@@ -35,6 +35,105 @@ A Django-based API project template using:
    - Admin: http://localhost:8000/admin/
    - Health check: http://localhost:8000/health/
 
+## Developer setup
+
+### Docker-based development
+
+The easiest way to develop is with the provided Docker Compose file. It starts PostgreSQL, Redis, the Django dev server, and Dramatiq workers.
+
+```bash
+# Copy environment variables
+cp .env.example .env
+
+# Build and start all services
+docker compose -f docker/docker-compose.yml up -d --build
+
+# View logs
+docker compose -f docker/docker-compose.yml logs -f
+
+# Run a management command
+docker compose -f docker/docker-compose.yml exec web python manage.py <command>
+```
+
+Common management commands:
+
+```bash
+# Run migrations
+docker compose -f docker/docker-compose.yml exec web python manage.py migrate
+
+# Create a superuser
+docker compose -f docker/docker-compose.yml exec web python manage.py createsuperuser
+
+# Open a Django shell
+docker compose -f docker/docker-compose.yml exec web python manage.py shell
+
+# Make migrations after model changes
+docker compose -f docker/docker-compose.yml exec web python manage.py makemigrations
+```
+
+### Local development without Docker
+
+1. Create a virtual environment and install dependencies:
+
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r src/requirements/local.txt
+   ```
+
+2. Copy `.env.example` to `.env` and start PostgreSQL + Redis locally.
+
+3. Run migrations and start the dev server:
+
+   ```bash
+   cd src
+   python manage.py migrate
+   python manage.py runserver
+   ```
+
+### Running tests
+
+Tests use pytest with the `config.settings.test` settings module (SQLite in-memory by default).
+
+```bash
+cd src
+pytest
+```
+
+To run with coverage:
+
+```bash
+pytest --cov --cov-report=html
+```
+
+### Linting and formatting
+
+This project uses [Ruff](https://docs.astral.sh/ruff/).
+
+```bash
+cd src
+ruff check .
+ruff format .
+```
+
+### Background jobs
+
+Dramatiq workers run as a separate `worker` service. Example tasks are defined in `src/apps/core/tasks.py`.
+
+Enqueue a task from code:
+
+```python
+from apps.core.tasks import send_welcome_email
+
+send_welcome_email.send("user@example.com")
+```
+
+Monitor the worker logs:
+
+```bash
+docker compose -f docker/docker-compose.yml logs -f worker
+```
+
 ## Project structure
 
 ```
@@ -55,6 +154,7 @@ A Django-based API project template using:
 ├── README.md
 ├── agents.md
 ├── architecture.md
+├── production.md
 └── skills/
 ```
 
@@ -73,85 +173,9 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
 | `EMAIL_URL` | Email backend URL | `smtp://user:pass@smtp:587` |
 
-## Running locally without Docker
-
-1. Create a virtual environment and install dependencies:
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r src/requirements/local.txt
-   ```
-
-2. Copy `.env.example` to `.env` and start PostgreSQL + Redis locally.
-
-3. Run migrations and start the dev server:
-
-   ```bash
-   cd src
-   python manage.py migrate
-   python manage.py runserver
-   ```
-
-## Running tests
-
-Tests use pytest with the `config.settings.test` settings module (SQLite in-memory by default).
-
-```bash
-cd src
-pytest
-```
-
-To run with coverage:
-
-```bash
-pytest --cov --cov-report=html
-```
-
-## Background jobs
-
-Dramatiq workers run as a separate `worker` service. Example tasks are defined in `src/apps/core/tasks.py`.
-
-Enqueue a task from code:
-
-```python
-from apps.core.tasks import send_welcome_email
-
-send_welcome_email.send("user@example.com")
-```
-
-Monitor the worker logs:
-
-```bash
-docker compose -f docker/docker-compose.yml logs -f worker
-```
-
-## Linting and formatting
-
-This project uses [Ruff](https://docs.astral.sh/ruff/).
-
-```bash
-cd src
-ruff check .
-ruff format .
-```
-
 ## Production deployment
 
-1. Prepare production environment variables (see `.env.prod.example`) and export them on the target host. At minimum you need `SECRET_KEY`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DB_PASSWORD`, plus any email/Sentry variables you configure.
-2. Deploy using the production compose file:
-
-   ```bash
-   docker compose -f docker/docker-compose.prod.yml up -d
-   ```
-
-3. Run migrations manually if needed:
-
-   ```bash
-   docker compose -f docker/docker-compose.prod.yml exec web python manage.py migrate
-   ```
-
-> The production image runs as a non-root user and is built to be stateless: static files are collected into a shared volume on startup and media uploads should be backed by the `media` volume (or an object-store such as S3).
+See [production.md](production.md) for the full production deployment guide.
 
 Images are built and pushed to `ghcr.io/<owner>/dristi` automatically on every push to `main`.
 
