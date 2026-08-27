@@ -84,7 +84,7 @@ Django’s cache framework is configured to use a dedicated Redis database. View
 - **Web tier:** horizontally scalable by increasing Gunicorn workers or running multiple `web` containers behind a load balancer.
 - **Worker tier:** horizontally scalable by adding more `worker` containers; Dramatiq uses Redis as the shared broker.
 - **Database:** use PostgreSQL connection pooling (e.g. PgBouncer) and read replicas at scale.
-- **Observability:** structured logging to stdout, optional Sentry integration, and health check endpoints (`/health/`, `/api/v1/health/`).
+- **Observability:** structured logging to stdout and health check endpoints (`/health/`, `/api/v1/health/`).
 
 ## Security
 

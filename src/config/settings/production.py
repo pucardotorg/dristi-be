@@ -23,16 +23,3 @@ SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = "DENY"
-
-# Sentry integration (optional)
-SENTRY_DSN = env("SENTRY_DSN", default=None)
-if SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.django import DjangoIntegration
-    from sentry_sdk.integrations.dramatiq import DramatiqIntegration
-
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        integrations=[DjangoIntegration(), DramatiqIntegration()],
-        traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.1),
-    )

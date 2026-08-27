@@ -72,7 +72,6 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CACHE_URL` | Redis connection for Django cache | `redis://redis:6379/1` |
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
 | `EMAIL_URL` | Email backend URL | `smtp://user:pass@smtp:587` |
-| `SENTRY_DSN` | Optional Sentry DSN | `https://...@sentry.io/...` |
 
 ## Running locally without Docker
 
