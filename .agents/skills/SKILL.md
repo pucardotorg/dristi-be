@@ -22,9 +22,9 @@ Use this skill when asked to:
 
 ## Workflow
 
-1. Read `agents.md` and `architecture.md` if you are making structural changes.
+1. Read `agents.md` and `docs/architecture.md` if you are making structural changes.
 2. Make focused changes that preserve the existing app structure and style.
-3. Update `.env.example` / `.env.prod.example` and `README.md` when adding environment variables.
+3. Update `.env.example` / `.env.prod.example`, `README.md`, and relevant docs under `docs/` when adding environment variables.
 4. Run tests and linting before finishing:
    - `cd src && pytest`
    - `cd src && ruff check . && ruff format .`

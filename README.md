@@ -31,9 +31,9 @@ A Django-based API project template using:
 
 ## Documentation
 
-- [development.md](development.md) — developer setup, running tests, linting, and background jobs.
-- [production.md](production.md) — production deployment guide.
-- [architecture.md](architecture.md) — system architecture and component overview.
+- [docs/development.md](docs/development.md) — developer setup, running tests, linting, and background jobs.
+- [docs/production.md](docs/production.md) — production deployment guide.
+- [docs/architecture.md](docs/architecture.md) — system architecture and component overview.
 - [agents.md](agents.md) — conventions and workflows for AI coding assistants.
 
 ## Project structure
@@ -55,10 +55,13 @@ A Django-based API project template using:
 ├── pyproject.toml
 ├── README.md
 ├── agents.md
-├── architecture.md
-├── development.md
-├── production.md
-└── skills/
+├── docs/
+│   ├── architecture.md
+│   ├── development.md
+│   └── production.md
+├── .agents/
+│   └── skills/
+│       └── SKILL.md
 ```
 
 ## Environment variables

@@ -62,7 +62,7 @@ This document helps AI coding assistants work effectively inside the **Dristi** 
 - The `web` service runs Gunicorn and executes migrations + static collection on startup.
 - The `worker` service runs Dramatiq workers.
 - Do not commit `.env` files. The `.env.example` files are the source of truth for local development.
-- The production compose file expects Docker secrets / exported env vars; do not bake secrets into the image.
+- The production compose file expects exported environment variables; do not bake secrets into the image.
 
 ## Common commands
 
