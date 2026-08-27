@@ -1,0 +1,4 @@
+-r base.txt
+
+# Production-only pinned versions can be added here if needed.
+# The Docker build installs base.txt; this file is kept for parity.
