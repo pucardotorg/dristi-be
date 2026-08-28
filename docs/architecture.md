@@ -15,15 +15,21 @@ Dristi is a containerized Django API platform. It separates synchronous web traf
                             │                       │
                             ▼                       ▼
                      ┌─────────────┐      ┌─────────────────┐
-                     │  Static /   │      │   PostgreSQL    │
-                     │  Media vol  │      │   (persistent)  │
+                     │  Static     │      │   PostgreSQL    │
+                     │  volume     │      │   (persistent)  │
                      └─────────────┘      └─────────────────┘
                                                    ▲
                                                    │
 ┌─────────────────┐      ┌─────────────┐          │
 │ Dramatiq Worker │◀─────│    Redis    │──────────┘
 │   (background)  │      │ cache/queue │
-└─────────────────┘      └─────────────┘
+└─────────────────┘      └─────────────┘          │
+                                                  │
+                                           ┌──────▼──────┐
+                                           │  rustfs     │
+                                           │ S3-compatible
+                                           │ object store│
+                                           └─────────────┘
 ```
 
 ## Django application layout
@@ -35,7 +41,7 @@ The `config` package is the Django project configuration. Settings are split by 
 - `base.py` — shared settings (installed apps, middleware, DRF, cache, Dramatiq broker, logging).
 - `local.py` — development settings; loads `.env`, enables debug toolbar, browsable API.
 - `test.py` — CI settings; uses an in-memory SQLite database and the Dramatiq stub broker.
-- `production.py` — production settings; security hardening, optional Sentry integration.
+- `production.py` — production settings; security hardening.
 
 ### `apps.core`
 
@@ -66,7 +72,7 @@ DRF API layer:
 2. Django middleware handles CORS, sessions, CSRF, and security headers.
 3. DRF routes the request to the appropriate view/serializer.
 4. Views interact with models backed by PostgreSQL.
-5. Static files are served by WhiteNoise (or Nginx in production); media files are served by Nginx.
+5. Static files are served by WhiteNoise (or Nginx in production). Uploaded media files are stored in the configured S3-compatible `rustfs` object store.
 
 ### Background job
 
@@ -74,6 +80,13 @@ DRF API layer:
 2. The `worker` service consumes messages from Redis.
 3. Actors execute business logic; database connections are managed by `django_dramatiq` middleware.
 4. Results (if requested) are stored back in Redis or ignored for fire-and-forget tasks.
+
+### File uploads
+
+1. A view receives an uploaded file and delegates it to Django's default storage.
+2. When S3 settings are configured, `django-storages` writes the file to the `rustfs` S3-compatible object store.
+3. The file URL returned by the storage backend points at the S3-compatible endpoint.
+4. If any S3 setting is missing, Django falls back to the local filesystem (`MEDIA_ROOT`).
 
 ### Caching
 

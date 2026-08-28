@@ -136,6 +136,30 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 
 # ---------------------------------------------------------------------------
+# S3-compatible media storage (optional)
+# ---------------------------------------------------------------------------
+S3_API_ENDPOINT = env("S3_API_ENDPOINT", default=None)
+S3_BUCKET = env("S3_BUCKET", default=None)
+S3_ACCESS_KEY = env("S3_ACCESS_KEY", default=None)
+S3_SECRET_KEY = env("S3_SECRET_KEY", default=None)
+
+if all([S3_API_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY]):
+    STORAGES["default"] = {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "OPTIONS": {
+            "bucket_name": S3_BUCKET,
+            "endpoint_url": S3_API_ENDPOINT,
+            "access_key": S3_ACCESS_KEY,
+            "secret_key": S3_SECRET_KEY,
+            "signature_version": "s3v4",
+            "default_acl": "private",
+            "querystring_auth": True,
+            "location": "media",
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Django REST Framework
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {

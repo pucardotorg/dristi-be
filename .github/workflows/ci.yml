@@ -57,6 +57,10 @@ jobs:
           ALLOWED_HOSTS: localhost
           CSRF_TRUSTED_ORIGINS: http://localhost
           CORS_ALLOWED_ORIGINS: http://localhost
+          S3_API_ENDPOINT: http://rustfs:9000
+          S3_BUCKET: dristi-media
+          S3_ACCESS_KEY: minioadmin
+          S3_SECRET_KEY: minioadmin
 
       - name: Run pytest
         run: pytest --cov --cov-report=xml

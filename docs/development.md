@@ -4,7 +4,7 @@ This document explains how to set up and run Dristi for local development.
 
 ## Docker-based development
 
-The easiest way to develop is with the provided Docker Compose file. It starts PostgreSQL, Redis, the Django dev server, and Dramatiq workers.
+The easiest way to develop is with the provided Docker Compose file. It starts PostgreSQL, Redis, the Django dev server, Dramatiq workers, and an S3-compatible `rustfs` object store (MinIO by default) for media uploads.
 
 ```bash
 # Copy environment variables
@@ -41,6 +41,7 @@ Once the stack is running:
 - API root: http://localhost:8000/api/v1/
 - Admin: http://localhost:8000/admin/
 - Health check: http://localhost:8000/health/
+- rustfs / MinIO console: http://localhost:9001/ (default credentials: `minioadmin` / `minioadmin`)
 
 ## Local development without Docker
 
@@ -52,7 +53,7 @@ Once the stack is running:
    pip install -r src/requirements/local.txt
    ```
 
-2. Copy `.env.example` to `.env` and start PostgreSQL + Redis locally.
+2. Copy `.env.example` to `.env` and start PostgreSQL, Redis, and an S3-compatible object store locally (for example, MinIO or the `rustfs` service of your choice).
 
 3. Run migrations and start the dev server:
 
@@ -76,6 +77,12 @@ To run with coverage:
 ```bash
 pytest --cov --cov-report=html
 ```
+
+## File uploads and media storage
+
+Media uploads are stored in the S3-compatible object store configured by the `S3_*` environment variables. When running the Docker stack, the `rustfs` service is used automatically. If any `S3_*` variable is left blank, Django falls back to the local filesystem.
+
+See `.env.example` for the default S3 settings.
 
 ## Linting and formatting
 

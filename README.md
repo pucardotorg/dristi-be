@@ -78,6 +78,10 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CACHE_URL` | Redis connection for Django cache | `redis://redis:6379/1` |
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
 | `EMAIL_URL` | Email backend URL | `smtp://user:pass@smtp:587` |
+| `S3_API_ENDPOINT` | S3-compatible API endpoint for media uploads | `http://rustfs:9000` |
+| `S3_BUCKET` | S3 bucket for media uploads | `dristi-media` |
+| `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
+| `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
 
 ## CI/CD
 
