@@ -20,7 +20,7 @@ jobs:
 
     env:
       DJANGO_SETTINGS_MODULE: config.settings.test
-      DATABASE_URL: sqlite:///:memory:
+      DATABASE_URL: "sqlite:///:memory:"
 
     steps:
       - name: Checkout repository
