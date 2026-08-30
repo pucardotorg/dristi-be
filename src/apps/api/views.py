@@ -1,5 +1,6 @@
 """API views."""
 
+from django.conf import settings
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -23,6 +24,13 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 def health_check(request):
     """Lightweight liveness probe."""
     return Response({"status": "ok"})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def version(request):
+    """Return the Git commit SHA the image was built from."""
+    return Response({"git_version": getattr(settings, "GIT_COMMIT_SHA", "unknown")})
 
 
 @api_view(["POST"])

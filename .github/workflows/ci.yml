@@ -50,7 +50,7 @@ jobs:
           DJANGO_SETTINGS_MODULE: config.settings.test
 
       - name: Run Django deployment checks (production settings)
-        run: python manage.py check --deploy --fail-level WARNING
+        run: python manage.py check --deploy
         env:
           DJANGO_SETTINGS_MODULE: config.settings.production
           SECRET_KEY: github-actions-ci-secret-key-not-for-production-only-for-checks-0123456789

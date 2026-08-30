@@ -21,6 +21,9 @@ env = environ.Env(
     CORS_ALLOWED_ORIGINS=(list, []),
 )
 
+# Version information (commit SHA injected at Docker build time).
+from .version import GIT_COMMIT_SHA  # noqa: E402,F401
+
 # Environment-specific modules are responsible for loading .env files.
 
 
