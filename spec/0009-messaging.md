@@ -175,13 +175,14 @@ Dristi does not ship with a real provider. Instead, it looks up the backend clas
 MESSAGING_BACKENDS = {
     "email": "apps.messaging.senders.email.SMTPEmailBackend",
     "sms": "apps.messaging.senders.sms.DummySMSBackend",
-    "push": "external_notifications.senders.push.FCMPushSender",
 }
 ```
 
+Push notification backend is intentionally not implemented in this iteration. Attempting to send a push message raises `NotImplementedError`.
+
 At import/use time the backend class is lazily imported and instantiated. The backend class must inherit from the matching `BaseMessageSender` subclass and implement `send()`.
 
-If no backend is configured for a channel, calling `send()` raises `MessageBackendNotConfigured`.
+If a channel is referenced without a configured backend, calling `send()` raises `MessageBackendNotConfigured`.
 
 ### 7.1 Built-in dummy SMS backend
 
@@ -250,6 +251,27 @@ Behavior:
 - Raises `MessageSendError` on SMTP or connection errors.
 - Supports both plain-text and HTML content if `rendered_message` provides a content type; default is `text/plain`.
 
+### 7.3 Push sender (not implemented)
+
+Location: `apps.messaging.senders.push`
+
+The `PushSender` class is defined as a placeholder to preserve the abstract interface, but its `send()` method raises `NotImplementedError`.
+
+```python
+class PushSender(BaseMessageSender):
+    message_type = "push"
+
+    def send(self, rendered_message: RenderedMessage) -> None:
+        raise NotImplementedError("Push notification delivery is not implemented yet.")
+```
+
+Behavior:
+- `enqueue_push(...)` immediately raises `NotImplementedError`.
+- Any `MessageLog` created for `message_type="push"` should be marked `status=failed` with `error_message` set to a not-implemented message.
+- No Dramatiq message is enqueued for push notifications.
+
+Push support is tracked as a future TODO.
+
 ### 8. Async dispatch via Dramatiq
 
 Location: `apps.messaging.tasks`
@@ -270,7 +292,9 @@ Flow:
 7. On success: set `status=sent`, record `sent_at` and `provider_message_id` if returned.
 8. On failure: record `failed_at` and `error_message`. If `attempt_count <= max_retry`, re-enqueue `send_message(log_id)` with a backoff delay; otherwise set `status=failed`.
 
-Provide convenience enqueue helpers that create the `MessageLog` row first and then enqueue the actor:
+Provide convenience enqueue helpers that create the `MessageLog` row synchronously in the calling process and then enqueue the Dramatiq task. The worker only updates the existing log row.
+
+> **Note:** Bulk sending (thousands of messages in one operation) is not supported by these helpers and is out of scope for this iteration.
 
 ```python
 def enqueue_email(message_key, recipient, context): ...
@@ -348,6 +372,7 @@ Register `MessageLog` as read-only with:
 
 ## Out of scope
 
+- Bulk message sending (thousands of recipients in one operation).
 - Third-party provider integrations beyond the built-in dummy SMS and SMTP email backends (e.g., Twilio, SES, FCM, APNs).
 - Organization- or location-scoped templates (future TODO).
 - Delivery receipts, bounce handling, and detailed retry policies beyond `max_retry`.
@@ -360,3 +385,4 @@ Register `MessageLog` as read-only with:
 - Add organization- and location-level scoping to `MessageTemplate`.
 - Implement scoped template resolution (exact → organization-only → location-only → global fallback).
 - Store scope snapshots on `MessageLog` so historical sends remain traceable to the correct tenant/location.
+- Implement push notification backend and remove the `NotImplementedError` from `PushSender`.
