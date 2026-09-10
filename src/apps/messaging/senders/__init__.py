@@ -31,13 +31,9 @@ def _get_sender_class(message_type: str):
     registered for the channel or when the configured class is invalid.
     """
     configured_senders = getattr(settings, "MESSAGING_SENDERS", {})
-    path = configured_senders.get(message_type) or _DEFAULT_SENDER_CLASSES.get(
-        message_type
-    )
+    path = configured_senders.get(message_type) or _DEFAULT_SENDER_CLASSES.get(message_type)
     if not path:
-        raise MessageBackendNotConfigured(
-            f"No sender available for message type '{message_type}'"
-        )
+        raise MessageBackendNotConfigured(f"No sender available for message type '{message_type}'")
 
     try:
         cls = import_string(path)
@@ -47,9 +43,7 @@ def _get_sender_class(message_type: str):
         ) from exc
 
     if not isinstance(cls, type) or not issubclass(cls, BaseMessageSender):
-        raise MessageBackendNotConfigured(
-            f"Sender '{path}' must subclass BaseMessageSender"
-        )
+        raise MessageBackendNotConfigured(f"Sender '{path}' must subclass BaseMessageSender")
 
     return cls
 

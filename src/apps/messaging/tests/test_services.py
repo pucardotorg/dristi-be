@@ -77,6 +77,7 @@ class RendererTests(TestCase):
             "Hello Alice, your case CASE-1 was filed.",
         )
         self.assertEqual(rendered.message_type, MessageTemplate.MessageType.EMAIL.value)
+        self.assertEqual(rendered.category, self.template.category)
         self.assertEqual(rendered.recipient, {"email": "alice@example.com"})
 
     def test_render_autoescapes_html(self):
@@ -103,6 +104,15 @@ class RendererTests(TestCase):
         rendered = self.renderer.render(self.template, {"anything": "goes"})
         self.assertEqual(rendered.subject, "Static subject")
         self.assertEqual(rendered.body, "Static content")
+
+    def test_render_includes_category(self):
+        self.template.category = MessageTemplate.Category.TRANSACTION.value
+        self.template.save()
+        rendered = self.renderer.render(
+            self.template,
+            {"case_number": "CASE-1", "name": "Alice"},
+        )
+        self.assertEqual(rendered.category, MessageTemplate.Category.TRANSACTION.value)
 
     def test_render_content_type_and_payload(self):
         rendered = self.renderer.render(

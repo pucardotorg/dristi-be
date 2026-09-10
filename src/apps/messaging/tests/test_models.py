@@ -37,6 +37,7 @@ class MessageTemplateTests(TestCase):
         template = self.create_template()
         self.assertEqual(template.message_key, "case_filing_submitted")
         self.assertEqual(template.priority, MessageTemplate.Priority.MEDIUM.value)
+        self.assertEqual(template.category, MessageTemplate.Category.NOTIFICATION.value)
         self.assertTrue(template.is_active)
 
     def test_message_key_must_be_snake_case(self):
@@ -56,11 +57,19 @@ class MessageTemplateTests(TestCase):
         )
         self.assertEqual(template.subject, "")
 
+    def test_category_defaults_to_notification(self):
+        template = self.create_template()
+        self.assertEqual(template.category, MessageTemplate.Category.NOTIFICATION.value)
+
+    def test_category_can_be_set(self):
+        template = self.create_template(
+            category=MessageTemplate.Category.OTP.value,
+        )
+        self.assertEqual(template.category, MessageTemplate.Category.OTP.value)
+
     def test_invalid_json_schema_rejected(self):
         with self.assertRaises(ValidationError):
-            self.build_template(
-                data_schema={"type": "not_a_real_type"}
-            ).full_clean()
+            self.build_template(data_schema={"type": "not_a_real_type"}).full_clean()
 
     def test_unique_key_and_type(self):
         self.create_template()

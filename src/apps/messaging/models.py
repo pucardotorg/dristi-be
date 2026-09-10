@@ -18,6 +18,13 @@ class MessageTemplate(BaseModel):
         SMS = "sms", "SMS"
         PUSH = "push", "Push"
 
+    class Category(models.TextChoices):
+        """Message category used by backends for routing/handling."""
+
+        OTP = "OTP", "OTP"
+        NOTIFICATION = "NOTIFICATION", "Notification"
+        TRANSACTION = "TRANSACTION", "Transaction"
+
     class Priority(models.TextChoices):
         """Delivery priority levels."""
 
@@ -34,6 +41,11 @@ class MessageTemplate(BaseModel):
         max_length=20,
         choices=Priority.choices,
         default=Priority.MEDIUM,
+    )
+    category = models.CharField(
+        max_length=20,
+        choices=Category.choices,
+        default=Category.NOTIFICATION,
     )
     max_retries = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
@@ -55,19 +67,10 @@ class MessageTemplate(BaseModel):
         super().clean()
         if not re.match(r"^[a-z][a-z0-9_]*$", self.message_key):
             raise ValidationError(
-                {
-                    "message_key": (
-                        "Must be lowercase snake_case (e.g. case_filing_submitted)."
-                    )
-                }
+                {"message_key": ("Must be lowercase snake_case (e.g. case_filing_submitted).")}
             )
-        if (
-            self.message_type == self.MessageType.EMAIL.value
-            and not self.subject
-        ):
-            raise ValidationError(
-                {"subject": "Subject is required for email templates."}
-            )
+        if self.message_type == self.MessageType.EMAIL.value and not self.subject:
+            raise ValidationError({"subject": "Subject is required for email templates."})
         self._validate_data_schema()
 
     def _validate_data_schema(self):
@@ -133,10 +136,7 @@ class MessageLog(BaseModel):
     def can_retry(self):
         """Return True when the message may be attempted again."""
 
-        return (
-            self.status != self.Status.SENT.value
-            and self.attempt_count <= self.max_retries
-        )
+        return self.status != self.Status.SENT.value and self.attempt_count <= self.max_retries
 
     def __str__(self):
         return f"{self.message_key} ({self.status})"

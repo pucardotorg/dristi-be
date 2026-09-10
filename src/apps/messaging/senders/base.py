@@ -51,19 +51,12 @@ class ConfiguredBackendSender(BaseMessageSender):
                 f"No backend configured for message type '{self.message_type}'"
             )
 
-        if (
-            self._configured_backend is None
-            or self._configured_backend_path != path
-        ):
+        if self._configured_backend is None or self._configured_backend_path != path:
             cls = import_string(path)
             if not issubclass(cls, self.__class__):
-                raise TypeError(
-                    f"Backend '{path}' must inherit from {self.__class__.__name__}"
-                )
+                raise TypeError(f"Backend '{path}' must inherit from {self.__class__.__name__}")
             if cls.send is self.__class__.send:
-                raise MessageBackendNotConfigured(
-                    f"Backend '{path}' must implement send()"
-                )
+                raise MessageBackendNotConfigured(f"Backend '{path}' must implement send()")
             self._configured_backend = cls()
             self._configured_backend_path = path
 

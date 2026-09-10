@@ -33,6 +33,7 @@ class RenderedMessage:
     body: str
     message_key: str = ""
     content_type: str = "text/plain"
+    category: str = ""
     payload: dict = field(default_factory=dict)
 
 
@@ -43,8 +44,7 @@ class MessageTemplateRenderer:
 
     def __init__(self, template_engine=None):
         self.template_engine = (
-            template_engine
-            or getattr(settings, "MESSAGING_TEMPLATE_ENGINE", self.template_engine)
+            template_engine or getattr(settings, "MESSAGING_TEMPLATE_ENGINE", self.template_engine)
         ).lower()
         self._jinja_env = None
 
@@ -75,6 +75,7 @@ class MessageTemplateRenderer:
             body=body,
             message_key=message_key or template.message_key,
             content_type=content_type,
+            category=template.category,
             payload=payload,
         )
 
@@ -104,9 +105,7 @@ class MessageTemplateRenderer:
             return self._get_jinja_env().from_string(template_string).render(**context)
         if self.template_engine in ("mustache", "pystache"):
             return self._render_mustache(template_string, context)
-        raise MessageRenderError(
-            f"Unsupported template engine: {self.template_engine}"
-        )
+        raise MessageRenderError(f"Unsupported template engine: {self.template_engine}")
 
     def _get_jinja_env(self):
         """Return the cached Jinja2 sandbox environment."""
@@ -116,9 +115,7 @@ class MessageTemplateRenderer:
                 from jinja2 import StrictUndefined
                 from jinja2.sandbox import SandboxedEnvironment
             except ImportError as exc:
-                raise MessageRenderError(
-                    "Jinja2 rendering requires the 'jinja2' package"
-                ) from exc
+                raise MessageRenderError("Jinja2 rendering requires the 'jinja2' package") from exc
             self._jinja_env = SandboxedEnvironment(
                 autoescape=True,
                 undefined=StrictUndefined,
@@ -131,9 +128,7 @@ class MessageTemplateRenderer:
         try:
             import pystache
         except ImportError as exc:
-            raise MessageRenderError(
-                "Mustache rendering requires the 'pystache' package"
-            ) from exc
+            raise MessageRenderError("Mustache rendering requires the 'pystache' package") from exc
         return pystache.render(template_string, context)
 
 

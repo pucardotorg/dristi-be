@@ -11,6 +11,4 @@ class PushSender(BaseMessageSender):
     message_type = "push"
 
     def send(self, rendered_message: RenderedMessage):
-        raise NotImplementedError(
-            "Push notification delivery is not implemented yet."
-        )
+        raise NotImplementedError("Push notification delivery is not implemented yet.")

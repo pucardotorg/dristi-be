@@ -107,9 +107,7 @@ class SendMessageTaskTests(TestCase):
         clear_backend_cache()
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "email": "apps.messaging.senders.email.SMTPEmailBackend"
-        },
+        MESSAGING_BACKENDS={"email": "apps.messaging.senders.email.SMTPEmailBackend"},
         MESSAGING_EMAIL_BACKEND="django",
         MESSAGING_EMAIL_DEFAULT_FROM="noreply@example.com",
     )
@@ -133,9 +131,7 @@ class SendMessageTaskTests(TestCase):
         mock_retry.assert_not_called()
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "email": "apps.messaging.senders.email.SMTPEmailBackend"
-        },
+        MESSAGING_BACKENDS={"email": "apps.messaging.senders.email.SMTPEmailBackend"},
         MESSAGING_EMAIL_BACKEND="django",
         MESSAGING_EMAIL_DEFAULT_FROM="noreply@example.com",
     )
@@ -158,9 +154,7 @@ class SendMessageTaskTests(TestCase):
         self.assertEqual(log.provider_message_id, "provider-123")
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "email": "apps.messaging.senders.email.SMTPEmailBackend"
-        },
+        MESSAGING_BACKENDS={"email": "apps.messaging.senders.email.SMTPEmailBackend"},
         MESSAGING_EMAIL_BACKEND="django",
         MESSAGING_EMAIL_DEFAULT_FROM="noreply@example.com",
     )
@@ -191,9 +185,7 @@ class SendMessageTaskTests(TestCase):
         self.assertIn("delay", kwargs)
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "email": "apps.messaging.senders.email.SMTPEmailBackend"
-        },
+        MESSAGING_BACKENDS={"email": "apps.messaging.senders.email.SMTPEmailBackend"},
         MESSAGING_EMAIL_BACKEND="django",
         MESSAGING_EMAIL_DEFAULT_FROM="noreply@example.com",
     )

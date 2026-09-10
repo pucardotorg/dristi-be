@@ -115,9 +115,7 @@ class DummySMSBackendTests(TestCase):
         clear_backend_cache()
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "sms": "apps.messaging.senders.sms.DummySMSBackend"
-        },
+        MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"},
         MESSAGING_DUMMY_SMS_ENDPOINT="https://example.com/sms",
     )
     @patch("apps.messaging.senders.sms.requests.post")
@@ -131,6 +129,7 @@ class DummySMSBackendTests(TestCase):
                 subject="",
                 body="Hello",
                 message_key="case_filing_submitted",
+                category="NOTIFICATION",
             )
         )
         self.assertTrue(provider_id)
@@ -138,12 +137,11 @@ class DummySMSBackendTests(TestCase):
         self.assertEqual(payload["phone_number"], "+1234567890")
         self.assertEqual(payload["message"], "Hello")
         self.assertEqual(payload["message_key"], "case_filing_submitted")
+        self.assertEqual(payload["category"], "NOTIFICATION")
         self.assertEqual(payload["provider_message_id"], provider_id)
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "sms": "apps.messaging.senders.sms.DummySMSBackend"
-        },
+        MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"},
         MESSAGING_DUMMY_SMS_ENDPOINT="https://example.com/sms",
     )
     def test_missing_phone_number_raises(self):
@@ -172,9 +170,7 @@ class DummySMSBackendTests(TestCase):
             )
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "sms": "apps.messaging.senders.sms.DummySMSBackend"
-        },
+        MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"},
         MESSAGING_DUMMY_SMS_ENDPOINT="https://example.com/sms",
     )
     @patch("apps.messaging.senders.sms.requests.post")
@@ -202,9 +198,7 @@ class SMTPEmailBackendTests(TestCase):
         clear_backend_cache()
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "email": "apps.messaging.senders.email.SMTPEmailBackend"
-        },
+        MESSAGING_BACKENDS={"email": "apps.messaging.senders.email.SMTPEmailBackend"},
         MESSAGING_EMAIL_BACKEND="django",
         MESSAGING_EMAIL_DEFAULT_FROM="noreply@example.com",
     )
@@ -223,9 +217,7 @@ class SMTPEmailBackendTests(TestCase):
         self.assertEqual(mail.outbox[0].subject, "Test subject")
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "email": "apps.messaging.senders.email.SMTPEmailBackend"
-        },
+        MESSAGING_BACKENDS={"email": "apps.messaging.senders.email.SMTPEmailBackend"},
         MESSAGING_EMAIL_BACKEND="django",
         MESSAGING_EMAIL_DEFAULT_FROM="noreply@example.com",
     )
@@ -242,9 +234,7 @@ class SMTPEmailBackendTests(TestCase):
             )
 
     @override_settings(
-        MESSAGING_BACKENDS={
-            "email": "apps.messaging.senders.email.SMTPEmailBackend"
-        },
+        MESSAGING_BACKENDS={"email": "apps.messaging.senders.email.SMTPEmailBackend"},
         MESSAGING_EMAIL_BACKEND="django",
         MESSAGING_EMAIL_DEFAULT_FROM="noreply@example.com",
     )

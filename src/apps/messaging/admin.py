@@ -10,11 +10,12 @@ class MessageTemplateAdmin(admin.ModelAdmin):
     list_display = (
         "message_key",
         "message_type",
+        "category",
         "priority",
         "max_retries",
         "is_active",
     )
-    list_filter = ("message_type", "priority", "is_active")
+    list_filter = ("message_type", "category", "priority", "is_active")
     search_fields = ("message_key", "subject", "content")
     readonly_fields = ("id", "created_at", "updated_at")
 

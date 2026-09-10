@@ -23,9 +23,7 @@ class SMTPEmailBackend(EmailSender):
         self._validate_message_type(rendered_message)
         email = rendered_message.recipient.get("email")
         if not email:
-            raise MessageSendError(
-                "Email recipient must include an 'email' address"
-            )
+            raise MessageSendError("Email recipient must include an 'email' address")
 
         from_email = getattr(settings, "MESSAGING_EMAIL_DEFAULT_FROM", None)
         from_email = from_email or getattr(settings, "DEFAULT_FROM_EMAIL", None)

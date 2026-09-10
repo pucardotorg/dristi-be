@@ -34,15 +34,14 @@ class DummySMSBackend(SMSSender):
             )
         phone_number = rendered_message.recipient.get("phone_number")
         if not phone_number:
-            raise MessageSendError(
-                "SMS recipient must include a 'phone_number'"
-            )
+            raise MessageSendError("SMS recipient must include a 'phone_number'")
 
         provider_message_id = str(uuid.uuid4())
         payload = {
             "phone_number": phone_number,
             "message": rendered_message.body,
             "message_key": rendered_message.message_key,
+            "category": rendered_message.category,
             "provider_message_id": provider_message_id,
         }
         try:

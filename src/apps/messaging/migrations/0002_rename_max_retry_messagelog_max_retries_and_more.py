@@ -4,20 +4,19 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('messaging', '0001_initial'),
+        ("messaging", "0001_initial"),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='messagelog',
-            old_name='max_retry',
-            new_name='max_retries',
+            model_name="messagelog",
+            old_name="max_retry",
+            new_name="max_retries",
         ),
         migrations.RenameField(
-            model_name='messagetemplate',
-            old_name='max_retry',
-            new_name='max_retries',
+            model_name="messagetemplate",
+            old_name="max_retry",
+            new_name="max_retries",
         ),
     ]

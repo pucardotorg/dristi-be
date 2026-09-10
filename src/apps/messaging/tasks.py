@@ -71,9 +71,7 @@ def _record_failure(log: MessageLog, exc: Exception) -> None:
         send_message.send_with_options(args=[str(log.id)], delay=delay_ms)
     else:
         log.status = MessageLog.Status.FAILED.value
-        log.save(
-            update_fields=["status", "failed_at", "error_message", "updated_at"]
-        )
+        log.save(update_fields=["status", "failed_at", "error_message", "updated_at"])
 
 
 def get_retry_delay_ms(attempt_count: int) -> int:
@@ -155,7 +153,5 @@ def enqueue_push(message_key: str, recipient: dict, context: dict) -> MessageLog
     log.status = MessageLog.Status.FAILED.value
     log.error_message = "Push notification delivery is not implemented yet."
     log.failed_at = timezone.now()
-    log.save(
-        update_fields=["status", "error_message", "failed_at", "updated_at"]
-    )
+    log.save(update_fields=["status", "error_message", "failed_at", "updated_at"])
     raise NotImplementedError("Push notification delivery is not implemented yet.")
