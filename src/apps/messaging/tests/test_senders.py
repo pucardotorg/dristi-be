@@ -7,6 +7,7 @@ from django.core import mail
 from django.test import TestCase, override_settings
 
 from apps.messaging.senders import clear_backend_cache, get_backend
+from apps.messaging.senders.base import BaseMessageSender
 from apps.messaging.senders.push import PushSender
 from apps.messaging.services import (
     MessageBackendNotConfigured,
@@ -15,12 +16,22 @@ from apps.messaging.services import (
 )
 
 
+class CustomSender(BaseMessageSender):
+    """A sender used to verify settings-driven registration."""
+
+    message_type = "custom"
+
+    def send(self, rendered_message):
+        return "custom-sent"
+
+
 class SenderRegistryTests(TestCase):
     """Sender registry tests."""
 
     def tearDown(self):
         clear_backend_cache()
 
+    @override_settings(MESSAGING_BACKENDS={})
     def test_missing_backend_raises_on_send(self):
         sender = get_backend("email")
         with self.assertRaises(MessageBackendNotConfigured):
@@ -64,6 +75,34 @@ class SenderRegistryTests(TestCase):
                     body="Body",
                 )
             )
+
+    @override_settings(
+        MESSAGING_SENDERS={"custom": "apps.messaging.tests.test_senders.CustomSender"}
+    )
+    def test_custom_channel_from_settings(self):
+        sender = get_backend("custom")
+        self.assertIsInstance(sender, CustomSender)
+        result = sender.send(
+            RenderedMessage(
+                message_type="custom",
+                recipient={},
+                subject="Test",
+                body="Body",
+            )
+        )
+        self.assertEqual(result, "custom-sent")
+
+    @override_settings(
+        MESSAGING_SENDERS={"email": "apps.messaging.tests.test_senders.CustomSender"}
+    )
+    def test_settings_can_override_builtin_sender(self):
+        sender = get_backend("email")
+        self.assertIsInstance(sender, CustomSender)
+
+    @override_settings(MESSAGING_SENDERS={"bad": "not.a.real.Sender"})
+    def test_invalid_sender_path_raises(self):
+        with self.assertRaises(MessageBackendNotConfigured):
+            get_backend("bad")
 
 
 class DummySMSBackendTests(TestCase):

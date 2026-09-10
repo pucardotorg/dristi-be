@@ -67,7 +67,7 @@ Stores templated content and metadata for outbound messages.
 | `content` | `TextField()` | Message body. Templatized. |
 | `data_schema` | `JSONField(default=dict, blank=True)` | JSON Schema describing the context object that must be supplied when rendering the template. |
 | `priority` | `CharField(max_length=20, default="MEDIUM")` | One of `HIGH`, `MEDIUM`, `LOW`. May be used by workers for queue ordering or preferential processing. |
-| `max_retry` | `PositiveSmallIntegerField(default=0)` | Maximum number of retry attempts after the first failure. `0` means no retries. |
+| `max_retries` | `PositiveSmallIntegerField(default=0)` | Maximum number of retry attempts after the first failure. `0` means no retries. |
 | `is_active` | `BooleanField(default=True)` | Allows soft-disabling a template without deleting it. |
 
 Constraints:
@@ -96,7 +96,7 @@ Keeps a persistent record of every message that is dispatched, including its sta
 | `rendered_content` | `TextField(blank=True)` | Rendered message body. |
 | `status` | `CharField(max_length=50)` | One of `pending`, `sent`, `failed`, `cancelled`. |
 | `attempt_count` | `PositiveSmallIntegerField(default=0)` | Number of delivery attempts made so far. |
-| `max_retry` | `PositiveSmallIntegerField(default=0)` | Snapshot of `template.max_retry` at enqueue time. |
+| `max_retries` | `PositiveSmallIntegerField(default=0)` | Snapshot of `template.max_retries` at enqueue time. |
 | `provider_message_id` | `CharField(max_length=255, blank=True)` | Optional ID returned by the backend provider. |
 | `error_message` | `TextField(blank=True)` | Last recorded error, if any. |
 | `sent_at` | `DateTimeField(null=True, blank=True)` | Timestamp when the message reached `sent` status. |
@@ -107,8 +107,18 @@ Behavior:
 - Each delivery attempt increments `attempt_count`.
 - On success the row moves to `status=sent` and records `sent_at` and `provider_message_id` if available.
 - On failure the row records `failed_at` and `error_message`.
-- If `attempt_count > max_retry`, the row moves to `status=failed` and no further retries are attempted.
-- A helper method `can_retry()` returns `True` when `status != "sent"` and `attempt_count <= max_retry`.
+- If `attempt_count > max_retries`, the row moves to `status=failed` and no further retries are attempted.
+- A helper method `can_retry()` returns `True` when `status != "sent"` and `attempt_count <= max_retries`.
+
+### Retry policy design note
+
+`max_retries` is stored on `MessageTemplate` and snapshotted into `MessageLog` at enqueue time rather than relying solely on Dramatiq's task-level retry configuration. This choice was made because:
+
+- **Per-template reliability:** different message types have different delivery requirements. A court-filing notification may warrant several retries, while a low-priority informational message may not.
+- **Operational visibility:** the exact retry policy that applied to a given send is preserved in the audit log, even if the template is later changed.
+- **Self-contained audit:** `MessageLog.attempt_count` and `MessageLog.max_retries` make it easy to see why a message failed without inspecting Dramatiq internals.
+
+The `send_message` Dramatiq actor is decorated with `max_retries=0` so that Dramatiq's built-in retry middleware never re-runs it; all retry decisions are driven by the task based on the persisted log state.
 
 ### 4. Template rendering
 
@@ -177,6 +187,17 @@ MESSAGING_BACKENDS = {
     "sms": "apps.messaging.senders.sms.DummySMSBackend",
 }
 ```
+
+Sender classes are also configurable through `MESSAGING_SENDERS`. Built-in defaults are provided for `email`, `sms`, and `push`, but external Django apps can override an existing channel or register entirely new channels without modifying this module:
+
+```python
+MESSAGING_SENDERS = {
+    "email": "external_app.senders.MyEmailSender",
+    "voice": "external_app.senders.VoiceSender",
+}
+```
+
+If `MESSAGING_SENDERS` does not contain a channel, the registry falls back to the built-in sender for that channel. Unknown channels raise `MessageBackendNotConfigured`.
 
 Push notification backend is intentionally not implemented in this iteration. Attempting to send a push message raises `NotImplementedError`.
 
@@ -277,7 +298,7 @@ Push support is tracked as a future TODO.
 Location: `apps.messaging.tasks`
 
 ```python
-@actor
+@actor(max_retries=0)
 def send_message(log_id: int):
     ...
 ```
@@ -290,7 +311,7 @@ Flow:
 5. Increment `attempt_count`.
 6. Instantiate the backend sender for `message_type` and call `sender.send(rendered_message)`.
 7. On success: set `status=sent`, record `sent_at` and `provider_message_id` if returned.
-8. On failure: record `failed_at` and `error_message`. If `attempt_count <= max_retry`, re-enqueue `send_message(log_id)` with a backoff delay; otherwise set `status=failed`.
+8. On failure: record `failed_at` and `error_message`. If `attempt_count <= max_retries`, re-enqueue `send_message(log_id)` with a backoff delay; otherwise set `status=failed`.
 
 Provide convenience enqueue helpers that create the `MessageLog` row synchronously in the calling process and then enqueue the Dramatiq task. The worker only updates the existing log row.
 
@@ -332,13 +353,13 @@ enqueue_email(
 ### 11. Admin interface
 
 Register `MessageTemplate` in `apps.messaging.admin` with:
-- List display: `message_key`, `message_type`, `priority`, `max_retry`, `is_active`.
+- List display: `message_key`, `message_type`, `priority`, `max_retries`, `is_active`.
 - List filters: `message_type`, `priority`, `is_active`.
 - Search fields: `message_key`, `subject`, `content`.
 - Read-only: audit fields from `BaseModel`.
 
 Register `MessageLog` as read-only with:
-- List display: `id`, `message_key`, `message_type`, `status`, `attempt_count`, `max_retry`, `sent_at`, `failed_at`.
+- List display: `id`, `message_key`, `message_type`, `status`, `attempt_count`, `max_retries`, `sent_at`, `failed_at`.
 - List filters: `message_type`, `status`.
 - Search fields: `message_key`, `recipient`, `provider_message_id`.
 
@@ -375,7 +396,7 @@ Register `MessageLog` as read-only with:
 - Bulk message sending (thousands of recipients in one operation).
 - Third-party provider integrations beyond the built-in dummy SMS and SMTP email backends (e.g., Twilio, SES, FCM, APNs).
 - Organization- or location-scoped templates (future TODO).
-- Delivery receipts, bounce handling, and detailed retry policies beyond `max_retry`.
+- Delivery receipts, bounce handling, and detailed retry policies beyond `max_retries`.
 - Message scheduling and rate limiting.
 - Multi-language / localization support.
 - Message preference management for users (opt-in/opt-out).

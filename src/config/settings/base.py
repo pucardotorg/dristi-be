@@ -218,7 +218,16 @@ DRAMATIQ_TASKS_DATABASE = "default"
 # Messaging
 # ---------------------------------------------------------------------------
 MESSAGING_TEMPLATE_ENGINE = env("MESSAGING_TEMPLATE_ENGINE", default="jinja2")
-MESSAGING_BACKENDS = {}
+# Sender classes can be overridden or extended via MESSAGING_SENDERS.
+# Built-in defaults are email/sms/push; external Django apps can register
+# custom channels by providing a BaseMessageSender subclass import path.
+MESSAGING_SENDERS = {}
+# Concrete delivery backends for each channel (used by ConfiguredBackendSender).
+# Defaults ship with the built-in SMTP email and dummy SMS backends.
+MESSAGING_BACKENDS = {
+    "email": "apps.messaging.senders.email.SMTPEmailBackend",
+    "sms": "apps.messaging.senders.sms.DummySMSBackend",
+}
 MESSAGING_DUMMY_SMS_ENDPOINT = env("MESSAGING_DUMMY_SMS_ENDPOINT", default=None)
 MESSAGING_DUMMY_SMS_TIMEOUT = env.int("MESSAGING_DUMMY_SMS_TIMEOUT", default=30)
 MESSAGING_EMAIL_BACKEND = env("MESSAGING_EMAIL_BACKEND", default="django")
