@@ -90,7 +90,7 @@ class MessageLogTests(TestCase):
             "message_key": "case_filing_submitted",
             "recipient": {"email": "user@example.com"},
             "context": {"case_number": "CASE-1"},
-            "max_retry": 2,
+            "max_retries": 2,
         }
         data.update(overrides)
         return MessageLog.objects.create(**data)

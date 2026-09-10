@@ -25,7 +25,7 @@ class EnqueueHelperTests(TestCase):
             message_type=MessageTemplate.MessageType.EMAIL.value,
             subject="Case {{ case_number }} filed",
             content="Hello {{ name }}",
-            max_retry=2,
+            max_retries=2,
         )
         clear_backend_cache()
 
@@ -41,7 +41,7 @@ class EnqueueHelperTests(TestCase):
         )
         self.assertEqual(log.status, MessageLog.Status.PENDING.value)
         self.assertEqual(log.attempt_count, 0)
-        self.assertEqual(log.max_retry, 2)
+        self.assertEqual(log.max_retries, 2)
         mock_send.assert_called_once_with(args=[str(log.id)])
 
     @patch("apps.messaging.tasks.send_message.send")
@@ -99,7 +99,7 @@ class SendMessageTaskTests(TestCase):
             message_type=MessageTemplate.MessageType.EMAIL.value,
             subject="Case {{ case_number }} filed",
             content="Hello {{ name }}",
-            max_retry=1,
+            max_retries=1,
         )
         clear_backend_cache()
 
@@ -121,7 +121,7 @@ class SendMessageTaskTests(TestCase):
             message_key="case_filing_submitted",
             recipient={"email": "user@example.com"},
             context={"case_number": "CASE-1", "name": "Alice"},
-            max_retry=1,
+            max_retries=1,
         )
         send_message.fn(str(log.id))
         log.refresh_from_db()
@@ -147,7 +147,7 @@ class SendMessageTaskTests(TestCase):
             message_key="case_filing_submitted",
             recipient={"email": "user@example.com"},
             context={"case_number": "CASE-1", "name": "Alice"},
-            max_retry=1,
+            max_retries=1,
         )
         with patch(
             "apps.messaging.senders.email.SMTPEmailBackend.send",
@@ -172,7 +172,7 @@ class SendMessageTaskTests(TestCase):
             message_key="case_filing_submitted",
             recipient={"email": "user@example.com"},
             context={"case_number": "CASE-1", "name": "Alice"},
-            max_retry=1,
+            max_retries=1,
         )
         with patch(
             "apps.messaging.senders.email.SMTPEmailBackend.send",
@@ -205,7 +205,7 @@ class SendMessageTaskTests(TestCase):
             message_key="case_filing_submitted",
             recipient={"email": "user@example.com"},
             context={"case_number": "CASE-1", "name": "Alice"},
-            max_retry=0,
+            max_retries=0,
         )
         with patch(
             "apps.messaging.senders.email.SMTPEmailBackend.send",
@@ -225,7 +225,7 @@ class SendMessageTaskTests(TestCase):
             message_key="missing_key",
             recipient={"email": "user@example.com"},
             context={},
-            max_retry=0,
+            max_retries=0,
         )
         send_message.fn(str(log.id))
         log.refresh_from_db()
