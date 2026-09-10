@@ -383,6 +383,7 @@ Register `MessageLog` as read-only with:
 ## Future TODO
 
 - Add organization- and location-level scoping to `MessageTemplate`.
+- History/Audit trail for the 'MessageTemplate`
 - Implement scoped template resolution (exact → organization-only → location-only → global fallback).
 - Store scope snapshots on `MessageLog` so historical sends remain traceable to the correct tenant/location.
 - Implement push notification backend and remove the `NotImplementedError` from `PushSender`.
