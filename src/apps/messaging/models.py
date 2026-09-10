@@ -35,7 +35,7 @@ class MessageTemplate(BaseModel):
         choices=Priority.choices,
         default=Priority.MEDIUM,
     )
-    max_retry = models.PositiveSmallIntegerField(default=0)
+    max_retries = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -124,7 +124,7 @@ class MessageLog(BaseModel):
         default=Status.PENDING,
     )
     attempt_count = models.PositiveSmallIntegerField(default=0)
-    max_retry = models.PositiveSmallIntegerField(default=0)
+    max_retries = models.PositiveSmallIntegerField(default=0)
     provider_message_id = models.CharField(max_length=255, blank=True)
     error_message = models.TextField(blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
@@ -135,7 +135,7 @@ class MessageLog(BaseModel):
 
         return (
             self.status != self.Status.SENT.value
-            and self.attempt_count <= self.max_retry
+            and self.attempt_count <= self.max_retries
         )
 
     def __str__(self):

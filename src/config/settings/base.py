@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.users",
     "apps.api",
+    "apps.messaging",
 ]
 
 MIDDLEWARE = [
@@ -211,6 +212,28 @@ DRAMATIQ_BROKER = {
 }
 
 DRAMATIQ_TASKS_DATABASE = "default"
+
+
+# ---------------------------------------------------------------------------
+# Messaging
+# ---------------------------------------------------------------------------
+MESSAGING_TEMPLATE_ENGINE = env("MESSAGING_TEMPLATE_ENGINE", default="jinja2")
+MESSAGING_BACKENDS = {}
+MESSAGING_DUMMY_SMS_ENDPOINT = env("MESSAGING_DUMMY_SMS_ENDPOINT", default=None)
+MESSAGING_DUMMY_SMS_TIMEOUT = env.int("MESSAGING_DUMMY_SMS_TIMEOUT", default=30)
+MESSAGING_EMAIL_BACKEND = env("MESSAGING_EMAIL_BACKEND", default="django")
+MESSAGING_EMAIL_HOST = env("MESSAGING_EMAIL_HOST", default=None)
+MESSAGING_EMAIL_PORT = env.int("MESSAGING_EMAIL_PORT", default=587)
+MESSAGING_EMAIL_HOST_USER = env("MESSAGING_EMAIL_HOST_USER", default=None)
+MESSAGING_EMAIL_HOST_PASSWORD = env(
+    "MESSAGING_EMAIL_HOST_PASSWORD", default=None
+)
+MESSAGING_EMAIL_USE_TLS = env.bool("MESSAGING_EMAIL_USE_TLS", default=True)
+MESSAGING_EMAIL_USE_SSL = env.bool("MESSAGING_EMAIL_USE_SSL", default=False)
+MESSAGING_EMAIL_DEFAULT_FROM = env("MESSAGING_EMAIL_DEFAULT_FROM", default=None)
+MESSAGING_EMAIL_TIMEOUT = env.int("MESSAGING_EMAIL_TIMEOUT", default=30)
+MESSAGING_RETRY_DELAY_BASE = env.int("MESSAGING_RETRY_DELAY_BASE", default=60)
+MESSAGING_RETRY_DELAY_MAX = env.int("MESSAGING_RETRY_DELAY_MAX", default=3600)
 
 
 # ---------------------------------------------------------------------------

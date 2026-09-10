@@ -9,7 +9,7 @@ from .senders import get_backend
 from .services import MessageTemplateRenderer, resolve_template
 
 
-@actor
+@actor(max_retries=0)
 def send_message(log_id: str) -> None:
     """Deliver a queued message and update its MessageLog."""
 
@@ -105,7 +105,7 @@ def _enqueue(
         message_key=message_key,
         recipient=recipient,
         context=context,
-        max_retry=template.max_retry,
+        max_retries=template.max_retries,
         status=MessageLog.Status.PENDING.value,
     )
     send_message.send(args=[str(log.id)])
@@ -149,7 +149,7 @@ def enqueue_push(message_key: str, recipient: dict, context: dict) -> MessageLog
         message_key=message_key,
         recipient=recipient,
         context=context,
-        max_retry=template.max_retry,
+        max_retries=template.max_retries,
         status=MessageLog.Status.PENDING.value,
     )
     log.status = MessageLog.Status.FAILED.value

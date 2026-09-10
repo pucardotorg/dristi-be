@@ -11,7 +11,7 @@ class MessageTemplateAdmin(admin.ModelAdmin):
         "message_key",
         "message_type",
         "priority",
-        "max_retry",
+        "max_retries",
         "is_active",
     )
     list_filter = ("message_type", "priority", "is_active")
@@ -27,7 +27,7 @@ class MessageLogAdmin(admin.ModelAdmin):
         "message_type",
         "status",
         "attempt_count",
-        "max_retry",
+        "max_retries",
         "sent_at",
         "failed_at",
     )
