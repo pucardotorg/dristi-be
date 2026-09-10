@@ -221,6 +221,12 @@ MESSAGING_TEMPLATE_ENGINE = env("MESSAGING_TEMPLATE_ENGINE", default="jinja2")
 # Sender classes can be overridden or extended via MESSAGING_SENDERS.
 # Built-in defaults are email/sms/push; external Django apps can register
 # custom channels by providing a BaseMessageSender subclass import path.
+# Default mapping (uncomment and edit to override):
+# MESSAGING_SENDERS = {
+#     "email": "apps.messaging.senders.email.EmailSender",
+#     "sms": "apps.messaging.senders.sms.SMSSender",
+#     "push": "apps.messaging.senders.push.PushSender",
+# }
 MESSAGING_SENDERS = {}
 # Concrete delivery backends for each channel (used by ConfiguredBackendSender).
 # Defaults ship with the built-in SMTP email and dummy SMS backends.
