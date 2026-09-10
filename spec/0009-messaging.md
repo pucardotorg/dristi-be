@@ -295,6 +295,94 @@ Behavior:
 
 Push support is tracked as a future TODO.
 
+### 7.4 Sequence diagrams
+
+The following diagrams show the end-to-end flow for enqueueing and delivering a message through the built-in backends.
+
+#### SMS delivery via `DummySMSBackend`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant E as enqueue_sms
+    participant MT as MessageTemplate
+    participant ML as MessageLog
+    participant B as Dramatiq Broker
+    participant W as send_message worker
+    participant R as MessageTemplateRenderer
+    participant S as DummySMSBackend
+    participant EP as HTTP Endpoint
+
+    C->>E: enqueue_sms(message_key, recipient, context)
+    E->>MT: resolve_template(message_key, "sms")
+    MT-->>E: MessageTemplate
+    E->>ML: create log (status=pending)
+    ML-->>E: log_id
+    E->>B: send_message(log_id)
+    E-->>C: MessageLog
+
+    B->>W: deliver send_message(log_id)
+    W->>ML: load MessageLog
+    ML-->>W: log
+    W->>MT: resolve_template(message_key, "sms")
+    MT-->>W: MessageTemplate
+    W->>R: render(template, context, recipient)
+    R-->>W: RenderedMessage<br/>(message_type, recipient, subject, body, category, ...)
+    W->>ML: save rendered_subject, rendered_content
+    W->>S: backend.send(rendered_message)
+    S->>S: validate phone_number
+    S->>S: generate provider_message_id
+    S->>EP: POST JSON payload<br/>{phone_number, message, message_key, category, provider_message_id}
+    EP-->>S: HTTP 2xx
+    S-->>W: provider_message_id
+    W->>ML: update status=sent, sent_at, provider_message_id
+```
+
+#### Email delivery via `SMTPEmailBackend`
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant E as enqueue_email
+    participant MT as MessageTemplate
+    participant ML as MessageLog
+    participant B as Dramatiq Broker
+    participant W as send_message worker
+    participant R as MessageTemplateRenderer
+    participant S as SMTPEmailBackend
+    participant SP as SMTP/Django Email Backend
+
+    C->>E: enqueue_email(message_key, recipient, context)
+    E->>MT: resolve_template(message_key, "email")
+    MT-->>E: MessageTemplate
+    E->>ML: create log (status=pending)
+    ML-->>E: log_id
+    E->>B: send_message(log_id)
+    E-->>C: MessageLog
+
+    B->>W: deliver send_message(log_id)
+    W->>ML: load MessageLog
+    ML-->>W: log
+    W->>MT: resolve_template(message_key, "email")
+    MT-->>W: MessageTemplate
+    W->>R: render(template, context, recipient)
+    R-->>W: RenderedMessage<br/>(message_type, recipient, subject, body, category, content_type, ...)
+    W->>ML: save rendered_subject, rendered_content
+    W->>S: backend.send(rendered_message)
+    S->>S: validate email
+    S->>S: build EmailMessage(subject, body, from_email, to)
+    alt MESSAGING_EMAIL_BACKEND == "smtp"
+        S->>SP: send via smtplib
+    else default / "django"
+        S->>SP: send via Django mail backend
+    end
+    SP-->>S: success
+    S-->>W: None
+    W->>ML: update status=sent, sent_at
+```
+
 ### 8. Async dispatch via Dramatiq
 
 Location: `apps.messaging.tasks`
