@@ -67,6 +67,7 @@ Stores templated content and metadata for outbound messages.
 | `content` | `TextField()` | Message body. Templatized. |
 | `data_schema` | `JSONField(default=dict, blank=True)` | JSON Schema describing the context object that must be supplied when rendering the template. |
 | `priority` | `CharField(max_length=20, default="MEDIUM")` | One of `HIGH`, `MEDIUM`, `LOW`. May be used by workers for queue ordering or preferential processing. |
+| `category` | `CharField(max_length=20, default="NOTIFICATION")` | One of `OTP`, `NOTIFICATION`, `TRANSACTION`. Lets backends apply channel-specific routing or handling rules. |
 | `max_retries` | `PositiveSmallIntegerField(default=0)` | Maximum number of retry attempts after the first failure. `0` means no retries. |
 | `is_active` | `BooleanField(default=True)` | Allows soft-disabling a template without deleting it. |
 
@@ -137,7 +138,7 @@ class MessageTemplateRenderer:
 Behavior:
 1. Validate `context` against `template.data_schema`.
 2. Render `subject` and `content` using the configured engine.
-3. Return a `RenderedMessage` dataclass containing `message_type`, `recipient`, `subject`, `body`, and any channel-specific payload fields.
+3. Return a `RenderedMessage` dataclass containing `message_type`, `recipient`, `subject`, `body`, `category` (copied from the template), and any channel-specific payload fields.
 
 Supported engines:
 - **Jinja2** — default. Sandboxed if possible; autoescape enabled.
@@ -231,6 +232,7 @@ Behavior:
   - `phone_number`
   - `message` (rendered content)
   - `message_key`
+  - `category` (from the template)
   - `provider_message_id` (a generated UUID for tracing)
 - Treats HTTP 2xx responses as success.
 - Raises `MessageSendError` on network errors or non-2xx responses.
@@ -353,8 +355,8 @@ enqueue_email(
 ### 11. Admin interface
 
 Register `MessageTemplate` in `apps.messaging.admin` with:
-- List display: `message_key`, `message_type`, `priority`, `max_retries`, `is_active`.
-- List filters: `message_type`, `priority`, `is_active`.
+- List display: `message_key`, `message_type`, `category`, `priority`, `max_retries`, `is_active`.
+- List filters: `message_type`, `category`, `priority`, `is_active`.
 - Search fields: `message_key`, `subject`, `content`.
 - Read-only: audit fields from `BaseModel`.
 
