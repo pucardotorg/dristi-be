@@ -3,6 +3,7 @@
 import copy
 import uuid
 
+from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -42,11 +43,27 @@ class BaseActivatableModel(models.Model):
 
 
 class BaseModel(models.Model):
-    """Abstract base model with UUID primary key and timestamps."""
+    """Abstract base model with UUID primary key, timestamps, and audit users."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        default=None,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s_created_by",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        default=None,
+        blank=True,
+        null=True,
+        related_name="%(app_label)s_%(class)s_updated_by",
+    )
 
     class Meta:
         """Meta options."""

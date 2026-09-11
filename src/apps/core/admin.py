@@ -2,11 +2,12 @@
 
 from django.contrib import admin
 
+from .mixins import AuditUserAdminMixin
 from .models import AdditionalAttribute, ApiVersionChangeLog
 
 
 @admin.register(AdditionalAttribute)
-class AdditionalAttributeAdmin(admin.ModelAdmin):
+class AdditionalAttributeAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for additional attribute metadata."""
 
     list_display = (
@@ -21,7 +22,7 @@ class AdditionalAttributeAdmin(admin.ModelAdmin):
 
 
 @admin.register(ApiVersionChangeLog)
-class ApiVersionChangeLogAdmin(admin.ModelAdmin):
+class ApiVersionChangeLogAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for API version change-log entries."""
 
     list_display = (
@@ -29,6 +30,8 @@ class ApiVersionChangeLogAdmin(admin.ModelAdmin):
         "change_log",
         "created_at",
         "updated_at",
+        "created_by",
+        "updated_by",
     )
     search_fields = ("version", "change_log")
     readonly_fields = ("id", "created_at", "updated_at")
