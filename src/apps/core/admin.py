@@ -3,10 +3,10 @@
 from django.contrib import admin
 
 from .models import AdditionalAttribute, ApiVersionChangeLog
-
+from simple_history.admin import SimpleHistoryAdmin
 
 @admin.register(AdditionalAttribute)
-class AdditionalAttributeAdmin(admin.ModelAdmin):
+class AdditionalAttributeAdmin(SimpleHistoryAdmin):
     """Admin configuration for additional attribute metadata."""
 
     list_display = (
@@ -21,7 +21,7 @@ class AdditionalAttributeAdmin(admin.ModelAdmin):
 
 
 @admin.register(ApiVersionChangeLog)
-class ApiVersionChangeLogAdmin(admin.ModelAdmin):
+class ApiVersionChangeLogAdmin(SimpleHistoryAdmin):
     """Admin configuration for API version change-log entries."""
 
     list_display = (
