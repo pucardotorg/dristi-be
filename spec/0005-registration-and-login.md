@@ -40,7 +40,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         default=RegistrationStatus.PENDING_PROFILE,
     )
     terms_accepted_at      = models.DateTimeField(null=True)
-    terms_version_accepted = models.CharField(max_length=32, null=True)
+    terms_version_accepted = models.PositiveIntegerField(null=True)
 
     is_active = models.BooleanField(default=True)
     is_staff  = models.BooleanField(default=False)
@@ -100,10 +100,18 @@ The uploaded council ID is the evidence a scrutiny officer reviews. Deleting it 
 ### 4.1 Verification and account creation
 
 ```http
-POST   /auth/otp/request      { mobile_number, purpose: "register" }     no auth
-POST   /users                 { mobile_number, otp }                     no auth
-POST   /sessions              { mobile_number, otp }                     no auth
+POST   /auth/otp/request      { mobile_number, purpose: "register" }     no credential
+POST   /users                 { mobile_number, otp }                     OTP is the credential
+POST   /sessions              { mobile_number, otp }                     OTP is the credential
 ```
+
+None of the three carries a session cookie, but only the first is genuinely
+unauthenticated. On `POST /users` and `POST /sessions` the **OTP is the
+credential** — it authorises the call exactly the way a password does at login,
+and possession of the handset is what it proves. Reading these as "no auth"
+invites the mistake of treating the body as untrusted-but-harmless input; it is
+in fact a single-use secret and must be handled like a password (never logged,
+never echoed back, consumed on use — section 5.1).
 
 `POST /users` creates the account, issues a session cookie, and returns the account's state:
 
@@ -128,7 +136,33 @@ The call creates a row. An endpoint named `verify` reads as a side-effect-free c
 
 An incomplete account can log in. Without the status in the response, the client receives a `200` and a cookie and then fails against every gated endpoint with no explanation. Returning it gives the client a single rule regardless of which endpoint issued the session: if `registration_status != COMPLETE`, route to the wizard.
 
-### 4.2 Documents
+#### 4.1.3 Rate limit on OTP requests
+
+`POST /auth/otp/request` sends an SMS on every call and requires no credential
+to reach. Once a code has been sent to a mobile number, a second request for
+that same number is refused for **30 seconds**, and it comes from a user
+tapping "resend".
+
+Exceeding the limit returns `429 Too Many Requests` with a `Retry-After` header
+giving the seconds remaining. The response must not reveal whether the number
+belongs to an existing account.
+
+**How it is enforced.** A cache key whose presence *is* the cooldown. Each
+request builds a key from the OTP purpose and the mobile number, and tries to
+write it with `cache.add()`, storing the time at which a resend becomes allowed
+and a 30-second expiry. `cache.add()` is the whole mechanism: one atomic
+operation that writes only when the key is absent and reports whether it wrote.
+If the write succeeds, no cooldown was active and the SMS goes out. If it fails,
+a code was sent within the last 30 seconds, so the request is refused and the
+stored retry time gives the seconds left for `Retry-After` (never less than 1).
+The key expires by itself, so there is nothing to clean up.
+
+DRF's `SimpleRateThrottle` cannot express this rule. Its rates are per second,
+minute, hour or day, so `2/min` would permit two messages back to back and then
+nothing for the rest of the minute — not a 30-second gap. The cooldown needs the
+explicit key.
+
+### 4.2 Documents (NON-PRIORITY)
 
 ```http
 POST   /documents             cookie auth   → returns document_id
@@ -159,7 +193,7 @@ Common body:
   "email": "...",
   "password": "...",
   "terms_accepted": true,
-  "terms_version": "v2.1"
+  "terms_version": 3
 }
 ```
 
@@ -171,6 +205,27 @@ Advocate and clerk add a nested object whose contents are written only to the pr
   "document_id": "..."
 }
 ```
+
+#### 4.3.1 Why the password is sent in the request body
+
+This is the conventional Django arrangement, not a shortcut. Django's own
+`AuthenticationForm` and `LoginView` take the password as a POST field, and
+DRF's built-in token endpoint takes it as a JSON body field. Three rules make it
+safe, and all three are requirements here:
+
+- **The body, never the URL.** A password in a query string is written to server
+  access logs, kept in browser history, and leaked to third parties through the
+  `Referer` header. In the body over HTTPS it is encrypted in transit and not
+  logged by default.
+- **`write_only=True`** on the serializer field, so the value can be accepted but
+  can never be serialised back into a response.
+- **`set_password()`**, never assignment to `.password`, since that is what runs
+  the configured hasher.
+
+The completion endpoints and `POST /sessions` must additionally be decorated
+with `@sensitive_post_parameters("password", "otp")`. Without it, an unhandled
+`500` writes the raw password into Django's error report and into anything
+downstream of it, such as Sentry.
 
 ## 5. Authentication
 
@@ -222,21 +277,40 @@ Two fields on the account, not a boolean, and not on the profile.
 | Field | Purpose |
 |---|---|
 | `terms_accepted_at` | When acceptance occurred |
-| `terms_version_accepted` | Which version was accepted |
+| `terms_version_accepted` | Which version was accepted, as an integer |
 
 ### 6.1 Why not a boolean
 
 A bare `true` cannot answer "has this user accepted the current terms?" once terms are versioned, and cannot evidence what was agreed to if acceptance is disputed.
 
-### 6.2 Why both values are server-set
+### 6.2 Why the version is an incrementing integer, not a string like `v2.1`
+
+Terms are published in sequence, and the only question ever asked of the stored
+value is "is this older than what is in force now?" An integer answers it
+directly:
+
+```python
+terms_version_accepted < settings.CURRENT_TERMS_VERSION  # stale, re-accept
+```
+
+A string supports only equality, which is a weaker question — "did you accept
+this exact version?" — and it orders wrongly the moment there are ten of them,
+since `"v10" < "v2"` alphabetically. Equality also mishandles an account holding
+a *newer* version than the server currently advertises, flagging it stale when
+it is not.
+
+`CURRENT_TERMS_VERSION` is therefore an integer in server configuration, and is
+incremented by one each time new terms are published.
+
+### 6.3 Why both values are server-set
 
 The timestamp comes from the server clock and the version from server configuration. A client-supplied timestamp or version is unverifiable and therefore worthless as evidence. A missing or `false` `terms_accepted` in the request rejects the registration rather than warning.
 
-### 6.3 Why on the account rather than the profile
+### 6.4 Why on the account rather than the profile
 
 Every user type accepts terms; only some have a profile.
 
-## 7. Scrutiny Dispatch
+## 7. Scrutiny Dispatch (NON-PRIORITY)
 
 For advocate and clerk only:
 
@@ -273,7 +347,9 @@ An abandoned registration leaves a scan of a person's identity document in stora
 5. **Keep registration status and terms currency as separate checks** — they have different failure remedies.
 6. **Normalise the mobile number in the manager and in every lookup**, not only at the point of creation.
 7. **Consume the OTP on use.** Verification without invalidation permits replay.
-8. **Set `AUTH_USER_MODEL` before the first migration.**
-9. **Reference the user model indirectly** — `settings.AUTH_USER_MODEL` in model definitions, `get_user_model()` in code. Never import `User` directly.
-10. **Name endpoints after the resource they act on**, not after the check they perform, so side effects are visible from the route.
-11. **Document what `PENDING_PROFILE` means in the API contract**, including that a session issued to such an account is valid but gated.
+8. **Hold the OTP resend cooldown in the cache, not the database.** `cache.add()` is atomic; a read-then-write check on the last issued row races and sends two messages.
+9. **Treat the OTP in a request body as a credential, not as input.** Never log it, never echo it back, and scrub it from error reports alongside the password.
+10. **Set `AUTH_USER_MODEL` before the first migration.**
+11. **Reference the user model indirectly** — `settings.AUTH_USER_MODEL` in model definitions, `get_user_model()` in code. Never import `User` directly.
+12. **Name endpoints after the resource they act on**, not after the check they perform, so side effects are visible from the route.
+13. **Document what `PENDING_PROFILE` means in the API contract**, including that a session issued to such an account is valid but gated.
