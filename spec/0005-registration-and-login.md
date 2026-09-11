@@ -8,11 +8,11 @@ Proposed
 Create user accounts for four user types — litigant, power of attorney, advocate and advocate clerk — over a multi-step wizard, such that:
 
 - Authentication is cookie-based throughout, with no second auth mechanism.
-- Document upload during registration is authenticated, not anonymous.
 - A registration abandoned midway is resumable, never corrupt, and never locks the user out.
 - The type-specific profile row and the account can never disagree about whether registration finished.
 - Terms acceptance is provable after the fact, including which version was accepted.
-- Advocate and clerk claims are recorded as unverified until a scrutiny officer approves them.
+
+Verifying an advocate's or clerk's claim — uploading the bar council ID and having it approved — is not part of registration. It is raised as a request type under 0010 (Generic Request & Approval Workflow), which owns the document upload, the approver routing and the outcome.
 
 ## 2. Account Model
 
@@ -57,7 +57,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 ### 2.2 Why a `registration_status` enum rather than inferring from nulls?
 
-Incompleteness must be a named, queryable state rather than something derived from whichever field happens to be empty. A derived test — `terms_accepted_at IS NULL`, say — conflates "never finished signing up" with "has not accepted the current terms," and the two require different remedies (section 7).
+Incompleteness must be a named, queryable state rather than something derived from whichever field happens to be empty. A derived test — `terms_accepted_at IS NULL`, say — conflates "never finished signing up" with "has not accepted the current terms," and the two require different remedies (section 6).
 
 ### 2.3 Why not `is_active = False` for incomplete accounts?
 
@@ -76,24 +76,11 @@ class AdvocateProfile(models.Model):
         related_name="advocate_profile",
     )
     bar_registration_id = models.CharField(max_length=64, unique=True)
-    document            = models.ForeignKey("documents.Document", on_delete=models.PROTECT)
-    approval_status     = models.CharField(
-        max_length=16,
-        choices=ApprovalStatus.choices,
-        default=ApprovalStatus.PENDING,
-    )
-    rejection_reason = models.TextField(blank=True)
 ```
 
-`ClerkProfile` is identical with `clerk_registration_number` in place of `bar_registration_id`. `LitigantProfile` carries no verification fields.
+`ClerkProfile` is identical with `clerk_registration_number` in place of `bar_registration_id`. `LitigantProfile` carries no extra fields.
 
-### 3.1 Why `approval_status` defaults to `PENDING` and is never read from the request
-
-An unauthenticated-by-session caller supplies the bar registration number, so it is a claim rather than a verified fact. Storing it is safe precisely because it is stored as unverified. The value must be server-set; a client must never be able to declare itself approved.
-
-### 3.2 Why `on_delete=models.PROTECT` on the document?
-
-The uploaded council ID is the evidence a scrutiny officer reviews. Deleting it out from under a pending profile would leave the officer with nothing to check.
+`bar_registration_id` is the user's own claim and is stored unverified. Verification happens through a 0010 request, not through fields on the profile.
 
 ## 4. Endpoints
 
@@ -162,20 +149,7 @@ minute, hour or day, so `2/min` would permit two messages back to back and then
 nothing for the rest of the minute — not a 30-second gap. The cooldown needs the
 explicit key.
 
-### 4.2 Documents (NON-PRIORITY)
-
-```http
-POST   /documents             cookie auth   → returns document_id
-DELETE /documents/{id}        cookie auth
-```
-
-Advocates and clerks upload the bar council ID before the terms screen. Litigants and PoA holders skip this step.
-
-#### 4.2.1 Why the account is created before the upload
-
-The upload must be authenticated — anonymous file upload permits storage exhaustion and malware hosting on the service's own domain. Creating the account at OTP time means the upload is an ordinary cookie-authenticated request with a real foreign key to its owner, rather than requiring a pre-auth token, a placeholder `uploaded_by_mobile` column, and an ownership check at registration time to prevent one user referencing another's document.
-
-### 4.3 Completing registration
+### 4.2 Completing registration
 
 ```http
 POST   /litigants             cookie auth
@@ -201,12 +175,11 @@ Advocate and clerk add a nested object whose contents are written only to the pr
 
 ```json
 "profile": {
-  "bar_registration_id": "KER/1234/2019",
-  "document_id": "..."
+  "bar_registration_id": "KER/1234/2019"
 }
 ```
 
-#### 4.3.1 Why the password is sent in the request body
+#### 4.2.1 Why the password is sent in the request body
 
 This is the conventional Django arrangement, not a shortcut. Django's own
 `AuthenticationForm` and `LoginView` take the password as a POST field, and
@@ -310,46 +283,26 @@ The timestamp comes from the server clock and the version from server configurat
 
 Every user type accepts terms; only some have a profile.
 
-## 7. Scrutiny Dispatch (NON-PRIORITY)
+## 7. Cleanup (NON-PRIORITY)
 
-For advocate and clerk only:
+A scheduled job deletes accounts still in `PENDING_PROFILE` after N days. It is a retention control rather than housekeeping.
 
-```http
-POST   /scrutiny/registrations
-```
+### 7.1 Why this should be considered in the future
 
-Called internally by the completion endpoint, after the transaction commits. The client makes one call and is done.
-
-### 7.1 Why after commit rather than inside the transaction
-
-An outage in the scrutiny service would otherwise roll back a valid registration, and the user would be told their account could not be created when the only failure was a notification. Dispatch via an outbox row or task queue so it can be retried independently.
-
-## 8. Cleanup (NON-PRIORITY)
-
-Two scheduled jobs, both retention controls rather than housekeeping.
-
-| Target | Rule |
-|---|---|
-| Accounts in `PENDING_PROFILE` | Delete after N days, together with their uploaded documents |
-| Documents with no completed account | Delete after N hours |
-
-### 8.1 Why this is not optional
-
-An abandoned registration leaves a scan of a person's identity document in storage for an account that was never completed, and inflates the authentication table with rows that hold a claim on a mobile number.
+An abandoned registration keeps personal data for an account that was never completed, and inflates the authentication table with rows that hold a claim on a mobile number.
 
 
-## 9. Best Practices
+## 8. Best Practices
 
-1. **Never accept `approval_status` from a request body.** It is server-set to `PENDING` and changed only by the scrutiny workflow.
-2. **Never accept `terms_accepted_at` or `terms_version_accepted` from a request body.** Both come from the server.
-3. **Treat an incomplete account as unregistered** when checking whether a mobile number is taken, or an abandoned registration locks that number out permanently.
-4. **Apply access gates as default permission classes**, opting out explicitly on the endpoints that need it, so an omission fails closed.
-5. **Keep registration status and terms currency as separate checks** — they have different failure remedies.
-6. **Normalise the mobile number in the manager and in every lookup**, not only at the point of creation.
-7. **Consume the OTP on use.** Verification without invalidation permits replay.
-8. **Hold the OTP resend cooldown in the cache, not the database.** `cache.add()` is atomic; a read-then-write check on the last issued row races and sends two messages.
-9. **Treat the OTP in a request body as a credential, not as input.** Never log it, never echo it back, and scrub it from error reports alongside the password.
-10. **Set `AUTH_USER_MODEL` before the first migration.**
-11. **Reference the user model indirectly** — `settings.AUTH_USER_MODEL` in model definitions, `get_user_model()` in code. Never import `User` directly.
-12. **Name endpoints after the resource they act on**, not after the check they perform, so side effects are visible from the route.
-13. **Document what `PENDING_PROFILE` means in the API contract**, including that a session issued to such an account is valid but gated.
+1. **Never accept `terms_accepted_at` or `terms_version_accepted` from a request body.** Both come from the server.
+2. **Treat an incomplete account as unregistered** when checking whether a mobile number is taken, or an abandoned registration locks that number out permanently.
+3. **Apply access gates as default permission classes**, opting out explicitly on the endpoints that need it, so an omission fails closed.
+4. **Keep registration status and terms currency as separate checks** — they have different failure remedies.
+5. **Normalise the mobile number in the manager and in every lookup**, not only at the point of creation.
+6. **Consume the OTP on use.** Verification without invalidation permits replay.
+7. **Hold the OTP resend cooldown in the cache, not the database.** `cache.add()` is atomic; a read-then-write check on the last issued row races and sends two messages.
+8. **Treat the OTP in a request body as a credential, not as input.** Never log it, never echo it back, and scrub it from error reports alongside the password.
+9. **Set `AUTH_USER_MODEL` before the first migration.**
+10. **Reference the user model indirectly** — `settings.AUTH_USER_MODEL` in model definitions, `get_user_model()` in code. Never import `User` directly.
+11. **Name endpoints after the resource they act on**, not after the check they perform, so side effects are visible from the route.
+12. **Document what `PENDING_PROFILE` means in the API contract**, including that a session issued to such an account is valid but gated.
