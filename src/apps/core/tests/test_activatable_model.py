@@ -7,7 +7,6 @@ from apps.core.models import (
     ActivatableQuerySet,
     ApiVersionChangeLog,
     BaseActivatableModel,
-    BaseModel,
 )
 
 
