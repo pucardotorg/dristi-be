@@ -15,6 +15,31 @@ from .validators import (
 )
 
 
+class ActivatableQuerySet(models.QuerySet):
+    """QuerySet helpers for models with an is_active flag."""
+
+    def active(self):
+        """Return rows with is_active=True."""
+        return self.filter(is_active=True)
+
+    def inactive(self):
+        """Return rows with is_active=False."""
+        return self.filter(is_active=False)
+
+
+class BaseActivatableModel(models.Model):
+    """Abstract mixin that adds an opt-in is_active flag."""
+
+    is_active = models.BooleanField(default=True)
+
+    objects = ActivatableQuerySet.as_manager()
+
+    class Meta:
+        """Meta options."""
+
+        abstract = True
+
+
 class BaseModel(models.Model):
     """Abstract base model with UUID primary key and timestamps."""
 
@@ -150,7 +175,7 @@ class AdditionalAttribute(BaseModel):
         super().save(*args, **kwargs)
 
 
-class ApiVersionChangeLog(BaseExtendableModel):
+class ApiVersionChangeLog(BaseExtendableModel, BaseActivatableModel):
     """API version change-log entry that uses BaseExtendableModel."""
 
     version = models.CharField(max_length=50)
