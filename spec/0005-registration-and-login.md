@@ -127,8 +127,16 @@ An incomplete account can log in. Without the status in the response, the client
 
 `POST /auth/otp/request` sends an SMS on every call and requires no credential
 to reach. Once a code has been sent to a mobile number, a second request for
-that same number is refused for **30 seconds**, and it comes from a user
-tapping "resend".
+that same number is refused for the length of the resend cooldown, and it comes
+from a user tapping "resend".
+
+The cooldown is **configurable, not hardcoded**. It is read from server
+configuration as a whole number of seconds:
+
+
+The default is 30 seconds. The value must be a positive integer; a value of zero
+or less disables the cooldown and is a misconfiguration, so it is rejected at
+startup rather than silently permitting unlimited resends.
 
 Exceeding the limit returns `429 Too Many Requests` with a `Retry-After` header
 giving the seconds remaining. The response must not reveal whether the number
@@ -137,17 +145,34 @@ belongs to an existing account.
 **How it is enforced.** A cache key whose presence *is* the cooldown. Each
 request builds a key from the OTP purpose and the mobile number, and tries to
 write it with `cache.add()`, storing the time at which a resend becomes allowed
-and a 30-second expiry. `cache.add()` is the whole mechanism: one atomic
-operation that writes only when the key is absent and reports whether it wrote.
-If the write succeeds, no cooldown was active and the SMS goes out. If it fails,
-a code was sent within the last 30 seconds, so the request is refused and the
-stored retry time gives the seconds left for `Retry-After` (never less than 1).
-The key expires by itself, so there is nothing to clean up.
+and an expiry of `settings.OTP_RESEND_COOLDOWN_SECONDS`. `cache.add()` is the
+whole mechanism: one atomic operation that writes only when the key is absent
+and reports whether it wrote. If the write succeeds, no cooldown was active and
+the SMS goes out. If it fails, a code was sent within the cooldown window, so
+the request is refused and the stored retry time gives the seconds left for
+`Retry-After` (never less than 1). The key expires by itself, so there is
+nothing to clean up.
+
+The setting is read at request time, not captured at import time, so a changed
+value takes effect on the next request without a code change. Keys written
+before the change keep the expiry they were written with; the new value applies
+to keys written after it.
+
+#### 4.1.3.1 Why the cooldown is configuration rather than a constant
+
+The right interval is an operational judgement, not a property of the design. It
+trades SMS cost and abuse resistance against how long a user whose first message
+never arrived must wait, and the balance differs between environments — tests
+need it at zero-cost speed, staging needs it short enough not to obstruct manual
+QA, production needs it long enough to blunt enumeration and bill-running. A
+literal in the throttle code forces a deploy to retune something that should be
+an environment variable, and guarantees the test suite either sleeps or
+monkey-patches.
 
 DRF's `SimpleRateThrottle` cannot express this rule. Its rates are per second,
 minute, hour or day, so `2/min` would permit two messages back to back and then
-nothing for the rest of the minute — not a 30-second gap. The cooldown needs the
-explicit key.
+nothing for the rest of the minute — not a fixed gap between messages. The
+cooldown needs the explicit key.
 
 ### 4.2 Completing registration
 
@@ -301,8 +326,9 @@ An abandoned registration keeps personal data for an account that was never comp
 5. **Normalise the mobile number in the manager and in every lookup**, not only at the point of creation.
 6. **Consume the OTP on use.** Verification without invalidation permits replay.
 7. **Hold the OTP resend cooldown in the cache, not the database.** `cache.add()` is atomic; a read-then-write check on the last issued row races and sends two messages.
-8. **Treat the OTP in a request body as a credential, not as input.** Never log it, never echo it back, and scrub it from error reports alongside the password.
-9. **Set `AUTH_USER_MODEL` before the first migration.**
-10. **Reference the user model indirectly** — `settings.AUTH_USER_MODEL` in model definitions, `get_user_model()` in code. Never import `User` directly.
-11. **Name endpoints after the resource they act on**, not after the check they perform, so side effects are visible from the route.
-12. **Document what `PENDING_PROFILE` means in the API contract**, including that a session issued to such an account is valid but gated.
+8. **Read the resend cooldown from settings at request time**, never as a literal in the throttle and never captured at import. It is an operational dial, and tests must be able to set it without sleeping.
+9. **Treat the OTP in a request body as a credential, not as input.** Never log it, never echo it back, and scrub it from error reports alongside the password.
+10. **Set `AUTH_USER_MODEL` before the first migration.**
+11. **Reference the user model indirectly** — `settings.AUTH_USER_MODEL` in model definitions, `get_user_model()` in code. Never import `User` directly.
+12. **Name endpoints after the resource they act on**, not after the check they perform, so side effects are visible from the route.
+13. **Document what `PENDING_PROFILE` means in the API contract**, including that a session issued to such an account is valid but gated.
