@@ -54,7 +54,7 @@ class BaseModel(models.Model):
         ordering = ("-created_at",)
 
 
-class BaseExtendableModel(BaseModel):
+class BaseExtendableModel(models.Model):
     """Abstract base model that supports typed additional attributes."""
 
     additional_attributes = models.JSONField(default=dict, blank=True)
@@ -175,7 +175,7 @@ class AdditionalAttribute(BaseModel):
         super().save(*args, **kwargs)
 
 
-class ApiVersionChangeLog(BaseExtendableModel, BaseActivatableModel):
+class ApiVersionChangeLog(BaseExtendableModel, BaseModel, BaseActivatableModel):
     """API version change-log entry that uses BaseExtendableModel."""
 
     version = models.CharField(max_length=50)
