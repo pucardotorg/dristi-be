@@ -5,10 +5,10 @@ import re
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from apps.core.models import BaseModel
+from apps.core.models import BaseActivatableModel, BaseModel
 
 
-class MessageTemplate(BaseModel):
+class MessageTemplate(BaseModel, BaseActivatableModel):
     """Templated content for outbound messages."""
 
     class MessageType(models.TextChoices):
@@ -48,7 +48,6 @@ class MessageTemplate(BaseModel):
         default=Category.NOTIFICATION,
     )
     max_retries = models.PositiveSmallIntegerField(default=0)
-    is_active = models.BooleanField(default=True)
 
     class Meta:
         """Meta options."""
