@@ -23,14 +23,14 @@ Several domain models in Dristi may need to store extra, model-specific fields w
 
 Location: `apps.core.models`
 
-Inherits from `BaseModel` and adds:
+Inherits from `models.Model` and adds a single `additional_attributes` JSON column. Models that also need the UUID primary key and timestamp fields from `BaseModel` must inherit from `BaseModel` explicitly in addition to `BaseExtendableModel`.
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `additional_attributes` | `JSONField(default=dict)` | Stores `{name: value}` pairs as plain JSON. |
 
 ```python
-class BaseExtendableModel(BaseModel):
+class BaseExtendableModel(models.Model):
     additional_attributes = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -99,7 +99,7 @@ When an instance of a concrete `BaseExtendableModel` subclass is saved:
 
 ```python
 # apps/users/models.py
-class User(BaseExtendableModel):
+class User(BaseModel, BaseExtendableModel):
     email = models.EmailField(unique=True)
 
 # AdditionalAttribute rows (created via admin or migration)

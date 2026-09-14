@@ -40,7 +40,7 @@ src/apps/locations/
     └── test_location.py
 ```
 
-`Location` inherits from `BaseExtendableModel` and `BaseActivatableModel` (see `0006-active-flag-model.md`). Register `apps.locations` in `src/config/settings/base.py` under `INSTALLED_APPS` and mount its URLs under `/api/v1/locations/` in `src/config/urls.py`.
+`Location` inherits from `BaseModel`, `BaseExtendableModel`, and `BaseActivatableModel` (see `0006-active-flag-model.md`). Register `apps.locations` in `src/config/settings/base.py` under `INSTALLED_APPS` and mount its URLs under `/api/v1/locations/` in `src/config/urls.py`.
 
 ### 2. `LocationType` choices
 
@@ -56,7 +56,7 @@ The list is intentionally small for v1. Additional choices (e.g. `tehsil`, `bloc
 
 Location: `apps.locations.models`
 
-Inherits from `BaseExtendableModel`.
+Inherits from `BaseModel`, `BaseExtendableModel`, and `BaseActivatableModel`.
 
 | Field | Type | Notes |
 |-------|------|-------|
