@@ -57,6 +57,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        REQUIREMENTS_FILE: requirements/production.txt
     command: ["web"]
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.production
@@ -90,6 +92,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        REQUIREMENTS_FILE: requirements/production.txt
     command: ["worker"]
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.production
