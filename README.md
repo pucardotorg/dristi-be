@@ -96,6 +96,16 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
 | `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
 
+## Docker dependency profiles
+
+The Docker image supports selecting which requirements file to install via the `REQUIREMENTS_FILE` build arg:
+
+- Local compose (`docker/docker-compose.yml`) builds with `requirements/local.txt`.
+- Production compose (`docker/docker-compose.prod.yml`) builds with `requirements/production.txt`.
+- GitHub image publishing (`.github/workflows/docker-publish.yml`) also builds with `requirements/production.txt`.
+
+If you run `docker build` directly without setting `REQUIREMENTS_FILE`, it defaults to `requirements/production.txt`.
+
 ## CI/CD
 
 - `.github/workflows/ci.yml` runs linting, Django system checks, and pytest on every push/PR.

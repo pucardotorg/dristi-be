@@ -76,6 +76,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        REQUIREMENTS_FILE: requirements/local.txt
     command: ["dev"]
     user: root
     env_file:
@@ -110,6 +112,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        REQUIREMENTS_FILE: requirements/local.txt
     command: ["worker"]
     user: root
     env_file:
