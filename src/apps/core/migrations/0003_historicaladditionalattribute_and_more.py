@@ -9,60 +9,110 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('contenttypes', '0002_remove_content_type_name'),
-        ('core', '0002_apiversionchangelog_is_active'),
+        ("contenttypes", "0002_remove_content_type_name"),
+        ("core", "0002_apiversionchangelog_is_active"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='HistoricalAdditionalAttribute',
+            name="HistoricalAdditionalAttribute",
             fields=[
-                ('id', models.UUIDField(db_index=True, default=uuid.uuid4, editable=False)),
-                ('created_at', models.DateTimeField(blank=True, db_index=True, editable=False)),
-                ('updated_at', models.DateTimeField(blank=True, editable=False)),
-                ('name', models.CharField(max_length=255)),
-                ('data_type', models.CharField(choices=[('integer', 'integer'), ('float', 'float'), ('number', 'number'), ('character', 'character'), ('boolean', 'boolean'), ('datetime', 'datetime'), ('date', 'date'), ('json', 'json')], max_length=50)),
-                ('is_nullable', models.BooleanField(default=True)),
-                ('default_value', models.JSONField(blank=True, default=None, null=True)),
-                ('history_id', models.AutoField(primary_key=True, serialize=False)),
-                ('history_date', models.DateTimeField(db_index=True)),
-                ('history_change_reason', models.CharField(max_length=100, null=True)),
-                ('history_type', models.CharField(choices=[('+', 'Created'), ('~', 'Changed'), ('-', 'Deleted')], max_length=1)),
-                ('content_type', models.ForeignKey(blank=True, db_constraint=False, null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='+', to='contenttypes.contenttype')),
-                ('history_user', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)),
+                ("id", models.UUIDField(db_index=True, default=uuid.uuid4, editable=False)),
+                ("created_at", models.DateTimeField(blank=True, db_index=True, editable=False)),
+                ("updated_at", models.DateTimeField(blank=True, editable=False)),
+                ("name", models.CharField(max_length=255)),
+                (
+                    "data_type",
+                    models.CharField(
+                        choices=[
+                            ("integer", "integer"),
+                            ("float", "float"),
+                            ("number", "number"),
+                            ("character", "character"),
+                            ("boolean", "boolean"),
+                            ("datetime", "datetime"),
+                            ("date", "date"),
+                            ("json", "json"),
+                        ],
+                        max_length=50,
+                    ),
+                ),
+                ("is_nullable", models.BooleanField(default=True)),
+                ("default_value", models.JSONField(blank=True, default=None, null=True)),
+                ("history_id", models.AutoField(primary_key=True, serialize=False)),
+                ("history_date", models.DateTimeField(db_index=True)),
+                ("history_change_reason", models.CharField(max_length=100, null=True)),
+                (
+                    "history_type",
+                    models.CharField(
+                        choices=[("+", "Created"), ("~", "Changed"), ("-", "Deleted")], max_length=1
+                    ),
+                ),
+                (
+                    "content_type",
+                    models.ForeignKey(
+                        blank=True,
+                        db_constraint=False,
+                        null=True,
+                        on_delete=django.db.models.deletion.DO_NOTHING,
+                        related_name="+",
+                        to="contenttypes.contenttype",
+                    ),
+                ),
+                (
+                    "history_user",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="+",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'historical Additional Attribute',
-                'verbose_name_plural': 'historical Additional Attributes',
-                'ordering': ('-history_date', '-history_id'),
-                'get_latest_by': ('history_date', 'history_id'),
+                "verbose_name": "historical Additional Attribute",
+                "verbose_name_plural": "historical Additional Attributes",
+                "ordering": ("-history_date", "-history_id"),
+                "get_latest_by": ("history_date", "history_id"),
             },
             bases=(simple_history.models.HistoricalChanges, models.Model),
         ),
         migrations.CreateModel(
-            name='HistoricalApiVersionChangeLog',
+            name="HistoricalApiVersionChangeLog",
             fields=[
-                ('is_active', models.BooleanField(default=True)),
-                ('id', models.UUIDField(db_index=True, default=uuid.uuid4, editable=False)),
-                ('created_at', models.DateTimeField(blank=True, db_index=True, editable=False)),
-                ('updated_at', models.DateTimeField(blank=True, editable=False)),
-                ('additional_attributes', models.JSONField(blank=True, default=dict)),
-                ('version', models.CharField(max_length=50)),
-                ('change_log', models.TextField()),
-                ('history_id', models.AutoField(primary_key=True, serialize=False)),
-                ('history_date', models.DateTimeField(db_index=True)),
-                ('history_change_reason', models.CharField(max_length=100, null=True)),
-                ('history_type', models.CharField(choices=[('+', 'Created'), ('~', 'Changed'), ('-', 'Deleted')], max_length=1)),
-                ('history_user', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)),
+                ("is_active", models.BooleanField(default=True)),
+                ("id", models.UUIDField(db_index=True, default=uuid.uuid4, editable=False)),
+                ("created_at", models.DateTimeField(blank=True, db_index=True, editable=False)),
+                ("updated_at", models.DateTimeField(blank=True, editable=False)),
+                ("additional_attributes", models.JSONField(blank=True, default=dict)),
+                ("version", models.CharField(max_length=50)),
+                ("change_log", models.TextField()),
+                ("history_id", models.AutoField(primary_key=True, serialize=False)),
+                ("history_date", models.DateTimeField(db_index=True)),
+                ("history_change_reason", models.CharField(max_length=100, null=True)),
+                (
+                    "history_type",
+                    models.CharField(
+                        choices=[("+", "Created"), ("~", "Changed"), ("-", "Deleted")], max_length=1
+                    ),
+                ),
+                (
+                    "history_user",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="+",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'historical API Version Change Log',
-                'verbose_name_plural': 'historical API Version Change Logs',
-                'ordering': ('-history_date', '-history_id'),
-                'get_latest_by': ('history_date', 'history_id'),
+                "verbose_name": "historical API Version Change Log",
+                "verbose_name_plural": "historical API Version Change Logs",
+                "ordering": ("-history_date", "-history_id"),
+                "get_latest_by": ("history_date", "history_id"),
             },
             bases=(simple_history.models.HistoricalChanges, models.Model),
         ),

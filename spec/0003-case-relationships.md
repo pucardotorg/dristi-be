@@ -118,9 +118,9 @@ clerk.
 Shared queryset mixed into both relationship tables' `objects` manager.
 
 ```python
-CasePersonRelationship.objects.active()                 # end_date IS NULL or in the future
-CasePersonRelationship.objects.active(as_of=some_date)   # as of a specific date
-CasePersonRelationship.objects.inactive()                # end_date has passed
+CasePersonRelationship.objects.active()  # end_date IS NULL or in the future
+CasePersonRelationship.objects.active(as_of=some_date)  # as of a specific date
+CasePersonRelationship.objects.inactive()  # end_date has passed
 ```
 
 ## 3. Known deferred item
