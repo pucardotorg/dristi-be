@@ -85,6 +85,7 @@ venv.bak/
 
 # Docker
 .docker/
+docker/rustfs_volumes/
 
 # OS files
 .DS_Store
