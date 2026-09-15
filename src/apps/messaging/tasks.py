@@ -68,7 +68,7 @@ def _record_failure(log: MessageLog, exc: Exception) -> None:
     if log.can_retry():
         delay_ms = get_retry_delay_ms(log.attempt_count)
         log.save(update_fields=["failed_at", "error_message", "updated_at"])
-        send_message.send_with_options(args=[str(log.id)], delay=delay_ms)
+        send_message.send_with_options(args=(str(log.id),), delay=delay_ms)
     else:
         log.status = MessageLog.Status.FAILED.value
         log.save(update_fields=["status", "failed_at", "error_message", "updated_at"])
@@ -106,7 +106,7 @@ def _enqueue(
         max_retries=template.max_retries,
         status=MessageLog.Status.PENDING.value,
     )
-    send_message.send(args=[str(log.id)])
+    send_message.send(str(log.id))
     return log
 
 
