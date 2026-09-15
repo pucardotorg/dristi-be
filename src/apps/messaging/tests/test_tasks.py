@@ -42,7 +42,7 @@ class EnqueueHelperTests(TestCase):
         self.assertEqual(log.status, MessageLog.Status.PENDING.value)
         self.assertEqual(log.attempt_count, 0)
         self.assertEqual(log.max_retries, 2)
-        mock_send.assert_called_once_with(args=[str(log.id)])
+        mock_send.assert_called_once_with(str(log.id))
 
     @patch("apps.messaging.tasks.send_message.send")
     def test_enqueue_sms_creates_log_and_enqueues(self, mock_send):
@@ -55,7 +55,7 @@ class EnqueueHelperTests(TestCase):
             {"name": "Alice"},
         )
         self.assertEqual(log.message_type, MessageTemplate.MessageType.SMS.value)
-        mock_send.assert_called_once_with(args=[str(log.id)])
+        mock_send.assert_called_once_with(str(log.id))
 
     def test_enqueue_missing_template_raises(self):
         with self.assertRaises(MessageTemplateNotFound):
@@ -181,7 +181,7 @@ class SendMessageTaskTests(TestCase):
         mock_retry.assert_called_once()
         args, kwargs = mock_retry.call_args
         self.assertEqual(args, ())
-        self.assertEqual(kwargs["args"], [str(log.id)])
+        self.assertEqual(kwargs["args"], (str(log.id),))
         self.assertIn("delay", kwargs)
 
     @override_settings(
