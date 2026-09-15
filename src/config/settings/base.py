@@ -39,7 +39,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third-party
     "rest_framework",
-    "rest_framework.authtoken",
     "corsheaders",
     "django_dramatiq",
     "health_check",
@@ -100,6 +99,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Authentication
 # ---------------------------------------------------------------------------
 AUTH_USER_MODEL = "users.User"
+
+# Django tries each backend in order until one returns a user, so mobile+password
+# and mobile+OTP are one authenticate() call from the caller's side.
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",  # mobile + password
+    "apps.users.backends.OTPBackend",  # mobile + OTP
+]
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -166,12 +172,15 @@ if all([S3_API_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY]):
 # Django REST Framework
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
+    # Cookie-based throughout, with no second auth mechanism.
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.TokenAuthentication",
     ],
+    # Gates are defaults so that forgetting to think about access on a new
+    # endpoint fails closed. Endpoints reachable earlier opt out explicitly.
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticatedOrReadOnly",
+        "rest_framework.permissions.IsAuthenticated",
+        "apps.users.permissions.IsRegistrationComplete",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
@@ -179,6 +188,22 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.JSONRenderer",
     ],
 }
+
+
+# ---------------------------------------------------------------------------
+# Registration (spec 0005)
+# ---------------------------------------------------------------------------
+# Incremented by one each time new terms are published. An account whose
+# terms_version_accepted is lower than this must re-accept.
+CURRENT_TERMS_VERSION = env.int("CURRENT_TERMS_VERSION", default=1)
+
+OTP_LENGTH = env.int("OTP_LENGTH", default=6)
+OTP_TTL_SECONDS = env.int("OTP_TTL_SECONDS", default=300)
+
+# Minimum gap between two codes sent to the same number. An operational dial:
+# it trades SMS cost and abuse resistance against how long a user whose first
+# message never arrived has to wait. Validated at startup by apps.users.checks.
+OTP_RESEND_COOLDOWN_SECONDS = env.int("OTP_RESEND_COOLDOWN_SECONDS", default=30)
 
 
 # ---------------------------------------------------------------------------

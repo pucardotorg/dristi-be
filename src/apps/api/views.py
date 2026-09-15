@@ -1,22 +1,16 @@
-"""API views."""
+"""Cross-cutting API views.
+
+Account creation and login live in apps.users; this app keeps only what is not
+tied to a single domain.
+"""
 
 from django.conf import settings
-from rest_framework import status, viewsets
+from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.core.tasks import send_welcome_email
-from apps.users.models import User
-
-from .serializers import UserSerializer
-
-
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
-    """Read-only user API."""
-
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
 
 
 @api_view(["GET"])

@@ -10,6 +10,7 @@ from health_check.views import HealthCheckView
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.api.urls")),
+    path("api/v1/", include("apps.users.urls")),
     path(
         "health/",
         HealthCheckView.as_view(checks=[DatabaseBackend, CacheBackend, RedisHealthCheck]),
