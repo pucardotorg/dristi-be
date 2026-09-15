@@ -31,6 +31,18 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  dramatiq-dashboard:
+    image: ghcr.io/thejeshgn/dramatiq-dashboard-docker:latest
+    ports:
+      - "8080:8080"
+    environment:
+      REDIS_URL: "redis://redis:6379/2"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+
+
   rustfs_perms:
     image: alpine:latest
     user: "0:0"
