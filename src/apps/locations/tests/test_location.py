@@ -5,40 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 
 from apps.locations.models import Location
-
-
-def make_location(**overrides):
-    """Create a location with sensible defaults for tests."""
-    data = {
-        "code": "IN",
-        "name": "India",
-        "short_name": "IN",
-        "location_type": Location.LocationType.COUNTRY,
-        "parent": None,
-        "additional_attributes": {},
-    }
-    data.update(overrides)
-    return Location.objects.create(**data)
-
-
-def make_hierarchy():
-    """Create the IN -> BR -> PATNA chain from the spec example."""
-    india = make_location()
-    bihar = make_location(
-        code="BR",
-        name="Bihar",
-        short_name="BR",
-        location_type=Location.LocationType.STATE,
-        parent=india,
-    )
-    patna = make_location(
-        code="PATNA",
-        name="Patna",
-        short_name="Patna",
-        location_type=Location.LocationType.DISTRICT,
-        parent=bihar,
-    )
-    return india, bihar, patna
+from apps.locations.tests.factories import make_hierarchy, make_location, make_state
 
 
 @pytest.mark.django_db
@@ -125,12 +92,7 @@ class TestParentValidation:
 
     def test_rejects_two_node_cycle(self):
         india = make_location()
-        bihar = make_location(
-            code="BR",
-            name="Bihar",
-            location_type=Location.LocationType.STATE,
-            parent=india,
-        )
+        bihar = make_state(parent=india)
         india.parent = bihar
 
         with pytest.raises(ValidationError) as exc_info:
@@ -149,12 +111,8 @@ class TestParentValidation:
 
     def test_allows_many_children_under_one_parent(self):
         india = make_location()
-        make_location(
-            code="BR", name="Bihar", location_type=Location.LocationType.STATE, parent=india
-        )
-        make_location(
-            code="MH", name="Maharashtra", location_type=Location.LocationType.STATE, parent=india
-        )
+        make_state(parent=india)
+        make_state(parent=india, code="MH", name="Maharashtra")
 
         assert india.children.count() == 2
 
@@ -225,12 +183,7 @@ class TestActivatableManager:
 
     def test_active_and_inactive(self):
         active = make_location()
-        inactive = make_location(
-            code="BR",
-            name="Bihar",
-            location_type=Location.LocationType.STATE,
-            is_active=False,
-        )
+        inactive = make_state(is_active=False)
 
         assert active in Location.objects.active()
         assert inactive not in Location.objects.active()

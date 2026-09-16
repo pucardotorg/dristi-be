@@ -6,7 +6,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.locations.models import Location
+from apps.locations.tests.factories import make_hierarchy, make_state
 from apps.users.models import User
 
 
@@ -15,38 +15,8 @@ class LocationAPITestCase(APITestCase):
 
     def setUp(self):
         """Create the IN -> BR -> PATNA chain plus an inactive sibling state."""
-        self.india = Location.objects.create(
-            code="IN",
-            name="India",
-            short_name="IN",
-            location_type=Location.LocationType.COUNTRY,
-            additional_attributes={},
-        )
-        self.bihar = Location.objects.create(
-            code="BR",
-            name="Bihar",
-            short_name="BR",
-            location_type=Location.LocationType.STATE,
-            parent=self.india,
-            additional_attributes={},
-        )
-        self.patna = Location.objects.create(
-            code="PATNA",
-            name="Patna",
-            short_name="Patna",
-            location_type=Location.LocationType.DISTRICT,
-            parent=self.bihar,
-            additional_attributes={},
-        )
-        self.goa = Location.objects.create(
-            code="GA",
-            name="Goa",
-            short_name="GA",
-            location_type=Location.LocationType.STATE,
-            parent=self.india,
-            is_active=False,
-            additional_attributes={},
-        )
+        self.india, self.bihar, self.patna = make_hierarchy()
+        self.goa = make_state(parent=self.india, code="GA", name="Goa", is_active=False)
 
 
 class LocationListTests(LocationAPITestCase):

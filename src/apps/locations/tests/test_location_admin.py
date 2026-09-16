@@ -8,6 +8,7 @@ from django.test import RequestFactory
 
 from apps.locations.admin import LocationAdmin
 from apps.locations.models import Location
+from apps.locations.tests.factories import make_country_and_state
 
 
 @pytest.fixture
@@ -33,24 +34,8 @@ def collected(request):
 class TestLocationAdminDeletion:
     """Deleting a parent with children must not raise."""
 
-    def _hierarchy(self):
-        india = Location.objects.create(
-            code="IN",
-            name="India",
-            location_type=Location.LocationType.COUNTRY,
-            additional_attributes={},
-        )
-        bihar = Location.objects.create(
-            code="BR",
-            name="Bihar",
-            location_type=Location.LocationType.STATE,
-            parent=india,
-            additional_attributes={},
-        )
-        return india, bihar
-
     def test_delete_model_reports_protected_children(self, admin_instance, request_with_messages):
-        india, _ = self._hierarchy()
+        india, _ = make_country_and_state()
 
         admin_instance.delete_model(request_with_messages, india)
 
@@ -59,7 +44,7 @@ class TestLocationAdminDeletion:
         assert Location.objects.filter(code="IN").exists()
 
     def test_delete_model_succeeds_for_leaf(self, admin_instance, request_with_messages):
-        _, bihar = self._hierarchy()
+        _, bihar = make_country_and_state()
 
         admin_instance.delete_model(request_with_messages, bihar)
 
@@ -69,7 +54,7 @@ class TestLocationAdminDeletion:
     def test_delete_queryset_reports_protected_children(
         self, admin_instance, request_with_messages
     ):
-        self._hierarchy()
+        make_country_and_state()
 
         admin_instance.delete_queryset(request_with_messages, Location.objects.filter(code="IN"))
 
@@ -78,7 +63,7 @@ class TestLocationAdminDeletion:
         assert Location.objects.filter(code="IN").exists()
 
     def test_delete_queryset_succeeds_for_leaves(self, admin_instance, request_with_messages):
-        self._hierarchy()
+        make_country_and_state()
 
         admin_instance.delete_queryset(request_with_messages, Location.objects.filter(code="BR"))
 
