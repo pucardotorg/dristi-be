@@ -104,6 +104,18 @@ Deletion behaviour: because `parent` uses `PROTECT`, attempting to delete a loca
 
 Base path: `/api/v1/locations/`
 
+### API authentication
+
+The `/api/v1/locations/` endpoints are currently publicly accessible
+and do not require authentication.
+
+Authentication will be added in a future change.
+Until then, all read-only location endpoints described in this
+specification are accessible without authentication.
+
+This is intentional for v1 and should not be interpreted as the
+final security model for the API.
+
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/locations/` | List locations. Supports filtering by `location_type`, `parent_id`, and `parent_code`. |
