@@ -80,6 +80,19 @@ class MessageTemplateTests(TestCase):
         with self.assertRaises(ValidationError):
             self.build_template(data_schema={"type": "not_a_real_type"}).full_clean()
 
+    def test_valid_json_schema_is_accepted(self):
+        template = self.build_template(
+            data_schema={
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "case_number": {"type": "string"},
+                },
+            }
+        )
+
+        template.full_clean()
+
     def test_unique_key_and_type(self):
         self.create_template()
         with self.assertRaises(IntegrityError):

@@ -89,12 +89,13 @@ class MessageTemplate(BaseModel, BaseActivatableModel):
         if not self.data_schema:
             return
         try:
-            import jsonschema
+            from jsonschema import validators
         except ImportError:
             # The project declares jsonschema; skip only when it is absent.
             return
         try:
-            jsonschema.check_schema(self.data_schema)
+            validator_cls = validators.validator_for(self.data_schema)
+            validator_cls.check_schema(self.data_schema)
         except Exception as exc:
             raise ValidationError({"data_schema": str(exc)}) from exc
 
