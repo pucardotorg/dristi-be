@@ -252,28 +252,12 @@ The core state machine. It is case-type-agnostic.
 
 ```python
 class WorkflowEngine:
-    def create_instance(
-        case: Case, workflow: WorkflowDefinition = None
-    ) -> CaseWorkflowInstance: ...
-    def evaluate_transition(
-        case_workflow: CaseWorkflowInstance, transition: WorkflowTransition, context: dict = None
-    ) -> TransitionEvaluationResult: ...
-    def attempt_transition(
-        case_workflow: CaseWorkflowInstance,
-        transition_key: str,
-        user=None,
-        reason: str = "",
-        context: dict = None,
-    ) -> CaseWorkflowTransitionLog: ...
-    def attempt_automatic_transitions(
-        case_workflow: CaseWorkflowInstance, context: dict = None
-    ) -> list[CaseWorkflowTransitionLog]: ...
-    def complete_task(
-        case_task: CaseWorkflowTaskInstance, user=None, result_payload: dict = None
-    ) -> CaseWorkflowTaskInstance: ...
-    def reset_task(
-        case_task: CaseWorkflowTaskInstance, user=None, reason: str = ""
-    ) -> CaseWorkflowTaskInstance: ...
+    def create_instance(case: Case, workflow: WorkflowDefinition = None) -> CaseWorkflowInstance: ...
+    def evaluate_transition(case_workflow: CaseWorkflowInstance, transition: WorkflowTransition, context: dict = None) -> TransitionEvaluationResult: ...
+    def attempt_transition(case_workflow: CaseWorkflowInstance, transition_key: str, user=None, reason: str = "", context: dict = None) -> CaseWorkflowTransitionLog: ...
+    def attempt_automatic_transitions(case_workflow: CaseWorkflowInstance, context: dict = None) -> list[CaseWorkflowTransitionLog]: ...
+    def complete_task(case_task: CaseWorkflowTaskInstance, user=None, result_payload: dict = None) -> CaseWorkflowTaskInstance: ...
+    def reset_task(case_task: CaseWorkflowTaskInstance, user=None, reason: str = "") -> CaseWorkflowTaskInstance: ...
 ```
 
 Rules enforced by `WorkflowEngine`:
@@ -295,13 +279,9 @@ class CaseWorkflowService:
     def start_case_workflow(case: Case) -> CaseWorkflowInstance: ...
     def get_or_create_instance(case: Case) -> CaseWorkflowInstance: ...
     def get_available_transitions(case: Case) -> list[WorkflowTransition]: ...
-    def move_case(
-        case: Case, transition_key: str, user=None, reason: str = "", context: dict = None
-    ) -> CaseWorkflowTransitionLog: ...
+    def move_case(case: Case, transition_key: str, user=None, reason: str = "", context: dict = None) -> CaseWorkflowTransitionLog: ...
     def run_automatic_checks(case: Case) -> list[CaseWorkflowTransitionLog]: ...
-    def complete_case_task(
-        case_task_id: UUID, user=None, payload: dict = None
-    ) -> CaseWorkflowTaskInstance: ...
+    def complete_case_task(case_task_id: UUID, user=None, payload: dict = None) -> CaseWorkflowTaskInstance: ...
     def fail_case_task(case_task_id: UUID, error_message: str) -> CaseWorkflowTaskInstance: ...
 ```
 
@@ -418,25 +398,15 @@ class BaseCaseTypePlugin(ABC):
         """Hook called before a state is exited."""
         pass
 
-    def check_transition_condition(
-        self, case: Case, transition: WorkflowTransition, context: dict = None
-    ) -> bool:
+    def check_transition_condition(self, case: Case, transition: WorkflowTransition, context: dict = None) -> bool:
         """Custom guard for a transition. Return False to block."""
         return True
 
-    def before_transition(
-        self, case: Case, transition: WorkflowTransition, context: dict = None
-    ) -> None:
+    def before_transition(self, case: Case, transition: WorkflowTransition, context: dict = None) -> None:
         """Side-effects before the transition is persisted."""
         pass
 
-    def after_transition(
-        self,
-        case: Case,
-        transition: WorkflowTransition,
-        log: CaseWorkflowTransitionLog,
-        context: dict = None,
-    ) -> None:
+    def after_transition(self, case: Case, transition: WorkflowTransition, log: CaseWorkflowTransitionLog, context: dict = None) -> None:
         """Side-effects after the transition is persisted."""
         pass
 
@@ -456,7 +426,6 @@ class CaseTypePluginRegistry:
     def register(self, plugin_class: type[BaseCaseTypePlugin]) -> None: ...
     def get(self, case_type: str) -> BaseCaseTypePlugin: ...
 
-
 registry = CaseTypePluginRegistry()
 ```
 
@@ -470,7 +439,6 @@ class WorkflowsConfig(AppConfig):
         from .case_type_plugins import registry
         from .case_type_plugins.checked_bounce_case import CheckedBounceCasePlugin
         from .case_type_plugins.insurance_case import InsuranceCasePlugin
-
         registry.register(CheckedBounceCasePlugin)
         registry.register(InsuranceCasePlugin)
 ```

@@ -131,7 +131,8 @@ Provide a `MessageTemplateRenderer` service:
 class MessageTemplateRenderer:
     template_engine: str = "jinja2"  # or "mustache"
 
-    def render(self, template: MessageTemplate, context: dict) -> RenderedMessage: ...
+    def render(self, template: MessageTemplate, context: dict) -> RenderedMessage:
+        ...
 ```
 
 Behavior:
@@ -388,7 +389,8 @@ Location: `apps.messaging.tasks`
 
 ```python
 @actor(max_retries=0)
-def send_message(log_id: int): ...
+def send_message(log_id: int):
+    ...
 ```
 
 Flow:

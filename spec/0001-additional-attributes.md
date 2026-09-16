@@ -102,7 +102,6 @@ When an instance of a concrete `BaseExtendableModel` subclass is saved:
 class User(BaseModel, BaseExtendableModel):
     email = models.EmailField(unique=True)
 
-
 # AdditionalAttribute rows (created via admin or migration)
 from django.contrib.contenttypes.models import ContentType
 

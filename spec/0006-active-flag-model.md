@@ -84,7 +84,6 @@ If a model already defines a custom manager (e.g. `ActiveRoleQuerySet`), compose
 class MyCustomQuerySet(ActivatableQuerySet, ExistingQuerySet):
     pass
 
-
 class MyModel(BaseModel, BaseActivatableModel):
     objects = MyCustomQuerySet.as_manager()
     ...
