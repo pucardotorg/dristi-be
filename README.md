@@ -78,10 +78,33 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CACHE_URL` | Redis connection for Django cache | `redis://redis:6379/1` |
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
 | `EMAIL_URL` | Email backend URL | `smtp://user:pass@smtp:587` |
+| `MESSAGING_TEMPLATE_ENGINE` | Template engine for message rendering (`jinja2` or `mustache`) | `jinja2` |
+| `MESSAGING_DUMMY_SMS_ENDPOINT` | HTTP endpoint for the dummy SMS backend | `https://httpbin.org/post` |
+| `MESSAGING_EMAIL_BACKEND` | Email backend mode (`smtp` or `django`) | `smtp` |
+| `MESSAGING_EMAIL_HOST` | SMTP host for the messaging email backend | `smtp.example.com` |
+| `MESSAGING_EMAIL_PORT` | SMTP port for the messaging email backend | `587` |
+| `MESSAGING_EMAIL_HOST_USER` | SMTP username for the messaging email backend | `notifications@example.com` |
+| `MESSAGING_EMAIL_HOST_PASSWORD` | SMTP password for the messaging email backend | secret |
+| `MESSAGING_EMAIL_USE_TLS` | Enable TLS for the messaging SMTP backend | `True` |
+| `MESSAGING_EMAIL_USE_SSL` | Enable SSL for the messaging SMTP backend | `False` |
+| `MESSAGING_EMAIL_DEFAULT_FROM` | Default sender for messaging emails | `Dristi <notifications@example.com>` |
+| `MESSAGING_EMAIL_TIMEOUT` | SMTP connection timeout in seconds | `30` |
+| `MESSAGING_RETRY_DELAY_BASE` | Base retry delay in seconds (exponential backoff) | `60` |
+| `MESSAGING_RETRY_DELAY_MAX` | Maximum retry delay in seconds | `3600` |
 | `S3_API_ENDPOINT` | S3-compatible API endpoint for media uploads | `http://rustfs:9000` |
 | `S3_BUCKET` | S3 bucket for media uploads | `dristi-media` |
 | `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
 | `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
+
+## Docker dependency profiles
+
+The Docker image supports selecting which requirements file to install via the `REQUIREMENTS_FILE` build arg:
+
+- Local compose (`docker/docker-compose.yml`) builds with `requirements/local.txt`.
+- Production compose (`docker/docker-compose.prod.yml`) builds with `requirements/production.txt`.
+- GitHub image publishing (`.github/workflows/docker-publish.yml`) also builds with `requirements/production.txt`.
+
+If you run `docker build` directly without setting `REQUIREMENTS_FILE`, it defaults to `requirements/production.txt`.
 
 ## CI/CD
 

@@ -37,3 +37,14 @@ Use this skill when asked to:
 - Keep business logic out of views when possible; prefer services, model methods, or Dramatiq actors.
 - Use `apps.<appname>` as the full Python app path everywhere.
 - Maintain test coverage for new features and bug fixes.
+
+## Skill index
+
+- `ruff-check` — Run Ruff lint checks after ensuring the local virtual environment and dev dependencies are ready.
+  - Path: `.agents/skills/ruff-check/SKILL.md`
+- `ruff-format` — Run Ruff formatter after ensuring the local virtual environment and dev dependencies are ready.
+  - Path: `.agents/skills/ruff-format/SKILL.md`
+- `check-and-test` — Run Django system checks and pytest together after ensuring the local virtual environment and dev dependencies are ready.
+  - Path: `.agents/skills/check-and-test/SKILL.md`
+- `docker-django-shell` — Start Docker services, run migrations, ensure a test admin user exists, then prompt for opening Django shell.
+  - Path: `.agents/skills/docker-django-shell/SKILL.md`

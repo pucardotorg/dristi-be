@@ -52,4 +52,5 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             GIT_COMMIT_SHA=${{ github.sha }}
+            REQUIREMENTS_FILE=requirements/production.txt
 
