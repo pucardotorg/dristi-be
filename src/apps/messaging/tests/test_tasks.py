@@ -21,7 +21,7 @@ class EnqueueHelperTests(TestCase):
 
     def setUp(self):
         self.template = MessageTemplate.objects.create(
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             message_type=MessageTemplate.MessageType.EMAIL.value,
             subject="Case {{ case_number }} filed",
             content="Hello {{ name }}",
@@ -35,7 +35,7 @@ class EnqueueHelperTests(TestCase):
     @patch("apps.messaging.tasks.send_message.send")
     def test_enqueue_email_creates_log_and_enqueues(self, mock_send):
         log = enqueue_email(
-            "case_filing_submitted",
+            "CASE_FILING_SUBMITTED",
             {"email": "user@example.com"},
             {"case_number": "CASE-1", "name": "Alice"},
         )
@@ -50,7 +50,7 @@ class EnqueueHelperTests(TestCase):
         self.template.subject = ""
         self.template.save()
         log = enqueue_sms(
-            "case_filing_submitted",
+            "CASE_FILING_SUBMITTED",
             {"phone_number": "+1234567890"},
             {"name": "Alice"},
         )
@@ -63,18 +63,18 @@ class EnqueueHelperTests(TestCase):
 
     def test_enqueue_push_marks_log_failed_and_raises_not_implemented(self):
         MessageTemplate.objects.create(
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             message_type=MessageTemplate.MessageType.PUSH.value,
             subject="",
             content="Push content",
         )
         with self.assertRaises(NotImplementedError):
             enqueue_push(
-                "case_filing_submitted",
+                "CASE_FILING_SUBMITTED",
                 {"device_token": "token"},
                 {"case_number": "CASE-1"},
             )
-        log = MessageLog.objects.get(message_key="case_filing_submitted")
+        log = MessageLog.objects.get(message_key="CASE_FILING_SUBMITTED")
         self.assertEqual(log.status, MessageLog.Status.FAILED.value)
         self.assertIn("not implemented", log.error_message.lower())
         self.assertIsNotNone(log.failed_at)
@@ -95,7 +95,7 @@ class SendMessageTaskTests(TestCase):
 
     def setUp(self):
         self.template = MessageTemplate.objects.create(
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             message_type=MessageTemplate.MessageType.EMAIL.value,
             subject="Case {{ case_number }} filed",
             content="Hello {{ name }}",
@@ -116,7 +116,7 @@ class SendMessageTaskTests(TestCase):
         log = MessageLog.objects.create(
             template=self.template,
             message_type=MessageTemplate.MessageType.EMAIL.value,
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             recipient={"email": "user@example.com"},
             context={"case_number": "CASE-1", "name": "Alice"},
             max_retries=1,
@@ -140,7 +140,7 @@ class SendMessageTaskTests(TestCase):
         log = MessageLog.objects.create(
             template=self.template,
             message_type=MessageTemplate.MessageType.EMAIL.value,
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             recipient={"email": "user@example.com"},
             context={"case_number": "CASE-1", "name": "Alice"},
             max_retries=1,
@@ -163,7 +163,7 @@ class SendMessageTaskTests(TestCase):
         log = MessageLog.objects.create(
             template=self.template,
             message_type=MessageTemplate.MessageType.EMAIL.value,
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             recipient={"email": "user@example.com"},
             context={"case_number": "CASE-1", "name": "Alice"},
             max_retries=1,
@@ -194,7 +194,7 @@ class SendMessageTaskTests(TestCase):
         log = MessageLog.objects.create(
             template=self.template,
             message_type=MessageTemplate.MessageType.EMAIL.value,
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             recipient={"email": "user@example.com"},
             context={"case_number": "CASE-1", "name": "Alice"},
             max_retries=0,
@@ -214,7 +214,7 @@ class SendMessageTaskTests(TestCase):
         log = MessageLog.objects.create(
             template=self.template,
             message_type=MessageTemplate.MessageType.EMAIL.value,
-            message_key="missing_key",
+            message_key="MISSING_KEY",
             recipient={"email": "user@example.com"},
             context={},
             max_retries=0,

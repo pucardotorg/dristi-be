@@ -2,7 +2,7 @@ from django.db import migrations
 
 TEMPLATES = [
     {
-        "message_key": "login_otp_sms",
+        "message_key": "LOGIN_OTP_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Use OTP {{otp}} to log in to your account - On Courts",
@@ -17,7 +17,7 @@ TEMPLATES = [
         "max_retries": 1,
     },
     {
-        "message_key": "case_filing_signature_pending_sms",
+        "message_key": "EFILE_SIGNATURE_PENDING_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Case file is pending your signature. Log in or use link {{link}} to sign. - On Courts",
@@ -32,7 +32,7 @@ TEMPLATES = [
         "max_retries": 0,
     },
     {
-        "message_key": "case_filing_mobile_verification_otp_sms",
+        "message_key": "CASE_FILING_MOBILE_VERIFICATION_OTP_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Use OTP {{otp}} to verify your mobile number and complete case filing for {{case_number}}. View the case file using link {{link}} - On Courts",
@@ -51,7 +51,7 @@ TEMPLATES = [
         "max_retries": 1,
     },
     {
-        "message_key": "case_scrutiny_errors_sms",
+        "message_key": "CASE_SCRUTINY_ERRORS_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Errors have been identified in case {{case_number}} during scrutiny. Log in to {{link}} to rectify the file within {{deadline}} days. - On Courts",
@@ -70,7 +70,7 @@ TEMPLATES = [
         "max_retries": 0,
     },
     {
-        "message_key": "case_scrutiny_passed_sms",
+        "message_key": "CASE_SCRUTINY_PASSED_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Case {{case_number}} has passed scrutiny and is pending registration. - On Courts",
@@ -85,7 +85,7 @@ TEMPLATES = [
         "max_retries": 0,
     },
     {
-        "message_key": "account_registration_rejected_sms",
+        "message_key": "ACCOUNT_REGISTRATION_REJECTED_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Your account registration request has been rejected. Log in to {{link}} to view the reason and resubmit - On Courts",
@@ -100,7 +100,7 @@ TEMPLATES = [
         "max_retries": 0,
     },
     {
-        "message_key": "account_registration_approved_sms",
+        "message_key": "ACCOUNT_REGISTRATION_APPROVED_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Your account registration request has been approved. Log in to {{link}} to start using your account - On Courts",
@@ -144,7 +144,7 @@ def unseed_templates(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("messaging", "0003_add_messagetemplate_category"),
+        ("messaging", "0004_enforce_uppercase_message_keys"),
     ]
 
     operations = [

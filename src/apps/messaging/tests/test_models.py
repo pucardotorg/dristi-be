@@ -12,7 +12,7 @@ class MessageTemplateTests(TestCase):
 
     def setUp(self):
         self.template_data = {
-            "message_key": "case_filing_submitted",
+            "message_key": "CASE_FILING_SUBMITTED",
             "message_type": MessageTemplate.MessageType.EMAIL.value,
             "subject": "Case {{ case_number }} filed",
             "content": "Your case {{ case_number }} was filed.",
@@ -35,16 +35,25 @@ class MessageTemplateTests(TestCase):
 
     def test_create_template(self):
         template = self.create_template()
-        self.assertEqual(template.message_key, "case_filing_submitted")
+        self.assertEqual(template.message_key, "CASE_FILING_SUBMITTED")
         self.assertEqual(template.priority, MessageTemplate.Priority.MEDIUM.value)
         self.assertEqual(template.category, MessageTemplate.Category.NOTIFICATION.value)
         self.assertTrue(template.is_active)
 
-    def test_message_key_must_be_snake_case(self):
+    def test_message_key_must_be_uppercase_snake_case(self):
         with self.assertRaises(ValidationError):
             self.build_template(message_key="Invalid-Key").full_clean()
         with self.assertRaises(ValidationError):
             self.build_template(message_key="123_invalid").full_clean()
+        with self.assertRaises(ValidationError):
+            self.build_template(message_key="case_filing_submitted").full_clean()
+
+    def test_uppercase_snake_case_message_key_is_valid(self):
+        template = self.build_template(
+            message_key="CASE_FILING_SUBMITTED",
+            data_schema={},
+        )
+        template.full_clean()
 
     def test_email_requires_subject(self):
         with self.assertRaises(ValidationError):
@@ -78,7 +87,7 @@ class MessageTemplateTests(TestCase):
 
     def test_string_representation(self):
         template = self.create_template()
-        self.assertIn("case_filing_submitted", str(template))
+        self.assertIn("CASE_FILING_SUBMITTED", str(template))
 
 
 class MessageLogTests(TestCase):
@@ -86,7 +95,7 @@ class MessageLogTests(TestCase):
 
     def setUp(self):
         self.template = MessageTemplate.objects.create(
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             message_type=MessageTemplate.MessageType.EMAIL.value,
             subject="Case filed",
             content="Your case was filed.",
@@ -96,7 +105,7 @@ class MessageLogTests(TestCase):
         data = {
             "template": self.template,
             "message_type": MessageTemplate.MessageType.EMAIL.value,
-            "message_key": "case_filing_submitted",
+            "message_key": "CASE_FILING_SUBMITTED",
             "recipient": {"email": "user@example.com"},
             "context": {"case_number": "CASE-1"},
             "max_retries": 2,
