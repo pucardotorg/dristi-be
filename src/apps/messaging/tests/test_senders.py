@@ -128,7 +128,7 @@ class DummySMSBackendTests(TestCase):
                 recipient={"phone_number": "+1234567890"},
                 subject="",
                 body="Hello",
-                message_key="case_filing_submitted",
+                message_key="CASE_FILING_SUBMITTED",
                 category="NOTIFICATION",
             )
         )
@@ -136,7 +136,7 @@ class DummySMSBackendTests(TestCase):
         payload = mock_post.call_args.kwargs["json"]
         self.assertEqual(payload["phone_number"], "+1234567890")
         self.assertEqual(payload["message"], "Hello")
-        self.assertEqual(payload["message_key"], "case_filing_submitted")
+        self.assertEqual(payload["message_key"], "CASE_FILING_SUBMITTED")
         self.assertEqual(payload["category"], "NOTIFICATION")
         self.assertEqual(payload["provider_message_id"], provider_id)
 

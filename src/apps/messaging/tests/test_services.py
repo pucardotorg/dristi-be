@@ -17,7 +17,7 @@ class TemplateResolutionTests(TestCase):
 
     def setUp(self):
         self.template = MessageTemplate.objects.create(
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             message_type=MessageTemplate.MessageType.EMAIL.value,
             subject="Case filed",
             content="Your case was filed.",
@@ -25,7 +25,7 @@ class TemplateResolutionTests(TestCase):
 
     def test_resolve_active_template(self):
         resolved = resolve_template(
-            "case_filing_submitted",
+            "CASE_FILING_SUBMITTED",
             MessageTemplate.MessageType.EMAIL.value,
         )
         self.assertEqual(resolved.pk, self.template.pk)
@@ -35,7 +35,7 @@ class TemplateResolutionTests(TestCase):
         self.template.save()
         with self.assertRaises(MessageTemplateNotFound):
             resolve_template(
-                "case_filing_submitted",
+                "CASE_FILING_SUBMITTED",
                 MessageTemplate.MessageType.EMAIL.value,
             )
 
@@ -49,7 +49,7 @@ class RendererTests(TestCase):
 
     def setUp(self):
         self.template = MessageTemplate.objects.create(
-            message_key="case_filing_submitted",
+            message_key="CASE_FILING_SUBMITTED",
             message_type=MessageTemplate.MessageType.EMAIL.value,
             subject="Case {{ case_number }} filed",
             content="Hello {{ name }}, your case {{ case_number }} was filed.",
