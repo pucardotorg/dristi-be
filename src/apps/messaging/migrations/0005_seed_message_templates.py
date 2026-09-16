@@ -2,7 +2,7 @@ from django.db import migrations
 
 TEMPLATES = [
     {
-        "message_key": "LOGIN_OTP_SMS",
+        "message_key": "ACCOUNT_LOGIN_OTP_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Use OTP {{otp}} to log in to your account - On Courts",
@@ -17,7 +17,7 @@ TEMPLATES = [
         "max_retries": 1,
     },
     {
-        "message_key": "EFILE_SIGNATURE_PENDING_SMS",
+        "message_key": "CASE_FILING_SIGNATURE_PENDING_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Case file is pending your signature. Log in or use link {{link}} to sign. - On Courts",
@@ -51,7 +51,7 @@ TEMPLATES = [
         "max_retries": 1,
     },
     {
-        "message_key": "CASE_SCRUTINY_ERRORS_SMS",
+        "message_key": "CASE_FILING_SCRUTINY_ERRORS_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Errors have been identified in case {{case_number}} during scrutiny. Log in to {{link}} to rectify the file within {{deadline}} days. - On Courts",
@@ -70,7 +70,7 @@ TEMPLATES = [
         "max_retries": 0,
     },
     {
-        "message_key": "CASE_SCRUTINY_PASSED_SMS",
+        "message_key": "CASE_FILING_SCRUTINY_PASSED_SMS",
         "message_type": "sms",
         "subject": "",
         "content": "Case {{case_number}} has passed scrutiny and is pending registration. - On Courts",
