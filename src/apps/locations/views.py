@@ -3,10 +3,14 @@
 import uuid
 
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
+
+from apps.api.viewsets import APIModelReadOnlyViewSet
 
 from .models import Location
 from .serializers import LocationSerializer
@@ -16,9 +20,20 @@ CODE_URL_PATH = r"code/(?P<code>[^/.]+)"
 BOOLEAN_VALUES = {"true": True, "false": False}
 
 
-class LocationViewSet(viewsets.ReadOnlyModelViewSet):
+@extend_schema_view(
+    list=extend_schema(tags=["locations"]),
+    retrieve=extend_schema(tags=["locations"]),
+    children=extend_schema(tags=["locations"]),
+    ancestors=extend_schema(tags=["locations"]),
+    by_code=extend_schema(tags=["locations"]),
+    children_by_code=extend_schema(tags=["locations"]),
+    ancestors_by_code=extend_schema(tags=["locations"]),
+)
+class LocationViewSet(APIModelReadOnlyViewSet):
     """Read-only location API with hierarchy lookups by id or code."""
 
+    authentication_classes = [SessionAuthentication, TokenAuthentication]
+    permission_classes = [IsAuthenticatedOrReadOnly]
     queryset = Location.objects.select_related("parent").all()
     serializer_class = LocationSerializer
     lookup_value_regex = UUID_REGEX
