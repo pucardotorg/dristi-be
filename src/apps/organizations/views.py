@@ -5,6 +5,8 @@ from rest_framework import generics, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.locations.serializers import LocationSerializer
+
 from .models import Organization
 from .serializers import OrganizationFilterSerializer, OrganizationSerializer
 
@@ -40,6 +42,13 @@ class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
         elif parent_code:
             queryset = queryset.filter(parent__code=parent_code)
 
+        jurisdiction_id = params.get("jurisdiction_id")
+        jurisdiction_code = params.get("jurisdiction_code")
+        if jurisdiction_id:
+            queryset = queryset.filter(jurisdictions__id=jurisdiction_id)
+        elif jurisdiction_code:
+            queryset = queryset.filter(jurisdictions__code=jurisdiction_code)
+
         is_active = params.get("is_active")
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active)
@@ -63,13 +72,10 @@ class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["get"])
     def jurisdictions(self, request, id=None):
-        """List jurisdiction locations for this organization.
-
-        TODO(0007-location): depends on the location app (spec/0007-location.md),
-        which is not implemented yet. Returns an empty list until then.
-        """
-        self.get_object()
-        return Response([])
+        """List jurisdiction locations for this organization."""
+        organization = self.get_object()
+        serializer = LocationSerializer(organization.jurisdictions.all(), many=True)
+        return Response(serializer.data)
 
 
 class OrganizationByCodeMixin:
@@ -112,16 +118,12 @@ class OrganizationCodeAncestorsView(OrganizationByCodeMixin, generics.GenericAPI
         return Response(serializer.data)
 
 
-class OrganizationCodeJurisdictionsView(OrganizationByCodeMixin, generics.GenericAPIView):
-    """List jurisdiction locations of the organization identified by code.
+class OrganizationCodeJurisdictionsView(OrganizationByCodeMixin, generics.ListAPIView):
+    """List jurisdiction locations of the organization identified by code."""
 
-    TODO(0007-location): depends on the location app (spec/0007-location.md),
-    which is not implemented yet. Returns an empty list until then.
-    """
+    serializer_class = LocationSerializer
+    pagination_class = None
 
-    serializer_class = OrganizationSerializer
-
-    def get(self, request, code):
-        """Validate the organization exists and return an empty jurisdiction list."""
-        self.get_organization()
-        return Response([])
+    def get_queryset(self):
+        """Return jurisdiction locations of the organization matching the `code` kwarg."""
+        return self.get_organization().jurisdictions.all()

@@ -40,10 +40,9 @@ class OrganizationSerializer(serializers.ModelSerializer):
         source="get_organization_type_display", read_only=True
     )
     parent_code = serializers.SerializerMethodField()
-
-    # TODO(0007-location): expose a `jurisdictions` field (nested location
-    # codes/ids) once spec/0007-location.md lands and the model gains the
-    # `jurisdictions` M2M field.
+    jurisdiction_codes = serializers.SlugRelatedField(
+        slug_field="code", many=True, read_only=True, source="jurisdictions"
+    )
 
     class Meta:
         """Meta options."""
@@ -59,6 +58,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "description",
             "parent",
             "parent_code",
+            "jurisdiction_codes",
             "is_active",
             "additional_attributes",
             "created_at",
@@ -77,21 +77,18 @@ class OrganizationFilterSerializer(serializers.Serializer):
     organization_type = serializers.ChoiceField(choices=OrganizationType.choices, required=False)
     parent_id = serializers.UUIDField(required=False)
     parent_code = serializers.CharField(required=False)
-    jurisdiction_id = serializers.CharField(required=False)
+    jurisdiction_id = serializers.UUIDField(required=False)
     jurisdiction_code = serializers.CharField(required=False)
     is_active = StrictBooleanField(required=False)
 
     def validate(self, attrs):
-        """Enforce mutually-exclusive filter pairs and the jurisdiction placeholder."""
+        """Enforce the parent_id/parent_code and jurisdiction_id/jurisdiction_code exclusivity."""
         if attrs.get("parent_id") and attrs.get("parent_code"):
             raise serializers.ValidationError("parent_id and parent_code are mutually exclusive.")
 
-        if attrs.get("jurisdiction_id") or attrs.get("jurisdiction_code"):
-            # TODO(0007-location): the `jurisdictions` M2M field depends on the
-            # location app (spec/0007-location.md), which is not implemented yet.
+        if attrs.get("jurisdiction_id") and attrs.get("jurisdiction_code"):
             raise serializers.ValidationError(
-                "Filtering by jurisdiction is not supported until the location module "
-                "is implemented."
+                "jurisdiction_id and jurisdiction_code are mutually exclusive."
             )
 
         return attrs

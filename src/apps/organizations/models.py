@@ -36,11 +36,9 @@ class Organization(BaseExtendableModel, BaseModel, BaseActivatableModel):
         related_name="children",
     )
 
-    # TODO(0007-location): spec/0007-location.md (Location module) is not yet
-    # implemented in this codebase. Once that app lands, add:
-    #   jurisdictions = models.ManyToManyField(
-    #       "locations.Location", related_name="organizations"
-    #   )
+    jurisdictions = models.ManyToManyField(
+        "locations.Location", related_name="organizations", blank=True
+    )
 
     class Meta:
         """Meta options."""

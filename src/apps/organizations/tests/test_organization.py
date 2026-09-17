@@ -1,5 +1,7 @@
 """Tests for the Organization model and read-only API."""
 
+from datetime import datetime
+
 import pytest
 from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
@@ -7,18 +9,23 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.locations.tests.factories import make_hierarchy
 from apps.organizations.models import Organization, OrganizationType
 
 
 def make_organization(**kwargs):
     """Create an Organization with sensible defaults for tests."""
+    jurisdictions = kwargs.pop("jurisdictions", None)
     defaults = {
         "code": "TEST_ORG",
         "organization_type": OrganizationType.HIGH_COURT,
         "name": "Test Organization",
     }
     defaults.update(kwargs)
-    return Organization.objects.create(**defaults)
+    org = Organization.objects.create(**defaults)
+    if jurisdictions is not None:
+        org.jurisdictions.set(jurisdictions)
+    return org
 
 
 @pytest.mark.django_db
@@ -32,6 +39,10 @@ class TestOrganizationModel:
     def test_valid_code_is_accepted(self):
         org = make_organization(code="VALID_CODE_1")
         assert org.code == "VALID_CODE_1"
+
+    def test_organization_type_must_be_a_supported_choice(self):
+        with pytest.raises(ValidationError):
+            make_organization(code="BAD_TYPE_ORG", organization_type="not_a_real_type")
 
     def test_organization_cannot_be_its_own_parent(self):
         org = make_organization(code="SELF_PARENT")
@@ -95,16 +106,33 @@ class TestOrganizationModel:
         with pytest.raises(ProtectedError):
             root.delete()
 
+    def test_jurisdictions_can_be_assigned(self):
+        india, bihar, patna = make_hierarchy()
+        org = make_organization(code="JURIS_ORG", jurisdictions=[bihar, patna])
+
+        assert set(org.jurisdictions.values_list("code", flat=True)) == {"BR", "PATNA"}
+
+    def test_jurisdictions_default_to_empty(self):
+        org = make_organization(code="NO_JURIS_ORG")
+        assert org.jurisdictions.count() == 0
+
 
 class OrganizationAPITestCase(APITestCase):
-    """Base test case that seeds a small organization hierarchy."""
+    """Base test case that seeds a small organization hierarchy.
+
+    Jurisdictions mirror the IN -> BR -> PATNA example from spec/0008-organization.md
+    section 8: the supreme court maps to the country, the high court to the
+    state, and the district court to the district.
+    """
 
     def setUp(self):
+        self.india, self.bihar, self.patna = make_hierarchy()
         self.root = make_organization(
             code="SUPREME_COURT_INDIA",
             organization_type=OrganizationType.SUPREME_COURT,
             name="Supreme Court of India",
             short_name="SCI",
+            jurisdictions=[self.india],
         )
         self.child = make_organization(
             code="PATNA_HIGH_COURT",
@@ -112,6 +140,7 @@ class OrganizationAPITestCase(APITestCase):
             name="High Court of Judicature at Patna",
             short_name="Patna HC",
             parent=self.root,
+            jurisdictions=[self.bihar],
         )
         self.grandchild = make_organization(
             code="PATNA_DISTRICT_COURT",
@@ -119,6 +148,7 @@ class OrganizationAPITestCase(APITestCase):
             name="District Court Patna",
             short_name="Patna DC",
             parent=self.child,
+            jurisdictions=[self.patna],
         )
         self.inactive = make_organization(
             code="INACTIVE_ORG",
@@ -126,6 +156,16 @@ class OrganizationAPITestCase(APITestCase):
             name="Inactive Org",
             is_active=False,
         )
+
+    def assert_meta(self, payload):
+        """Assert the API response includes the required metadata envelope."""
+        self.assertIn("meta", payload)
+        self.assertEqual(payload["meta"]["spec_version"], "1.0")
+        self.assertIn("app_version", payload["meta"])
+        self.assertIn("timestamp", payload["meta"])
+        parsed = datetime.fromisoformat(payload["meta"]["timestamp"])
+        self.assertIsNotNone(parsed.tzinfo)
+        self.assertEqual(payload["meta"]["timestamp"][-6:], "+05:30")
 
 
 class OrganizationListAPITests(OrganizationAPITestCase):
@@ -187,14 +227,25 @@ class OrganizationListAPITests(OrganizationAPITestCase):
         response = self.client.get(reverse("organization-list"), {"is_active": "maybe"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_jurisdiction_id_filter_not_yet_supported(self):
-        # TODO(0007-location): remove once the location app lands and the
-        # `jurisdictions` M2M field exists to filter against.
-        response = self.client.get(reverse("organization-list"), {"jurisdiction_id": "1"})
+    def test_filter_by_jurisdiction_id(self):
+        response = self.client.get(reverse("organization-list"), {"jurisdiction_id": self.bihar.id})
+        codes = [item["code"] for item in response.json()["results"]]
+        self.assertEqual(codes, ["PATNA_HIGH_COURT"])
+
+    def test_filter_by_jurisdiction_code(self):
+        response = self.client.get(reverse("organization-list"), {"jurisdiction_code": "BR"})
+        codes = [item["code"] for item in response.json()["results"]]
+        self.assertEqual(codes, ["PATNA_HIGH_COURT"])
+
+    def test_jurisdiction_id_and_jurisdiction_code_are_mutually_exclusive(self):
+        response = self.client.get(
+            reverse("organization-list"),
+            {"jurisdiction_id": self.bihar.id, "jurisdiction_code": "BR"},
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_jurisdiction_code_filter_not_yet_supported(self):
-        response = self.client.get(reverse("organization-list"), {"jurisdiction_code": "BR"})
+    def test_malformed_jurisdiction_id_returns_400_not_500(self):
+        response = self.client.get(reverse("organization-list"), {"jurisdiction_id": "not-a-uuid"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
@@ -237,6 +288,18 @@ class OrganizationDetailAPITests(OrganizationAPITestCase):
         )
         self.assertIsNone(response.json()["parent_code"])
 
+    def test_response_includes_jurisdiction_codes(self):
+        response = self.client.get(
+            reverse("organization-code-detail", kwargs={"code": "PATNA_HIGH_COURT"})
+        )
+        self.assertEqual(response.json()["jurisdiction_codes"], ["BR"])
+
+    def test_jurisdiction_codes_empty_when_none_assigned(self):
+        response = self.client.get(
+            reverse("organization-code-detail", kwargs={"code": "INACTIVE_ORG"})
+        )
+        self.assertEqual(response.json()["jurisdiction_codes"], [])
+
 
 class OrganizationChildrenAPITests(OrganizationAPITestCase):
     """Tests for the children sub-resource, by id and by code."""
@@ -244,20 +307,22 @@ class OrganizationChildrenAPITests(OrganizationAPITestCase):
     def test_children_by_id(self):
         response = self.client.get(reverse("organization-children", args=[self.root.id]))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        codes = [item["code"] for item in response.json()]
+        body = response.json()
+        codes = [item["code"] for item in body["data"]]
         self.assertEqual(codes, ["PATNA_HIGH_COURT"])
+        self.assert_meta(body)
 
     def test_children_by_code(self):
         response = self.client.get(
             reverse("organization-code-children", kwargs={"code": "SUPREME_COURT_INDIA"})
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        codes = [item["code"] for item in response.json()]
+        codes = [item["code"] for item in response.json()["data"]]
         self.assertEqual(codes, ["PATNA_HIGH_COURT"])
 
     def test_children_empty_for_leaf_organization(self):
         response = self.client.get(reverse("organization-children", args=[self.grandchild.id]))
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.json()["data"], [])
 
     def test_children_by_code_not_found(self):
         response = self.client.get(
@@ -272,20 +337,22 @@ class OrganizationAncestorsAPITests(OrganizationAPITestCase):
     def test_ancestors_by_id(self):
         response = self.client.get(reverse("organization-ancestors", args=[self.grandchild.id]))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        codes = [item["code"] for item in response.json()]
+        body = response.json()
+        codes = [item["code"] for item in body["data"]]
         self.assertEqual(codes, ["SUPREME_COURT_INDIA", "PATNA_HIGH_COURT"])
+        self.assert_meta(body)
 
     def test_ancestors_by_code(self):
         response = self.client.get(
             reverse("organization-code-ancestors", kwargs={"code": "PATNA_DISTRICT_COURT"})
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        codes = [item["code"] for item in response.json()]
+        codes = [item["code"] for item in response.json()["data"]]
         self.assertEqual(codes, ["SUPREME_COURT_INDIA", "PATNA_HIGH_COURT"])
 
     def test_ancestors_empty_for_root(self):
         response = self.client.get(reverse("organization-ancestors", args=[self.root.id]))
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.json()["data"], [])
 
     def test_ancestors_by_code_not_found(self):
         response = self.client.get(
@@ -295,23 +362,28 @@ class OrganizationAncestorsAPITests(OrganizationAPITestCase):
 
 
 class OrganizationJurisdictionsAPITests(OrganizationAPITestCase):
-    """Tests for the jurisdictions sub-resource placeholder.
+    """Tests for the jurisdictions sub-resource, by id and by code."""
 
-    TODO(0007-location): these currently assert an empty-list placeholder
-    response. Replace with real assertions once spec/0007-location.md lands.
-    """
-
-    def test_jurisdictions_by_id_returns_empty_list(self):
-        response = self.client.get(reverse("organization-jurisdictions", args=[self.root.id]))
+    def test_jurisdictions_by_id(self):
+        response = self.client.get(reverse("organization-jurisdictions", args=[self.child.id]))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), [])
+        body = response.json()
+        codes = [item["code"] for item in body["data"]]
+        self.assertEqual(codes, ["BR"])
+        self.assert_meta(body)
 
-    def test_jurisdictions_by_code_returns_empty_list(self):
+    def test_jurisdictions_by_code(self):
         response = self.client.get(
-            reverse("organization-code-jurisdictions", kwargs={"code": "SUPREME_COURT_INDIA"})
+            reverse("organization-code-jurisdictions", kwargs={"code": "PATNA_DISTRICT_COURT"})
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), [])
+        codes = [item["code"] for item in response.json()["data"]]
+        self.assertEqual(codes, ["PATNA"])
+
+    def test_jurisdictions_empty_when_none_assigned(self):
+        response = self.client.get(reverse("organization-jurisdictions", args=[self.inactive.id]))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["data"], [])
 
     def test_jurisdictions_by_id_not_found(self):
         response = self.client.get(
