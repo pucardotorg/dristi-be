@@ -178,4 +178,5 @@ _None — the `is_active` flag is handled by `0006-active-flag-model.md`._
 
 ## TODO
 
+- Add authentication to the `/api/v1/locations/` endpoints in a future change.
 - A generic base serialization class is being built and will be implemented in a future change.
