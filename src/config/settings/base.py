@@ -43,12 +43,14 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_dramatiq",
     "health_check",
+    "simple_history",
     # Project apps
     "apps.core",
     "apps.users",
     "apps.api",
     "apps.messaging",
     "apps.organizations",
+    "apps.locations",
 ]
 
 MIDDLEWARE = [
@@ -61,6 +63,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "simple_history.middleware.HistoryRequestMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -109,6 +112,13 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+
+# ---------------------------------------------------------------------------
+# Simple History
+# ---------------------------------------------------------------------------
+# Disable admin revert to prevent accidental restoration of historical records.
+SIMPLE_HISTORY_REVERT_DISABLED = True
 
 
 # ---------------------------------------------------------------------------

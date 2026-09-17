@@ -6,6 +6,7 @@ import uuid
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
+from simple_history.models import HistoricalRecords
 
 from .validators import (
     DATA_TYPE_CHOICES,
@@ -130,7 +131,16 @@ class BaseExtendableModel(models.Model):
         super().save(*args, **kwargs)
 
 
-class AdditionalAttribute(BaseModel):
+class BaseAuditableModel(models.Model):
+    """Abstract base model that captures a full history table for every change."""
+
+    history = HistoricalRecords(inherit=True)
+
+    class Meta:
+        abstract = True
+
+
+class AdditionalAttribute(BaseModel, BaseAuditableModel):
     """Metadata describing an additional attribute available on a model."""
 
     content_type = models.ForeignKey(
@@ -175,7 +185,7 @@ class AdditionalAttribute(BaseModel):
         super().save(*args, **kwargs)
 
 
-class ApiVersionChangeLog(BaseExtendableModel, BaseModel, BaseActivatableModel):
+class ApiVersionChangeLog(BaseExtendableModel, BaseModel, BaseActivatableModel, BaseAuditableModel):
     """API version change-log entry that uses BaseExtendableModel."""
 
     version = models.CharField(max_length=50)

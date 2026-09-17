@@ -58,15 +58,24 @@ class MessageTemplate(BaseModel, BaseActivatableModel):
                 fields=["message_key", "message_type"],
                 name="unique_message_key_type",
             ),
+            models.CheckConstraint(
+                check=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
+                name="messagetemplate_message_key_upper_snake",
+            ),
         ]
 
     def clean(self):
         """Validate template configuration."""
 
         super().clean()
-        if not re.match(r"^[a-z][a-z0-9_]*$", self.message_key):
+        if not re.match(r"^[A-Z][A-Z0-9_]*$", self.message_key):
             raise ValidationError(
-                {"message_key": ("Must be lowercase snake_case (e.g. case_filing_submitted).")}
+                {
+                    "message_key": (
+                        "Must be UPPERCASE_SNAKE_CASE using letters, numbers, and "
+                        "underscores (e.g. CASE_FILING_SUBMITTED)."
+                    )
+                }
             )
         if self.message_type == self.MessageType.EMAIL.value and not self.subject:
             raise ValidationError({"subject": "Subject is required for email templates."})
@@ -80,12 +89,13 @@ class MessageTemplate(BaseModel, BaseActivatableModel):
         if not self.data_schema:
             return
         try:
-            import jsonschema
+            from jsonschema import validators
         except ImportError:
             # The project declares jsonschema; skip only when it is absent.
             return
         try:
-            jsonschema.check_schema(self.data_schema)
+            validator_cls = validators.validator_for(self.data_schema)
+            validator_cls.check_schema(self.data_schema)
         except Exception as exc:
             raise ValidationError({"data_schema": str(exc)}) from exc
 
@@ -131,6 +141,16 @@ class MessageLog(BaseModel):
     error_message = models.TextField(blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     failed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
+                name="messagelog_message_key_upper_snake",
+            ),
+        ]
 
     def can_retry(self):
         """Return True when the message may be attempted again."""
