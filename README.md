@@ -26,6 +26,8 @@ A Django-based API project template using:
 3. Open the API in your browser:
 
    - API root: http://localhost:8000/api/v1/
+   - Swagger UI: http://localhost:8000/api/docs/
+   - OpenAPI schema: http://localhost:8000/api/schema/
    - Admin: http://localhost:8000/admin/
    - Health check: http://localhost:8000/health/
 

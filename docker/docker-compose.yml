@@ -42,6 +42,11 @@ services:
         condition: service_healthy
 
 
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 9090:8080
 
   rustfs_perms:
     image: alpine:latest
