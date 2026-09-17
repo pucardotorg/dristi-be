@@ -75,6 +75,9 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `DJANGO_SETTINGS_MODULE` | Settings module to use | `config.settings.local` |
 | `SECRET_KEY` | Django secret key | long random string |
 | `ALLOWED_HOSTS` | Comma-separated list of allowed hosts | `localhost,api.example.com` |
+| `CSRF_TRUSTED_ORIGINS` | Comma-separated trusted origins for CSRF-protected requests | `https://api.example.com` |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed by CORS (local `:3000` is a common default; use your actual frontend port if different) | `https://app.example.com` |
+| `CORS_ALLOW_CREDENTIALS` | Allow cross-origin cookies/credentials for browser API calls | `True` |
 | `DATABASE_URL` | PostgreSQL connection URL | `postgres://user:pass@db:5432/dristi` |
 | `REDIS_URL` | Redis connection for general use | `redis://redis:6379/0` |
 | `CACHE_URL` | Redis connection for Django cache | `redis://redis:6379/1` |

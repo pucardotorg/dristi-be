@@ -1,6 +1,7 @@
 """Tests for the read-only Location API."""
 
 import uuid
+from datetime import datetime
 
 from django.urls import reverse
 from rest_framework import status
@@ -18,6 +19,16 @@ class LocationAPITestCase(APITestCase):
         self.india, self.bihar, self.patna = make_hierarchy()
         self.goa = make_state(parent=self.india, code="GA", name="Goa", is_active=False)
 
+    def assert_meta(self, payload):
+        """Assert the API response includes the required metadata envelope."""
+        self.assertIn("meta", payload)
+        self.assertEqual(payload["meta"]["spec_version"], "1.0")
+        self.assertIn("app_version", payload["meta"])
+        self.assertIn("timestamp", payload["meta"])
+        parsed = datetime.fromisoformat(payload["meta"]["timestamp"])
+        self.assertIsNotNone(parsed.tzinfo)
+        self.assertEqual(payload["meta"]["timestamp"][-6:], "+05:30")
+
 
 class LocationListTests(LocationAPITestCase):
     """GET /api/v1/locations/"""
@@ -26,7 +37,9 @@ class LocationListTests(LocationAPITestCase):
         response = self.client.get(reverse("location-list"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json()["count"], 4)
+        body = response.json()
+        self.assertEqual(body["count"], 4)
+        self.assert_meta(body)
 
     def test_filters_by_location_type(self):
         response = self.client.get(reverse("location-list"), {"location_type": "state"})
@@ -95,7 +108,9 @@ class LocationRetrieveTests(LocationAPITestCase):
         response = self.client.get(reverse("location-detail", args=[self.patna.pk]))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json()["code"], "PATNA")
+        body = response.json()
+        self.assertEqual(body["code"], "PATNA")
+        self.assert_meta(body)
 
     def test_retrieve_by_code(self):
         response = self.client.get(reverse("location-by-code", args=["PATNA"]))
@@ -139,8 +154,10 @@ class LocationChildrenTests(LocationAPITestCase):
         response = self.client.get(reverse("location-children", args=[self.india.pk]))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        codes = {row["code"] for row in response.json()["results"]}
+        body = response.json()
+        codes = {row["code"] for row in body["results"]}
         self.assertEqual(codes, {"BR", "GA"})
+        self.assert_meta(body)
 
     def test_children_by_code(self):
         response = self.client.get(reverse("location-by-code-children", args=["IN"]))
@@ -174,19 +191,25 @@ class LocationAncestorsTests(LocationAPITestCase):
         response = self.client.get(reverse("location-ancestors", args=[self.patna.pk]))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual([row["code"] for row in response.json()], ["IN", "BR"])
+        body = response.json()
+        self.assertEqual([row["code"] for row in body["data"]], ["IN", "BR"])
+        self.assert_meta(body)
 
     def test_ancestors_by_code_are_root_first(self):
         response = self.client.get(reverse("location-by-code-ancestors", args=["PATNA"]))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual([row["code"] for row in response.json()], ["IN", "BR"])
+        body = response.json()
+        self.assertEqual([row["code"] for row in body["data"]], ["IN", "BR"])
+        self.assert_meta(body)
 
     def test_root_has_no_ancestors(self):
         response = self.client.get(reverse("location-by-code-ancestors", args=["IN"]))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), [])
+        body = response.json()
+        self.assertEqual(body["data"], [])
+        self.assert_meta(body)
 
     def test_ancestors_of_unknown_code_returns_404(self):
         response = self.client.get(reverse("location-by-code-ancestors", args=["NOPE"]))
@@ -204,6 +227,14 @@ class LocationWriteMethodTests(LocationAPITestCase):
 
     def test_authenticated_post_is_not_allowed(self):
         self.client.force_authenticate(user=self._make_user())
+        response = self.client.post(reverse("location-list"), {"code": "MH"})
+
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_session_cookie_post_is_not_allowed(self):
+        user = self._make_user()
+        self.assertTrue(self.client.login(email=user.email, password="test"))
+
         response = self.client.post(reverse("location-list"), {"code": "MH"})
 
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
