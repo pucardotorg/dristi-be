@@ -78,8 +78,11 @@ class OrganizationViewSet(APIModelReadOnlyViewSet):
         return get_object_or_404(Organization.objects.select_related("parent"), code=code)
 
     def _children_response(self, organization):
-        """Return the organization's direct children."""
+        """Return a paginated response of the organization's direct children."""
         children = organization.children.select_related("parent").all()
+        page = self.paginate_queryset(children)
+        if page is not None:
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
         return Response(self.get_serializer(children, many=True).data)
 
     def _ancestors_response(self, organization):
@@ -87,9 +90,12 @@ class OrganizationViewSet(APIModelReadOnlyViewSet):
         return Response(self.get_serializer(organization.get_ancestors(), many=True).data)
 
     def _jurisdictions_response(self, organization):
-        """Return the organization's jurisdiction locations."""
-        serializer = LocationSerializer(organization.jurisdictions.all(), many=True)
-        return Response(serializer.data)
+        """Return a paginated response of the organization's jurisdiction locations."""
+        jurisdictions = organization.jurisdictions.all()
+        page = self.paginate_queryset(jurisdictions)
+        if page is not None:
+            return self.get_paginated_response(LocationSerializer(page, many=True).data)
+        return Response(LocationSerializer(jurisdictions, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="children", url_name="children")
     def children(self, request, *args, **kwargs):

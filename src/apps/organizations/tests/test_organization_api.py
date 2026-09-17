@@ -203,7 +203,7 @@ class OrganizationChildrenAPITests(OrganizationAPITestCase):
         response = self.client.get(reverse("organization-children", args=[self.root.id]))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.json()
-        codes = [item["code"] for item in body["data"]]
+        codes = [item["code"] for item in body["results"]]
         self.assertEqual(codes, ["PATNA_HIGH_COURT"])
         self.assert_meta(body)
 
@@ -212,12 +212,12 @@ class OrganizationChildrenAPITests(OrganizationAPITestCase):
             reverse("organization-by-code-children", kwargs={"code": "SUPREME_COURT_INDIA"})
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        codes = [item["code"] for item in response.json()["data"]]
+        codes = [item["code"] for item in response.json()["results"]]
         self.assertEqual(codes, ["PATNA_HIGH_COURT"])
 
     def test_children_empty_for_leaf_organization(self):
         response = self.client.get(reverse("organization-children", args=[self.grandchild.id]))
-        self.assertEqual(response.json()["data"], [])
+        self.assertEqual(response.json()["results"], [])
 
     def test_children_by_code_not_found(self):
         response = self.client.get(
@@ -263,7 +263,7 @@ class OrganizationJurisdictionsAPITests(OrganizationAPITestCase):
         response = self.client.get(reverse("organization-jurisdictions", args=[self.child.id]))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.json()
-        codes = [item["code"] for item in body["data"]]
+        codes = [item["code"] for item in body["results"]]
         self.assertEqual(codes, ["BR"])
         self.assert_meta(body)
 
@@ -272,13 +272,13 @@ class OrganizationJurisdictionsAPITests(OrganizationAPITestCase):
             reverse("organization-by-code-jurisdictions", kwargs={"code": "PATNA_DISTRICT_COURT"})
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        codes = [item["code"] for item in response.json()["data"]]
+        codes = [item["code"] for item in response.json()["results"]]
         self.assertEqual(codes, ["PATNA"])
 
     def test_jurisdictions_empty_when_none_assigned(self):
         response = self.client.get(reverse("organization-jurisdictions", args=[self.inactive.id]))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json()["data"], [])
+        self.assertEqual(response.json()["results"], [])
 
     def test_jurisdictions_by_id_not_found(self):
         response = self.client.get(
