@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.api",
     "apps.messaging",
+    "apps.locations",
 ]
 
 MIDDLEWARE = [
