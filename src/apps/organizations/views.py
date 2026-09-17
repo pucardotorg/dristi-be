@@ -1,19 +1,37 @@
 """Organization views."""
 
 from django.shortcuts import get_object_or_404
-from rest_framework import generics, viewsets
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
+from apps.api.viewsets import APIModelReadOnlyViewSet
 from apps.locations.serializers import LocationSerializer
 
 from .models import Organization
 from .serializers import OrganizationFilterSerializer, OrganizationSerializer
 
+CODE_URL_PATH = r"code/(?P<code>[^/.]+)"
 
-class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
-    """Read-only organization API, looked up by id."""
 
+@extend_schema_view(
+    list=extend_schema(tags=["organizations"]),
+    retrieve=extend_schema(tags=["organizations"]),
+    children=extend_schema(tags=["organizations"]),
+    ancestors=extend_schema(tags=["organizations"]),
+    jurisdictions=extend_schema(tags=["organizations"]),
+    by_code=extend_schema(tags=["organizations"]),
+    children_by_code=extend_schema(tags=["organizations"]),
+    ancestors_by_code=extend_schema(tags=["organizations"]),
+    jurisdictions_by_code=extend_schema(tags=["organizations"]),
+)
+class OrganizationViewSet(APIModelReadOnlyViewSet):
+    """Read-only organization API with hierarchy and jurisdiction lookups by id or code."""
+
+    authentication_classes = [SessionAuthentication, TokenAuthentication]
+    permission_classes = [IsAuthenticatedOrReadOnly]
     queryset = Organization.objects.select_related("parent").all()
     serializer_class = OrganizationSerializer
     lookup_field = "id"
@@ -55,75 +73,70 @@ class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
 
         return queryset
 
-    @action(detail=True, methods=["get"])
-    def children(self, request, id=None):
-        """List direct children of this organization."""
-        organization = self.get_object()
+    def _get_by_code(self, code):
+        """Return the organization with the given unique code or raise 404."""
+        return get_object_or_404(Organization.objects.select_related("parent"), code=code)
+
+    def _children_response(self, organization):
+        """Return the organization's direct children."""
         children = organization.children.select_related("parent").all()
-        serializer = self.get_serializer(children, many=True)
-        return Response(serializer.data)
+        return Response(self.get_serializer(children, many=True).data)
 
-    @action(detail=True, methods=["get"])
-    def ancestors(self, request, id=None):
-        """List the ancestor chain from root to immediate parent."""
-        organization = self.get_object()
-        serializer = self.get_serializer(organization.get_ancestors(), many=True)
-        return Response(serializer.data)
+    def _ancestors_response(self, organization):
+        """Return the ancestor chain from root to immediate parent."""
+        return Response(self.get_serializer(organization.get_ancestors(), many=True).data)
 
-    @action(detail=True, methods=["get"])
-    def jurisdictions(self, request, id=None):
-        """List jurisdiction locations for this organization."""
-        organization = self.get_object()
+    def _jurisdictions_response(self, organization):
+        """Return the organization's jurisdiction locations."""
         serializer = LocationSerializer(organization.jurisdictions.all(), many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=["get"], url_path="children", url_name="children")
+    def children(self, request, *args, **kwargs):
+        """List the direct children of an organization identified by id."""
+        return self._children_response(self.get_object())
 
-class OrganizationByCodeMixin:
-    """Look up the organization named by the `code` URL kwarg, or 404."""
+    @action(detail=True, methods=["get"], url_path="ancestors", url_name="ancestors")
+    def ancestors(self, request, *args, **kwargs):
+        """List the ancestors of an organization identified by id."""
+        return self._ancestors_response(self.get_object())
 
-    def get_organization(self):
-        """Return the organization matching the `code` URL kwarg."""
-        return get_object_or_404(Organization, code=self.kwargs["code"])
+    @action(detail=True, methods=["get"], url_path="jurisdictions", url_name="jurisdictions")
+    def jurisdictions(self, request, *args, **kwargs):
+        """List the jurisdiction locations of an organization identified by id."""
+        return self._jurisdictions_response(self.get_object())
 
+    @action(detail=False, methods=["get"], url_path=CODE_URL_PATH, url_name="by-code")
+    def by_code(self, request, code=None, *args, **kwargs):
+        """Retrieve an organization by its unique code."""
+        return Response(self.get_serializer(self._get_by_code(code)).data)
 
-class OrganizationCodeDetailView(OrganizationByCodeMixin, generics.RetrieveAPIView):
-    """Retrieve an organization by its unique code."""
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=f"{CODE_URL_PATH}/children",
+        url_name="by-code-children",
+    )
+    def children_by_code(self, request, code=None, *args, **kwargs):
+        """List the direct children of an organization identified by code."""
+        return self._children_response(self._get_by_code(code))
 
-    serializer_class = OrganizationSerializer
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=f"{CODE_URL_PATH}/ancestors",
+        url_name="by-code-ancestors",
+    )
+    def ancestors_by_code(self, request, code=None, *args, **kwargs):
+        """List the ancestors of an organization identified by code."""
+        return self._ancestors_response(self._get_by_code(code))
 
-    def get_object(self):
-        """Return the organization matching the `code` URL kwarg."""
-        return self.get_organization()
-
-
-class OrganizationCodeChildrenView(OrganizationByCodeMixin, generics.ListAPIView):
-    """List direct children of the organization identified by code."""
-
-    serializer_class = OrganizationSerializer
-    pagination_class = None
-
-    def get_queryset(self):
-        """Return direct children of the organization matching the `code` kwarg."""
-        return self.get_organization().children.select_related("parent").all()
-
-
-class OrganizationCodeAncestorsView(OrganizationByCodeMixin, generics.GenericAPIView):
-    """List the ancestor chain of the organization identified by code."""
-
-    serializer_class = OrganizationSerializer
-
-    def get(self, request, code):
-        """Return the ancestor chain from root to immediate parent."""
-        serializer = self.get_serializer(self.get_organization().get_ancestors(), many=True)
-        return Response(serializer.data)
-
-
-class OrganizationCodeJurisdictionsView(OrganizationByCodeMixin, generics.ListAPIView):
-    """List jurisdiction locations of the organization identified by code."""
-
-    serializer_class = LocationSerializer
-    pagination_class = None
-
-    def get_queryset(self):
-        """Return jurisdiction locations of the organization matching the `code` kwarg."""
-        return self.get_organization().jurisdictions.all()
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=f"{CODE_URL_PATH}/jurisdictions",
+        url_name="by-code-jurisdictions",
+    )
+    def jurisdictions_by_code(self, request, code=None, *args, **kwargs):
+        """List the jurisdiction locations of an organization identified by code."""
+        return self._jurisdictions_response(self._get_by_code(code))

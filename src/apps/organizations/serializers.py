@@ -16,10 +16,7 @@ class StrictBooleanField(serializers.BooleanField):
     default_error_messages = {
         "invalid": 'Must be "true" or "false".',
     }
-    # BooleanField normally treats a QueryDict (e.g. request.query_params) as
-    # an HTML form and substitutes False when the key is missing, so an
-    # absent `is_active` param would otherwise be validated as False instead
-    # of being treated as "not provided".
+
     default_empty_html = empty
 
     def to_internal_value(self, data):
@@ -39,7 +36,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
     organization_type_display = serializers.CharField(
         source="get_organization_type_display", read_only=True
     )
-    parent_code = serializers.SerializerMethodField()
+    parent_code = serializers.CharField(source="parent.code", read_only=True, default=None)
     jurisdiction_codes = serializers.SlugRelatedField(
         slug_field="code", many=True, read_only=True, source="jurisdictions"
     )
@@ -65,10 +62,6 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = fields
-
-    def get_parent_code(self, obj):
-        """Return the parent organization's code, or None for root organizations."""
-        return obj.parent.code if obj.parent_id else None
 
 
 class OrganizationFilterSerializer(serializers.Serializer):
