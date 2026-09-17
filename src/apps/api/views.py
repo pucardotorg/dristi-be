@@ -1,16 +1,8 @@
-"""API views."""
+"""API view compatibility imports."""
 
-from apps.users.models import User
+from apps.users.views import UserViewSet
 
-from .serializers import UserSerializer
-from .viewsets import APIModelReadOnlyViewSet
-
-
-class UserViewSet(APIModelReadOnlyViewSet):
-    """Read-only user API."""
-
-    database_model = User
-    read_serializer_class = UserSerializer
+__all__ = ["UserViewSet"]
 
 
 
