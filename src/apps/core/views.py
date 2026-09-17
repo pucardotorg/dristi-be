@@ -1,6 +1,7 @@
 """Core app API views and viewsets."""
 
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
+from rest_framework import serializers
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -12,6 +13,15 @@ from .models import ApiVersionChangeLog
 from .serializers import ApiVersionChangeLogSerializer
 
 
+@extend_schema(
+    tags=["core"],
+    responses={
+        200: inline_serializer(
+            name="HealthCheckResponse",
+            fields={"status": serializers.CharField()},
+        )
+    },
+)
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health_check(request):
