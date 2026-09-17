@@ -1,3 +1,34 @@
 """Core admin registration."""
 
-# Register shared / admin-only models here.
+from django.contrib import admin
+
+from .models import AdditionalAttribute, ApiVersionChangeLog
+
+
+@admin.register(AdditionalAttribute)
+class AdditionalAttributeAdmin(admin.ModelAdmin):
+    """Admin configuration for additional attribute metadata."""
+
+    list_display = (
+        "name",
+        "content_type",
+        "data_type",
+        "is_nullable",
+        "default_value",
+    )
+    list_filter = ("content_type", "data_type", "is_nullable")
+    search_fields = ("name",)
+
+
+@admin.register(ApiVersionChangeLog)
+class ApiVersionChangeLogAdmin(admin.ModelAdmin):
+    """Admin configuration for API version change-log entries."""
+
+    list_display = (
+        "version",
+        "change_log",
+        "created_at",
+        "updated_at",
+    )
+    search_fields = ("version", "change_log")
+    readonly_fields = ("id", "created_at", "updated_at")
