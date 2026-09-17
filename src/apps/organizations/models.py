@@ -51,9 +51,7 @@ class Organization(BaseExtendableModel, BaseModel, BaseActivatableModel):
         """Validate code format and parent hierarchy constraints."""
         super().clean()
         if self.code and not CODE_PATTERN.match(self.code):
-            raise ValidationError(
-                {"code": "code must be uppercase snake_case (A-Z, 0-9, _)."}
-            )
+            raise ValidationError({"code": "code must be uppercase snake_case (A-Z, 0-9, _)."})
         if self.parent_id and self.parent_id == self.id:
             raise ValidationError({"parent": "An organization cannot be its own parent."})
         if self.parent_id:
