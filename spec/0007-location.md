@@ -175,3 +175,7 @@ _None — the `is_active` flag is handled by `0006-active-flag-model.md`._
 ## Related specs
 
 - `0006-active-flag-model.md` — defines `BaseActivatableModel` used by `Location`.
+
+## TODO
+
+- A generic base serialization class is being built and will be implemented in a future change.
