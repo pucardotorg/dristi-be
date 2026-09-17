@@ -1,5 +1,6 @@
 """Core app API views and viewsets."""
 
+from django.http import HttpResponse
 from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
 from rest_framework import serializers
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
@@ -11,6 +12,12 @@ from apps.api.viewsets import APIModelReadOnlyViewSet
 
 from .models import ApiVersionChangeLog
 from .serializers import ApiVersionChangeLogSerializer
+
+
+def index(request):
+    """Root endpoint."""
+
+    return HttpResponse("All is well")
 
 
 @extend_schema(
