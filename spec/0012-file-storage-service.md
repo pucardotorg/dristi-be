@@ -19,7 +19,7 @@ The service should remain independent of the business context in which a file is
 * Store the actual file in Object Storage.
 * Return a unique `file_id` that other services can use to reference the file.
 * Support an optional `organization_id`.
-* Track the user or system that uploaded the file through `owner_id`.
+* Track the user or system that uploaded the file through `user_id`.
 * Support a controlled `file_type` ENUM.
 * Support multiple arbitrary tags for filtering and search.
 * Provide APIs to retrieve a single file.
@@ -52,7 +52,7 @@ classDiagram
     class File {
         +id
         +organization_id
-        +owner_id
+        +user_id
         +file_type
         +file_name
         +content_type
@@ -80,7 +80,7 @@ classDiagram
 | ----------------- | ----------------------------------------------- |
 | `id`              | Unique identifier of the file                   |
 | `organization_id` | Organization associated with the file; nullable |
-| `owner_id`        | User or system that uploaded the file           |
+| `user_id`         | User or system that uploaded the file           |
 | `file_type`       | Controlled type of the file                     |
 | `file_name`       | Original file name                              |
 | `content_type`    | MIME type                                       |
@@ -91,7 +91,7 @@ classDiagram
 
 `organization_id` is nullable because not every file needs to belong to an organization.
 
-`owner_id` identifies the actor that uploaded the file. This can represent either a user or a system/backend process.
+`user_id` identifies the actor that uploaded the file. This can represent either a user or a system/backend process.
 
 ### 1.2 File type
 
@@ -155,7 +155,7 @@ Content-Type: multipart/form-data
 files: <file1>
 files: <file2>
 organization_id: <organization-id>
-owner_id: <owner-id>
+user_id: <user-id>
 file_type: PDF
 tags: verification
 tags: application
@@ -163,7 +163,7 @@ tags: application
 
 `organization_id` is optional and can be null.
 
-`owner_id` identifies the user or system responsible for the upload.
+`user_id` identifies the user or system responsible for the upload.
 
 Each uploaded file results in a separate `File` record and receives a separate `file_id`.
 
@@ -283,7 +283,7 @@ Example response:
 {
   "id": "file-123",
   "organization_id": "org-123",
-  "owner_id": "user-123",
+  "user_id": "user-123",
   "file_type": "PDF",
   "file_name": "address-proof.pdf",
   "content_type": "application/pdf",
@@ -318,7 +318,7 @@ Initial filters:
 
 ```text
 organization_id
-owner_id
+user_id
 file_type
 tags
 ```
@@ -330,7 +330,7 @@ GET /files/?organization_id=<organization-id>
 ```
 
 ```text
-GET /files/?owner_id=<owner-id>
+GET /files/?user_id=<user-id>
 ```
 
 ```text
@@ -477,7 +477,7 @@ apps/files/tests/test_views.py
 
 2. What should be the initial `FileType` ENUM values?
 
-3. How should a system/backend owner be represented in `owner_id`?
+3. How should a system/backend owner be represented in `user_id`?
 
 4. Should tags be global across the system or scoped to an `organization_id`?
 
