@@ -1,16 +1,33 @@
+x-django-env: &django-env
+  DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE}
+  DATABASE_URL: ${DATABASE_URL}
+  REDIS_URL: ${REDIS_URL}
+  CACHE_URL: ${CACHE_URL}
+  DRAMATIQ_BROKER_URL: ${DRAMATIQ_BROKER_URL}
+  S3_API_ENDPOINT: ${S3_API_ENDPOINT}
+  S3_BUCKET: ${S3_BUCKET}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_SECRET_KEY}
+  MESSAGING_EMAIL_BACKEND: ${MESSAGING_EMAIL_BACKEND}
+  MESSAGING_EMAIL_HOST: ${MESSAGING_EMAIL_HOST}
+  MESSAGING_EMAIL_PORT: ${MESSAGING_EMAIL_PORT}
+  MESSAGING_EMAIL_USE_TLS: ${MESSAGING_EMAIL_USE_TLS}
+  MESSAGING_EMAIL_USE_SSL: ${MESSAGING_EMAIL_USE_SSL}
+  MESSAGING_EMAIL_DEFAULT_FROM: ${MESSAGING_EMAIL_DEFAULT_FROM}
+
 services:
   db:
     image: docker.io/postgres:16-alpine
     environment:
-      POSTGRES_DB: dristi
-      POSTGRES_USER: dristi
-      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PUBLISHED_PORT}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dristi -d dristi"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -18,7 +35,7 @@ services:
   redis:
     image: docker.io/redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PUBLISHED_PORT}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -28,15 +45,15 @@ services:
   mailhog:
     image: docker.io/mailhog/mailhog:latest
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "${MAILHOG_SMTP_PORT}:1025"
+      - "${MAILHOG_UI_PORT}:8025"
 
   dramatiq-dashboard:
     image: ghcr.io/thejeshgn/dramatiq-dashboard-docker:latest
     ports:
-      - "8080:8080"
+      - "${DRAMATIQ_DASHBOARD_PORT}:8080"
     environment:
-      REDIS_URL: "redis://redis:6379/2"
+      REDIS_URL: ${DRAMATIQ_REDIS_URL}
     depends_on:
       redis:
         condition: service_healthy
@@ -46,7 +63,7 @@ services:
     image: adminer
     restart: always
     ports:
-      - 9090:8080
+      - "${ADMINER_PUBLISHED_PORT}:8080"
 
   rustfs_perms:
     image: alpine:latest
@@ -63,8 +80,8 @@ services:
         condition: service_completed_successfully
     user: "10001:10001"
     ports:
-      - "9000:9000" # S3-compatible API
-      - "9001:9001" # Web console
+      - "${S3_PUBLISHED_PORT}:9000" # S3-compatible API
+      - "${S3_CONSOLE_PUBLISHED_PORT}:9001" # Web console
     volumes:
       - ./rustfs_volumes/data:/data
       - ./rustfs_volumes/logs:/var/log/rustfs
@@ -72,9 +89,9 @@ services:
       RUSTFS_ADDRESS: ":9000"
       RUSTFS_CONSOLE_ADDRESS: ":9001"
       RUSTFS_CONSOLE_ENABLE: "true"
-      RUSTFS_ACCESS_KEY: admin
-      RUSTFS_SECRET_KEY: this is dummy password
-      RUSTFS_OBS_LOGGER_LEVEL: error
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY}
+      RUSTFS_OBS_LOGGER_LEVEL: ${RUSTFS_OBS_LOGGER_LEVEL}
       RUSTFS_OBS_LOG_DIRECTORY: /var/log/rustfs
 
   web:
@@ -82,29 +99,14 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       args:
-        REQUIREMENTS_FILE: requirements/local.txt
+        REQUIREMENTS_FILE: ${REQUIREMENTS_FILE}
     command: ["dev"]
     user: root
-    env_file:
-      - ../.env
     environment:
-      DJANGO_SETTINGS_MODULE: config.settings.local
-      DATABASE_URL: postgres://dristi:secret@db:5432/dristi
-      REDIS_URL: redis://redis:6379/0
-      CACHE_URL: redis://redis:6379/1
-      DRAMATIQ_BROKER_URL: redis://redis:6379/2
-      S3_API_ENDPOINT: http://rustfs:9000
-      S3_BUCKET: dristi-media
-      S3_ACCESS_KEY: admin
-      S3_SECRET_KEY: admin123
-      MESSAGING_EMAIL_BACKEND: smtp
-      MESSAGING_EMAIL_HOST: mailhog
-      MESSAGING_EMAIL_PORT: 1025
-      MESSAGING_EMAIL_USE_TLS: "False"
-      MESSAGING_EMAIL_USE_SSL: "False"
-      MESSAGING_EMAIL_DEFAULT_FROM: dev@example.com
+      <<: *django-env
+
     ports:
-      - "8000:8000"
+      - "${WEB_PUBLISHED_PORT}:8000"
     volumes:
       - ../src:/app
     depends_on:
@@ -118,27 +120,11 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       args:
-        REQUIREMENTS_FILE: requirements/local.txt
+        REQUIREMENTS_FILE: ${REQUIREMENTS_FILE}
     command: ["worker"]
     user: root
-    env_file:
-      - ../.env
     environment:
-      DJANGO_SETTINGS_MODULE: config.settings.local
-      DATABASE_URL: postgres://dristi:secret@db:5432/dristi
-      REDIS_URL: redis://redis:6379/0
-      CACHE_URL: redis://redis:6379/1
-      DRAMATIQ_BROKER_URL: redis://redis:6379/2
-      S3_API_ENDPOINT: http://rustfs:9000
-      S3_BUCKET: dristi-media
-      S3_ACCESS_KEY: rustfsadmin
-      S3_SECRET_KEY: rustfsadmin
-      MESSAGING_EMAIL_BACKEND: smtp
-      MESSAGING_EMAIL_HOST: mailhog
-      MESSAGING_EMAIL_PORT: 1025
-      MESSAGING_EMAIL_USE_TLS: "False"
-      MESSAGING_EMAIL_USE_SSL: "False"
-      MESSAGING_EMAIL_DEFAULT_FROM: dev@example.com
+      <<: *django-env
     volumes:
       - ../src:/app
     depends_on:
