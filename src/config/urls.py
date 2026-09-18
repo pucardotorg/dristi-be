@@ -14,6 +14,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.api.urls")),
     path("api/v1/", include("apps.locations.urls")),
+    path("api/v1/", include("apps.organizations.urls")),
     path(
         "health/",
         HealthCheckView.as_view(checks=[DatabaseBackend, CacheBackend, RedisHealthCheck]),
