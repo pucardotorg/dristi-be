@@ -12,9 +12,11 @@ The service owns the file metadata and the physical file stored in Object Storag
 
 The service should remain independent of the business context in which a file is used. For example, an application service may use a file as an address proof, while another service may use a file as an invoice.
 
+**This iteration does not expose any REST API.** The module is consumed **in-process** by other Django apps through service-level functions only. REST endpoints, if needed later, will be added as a thin layer on top of these functions.
+
 ## Goals
 
-* Provide a generic API for uploading one or multiple files.
+* Provide service-level functions for uploading one or multiple files.
 * Store file metadata in a `File` model.
 * Store the actual file in Object Storage.
 * Return a unique `file_id` that other services can use to reference the file.
@@ -22,11 +24,12 @@ The service should remain independent of the business context in which a file is
 * Track the user or system that uploaded the file through `user_id`.
 * Support a controlled `file_type` ENUM.
 * Support multiple arbitrary tags for filtering and search.
-* Provide APIs to retrieve a single file.
-* Provide APIs to search and list files.
+* Provide a function to retrieve a single file.
+* Provide a function to search/list files.
 
 ## Non-goals
 
+* REST/HTTP APIs, DRF serializers, viewsets, or URL routing in this iteration.
 * Validating the business meaning or content of a file.
 * OCR or extracting information from files.
 * File conversion or preview generation.
@@ -74,6 +77,8 @@ classDiagram
 
 `FileTag` stores reusable tags that can be associated with multiple files.
 
+Per [`0000`](0000-api-coding-spec.md) #3, both models inherit `apps.core.models.BaseModel` (UUID primary key, `created_at`, `updated_at`, explicit `Meta.ordering`), use `TextChoices` for bounded enums, and declare explicit constraints (for example a unique constraint on the normalized tag name).
+
 ### 1.1 File fields
 
 | Field             | Description                                     |
@@ -95,7 +100,7 @@ classDiagram
 
 ### 1.2 File type
 
-`file_type` should be an ENUM rather than an arbitrary string.
+`file_type` should be a `TextChoices` ENUM rather than an arbitrary string.
 
 Initial values need to be finalized based on the requirements of the consuming modules.
 
@@ -137,44 +142,74 @@ do not result in separate tags.
 
 ---
 
-### 2. File upload
+### 2. Service interface
 
-Location: `apps.files.views`, `apps.files.serializers`
+Location: `apps.files.services`
 
-```text
-POST /files/
-```
-
-The API accepts `multipart/form-data` and supports multiple files in a single request.
-
-Request:
+The module exposes exactly three public functions in this iteration:
 
 ```text
-Content-Type: multipart/form-data
-
-files: <file1>
-files: <file2>
-organization_id: <organization-id>
-user_id: <user-id>
-file_type: PDF
-tags: verification
-tags: application
+upload_file(...)
+get_file(...)
+search_file(...)
 ```
 
-`organization_id` is optional and can be null.
+* Business logic lives in the service module and models — not in views or serializers.
+* The functions are plain Python callables; they take and return plain Python data structures (dicts, model instances, querysets), not DRF `Response` objects.
+* The service must not depend on request/response objects, DRF, or HTTP status codes.
+* Errors are raised as Django/Python exceptions, not translated into HTTP responses.
 
-`user_id` identifies the user or system responsible for the upload.
+---
 
-Each uploaded file results in a separate `File` record and receives a separate `file_id`.
+### 3. Upload files
+
+```text
+upload_file(payload)
+```
+
+The function accepts one or multiple files in a single call. `organization_id` and `user_id` are common to the call; `file_type` and `tags` are per file.
+
+Input:
+
+```json
+{
+  "organization_id": "org-123",
+  "user_id": "user-123",
+  "files": [
+    {
+      "file": "<uploaded-file>",
+      "file_type": "PDF",
+      "tags": ["invoice", "2026"]
+    },
+    {
+      "file": "<uploaded-file>",
+      "file_type": "PHOTO",
+      "tags": ["profile"]
+    }
+  ]
+}
+```
+
+Input rules:
+
+* `organization_id` — optional, may be `null`.
+* `user_id` — required; identifies the user or system responsible for the upload.
+* `files` — required, non-empty list.
+* `files[].file` — required; a Django `UploadedFile` or any file-like object exposing `name`, `size`, `content_type`, and `read()`.
+* `files[].file_type` — required; must be a valid `FileType` value.
+* `files[].tags` — optional list of tag names; normalized as per §1.3.
+
+Each entry in `files` results in a separate `File` record and a separate `file_id`.
 
 For example:
 
 ```text
-POST /files/
-
-files:
-    application.pdf
-    identity.pdf
+upload_file(
+    files = [
+        application.pdf,
+        identity.pdf,
+    ]
+)
 ```
 
 results in:
@@ -187,26 +222,24 @@ File
     identity.pdf   -> file_id = B
 ```
 
-The response contains the generated IDs:
+Output:
 
 ```json
 {
   "files": [
-    {
-      "id": "A"
-    },
-    {
-      "id": "B"
-    }
+    { "id": "A" },
+    { "id": "B" }
   ]
 }
 ```
+
+The returned order must match the input order of `files`, so callers can map results back to the file they submitted.
 
 The `file_id` is the only identifier that consuming services need to persist.
 
 ---
 
-### 3. File storage
+### 4. File storage
 
 The actual file content is stored in Object Storage.
 
@@ -214,35 +247,43 @@ The database stores only the metadata and Object Storage path.
 
 ```mermaid
 sequenceDiagram
-    actor C as Client
-    participant API as File Storage API
+    participant C as Calling service
+    participant F as upload_file()
     participant S as Object Storage
     participant DB as Database
 
-    C->>API: POST /files/ (multipart)
-    API->>API: Validate request
-    API->>S: Store file
-    S-->>API: Storage path
-    API->>DB: Create File
-    DB-->>API: File ID
-    API-->>C: 201 Created, file_id
+    C->>F: upload_file(payload)
+    F->>F: Validate payload
+    F->>S: Store file
+    S-->>F: Storage path
+    F->>DB: Create File + tags
+    DB-->>F: File ID
+    F-->>C: file_id list
 ```
 
-The `storage_path` should contain the Object Storage key/path and should not become part of the public API contract.
+The `storage_path` should contain the Object Storage key/path and should not be returned to callers.
 
 Example:
 
 ```text
-files/<organization_id>/<year>/<month>/<file_id>/<file_name>
+files/<year>/<month>/<file_id>/<file_name>
 ```
 
 The exact path structure can be finalized during implementation.
 
-The Object Storage implementation should be abstracted so that the File Storage service does not depend directly on a specific storage provider.
+Location: `apps.files.storage`
+
+The Object Storage implementation should be abstracted behind a small internal interface so that the File Storage service does not depend directly on a specific storage provider:
+
+```text
+save(path, file)   -> storage_path
+open(storage_path) -> file-like object
+delete(storage_path)
+```
 
 ---
 
-### 4. File ID
+### 5. File ID
 
 The `File.id` generated by this service is the reference used by other services.
 
@@ -267,17 +308,15 @@ This keeps the storage implementation internal to the File Storage module.
 
 ---
 
-### 5. Get file
-
-Location: `apps.files.views`, `apps.files.serializers`
+### 6. Get file
 
 ```text
-GET /files/{file_id}/
+get_file(file_id)
 ```
 
-The API retrieves a single file using its `file_id`.
+Returns the metadata of a single file.
 
-Example response:
+Output:
 
 ```json
 {
@@ -288,31 +327,35 @@ Example response:
   "file_name": "address-proof.pdf",
   "content_type": "application/pdf",
   "file_size": 245678,
-  "tags": [
-    "verification",
-    "address-proof"
-  ],
+  "tags": ["verification", "address-proof"],
   "created_at": "2026-09-16T10:30:00Z"
 }
 ```
 
-The API should also provide a mechanism for the caller to access the actual file.
+`storage_path` is intentionally excluded.
 
-The exact approach is kept as an open design decision:
+If the file does not exist, `get_file` raises `File.DoesNotExist` (or a module-level `FileNotFound` error); it must not return `None` silently.
 
-* Stream the file through the API.
+Content access is provided separately so that metadata reads stay cheap:
+
+```text
+get_file_content(file_id) -> file-like object
+```
+
+The exact approach for content access is kept as an open design decision:
+
+* Return a file-like stream from the storage backend.
 * Return a short-lived signed URL.
-* Provide a separate download endpoint.
 
 ---
 
-### 6. Search/list files
+### 7. Search files
 
 ```text
-GET /files/
+search_file(filters, page=1, page_size=20)
 ```
 
-The API should support listing and searching files using file metadata.
+Supports searching files using file metadata.
 
 Initial filters:
 
@@ -326,33 +369,23 @@ tags
 Examples:
 
 ```text
-GET /files/?organization_id=<organization-id>
+search_file({"organization_id": "org-123"})
+search_file({"user_id": "user-123"})
+search_file({"file_type": "PDF"})
+search_file({"tags": ["verification"]})
 ```
+
+Multiple filters can be combined and are ANDed:
 
 ```text
-GET /files/?user_id=<user-id>
+search_file({
+    "organization_id": "org-123",
+    "file_type": "PDF",
+    "tags": ["verification"],
+})
 ```
 
-```text
-GET /files/?file_type=PDF
-```
-
-```text
-GET /files/?tags=verification
-```
-
-Multiple filters can be combined:
-
-```text
-GET /files/
-    ?organization_id=<organization-id>
-    &file_type=PDF
-    &tags=verification
-```
-
-The response should be paginated.
-
-Example:
+Output:
 
 ```json
 {
@@ -367,53 +400,33 @@ Example:
 }
 ```
 
----
+Results are ordered by `-created_at` (the `BaseModel` default ordering) for stable pagination.
 
-### 7. File access
-
-The File Storage service should not expose the Object Storage path directly to consumers.
-
-The expected flow is:
-
-```mermaid
-sequenceDiagram
-    actor C as Client
-    participant API as File Storage API
-    participant DB as Database
-    participant S as Object Storage
-
-    C->>API: GET /files/{file_id}/
-    API->>DB: Fetch File
-    DB-->>API: File metadata + storage_path
-    API->>S: Resolve file access
-    S-->>API: File access information
-    API-->>C: File metadata + access information
-```
-
-The exact implementation of file access is intentionally left open for this iteration.
+Pagination is applied at the service level using simple page/page-size arguments. When a REST layer is added, it must map onto DRF page-number pagination as required.
 
 ---
 
-## 8. API
+### 8. Validation and error handling
 
-Location: `apps.files.views`, `apps.files.serializers`, `apps.files.urls`
+Validation is performed in the service layer, since there are no serializers in this iteration:
 
-| Method & path           | Purpose                       |
-| ----------------------- | ----------------------------- |
-| `POST /files/`          | Upload one or multiple files. |
-| `GET /files/`           | Search/list files.            |
-| `GET /files/{file_id}/` | Retrieve a single file.       |
+* Missing `user_id`, empty `files`, or missing `file`/`file_type` → `ValidationError`.
+* Unknown `file_type` → `ValidationError`.
+* File exceeding the configured maximum size, or a request exceeding the maximum file count → `ValidationError`.
+* Unknown `file_id` in `get_file` → not-found error.
+
+Use `django.core.exceptions.ValidationError` so that a future DRF layer can translate it into a 400 response consistently.
 
 ---
 
-## 9. Upload failure handling
+### 9. Upload failure handling
 
 A file should not have a database record if its Object Storage upload has failed.
 
 Expected flow:
 
 ```text
-Validate request
+Validate payload
       |
       v
 Upload to Object Storage
@@ -428,75 +441,111 @@ Create tag associations
 Return file_id
 ```
 
-If Object Storage upload fails, the API should return an appropriate error and should not create a `File` record.
+If Object Storage upload fails, `upload_file` raises an error and must not create a `File` record.
 
-If Object Storage succeeds but database creation fails, the implementation should attempt to clean up the uploaded object to avoid orphaned files.
+If Object Storage succeeds but database creation fails, the implementation should attempt to delete the uploaded object to avoid orphaned files.
 
-The exact transaction and cleanup mechanism can be finalized during implementation.
+Database work for a single `upload_file` call should run inside `transaction.atomic()` so that a partially uploaded batch does not leave half-written metadata. Whether a multi-file upload is all-or-nothing or best-effort per file is an open question (§12).
 
 ---
 
-## 10. Pagination
+### 10. Configuration
 
-`GET /files/` should support pagination.
-
-Initial implementation can use page-based pagination:
+New settings read in `config.settings.base`, with values coming from environment variables and documented in `.env.example` / `README.md`:
 
 ```text
-GET /files/?page=1&page_size=20
+FILE_STORAGE_BACKEND
+FILE_STORAGE_BUCKET
+FILE_MAX_SIZE_BYTES
+FILE_MAX_COUNT_PER_UPLOAD
 ```
-
-The pagination approach can be changed to cursor-based pagination later if the expected number of files requires it.
 
 ---
 
-## 11. Affected files
+### 11. Affected files
 
 Initial implementation is expected to add:
 
 ```text
 apps/files/__init__.py
-apps/files/apps.py
+apps/files/apps.py            # name = "apps.files"
 apps/files/models.py
-apps/files/serializers.py
-apps/files/views.py
-apps/files/urls.py
 apps/files/services.py
 apps/files/storage.py
 apps/files/admin.py
+apps/files/migrations/__init__.py
+apps/files/tests/__init__.py
 apps/files/tests/test_models.py
 apps/files/tests/test_services.py
-apps/files/tests/test_views.py
+```
+
+and to update:
+
+```text
+config/settings/base.py       # INSTALLED_APPS += ["apps.files"], storage settings
+.env.example
+README.md
+```
+
+No `serializers.py`, `views.py`, or `urls.py` in this iteration.
+
+* `upload_file` with a single file and with multiple files of different `file_type`.
+* Tag normalization and tag reuse across files.
+* `get_file` success and not-found.
+* `search_file` for each filter, combined filters, and pagination.
+* Validation failures.
+* Storage failure → no `File` record; database failure → uploaded object cleaned up (using a fake/in-memory storage backend).
+
+Quality checks before committing:
+
+```bash
+cd src && DJANGO_SETTINGS_MODULE=config.settings.test pytest
+cd src && ruff check . && ruff format .
+cd src && python manage.py check
 ```
 
 ---
 
 ## 12. Open questions
 
-1. Should `GET /files/{file_id}/` return a short-lived signed URL, stream the file through Django, or should there be a separate download API?
+1. Should content access return a short-lived signed URL or a file-like stream from the storage backend?
 
 2. What should be the initial `FileType` ENUM values?
 
-3. How should a system/backend owner be represented in `user_id`?
+3. How should a system/backend actor be represented in `user_id`?
 
 4. Should tags be global across the system or scoped to an `organization_id`?
 
 5. When searching with multiple tags, should the result match files having **all** tags or **any** of the tags?
 
-6. Should the initial list API use page-based pagination or cursor-based pagination?
+6. Should a multi-file `upload_file` call be all-or-nothing, or should it return per-file success/failure?
 
 7. Which Object Storage provider should be supported initially?
 
 8. Should the Object Storage interface support multiple providers from the beginning, or should we start with the provider used by Dristi?
 
-9. What should be the maximum file size and maximum number of files allowed in a single upload request?
+9. What should be the maximum file size and maximum number of files allowed in a single `upload_file` call?
 
-10. Should the upload API validate file extensions/content types, or should this be handled by a separate validation mechanism?
+10. Should `upload_file` validate file extensions/content types, or should this be handled by the calling module?
+
+11. Should `organization_id` / `user_id` be plain UUID fields or foreign keys to the organizations/users apps?
+
+---
+## 14. Future TODO
+
+* Evaluate signed URL based upload for large files.
+* Add file deletion service and Object Storage cleanup.
+* Add file access/permission model if required.
+* Add virus/malware scanning.
+* Add file versioning if required.
+* Add content-based search if required.
+* Add support for additional Object Storage providers.
 
 ---
 
 ## 13. Out of scope
 
+* REST APIs, serializers, viewsets, routing, and Swagger annotations.
 * Direct client-to-Object-Storage upload using signed URLs.
 * Asynchronous upload/processing.
 * File content validation or authenticity verification.
@@ -509,15 +558,3 @@ apps/files/tests/test_views.py
 * Access-control/permission management.
 * Full-text search inside file contents.
 * Notifications related to file upload.
-
----
-
-## 14. Future TODO
-
-* Evaluate signed URL based upload for large files.
-* Add file deletion API and Object Storage cleanup.
-* Add file access/permission model if required.
-* Add virus/malware scanning.
-* Add file versioning if required.
-* Add content-based search if required.
-* Add support for additional Object Storage providers.
