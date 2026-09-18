@@ -74,7 +74,7 @@ class RequestDocumentSerializer(serializers.ModelSerializer):
         model = RequestDocument
         fields = ["id", "filename", "download_url", "uploaded_by", "uploaded_at"]
 
-    def get_download_url(self, obj):
+    def get_download_url(self, obj) -> str:
         """Return the authorization-checked download path for the document."""
         url = reverse("request-document-download", args=[obj.request_id, obj.pk])
         request = self.context.get("request")

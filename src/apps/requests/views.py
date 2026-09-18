@@ -2,6 +2,8 @@
 
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -21,6 +23,10 @@ from .serializers import (
 )
 
 
+@extend_schema_view(
+    list=extend_schema(tags=["requests"]),
+    retrieve=extend_schema(tags=["requests"]),
+)
 class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """List available request types and their schemas."""
 
@@ -29,6 +35,14 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
     queryset = RequestType.objects.active().prefetch_related("approval_steps")
 
 
+@extend_schema_view(
+    list=extend_schema(tags=["requests"]),
+    retrieve=extend_schema(tags=["requests"], responses=RequestDetailSerializer),
+    create=extend_schema(tags=["requests"], responses=RequestDetailSerializer),
+    approvals=extend_schema(tags=["requests"], responses=RequestApprovalSerializer(many=True)),
+    resubmit=extend_schema(tags=["requests"], request=None, responses=RequestDetailSerializer),
+    cancel=extend_schema(tags=["requests"], request=None, responses=RequestDetailSerializer),
+)
 class RequestViewSet(
     mixins.CreateModelMixin,
     mixins.ListModelMixin,
@@ -46,7 +60,9 @@ class RequestViewSet(
             .prefetch_related("documents", "approvals__approver")
             .all()
         )
-        user = self.request.user
+        user = getattr(self.request, "user", None)
+        if user is None or not user.is_authenticated:
+            return queryset.none()
         if user.is_staff or user.is_superuser:
             return queryset
         return queryset.filter(requester=user)
@@ -106,6 +122,27 @@ class RequestViewSet(
         return instance
 
 
+@extend_schema_view(
+    list=extend_schema(
+        tags=["requests"],
+        parameters=[
+            OpenApiParameter(
+                name="status",
+                type=OpenApiTypes.STR,
+                many=True,
+                enum=[choice.value for choice in RequestApproval.Status],
+                description="Filter by approval status; repeat for multiple values. "
+                "Defaults to pending.",
+            )
+        ],
+    ),
+    retrieve=extend_schema(tags=["requests"], responses=RequestApprovalDetailSerializer),
+    decide=extend_schema(
+        tags=["requests"],
+        request=DecisionSerializer,
+        responses=RequestApprovalDetailSerializer,
+    ),
+)
 class RequestApprovalViewSet(
     mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
 ):
@@ -115,13 +152,14 @@ class RequestApprovalViewSet(
 
     def get_queryset(self):
         """Return approvals assigned to the caller, filtered by status."""
-        queryset = (
-            RequestApproval.objects.select_related(
-                "request", "request__request_type", "request__requester", "approver"
-            )
-            .prefetch_related("request__documents")
-            .filter(approver=self.request.user)
-        )
+        user = getattr(self.request, "user", None)
+        base = RequestApproval.objects.select_related(
+            "request", "request__request_type", "request__requester", "approver"
+        ).prefetch_related("request__documents")
+        if user is None or not user.is_authenticated:
+            return base.none()
+
+        queryset = base.filter(approver=user)
         statuses = self.request.query_params.getlist("status")
         if statuses:
             queryset = queryset.filter(status__in=statuses)
@@ -158,6 +196,11 @@ class RequestDocumentDownloadView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        tags=["requests"],
+        operation_id="requests_documents_download",
+        responses={(200, "application/octet-stream"): OpenApiTypes.BINARY},
+    )
     def get(self, request, request_id, document_id):
         """Stream the document if the caller is allowed to see it."""
         document = get_object_or_404(

@@ -211,8 +211,32 @@ class TestRequestReadAPI:
         response = auth_client(requester).get(reverse("request-approvals", args=[request.pk]))
 
         assert response.status_code == 200
-        assert len(response.json()) == 1
-        assert response.json()[0]["status"] == "pending"
+        body = response.json()
+        assert len(body["data"]) == 1
+        assert body["data"][0]["status"] == "pending"
+
+    def test_responses_include_meta_envelope(
+        self, auth_client, simple_type, requester, approver_one
+    ):
+        request = services.create_request(
+            request_type=simple_type, requester=requester, data={"reason": "x"}
+        )
+
+        for url in (create_url(), detail_url(request.pk)):
+            meta = auth_client(requester).get(url).json()["meta"]
+            assert set(meta) == {"timestamp", "app_version", "spec_version"}
+            assert meta["spec_version"] == "1.0"
+
+    def test_list_is_paginated(self, auth_client, simple_type, requester, approver_one):
+        for index in range(3):
+            services.create_request(
+                request_type=simple_type, requester=requester, data={"reason": str(index)}
+            )
+
+        body = auth_client(requester).get(create_url()).json()
+
+        assert body["count"] == 3
+        assert set(body) >= {"count", "next", "previous", "results", "meta"}
 
     def test_request_types_endpoint(self, auth_client, requester, simple_type):
         response = auth_client(requester).get(reverse("request-type-list"))
