@@ -40,8 +40,6 @@ isolated module.
   encoding, form fields, TLS) inside `addon/cdac_sms_gateway/`.
 - Enforce a one-way source dependency: the addon imports from `apps.messaging`;
   `apps.messaging` never imports the addon.
-- Support per-state/tenant gateway credentials through configuration, with no
-  state-specific branching in code.
 - Reuse 0009's queuing, retry, status, and audit machinery without forking it.
 - Keep each gateway concern independently unit-testable.
 
@@ -189,7 +187,7 @@ without judging success.
 | Enqueue, Redis broker, backoff, retry eligibility | `apps.messaging.tasks` |
 | Channel dispatch / backend lookup | `apps.messaging.senders` |
 | Sender contract and exception vocabulary | `apps.messaging` (public API) |
-| Gateway credential + option resolution per state | addon `config.py` |
+| Gateway credential + option loading | addon `config.py` |
 | Recipient filtering and non-production override | addon `filtering.py` |
 | Service-type mapping, template ID, mobile prefix | addon `backend.py` |
 | Password hash, request signature | addon `hashing.py` |
@@ -412,32 +410,36 @@ from `MESSAGING_*` (owned by 0009). They live in a dedicated block in
 `config/settings/base.py` so the whole integration can be removed by deleting
 that block plus the `INSTALLED_APPS` and `MESSAGING_BACKENDS` entries.
 
-### 6.2 Gateway credentials (per state/tenant)
+### 6.2 Gateway credentials
+
+One deployment serves one state, so the gateway has exactly one set of
+credentials. They are flat settings read from the environment:
 
 ```python
 # config/settings/base.py — CDAC SMS gateway addon
-CDAC_SMS_GATEWAYS = {
-    "default": {
-        "url": env("CDAC_SMS_URL", default=""),
-        "username": env("CDAC_SMS_USERNAME", default=""),
-        "password": env("CDAC_SMS_PASSWORD", default=""),
-        "sender_id": env("CDAC_SMS_SENDER_ID", default=""),
-        "secure_key": env("CDAC_SMS_SECURE_KEY", default=""),
-        "template_id": env("CDAC_SMS_TEMPLATE_ID", default=""),
-        "mobile_prefix": env("CDAC_SMS_MOBILE_PREFIX", default=""),
-    },
-}
+CDAC_SMS_URL = env("CDAC_SMS_URL", default="")
+CDAC_SMS_USERNAME = env("CDAC_SMS_USERNAME", default="")
+CDAC_SMS_PASSWORD = env("CDAC_SMS_PASSWORD", default="")
+CDAC_SMS_SENDER_ID = env("CDAC_SMS_SENDER_ID", default="")
+CDAC_SMS_SECURE_KEY = env("CDAC_SMS_SECURE_KEY", default="")
+CDAC_SMS_TEMPLATE_ID = env("CDAC_SMS_TEMPLATE_ID", default="")
+CDAC_SMS_MOBILE_PREFIX = env("CDAC_SMS_MOBILE_PREFIX", default="")
 ```
 
-| Key | Required | Notes |
+| Setting | Required | Notes |
 | --- | --- | --- |
-| `url` | yes | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
-| `username` | yes | CDAC username |
-| `password` | yes | plaintext in config; hashed before transmission |
-| `sender_id` | yes | registered sender ID |
-| `secure_key` | yes | signature key; never logged |
-| `template_id` | no | fallback DLT template ID |
-| `mobile_prefix` | no | e.g. `91` |
+| `CDAC_SMS_URL` | yes | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
+| `CDAC_SMS_USERNAME` | yes | CDAC username |
+| `CDAC_SMS_PASSWORD` | yes | plaintext in config; hashed before transmission |
+| `CDAC_SMS_SENDER_ID` | yes | registered sender ID |
+| `CDAC_SMS_SECURE_KEY` | yes | signature key; never logged |
+| `CDAC_SMS_TEMPLATE_ID` | no | fallback DLT template ID |
+| `CDAC_SMS_MOBILE_PREFIX` | no | e.g. `91` |
+
+`config.resolve_config()` loads these into a frozen `CDACConfig` dataclass once
+and caches it. State-specific values are supplied by the deployment's
+environment, so the code stays state agnostic: a different state is a different
+`.env`, never a different code path.
 
 ### 6.3 Transport and validation options
 
@@ -471,25 +473,6 @@ by `config/settings/production.py` and should be gated in CI/CD.
 
 Every setting is documented in `.env.example`, `.env.prod.example`, and
 `README.md`, per `AGENTS.md`.
-
-### 6.5 Gateway selection per message
-
-```text
-context["sms_gateway"]  (optional, e.g. "kerala")
-        |
-        +-- present and known ---> CDAC_SMS_GATEWAYS[key]
-        |
-        +-- absent --------------> CDAC_SMS_GATEWAYS["default"]
-        |
-        +-- present, unknown ----> MessagePermanentError(INVALID_CONFIGURATION)
-```
-
-The key travels in the message context, so tenancy stays a caller concern and
-`apps.messaging` needs no tenant awareness. When 0008 (Organization) lands, the
-organization/location record can supply the key without touching the addon.
-
-A single-state deployment configures only `default` and never sets the context
-key.
 
 ---
 
@@ -575,8 +558,8 @@ TRANSIENT: GATEWAY_TIMEOUT, GATEWAY_CONNECTION_ERROR, GATEWAY_UNAVAILABLE,
 ```
 
 Permanent failures are raised only for conditions that retrying cannot fix:
-missing or invalid configuration, unknown gateway key, missing recipient, and
-unsupported category or content type.
+missing or invalid configuration, missing recipient, and unsupported category or
+content type.
 
 ---
 
@@ -652,7 +635,7 @@ One structured line per stage, carrying both identifiers, under the
 
 ```text
 event=GATEWAY_RESPONSE message_id=<MessageLog.id> correlation_id=...
-gateway=cdac gateway_key=default category=OTP content_type=unicode
+gateway=cdac category=OTP content_type=unicode
 attempt=1 status=sent gateway_status=200
 ```
 
@@ -679,9 +662,9 @@ addon's `AppConfig.ready()`, so misconfiguration is caught by
 Checks (error level, only when `CDACSMSBackend` is the configured SMS backend
 and `CDAC_SMS_ENABLED` is true):
 
-- `CDAC_SMS_GATEWAYS` is non-empty and contains `default`
-- every gateway entry has `url`, `username`, `password`, `sender_id`, `secure_key`
-- `url` is an absolute `https://` URL
+- `CDAC_SMS_URL`, `CDAC_SMS_USERNAME`, `CDAC_SMS_PASSWORD`, `CDAC_SMS_SENDER_ID`,
+  and `CDAC_SMS_SECURE_KEY` are all set
+- `CDAC_SMS_URL` is an absolute `https://` URL
 - `CDAC_SMS_DEFAULT_NUMBER` is exactly 10 digits when the override is on
 - every whitelist/blacklist pattern compiles
 - `CDAC_SMS_TIMEOUT` is below the messaging actor time limit
@@ -771,8 +754,8 @@ Modified (wiring and docs):
 - [ ] No module under `apps.messaging` imports `addon.*`.
 - [ ] Deleting the addon directory plus its settings entries leaves messaging working on `DummySMSBackend`.
 - [ ] No new messaging service, actor, broker, or audit table is introduced.
-- [ ] Gateway credentials resolve per state from `CDAC_SMS_GATEWAYS` with a `default`.
-- [ ] No state-specific conditionals exist in code.
+- [ ] Gateway credentials load from flat `CDAC_SMS_*` settings.
+- [ ] No state-specific conditionals exist in code; a different state is a different `.env`.
 - [ ] Form fields, service type, template ID, and mobile prefix are built per §5.
 - [ ] `mobileno` is used for every service type.
 - [ ] Password uses SHA-1 over ISO-8859-1 bytes; `key` uses SHA-512, lowercase hex, no separators, over the final content.
@@ -801,12 +784,11 @@ Modified (wiring and docs):
 | The addon imports the contract; messaging never imports the addon | Dependency inversion: both sides depend on the `SMSSender` abstraction, and the concrete class is resolved from a settings string at first send. Removing the addon cannot break messaging. |
 | No separate provider registry or resolver | 0009's `MESSAGING_BACKENDS` + `get_backend()` already performs provider selection. A second selector would be a second source of truth. |
 | No provider-class / request-type / content-type settings | The backend import path already selects the implementation, and `POST` + urlencoded are fixed properties of the CDAC contract. Settings whose only alternative value is a hard failure are dead configuration. |
-| Nested `CDAC_SMS_GATEWAYS` keyed by state, with `default` | Supports multi-state deployments without code changes; single-state deployments configure only `default`. |
-| Gateway key travels in message context | Keeps tenancy a caller concern so `apps.messaging` stays tenant-agnostic until 0008 lands. |
+| Flat `CDAC_SMS_*` credentials, no per-message gateway selection | One deployment serves one state, so there is never more than one credential set in a process. A nested registry plus a runtime resolver would be unused indirection. State-specific values come from the deployment's environment. |
 | No new SMS audit table | `MessageLog` already records recipient, context, rendered output, attempts, status, and timestamps; five new fields cover the rest. |
 | Retries stay log-driven in 0009, not Dramatiq middleware | 0009 chose per-template retry policy with a persisted audit trail; forking that into the addon would split the retry story across two modules. |
 | Any response-validation failure is transient | Non-success statuses from the gateway are usually load or upstream conditions, which retrying can fix. |
-| Permanent failures are limited to config/request errors | Retrying a bad template, unknown gateway key, or unsupported category can never succeed. |
+| Permanent failures are limited to config/request errors | Retrying a missing credential, a bad template, or an unsupported category can never succeed. |
 | `TRANSACTION` maps like `NOTIFICATION` | The category already exists in `MessageTemplate.Category` and must not be rejected. |
 | Content type is derived, not declared | Avoids a model change and a caller burden; an explicit context override remains available. |
 | Startup validation via system checks | Matches the documented `manage.py check` workflow and fails fast in containers. |
@@ -824,8 +806,8 @@ Modified (wiring and docs):
 
 ## 19. Open questions
 
-1. Should `CDAC_SMS_GATEWAYS` entries eventually be keyed by
-   Organization/Location records (0008) instead of free-form strings?
+1. If a deployment ever has to serve multiple states, does it become a second
+   deployment, or does this addon grow a credential registry at that point?
 2. Do OTP templates need a shorter retry/backoff profile than the global
    `MESSAGING_RETRY_DELAY_BASE`?
 3. Should recipient filtering (kill-switch, whitelist/blacklist, override) be
