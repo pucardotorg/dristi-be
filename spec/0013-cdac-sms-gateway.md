@@ -1,24 +1,19 @@
-# 0013 — CDAC SMS Gateway Addon (`addon_cdac_sms_gateway`)
+# 0013 — CDAC SMS Gateway Addon (`addon.cdac_sms_gateway`)
 
 ## Status
 
 Proposed
 
-> **Reframing note.** An earlier draft of this document described CDAC as a
-> standalone *messaging service* with its own request model, provider registry,
-> Dramatiq actor, retry loop, audit store, and `SMS_*` configuration namespace.
-> That duplicated [0009 — Messaging Module](0009-messaging.md), which is already
-> implemented in `src/apps/messaging/`.
->
-> This document is reframed twice over:
->
-> 1. **CDAC is a *gateway*, not a messaging service** — it owns the CDAC wire
->    protocol and nothing else. Orchestration, templating, queuing, retries, and
->    audit remain owned by 0009.
-> 2. **The gateway ships as a separate top-level module,
->    `addon_cdac_sms_gateway`** — not as a subpackage of `apps.messaging`. The
->    messaging module consumes it purely through the `MESSAGING_BACKENDS`
->    setting in `config/settings/base.py`.
+## References
+
+- [0009 — Messaging Module](0009-messaging.md) — the consuming module (implemented)
+- [0000 — API Coding Spec](0000-api-coding-spec.md) — style constraints
+
+> **Scope note.** CDAC is a *gateway*, not a messaging service: it owns the CDAC
+> wire protocol and nothing else. Orchestration, templating, queuing, retries,
+> and audit remain owned by [0009-messaging.md](0009-messaging.md). The gateway ships inside a shared `addon`
+> package as `addon.cdac_sms_gateway` and is consumed purely through the
+> `MESSAGING_BACKENDS` setting.
 
 ## Context
 
@@ -26,24 +21,24 @@ Dristi already has a channel-agnostic messaging module (0009):
 
 - `MessageTemplate` / `MessageLog` models
 - `MessageTemplateRenderer` → `RenderedMessage`
-- `BaseMessageSender` → `SMSSender` → `ConfiguredBackendSender` with backend
+- `BaseMessageSender` → `SMSSender` → `ConfiguredBackendSender`, with backend
   lookup via `settings.MESSAGING_BACKENDS`
 - `send_message` Dramatiq actor (Redis broker) with log-driven retries
 - A development-only `DummySMSBackend` that POSTs to an HTTP endpoint
 
-0009 explicitly anticipated this shape: *"the concrete delivery implementation
-lives in an external Django app that Dristi configures at runtime."*
-`addon_cdac_sms_gateway` is the first real instance of such an app. It is
-vendored in this repository for convenience, but it is structured so it could be
-extracted into its own distributable package without touching `apps.messaging`.
+What is missing is a SMS gateway. CDAC (`msdgweb.mgov.gov.in`) is the
+gateway used by state e-governance deployments, and its wire contract (SHA-1
+password hash, SHA-512 request signature, service-type mapping, numeric
+HTML-entity Unicode encoding, DLT template IDs) is specific enough to justify an
+isolated module.
 
 ## Goals
 
-- Ship `CDACSMSBackend` in a standalone, removable module that satisfies 0009's
-  SMS sender contract.
+- Ship `CDACSMSBackend` in a standalone, removable module satisfying 0009's SMS
+  sender contract.
 - Keep every CDAC-specific detail (hashing, signature, service types, Unicode
-  encoding, form fields, TLS) inside `addon_cdac_sms_gateway`.
-- Enforce a one-way dependency: the addon imports from `apps.messaging`;
+  encoding, form fields, TLS) inside `addon/cdac_sms_gateway/`.
+- Enforce a one-way source dependency: the addon imports from `apps.messaging`;
   `apps.messaging` never imports the addon.
 - Support per-state/tenant gateway credentials through configuration, with no
   state-specific branching in code.
@@ -55,12 +50,12 @@ extracted into its own distributable package without touching `apps.messaging`.
 - A second messaging service, provider registry, or Dramatiq actor.
 - A new SMS request model or SMS audit table (`MessageLog` is the audit store).
 - Any models or migrations in the addon.
-- Kafka, delivery-status polling, provider failover, or campaign management.
-- Any REST API surface. This iteration adds no endpoints, so
-  [0000 — API Coding Spec](0000-api-coding-spec.md) applies only as a style
-  constraint (no Pydantic, thin logic layers, explicit tests, Ruff, system
-  checks). If an operational status endpoint is added later it must carry the
-  standard `meta` envelope and its own Swagger tag.
+- Delivery-status polling, bounce handling, provider failover, message expiry,
+  or campaign management.
+- Any REST API surface. This iteration adds no endpoints, so 0000 applies only
+  as a style constraint (no Pydantic, thin logic layers, explicit tests, Ruff,
+  system checks). If an operational status endpoint is added later it must carry
+  the standard `meta` envelope and its own Swagger tag.
 
 ---
 
@@ -68,34 +63,38 @@ extracted into its own distributable package without touching `apps.messaging`.
 
 ```text
 src/
-├── apps/                          # Dristi domain apps
+├── apps/
 │   ├── core/
-│   ├── messaging/                 # 0009 — knows nothing about CDAC
+│   ├── messaging/
 │   └── ...
-├── addon_cdac_sms_gateway/        # THIS SPEC — pluggable gateway addon
+├── addon/                         # pluggable integrations (new)
+│   ├── __init__.py
+│   └── cdac_sms_gateway/          # THIS SPEC
 └── config/
     └── settings/base.py           # the only wiring point
 ```
 
-The addon is a top-level package (sibling of `apps/`), not `apps.addon_...`.
-This is a deliberate, documented exception to the `AGENTS.md` rule that apps
-live under `src/apps/<app>/` with the dotted path `apps.<app>`: the addon is not
-a Dristi domain app, it is a swappable integration. `AGENTS.md` should be
-amended with a short "Addon modules" note when this lands.
+`addon` is a plain package (an `__init__.py` with a docstring) and is **not**
+itself a Django app. Each integration underneath it is independently
+installable, and future addons slot in as `addon.<name>`.
 
 Dependency rules:
 
 ```text
-addon_cdac_sms_gateway  ---- imports ---->  apps.messaging (senders.base, services)
-apps.messaging          --- never imports -->  addon_cdac_sms_gateway
-config.settings.base    ---- references --->  "addon_cdac_sms_gateway.backend.CDACSMSBackend"
+addon.cdac_sms_gateway  ---- imports ---->  apps.messaging (senders.sms, services)
+apps.messaging          --- never imports -->  addon.*
+config.settings.base    ---- references --->  "addon.cdac_sms_gateway.backend.CDACSMSBackend"
 ```
 
-`apps.messaging` may only reference the addon as a **string** in
-`MESSAGING_BACKENDS`, resolved lazily by the existing
+The addon imports only the *contract* — the `SMSSender` base class, the
+exception types, and `RenderedMessage` for typing. It never imports messaging
+models, tasks, or services behaviour.
+
+`apps.messaging` references the addon only as a **string** in
+`MESSAGING_BACKENDS`, resolved lazily at first send by the existing
 `ConfiguredBackendSender._get_configured_backend()` (`import_string`). Deleting
-the addon directory and the two settings blocks must leave a working messaging
-module with the dummy SMS backend.
+`src/addon/cdac_sms_gateway/` plus its settings entries must leave a working
+messaging module on `DummySMSBackend`.
 
 Django registration:
 
@@ -106,13 +105,19 @@ INSTALLED_APPS = [
     "apps.messaging",
     "apps.locations",
     # Addons
-    "addon_cdac_sms_gateway",
+    "addon.cdac_sms_gateway",
 ]
 ```
 
-The addon is an installed app only so it can register system checks (§14) and
-expose its own app label in logs. It contributes no models, migrations,
-templates, URLs, admin, or middleware.
+The addon is an installed app only so it can register system checks. Its
+`AppConfig` sets `name = "addon.cdac_sms_gateway"` and an explicit
+`label = "cdac_sms_gateway"`. It contributes no models, migrations, templates,
+URLs, admin, or middleware.
+
+Imports need no path configuration: `src/` is already the import root
+(`manage.py` lives there, the Dockerfile does `COPY src /app` with
+`WORKDIR /app`, and pytest's rootdir is `src/`), exactly as `apps.*` and
+`config.*` resolve today.
 
 ---
 
@@ -142,12 +147,12 @@ enqueue_sms(message_key, recipient, context)      [apps.messaging]
                                                                  |
                                                                  v
                                                         CDACSMSBackend
-                                                     [addon_cdac_sms_gateway]
+                                                     [addon.cdac_sms_gateway]
                                                                  |
                                             +--------------------+--------------------+
                                             |                    |                    |
                                             v                    v                    v
-                                   recipient filtering   request building     response classification
+                                   recipient filtering   request building     response validation
                                                                  |
                                                                  v
                                                            CDACClient
@@ -158,7 +163,7 @@ enqueue_sms(message_key, recipient, context)      [apps.messaging]
                                      password hash        SHA-512 key        Unicode encoding
                                                                  |
                                                                  v
-                                                      HTTP POST (urlencoded, TLS)
+                                                      HTTP POST (urlencoded, TLS 1.2+)
                                                                  |
                                                                  v
                                                            CDAC gateway
@@ -172,6 +177,11 @@ decides retry policy.
 
 ## 3. Responsibility boundary
 
+The gateway splits into a thin backend and a dumb client: the **backend** decides
+*whether* and *which type* of SMS to send; the **client** knows only how to
+build, sign, and post the form request, and returns the raw status code and body
+without judging success.
+
 | Concern | Owner |
 | --- | --- |
 | Template resolution, rendering, context validation | `apps.messaging.services` |
@@ -181,7 +191,7 @@ decides retry policy.
 | Sender contract and exception vocabulary | `apps.messaging` (public API) |
 | Gateway credential + option resolution per state | addon `config.py` |
 | Recipient filtering and non-production override | addon `filtering.py` |
-| CDAC service-type mapping, template ID, mobile prefix | addon `backend.py` |
+| Service-type mapping, template ID, mobile prefix | addon `backend.py` |
 | Password hash, request signature | addon `hashing.py` |
 | Unicode content encoding | addon `unicode_encoding.py` |
 | Form data, TLS, timeout, HTTP POST | addon `client.py` |
@@ -190,71 +200,55 @@ decides retry policy.
 Rule of thumb: **if removing the CDAC integration tomorrow would delete the
 code, it belongs in the addon. Otherwise it belongs in `apps.messaging`.**
 
----
+Identity of a message is owned by 0009:
 
-## 4. Terminology mapping
-
-The earlier draft invented a parallel vocabulary. It maps onto existing
-constructs as follows, and the new terms are dropped:
-
-| Earlier draft | Reframed equivalent |
+| Concept | Where it lives |
 | --- | --- |
-| Messaging Service | `apps.messaging` (0009) — unchanged |
-| SMS Request model | `MessageLog` row + `RenderedMessage` |
-| `requestId` | `MessageLog.id` (UUID) |
-| `correlationId` | new `MessageLog.correlation_id` field |
-| Provider interface | existing `BaseMessageSender` / `SMSSender` |
-| Provider Resolver | existing `get_backend()` + `MESSAGING_BACKENDS` |
-| CDAC Provider + CDAC Client | `CDACSMSBackend` + `CDACClient` (addon) |
-| `send_sms_task` actor | existing `send_message` actor |
-| `category` | `MessageTemplate.category` |
-| `contentType` | derived per message (see §7) |
-| `mobileNumber` | `recipient["phone_number"]` |
-| `message` | `MessageLog.rendered_content` |
-| `templateId` | `MessageTemplate.provider_template_id` (new) |
-| Dedicated SMS audit table | `MessageLog` |
-| `SMS_*` settings | `CDAC_SMS_*` settings (addon-owned namespace) |
+| Request ID | `MessageLog.id` (UUID) |
+| Correlation ID | `MessageLog.correlation_id` (new field) |
+| Recipient | `MessageLog.recipient["phone_number"]` |
+| Message body | `MessageLog.rendered_content` |
+| Category | `MessageTemplate.category` |
+| DLT template ID | `MessageTemplate.provider_template_id` (new field) |
 
 ---
 
-## 5. Addon layout
+## 4. Addon layout and gateway contract
 
 ```text
-src/addon_cdac_sms_gateway/
-├── __init__.py                  # default_app_config-free; exports nothing heavy
-├── apps.py                      # AppConfig(name="addon_cdac_sms_gateway")
-├── backend.py                   # CDACSMSBackend(SMSSender)
-├── client.py                    # CDACClient (HTTP/TLS/timeout)
-├── config.py                    # CDACConfig, resolve_config(), validation
-├── constants.py                 # service types, error codes
-├── checks.py                    # Django system checks
-├── filtering.py                 # whitelist/blacklist/default-number override
-├── hashing.py                   # password hash + request signature
-├── response.py                  # response validation + classification
-├── unicode_encoding.py          # numeric HTML-entity encoding
-└── tests/
+src/addon/
+├── __init__.py
+└── cdac_sms_gateway/
     ├── __init__.py
-    ├── test_config.py
-    ├── test_hashing.py
-    ├── test_unicode.py
-    ├── test_filtering.py
-    ├── test_response.py
-    ├── test_backend.py          # form fields, service type, template, prefix
-    ├── test_checks.py
-    └── test_delivery.py         # stub-broker end-to-end with mocked gateway
+    ├── apps.py                  # AppConfig(name="addon.cdac_sms_gateway")
+    ├── backend.py               # CDACSMSBackend(SMSSender)
+    ├── client.py                # CDACClient (form build, TLS, timeout, POST)
+    ├── config.py                # CDACConfig, resolve_config(), validation
+    ├── constants.py             # service types, error codes, log events
+    ├── checks.py                # Django system checks
+    ├── filtering.py             # whitelist/blacklist/default-number override
+    ├── hashing.py               # password hash + request signature
+    ├── response.py              # response validation + classification
+    ├── unicode_encoding.py      # numeric HTML-entity encoding
+    └── tests/
+        ├── __init__.py
+        ├── test_config.py
+        ├── test_hashing.py
+        ├── test_unicode.py
+        ├── test_filtering.py
+        ├── test_response.py
+        ├── test_backend.py      # form fields, service type, template, prefix
+        ├── test_checks.py
+        └── test_delivery.py     # stub-broker end-to-end with mocked gateway
 ```
 
-Addon tests live with the addon, not in `apps/messaging/tests/`. `pytest` is run
-from `src/`, so they are collected automatically.
-
----
-
-## 6. Gateway contract
+Addon tests live with the addon. `pytest` runs from `src/`, so they are
+collected automatically.
 
 The addon implements the existing sender contract and nothing more:
 
 ```python
-# addon_cdac_sms_gateway/backend.py
+# addon/cdac_sms_gateway/backend.py
 from apps.messaging.senders.sms import SMSSender
 
 
@@ -283,32 +277,142 @@ Activation is configuration only:
 ```python
 MESSAGING_BACKENDS = {
     "email": "apps.messaging.senders.email.SMTPEmailBackend",
-    "sms": "addon_cdac_sms_gateway.backend.CDACSMSBackend",
+    "sms": "addon.cdac_sms_gateway.backend.CDACSMSBackend",   # only change needed
 }
 ```
 
 Recommended per-environment default: `DummySMSBackend` in
-`config.settings.local` and `config.settings.test`, `CDACSMSBackend` in
+`config.settings.local` and `config.settings.test`; `CDACSMSBackend` in
 staging/production.
 
 ---
 
-## 7. Configuration
+## 5. CDAC wire contract
 
-### 7.1 Namespace
+### 5.1 Endpoint
+
+```text
+POST https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT
+Content-Type: application/x-www-form-urlencoded
+```
+
+Only `POST` is supported. The method and content type are fixed properties of
+the contract, owned by `CDACClient`; they are not configurable. The URL is
+configurable per gateway.
+
+### 5.2 Form fields
+
+| CDAC field | Source |
+| --- | --- |
+| `username` | gateway config `username` |
+| `password` | SHA-1 hash of gateway config `password` |
+| `senderid` | gateway config `sender_id` |
+| `content` | rendered body; entity-encoded for Unicode |
+| `smsservicetype` | category + content type mapping |
+| `mobileno` | `mobile_prefix` + `recipient["phone_number"]` |
+| `key` | SHA-512 signature |
+| `templateid` | `MessageTemplate.provider_template_id`, else config `template_id` |
+
+### 5.3 Dispatch mapping
+
+| `MessageTemplate.category` | Content type | `smsservicetype` | Mobile field |
+| --- | --- | --- | --- |
+| `OTP` | text or unicode | `otpmsg` | `mobileno` |
+| `NOTIFICATION` | text | `singlemsg` | `mobileno` |
+| `NOTIFICATION` | unicode | `unicodemsg` | `mobileno` |
+| `TRANSACTION` | text | `singlemsg` | `mobileno` |
+| `TRANSACTION` | unicode | `unicodemsg` | `mobileno` |
+| anything else | any | `MessagePermanentError(UNSUPPORTED_CATEGORY)` | — |
+
+Notes:
+
+- **`mobileno` is used for every service type**, including the Unicode paths.
+  The gateway also exposes a bulk mobile field; it is never used here.
+- OTP uses `otpmsg` regardless of content type.
+
+### 5.4 Hashing and signature
+
+```text
+password --> ISO-8859-1 bytes --> SHA-1 --> lowercase hex --> form field "password"
+
+username.strip() + sender_id.strip() + content.strip() + secure_key.strip()
+        --> UTF-8 bytes --> SHA-512 --> lowercase hex --> form field "key"
+```
+
+- No separators between signature components.
+- The `content` used for the signature is the **final** content, i.e. after
+  Unicode entity encoding.
+- The plaintext password is never transmitted.
+- Functions are named for the algorithm they implement:
+  `generate_password_hash()` and `generate_signature()`.
+
+### 5.5 Unicode encoding
+
+When content type is unicode, every code point becomes a numeric HTML entity,
+because the CDAC unicode endpoint expects HTML numeric entities rather than raw
+UTF-8:
+
+```text
+"नमस्ते" -> "&#2344;&#2350;&#2360;&#2381;&#2340;&#2375;"
+```
+
+ASCII characters are encoded the same way when Unicode mode is active, so the
+function stays pure and independently unit-testable.
+
+### 5.6 Content type determination
+
+The addon derives Unicode mode from the rendered body (any code point > 127)
+rather than requiring callers to declare it. An explicit override may be passed
+via `context["sms_content_type"] = "unicode" | "text"`. This avoids a model
+change and keeps `RenderedMessage.content_type` (a MIME type used by email)
+unambiguous.
+
+### 5.7 Template ID resolution
+
+```text
+MessageTemplate.provider_template_id   (new field, blank allowed)
+        |
+        +-- non-empty ---> use it
+        |
+        +-- empty -------> gateway config template_id
+                                |
+                                +-- empty ---> send without templateid
+```
+
+### 5.8 Mobile number
+
+```text
+prefix "91" + "9876543210" -> "919876543210"
+```
+
+`apps.messaging` keeps storing the caller-supplied number in
+`MessageLog.recipient`; the prefix is applied only when building the CDAC
+request. Filtering (§7) matches against the number **before** the prefix is
+applied.
+
+### 5.9 TLS and timeouts
+
+- The client requires **TLS 1.2 or higher**.
+- `CDAC_SMS_VERIFY_SSL=True` (default) enforces strict certificate verification.
+- `CDAC_SMS_VERIFY_SSL=False` is for local/test only, must also suppress
+  `InsecureRequestWarning` noise, and is rejected in production.
+- `CDAC_SMS_TIMEOUT` (default `30`) is the connect/read timeout.
+- The messaging actor's `time_limit` is set explicitly and must be **greater
+  than** `CDAC_SMS_TIMEOUT`, so a network hang surfaces as a clean transient
+  failure rather than a worker kill.
+
+---
+
+## 6. Configuration
+
+### 6.1 Namespace
 
 Addon-owned settings use the `CDAC_SMS_` prefix, keeping them visibly distinct
-from `MESSAGING_*` (owned by 0009). They are declared in
-`config/settings/base.py` in a dedicated block so the whole integration can be
-removed by deleting that block plus the `INSTALLED_APPS` and
-`MESSAGING_BACKENDS` entries.
+from `MESSAGING_*` (owned by 0009). They live in a dedicated block in
+`config/settings/base.py` so the whole integration can be removed by deleting
+that block plus the `INSTALLED_APPS` and `MESSAGING_BACKENDS` entries.
 
-`SMS_PROVIDER_CLASS`, `SMS_PROVIDER_REQUEST_TYPE`, and
-`SMS_PROVIDER_CONTENT_TYPE` from the earlier draft are removed: the backend
-import path already selects the implementation, and the HTTP method and content
-type are fixed properties of the CDAC contract owned by `CDACClient`.
-
-### 7.2 Gateway credentials (per state/tenant)
+### 6.2 Gateway credentials (per state/tenant)
 
 ```python
 # config/settings/base.py — CDAC SMS gateway addon
@@ -327,46 +431,48 @@ CDAC_SMS_GATEWAYS = {
 
 | Key | Required | Notes |
 | --- | --- | --- |
-| `url` | yes | e.g. `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
-| `username` | yes | — |
+| `url` | yes | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
+| `username` | yes | CDAC username |
 | `password` | yes | plaintext in config; hashed before transmission |
-| `sender_id` | yes | — |
-| `secure_key` | yes | never logged |
+| `sender_id` | yes | registered sender ID |
+| `secure_key` | yes | signature key; never logged |
 | `template_id` | no | fallback DLT template ID |
 | `mobile_prefix` | no | e.g. `91` |
 
-Additional states are extra keys in the same dict, supplied by the deployment.
-No code change is required, and no `if state == ...` branching is permitted.
+### 6.3 Transport and validation options
 
-### 7.3 Transport and validation options
+| Setting | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `CDAC_SMS_ENABLED` | bool | `True` | master kill-switch |
+| `CDAC_SMS_TIMEOUT` | int (s) | `30` | connect/read timeout |
+| `CDAC_SMS_VERIFY_SSL` | bool | `True` | certificate verification |
+| `CDAC_SMS_SUCCESS_CODES` | list[int] | `[200, 201, 202]` | allowed HTTP statuses |
+| `CDAC_SMS_ERROR_CODES` | list[int] | `[]` | disallowed HTTP statuses |
+| `CDAC_SMS_VERIFY_RESPONSE` | bool | `False` | enable body-substring check |
+| `CDAC_SMS_VERIFY_RESPONSE_CONTAINS` | str | `""` | literal expected in body |
+| `CDAC_SMS_PRINT_RESPONSE` | bool | `True` | log gateway status and body (redacted) |
 
-| Setting | Type | Default |
-| --- | --- | --- |
-| `CDAC_SMS_ENABLED` | bool | `True` |
-| `CDAC_SMS_TIMEOUT` | int (s) | `30` |
-| `CDAC_SMS_VERIFY_SSL` | bool | `True` |
-| `CDAC_SMS_SUCCESS_CODES` | list[int] | `[200, 201, 202]` |
-| `CDAC_SMS_ERROR_CODES` | list[int] | `[]` |
-| `CDAC_SMS_VERIFY_RESPONSE` | bool | `False` |
-| `CDAC_SMS_VERIFY_RESPONSE_CONTAINS` | str | `""` |
-| `CDAC_SMS_PRINT_RESPONSE` | bool | `False` |
+`CDAC_SMS_ENABLED=False` makes the backend raise `RecipientFilteredError`
+(logged as `FILTERED`, reason `disabled`) without contacting the gateway, so
+nothing is retried and the outcome stays auditable.
 
-### 7.4 Recipient policy
+### 6.4 Recipient policy
 
-| Setting | Type | Default |
-| --- | --- | --- |
-| `CDAC_SMS_WHITELIST_NUMBERS` | list[str] | `[]` (empty = allow all) |
-| `CDAC_SMS_BLACKLIST_NUMBERS` | list[str] | `[]` |
-| `CDAC_SMS_USE_DEFAULT_NUMBER` | bool | `False` |
-| `CDAC_SMS_DEFAULT_NUMBER` | str | `""` (exactly 10 digits when used) |
+| Setting | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `CDAC_SMS_WHITELIST_NUMBERS` | list[str] | `[]` | empty means allow all |
+| `CDAC_SMS_BLACKLIST_NUMBERS` | list[str] | `[]` | patterns to suppress |
+| `CDAC_SMS_USE_DEFAULT_NUMBER` | bool | `False` | replaces **all** recipients |
+| `CDAC_SMS_DEFAULT_NUMBER` | str | `""` | exactly 10 digits when enabled |
 
+The default-number override exists for non-production testing only.
 `CDAC_SMS_USE_DEFAULT_NUMBER=True` and `CDAC_SMS_VERIFY_SSL=False` are rejected
-by `config/settings/production.py`.
+by `config/settings/production.py` and should be gated in CI/CD.
 
 Every setting is documented in `.env.example`, `.env.prod.example`, and
 `README.md`, per `AGENTS.md`.
 
-### 7.5 Gateway selection per message
+### 6.5 Gateway selection per message
 
 ```text
 context["sms_gateway"]  (optional, e.g. "kerala")
@@ -382,102 +488,18 @@ The key travels in the message context, so tenancy stays a caller concern and
 `apps.messaging` needs no tenant awareness. When 0008 (Organization) lands, the
 organization/location record can supply the key without touching the addon.
 
----
-
-## 8. Request construction
-
-| CDAC form field | Source |
-| --- | --- |
-| `username` | gateway config |
-| `password` | SHA-1 of configured password (§9) |
-| `senderid` | gateway config |
-| `content` | rendered body, Unicode-encoded when applicable (§10) |
-| `smsservicetype` | category + content type mapping (below) |
-| `mobileno` | `mobile_prefix` + `recipient["phone_number"]` |
-| `key` | SHA-512 request signature (§9) |
-| `templateid` | `MessageTemplate.provider_template_id` or config fallback |
-
-Fixed by `CDACClient`: `POST`,
-`Content-Type: application/x-www-form-urlencoded`.
-
-### Service type mapping
-
-| `MessageTemplate.category` | Content type | `smsservicetype` |
-| --- | --- | --- |
-| `OTP` | any | `otpmsg` |
-| `NOTIFICATION` | text | `singlemsg` |
-| `NOTIFICATION` | unicode | `unicodemsg` |
-| `TRANSACTION` | text | `singlemsg` |
-| `TRANSACTION` | unicode | `unicodemsg` |
-| anything else | any | `MessagePermanentError(UNSUPPORTED_CATEGORY)` |
-
-`TRANSACTION` is included because it already exists in
-`MessageTemplate.Category`; the earlier draft omitted it.
-
-### Content type determination
-
-The addon derives Unicode mode from the rendered body (any code point > 127)
-rather than requiring callers to declare it. An explicit override may be passed
-via `context["sms_content_type"] = "unicode" | "text"`. This avoids a model
-change and keeps `RenderedMessage.content_type` (a MIME type used by email)
-unambiguous.
-
-### Template ID resolution
-
-```text
-MessageTemplate.provider_template_id   (new field, blank allowed)
-        |
-        +-- non-empty ---> use it
-        |
-        +-- empty -------> gateway config template_id
-                                |
-                                +-- empty ---> send without templateid
-```
-
-### Mobile number
-
-```text
-prefix "91" + "9876543210" -> "919876543210"
-```
-
-`apps.messaging` keeps storing the caller-supplied number in
-`MessageLog.recipient`; the prefix is applied only when building the CDAC
-request.
+A single-state deployment configures only `default` and never sets the context
+key.
 
 ---
 
-## 9. Hashing and signature
+## 7. Recipient filtering
 
 ```text
-password --> ISO-8859-1 bytes --> SHA-1 --> lowercase hex --> form field "password"
-
-username.strip() + sender_id.strip() + content.strip() + secure_key.strip()
-        --> UTF-8 bytes --> SHA-512 --> lowercase hex --> form field "key"
-```
-
-No separators between signature components. Function names must describe the
-real algorithm (`generate_password_hash`, `generate_signature`) — not a wrong
-algorithm name inherited from the reference implementation.
-
----
-
-## 10. Unicode encoding
-
-Each code point becomes a numeric HTML entity:
-
-```text
-"नमस्ते" -> "&#2344;&#2350;&#2360;&#2381;&#2340;&#2375;"
-```
-
-ASCII characters are encoded the same way when Unicode mode is active, so the
-function stays pure and independently unit-testable.
-
----
-
-## 11. Recipient filtering
-
-```text
-resolved recipient
+resolved recipient (recipient["phone_number"])
+      |
+      v
+CDAC_SMS_ENABLED == False ?  --> RecipientFilteredError(reason=disabled)
       |
       v
 default-number override (non-production only)
@@ -488,10 +510,29 @@ whitelist  (empty = allow all)
       v
 blacklist
       |
-      +-- rejected --> RecipientFilteredError
+      +-- rejected --> RecipientFilteredError(reason=whitelist|blacklist)
       |
       v
-CDAC request
+mobile prefix applied --> CDAC request
+```
+
+### Pattern matching
+
+Whitelist and blacklist entries are **patterns, not exact numbers**, supplied as
+comma-separated values:
+
+- `X` matches any single digit
+- `*` matches any remaining sequence of digits
+- every other character matches literally
+
+Patterns are compiled to anchored regular expressions and matched with
+`fullmatch` against the number **after** any default-number override and
+**before** the mobile prefix is applied:
+
+```text
+98765XXXXX  matches 9876512345, not 9123456789
+9876*       matches 9876512345 and 98761
+9876512345  exact match only
 ```
 
 Filtering lives in the addon because the policy settings are addon-owned and
@@ -500,24 +541,31 @@ gateway-specific. A filtered recipient is **not** a gateway failure:
 
 ---
 
-## 12. Response handling and failure classification
+## 8. Response handling and failure classification
 
 `CDACClient.post()` returns `(status_code, body)` and makes no business
-decision. `response.classify(status_code, body)` returns one of `SUCCESS`,
-`PERMANENT`, `TRANSIENT`:
+decision. `response.classify(status_code, body)` applies this order:
 
-- status in `CDAC_SMS_ERROR_CODES` → `PERMANENT`
-- status not in `CDAC_SMS_SUCCESS_CODES` → `TRANSIENT`
-- `CDAC_SMS_VERIFY_RESPONSE` enabled and body lacks
-  `CDAC_SMS_VERIFY_RESPONSE_CONTAINS` → `TRANSIENT`
-  (`RESPONSE_VALIDATION_FAILED`)
-- otherwise `SUCCESS`; the CDAC message ID is parsed from bodies shaped like
-  `402,MsgID = <id>msdgsms` and returned as `provider_message_id`
+1. If `CDAC_SMS_PRINT_RESPONSE`, log the status code and body, redacting any
+   `password` and `key` values if the body echoes the request.
+2. If `CDAC_SMS_VERIFY_RESPONSE`, the body must contain the literal
+   `CDAC_SMS_VERIFY_RESPONSE_CONTAINS`; otherwise `RESPONSE_VALIDATION_FAILED`.
+3. If `CDAC_SMS_SUCCESS_CODES` is non-empty, the status must be in the list.
+4. If `CDAC_SMS_ERROR_CODES` is non-empty, the status must not be in the list.
+5. **Any validation failure is transient** and triggers a retry. The gateway can
+   return a non-success status for load or upstream reasons, so no HTTP status
+   alone is treated as permanent.
 
-Transport errors map to `TRANSIENT`: `GATEWAY_TIMEOUT`,
+On success the CDAC message ID is parsed from bodies shaped like
+`402,MsgID = <id>msdgsms` and returned as `provider_message_id`. A body that
+passes validation but yields no parsable ID is still a success with
+`provider_message_id = None`. In production `CDAC_SMS_VERIFY_RESPONSE_CONTAINS`
+is typically set to `MsgID` or `402`.
+
+Transport errors map to transient: `GATEWAY_TIMEOUT`,
 `GATEWAY_CONNECTION_ERROR`, `GATEWAY_UNAVAILABLE`.
 
-Error codes raised by the addon (defined in `constants.py`):
+Error codes (defined in `constants.py`):
 
 ```text
 PERMANENT: INVALID_REQUEST, INVALID_RECIPIENT, INVALID_CONFIGURATION,
@@ -526,13 +574,17 @@ TRANSIENT: GATEWAY_TIMEOUT, GATEWAY_CONNECTION_ERROR, GATEWAY_UNAVAILABLE,
            GATEWAY_ERROR, RESPONSE_VALIDATION_FAILED
 ```
 
+Permanent failures are raised only for conditions that retrying cannot fix:
+missing or invalid configuration, unknown gateway key, missing recipient, and
+unsupported category or content type.
+
 ---
 
-## 13. Retry (owned by `apps.messaging`)
+## 9. Retry (owned by `apps.messaging`)
 
-The addon does **not** implement retries, backoff, or Dramatiq retry
-middleware. 0009 deliberately keeps `send_message` at `max_retries=0` and drives
-retries from persisted `MessageLog` state for auditability; that design stands.
+The addon implements no retries, backoff, or Dramatiq retry middleware. 0009
+deliberately keeps `send_message` at `max_retries=0` and drives retries from
+persisted `MessageLog` state for auditability; that design stands.
 
 `apps.messaging` needs only exception-aware classification:
 
@@ -553,24 +605,21 @@ Retry count stays per-template (`MessageTemplate.max_retries`); backoff stays
 `MESSAGING_RETRY_DELAY_BASE` / `MESSAGING_RETRY_DELAY_MAX` (exponential,
 capped). Recommended template defaults: OTP `max_retries=1`, notifications `2`.
 
-The actor's `time_limit` is set explicitly and must exceed `CDAC_SMS_TIMEOUT` so
-an HTTP timeout surfaces as a clean transient failure rather than a worker kill.
-
 ---
 
-## 14. Changes required in `apps.messaging` (0009 amendments)
+## 10. Changes required in `apps.messaging` (0009 amendments)
 
-These live in the messaging module because they are gateway-agnostic. Any future
+These live in the messaging module because they are gateway-agnostic; any future
 addon benefits from them.
 
-`services.py` — extend the public exception/error vocabulary:
+`services.py` — extend the public exception vocabulary:
 - `MessagePermanentError(MessageSendError)` — never retried
 - `RecipientFilteredError(Exception)` — suppressed by policy, not a failure
 
 `tasks.py`
 - classify the three outcomes above in `_record_failure()`
 - accept and propagate `correlation_id` through `enqueue_sms()`
-- set an explicit actor `time_limit`
+- set an explicit actor `time_limit` greater than `CDAC_SMS_TIMEOUT`
 
 `models.py` + one migration
 - `MessageTemplate.provider_template_id = CharField(max_length=255, blank=True)`
@@ -584,15 +633,48 @@ addon benefits from them.
 
 `MessageLog.id` is the request ID; `correlation_id` defaults to the log ID when
 the caller supplies none. No separate SMS audit table is introduced, and the
-addon itself contributes no models or migrations.
+addon contributes no models or migrations.
 
 ---
 
-## 15. Startup validation
+## 11. Logging
+
+One structured line per stage, carrying both identifiers, under the
+`addon.cdac_sms_gateway` logger:
+
+| Event | Emitted by |
+| --- | --- |
+| `ENQUEUED` | `apps.messaging.tasks.enqueue_sms` |
+| `FILTERED` (with reason) | addon `filtering.py` |
+| `GATEWAY_REQUEST` | addon `client.py` |
+| `GATEWAY_RESPONSE` | addon `response.py` |
+| `SENT` / `FAILED` / `RETRYING` | `apps.messaging.tasks` |
+
+```text
+event=GATEWAY_RESPONSE message_id=<MessageLog.id> correlation_id=...
+gateway=cdac gateway_key=default category=OTP content_type=unicode
+attempt=1 status=sent gateway_status=200
+```
+
+`GATEWAY_REQUEST` logs the URL, service type, whether a mobile prefix was
+applied, and a **masked** body (recipient partially masked; `password` and `key`
+omitted entirely).
+
+Never logged, in any mode: plaintext password, SHA-1 password hash, secure key,
+SHA-512 signature, or an unmasked form body. `CDAC_SMS_PRINT_RESPONSE`
+(default on) logs the gateway status code and body with those values redacted.
+
+Monitoring uses these logs plus `MessageLog` aggregates (counts by `status`,
+`failure_code`, `attempt_count`; latency from `created_at` → `sent_at`). No
+dedicated metrics backend in this iteration.
+
+---
+
+## 12. Startup validation
 
 Validation runs through the Django system check framework, registered in the
-addon's `AppConfig.ready()`, so failures appear in `python manage.py check` and
-at container startup rather than on first send.
+addon's `AppConfig.ready()`, so misconfiguration is caught by
+`python manage.py check` and at container startup rather than on first send.
 
 Checks (error level, only when `CDACSMSBackend` is the configured SMS backend
 and `CDAC_SMS_ENABLED` is true):
@@ -601,55 +683,38 @@ and `CDAC_SMS_ENABLED` is true):
 - every gateway entry has `url`, `username`, `password`, `sender_id`, `secure_key`
 - `url` is an absolute `https://` URL
 - `CDAC_SMS_DEFAULT_NUMBER` is exactly 10 digits when the override is on
+- every whitelist/blacklist pattern compiles
 - `CDAC_SMS_TIMEOUT` is below the messaging actor time limit
+- `CDAC_SMS_VERIFY_RESPONSE` is on but `CDAC_SMS_VERIFY_RESPONSE_CONTAINS` is empty
 - warning when the default-number override is enabled
+- warning when SSL verification is disabled
 - error in production when the override is enabled or SSL verification is off
 
 Checks are silent when the addon is installed but not the active SMS backend, so
-local/test environments using `DummySMSBackend` do not need CDAC credentials.
+local/test environments using `DummySMSBackend` need no CDAC credentials.
 
 ---
 
-## 16. Logging and observability
-
-One structured log line per attempt, emitted by the addon under the
-`addon_cdac_sms_gateway` logger:
-
-```text
-message_id=<MessageLog.id> correlation_id=... gateway=cdac gateway_key=default
-category=OTP content_type=unicode attempt=1 status=sent gateway_status=200
-```
-
-Never logged, in any mode: plaintext password, password hash, secure key,
-request signature, full form data. `CDAC_SMS_PRINT_RESPONSE` may log the status
-code and body with credentials redacted; it defaults to off.
-
-Monitoring uses these logs plus `MessageLog` aggregates (counts by `status`,
-`failure_code`, `attempt_count`; latency from `created_at` → `sent_at`). No
-Kafka health topic and no bespoke metrics backend in this iteration.
-
----
-
-## 17. Security
+## 13. Security
 
 - Credentials come from environment/secret injection only; never committed.
 - Credentials, hashes, and signatures are never logged or persisted.
 - `CDACConfig.__repr__` redacts `password` and `secure_key`.
 - TLS ≥ 1.2 with certificate verification on by default; disabling verification
   is rejected in production.
-- Default-number override is rejected in production.
+- The default-number override is rejected in production.
 
 ---
 
-## 18. Testing
+## 14. Testing
 
 **Unit (no network; DB only where a template/log is needed)**
-- hashing: SHA-1 password hash, ISO-8859-1 encoding, SHA-512 signature, trimming, no separators
+- hashing: SHA-1 password hash, ISO-8859-1 encoding, SHA-512 signature, trimming, no separators, signature over the final encoded content
 - unicode: single/multiple/mixed characters, ASCII in Unicode mode, empty string
 - config: default resolution, named gateway, unknown key, missing required keys, redacted repr
-- filtering: empty whitelist, whitelist hit/miss, blacklist hit, override on/off, invalid default number
-- backend: exact form fields, service type per category/content type, template ID precedence and fallback, mobile prefix, unsupported category
-- response: success codes, configured error codes, substring validation pass/fail, message-ID parsing, malformed body
+- filtering: kill-switch, empty whitelist, `X`/`*`/literal patterns on both lists, override on/off, invalid default number, matching happens pre-prefix
+- backend: exact form fields, service type per category/content type, `mobileno` used for every service type, template ID precedence and fallback, mobile prefix, unsupported category
+- response: validation order, success codes, error codes classified transient, substring validation pass/fail, `MsgID` parsing, success without a parsable ID, malformed body
 - checks: each failure mode; silent when the addon is not the active backend
 
 **Integration (stub broker + mocked CDAC endpoint)**
@@ -660,9 +725,12 @@ Kafka health topic and no bespoke metrics backend in this iteration.
 - `id` / `correlation_id` preserved across attempts
 - actor time limit > `CDAC_SMS_TIMEOUT`
 
+**Mock gateway assertions:** HTTP method, content type, `username`, `password`
+hash, `senderid`, `content`, `smsservicetype`, `mobileno`, `templateid`, `key`
+signature, and Unicode entity encoding.
+
 **Isolation test**
-- with `MESSAGING_BACKENDS["sms"] = DummySMSBackend`, no module under
-  `apps.messaging` imports `addon_cdac_sms_gateway`.
+- no module under `apps.messaging` imports `addon.*`
 
 **Checks**
 
@@ -674,13 +742,14 @@ cd src && python manage.py check
 
 ---
 
-## 19. Affected files
+## 15. Affected files
 
 New (addon):
-- `src/addon_cdac_sms_gateway/{__init__,apps,backend,client,config,constants,checks,filtering,hashing,response,unicode_encoding}.py`
-- `src/addon_cdac_sms_gateway/tests/*`
+- `src/addon/__init__.py`
+- `src/addon/cdac_sms_gateway/{__init__,apps,backend,client,config,constants,checks,filtering,hashing,response,unicode_encoding}.py`
+- `src/addon/cdac_sms_gateway/tests/*`
 
-Modified (messaging, per §14):
+Modified (messaging, per §10):
 - `src/apps/messaging/services.py`
 - `src/apps/messaging/tasks.py`
 - `src/apps/messaging/models.py` + new migration
@@ -695,76 +764,84 @@ Modified (wiring and docs):
 
 ---
 
-## 20. Acceptance criteria
+## 16. Acceptance criteria
 
-- [ ] CDAC ships as `src/addon_cdac_sms_gateway/`, a standalone installed app with no models or migrations.
+- [ ] CDAC ships as `src/addon/cdac_sms_gateway/` under a shared `addon` package, with no models or migrations.
 - [ ] CDAC is selected purely by `MESSAGING_BACKENDS["sms"]`; no caller changes.
-- [ ] No module under `apps.messaging` imports the addon.
+- [ ] No module under `apps.messaging` imports `addon.*`.
 - [ ] Deleting the addon directory plus its settings entries leaves messaging working on `DummySMSBackend`.
 - [ ] No new messaging service, actor, broker, or audit table is introduced.
 - [ ] Gateway credentials resolve per state from `CDAC_SMS_GATEWAYS` with a `default`.
 - [ ] No state-specific conditionals exist in code.
-- [ ] Form fields, service type, template ID, and mobile prefix are correct.
-- [ ] Password uses SHA-1 over ISO-8859-1 bytes; `key` uses SHA-512, lowercase hex, no separators.
+- [ ] Form fields, service type, template ID, and mobile prefix are built per §5.
+- [ ] `mobileno` is used for every service type.
+- [ ] Password uses SHA-1 over ISO-8859-1 bytes; `key` uses SHA-512, lowercase hex, no separators, over the final content.
 - [ ] Unicode bodies are converted to numeric HTML entities.
-- [ ] Unsupported categories fail permanently.
-- [ ] Whitelist, blacklist, and non-production override behave per §11.
-- [ ] TLS verification on by default; override blocked in production.
-- [ ] HTTP timeout configurable and below the actor time limit.
+- [ ] Unsupported categories fail permanently; `TRANSACTION` is supported.
+- [ ] Whitelist/blacklist support `X` and `*` patterns and match before the prefix is applied.
+- [ ] `CDAC_SMS_ENABLED=False` filters without contacting the gateway.
+- [ ] Non-production recipient override works and is blocked in production.
+- [ ] TLS 1.2+ enforced; verification on by default; override blocked in production.
+- [ ] HTTP timeout is configurable and below the actor time limit.
+- [ ] Response validation follows the §8 order; every validation failure is transient.
+- [ ] CDAC message ID is parsed from `402,MsgID = ...` into `provider_message_id`.
 - [ ] Transient failures retry via `MessageLog`; permanent failures and filtered recipients do not.
-- [ ] Response validation is configurable; CDAC message ID stored as `provider_message_id`.
-- [ ] `MessageLog.id` and `correlation_id` appear in every attempt's logs.
-- [ ] Credentials, hashes, and signatures never appear in logs.
+- [ ] `ENQUEUED` / `FILTERED` / `GATEWAY_REQUEST` / `GATEWAY_RESPONSE` / `SENT` / `FAILED` / `RETRYING` events are logged with `message_id` and `correlation_id`.
+- [ ] Credentials, hashes, signatures, and unmasked bodies never appear in logs.
 - [ ] `manage.py check` fails on invalid gateway configuration and is silent when the addon is inactive.
 - [ ] Unit, integration, and isolation tests pass; Ruff clean.
 
 ---
 
-## 21. Resolved decisions
+## 17. Design decisions
 
-The earlier draft's open questions are resolved by the gateway-addon framing:
-
-| Question | Decision |
+| Decision | Rationale |
 | --- | --- |
-| Where does CDAC live? | Standalone top-level module `addon_cdac_sms_gateway`, wired only through settings. |
-| State identification | Optional `context["sms_gateway"]` key → `CDAC_SMS_GATEWAYS`, `default` fallback. Organization-driven once 0008 lands. |
-| Configuration storage | Django settings from env/secret injection. No DB-stored credentials. |
-| Multiple states per deployment | Supported by config shape; resolved per message. |
-| Provider abstraction | Already exists (`BaseMessageSender`). No new abstraction. |
-| Persistent audit | `MessageLog` plus new fields. No dedicated table. |
-| Retry strategy | 0009's log-driven exponential backoff; per-template `max_retries`. |
-| Expiry handling | Out of scope. |
-| Backup provider / failover | Out of scope. |
-| Template strategy | Per-template `provider_template_id`, gateway config fallback. |
-| Environment defaults | `DummySMSBackend` in local/test; CDAC in staging/production. |
+| CDAC lives in `addon.cdac_sms_gateway`, not `apps.messaging` | It is a swappable integration, not a domain app. The shared `addon` package gives future integrations a home. |
+| The addon imports the contract; messaging never imports the addon | Dependency inversion: both sides depend on the `SMSSender` abstraction, and the concrete class is resolved from a settings string at first send. Removing the addon cannot break messaging. |
+| No separate provider registry or resolver | 0009's `MESSAGING_BACKENDS` + `get_backend()` already performs provider selection. A second selector would be a second source of truth. |
+| No provider-class / request-type / content-type settings | The backend import path already selects the implementation, and `POST` + urlencoded are fixed properties of the CDAC contract. Settings whose only alternative value is a hard failure are dead configuration. |
+| Nested `CDAC_SMS_GATEWAYS` keyed by state, with `default` | Supports multi-state deployments without code changes; single-state deployments configure only `default`. |
+| Gateway key travels in message context | Keeps tenancy a caller concern so `apps.messaging` stays tenant-agnostic until 0008 lands. |
+| No new SMS audit table | `MessageLog` already records recipient, context, rendered output, attempts, status, and timestamps; five new fields cover the rest. |
+| Retries stay log-driven in 0009, not Dramatiq middleware | 0009 chose per-template retry policy with a persisted audit trail; forking that into the addon would split the retry story across two modules. |
+| Any response-validation failure is transient | Non-success statuses from the gateway are usually load or upstream conditions, which retrying can fix. |
+| Permanent failures are limited to config/request errors | Retrying a bad template, unknown gateway key, or unsupported category can never succeed. |
+| `TRANSACTION` maps like `NOTIFICATION` | The category already exists in `MessageTemplate.Category` and must not be rejected. |
+| Content type is derived, not declared | Avoids a model change and a caller burden; an explicit context override remains available. |
+| Startup validation via system checks | Matches the documented `manage.py check` workflow and fails fast in containers. |
+| `DummySMSBackend` stays the local/test default | Developers and CI need no CDAC credentials. |
 
-## 22. Out of scope
+## 18. Out of scope
 
-- Kafka, additional SMS gateways, failover, delivery-status polling.
+- Additional SMS gateways, provider failover, delivery-status polling, bounce handling.
+- Message expiry handling.
 - Bulk/campaign sending, analytics, scheduling, rate limiting.
-- Runtime/DB-managed gateway configuration and any admin UI for it.
+- Runtime or DB-managed gateway configuration and any admin UI for it.
 - Email/WhatsApp/push gateways.
 - New REST endpoints.
-- Packaging the addon for PyPI distribution (structure allows it; not done now).
+- Packaging addons for external distribution (the structure allows it; not done now).
 
-## 23. Remaining open questions
+## 19. Open questions
 
 1. Should `CDAC_SMS_GATEWAYS` entries eventually be keyed by
    Organization/Location records (0008) instead of free-form strings?
 2. Do OTP templates need a shorter retry/backoff profile than the global
    `MESSAGING_RETRY_DELAY_BASE`?
-3. Should recipient filtering (whitelist/blacklist/override) eventually be
-   promoted into `apps.messaging` so every future gateway inherits it, rather
-   than staying addon-local?
+3. Should recipient filtering (kill-switch, whitelist/blacklist, override) be
+   promoted into `apps.messaging` so every future addon inherits it, rather than
+   staying addon-local?
+4. Should `addon/` carry its own `README.md` describing the contract every addon
+   must satisfy?
 
-## 24. Implementation phases
+## 20. Implementation phases
 
 1. **Messaging amendments** — new exceptions, model fields/migration, task
-   failure classification, `correlation_id`, admin (§14) + tests.
-2. **Addon scaffolding** — package, `apps.py`, `INSTALLED_APPS`, `constants.py`,
-   settings block, env/README docs.
+   failure classification, `correlation_id`, admin + tests.
+2. **Addon scaffolding** — `addon/` package, `cdac_sms_gateway` app, `apps.py`,
+   `INSTALLED_APPS`, `constants.py`, settings block, env/README docs.
 3. **Pure functions** — `hashing.py`, `unicode_encoding.py`, `response.py`,
    `config.py`, `filtering.py` + unit tests.
-4. **Gateway** — `client.py`, `backend.py` + unit tests with mocked HTTP,
+4. **Gateway** — `client.py`, `backend.py` + unit tests with a mock gateway,
    `checks.py` + check tests.
 5. **End-to-end** — stub-broker delivery tests, isolation test, quality checks.
