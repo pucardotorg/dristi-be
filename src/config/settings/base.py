@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "apps.messaging",
     "apps.organizations",
     "apps.locations",
+    "apps.files",
 ]
 
 MIDDLEWARE = [
