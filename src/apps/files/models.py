@@ -36,9 +36,17 @@ class FileTag(BaseModel):
         ordering = ("name",)
 
     def clean(self):
-        """Slugify the tag name so equivalent inputs collapse to one row."""
+        """Slugify the tag name so equivalent inputs collapse to one row.
+
+        Non-ASCII names are rejected rather than slugified: slugify would drop
+        or transliterate the characters, silently storing a tag the caller
+        never asked for.
+        """
         super().clean()
-        self.name = slugify(self.name or "")
+        name = (self.name or "").strip()
+        if not name.isascii():
+            raise ValidationError({"name": "name must contain only ASCII characters."})
+        self.name = slugify(name)
         if not self.name:
             raise ValidationError(
                 {"name": "name must contain at least one alphanumeric character."}
