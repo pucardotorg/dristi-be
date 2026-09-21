@@ -11,6 +11,8 @@ from rest_framework.views import APIView
 
 from apps.users.models import (
     AdvocateProfile,
+    AdvocateType,
+    ApprovalStatus,
     ClerkProfile,
     LitigantProfile,
     RegistrationStatus,
@@ -188,10 +190,44 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(
-            AdvocateProfile.objects.get(user=self.user).bar_registration_id,
-            "KER/1234/2019",
+        profile = AdvocateProfile.objects.get(user=self.user)
+        self.assertEqual(profile.bar_registration_id, "KER/1234/2019")
+        # Omitted rather than defaulted: no practice area was stated.
+        self.assertIsNone(profile.advocate_type)
+        self.assertEqual(profile.approval_status, ApprovalStatus.PENDING)
+
+    def test_advocate_can_state_a_practice_area(self):
+        """advocate_type is optional, and is stored when supplied."""
+        response = self.client.post(
+            reverse("advocate-create"),
+            self.body(
+                profile={
+                    "bar_registration_id": "KER/5678/2021",
+                    "advocate_type": AdvocateType.CRIMINAL,
+                }
+            ),
+            format="json",
         )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            AdvocateProfile.objects.get(user=self.user).advocate_type,
+            AdvocateType.CRIMINAL,
+        )
+
+    def test_unknown_practice_area_is_rejected(self):
+        """Only the declared choices are accepted."""
+        response = self.client.post(
+            reverse("advocate-create"),
+            self.body(
+                profile={
+                    "bar_registration_id": "KER/9999/2021",
+                    "advocate_type": "TAX",
+                }
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(AdvocateProfile.objects.exists())
 
     def test_clerk_completes_with_profile(self):
         """The nested profile is written to the clerk table."""

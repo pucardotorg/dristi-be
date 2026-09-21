@@ -129,13 +129,20 @@ roll may carry a different form of the name than the person uses day to day.
 Registration seeds both from the same value; nothing yet lets them diverge, and
 if they need to, the profile `name` moves into the nested `profile` block.
 
-### 3.3 `advocate_type` is a column without a writer
+### 3.3 Why `advocate_type` is optional rather than defaulted
 
-The field records the practice area an advocate works in. Nothing sets it
-today: it is not accepted in the registration body and no approval flow writes
-it. It is deliberately nullable rather than defaulted, so that no row asserts a
-practice area nobody supplied. The logic that populates it is out of scope
-here.
+The field records the practice area an advocate works in. `POST /advocates/`
+accepts it in the nested `profile` block, but does not require it.
+
+Omitting it leaves the column null. There is no default, because a default
+would have every advocate who skipped the question asserting a practice area
+they never chose — and nothing downstream could distinguish that from a
+deliberate answer. Null means "not stated", which is a different fact from
+either `CIVIL` or `CRIMINAL`.
+
+Unlike `approval_status`, this is the advocate's own claim and is theirs to
+set, so it is accepted from the request body. Like `bar_registration_id`, it is
+stored unverified.
 
 ## 4. Endpoints
 
@@ -300,9 +307,13 @@ Advocate and clerk add a nested object whose contents are written only to the pr
 
 ```json
 "profile": {
-  "bar_registration_id": "KER/1234/2019"
+  "bar_registration_id": "KER/1234/2019",
+  "advocate_type": "CIVIL"
 }
 ```
+
+`advocate_type` is optional and accepts `CIVIL` or `CRIMINAL`; omitting it
+leaves the column null (section 3.3). `ClerkProfile` has no equivalent.
 
 #### 4.2.1 Why the password is sent in the request body
 

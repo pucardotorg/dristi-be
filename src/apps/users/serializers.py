@@ -5,7 +5,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import mobile_number_validator
+from .models import AdvocateType, mobile_number_validator
 from .services.otp import Purpose
 
 
@@ -79,6 +79,13 @@ class AdvocateProfileSerializer(serializers.Serializer):
     """Nested profile body for an advocate. Stored as an unverified claim."""
 
     bar_registration_id = serializers.CharField(max_length=64)
+    # Optional: an advocate who does not state a practice area leaves the
+    # column null rather than being assigned a default they never chose.
+    advocate_type = serializers.ChoiceField(
+        choices=AdvocateType.choices,
+        required=False,
+        allow_null=True,
+    )
 
 
 class ClerkProfileSerializer(serializers.Serializer):
