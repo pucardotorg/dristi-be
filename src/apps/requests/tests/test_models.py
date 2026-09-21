@@ -1,12 +1,12 @@
 """Model-level tests for the request workflow."""
 
 import pytest
+from django.apps import apps
+from django.contrib.auth.models import Group
 from django.db import IntegrityError
 
 from apps.requests.models import (
     ApprovalStep,
-    LawyerBarDocument,
-    LawyerProfile,
     Request,
     RequestApproval,
     RequestDocument,
@@ -109,20 +109,19 @@ class TestRequestModel:
 
 
 @pytest.mark.django_db
-class TestLawyerModels:
-    """Tests for the LAWYER_BAR_UPDATE specific models."""
+class TestModuleIsDomainAgnostic:
+    """The app must not carry models for any specific request type."""
 
-    def test_profile_and_bar_document(self, requester, simple_type, pdf_file):
-        profile = LawyerProfile.objects.create(
-            user=requester, name="Jane Doe", bar_number="KAR/1234/2019"
-        )
-        request = Request.objects.create(request_type=simple_type, requester=requester)
-        document = RequestDocument.objects.create(request=request, file=pdf_file())
-        bar_document = LawyerBarDocument.objects.create(person=profile, request_document=document)
+    def test_no_domain_specific_models(self):
+        model_names = {model.__name__ for model in apps.get_app_config("requests").get_models()}
 
-        assert requester.lawyer_profile == profile
-        assert list(profile.bar_documents.all()) == [bar_document]
-        assert "Jane Doe" in str(profile)
+        assert model_names == {
+            "RequestType",
+            "ApprovalStep",
+            "Request",
+            "RequestDocument",
+            "RequestApproval",
+        }
 
 
 @pytest.mark.django_db
@@ -133,4 +132,10 @@ class TestSeededConfiguration:
         assert lawyer_bar_type.min_documents == 1
         assert lawyer_bar_type.schema["required"] == ["name", "bar_number"]
         assert lawyer_bar_type.approval_steps.count() == 1
-        assert lawyer_bar_type.approval_steps.first().approver_role == "BAR_COUNCIL_APPROVER"
+        assert lawyer_bar_type.approval_steps.first().approver_role == "BAR_ID_APPROVER"
+
+    def test_seeded_step_points_at_the_bar_id_group(self, lawyer_bar_type):
+        step = lawyer_bar_type.approval_steps.first()
+
+        assert step.approver_group.name == "BAR_ID_APPROVER"
+        assert not Group.objects.filter(name="BAR_COUNCIL_APPROVER").exists()

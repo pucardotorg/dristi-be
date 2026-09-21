@@ -1,7 +1,41 @@
 """Post-approval hook registry.
 
-Each request type registers its own hook, so adding a type never requires
-editing the core approval engine.
+This is the integration point between the generic request engine and the
+apps that use it. The requests app owns the *workflow*; the consuming app
+owns the *meaning* of a request type and any side effect of approving it.
+
+A consuming app registers a hook for its request type code and applies the
+side effect to its own models::
+
+    # apps/users/hooks.py
+    from apps.requests.hooks import register_hook
+
+
+    @register_hook("LAWYER_BAR_UPDATE")
+    def apply_bar_update(request):
+        profile = request.requester.profile
+        profile.bar_number = request.data["bar_number"]
+        profile.bar_id_status = profile.BarIdStatus.VERIFIED
+        profile.bar_certificate = request.documents.first()  # a RequestDocument
+        profile.save()
+
+Register hooks at import time and import the module from the owning app's
+``AppConfig.ready()`` so registration happens exactly once::
+
+    # apps/users/apps.py
+    def ready(self):
+        from . import hooks  # noqa: F401
+
+Contract for hook authors:
+
+- The hook receives the approved ``Request``. Everything it needs is on it:
+  ``requester``, ``data`` (schema-validated at submit time), ``documents``
+  (``RequestDocument`` rows) and ``request_type``.
+- The hook runs inside the same transaction as the approving decision, so
+  raising rolls the decision back and leaves the approval pending. Keep
+  hooks idempotent: a request can be rejected and resubmitted.
+- A request type without a hook is valid; approval then only changes the
+  request's own status.
 """
 
 import logging

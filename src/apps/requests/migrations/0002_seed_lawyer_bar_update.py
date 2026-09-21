@@ -3,7 +3,7 @@
 from django.db import migrations
 
 CODE = "LAWYER_BAR_UPDATE"
-APPROVER_ROLE = "BAR_COUNCIL_APPROVER"
+APPROVER_ROLE = "BAR_ID_APPROVER"
 SCHEMA = {
     "type": "object",
     "required": ["name", "bar_number"],

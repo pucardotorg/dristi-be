@@ -108,8 +108,8 @@ def lawyer_bar_type(db):
 
 @pytest.fixture
 def bar_approver(make_user):
-    """An approver in the seeded bar council group."""
-    return make_user("bar@example.com", groups=["BAR_COUNCIL_APPROVER"])
+    """An approver in the seeded bar ID approver group."""
+    return make_user("bar@example.com", groups=["BAR_ID_APPROVER"])
 
 
 @pytest.fixture

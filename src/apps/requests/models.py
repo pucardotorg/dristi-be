@@ -1,4 +1,11 @@
-"""Models for the generic request and approval workflow."""
+"""Models for the generic request and approval workflow.
+
+This module is deliberately domain-agnostic: it knows about request types,
+requests, their documents and their approval trail, and nothing about what
+any particular request *means*. Consuming apps own their own models and
+apply their side effects from a registered post-approval hook (see
+``apps.requests.hooks``).
+"""
 
 from django.conf import settings
 from django.db import models
@@ -219,60 +226,3 @@ class RequestApproval(BaseModel):
     def __str__(self):
         """Return a readable identifier for the approval."""
         return f"{self.request_id} v{self.version} step {self.step_order} ({self.status})"
-
-
-# ---------------------------------------------------------------------------
-# LAWYER_BAR_UPDATE request type models
-#
-# The generic engine above is type-agnostic; the two models below back the
-# first concrete request type (see apps/requests/request_types/lawyer_bar.py).
-# ---------------------------------------------------------------------------
-class LawyerProfile(BaseModel):
-    """Bar details of a lawyer, kept in sync by the LAWYER_BAR_UPDATE hook."""
-
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="lawyer_profile",
-    )
-    name = models.CharField(max_length=255, blank=True)
-    bar_number = models.CharField(max_length=100, blank=True)
-
-    class Meta:
-        """Meta options."""
-
-        ordering = ("-created_at",)
-        verbose_name = "Lawyer Profile"
-        verbose_name_plural = "Lawyer Profiles"
-
-    def __str__(self):
-        """Return the lawyer name and bar number."""
-        return f"{self.name or self.user} ({self.bar_number})"
-
-
-class LawyerBarDocument(BaseModel):
-    """Link between a lawyer profile and the approved bar registration document."""
-
-    person = models.ForeignKey(
-        LawyerProfile,
-        on_delete=models.CASCADE,
-        related_name="bar_documents",
-    )
-    request_document = models.ForeignKey(
-        RequestDocument,
-        on_delete=models.CASCADE,
-        related_name="lawyer_bar_documents",
-        null=True,
-        blank=True,
-    )
-
-    class Meta:
-        """Meta options."""
-
-        ordering = ("-created_at",)
-        verbose_name = "Lawyer Bar Document"
-        verbose_name_plural = "Lawyer Bar Documents"
-
-    def __str__(self):
-        """Return a readable identifier."""
-        return f"{self.person_id} / {self.request_document_id}"

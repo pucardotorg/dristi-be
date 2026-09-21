@@ -10,6 +10,5 @@ class RequestsConfig(AppConfig):
     name = "apps.requests"
     verbose_name = "Requests"
 
-    def ready(self):
-        """Import request-type modules so their post-approval hooks register."""
-        from .request_types import lawyer_bar  # noqa: F401
+    # Post-approval hooks are owned and registered by the consuming apps
+    # (see apps.requests.hooks), so this app imports no request types itself.

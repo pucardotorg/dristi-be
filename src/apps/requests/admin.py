@@ -4,8 +4,6 @@ from django.contrib import admin
 
 from .models import (
     ApprovalStep,
-    LawyerBarDocument,
-    LawyerProfile,
     Request,
     RequestApproval,
     RequestDocument,
@@ -95,21 +93,3 @@ class RequestDocumentAdmin(admin.ModelAdmin):
     list_display = ("id", "request", "file", "uploaded_by", "uploaded_at")
     search_fields = ("request__id",)
     readonly_fields = ("id", "created_at", "updated_at", "uploaded_at")
-
-
-@admin.register(LawyerProfile)
-class LawyerProfileAdmin(admin.ModelAdmin):
-    """Admin configuration for lawyer profiles."""
-
-    list_display = ("user", "name", "bar_number", "updated_at")
-    search_fields = ("user__email", "name", "bar_number")
-    readonly_fields = ("id", "created_at", "updated_at")
-
-
-@admin.register(LawyerBarDocument)
-class LawyerBarDocumentAdmin(admin.ModelAdmin):
-    """Admin configuration for lawyer bar documents."""
-
-    list_display = ("person", "request_document", "created_at")
-    search_fields = ("person__user__email",)
-    readonly_fields = ("id", "created_at", "updated_at")
