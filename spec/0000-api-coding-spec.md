@@ -119,14 +119,30 @@ Rules:
 Baseline defaults:
 
 - `SessionAuthentication`
-- `TokenAuthentication`
-- `IsAuthenticatedOrReadOnly`
+- `TokenAuthentication` 
+- `IsAuthenticated`
+- `IsAuthenticatedAndRegistered` (`apps.users.services.permissions`)
 
 Implications:
 
-- Read endpoints may be public unless overridden.
-- Unsafe methods generally require authentication.
+- **Nothing is readable by default.** An endpoint that declares no
+  `permission_classes` requires an authenticated account that has finished
+  registration.
 - Public endpoints must explicitly declare `AllowAny`.
+- Endpoints reachable part-way through registration — the wizard's own steps —
+  declare `IsAuthenticated` alone.
+
+### 6.1 Why registration completeness is part of the default
+
+An account can exist and authenticate before its registration is finished —
+`POST /users/` issues a session cookie mid-wizard so the flow is resumable
+(spec 0005 section 2.3). Without `IsAuthenticatedAndRegistered` in the baseline,
+every endpoint would have to remember that half-registered sessions exist. The
+gate is checked once, centrally, and the wizard's own endpoints opt out.
+
+It is a separate class from `IsAuthenticated` rather than a combined check
+because the two failures need different remedies: not logged in means log in,
+incomplete registration means finish the wizard.
 
 ## 7. URL Routing and Versioning Standards
 

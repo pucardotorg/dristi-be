@@ -312,7 +312,7 @@ class OrganizationWriteMethodTests(OrganizationAPITestCase):
 
     def test_session_cookie_post_is_not_allowed(self):
         user = self._make_user()
-        self.assertTrue(self.client.login(email=user.email, password="test"))
+        self.assertTrue(self.client.login(mobile_number=user.mobile_number, password="test"))
 
         response = self.client.post(reverse("organization-list"), {"code": "NEW_ORG"})
 
@@ -327,7 +327,10 @@ class OrganizationWriteMethodTests(OrganizationAPITestCase):
     def _make_user(self):
         """Create a user for permission-passing write attempts."""
         return User.objects.create_user(
-            email="editor@example.com", username="editor", password="test"
+            mobile_number="+919000000005",
+            name="Editor",
+            email="editor@example.com",
+            password="test",
         )
 
 
