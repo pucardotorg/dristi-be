@@ -29,6 +29,10 @@ CORS_ALLOW_CREDENTIALS = env.bool("CORS_ALLOW_CREDENTIALS", default=True)
 INSTALLED_APPS += ["django_extensions", "debug_toolbar"]
 MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
 
+from debug_toolbar.settings import PANELS_DEFAULTS  # noqa: E402
+
+DEBUG_TOOLBAR_PANELS = [*PANELS_DEFAULTS, "cachalot.panels.CachalotPanel"]
+
 # WhiteNoise is not needed when running the Django development server
 MIDDLEWARE = [m for m in MIDDLEWARE if m != "whitenoise.middleware.WhiteNoiseMiddleware"]
 
