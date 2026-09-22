@@ -72,10 +72,46 @@ services:
       RUSTFS_ADDRESS: ":9000"
       RUSTFS_CONSOLE_ADDRESS: ":9001"
       RUSTFS_CONSOLE_ENABLE: "true"
+      # Must stay in sync with S3_ACCESS_KEY / S3_SECRET_KEY on web and worker.
       RUSTFS_ACCESS_KEY: admin
       RUSTFS_SECRET_KEY: this is dummy password
       RUSTFS_OBS_LOGGER_LEVEL: error
       RUSTFS_OBS_LOG_DIRECTORY: /var/log/rustfs
+
+  rustfs-init:
+    # Creates the media bucket once rustfs is accepting requests. rustfs does
+    # not create buckets on demand, so the first upload fails with
+    # NoSuchBucket without this. Uses the AWS CLI because it speaks plain S3;
+    # MinIO's `mc` is not an option since the move off MinIO.
+    image: amazon/aws-cli:latest
+    depends_on:
+      - rustfs
+    restart: "no"
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: this is dummy password
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint:
+      - sh
+      - -c
+      - |
+        i=0
+        until aws --endpoint-url http://rustfs:9000 s3 ls >/dev/null 2>&1; do
+          i=$$((i + 1))
+          if [ $$i -ge 30 ]; then
+            echo "ERROR: rustfs did not become available after 60s."
+            exit 1
+          fi
+          echo "Waiting for rustfs..."
+          sleep 2
+        done
+        aws --endpoint-url http://rustfs:9000 s3 mb s3://dristi-media 2>/dev/null || true
+        if aws --endpoint-url http://rustfs:9000 s3 ls s3://dristi-media >/dev/null 2>&1; then
+          echo "Bucket dristi-media is ready."
+        else
+          echo "ERROR: bucket dristi-media could not be created."
+          exit 1
+        fi
 
   web:
     build:
@@ -96,7 +132,7 @@ services:
       S3_API_ENDPOINT: http://rustfs:9000
       S3_BUCKET: dristi-media
       S3_ACCESS_KEY: admin
-      S3_SECRET_KEY: admin123
+      S3_SECRET_KEY: this is dummy password
       MESSAGING_EMAIL_BACKEND: smtp
       MESSAGING_EMAIL_HOST: mailhog
       MESSAGING_EMAIL_PORT: 1025
@@ -112,6 +148,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rustfs-init:
+        condition: service_completed_successfully
 
   worker:
     build:
@@ -131,8 +169,8 @@ services:
       DRAMATIQ_BROKER_URL: redis://redis:6379/2
       S3_API_ENDPOINT: http://rustfs:9000
       S3_BUCKET: dristi-media
-      S3_ACCESS_KEY: rustfsadmin
-      S3_SECRET_KEY: rustfsadmin
+      S3_ACCESS_KEY: admin
+      S3_SECRET_KEY: this is dummy password
       MESSAGING_EMAIL_BACKEND: smtp
       MESSAGING_EMAIL_HOST: mailhog
       MESSAGING_EMAIL_PORT: 1025
@@ -146,6 +184,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rustfs-init:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:
