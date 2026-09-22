@@ -55,8 +55,9 @@ def upload_file(payload):
 def get_file(file_id):
     """Return the metadata of a single file.
 
-    Raises ``FileNotFound`` when the file does not exist; it never returns
-    ``None``. ``storage_path`` is deliberately excluded from the result.
+    Raises ``FileNotFound`` when the file does not exist or has been
+    deactivated; it never returns ``None``. ``storage_path`` is deliberately
+    excluded from the result.
     """
     return _as_dict(_instance(file_id))
 
@@ -78,16 +79,16 @@ def get_file_url(file_id):
 def search_file(filters=None, page=1, page_size=20):
     """Search files by metadata.
 
-    Filters are ANDed. When several tags are given a file must carry *all* of
-    them. Results use the model's ``-created_at`` ordering so pagination is
-    stable.
+    Only active files are returned. Filters are ANDed. When several tags are
+    given a file must carry *all* of them. Results use the model's
+    ``-created_at`` ordering so pagination is stable.
 
     The default page size matches ``REST_FRAMEWORK["PAGE_SIZE"]`` so a future
     REST layer can pass its own value through without changing the shape of
     the result.
     """
     filters = filters or {}
-    queryset = File.objects.all()
+    queryset = File.objects.active()
 
     if filters.get("organization_id") is not None:
         queryset = queryset.filter(organization_id=filters["organization_id"])
@@ -185,9 +186,15 @@ def _normalized_tag(name):
 
 
 def _instance(file_id):
-    """Return a File by id, or raise FileNotFound."""
+    """Return an active File by id, or raise FileNotFound.
+
+    A deactivated file is reported as missing rather than as a distinct state:
+    callers of this module have no way to reactivate one, so the difference is
+    not actionable for them. The Django admin queries the model directly and
+    still sees every row.
+    """
     try:
-        return File.objects.get(pk=file_id)
+        return File.objects.active().get(pk=file_id)
     except (File.DoesNotExist, ValidationError, ValueError) as exc:
         raise FileNotFound(f"No file with id {file_id!r}.") from exc
 

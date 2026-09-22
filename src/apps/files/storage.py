@@ -7,11 +7,16 @@ detail of ``apps.files``. The backend itself is the ``files`` entry in
 S3-compatible bucket once ``S3_*`` is configured.
 """
 
+import boto3
+from botocore.config import Config
+from django.conf import settings
 from django.core.files.storage import storages
 from django.utils import timezone
 from django.utils.text import get_valid_filename
 
 STORAGE_ALIAS = "files"
+
+DEFAULT_URL_EXPIRY_SECONDS = 3600
 
 
 def get_file_storage():
@@ -53,5 +58,47 @@ def get_url(storage_path):
 
     With the S3 backend this is a short-lived pre-signed URL, because
     ``querystring_auth`` is enabled for that backend in settings.
+
+    When ``S3_PUBLIC_ENDPOINT`` is set the URL is signed against that endpoint
+    instead of the one the server uploads through, so it names a host the
+    client can actually reach. The signature covers the host, so the two
+    cannot be swapped after the fact.
     """
-    return get_file_storage().url(storage_path)
+    options = _s3_options()
+    if not settings.S3_PUBLIC_ENDPOINT or not options:
+        return get_file_storage().url(storage_path)
+    return _public_signed_url(storage_path, options)
+
+
+def _s3_options():
+    """Return the ``OPTIONS`` of the files backend, or ``None`` if it is not S3.
+
+    The local filesystem backend has no bucket and signs nothing, so there is
+    no public endpoint to substitute for it.
+    """
+    options = settings.STORAGES[STORAGE_ALIAS].get("OPTIONS") or {}
+    return options if options.get("bucket_name") else None
+
+
+def _public_signed_url(storage_path, options):
+    """Pre-sign ``storage_path`` against ``settings.S3_PUBLIC_ENDPOINT``.
+
+    The backend prefixes every key with its ``location``, so that prefix has
+    to be reapplied here: ``storage_path`` is the key as the backend was asked
+    for it, not the key as the bucket holds it.
+    """
+    client = boto3.client(
+        "s3",
+        endpoint_url=settings.S3_PUBLIC_ENDPOINT,
+        aws_access_key_id=options.get("access_key"),
+        aws_secret_access_key=options.get("secret_key"),
+        region_name=options.get("region_name"),
+        config=Config(signature_version=options.get("signature_version", "s3v4")),
+    )
+    location = (options.get("location") or "").strip("/")
+    key = f"{location}/{storage_path}" if location else storage_path
+    return client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": options["bucket_name"], "Key": key},
+        ExpiresIn=options.get("querystring_expire", DEFAULT_URL_EXPIRY_SECONDS),
+    )

@@ -11,6 +11,7 @@ from apps.files.services import (
     FileNotFound,
     get_file,
     get_file_content,
+    get_file_url,
     search_file,
     upload_file,
 )
@@ -348,3 +349,128 @@ class TestSearchFile:
 
     def test_results_omit_the_storage_path(self, corpus):
         assert all("storage_path" not in item for item in search_file()["results"])
+
+
+class TestInactiveFiles:
+    """A deactivated file is reported as missing by every read path.
+
+    ``BaseActivatableModel`` deliberately does not filter by default (spec
+    0006), so the service layer has to opt in; the admin keeps querying the
+    model directly and still sees the row.
+    """
+
+    @pytest.fixture
+    def deactivated(self, user):
+        """Return the id of an uploaded file that has since been deactivated."""
+        result = upload_file(payload(user, files=[entry(tags=["retired"])]))
+        file_id = result["files"][0]["id"]
+        File.objects.filter(pk=file_id).update(is_active=False)
+        return file_id
+
+    def test_search_omits_it(self, deactivated):
+        assert search_file()["count"] == 0
+        assert search_file({"tags": ["retired"]})["count"] == 0
+
+    def test_get_file_raises(self, deactivated):
+        with pytest.raises(FileNotFound):
+            get_file(deactivated)
+
+    def test_get_file_content_raises(self, deactivated):
+        with pytest.raises(FileNotFound):
+            get_file_content(deactivated)
+
+    def test_get_file_url_raises(self, deactivated):
+        with pytest.raises(FileNotFound):
+            get_file_url(deactivated)
+
+    def test_the_row_and_its_content_are_kept(self, deactivated):
+        """Deactivating hides a file; it does not delete it."""
+        file = File.objects.get(pk=deactivated)
+        assert file.is_active is False
+        assert file_storage.get_file_storage().exists(file.storage_path)
+
+    def test_reactivating_makes_it_visible_again(self, deactivated):
+        File.objects.filter(pk=deactivated).update(is_active=True)
+
+        assert search_file()["count"] == 1
+        assert get_file(deactivated)["tags"] == ["retired"]
+
+
+class TestGetFileUrl:
+    """``get_file_url`` signs against S3_PUBLIC_ENDPOINT when one is set.
+
+    The endpoint the server uploads through is not always reachable by a
+    client, and a signed URL's host cannot be swapped afterwards because
+    SigV4 covers it.
+    """
+
+    S3_OPTIONS = {
+        "bucket_name": "test-bucket",
+        "endpoint_url": "http://internal-host:9000",
+        "access_key": "test-access-key",
+        "secret_key": "test-secret-key",
+        "signature_version": "s3v4",
+        "region_name": "us-east-1",
+        "querystring_auth": True,
+        "location": "media",
+    }
+
+    @pytest.fixture
+    def stored_file(self, user):
+        """Return a File row; its content lives in the in-memory backend."""
+        result = upload_file(payload(user))
+        return File.objects.get(pk=result["files"][0]["id"])
+
+    @pytest.fixture
+    def s3_backend(self, settings, stored_file):
+        """Point the files alias at an S3 backend, without reaching the network.
+
+        Depends on ``stored_file`` so the upload happens against the in-memory
+        backend first: signing a URL is local, but storing content is not, and
+        this endpoint does not exist.
+        """
+        settings.STORAGES = {
+            **settings.STORAGES,
+            "files": {
+                "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+                "OPTIONS": self.S3_OPTIONS,
+            },
+        }
+
+    def test_public_endpoint_replaces_the_internal_host(self, settings, s3_backend, stored_file):
+        settings.S3_PUBLIC_ENDPOINT = "http://localhost:9000"
+
+        url = get_file_url(stored_file.id)
+
+        assert url.startswith("http://localhost:9000/test-bucket/")
+        assert "internal-host" not in url
+
+    def test_the_url_is_signed_and_expires(self, settings, s3_backend, stored_file):
+        settings.S3_PUBLIC_ENDPOINT = "http://localhost:9000"
+
+        url = get_file_url(stored_file.id)
+
+        assert "X-Amz-Signature=" in url
+        assert "X-Amz-Expires=3600" in url
+
+    def test_the_backend_location_prefix_is_applied(self, settings, s3_backend, stored_file):
+        """The key in the URL is the bucket key, not the path the backend was given."""
+        settings.S3_PUBLIC_ENDPOINT = "http://localhost:9000"
+
+        url = get_file_url(stored_file.id)
+
+        assert f"/test-bucket/media/{stored_file.storage_path}?" in url
+
+    def test_without_a_public_endpoint_the_backend_url_is_used(self, settings, stored_file):
+        """Unset is the production default, and must not change today's behavior."""
+        settings.S3_PUBLIC_ENDPOINT = None
+
+        assert get_file_url(stored_file.id) == file_storage.get_file_storage().url(
+            stored_file.storage_path
+        )
+
+    def test_a_non_s3_backend_ignores_the_public_endpoint(self, settings, stored_file):
+        """The filesystem backend has no bucket and signs nothing."""
+        settings.S3_PUBLIC_ENDPOINT = "http://localhost:9000"
+
+        assert "localhost:9000" not in get_file_url(stored_file.id)
