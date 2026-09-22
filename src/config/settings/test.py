@@ -4,7 +4,7 @@ These settings are used by pytest and the GitHub Actions CI workflow.
 """
 
 from .base import *  # noqa: F401,F403
-from .base import MIDDLEWARE, REST_FRAMEWORK, STORAGES, env  # noqa: F401
+from .base import MESSAGING_BACKENDS, MIDDLEWARE, REST_FRAMEWORK, STORAGES, env  # noqa: F401
 
 SECRET_KEY = "test-secret-key-not-for-production"
 DEBUG = False
@@ -39,6 +39,9 @@ DRAMATIQ_BROKER = {
         "django_dramatiq.middleware.DbConnectionsMiddleware",
     ],
 }
+
+# Tests run on the dummy SMS backend; CDAC is exercised via override_settings.
+MESSAGING_BACKENDS = {**MESSAGING_BACKENDS, "sms": "apps.messaging.senders.sms.DummySMSBackend"}
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
