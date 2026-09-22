@@ -81,6 +81,10 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `DATABASE_URL` | PostgreSQL connection URL | `postgres://user:pass@db:5432/dristi` |
 | `REDIS_URL` | Redis connection for general use | `redis://redis:6379/0` |
 | `CACHE_URL` | Redis connection for Django cache | `redis://redis:6379/1` |
+| `CACHE_ENABLED` | Enable or disable Django's cache backend. When disabled, Django uses the dummy cache backend. | `True` |
+| `CACHE_KEY_PREFIX` | Prefix added to Django cache keys to namespace cached data. | `dristi-dev` |
+| `CACHALOT_ENABLED` | Enable or disable django-cachalot automatic ORM query caching. Defaults to `CACHE_ENABLED`. | `True` |
+| `CACHALOT_TIMEOUT` | Default lifetime of django-cachalot cached ORM query results, in seconds. | `120` |
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
 | `EMAIL_URL` | Email backend URL | `smtp://user:pass@smtp:587` |
 | `MESSAGING_TEMPLATE_ENGINE` | Template engine for message rendering (`jinja2` or `mustache`) | `jinja2` |

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import environ
+from debug_toolbar.settings import PANELS_DEFAULTS
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 environ.Env.read_env(BASE_DIR.parent / ".env")
@@ -28,8 +29,6 @@ CORS_ALLOW_CREDENTIALS = env.bool("CORS_ALLOW_CREDENTIALS", default=True)
 # Development niceties
 INSTALLED_APPS += ["django_extensions", "debug_toolbar"]
 MIDDLEWARE += ["debug_toolbar.middleware.DebugToolbarMiddleware"]
-
-from debug_toolbar.settings import PANELS_DEFAULTS  # noqa: E402
 
 DEBUG_TOOLBAR_PANELS = [*PANELS_DEFAULTS, "cachalot.panels.CachalotPanel"]
 
