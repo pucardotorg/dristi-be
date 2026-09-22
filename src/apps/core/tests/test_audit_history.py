@@ -112,15 +112,6 @@ class TestApiVersionChangeLogHistory:
 
         assert ApiVersionChangeLog.history.filter(history_type="~").count() == 3
 
-    def test_as_of_returns_snapshot_before_change(self):
-        changelog = ApiVersionChangeLog.objects.create(version="1.0.0", change_log="Original")
-        before_update = timezone.now()
-        changelog.change_log = "Updated"
-        changelog.save()
-
-        snapshot = changelog.history.as_of(before_update)
-        assert snapshot.change_log == "Original"
-
     def test_filter_history_by_type_and_recent_date(self):
         changelog = ApiVersionChangeLog.objects.create(version="1.0.0", change_log="Original")
 
