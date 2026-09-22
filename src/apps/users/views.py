@@ -43,6 +43,7 @@ class OTPResendThrottled(Throttled):
     extra_detail_plural = "You can request another in {wait} seconds."
     default_code = "otp_resend_too_soon"
 
+
 # Response shapes, declared for the OpenAPI schema only. These endpoints build
 # their bodies by hand rather than through a serializer, so drf-spectacular has
 # nothing to infer from and would otherwise drop them from the docs entirely.
