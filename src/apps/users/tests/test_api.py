@@ -63,6 +63,12 @@ class OTPRequestTests(OTPTestCase):
         self.assertGreaterEqual(int(response["Retry-After"]), 1)
         send.assert_not_called()
 
+        # The message names what was throttled and what to do about it.
+        detail = response.json()["detail"]
+        self.assertIn("A code was already sent", detail)
+        self.assertIn("You can request another in", detail)
+        self.assertNotIn("Request was throttled", detail)
+
     def test_cooldown_is_per_number(self):
         """A cooldown on one number does not block another."""
         self.request_code()

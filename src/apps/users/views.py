@@ -30,6 +30,19 @@ from .services.registration import complete_registration
 
 OTP_BACKEND = "apps.users.services.backend.OTPBackend"
 
+
+class OTPResendThrottled(Throttled):
+    """429 for a resend inside the cooldown, worded for the person waiting.
+
+    DRF's default reads "Request was throttled. Expected available in N
+    seconds," which says nothing about what was throttled or what to do.
+    """
+
+    default_detail = "A code was already sent to this number."
+    extra_detail_singular = "You can request another in {wait} second."
+    extra_detail_plural = "You can request another in {wait} seconds."
+    default_code = "otp_resend_too_soon"
+
 # Response shapes, declared for the OpenAPI schema only. These endpoints build
 # their bodies by hand rather than through a serializer, so drf-spectacular has
 # nothing to infer from and would otherwise drop them from the docs entirely.
@@ -79,7 +92,7 @@ class OTPRequestView(APIView):
             )
         except ResendTooSoonError as exc:
             # DRF's exception handler turns this into 429 + Retry-After.
-            raise Throttled(wait=exc.retry_after) from exc
+            raise OTPResendThrottled(wait=exc.retry_after) from exc
 
         # The response must not reveal whether the number belongs to an account.
         return Response(
