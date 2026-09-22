@@ -9,16 +9,17 @@ Proposed
 - [0000 — API Coding Spec](0000-api-coding-spec.md) — DRF/serializer/envelope constraints
 - [0002 — Audit Fields Base Model](0002-audit-fields-base-model.md) — `apps.core.models.BaseModel`
 - [0012 — Redis Caching](0012-redis-caching.md) — caching/exclusion rules
-- PDF Service module (separate spec, same project) — PDF preparation and signature embedding
-- File Storage module (separate spec, same project) — document persistence
+- [0014 — File Storage Service](0014-file-storage-service.md) — `apps.files`, owns document persistence and the `file_id` reference
+- [0016 — PDF Service](0016-pdf-services.md) — `apps.pdf`, owns signature-container preparation and PKCS#7 embedding
 
 > **Scope note.** The domain (transaction lifecycle, APIs, recovery, audit) lives
 > in `apps.esign`. Everything CDAC-specific (eSign 2.1 XML, XMLDSig signing,
 > response parsing, gateway form contract) lives in `addon.cdac_esign` behind a
-> provider interface, exactly as 0013 does for SMS. PDF manipulation and file
-> persistence are **separate modules of this project** and are consumed only
-> through their published interfaces; this spec neither implements nor
-> re-specifies them.
+> provider interface, exactly as 0013 does for SMS. PDF manipulation
+> ([`apps.pdf`](0016-pdf-services.md)) and file persistence
+> ([`apps.files`](0014-file-storage-service.md)) are **separate modules of this
+> project**, consumed in-process through their published service functions; this
+> spec neither implements nor re-specifies them.
 
 ## Context
 
@@ -73,8 +74,8 @@ src/
 ├── apps/
 │   ├── core/
 │   ├── esign/                     # THIS SPEC — domain, models, APIs
-│   ├── pdf/                       # separate spec (PDF Service module)
-│   ├── filestore/                 # separate spec (File Storage module)
+│   ├── pdf/                       # 0016 — PDF Service (signing primitives)
+│   ├── files/                     # 0014 — File Storage Service
 │   └── ...
 ├── addon/
 │   ├── cdac_sms_gateway/          # 0013
@@ -85,7 +86,7 @@ src/
 ```text
 addon.cdac_esign  -- imports -->  apps.esign (provider base class, dataclasses, exceptions)
 apps.esign        -- never imports --> addon.*
-apps.esign        -- imports -->  apps.pdf / apps.filestore *interfaces only*
+apps.esign        -- imports -->  apps.pdf / apps.files *service functions only*
 config.settings   -- references --> "addon.cdac_esign.provider.CDACESignProvider"
 ```
 
@@ -116,8 +117,8 @@ src/apps/esign/
 │   ├── callback.py
 │   └── recovery.py
 ├── clients/
-│   ├── pdf.py                   # thin adapter over the PDF Service interface
-│   └── filestore.py             # thin adapter over the File Storage interface
+│   ├── pdf.py                   # adapter over apps.pdf signing services (0016)
+│   └── files.py                 # adapter over apps.files services (0014)
 ├── tasks.py                     # expiry sweeper, placeholder cleanup
 ├── migrations/
 └── tests/
@@ -142,14 +143,14 @@ src/addon/cdac_esign/
 
 ```text
 Dristi UI
-   |  POST /api/v1/esign/_esign  {entity, file_store_id, sign_placeholder}
+   |  POST /api/v1/esign/_esign  {entity, file_id, sign_placeholder}
    v
 apps.esign initiation service
    |
-   +-- filestore.get(file_store_id)                      [File Storage module]
-   +-- pdf.prepare_for_signing(pdf, placeholder)         [PDF Service module]
-   |        -> prepared_pdf, byte_range_hash, field_name
-   +-- filestore.save(prepared_pdf)  -> placeholder_file_store_id
+   +-- files.get_content(file_id)                        [apps.files, 0014]
+   +-- pdf.prepare_for_signing(pdf, placeholder)         [apps.pdf, 0016]
+   |        -> prepared_pdf, document_hash, field_name
+   +-- files.upload(prepared_pdf)    -> placeholder_file_id
    +-- ESignTransaction.objects.create(status=PENDING)
    +-- provider.build_request(transaction, hash)         [addon.cdac_esign]
    |        -> <Esign ver="2.1"> XML, XMLDSig-signed with ASP key
@@ -166,16 +167,16 @@ apps.esign callback service                        v
    +-- provider.parse_response(payload) -> ESignProviderResponse
    +-- provider.verify_response(payload)            (XMLDSig, CDAC cert)
    +-- lock transaction (select_for_update) -> status=SIGNING
-   +-- filestore.get(placeholder_file_store_id)
+   +-- files.get_content(placeholder_file_id)
    +-- pdf.embed_signature(prepared_pdf, pkcs7, field_name)
-   +-- filestore.save(signed_pdf) -> signed_file_store_id
+   +-- files.upload(signed_pdf) -> signed_file_id
    +-- status=SUCCESS
    v
 HTTP 302 -> ESIGN_UI_REDIRECT_URL?transaction_id=..&status=SUCCESS
 ```
 
 The source PDF is never modified or overwritten. Every artefact is a new
-File Storage object.
+`apps.files` record with its own `file_id`.
 
 ---
 
@@ -231,19 +232,22 @@ caches it. An unset or unimportable provider raises
 
 ## 4. PDF Service and File Storage contracts consumed
 
-`apps.esign` calls the other modules through narrow adapters so that a change in
-their transport (in-process call today, HTTP later) does not touch the domain.
+Both modules are called **in-process** through their service functions, wrapped
+in narrow adapters so the domain stays indifferent to their internals (and to a
+future REST layer, which `apps.esign` would still not use).
+
+### 4.1 PDF Service (`apps.pdf`, [`0016`](0016-pdf-services.md) #14)
 
 ```python
-# apps/esign/clients/pdf.py
+# apps/esign/clients/pdf.py — adapter over apps.pdf.services.signing
 class PDFClient(Protocol):
     def prepare_for_signing(
-        self, document: bytes, placeholder: SignPlaceholder
+        self, document: bytes, placeholder: dict
     ) -> PreparedDocument:
         """Reserve an empty signature container and return the ByteRange hash.
 
-        Returns: prepared_document (bytes), document_hash (hex SHA-256 of the
-        ByteRange digest), field_name (str).
+        Returns prepared_document (bytes), document_hash (hex digest over the
+        PDF ByteRange, algorithm per PDF_SIGNATURE_HASH_ALGORITHM), field_name.
         """
 
     def embed_signature(
@@ -252,23 +256,41 @@ class PDFClient(Protocol):
         """Insert the PKCS#7 blob into the reserved container. Returns the signed PDF."""
 ```
 
+Requirements placed on 0016 by this spec: create a signature field, reserve a
+container large enough for a C-DAC PKCS#7 blob, compute the ByteRange digest,
+accept a detached PKCS#7, produce a valid signed PDF, and preserve existing
+signatures when a document is signed more than once (incremental update). These
+are synchronous, bytes-in/bytes-out functions: no `PDFJob` row is created and
+`apps.pdf` neither stores nor fetches the document.
+
+### 4.2 File Storage Service (`apps.files`, [`0014`](0014-file-storage-service.md) #2)
+
 ```python
-# apps/esign/clients/filestore.py
-class FileStoreClient(Protocol):
-    def get(self, file_store_id: str) -> StoredFile: ...      # bytes + content_type
-    def save(self, content: bytes, *, filename: str, content_type: str,
-             tenant_id: str, module: str) -> str: ...          # -> file_store_id
-    def delete(self, file_store_id: str) -> None: ...          # cleanup only
+# apps/esign/clients/files.py — adapter over apps.files.services
+class FileClient(Protocol):
+    def get_metadata(self, file_id: str) -> dict: ...   # get_file(): content_type, size, ...
+    def get_content(self, file_id: str) -> bytes: ...   # get_file_content()
+    def upload(self, content: bytes, *, filename: str,
+               file_type: str, user_id: str, organization_id: str | None,
+               tags: list[str]) -> str: ...             # upload_file() -> file_id
+    def delete(self, file_id: str) -> None: ...         # delete_file(), cleanup only
 ```
 
-Requirements placed on the PDF Service module by this spec (to be honoured in
-its own spec): create a signature field, reserve a container large enough for a
-C-DAC PKCS#7 blob, compute the ByteRange digest with SHA-256, accept a
-detached PKCS#7 and produce a valid signed PDF, and preserve any existing
-signatures when a document is signed more than once (incremental update).
+Adapter responsibilities:
 
-Adapter concerns owned here: timeouts, mapping module exceptions to
-`ESignPDFError` / `ESignFileStoreError`, and never logging document bytes.
+- Call `upload_file()` with the single-file batch shape of [`0014`](0014-file-storage-service.md) #3 and return the one `file_id`; the domain never sees the batch envelope.
+- `file_type` is `FileType.PDF` for the placeholder and `FileType.SIGNED_PDF`
+  for the signed output; tags are `esign`, the `module`, and the `entity_id`, so
+  artefacts are discoverable through `search_file`.
+- `user_id` is `transaction.signer_id`. The callback leg has **no authenticated
+  request user**, so the signer captured at initiation — not the request — is the
+  actor for the signed-PDF upload; when no signer is set, the configured system
+  actor is used.
+- Map module exceptions to `ESignPDFError` / `ESignFileStorageError`, enforce the
+  configured size limits, and never log document bytes.
+
+This spec depends on 0014 exposing `get_file_content()` and `delete_file()`; both
+are required amendments there ([`0014`](0014-file-storage-service.md) #6.1, #6.2).
 
 ---
 
@@ -286,9 +308,9 @@ Location: `apps.esign.models`. Inherits `apps.core.models.BaseModel` (UUID pk,
 | `signer` | `FK(AUTH_USER_MODEL, null=True, on_delete=PROTECT)` | user who initiated signing |
 | `provider` | `CharField(32)` | `ESignProvider.name`, e.g. `cdac` |
 | `provider_transaction_id` | `CharField(128, unique=True)` | id sent to / echoed by the ESP |
-| `source_file_store_id` | `CharField(128)` | original PDF, never mutated |
-| `placeholder_file_store_id` | `CharField(128, blank=True)` | prepared PDF |
-| `signed_file_store_id` | `CharField(128, blank=True)` | final signed PDF |
+| `source_file_id` | `CharField(64)` | `apps.files` id of the original PDF, never mutated |
+| `placeholder_file_id` | `CharField(64, blank=True)` | `apps.files` id of the prepared PDF |
+| `signed_file_id` | `CharField(64, blank=True)` | `apps.files` id of the final signed PDF |
 | `sign_placeholder` | `JSONField(default=dict, blank=True)` | signature placement (#6.2) |
 | `document_hash` | `CharField(128, blank=True)` | hex hash sent to the ESP |
 | `signature_field_name` | `CharField(128, blank=True)` | returned by PDF Service |
@@ -332,7 +354,7 @@ Rules:
 - `SUCCESS` is terminal. No transition leaves it.
 - `SIGNING` is only enterable from `PENDING` under `select_for_update()`.
 - `FAILURE` and `EXPIRED` never transition; **retry creates a new row** with
-  `retry_of` set and the same `placeholder_file_store_id` (#9). This keeps
+  `retry_of` set and the same `placeholder_file_id` (#9). This keeps
   `provider_transaction_id` unique and preserves every attempt for audit.
 - Transitions are enforced in a model method (`mark_signing()`, `mark_success()`,
   `mark_failed()`, `mark_expired()`); illegal transitions raise
@@ -341,8 +363,8 @@ Rules:
 ### 5.2 Constraints and indexes
 
 - `UniqueConstraint("provider_transaction_id")`.
-- `CheckConstraint`: `status != SUCCESS OR signed_file_store_id != ""`.
-- `CheckConstraint`: `status NOT IN (SIGNING, SUCCESS) OR placeholder_file_store_id != ""`.
+- `CheckConstraint`: `status != SUCCESS OR signed_file_id != ""`.
+- `CheckConstraint`: `status NOT IN (SIGNING, SUCCESS) OR placeholder_file_id != ""`.
 - Index on `(status, expires_at)` for the sweeper.
 - Index on `(entity_type, entity_id)` and `(tenant_id, created_at)` for lookups.
 - Non-DB invariants (placement validity, hash format) live in `clean()`.
@@ -365,7 +387,7 @@ Authenticated (`IsAuthenticated`). Request:
   "module": "orders",
   "entity_type": "order",
   "entity_id": "9f2c...",
-  "file_store_id": "abc-123",
+  "file_id": "abc-123",
   "sign_placeholder": {
     "page": 1,
     "position": "bottom-right",
@@ -375,8 +397,8 @@ Authenticated (`IsAuthenticated`). Request:
 }
 ```
 
-Serializer validation: required scalars present; `file_store_id` resolves in
-File Storage; content type is `application/pdf`; `sign_placeholder` matches the
+Serializer validation: required scalars present; `file_id` resolves through
+`get_file()`; its `content_type` is `application/pdf`; `sign_placeholder` matches the
 declared schema and page/coordinates are within the document; the requesting
 user is permitted to sign the referenced entity (object-level permission
 delegated to the owning module, not hardcoded here).
@@ -405,10 +427,11 @@ No provider-specific knowledge in the client.
 ### 6.2 `GET /api/v1/esign/transactions/{id}` — status
 
 Authenticated; scoped to the initiating user/tenant. Returns status,
-`signed_file_store_id` when `SUCCESS`, `failure_code`/`failure_message`
+`signed_file_id` when `SUCCESS`, `failure_code`/`failure_message`
 otherwise. This is the endpoint the UI polls after the browser returns, and it
 is the only supported way for a client to learn the outcome. Excluded from
-caching (#0012) because it is read-after-write on a volatile row.
+caching (per [`0012`](0012-redis-caching.md)) because it is read-after-write on a
+volatile row.
 
 ### 6.3 `POST /api/v1/esign/_signed` — ESP callback
 
@@ -417,8 +440,8 @@ caching (#0012) because it is read-after-write on a volatile row.
 - Accepts `application/x-www-form-urlencoded` (and `application/xml`), because
   C-DAC posts a browser form.
 - The transaction is identified **only** from the verified ESP response. Any
-  client-supplied `file_store_id`, transaction id, or redirect target in the
-  query string is ignored.
+  client-supplied `file_id`, transaction id, or redirect target in the query
+  string is ignored.
 - Response is a `302` to `ESIGN_UI_REDIRECT_URL` with
   `transaction_id` and `status` query parameters (allow-listed host, configured
   server-side — never taken from the request). If no redirect URL is configured,
@@ -509,8 +532,8 @@ raw form POST
    +-- 3. lookup by provider_transaction_id (select_for_update)
    +-- 4. state gate (#8.2)
    +-- 5. mark SIGNING, commit                         [tx 1]
-   +-- 6. filestore.get(placeholder) ; pdf.embed_signature ; filestore.save
-   +-- 7. mark SUCCESS + signed_file_store_id          [tx 2]
+   +-- 6. files.get_content(placeholder) ; pdf.embed_signature ; files.upload
+   +-- 7. mark SUCCESS + signed_file_id                [tx 2]
    v
 302 -> UI
 ```
@@ -561,21 +584,22 @@ in both models; nothing in `apps.esign` branches on it.
 - Any failure before the transaction row exists returns a DRF error and stores
   nothing.
 - Any failure after it exists sets `FAILURE` with `failure_code` and a safe
-  `failure_message`, keeps `placeholder_file_store_id`, and leaves the source
+  `failure_message`, keeps `placeholder_file_id`, and leaves the source
   document untouched.
 - The placeholder PDF is **retained** on failure so a retry does not re-prepare
   the source. Deletion happens only through the cleanup policy below.
 - `tasks.expire_stale_transactions` (Dramatiq, periodic) moves `PENDING` rows
   past `expires_at` + grace to `EXPIRED`.
-- `tasks.cleanup_placeholders` (Dramatiq, periodic) deletes placeholder files
-  for terminal transactions older than `ESIGN_PLACEHOLDER_RETENTION` and clears
-  the id. Never deletes source or signed files.
+- `tasks.cleanup_placeholders` (Dramatiq, periodic) calls `delete_file()` for the
+  placeholder files of terminal transactions older than
+  `ESIGN_PLACEHOLDER_RETENTION` and clears the id. Never deletes source or
+  signed files.
 - `tasks.reconcile_signing_transactions` handles the crash window in #8: a row
   stuck in `SIGNING` past a timeout is moved to `FAILURE` with
   `ESIGN_SIGNING_INTERRUPTED`, so the retry path (not a partial write) resolves
-  it. Because `signed_file_store_id` is written in the same transaction as
-  `SUCCESS`, an orphaned signed file in storage is possible; it is unreferenced
-  and collected by the storage module's orphan policy.
+  it. Because `signed_file_id` is written in the same transaction as `SUCCESS`, a
+  crash between upload and commit can leave an orphaned `apps.files` record; it
+  is unreferenced and left to the storage module's retention policy.
 - Retry (#6.4) creates a new row: new `provider_transaction_id`, `retry_of` set,
   `attempt_count = parent.attempt_count + 1`, same placeholder and hash. The
   placeholder is only re-prepared if it is missing.
@@ -589,7 +613,7 @@ in both models; nothing in `apps.esign` branches on it.
 ```text
 Initiation: ESIGN_INVALID_REQUEST, ESIGN_SOURCE_NOT_FOUND, ESIGN_NOT_A_PDF,
             ESIGN_INVALID_PLACEHOLDER, ESIGN_NOT_PERMITTED,
-            ESIGN_PDF_PREPARATION_FAILED, ESIGN_FILESTORE_UNAVAILABLE,
+            ESIGN_PDF_PREPARATION_FAILED, ESIGN_FILE_STORAGE_UNAVAILABLE,
             ESIGN_PROVIDER_NOT_CONFIGURED, ESIGN_REQUEST_BUILD_FAILED,
             ESIGN_REQUEST_SIGNING_FAILED
 Callback:   ESIGN_CALLBACK_MALFORMED, ESIGN_RESPONSE_UNTRUSTED,
@@ -658,7 +682,9 @@ System checks registered in each app's `AppConfig.ready()`, so
 - `CDAC_ESIGN_URL` and `CDAC_ESIGN_RESPONSE_URL` are absolute `https://` URLs;
 - keystore exists, opens with the given password, and holds a key + cert;
 - ASP certificate is not expired (warning within 30 days of expiry);
-- `CDAC_ESIGN_HASH_ALGORITHM` is supported by the PDF Service module;
+- `CDAC_ESIGN_HASH_ALGORITHM` matches `PDF_SIGNATURE_HASH_ALGORITHM`
+  ([`0016`](0016-pdf-services.md) #15), since the ESP is told which algorithm
+  produced the hash it receives;
 - production: response-signature verification enabled, response cert present,
   mock provider not selected, `ESIGN_UI_REDIRECT_URL` set and `https://`.
 
@@ -671,7 +697,7 @@ local/CI need no C-DAC credentials or keystore.
 
 - The callback is unauthenticated by necessity; authenticity comes solely from
   XMLDSig verification, `txn` correlation, timestamp freshness, and state gating.
-- A callback can never select a different document: the file ids come from the
+- A callback can never select a different document: the `file_id`s come from the
   stored transaction, never from the request.
 - Redirect targets are server-side configuration, preventing open redirect.
 - ASP key material: secrets-injected, memory-cached, never persisted, logged,
@@ -724,7 +750,7 @@ dedicated metrics backend in this iteration.
   rejection, missing signature, embed failure, upload failure.
 
 **Integration (DB + stub broker, PDF/File Storage/provider mocked)**
-- full flow: initiate → callback → `SUCCESS` with a `signed_file_store_id`, and
+- full flow: initiate → callback → `SUCCESS` with a `signed_file_id`, and
   a source file that is byte-identical afterwards.
 - duplicate callback: second delivery produces no second signed file and returns
   the same redirect.
@@ -760,7 +786,11 @@ New (`apps.esign`): app package per #1.1 plus migrations and tests.
 
 New (addon): `src/addon/cdac_esign/{__init__,apps,provider,config,request_builder,xml_signer,response_parser,response_verifier,keystore,constants,checks}.py` and `tests/`.
 
-Modified:
+Modified (other modules, as amendments to their own specs):
+- `src/apps/files/services.py` — `get_file_content()`, `delete_file()`, and the `SIGNED_PDF` file type per [`0014`](0014-file-storage-service.md) #1.2/#6.1/#6.2
+- `src/apps/pdf/services/signing.py` — `prepare_for_signing()` / `embed_signature()` per [`0016`](0016-pdf-services.md) #14
+
+Modified (wiring and docs):
 - `src/config/settings/base.py` — `INSTALLED_APPS` (`apps.esign`, `addon.cdac_esign`), `ESIGN_*` and `CDAC_ESIGN_*` blocks
 - `src/config/settings/local.py`, `test.py` — mock provider default
 - `src/config/settings/production.py` — production guards
@@ -769,8 +799,9 @@ Modified:
 - `.env.example`, `.env.prod.example`, `README.md`
 - `AGENTS.md` — note that `addon.*` now hosts two integrations
 
-Depends on: PDF Service module exposing `prepare_for_signing` / `embed_signature`,
-and File Storage module exposing `get` / `save` / `delete`.
+Depends on: [`0016`](0016-pdf-services.md) #14 (`prepare_for_signing`,
+`embed_signature`) and [`0014`](0014-file-storage-service.md) #6.1/#6.2
+(`get_file_content`, `delete_file`). Neither dependency is duplicated here.
 
 ---
 
@@ -779,15 +810,15 @@ and File Storage module exposing `get` / `save` / `delete`.
 - [ ] `apps.esign` owns the model, state machine, APIs, recovery, and audit.
 - [ ] All C-DAC specifics live in `addon.cdac_esign`; `apps.esign` never imports `addon.*`.
 - [ ] Provider is selected purely by `ESIGN_PROVIDER`; the mock provider is the local/test default.
-- [ ] No PDF parsing or file persistence code exists in this module.
+- [ ] No PDF parsing or file persistence code exists in this module; `apps.pdf` and `apps.files` are used through their service functions only.
 - [ ] Initiation prepares the PDF, stores the placeholder, creates a `PENDING` row, and returns opaque `form_fields` + `esign_url`.
-- [ ] Source document is never modified; placeholder and signed PDFs are new storage objects.
+- [ ] Source document is never modified; placeholder and signed PDFs are new `apps.files` records.
 - [ ] Request XML matches #7.1 and is enveloped-XMLDSig signed with the ASP key from a PKCS#12 keystore.
 - [ ] Callback is `AllowAny` + CSRF-exempt, accepts form-urlencoded, verifies the response signature, and returns a 302 to a server-configured URL.
 - [ ] Verification rejects untrusted, stale, malformed, unknown, or non-processable callbacks.
 - [ ] Transaction is identified only from the verified response; request-supplied ids are ignored.
 - [ ] Duplicate and concurrent callbacks produce exactly one signed file.
-- [ ] `SUCCESS` always carries a `signed_file_store_id` (DB-enforced).
+- [ ] `SUCCESS` always carries a `signed_file_id` (DB-enforced).
 - [ ] Failures record `failure_code`/`failure_message`, retain the placeholder, and are retryable.
 - [ ] Retry creates a new transaction linked by `retry_of`, bounded by `ESIGN_MAX_ATTEMPTS`.
 - [ ] Sweeper expires stale `PENDING` rows and reconciles stuck `SIGNING` rows.
@@ -805,7 +836,8 @@ and File Storage module exposing `get` / `save` / `delete`.
 | --- | --- |
 | Domain in `apps.esign`, wire protocol in `addon.cdac_esign` | Mirrors 0009/0013. The transaction lifecycle is a Dristi domain concern that outlives any ESP; the XML and keystore are swappable integration detail. |
 | Provider interface instead of a bare CDAC client | Gives a mock provider for local/CI without C-DAC credentials, and makes a second ESP a settings change. |
-| PDF and storage consumed via narrow adapters | They are separate modules of this project; adapters keep the domain indifferent to whether they are in-process today and remote later. |
+| PDF and storage consumed via narrow adapters | `apps.pdf` and `apps.files` are separate modules of this project; adapters keep the domain indifferent to their internals and to any future REST layer. |
+| Signing primitives live in `apps.pdf`, not here | Container reservation and the ByteRange digest are PDF-format concerns belonging to the module that already owns PDF bytes; duplicating them would guarantee drift. `apps.pdf` in turn holds no keys and never talks to an ESP. |
 | PDF Service computes the hash | The digest is defined over the PDF ByteRange, which only the module reserving the container can compute. Duplicating it here would guarantee drift. |
 | Extra `SIGNING` state | External calls cannot run inside a DB transaction; a durable in-progress marker is what makes crash recovery and concurrency safety possible. |
 | `EXPIRED` state + sweeper | The common real-world outcome is a user abandoning the C-DAC screen. Without it, `PENDING` grows forever and retry eligibility is undefined. |
@@ -837,11 +869,11 @@ and File Storage module exposing `get` / `save` / `delete`.
    signatories, or do we need a sign-request aggregate now?
 3. Should the signed PDF replace the entity's current document reference
    automatically, or does the calling module own that update? (This spec assumes
-   the caller owns it and only returns `signed_file_store_id`.)
+   the caller owns it and only returns `signed_file_id`.)
 4. Is a consent/eKYC artefact required to be archived for legal audit beyond the
    signer certificate metadata we retain?
-5. What is C-DAC's actual PKCS#7 blob size, so the PDF Service can size the
-   reserved container with an adequate margin?
+5. What is C-DAC's actual PKCS#7 blob size, so `PDF_SIGNATURE_CONTAINER_BYTES`
+   ([`0016`](0016-pdf-services.md) #15) can be set with an adequate margin?
 6. Should `ESignTransaction` rows be pruned or archived after a retention period,
    like the `MessageLog` question in 0009?
 
@@ -849,8 +881,10 @@ and File Storage module exposing `get` / `save` / `delete`.
 
 1. **Domain skeleton** — `apps.esign`, model + migration + state machine, admin,
    constants, exceptions, provider ABC/registry, mock provider, unit tests.
-2. **Module adapters** — PDF and File Storage adapters against the agreed
-   interfaces, with fakes for tests.
+2. **Module adapters** — `apps.pdf` and `apps.files` adapters against the agreed
+   service functions, with fakes for tests. Blocked on
+   [`0016`](0016-pdf-services.md) #14 and
+   [`0014`](0014-file-storage-service.md) #6.1/#6.2 landing.
 3. **APIs** — initiate, status, callback, retry; serializers, permissions,
    throttling, Swagger, envelope tests.
 4. **CDAC addon** — keystore, request builder, XML signer, response parser and
