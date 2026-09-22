@@ -4,6 +4,12 @@
 
 Proposed
 
+## References
+
+- [0000 — API Coding Spec](0000-api-coding-spec.md) — model/style constraints
+- [0016 — PDF Service](0016-pdf-services.md) — consumer: stores generated documents
+- [0015 — eSign Module and CDAC eSign Addon](0015-cdac-esign.md) — consumer: stores prepared and signed PDFs, reads content in-process, cleans up placeholders
+
 ## Context
 
 Multiple parts of the system need to upload and access files as part of their business flows. Rather than implementing file upload, storage, and retrieval separately in each module, this module provides a generic file storage service.
@@ -24,7 +30,9 @@ The service should remain independent of the business context in which a file is
 * Track the user or system that uploaded the file through `user_id`.
 * Support a controlled `file_type` ENUM.
 * Support multiple arbitrary tags for filtering and search.
-* Provide a function to retrieve a single file.
+* Provide a function to retrieve a single file's metadata.
+* Provide a function to read a stored file's content in-process.
+* Provide a function to delete a file and its stored object.
 * Provide a function to search/list files.
 
 ## Non-goals
@@ -107,14 +115,24 @@ Initial values need to be finalized based on the requirements of the consuming m
 For example:
 
 ```text
-PHOTO
-DOCUMENT
 PDF
+DOCUMENT
+IMAGE
 SIGNATURE
-OTHER
+DIGITALLY_SIGNED
 ```
 
-These are examples only and are not intended to define the final enum.
+The enum is driven by the needs of the consuming modules. Currently known:
+
+| Consumer | Values used |
+| --- | --- |
+| [`0016`](0016-pdf-services.md) generated documents | `PDF` |
+| [`0015`](0015-cdac-esign.md) prepared (placeholder) PDF | `PDF` |
+| [`0015`](0015-cdac-esign.md) eSigned output | `DIGITALLY_SIGNED` |
+
+`DIGITALLY_SIGNED` is kept distinct from `PDF` so that digitally signed artefacts can
+be filtered, retained, and audited separately from ordinary documents. Remaining
+values are examples and are finalized as consumers land.
 
 ### 1.3 Tags
 
@@ -146,13 +164,20 @@ do not result in separate tags.
 
 Location: `apps.files.services`
 
-The module exposes exactly three public functions in this iteration:
+The module exposes exactly five public functions in this iteration:
 
 ```text
 upload_file(...)
 get_file(...)
+get_file_content(...)
 search_file(...)
+delete_file(...)
 ```
+
+`get_file_content()` and `delete_file()` are required by
+[`0015`](0015-cdac-esign.md) (read a PDF for signing, clean up placeholder
+files) and [`0016`](0016-pdf-services.md) (document download and delete), so
+they are part of this iteration rather than deferred.
 
 * Business logic lives in the service module and models — not in views or serializers.
 * The functions are plain Python callables; they take and return plain Python data structures (dicts, model instances, querysets), not DRF `Response` objects.
@@ -336,16 +361,56 @@ Output:
 
 If the file does not exist, `get_file` raises `File.DoesNotExist` (or a module-level `FileNotFound` error); it must not return `None` silently.
 
-Content access is provided separately so that metadata reads stay cheap:
+Content access is provided separately so that metadata reads stay cheap.
+
+### 6.1 Get file content
 
 ```text
 get_file_content(file_id) -> file-like object
 ```
 
-The exact approach for content access is kept as an open design decision:
+Returns a readable, seekable file-like object obtained from the storage backend.
+A stream (not a signed URL) is the committed contract for this iteration because
+the in-process consumers need the bytes themselves: [`0016`](0016-pdf-services.md)
+streams them through the download endpoint, and [`0015`](0015-cdac-esign.md)
+feeds them to the PDF Service for hashing and signature embedding. Signed URLs
+remain a future addition for browser-direct download, not a replacement.
 
-* Return a file-like stream from the storage backend.
-* Return a short-lived signed URL.
+Rules:
+
+* Unknown `file_id` raises the same not-found error as `get_file`.
+* The caller is responsible for closing the returned object.
+* A configured maximum read size guards against loading very large files fully
+  into memory; consumers that only need metadata must use `get_file`.
+
+### 6.2 Delete file
+
+```text
+delete_file(file_id) -> None
+```
+
+Deletes the stored object and the `File` record (with its tag associations).
+
+Rules:
+
+* The stored object is deleted first; the database row is removed only after the
+  storage backend confirms deletion, so a `File` record never points at a
+  missing object.
+* Deleting an unknown `file_id` raises the not-found error; deletion is not
+  silently idempotent.
+* Deletion is permanent in this iteration. It is intended for cleanup of
+  module-owned intermediate artefacts (for example eSign placeholder PDFs and
+  cancelled PDF jobs), not as a general user-facing operation.
+* This module does **not** track which business entity references a `file_id`, so
+  the calling module is responsible for only deleting files it owns.
+
+### 6.3 Immutability
+
+Stored content is never modified in place. A file that must change produces a
+new `File` record with a new `file_id`. Consumers such as
+[`0015`](0015-cdac-esign.md) rely on this: the source document of a signing
+transaction must be byte-identical after signing, and the prepared and signed
+PDFs are separate records.
 
 ---
 
@@ -458,7 +523,15 @@ FILE_STORAGE_BACKEND
 FILE_STORAGE_BUCKET
 FILE_MAX_SIZE_BYTES
 FILE_MAX_COUNT_PER_UPLOAD
+FILE_MAX_READ_BYTES          # guard for get_file_content()
+FILE_SYSTEM_USER_ID          # user_id used by background/system uploads
 ```
+
+`FILE_SYSTEM_USER_ID` exists because some uploads have no interactive user: a
+PDF generated by a Dramatiq worker ([`0016`](0016-pdf-services.md)) and the
+signed PDF produced while handling an unauthenticated ESP callback
+([`0015`](0015-cdac-esign.md)). Those callers pass their own actor when they have
+one and fall back to this value otherwise.
 
 ---
 
@@ -492,6 +565,9 @@ No `serializers.py`, `views.py`, or `urls.py` in this iteration.
 * `upload_file` with a single file and with multiple files of different `file_type`.
 * Tag normalization and tag reuse across files.
 * `get_file` success and not-found.
+* `get_file_content` returns readable bytes, not-found, and read-size guard.
+* `delete_file` removes object then record, not-found, and that a storage
+  deletion failure leaves the `File` record intact.
 * `search_file` for each filter, combined filters, and pagination.
 * Validation failures.
 * Storage failure → no `File` record; database failure → uploaded object cleaned up (using a fake/in-memory storage backend).
@@ -508,11 +584,14 @@ cd src && python manage.py check
 
 ## 12. Open questions
 
-1. Should content access return a short-lived signed URL or a file-like stream from the storage backend?
+1. Signed-URL content access is deferred (#6.1 commits to a stream) — which
+   consumer needs signed URLs first, and for which file sizes?
 
-2. What should be the initial `FileType` ENUM values?
+2. Beyond the consumer-driven values in #1.2, which additional `FileType` values
+   are needed by the first non-PDF consumer?
 
-3. How should a system/backend actor be represented in `user_id`?
+3. Should `FILE_SYSTEM_USER_ID` (#10) be a real user row, a reserved UUID, or a
+   sentinel string?
 
 4. Should tags be global across the system or scoped to an `organization_id`?
 
@@ -533,8 +612,8 @@ cd src && python manage.py check
 ---
 ## 14. Future TODO
 
-* Evaluate signed URL based upload for large files.
-* Add file deletion service and Object Storage cleanup.
+* Evaluate signed URL based upload/download for large files.
+* Add soft-delete / retention policy and orphaned-object reconciliation on top of `delete_file`.
 * Add file access/permission model if required.
 * Add virus/malware scanning.
 * Add file versioning if required.
@@ -554,7 +633,8 @@ cd src && python manage.py check
 * Thumbnail generation.
 * File versioning.
 * File sharing.
-* File deletion.
+* Soft delete, retention policies, and reconciliation of orphaned storage objects.
+* Reference counting of `file_id` usage by consuming modules.
 * Access-control/permission management.
 * Full-text search inside file contents.
 * Notifications related to file upload.
