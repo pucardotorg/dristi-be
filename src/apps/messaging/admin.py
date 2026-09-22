@@ -15,6 +15,7 @@ class MessageTemplateAdmin(AuditUserAdminMixin, admin.ModelAdmin):
         "category",
         "priority",
         "max_retries",
+        "provider_template_id",
         "is_active",
     )
     list_filter = ("message_type", "category", "priority", "is_active")
@@ -29,13 +30,20 @@ class MessageLogAdmin(admin.ModelAdmin):
         "message_key",
         "message_type",
         "status",
+        "provider",
+        "failure_code",
         "attempt_count",
         "max_retries",
         "sent_at",
         "failed_at",
     )
-    list_filter = ("message_type", "status")
-    search_fields = ("message_key", "recipient", "provider_message_id")
+    list_filter = ("message_type", "status", "provider", "failure_code")
+    search_fields = (
+        "message_key",
+        "recipient",
+        "provider_message_id",
+        "correlation_id",
+    )
 
     def has_add_permission(self, request):
         return False

@@ -20,7 +20,28 @@ class MessageBackendNotConfigured(Exception):  # noqa: N818
 
 
 class MessageSendError(Exception):
-    """Raised when a backend fails to deliver a message."""
+    """Raised when a backend fails to deliver a message.
+
+    Backends may attach a machine-readable ``code`` and the raw
+    ``gateway_status`` they observed; both are recorded on the MessageLog.
+    """
+
+    def __init__(self, message: str = "", code: str = "", gateway_status: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.gateway_status = gateway_status
+
+
+class MessagePermanentError(MessageSendError):
+    """Raised when delivery failed for a reason retrying cannot fix."""
+
+
+class RecipientFilteredError(Exception):  # noqa: N818
+    """Raised when a recipient is suppressed by policy rather than failing."""
+
+    def __init__(self, message: str = "", reason: str = ""):
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass
@@ -35,6 +56,11 @@ class RenderedMessage:
     content_type: str = "text/plain"
     category: str = ""
     payload: dict = field(default_factory=dict)
+    provider_template_id: str = ""
+    context: dict = field(default_factory=dict)
+    message_id: str = ""
+    correlation_id: str = ""
+    attempt: int = 0
 
 
 class MessageTemplateRenderer:
@@ -54,6 +80,9 @@ class MessageTemplateRenderer:
         context: dict,
         recipient: dict | None = None,
         message_key: str | None = None,
+        message_id: str = "",
+        correlation_id: str = "",
+        attempt: int = 0,
         **payload,
     ) -> RenderedMessage:
         """Validate context and render subject and body."""
@@ -77,6 +106,11 @@ class MessageTemplateRenderer:
             content_type=content_type,
             category=template.category,
             payload=payload,
+            provider_template_id=template.provider_template_id,
+            context=context,
+            message_id=message_id,
+            correlation_id=correlation_id,
+            attempt=attempt,
         )
 
     def _validate_context(self, template: MessageTemplate, context: dict):
