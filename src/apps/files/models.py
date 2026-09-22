@@ -10,14 +10,26 @@ from apps.core.models import BaseActivatableModel, BaseModel
 class FileType(models.TextChoices):
     """Controlled type of a stored file.
 
-    Sample values for the first iteration; the final set depends on the
-    requirements of the consuming modules.
+    The type describes the role a file plays for the consuming module, not its
+    media type. Typical formats per value:
+
+    ``PDF``
+        PDF.
+    ``DOCUMENT``
+        PDF, DOC, DOCX, ODT.
+    ``IMAGE``
+        JPG, JPEG, PNG, etc.
+    ``SIGNATURE``
+        PNG, JPEG.
+    ``DIGITALLY_SIGNED``
+        PDF, XML, etc.
     """
 
-    PHOTO = "photo", "Photo"
+    PDF = "pdf", "PDF"
     DOCUMENT = "document", "Document"
+    IMAGE = "image", "Image"
     SIGNATURE = "signature", "Signature"
-    OTHER = "other", "Other"
+    DIGITALLY_SIGNED = "digitally_signed", "Digitally signed"
 
 
 class FileTag(BaseModel):
