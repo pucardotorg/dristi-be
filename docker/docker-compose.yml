@@ -2,9 +2,9 @@ services:
   db:
     image: docker.io/postgres:16-alpine
     environment:
-      POSTGRES_DB: dristi
-      POSTGRES_USER: dristi
-      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -36,7 +36,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      REDIS_URL: "redis://redis:6379/2"
+      REDIS_URL: "${DRAMATIQ_BROKER_URL}"
     depends_on:
       redis:
         condition: service_healthy
@@ -72,10 +72,11 @@ services:
       RUSTFS_ADDRESS: ":9000"
       RUSTFS_CONSOLE_ADDRESS: ":9001"
       RUSTFS_CONSOLE_ENABLE: "true"
-      # Must stay in sync with S3_ACCESS_KEY / S3_SECRET_KEY on web and worker.
-      RUSTFS_ACCESS_KEY: admin
-      RUSTFS_SECRET_KEY: this is dummy password
-      RUSTFS_OBS_LOGGER_LEVEL: error
+      # The server's own credentials come from the same S3_* vars the clients
+      # read, so the two cannot drift apart.
+      RUSTFS_ACCESS_KEY: "${S3_ACCESS_KEY}"
+      RUSTFS_SECRET_KEY: "${S3_SECRET_KEY}"
+      RUSTFS_OBS_LOGGER_LEVEL: "${RUSTFS_OBS_LOGGER_LEVEL}"
       RUSTFS_OBS_LOG_DIRECTORY: /var/log/rustfs
 
   rustfs-init:
@@ -88,15 +89,17 @@ services:
       - rustfs
     restart: "no"
     environment:
-      AWS_ACCESS_KEY_ID: admin
-      AWS_SECRET_ACCESS_KEY: this is dummy password
+      AWS_ACCESS_KEY_ID: "${S3_ACCESS_KEY}"
+      AWS_SECRET_ACCESS_KEY: "${S3_SECRET_KEY}"
       AWS_DEFAULT_REGION: us-east-1
+      S3_API_ENDPOINT: "${S3_API_ENDPOINT}"
+      S3_BUCKET: "${S3_BUCKET}"
     entrypoint:
       - sh
       - -c
       - |
         i=0
-        until aws --endpoint-url http://rustfs:9000 s3 ls >/dev/null 2>&1; do
+        until aws --endpoint-url "$$S3_API_ENDPOINT" s3 ls >/dev/null 2>&1; do
           i=$$((i + 1))
           if [ $$i -ge 30 ]; then
             echo "ERROR: rustfs did not become available after 60s."
@@ -105,11 +108,11 @@ services:
           echo "Waiting for rustfs..."
           sleep 2
         done
-        aws --endpoint-url http://rustfs:9000 s3 mb s3://dristi-media 2>/dev/null || true
-        if aws --endpoint-url http://rustfs:9000 s3 ls s3://dristi-media >/dev/null 2>&1; then
-          echo "Bucket dristi-media is ready."
+        aws --endpoint-url "$$S3_API_ENDPOINT" s3 mb "s3://$$S3_BUCKET" 2>/dev/null || true
+        if aws --endpoint-url "$$S3_API_ENDPOINT" s3 ls "s3://$$S3_BUCKET" >/dev/null 2>&1; then
+          echo "Bucket $$S3_BUCKET is ready."
         else
-          echo "ERROR: bucket dristi-media could not be created."
+          echo "ERROR: bucket $$S3_BUCKET could not be created."
           exit 1
         fi
 
@@ -123,22 +126,6 @@ services:
     user: root
     env_file:
       - ../.env
-    environment:
-      DJANGO_SETTINGS_MODULE: config.settings.local
-      DATABASE_URL: postgres://dristi:secret@db:5432/dristi
-      REDIS_URL: redis://redis:6379/0
-      CACHE_URL: redis://redis:6379/1
-      DRAMATIQ_BROKER_URL: redis://redis:6379/2
-      S3_API_ENDPOINT: http://rustfs:9000
-      S3_BUCKET: dristi-media
-      S3_ACCESS_KEY: admin
-      S3_SECRET_KEY: this is dummy password
-      MESSAGING_EMAIL_BACKEND: smtp
-      MESSAGING_EMAIL_HOST: mailhog
-      MESSAGING_EMAIL_PORT: 1025
-      MESSAGING_EMAIL_USE_TLS: "False"
-      MESSAGING_EMAIL_USE_SSL: "False"
-      MESSAGING_EMAIL_DEFAULT_FROM: dev@example.com
     ports:
       - "8000:8000"
     volumes:
@@ -161,22 +148,6 @@ services:
     user: root
     env_file:
       - ../.env
-    environment:
-      DJANGO_SETTINGS_MODULE: config.settings.local
-      DATABASE_URL: postgres://dristi:secret@db:5432/dristi
-      REDIS_URL: redis://redis:6379/0
-      CACHE_URL: redis://redis:6379/1
-      DRAMATIQ_BROKER_URL: redis://redis:6379/2
-      S3_API_ENDPOINT: http://rustfs:9000
-      S3_BUCKET: dristi-media
-      S3_ACCESS_KEY: admin
-      S3_SECRET_KEY: this is dummy password
-      MESSAGING_EMAIL_BACKEND: smtp
-      MESSAGING_EMAIL_HOST: mailhog
-      MESSAGING_EMAIL_PORT: 1025
-      MESSAGING_EMAIL_USE_TLS: "False"
-      MESSAGING_EMAIL_USE_SSL: "False"
-      MESSAGING_EMAIL_DEFAULT_FROM: dev@example.com
     volumes:
       - ../src:/app
     depends_on:
