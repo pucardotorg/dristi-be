@@ -105,7 +105,7 @@ class TestUploadFile:
                 user,
                 files=[
                     entry(upload("application.pdf"), FileType.DOCUMENT),
-                    entry(upload("portrait.png"), FileType.PHOTO),
+                    entry(upload("portrait.png"), FileType.IMAGE),
                     entry(upload("sign.png"), FileType.SIGNATURE),
                 ],
             )
@@ -287,7 +287,7 @@ class TestSearchFile:
                 files=[entry(upload("a.pdf"), FileType.DOCUMENT, ["verification", "identity"])],
             )
         )
-        upload_file(payload(user, files=[entry(upload("b.png"), FileType.PHOTO, ["verification"])]))
+        upload_file(payload(user, files=[entry(upload("b.png"), FileType.IMAGE, ["verification"])]))
         upload_file(payload(other_user, files=[entry(upload("c.pdf"), FileType.DOCUMENT)]))
         return org, user, other_user
 
@@ -303,7 +303,7 @@ class TestSearchFile:
 
     def test_filter_by_file_type(self, corpus):
         assert search_file({"file_type": FileType.DOCUMENT})["count"] == 2
-        assert search_file({"file_type": FileType.PHOTO})["count"] == 1
+        assert search_file({"file_type": FileType.IMAGE})["count"] == 1
 
     def test_filter_by_tag(self, corpus):
         assert search_file({"tags": ["verification"]})["count"] == 2
