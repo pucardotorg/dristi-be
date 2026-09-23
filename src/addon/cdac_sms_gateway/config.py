@@ -5,6 +5,8 @@ from dataclasses import dataclass, field, fields
 from functools import lru_cache
 
 from django.conf import settings
+from django.core.signals import setting_changed
+from django.dispatch import receiver
 
 from . import constants
 
@@ -109,6 +111,14 @@ def reset_config_cache() -> None:
     """Clear the cached configuration (needed when overriding settings)."""
 
     resolve_config.cache_clear()
+
+
+@receiver(setting_changed)
+def _reset_config_cache_on_setting_change(sender, setting, **kwargs):
+    """Auto-clear the cache when a CDAC_SMS_* setting changes (e.g. in tests)."""
+
+    if setting.startswith("CDAC_SMS_"):
+        reset_config_cache()
 
 
 def is_active_backend() -> bool:

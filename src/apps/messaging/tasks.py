@@ -22,6 +22,7 @@ _FAILURE_FIELDS = [
     "error_message",
     "failure_code",
     "gateway_status",
+    "provider",
     "updated_at",
 ]
 
@@ -77,6 +78,7 @@ def send_message(log_id: str) -> None:
         log.save(update_fields=["rendered_subject", "rendered_content", "updated_at"])
 
         sender = get_backend(log.message_type)
+        log.provider = sender.get_provider_name()
         provider_message_id = sender.send(rendered)
 
         log.status = MessageLog.Status.SENT.value
@@ -84,7 +86,6 @@ def send_message(log_id: str) -> None:
         log.error_message = ""
         log.failure_code = ""
         log.gateway_status = ""
-        log.provider = sender.get_provider_name()
         if provider_message_id:
             log.provider_message_id = str(provider_message_id)
         log.save(
@@ -111,7 +112,9 @@ def _record_failure(log: MessageLog, exc: Exception) -> None:
         log.status = MessageLog.Status.FILTERED.value
         log.error_message = str(exc)
         log.failure_code = exc.reason
-        log.save(update_fields=["status", "error_message", "failure_code", "updated_at"])
+        log.save(
+            update_fields=["status", "error_message", "failure_code", "provider", "updated_at"]
+        )
         _log_event("FILTERED", log, status=log.status, reason=exc.reason)
         return
 

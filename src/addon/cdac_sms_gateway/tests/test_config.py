@@ -44,10 +44,15 @@ class ResolveConfigTests(SimpleTestCase):
     def test_result_is_cached_until_reset(self):
         first = resolve_config()
         self.assertIs(first, resolve_config())
+        reset_config_cache()
+        self.assertIsNot(first, resolve_config())
+
+    @override_settings(**VALID)
+    def test_cache_resets_automatically_when_a_setting_changes(self):
+        self.assertEqual(resolve_config().username, "user")
         with override_settings(CDAC_SMS_USERNAME="other"):
-            self.assertEqual(resolve_config().username, "user")
-            reset_config_cache()
             self.assertEqual(resolve_config().username, "other")
+        self.assertEqual(resolve_config().username, "user")
 
     @override_settings(**VALID)
     def test_repr_redacts_secrets(self):

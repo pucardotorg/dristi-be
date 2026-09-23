@@ -42,7 +42,10 @@ def mask_form(form: dict) -> dict:
     masked = {key: value for key, value in form.items() if key not in _REDACTED_FIELDS}
     number = masked.get("mobileno", "")
     if number:
-        masked["mobileno"] = f"{number[:4]}{'*' * max(len(number) - 8, 0)}{number[-4:]}"
+        visible = 2
+        masked["mobileno"] = (
+            f"{number[:visible]}{'*' * max(len(number) - 2 * visible, 0)}{number[-visible:]}"
+        )
     masked.pop("content", None)
     return masked
 
@@ -99,5 +102,7 @@ class CDACClient:
             raise MessageSendError(
                 f"CDAC gateway unavailable: {exc}", code=constants.GATEWAY_UNAVAILABLE
             ) from exc
+        finally:
+            self.session.close()
 
         return response.status_code, response.text or ""

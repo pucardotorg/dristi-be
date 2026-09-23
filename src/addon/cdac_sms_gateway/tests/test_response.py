@@ -114,6 +114,10 @@ class ClassifyTests(SimpleTestCase):
         self.assertNotIn("abc123", line)
         self.assertNotIn("deadbeef", line)
 
-    def test_print_response_disabled_logs_nothing(self):
-        with self.assertNoLogs(constants.LOGGER_NAME, level="INFO"):
+    def test_print_response_disabled_still_logs_status_but_suppresses_body(self):
+        with self.assertLogs(constants.LOGGER_NAME, level="INFO") as captured:
             classify(200, SUCCESS_BODY, BASE)
+        line = captured.output[0]
+        self.assertIn("event=GATEWAY_RESPONSE", line)
+        self.assertIn("gateway_status=200", line)
+        self.assertNotIn(SUCCESS_BODY, line)

@@ -2,6 +2,7 @@
 
 import logging
 import re
+from functools import lru_cache
 
 from apps.messaging.services import RecipientFilteredError
 
@@ -10,11 +11,13 @@ from . import constants
 logger = logging.getLogger(constants.LOGGER_NAME)
 
 
+@lru_cache(maxsize=256)
 def compile_pattern(pattern: str) -> re.Pattern:
     """Compile a recipient pattern into an anchored regular expression.
 
     ``X`` matches any single digit, ``*`` matches any remaining sequence of
-    digits, and every other character matches literally.
+    digits, and every other character matches literally. Cached so each
+    distinct pattern is compiled once instead of on every message.
     """
 
     parts = []

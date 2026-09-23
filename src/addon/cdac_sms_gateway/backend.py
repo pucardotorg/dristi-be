@@ -1,5 +1,7 @@
 """CDAC SMS backend: decides whether and what type of SMS to send."""
 
+import re
+
 from apps.messaging.senders.sms import SMSSender
 from apps.messaging.services import MessagePermanentError, RenderedMessage
 
@@ -8,6 +10,11 @@ from .client import CDACClient
 from .config import resolve_config
 from .hashing import generate_password_hash, generate_signature
 from .unicode_encoding import is_unicode_content, to_html_entities
+
+# A bare 10-digit Indian mobile number, optionally prefixed with a '91'
+# country code (with or without a leading '+'). CDAC only accepts the bare
+# 10-digit form; cfg.mobile_prefix re-adds '91' before the request is sent.
+_PHONE_NUMBER_RE = re.compile(r"^\+?(91)?([6-9]\d{9})$")
 
 
 class CDACSMSBackend(SMSSender):
@@ -53,7 +60,8 @@ class CDACSMSBackend(SMSSender):
                 code=constants.INVALID_RECIPIENT,
             )
 
-        number = filtering.resolve_recipient(str(phone_number), cfg, log_context)
+        number = self._normalize_phone_number(phone_number)
+        number = filtering.resolve_recipient(number, cfg, log_context)
 
         content_type = self._resolve_content_type(rendered_message)
         log_context["content_type"] = content_type
@@ -67,6 +75,23 @@ class CDACSMSBackend(SMSSender):
 
         status_code, body = CDACClient(cfg).post(form, log_context)
         return response.classify(status_code, body, cfg, log_context)
+
+    def _normalize_phone_number(self, phone_number) -> str:
+        """Strip a '+91'/'91' country code and return the bare 10-digit number.
+
+        Without this, a number that already carries a country code or a '+'
+        gets cfg.mobile_prefix prepended again in _build_form.
+        """
+
+        normalized = re.sub(r"[\s-]", "", str(phone_number).strip())
+
+        match = _PHONE_NUMBER_RE.match(normalized)
+        if not match:
+            raise MessagePermanentError(
+                f"Invalid recipient phone number '{phone_number}'",
+                code=constants.INVALID_RECIPIENT,
+            )
+        return match.group(2)
 
     def _resolve_content_type(self, rendered_message: RenderedMessage) -> str:
         """Return 'text' or 'unicode', honouring an explicit context override."""
