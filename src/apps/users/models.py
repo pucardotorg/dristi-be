@@ -12,9 +12,14 @@ from .services.managers import UserManager
 # The client sends E.164 (`+919876543210`). The backend does not rewrite what it
 # receives; it refuses anything that is not already in that form, so `unique=True`
 # is comparing like with like.
+#
+# Only Indian numbers are in scope, so the pattern is narrower than E.164: the
+# `+91` country code followed by a 10-digit subscriber number. India allocates
+# mobile numbers in the 6-9 leading-digit range, which excludes landline and
+# service codes that E.164 alone would have accepted.
 mobile_number_validator = RegexValidator(
-    regex=r"^\+[1-9]\d{7,14}$",
-    message="Enter the mobile number in international format, e.g. +919876543210.",
+    regex=r"^\+91[6-9]\d{9}$",
+    message="Enter an Indian mobile number, e.g. +919876543210.",
 )
 
 

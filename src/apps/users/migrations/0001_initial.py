@@ -49,8 +49,8 @@ class Migration(migrations.Migration):
                         unique=True,
                         validators=[
                             django.core.validators.RegexValidator(
-                                message="Enter the mobile number in international format, e.g. +919876543210.",
-                                regex="^\\+[1-9]\\d{7,14}$",
+                                message="Enter an Indian mobile number, e.g. +919876543210.",
+                                regex="^\\+91[6-9]\\d{9}$",
                             )
                         ],
                     ),

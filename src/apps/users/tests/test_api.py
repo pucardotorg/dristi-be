@@ -98,6 +98,53 @@ class OTPRequestTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
+class MobileNumberFormatTests(OTPTestCase):
+    """Only Indian mobile numbers are accepted, on every endpoint that takes one."""
+
+    # Each case is structurally valid E.164 but not an Indian mobile number, so
+    # these are exactly the inputs the old country-agnostic pattern let through.
+    NON_INDIAN = {
+        "foreign_country_code": "+998639167",
+        "india_landline_leading_digit": "+912212345678",
+        "india_too_few_digits": "+9198765432",
+        "india_too_many_digits": "+91987654321012",
+        "leading_zero_after_country_code": "+910987654321",
+        "missing_plus": "919876543210",
+    }
+
+    def test_non_indian_numbers_are_rejected_on_otp_request(self):
+        """POST /auth/otp/request refuses anything outside +91 mobile ranges."""
+        for label, number in self.NON_INDIAN.items():
+            with self.subTest(label):
+                response = self.client.post(
+                    reverse("otp-request"), {"mobile_number": number}, format="json"
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertIn("mobile_number", response.json())
+
+    def test_non_indian_numbers_are_rejected_on_user_create(self):
+        """POST /users refuses the same set, before the OTP is even consulted."""
+        for label, number in self.NON_INDIAN.items():
+            with self.subTest(label):
+                response = self.client.post(
+                    reverse("user-create"),
+                    {"mobile_number": number, "otp": "123456"},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertIn("mobile_number", response.json())
+
+    def test_indian_mobile_ranges_are_accepted(self):
+        """India allocates mobile numbers on leading digits 6 through 9."""
+        for leading in "6789":
+            number = f"+91{leading}000000000"
+            with self.subTest(number):
+                response = self.client.post(
+                    reverse("otp-request"), {"mobile_number": number}, format="json"
+                )
+                self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+
+
 class UserCreateTests(OTPTestCase):
     """POST /users."""
 
