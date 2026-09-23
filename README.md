@@ -79,8 +79,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CORS_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed by CORS (local `:3000` is a common default; use your actual frontend port if different) | `https://app.example.com` |
 | `CORS_ALLOW_CREDENTIALS` | Allow cross-origin cookies/credentials for browser API calls | `True` |
 | `DATABASE_URL` | PostgreSQL connection URL | `postgres://user:pass@db:5432/dristi` |
-| `REDIS_URL` | Redis connection for general use | `redis://redis:6379/0` |
-| `CACHE_URL` | Redis connection for Django cache | `redis://redis:6379/1` |
+| `CACHE_REDIS_URL` | Redis connection for Django cache | `redis://redis:6379/1` |
 | `CACHE_ENABLED` | Enable or disable Django's cache backend. When disabled, Django uses the dummy cache backend. | `True` |
 | `CACHE_KEY_PREFIX` | Prefix added to Django cache keys to namespace cached data. | `dristi-dev` |
 | `CACHALOT_ENABLED` | Enable or disable django-cachalot automatic ORM query caching. Defaults to `CACHE_ENABLED`. | `True` |

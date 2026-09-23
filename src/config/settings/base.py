@@ -207,7 +207,7 @@ SPECTACULAR_SETTINGS = {
 # ---------------------------------------------------------------------------
 CACHES = {
     "default": env.cache(
-        var="CACHE_URL",
+        var="CACHE_REDIS_URL",
         default="redis://localhost:6379/1",
     ),
 }
