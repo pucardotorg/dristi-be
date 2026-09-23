@@ -50,10 +50,11 @@ class Migration(migrations.Migration):
                     "file_type",
                     models.CharField(
                         choices=[
-                            ("photo", "Photo"),
+                            ("pdf", "PDF"),
                             ("document", "Document"),
+                            ("image", "Image"),
                             ("signature", "Signature"),
-                            ("other", "Other"),
+                            ("digitally_signed", "Digitally signed"),
                         ],
                         db_index=True,
                         max_length=50,
