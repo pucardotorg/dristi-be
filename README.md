@@ -20,7 +20,7 @@ A Django-based API project template using:
 2. Start the development stack with Docker Compose:
 
    ```bash
-   docker compose -f docker/docker-compose.yml up -d --build
+   docker compose --env-file .env -f docker/docker-compose.yml up -d --build
    ```
 
 3. Open the API in your browser:
