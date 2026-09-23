@@ -96,7 +96,7 @@ def search_file(filters=None, page=1, page_size=20):
         queryset = queryset.filter(user_id=filters["user_id"])
     if filters.get("file_type"):
         queryset = queryset.filter(file_type=filters["file_type"])
-    for name in filters.get("tags") or []:
+    for name in _validated_tag_names(filters.get("tags"), "tags"):
         queryset = queryset.filter(tags__name=_normalized_tag(name))
 
     paginator = Paginator(queryset.distinct(), page_size)
@@ -127,6 +127,8 @@ def _validated_upload(payload):
     entries = payload.get("files")
     if not entries:
         raise ValidationError({"files": "At least one file is required."})
+    if not isinstance(entries, list | tuple):
+        raise ValidationError({"files": "files must be a list."})
 
     max_count = settings.FILE_MAX_COUNT_PER_UPLOAD
     if len(entries) > max_count:
@@ -153,6 +155,8 @@ def _validate_entry(index, entry):
     if _size_of(upload) > max_size:
         raise ValidationError({f"files[{index}].file": f"file exceeds the {max_size} byte limit."})
 
+    _validated_tag_names(entry.get("tags"), f"files[{index}].tags")
+
 
 def _create_file(organization_id, user_id, file_id, storage_path, entry):
     """Create the File row and its tag links for one stored object."""
@@ -171,6 +175,34 @@ def _create_file(organization_id, user_id, file_id, storage_path, entry):
     file.save()
     file.tags.set(_resolve_tags(entry.get("tags") or []))
     return file
+
+
+def _validated_tag_names(names, field):
+    """Return ``names`` as a list of tag names, rejecting any other shape.
+
+    A bare string is iterable, so without this check ``"invoices"`` would be
+    stored as one tag per character rather than rejected. Only lists and
+    tuples are accepted: an iterator would be consumed here and arrive empty
+    at ``_resolve_tags``.
+
+    Names are run through ``_normalized_tag`` here, rather than only at write
+    time, so an unusable name is reported under the caller's field alongside
+    the rest of the payload.
+    """
+    if names is None:
+        return []
+    if not isinstance(names, list | tuple):
+        raise ValidationError({field: "tags must be a list of strings."})
+
+    for name in names:
+        if not isinstance(name, str):
+            raise ValidationError({field: "tags must be a list of strings."})
+        try:
+            _normalized_tag(name)
+        except ValidationError as exc:
+            raise ValidationError({field: exc.messages}) from exc
+
+    return list(names)
 
 
 def _resolve_tags(names):

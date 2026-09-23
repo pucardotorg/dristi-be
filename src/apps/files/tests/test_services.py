@@ -155,6 +155,34 @@ class TestUploadFileTags:
 
         assert File.objects.count() == 0
 
+    def test_tags_given_as_a_string_are_rejected(self, user):
+        """A bare string is iterable: it must not become one tag per character."""
+        with pytest.raises(ValidationError):
+            upload_file(payload(user, files=[entry(tags="invoices")]))
+
+        assert FileTag.objects.count() == 0
+        assert File.objects.count() == 0
+
+    def test_non_string_tags_are_rejected(self, user):
+        with pytest.raises(ValidationError):
+            upload_file(payload(user, files=[entry(tags=[1, None])]))
+
+        assert FileTag.objects.count() == 0
+        assert File.objects.count() == 0
+
+    def test_tags_are_validated_before_anything_is_stored(self, user):
+        """An unusable tag on the second entry must not leave the first stored."""
+        with pytest.raises(ValidationError):
+            upload_file(
+                payload(
+                    user,
+                    files=[entry(upload("good.pdf")), entry(upload("bad.pdf"), tags=["---"])],
+                )
+            )
+
+        assert FileTag.objects.count() == 0
+        assert File.objects.count() == 0
+
 
 class TestUploadFileValidation:
     """Section 8: the service validates, since there are no serializers."""
@@ -166,6 +194,10 @@ class TestUploadFileValidation:
     def test_empty_file_list_is_rejected(self, user):
         with pytest.raises(ValidationError):
             upload_file(payload(user, files=[]))
+
+    def test_files_given_as_a_string_are_rejected(self, user):
+        with pytest.raises(ValidationError):
+            upload_file(payload(user, files="abc"))
 
     def test_missing_file_is_rejected(self, user):
         with pytest.raises(ValidationError):
@@ -313,6 +345,11 @@ class TestSearchFile:
 
     def test_tag_filter_is_normalized(self, corpus):
         assert search_file({"tags": ["Verification"]})["count"] == 2
+
+    def test_tag_filter_given_as_a_string_is_rejected(self, corpus):
+        """Iterating a string would AND one filter per character and find nothing."""
+        with pytest.raises(ValidationError):
+            search_file({"tags": "verification"})
 
     def test_filters_are_anded(self, corpus):
         org, _, _ = corpus
