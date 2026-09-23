@@ -213,7 +213,9 @@ giving the seconds remaining. The response must not reveal whether the number
 belongs to an existing account.
 
 **How it is enforced.** A cache key whose presence *is* the cooldown. Each
-request builds a key from the OTP purpose and the mobile number, and tries to
+request builds a key from the mobile number alone — not the purpose, or
+alternating `register` and `login` would give one number two windows — and
+tries to
 write it with `cache.add()`, storing the time at which a resend becomes allowed
 and an expiry of `settings.OTP_RESEND_COOLDOWN_SECONDS`. `cache.add()` is the
 whole mechanism: one atomic operation that writes only when the key is absent

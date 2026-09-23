@@ -5,8 +5,10 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import AdvocateType, mobile_number_validator
+from .models import AdvocateProfile, AdvocateType, ClerkProfile, mobile_number_validator
 from .services.otp import Purpose
+
+MAX_PASSWORD_LENGTH = 128
 
 
 class OTPRequestSerializer(serializers.Serializer):
@@ -28,7 +30,11 @@ class SessionCreateSerializer(serializers.Serializer):
 
     mobile_number = serializers.CharField(max_length=16, validators=[mobile_number_validator])
     otp = serializers.CharField(max_length=10, write_only=True, required=False)
-    password = serializers.CharField(write_only=True, required=False)
+    password = serializers.CharField(
+        max_length=MAX_PASSWORD_LENGTH,
+        write_only=True,
+        required=False,
+    )
 
     def validate(self, attrs):
         """Require one credential, not zero and not both."""
@@ -47,16 +53,29 @@ class RegistrationCompletionSerializer(serializers.Serializer):
 
     name = serializers.CharField(max_length=256)
     email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(max_length=MAX_PASSWORD_LENGTH, write_only=True)
     terms_accepted = serializers.BooleanField()
 
-    def validate_password(self, value):
-        """Run the password through AUTH_PASSWORD_VALIDATORS."""
+    def validate(self, attrs):
+        """Run the password through AUTH_PASSWORD_VALIDATORS.
+
+        Object-level rather than per-field so the password can be compared
+        against the name and email arriving in this request. The stored row
+        holds only a mobile number until `complete_registration` runs, so
+        checking against it would let someone pick their own name as their
+        password. The candidate is a throwaway carrying the submitted values
+        and is never saved.
+        """
+        candidate = get_user_model()(
+            mobile_number=self.context["request"].user.mobile_number,
+            name=attrs.get("name", ""),
+            email=attrs.get("email") or "",
+        )
         try:
-            validate_password(value, user=self.context["request"].user)
+            validate_password(attrs["password"], user=candidate)
         except DjangoValidationError as exc:
-            raise serializers.ValidationError(list(exc.messages)) from exc
-        return value
+            raise serializers.ValidationError({"password": list(exc.messages)}) from exc
+        return attrs
 
     def validate_email(self, value):
         """Reject an email already claimed by another account."""
@@ -75,10 +94,11 @@ class RegistrationCompletionSerializer(serializers.Serializer):
         return value
 
 
-class AdvocateProfileSerializer(serializers.Serializer):
-    """Nested profile body for an advocate. Stored as an unverified claim."""
+class AdvocateProfileSerializer(serializers.ModelSerializer):
+    """
+    Nested profile body for an advocate. Stored as an unverified claim.
+    """
 
-    bar_registration_id = serializers.CharField(max_length=64)
     # Optional: an advocate who does not state a practice area leaves the
     # column null rather than being assigned a default they never chose.
     advocate_type = serializers.ChoiceField(
@@ -87,11 +107,23 @@ class AdvocateProfileSerializer(serializers.Serializer):
         allow_null=True,
     )
 
+    class Meta:
+        """Meta options."""
 
-class ClerkProfileSerializer(serializers.Serializer):
-    """Nested profile body for an advocate clerk. Stored as an unverified claim."""
+        model = AdvocateProfile
+        fields = ["bar_registration_id", "advocate_type"]
 
-    clerk_registration_number = serializers.CharField(max_length=64)
+
+class ClerkProfileSerializer(serializers.ModelSerializer):
+    """
+    Nested profile body for an advocate clerk. Stored as an unverified claim.
+    """
+
+    class Meta:
+        """Meta options."""
+
+        model = ClerkProfile
+        fields = ["clerk_registration_number"]
 
 
 class AdvocateRegistrationSerializer(RegistrationCompletionSerializer):

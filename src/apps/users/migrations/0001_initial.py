@@ -45,7 +45,6 @@ class Migration(migrations.Migration):
                 (
                     "mobile_number",
                     models.CharField(
-                        db_index=True,
                         max_length=16,
                         unique=True,
                         validators=[

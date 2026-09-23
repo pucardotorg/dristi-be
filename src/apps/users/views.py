@@ -150,10 +150,12 @@ class UserCreateView(APIView):
 
         login(request._request, user, backend=OTP_BACKEND)
 
-        headers = {}
-        if response_status == status.HTTP_201_CREATED:
-            headers["Location"] = f"/api/v1/users/{user.pk}"
-
+        # No Location header. Spec 4.1 shows one, but nothing in this project
+        # serves a user detail route, so the header pointed at a 404 — worse
+        # than its absence, since a client that follows it learns nothing and
+        # a client that does not is unaffected. `user_id` in the body is what
+        # callers actually use. Restore it alongside a GET /users/<id>/, not
+        # before.
         return Response(
             {
                 "user_id": str(user.pk),
@@ -161,7 +163,6 @@ class UserCreateView(APIView):
                 "next": "profile",
             },
             status=response_status,
-            headers=headers,
         )
 
 

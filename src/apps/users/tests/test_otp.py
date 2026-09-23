@@ -6,6 +6,7 @@ from apps.messaging.models import MessageLog, MessageTemplate
 from apps.users.services.otp import (
     MESSAGE_KEYS,
     Purpose,
+    ResendTooSoonError,
     issue_otp,
     verify_and_consume_otp,
 )
@@ -32,6 +33,50 @@ class OTPConsumptionTests(OTPTestCase):
         code = send.call_args[0][1]
 
         self.assertFalse(verify_and_consume_otp(MOBILE, code, Purpose.LOGIN))
+
+
+class OTPCooldownTests(OTPTestCase):
+    """The cooldown spaces out messages that were actually sent."""
+
+    def test_a_failed_send_does_not_start_the_cooldown(self):
+        """A send that raises leaves the user free to retry at once.
+
+        The cooldown is claimed before the send so two concurrent taps cannot
+        both dispatch. If the send then fails — the queue's database being
+        down, say — holding the claim would strand the user for the full
+        window having received nothing.
+        """
+        with patch(
+            "apps.users.services.otp._send_sms",
+            side_effect=RuntimeError("queue unavailable"),
+        ):
+            with self.assertRaises(RuntimeError):
+                issue_otp(MOBILE, Purpose.REGISTER)
+
+        # The retry succeeds rather than raising ResendTooSoonError.
+        with patch("apps.users.services.otp._send_sms") as send:
+            issue_otp(MOBILE, Purpose.REGISTER)
+        send.assert_called_once()
+
+    def test_alternating_purpose_does_not_bypass_the_cooldown(self):
+        """The window belongs to the number, not to the reason for the code."""
+        with patch("apps.users.services.otp._send_sms"):
+            issue_otp(MOBILE, Purpose.REGISTER)
+
+        with patch("apps.users.services.otp._send_sms") as send:
+            with self.assertRaises(ResendTooSoonError):
+                issue_otp(MOBILE, Purpose.LOGIN)
+        send.assert_not_called()
+
+    def test_a_successful_send_does_start_the_cooldown(self):
+        """The failure path must not have disarmed the cooldown generally."""
+        with patch("apps.users.services.otp._send_sms"):
+            issue_otp(MOBILE, Purpose.REGISTER)
+
+        with patch("apps.users.services.otp._send_sms") as send:
+            with self.assertRaises(ResendTooSoonError):
+                issue_otp(MOBILE, Purpose.REGISTER)
+        send.assert_not_called()
 
 
 class OTPDeliveryTests(OTPTestCase):

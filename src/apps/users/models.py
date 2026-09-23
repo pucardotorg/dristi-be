@@ -59,7 +59,6 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     mobile_number = models.CharField(
         max_length=16,
         unique=True,
-        db_index=True,
         validators=[mobile_number_validator],
     )
     name = models.CharField(max_length=256, blank=True)

@@ -19,6 +19,7 @@ from apps.users.models import (
     Role,
     User,
 )
+from apps.users.serializers import MAX_PASSWORD_LENGTH
 from apps.users.services.otp import Purpose
 from config.urls import urlpatterns as project_urlpatterns
 
@@ -109,7 +110,6 @@ class UserCreateTests(OTPTestCase):
         self.assert_meta(body)
         self.assertEqual(body["registration_status"], RegistrationStatus.PENDING_PROFILE)
         self.assertEqual(body["next"], "profile")
-        self.assertIn("Location", response)
         self.assertIn("sessionid", response.cookies)
 
         user = User.objects.get(mobile_number=MOBILE)
@@ -235,6 +235,113 @@ class RegistrationCompletionTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(AdvocateProfile.objects.exists())
 
+    def test_overlong_password_is_rejected_before_hashing(self):
+        """A password past the cap is a 400, not work for the hasher."""
+        response = self.client.post(
+            reverse("litigant-create"),
+            self.body(password="x" * (MAX_PASSWORD_LENGTH + 1)),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", response.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.registration_status, RegistrationStatus.PENDING_PROFILE)
+
+    def test_password_similar_to_the_submitted_name_is_rejected(self):
+        """The name in this request counts, though it is not yet on the row.
+
+        UserAttributeSimilarityValidator only sees what it is handed, and the
+        account holds no name until registration completes.
+        """
+        response = self.client.post(
+            reverse("litigant-create"),
+            self.body(name="Asha Menon", password="asha menon"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", response.data)
+
+    def test_password_similar_to_the_submitted_email_is_rejected(self):
+        """Likewise the email, which is also only in the request body."""
+        response = self.client.post(
+            reverse("litigant-create"),
+            self.body(email="ashamenon@example.com", password="ashamenon"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", response.data)
+
+    def test_password_similar_to_the_mobile_number_is_rejected(self):
+        """The mobile number is on the row, but is not in Django's default list.
+
+        Given a trailing letter so NumericPasswordValidator has nothing to say
+        and only the similarity check can be what rejects this.
+        """
+        response = self.client.post(
+            reverse("litigant-create"),
+            self.body(password=MOBILE.lstrip("+") + "x"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", response.data)
+
+    def test_password_at_the_cap_is_accepted(self):
+        """The cap is inclusive, so a password of exactly that length works."""
+        response = self.client.post(
+            reverse("litigant-create"),
+            self.body(password="x" * MAX_PASSWORD_LENGTH),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def register_second_account(self, mobile_number="+919812345678"):
+        """Register a second account and leave it logged in at PENDING_PROFILE."""
+        self.client.logout()
+        self.create_account(mobile_number)
+
+    def test_duplicate_bar_registration_id_is_rejected(self):
+        """A bar ID already claimed answers 400, not the database's 500.
+
+        The uniqueness is on the column, so without a model-aware serializer
+        the duplicate reaches Postgres and surfaces as a server error.
+        """
+        self.client.post(
+            reverse("advocate-create"),
+            self.body(profile={"bar_registration_id": "KER/1234/2019"}),
+            format="json",
+        )
+        self.register_second_account()
+
+        response = self.client.post(
+            reverse("advocate-create"),
+            self.body(email="other@example.com", profile={"bar_registration_id": "KER/1234/2019"}),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("bar_registration_id", response.data["profile"])
+        self.assertEqual(AdvocateProfile.objects.count(), 1)
+
+    def test_duplicate_clerk_registration_number_is_rejected(self):
+        """A clerk number already claimed answers 400, not 500."""
+        self.client.post(
+            reverse("clerk-create"),
+            self.body(profile={"clerk_registration_number": "CLK/99/2020"}),
+            format="json",
+        )
+        self.register_second_account()
+
+        response = self.client.post(
+            reverse("clerk-create"),
+            self.body(
+                email="other@example.com",
+                profile={"clerk_registration_number": "CLK/99/2020"},
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("clerk_registration_number", response.data["profile"])
+        self.assertEqual(ClerkProfile.objects.count(), 1)
+
     def test_clerk_completes_with_profile(self):
         """The nested profile is written to the clerk table."""
         response = self.client.post(
@@ -341,6 +448,21 @@ class SessionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_overlong_password_is_refused_without_hashing(self):
+        """Login caps the password too, so the hasher is never handed the string.
+
+        A 400 rather than the usual 401: the request is malformed, and it is
+        turned away while parsing, before `authenticate` is reached.
+        """
+        with patch("apps.users.views.authenticate") as authenticate:
+            response = self.client.post(
+                reverse("session"),
+                {"mobile_number": MOBILE, "password": "x" * (MAX_PASSWORD_LENGTH + 1)},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        authenticate.assert_not_called()
 
     def test_exactly_one_credential_is_required(self):
         """Neither zero credentials nor both are accepted."""

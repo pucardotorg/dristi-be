@@ -29,8 +29,6 @@ class Purpose:
     CHOICES = (REGISTER, LOGIN)
 
 
-# Templates live in the messaging app and are seeded by migration. Each purpose
-# gets its own so the wording matches what the user is actually doing.
 MESSAGE_KEYS = {
     Purpose.REGISTER: "ACCOUNT_REGISTRATION_OTP_SMS",
     Purpose.LOGIN: "ACCOUNT_LOGIN_OTP_SMS",
@@ -49,8 +47,11 @@ def _code_key(purpose: str, mobile_number: str) -> str:
     return f"otp:code:{purpose}:{mobile_number}"
 
 
-def _cooldown_key(purpose: str, mobile_number: str) -> str:
-    return f"otp:cooldown:{purpose}:{mobile_number}"
+# Not keyed by purpose: alternating register and login would otherwise give a
+# number two windows. `_code_key` keeps it, so a register code stays useless
+# for login.
+def _cooldown_key(mobile_number: str) -> str:
+    return f"otp:cooldown:{mobile_number}"
 
 
 def _digest(code: str) -> str:
@@ -69,10 +70,9 @@ def issue_otp(mobile_number: str, purpose: str) -> None:
     when the key is absent and reports whether it wrote, so the check and the
     claim are one atomic operation and two concurrent taps cannot both send.
     """
-    # Read per call, never captured at import, so the dial can be turned without
-    # a deploy and tests can override it.
+
     cooldown = settings.OTP_RESEND_COOLDOWN_SECONDS
-    key = _cooldown_key(purpose, mobile_number)
+    key = _cooldown_key(mobile_number)
     retry_at = time.time() + cooldown
 
     if not cache.add(key, retry_at, timeout=cooldown):
@@ -85,7 +85,12 @@ def issue_otp(mobile_number: str, purpose: str) -> None:
         _digest(code),
         timeout=settings.OTP_TTL_SECONDS,
     )
-    _send_sms(mobile_number, code, purpose)
+
+    try:
+        _send_sms(mobile_number, code, purpose)
+    except Exception:
+        cache.delete(key)
+        raise
 
 
 def verify_and_consume_otp(mobile_number: str, otp: str, purpose: str) -> bool:
