@@ -316,7 +316,7 @@ class LoggingTests(BackendTestCase):
         self.assertIn("service_type=otpmsg", request_line)
         self.assertIn("prefix_applied=True", request_line)
         self.assertNotIn("919876512345", request_line)
-        self.assertIn("9198****2345", request_line)
+        self.assertIn("91********45", request_line)
 
     def test_no_log_line_contains_a_credential(self):
         with self.assertLogs(constants.LOGGER_NAME, level="INFO") as captured:

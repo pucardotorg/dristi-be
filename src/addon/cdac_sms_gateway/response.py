@@ -36,8 +36,7 @@ def classify(status_code: int, body: str, cfg, log_context: dict | None = None) 
 
     context = log_context or {}
 
-    if cfg.print_response:
-        _log_response(status_code, redact(body), context)
+    _log_response(status_code, redact(body) if cfg.print_response else None, context)
 
     if cfg.verify_response and cfg.verify_response_contains not in (body or ""):
         raise MessageSendError(
@@ -63,8 +62,12 @@ def classify(status_code: int, body: str, cfg, log_context: dict | None = None) 
     return parse_message_id(body)
 
 
-def _log_response(status_code: int, body: str, context: dict) -> None:
-    """Emit the GATEWAY_RESPONSE event with a redacted body."""
+def _log_response(status_code: int, body: str | None, context: dict) -> None:
+    """Emit the GATEWAY_RESPONSE event; body is omitted when print_response is off.
+
+    Status code and other metadata are always logged, even with print_response
+    disabled, so delivery outcomes stay observable without the response body.
+    """
 
     logger.info(
         "event=%s message_id=%s correlation_id=%s gateway=%s category=%s "
@@ -77,5 +80,5 @@ def _log_response(status_code: int, body: str, context: dict) -> None:
         context.get("content_type", ""),
         context.get("attempt", ""),
         status_code,
-        body,
+        body if body is not None else "<suppressed>",
     )
