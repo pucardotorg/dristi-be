@@ -84,7 +84,6 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
 | `EMAIL_URL` | Email backend URL | `smtp://user:pass@smtp:587` |
 | `MESSAGING_TEMPLATE_ENGINE` | Template engine for message rendering (`jinja2` or `mustache`) | `jinja2` |
-| `MESSAGING_DUMMY_SMS_ENDPOINT` | HTTP endpoint for the dummy SMS backend | `https://httpbin.org/post` |
 | `MESSAGING_EMAIL_BACKEND` | Email backend mode (`smtp` or `django`) | `smtp` |
 | `MESSAGING_EMAIL_HOST` | SMTP host for the messaging email backend | `smtp.example.com` |
 | `MESSAGING_EMAIL_PORT` | SMTP port for the messaging email backend | `587` |

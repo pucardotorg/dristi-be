@@ -210,13 +210,7 @@ If a channel is referenced without a configured backend, calling `send()` raises
 
 Location: `apps.messaging.senders.sms`
 
-A development/testing backend that POSTs the rendered SMS payload to a configurable HTTP endpoint instead of a real SMS gateway.
-
-Configuration (Django settings):
-
-```python
-MESSAGING_DUMMY_SMS_ENDPOINT = "https://httpbin.org/post"  # required for this backend
-```
+A development/testing backend that prints the rendered SMS payload to stdout instead of sending it to a real SMS gateway.
 
 Backend import path:
 
@@ -228,15 +222,10 @@ MESSAGING_BACKENDS = {
 
 Behavior:
 - Validates that `rendered_message.recipient` contains `phone_number`.
-- POSTs a JSON payload to `MESSAGING_DUMMY_SMS_ENDPOINT` with:
-  - `phone_number`
-  - `message` (rendered content)
-  - `message_key`
-  - `category` (from the template)
-  - `provider_message_id` (a generated UUID for tracing)
-- Treats HTTP 2xx responses as success.
-- Raises `MessageSendError` on network errors or non-2xx responses.
-- Does not retry on its own; relies on the Dramatiq task retry mechanism.
+- Generates a `provider_message_id` (UUID) for traceability.
+- Prints payload details (recipient, message body, message key, category, provider id) to stdout.
+- Returns the generated `provider_message_id` as a successful send result.
+- Raises `MessageSendError` only for invalid input (for example missing `phone_number`).
 
 ### 7.2 Built-in SMTP email backend
 
@@ -312,7 +301,7 @@ sequenceDiagram
     participant W as send_message worker
     participant R as MessageTemplateRenderer
     participant S as DummySMSBackend
-    participant EP as HTTP Endpoint
+    participant O as Stdout/Console
 
     C->>E: enqueue_sms(message_key, recipient, context)
     E->>MT: resolve_template(message_key, "sms")
@@ -333,8 +322,7 @@ sequenceDiagram
     W->>S: backend.send(rendered_message)
     S->>S: validate phone_number
     S->>S: generate provider_message_id
-    S->>EP: POST JSON payload<br/>{phone_number, message, message_key, category, provider_message_id}
-    EP-->>S: HTTP 2xx
+    S->>O: print payload<br/>{phone_number, message, message_key, category, provider_message_id}
     S-->>W: provider_message_id
     W->>ML: update status=sent, sent_at, provider_message_id
 ```

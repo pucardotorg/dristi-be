@@ -253,8 +253,6 @@ MESSAGING_BACKENDS = {
     "email": "apps.messaging.senders.email.SMTPEmailBackend",
     "sms": "apps.messaging.senders.sms.DummySMSBackend",
 }
-MESSAGING_DUMMY_SMS_ENDPOINT = env("MESSAGING_DUMMY_SMS_ENDPOINT", default=None)
-MESSAGING_DUMMY_SMS_TIMEOUT = env.int("MESSAGING_DUMMY_SMS_TIMEOUT", default=30)
 MESSAGING_EMAIL_BACKEND = env("MESSAGING_EMAIL_BACKEND", default="django")
 MESSAGING_EMAIL_HOST = env("MESSAGING_EMAIL_HOST", default=None)
 MESSAGING_EMAIL_PORT = env.int("MESSAGING_EMAIL_PORT", default=587)
