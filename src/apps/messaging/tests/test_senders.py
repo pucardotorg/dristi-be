@@ -113,9 +113,7 @@ class DummySMSBackendTests(TestCase):
     def tearDown(self):
         clear_backend_cache()
 
-    @override_settings(
-        MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"}
-    )
+    @override_settings(MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"})
     @patch("builtins.print")
     def test_prints_payload_and_returns_provider_id(self, mock_print):
         sender = get_backend("sms")
@@ -138,9 +136,7 @@ class DummySMSBackendTests(TestCase):
         self.assertIn("NOTIFICATION", printed_payload)
         self.assertIn(provider_id, printed_payload)
 
-    @override_settings(
-        MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"}
-    )
+    @override_settings(MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"})
     def test_missing_phone_number_raises(self):
         sender = get_backend("sms")
         with self.assertRaises(MessageSendError):
@@ -153,9 +149,7 @@ class DummySMSBackendTests(TestCase):
                 )
             )
 
-    @override_settings(
-        MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"}
-    )
+    @override_settings(MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"})
     @patch("builtins.print")
     def test_send_without_endpoint_setting_still_works(self, mock_print):
         sender = get_backend("sms")
