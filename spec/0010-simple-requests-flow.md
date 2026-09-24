@@ -177,11 +177,14 @@ Location: `apps.requests.hooks`
 ```python
 POST_APPROVAL_HOOKS = {}
 
+
 def register_hook(request_type_code):
     def decorator(fn):
         POST_APPROVAL_HOOKS[request_type_code] = fn
         return fn
+
     return decorator
+
 
 def run_post_approval_hooks(request: Request):
     hook = POST_APPROVAL_HOOKS.get(request.request_type.code)
@@ -267,7 +270,9 @@ class GenericRequestCreateSerializer(serializers.Serializer):
     )
     attributes = serializers.CharField()
     documents = serializers.ListField(
-        child=serializers.FileField(), required=False, allow_empty=True,
+        child=serializers.FileField(),
+        required=False,
+        allow_empty=True,
     )
 
     def validate_attributes(self, value):
@@ -285,10 +290,12 @@ class GenericRequestCreateSerializer(serializers.Serializer):
 
         doc_count = len(attrs.get("documents", []))
         if doc_count < request_type.min_documents:
-            raise serializers.ValidationError({
-                "documents": f"{request_type.name} requires at least "
-                             f"{request_type.min_documents} document(s), got {doc_count}."
-            })
+            raise serializers.ValidationError(
+                {
+                    "documents": f"{request_type.name} requires at least "
+                    f"{request_type.min_documents} document(s), got {doc_count}."
+                }
+            )
         return attrs
 ```
 
