@@ -6,7 +6,6 @@ Proposed
 
 ## References
 
-- [0000 — API Coding Spec](0000-api-coding-spec.md) — DRF/serializer/envelope constraints
 - [0002 — Audit Fields Base Model](0002-audit-fields-base-model.md) — `apps.core.models.BaseModel`
 - [0012 — Redis Caching](0012-redis-caching.md) — caching/exclusion rules
 - [0014 — File Storage Service](0014-file-storage-service.md) — `apps.files`, owns document persistence and the `file_id` reference
@@ -301,13 +300,13 @@ Location: `apps.esign.models`. Inherits `apps.core.models.BaseModel` (UUID pk,
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `tenant_id` | `CharField(64)` | required |
-| `module` | `CharField(64)` | initiating Dristi module/page (`pageModule` in the Java service) |
-| `entity_type` | `CharField(64, blank=True)` | what is being signed, e.g. `order` |
+| `organization_id` | `UUIDField(null=True, blank=True, db_index=True)` | organization the signing belongs to; nullable, since not every document is organization scoped |
+| `module` | `CharField(64)` | initiating Dristi module/page |
+| `entity_type` | `CharField(32, choices=EntityType, blank=True)` | what is being signed; `EntityType` enum below |
 | `entity_id` | `CharField(64, blank=True, db_index=True)` | id of that entity |
 | `signer` | `FK(AUTH_USER_MODEL, null=True, on_delete=PROTECT)` | user who initiated signing |
 | `provider` | `CharField(32)` | `ESignProvider.name`, e.g. `cdac` |
-| `provider_transaction_id` | `CharField(128, unique=True)` | id sent to / echoed by the ESP |
+| `provider_transaction_id` | `CharField(128)` | id sent to / echoed by the ESP; unique per `provider` (#5.2) |
 | `source_file_id` | `CharField(64)` | `apps.files` id of the original PDF, never mutated |
 | `placeholder_file_id` | `CharField(64, blank=True)` | `apps.files` id of the prepared PDF |
 | `signed_file_id` | `CharField(64, blank=True)` | `apps.files` id of the final signed PDF |
@@ -326,6 +325,28 @@ Location: `apps.esign.models`. Inherits `apps.core.models.BaseModel` (UUID pk,
 | `completed_at` | `DateTimeField(null=True, blank=True)` | reached `SUCCESS` |
 
 `Meta.ordering = ["-created_at"]`.
+
+`EntityType` is a `TextChoices` enum rather than a free string, so signable
+document kinds stay a bounded, reportable set:
+
+```text
+ORDER
+JUDGEMENT
+SUMMONS
+NOTICE
+WARRANT
+VAKALATNAMA
+APPLICATION
+CASE_FILING
+OTHER
+```
+
+New kinds are added to the enum with a migration; `OTHER` exists so an early
+consumer is never blocked, not as a permanent home.
+
+`organization_id` mirrors [`0014`](0014-file-storage-service.md) #1.1: a plain
+nullable identifier, not a foreign key, so the eSign module does not depend on
+the organization app's schema.
 
 Neither the PKCS#7 blob, the signed XML request, the raw callback body, nor any
 key material is stored on the model. `request_audit`/`response_audit` hold codes
@@ -355,18 +376,20 @@ Rules:
 - `SIGNING` is only enterable from `PENDING` under `select_for_update()`.
 - `FAILURE` and `EXPIRED` never transition; **retry creates a new row** with
   `retry_of` set and the same `placeholder_file_id` (#9). This keeps
-  `provider_transaction_id` unique and preserves every attempt for audit.
+  `(provider, provider_transaction_id)` unique and preserves every attempt for
+  audit.
 - Transitions are enforced in a model method (`mark_signing()`, `mark_success()`,
   `mark_failed()`, `mark_expired()`); illegal transitions raise
   `ESignInvalidTransition`.
 
 ### 5.2 Constraints and indexes
 
-- `UniqueConstraint("provider_transaction_id")`.
+- `UniqueConstraint("provider", "provider_transaction_id")` — an ESP id is only
+  unique within the ESP that issued it, so the pair is the real identity.
 - `CheckConstraint`: `status != SUCCESS OR signed_file_id != ""`.
 - `CheckConstraint`: `status NOT IN (SIGNING, SUCCESS) OR placeholder_file_id != ""`.
 - Index on `(status, expires_at)` for the sweeper.
-- Index on `(entity_type, entity_id)` and `(tenant_id, created_at)` for lookups.
+- Index on `(entity_type, entity_id)` and `(organization_id, created_at)` for lookups.
 - Non-DB invariants (placement validity, hash format) live in `clean()`.
 
 ---
@@ -379,13 +402,13 @@ callback, which is not a JSON API (#6.3).
 
 ### 6.1 `POST /api/v1/esign/_esign` — initiate
 
-Authenticated (`IsAuthenticated`). Request:
+Authenticated (`IsAuthenticatedAndRegistered`). Request:
 
 ```json
 {
-  "tenant_id": "kl",
+  "organization_id": "3b1e...",
   "module": "orders",
-  "entity_type": "order",
+  "entity_type": "ORDER",
   "entity_id": "9f2c...",
   "file_id": "abc-123",
   "sign_placeholder": {
@@ -397,7 +420,8 @@ Authenticated (`IsAuthenticated`). Request:
 }
 ```
 
-Serializer validation: required scalars present; `file_id` resolves through
+Serializer validation: required scalars present (`organization_id` optional and
+nullable, `entity_type` a valid `EntityType`); `file_id` resolves through
 `get_file()`; its `content_type` is `application/pdf`; `sign_placeholder` matches the
 declared schema and page/coordinates are within the document; the requesting
 user is permitted to sign the referenced entity (object-level permission
@@ -408,13 +432,13 @@ Response `201`:
 ```json
 {
   "transaction_id": "0f9d...",
-  "provider_transaction_id": "kl-orders-0f9d...",
+  "provider_transaction_id": "orders-0f9d...",
   "expires_at": "2026-09-22T18:10:00+05:30",
   "esign_url": "https://esign.cdac.in/...",
   "form_method": "POST",
   "form_fields": {
     "eSignRequest": "<base64 signed XML>",
-    "aspTxnID": "kl-orders-0f9d...",
+    "aspTxnID": "orders-0f9d...",
     "Content-Type": "application/xml"
   },
   "meta": { "timestamp": "...", "app_version": "...", "spec_version": "1.0" }
@@ -426,7 +450,8 @@ No provider-specific knowledge in the client.
 
 ### 6.2 `GET /api/v1/esign/transactions/{id}` — status
 
-Authenticated; scoped to the initiating user/tenant. Returns status,
+Authenticated (`IsAuthenticatedAndRegistered`); scoped to the initiating user and
+organization. Returns status,
 `signed_file_id` when `SUCCESS`, `failure_code`/`failure_message`
 otherwise. This is the endpoint the UI polls after the browser returns, and it
 is the only supported way for a client to learn the outcome. Excluded from
@@ -451,7 +476,7 @@ volatile row.
 
 ### 6.4 `POST /api/v1/esign/transactions/{id}/_retry` — retry
 
-Authenticated. Creates a new transaction from a `FAILURE`/`EXPIRED` one, reusing
+Authenticated (`IsAuthenticatedAndRegistered`). Creates a new transaction from a `FAILURE`/`EXPIRED` one, reusing
 the existing placeholder PDF, and returns the same body as #6.1. Rejects retry
 of `PENDING`/`SIGNING`/`SUCCESS` rows and enforces `ESIGN_MAX_ATTEMPTS`.
 
@@ -462,7 +487,7 @@ of `PENDING`/`SIGNING`/`SUCCESS` rows and enforces `ESIGN_MAX_ATTEMPTS`.
 ### 7.1 Request XML (eSign API 2.1)
 
 ```xml
-<Esign ver="2.1" sc="Y" ts="2026-09-22T17:40:03" txn="kl-orders-0f9d..."
+<Esign ver="2.1" sc="Y" ts="2026-09-22T17:40:03" txn="orders-0f9d..."
        ekycIdType="A" aspId="ASP-ID" AuthMode="1"
        responseSigType="pkcs7" responseUrl="https://.../api/v1/esign/_signed">
   <Docs>
@@ -477,9 +502,9 @@ of `PENDING`/`SIGNING`/`SUCCESS` rows and enforces `ESIGN_MAX_ATTEMPTS`.
   defaults; each is a config key so C-DAC can change them without code changes.
 - `ts` is IST, `yyyy-MM-dd'T'HH:mm:ss`, with no timezone suffix, taken from the
   same clock source as `expires_at`.
-- `txn` is `provider_transaction_id`; format
-  `{tenant_id}-{module}-{transaction_uuid}` truncated to the ESP limit, with the
-  template configurable. The UUID keeps it collision-free and traceable.
+- `txn` is `provider_transaction_id`; format `{module}-{transaction_uuid}`
+  truncated to the ESP limit, with the template configurable. The UUID keeps it
+  collision-free and traceable.
 - `InputHash` is the hex digest supplied by the PDF Service. The document itself
   is never sent to C-DAC.
 - The structure supports multiple `InputHash` elements; this iteration emits
@@ -500,7 +525,7 @@ responses, or `request_audit`, and the config dataclass redacts it in `repr`.
 ### 7.3 Response
 
 ```xml
-<EsignResp status="1" ts="..." txn="kl-orders-0f9d..." resCode="..."
+<EsignResp status="1" ts="..." txn="orders-0f9d..." resCode="..."
            errCode="" errMsg="">
   <UserX509Certificate>BASE64</UserX509Certificate>
   <Signatures><DocSignature id="1" error="">BASE64_PKCS7</DocSignature></Signatures>
@@ -529,7 +554,7 @@ raw form POST
    |
    +-- 1. parse payload            -> ESignProviderResponse
    +-- 2. verify_response()        -> XMLDSig valid against configured CDAC cert
-   +-- 3. lookup by provider_transaction_id (select_for_update)
+   +-- 3. lookup by (provider, provider_transaction_id) (select_for_update)
    +-- 4. state gate (#8.2)
    +-- 5. mark SIGNING, commit                         [tx 1]
    +-- 6. files.get_content(placeholder) ; pdf.embed_signature ; files.upload
@@ -548,7 +573,7 @@ A callback is rejected unless **all** of these hold:
 
 1. The response XMLDSig verifies against the configured C-DAC certificate
    (`CDAC_ESIGN_RESPONSE_CERT`), with the expected digest/signature algorithms.
-2. `txn` is present and matches an existing `provider_transaction_id`.
+2. `txn` is present and matches an existing `(provider, provider_transaction_id)`.
 3. `ts` is within `CDAC_ESIGN_RESPONSE_MAX_SKEW` of now.
 4. The transaction has not expired beyond `ESIGN_CALLBACK_GRACE_PERIOD`.
 5. The payload is well-formed and the signature count matches the request.
@@ -567,8 +592,8 @@ the certificate is configured) and may be disabled only in local/test.
 
 `select_for_update()` on the status gate serialises concurrent callbacks; the
 first wins and the rest observe a non-`PENDING` status. Combined with the unique
-`provider_transaction_id` this guarantees at most one signed file per
-transaction.
+`(provider, provider_transaction_id)` pair this guarantees at most one signed
+file per transaction.
 
 ### 8.3 Interceptor deployments
 
@@ -664,7 +689,7 @@ Addon settings (`addon.cdac_esign`), `CDAC_ESIGN_` prefix — matching the
 | `CDAC_ESIGN_HASH_ALGORITHM` | no (`SHA256`) | must match PDF Service digest |
 | `CDAC_ESIGN_EKYC_ID_TYPE` | no (`A`) | |
 | `CDAC_ESIGN_CONSENT` | no (`Y`) | |
-| `CDAC_ESIGN_TXN_TEMPLATE` | no | `{tenant_id}-{module}-{transaction_id}` |
+| `CDAC_ESIGN_TXN_TEMPLATE` | no | `{module}-{transaction_id}` |
 | `CDAC_ESIGN_RESPONSE_MAX_SKEW` | no (`900` s) | `ts` freshness window |
 | `CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE` | no (`True`) | rejected as `False` in production |
 
@@ -714,7 +739,7 @@ local/CI need no C-DAC credentials or keystore.
 ## 13. Logging
 
 One structured line per stage on the `apps.esign` / `addon.cdac_esign` loggers,
-always carrying `transaction_id`, `provider_transaction_id`, `tenant_id`,
+always carrying `transaction_id`, `provider_transaction_id`, `organization_id`,
 `module`, and `status`:
 
 ```text
@@ -733,7 +758,8 @@ dedicated metrics backend in this iteration.
 
 **Unit (no network, providers/clients mocked)**
 - model: legal and illegal transitions, `SUCCESS` terminality, constraints,
-  unique `provider_transaction_id`, `clean()` invariants.
+  unique `(provider, provider_transaction_id)`, `EntityType` choices,
+  nullable `organization_id`, `clean()` invariants.
 - request builder: every required attribute/value, IST timestamp format, hex hash
   placement, txn template and truncation, single `InputHash`.
 - XML signer: enveloped signature present, algorithms, cert in `KeyInfo`,
@@ -780,32 +806,7 @@ cd src && python manage.py check
 
 ---
 
-## 15. Affected files
-
-New (`apps.esign`): app package per #1.1 plus migrations and tests.
-
-New (addon): `src/addon/cdac_esign/{__init__,apps,provider,config,request_builder,xml_signer,response_parser,response_verifier,keystore,constants,checks}.py` and `tests/`.
-
-Modified (other modules, as amendments to their own specs):
-- `src/apps/files/services.py` — `get_file_content()`, `delete_file()`, and the `SIGNED_PDF` file type per [`0014`](0014-file-storage-service.md) #1.2/#6.1/#6.2
-- `src/apps/pdf/services/signing.py` — `prepare_for_signing()` / `embed_signature()` per [`0016`](0016-pdf-services.md) #14
-
-Modified (wiring and docs):
-- `src/config/settings/base.py` — `INSTALLED_APPS` (`apps.esign`, `addon.cdac_esign`), `ESIGN_*` and `CDAC_ESIGN_*` blocks
-- `src/config/settings/local.py`, `test.py` — mock provider default
-- `src/config/settings/production.py` — production guards
-- `src/config/urls.py` — include `apps.esign.urls` under `/api/v1/`
-- `src/requirements/*` — `signxml`/`xmlsec`, `cryptography`
-- `.env.example`, `.env.prod.example`, `README.md`
-- `AGENTS.md` — note that `addon.*` now hosts two integrations
-
-Depends on: [`0016`](0016-pdf-services.md) #14 (`prepare_for_signing`,
-`embed_signature`) and [`0014`](0014-file-storage-service.md) #6.1/#6.2
-(`get_file_content`, `delete_file`). Neither dependency is duplicated here.
-
----
-
-## 16. Acceptance criteria
+## 15. Acceptance criteria
 
 - [ ] `apps.esign` owns the model, state machine, APIs, recovery, and audit.
 - [ ] All C-DAC specifics live in `addon.cdac_esign`; `apps.esign` never imports `addon.*`.
@@ -830,7 +831,7 @@ Depends on: [`0016`](0016-pdf-services.md) #14 (`prepare_for_signing`,
 
 ---
 
-## 17. Design decisions
+## 16. Design decisions
 
 | Decision | Rationale |
 | --- | --- |
@@ -841,7 +842,8 @@ Depends on: [`0016`](0016-pdf-services.md) #14 (`prepare_for_signing`,
 | PDF Service computes the hash | The digest is defined over the PDF ByteRange, which only the module reserving the container can compute. Duplicating it here would guarantee drift. |
 | Extra `SIGNING` state | External calls cannot run inside a DB transaction; a durable in-progress marker is what makes crash recovery and concurrency safety possible. |
 | `EXPIRED` state + sweeper | The common real-world outcome is a user abandoning the C-DAC screen. Without it, `PENDING` grows forever and retry eligibility is undefined. |
-| Retry creates a new row, not a mutation | `provider_transaction_id` is unique and each ESP attempt has its own id and audit trail; mutating in place would destroy history and break the constraint. |
+| Retry creates a new row, not a mutation | `(provider, provider_transaction_id)` is unique and each ESP attempt has its own id and audit trail; mutating in place would destroy history and break the constraint. |
+| `entity_type` is an enum, `organization_id` is nullable | The set of signable documents is known and worth constraining; organization scope is not universal, so forcing it would push callers into inventing placeholder values. |
 | Response XMLDSig verification is mandatory | The callback is a public, unauthenticated endpoint. Without verification, anyone who learns a `txn` could inject a signature. This was the largest gap in the original draft. |
 | Callback returns a 302, not a `meta` envelope | The caller is a browser mid-navigation, not an API client. Forcing the JSON envelope here would leave the user staring at raw JSON. |
 | Redirect URL is server-side config | Taking it from the request would make a public endpoint an open redirect. |
@@ -850,7 +852,7 @@ Depends on: [`0016`](0016-pdf-services.md) #14 (`prepare_for_signing`,
 | Provider transaction id embeds the internal UUID | Guarantees uniqueness and makes support lookups trivial in both systems. |
 | Single `InputHash` this iteration | Multi-document signing needs its own model (one transaction, many documents) and is deferred rather than half-supported. |
 
-## 18. Out of scope
+## 17. Out of scope
 
 - PDF Service and File Storage implementations.
 - Multi-document / bulk signing in one C-DAC transaction.
@@ -860,7 +862,7 @@ Depends on: [`0016`](0016-pdf-services.md) #14 (`prepare_for_signing`,
 - Aadhaar/OTP handling, C-DAC UI, and any consent-artefact archival requirement.
 - Asynchronous (queue-based) signing of the main flow; only maintenance tasks are async.
 
-## 19. Open questions
+## 18. Open questions
 
 1. Does the deployment terminate C-DAC traffic at an interceptor (#8.3), or does
    C-DAC post directly to Django? This decides only the ingress config, but it
@@ -877,7 +879,7 @@ Depends on: [`0016`](0016-pdf-services.md) #14 (`prepare_for_signing`,
 6. Should `ESignTransaction` rows be pruned or archived after a retention period,
    like the `MessageLog` question in 0009?
 
-## 20. Implementation phases
+## 19. Implementation phases
 
 1. **Domain skeleton** — `apps.esign`, model + migration + state machine, admin,
    constants, exceptions, provider ABC/registry, mock provider, unit tests.
