@@ -1,13 +1,18 @@
 """Tests for the files service layer (spec 0014 sections 3, 6, 7, 8, 9)."""
 
+import io
+
 import pytest
 from django.core.exceptions import ValidationError
+from django.core.files import File as FileWrapper
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 
 from apps.files import storage as file_storage
 from apps.files.models import File, FileTag, FileType
 from apps.files.services import (
+    MAX_CONTENT_TYPE_LENGTH,
+    MAX_FILE_NAME_LENGTH,
     FileNotFound,
     get_file,
     get_file_content,
@@ -36,9 +41,35 @@ def user():
     return make_user()
 
 
+@pytest.fixture
+def forbid_storage_writes(monkeypatch):
+    """Fail the test if any content reaches storage.
+
+    A rejected upload ends with no stored objects either way, because
+    ``_discard`` removes whatever a failed call wrote. Only refusing the write
+    outright distinguishes validating up front from validating in
+    ``full_clean`` and cleaning up afterwards.
+    """
+
+    def fail(path, file):
+        raise AssertionError(f"content was written to storage at {path!r}")
+
+    monkeypatch.setattr(file_storage, "save", fail)
+
+
 def upload(name="a.pdf", content=b"hello", file_type=FileType.DOCUMENT, content_type=None):
     """Return an in-memory uploaded file."""
     return SimpleUploadedFile(name, content, content_type=content_type or "application/pdf")
+
+
+def plain_upload(name="a.pdf", content=b"hello"):
+    """Return a plain file object, as an in-process caller would pass.
+
+    ``UploadedFile`` truncates any name over 255 characters and refuses an
+    empty one, so a multipart upload cannot carry either. A plain ``File``
+    applies neither rule, which is what the service has to guard against.
+    """
+    return FileWrapper(io.BytesIO(content), name=name)
 
 
 def entry(file=None, file_type=FileType.DOCUMENT, tags=None):
@@ -218,6 +249,96 @@ class TestUploadFileValidation:
 
         with pytest.raises(ValidationError):
             upload_file(payload(user, files=[entry(upload(f"{i}.pdf")) for i in range(3)]))
+
+    def test_unknown_user_id_is_rejected(self, forbid_storage_writes):
+        """A dangling user reference must not cost a storage write."""
+        with pytest.raises(ValidationError) as exc:
+            upload_file({"user_id": 10**9, "files": [entry()]})
+
+        assert "user_id" in exc.value.message_dict
+        assert File.objects.count() == 0
+
+    def test_unknown_organization_id_is_rejected(self, user, forbid_storage_writes):
+        """An organization is optional, but a given one has to exist."""
+        with pytest.raises(ValidationError) as exc:
+            upload_file(payload(user, organization_id=10**9))
+
+        assert "organization_id" in exc.value.message_dict
+        assert File.objects.count() == 0
+
+    @pytest.mark.parametrize("bad_id", ["not-an-id", object()])
+    def test_unusable_user_id_is_rejected(self, bad_id, forbid_storage_writes):
+        """A value the primary key cannot be compared against is invalid input.
+
+        Left to the queryset this surfaces as ``ValueError`` or ``TypeError``
+        from the field's ``to_python``, neither of which a caller can map back
+        onto the payload.
+        """
+        with pytest.raises(ValidationError) as exc:
+            upload_file({"user_id": bad_id, "files": [entry()]})
+
+        assert "user_id" in exc.value.message_dict
+        assert File.objects.count() == 0
+
+    def test_file_name_over_the_length_limit_is_rejected(self, user, forbid_storage_writes):
+        """The name must be checked before the content is written, not by full_clean."""
+        long_name = f"{'a' * MAX_FILE_NAME_LENGTH}.pdf"
+
+        with pytest.raises(ValidationError):
+            upload_file(payload(user, files=[entry(plain_upload(long_name))]))
+
+        assert File.objects.count() == 0
+
+    def test_file_with_a_none_name_is_rejected(self, user, forbid_storage_writes):
+        """Without the check this is a TypeError from guess_type, after the write.
+
+        ``build_storage_path`` turns ``None`` into the literal key segment
+        ``None`` rather than failing, so the content reaches storage and only
+        then does ``_content_type_of`` raise.
+        """
+        with pytest.raises(ValidationError):
+            upload_file(payload(user, files=[entry(plain_upload(None))]))
+
+        assert File.objects.count() == 0
+
+    @pytest.mark.parametrize("name", ["", "   "])
+    def test_file_with_a_blank_name_is_rejected(self, user, name, forbid_storage_writes):
+        """Without the check this is a SuspiciousFileOperation, not a ValidationError."""
+        with pytest.raises(ValidationError):
+            upload_file(payload(user, files=[entry(plain_upload(name))]))
+
+        assert File.objects.count() == 0
+
+    def test_content_type_over_the_length_limit_is_rejected(self, user, forbid_storage_writes):
+        """content_type comes from the client and is not capped by Django."""
+        long_type = "application/" + "x" * MAX_CONTENT_TYPE_LENGTH
+
+        with pytest.raises(ValidationError):
+            upload_file(payload(user, files=[entry(upload(content_type=long_type))]))
+
+        assert File.objects.count() == 0
+
+    def test_a_bad_name_on_a_later_entry_stores_nothing(self, user, forbid_storage_writes):
+        """The whole payload is validated before the first byte is written."""
+        with pytest.raises(ValidationError):
+            upload_file(
+                payload(
+                    user,
+                    files=[
+                        entry(upload("good.pdf")),
+                        entry(plain_upload("a" * (MAX_FILE_NAME_LENGTH + 1))),
+                    ],
+                )
+            )
+
+        assert File.objects.count() == 0
+
+    def test_a_name_at_the_length_limit_is_accepted(self, user):
+        name = f"{'a' * (MAX_FILE_NAME_LENGTH - len('.pdf'))}.pdf"
+
+        upload_file(payload(user, files=[entry(plain_upload(name))]))
+
+        assert File.objects.get().file_name == name
 
     def test_validation_runs_before_anything_is_stored(self, user):
         """A bad second entry must not leave the first one in storage."""

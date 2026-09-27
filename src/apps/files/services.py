@@ -21,6 +21,9 @@ from .models import File, FileTag, FileType
 
 FALLBACK_CONTENT_TYPE = "application/octet-stream"
 
+MAX_FILE_NAME_LENGTH = File._meta.get_field("file_name").max_length
+MAX_CONTENT_TYPE_LENGTH = File._meta.get_field("content_type").max_length
+
 
 class FileNotFound(Exception):  # noqa: N818
     """Raised when no file matches the requested id."""
@@ -123,6 +126,11 @@ def _validated_upload(payload):
     user_id = payload.get("user_id")
     if user_id is None:
         raise ValidationError({"user_id": "user_id is required."})
+    _validate_related_id("user", user_id, "user_id")
+
+    organization_id = payload.get("organization_id")
+    if organization_id is not None:
+        _validate_related_id("organization", organization_id, "organization_id")
 
     entries = payload.get("files")
     if not entries:
@@ -137,11 +145,38 @@ def _validated_upload(payload):
     for index, entry in enumerate(entries):
         _validate_entry(index, entry)
 
-    return payload.get("organization_id"), user_id, entries
+    return organization_id, user_id, entries
+
+
+def _validate_related_id(field_name, value, key):
+    """Check that ``value`` identifies an existing row for the ``File`` field.
+
+    ``full_clean`` in ``_create_file`` already rejects a dangling reference,
+    but only once the content has been written and then discarded, so the
+    lookup is repeated here against the field's own related model. It stays in
+    ``_create_file`` as well: a row can be deleted between the two calls.
+
+    The error is reported under the key the caller supplied it as --
+    ``user_id`` rather than the ``user`` that ``full_clean`` would use -- so a
+    caller can map the message back onto the payload it sent.
+    """
+    model = File._meta.get_field(field_name).related_model
+    try:
+        exists = model.objects.filter(pk=value).exists()
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise ValidationError({key: f"No {field_name} with id {value!r}."}) from exc
+
+    if not exists:
+        raise ValidationError({key: f"No {field_name} with id {value!r}."})
 
 
 def _validate_entry(index, entry):
-    """Validate a single ``files[]`` entry."""
+    """Validate a single ``files[]`` entry.
+
+    The field lengths ``File`` declares are checked here, and not left to the
+    ``full_clean`` in ``_create_file``, so an over-long name or content type is
+    rejected before the content is written to storage rather than after.
+    """
     upload = entry.get("file")
     if upload is None:
         raise ValidationError({f"files[{index}].file": "file is required."})
@@ -151,11 +186,46 @@ def _validate_entry(index, entry):
             {f"files[{index}].file_type": f"file_type must be one of {FileType.values}."}
         )
 
+    _validate_file_name(index, upload)
+
+    content_type = _content_type_of(upload)
+    if len(content_type) > MAX_CONTENT_TYPE_LENGTH:
+        raise ValidationError(
+            {
+                f"files[{index}].file": (
+                    f"content type exceeds the {MAX_CONTENT_TYPE_LENGTH} character limit."
+                )
+            }
+        )
+
     max_size = settings.FILE_MAX_SIZE_BYTES
     if _size_of(upload) > max_size:
         raise ValidationError({f"files[{index}].file": f"file exceeds the {max_size} byte limit."})
 
     _validated_tag_names(entry.get("tags"), f"files[{index}].tags")
+
+
+def _validate_file_name(index, upload):
+    """Reject an upload whose name is missing or longer than the column.
+
+    A missing name never reaches ``full_clean`` as a ``ValidationError``, so it
+    is caught here instead. An empty or blank name raises
+    ``SuspiciousFileOperation`` in ``build_storage_path``; a ``None`` name gets
+    past it as the literal key segment ``None``, and then fails as a
+    ``TypeError`` out of ``mimetypes.guess_type`` in ``_content_type_of`` --
+    after the content has already been written.
+    """
+    name = getattr(upload, "name", None) or ""
+    if not name.strip():
+        raise ValidationError({f"files[{index}].file": "file must have a name."})
+    if len(name) > MAX_FILE_NAME_LENGTH:
+        raise ValidationError(
+            {
+                f"files[{index}].file": (
+                    f"file name exceeds the {MAX_FILE_NAME_LENGTH} character limit."
+                )
+            }
+        )
 
 
 def _create_file(organization_id, user_id, file_id, storage_path, entry):
