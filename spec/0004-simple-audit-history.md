@@ -139,8 +139,18 @@ class Migration(migrations.Migration):
                 ("history_id", models.AutoField(primary_key=True, serialize=False)),
                 ("history_date", models.DateTimeField(db_index=True)),
                 ("history_change_reason", models.CharField(max_length=100, null=True)),
-                ("history_type", models.CharField(max_length=1, choices=[("+", "Created"), ("~", "Changed"), ("-", "Deleted")])),
-                ("history_user", models.ForeignKey(null=True, on_delete=models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
+                (
+                    "history_type",
+                    models.CharField(
+                        max_length=1, choices=[("+", "Created"), ("~", "Changed"), ("-", "Deleted")]
+                    ),
+                ),
+                (
+                    "history_user",
+                    models.ForeignKey(
+                        null=True, on_delete=models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL
+                    ),
+                ),
             ],
             options={
                 "verbose_name": "historical document",
@@ -355,6 +365,7 @@ def test_history_user_set_via_middleware(rf, admin_user):
     request.user = admin_user
 
     from simple_history.middleware import HistoryRequestMiddleware
+
     middleware = HistoryRequestMiddleware(get_response=lambda r: r)
     middleware.process_request(request)
 

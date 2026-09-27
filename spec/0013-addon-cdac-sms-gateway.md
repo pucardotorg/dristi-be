@@ -275,7 +275,7 @@ Activation is configuration only:
 ```python
 MESSAGING_BACKENDS = {
     "email": "apps.messaging.senders.email.SMTPEmailBackend",
-    "sms": "addon.cdac_sms_gateway.backend.CDACSMSBackend",   # only change needed
+    "sms": "addon.cdac_sms_gateway.backend.CDACSMSBackend",  # only change needed
 }
 ```
 
