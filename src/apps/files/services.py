@@ -91,6 +91,8 @@ def search_file(filters=None, page=1, page_size=20):
     the result.
     """
     filters = filters or {}
+    page = _validated_page_arg(page, "page")
+    page_size = _validated_page_arg(page_size, "page_size")
     queryset = File.objects.active()
 
     if filters.get("organization_id") is not None:
@@ -285,6 +287,26 @@ def _normalized_tag(name):
     tag = FileTag(name=name)
     tag.clean()
     return tag.name
+
+
+def _validated_page_arg(value, field):
+    """Return a pagination argument as a positive integer, or reject it.
+
+    ``Paginator`` is not a safe place to send either of these unchecked.
+    ``get_page`` deliberately never fails, so a ``page`` below 1 is turned
+    into the *last* page rather than reported -- a caller that sends 0 gets
+    the tail of the result set and no indication anything was wrong.
+    ``page_size`` is divided by, so a 0 raises ``ZeroDivisionError`` out of
+    ``num_pages`` and a negative value lets an ``EmptyPage`` escape.
+
+    ``bool`` is excluded because it is a subclass of ``int``: ``False`` would
+    otherwise pass as a page number and land on the last page.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValidationError({field: f"{field} must be an integer."})
+    if value < 1:
+        raise ValidationError({field: f"{field} must be greater than 0."})
+    return value
 
 
 def _instance(file_id):
