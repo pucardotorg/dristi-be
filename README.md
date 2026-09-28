@@ -103,6 +103,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
 | `FILE_MAX_SIZE_BYTES` | Largest single file `apps.files` will accept | `10485760` |
 | `FILE_MAX_COUNT_PER_UPLOAD` | Most files allowed in one `upload_file` call | `10` |
+| `FILE_MAX_READ_BYTES` | Largest file `get_file_content()` will open into memory. Defaults to `FILE_MAX_SIZE_BYTES`. | `10485760` |
 
 ## Docker dependency profiles
 

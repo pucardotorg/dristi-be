@@ -66,8 +66,25 @@ def get_file(file_id):
 
 
 def get_file_content(file_id):
-    """Return a readable file-like object for a file's stored content."""
-    return file_storage.open_file(_instance(file_id).storage_path)
+    """Return a readable file-like object for a file's stored content.
+
+    The caller owns the returned object and is responsible for closing it.
+
+    The recorded ``file_size`` is checked against
+    ``settings.FILE_MAX_READ_BYTES`` before the object is opened, so an
+    oversized file costs one metadata read rather than a transfer the caller
+    cannot afford to hold in memory. The check trusts the size recorded at
+    upload; it is the only size available without fetching the object, which
+    is the very thing being guarded against. Callers that need nothing but
+    metadata must use ``get_file``.
+    """
+    file = _instance(file_id)
+    max_bytes = settings.FILE_MAX_READ_BYTES
+    if file.file_size > max_bytes:
+        raise ValidationError(
+            f"File {file.id} is {file.file_size} bytes, over the {max_bytes} byte read limit."
+        )
+    return file_storage.open_file(file.storage_path)
 
 
 def get_file_url(file_id):

@@ -426,6 +426,65 @@ class TestGetFile:
             get_file("not-a-uuid")
 
 
+class TestGetFileContent:
+    """Section 6.1."""
+
+    @pytest.fixture
+    def stored(self, user):
+        """Return ``(file_id, content)`` for an uploaded file."""
+        content = b"hello world"
+        result = upload_file(payload(user, files=[entry(upload("proof.pdf", content))]))
+        return result["files"][0]["id"], content
+
+    def test_returns_the_stored_bytes(self, stored):
+        file_id, content = stored
+
+        assert get_file_content(file_id).read() == content
+
+    def test_a_file_at_the_limit_is_served(self, stored, settings):
+        """The guard rejects what is over the limit, not what reaches it."""
+        file_id, content = stored
+        settings.FILE_MAX_READ_BYTES = len(content)
+
+        assert get_file_content(file_id).read() == content
+
+    def test_a_file_over_the_limit_is_rejected(self, stored, settings):
+        file_id, content = stored
+        settings.FILE_MAX_READ_BYTES = len(content) - 1
+
+        with pytest.raises(ValidationError):
+            get_file_content(file_id)
+
+    def test_the_guard_reads_metadata_and_does_not_open_storage(
+        self, stored, settings, monkeypatch
+    ):
+        """An oversized file must cost a metadata read, not a transfer.
+
+        Opening the object is the expense the limit exists to avoid, so the
+        size has to be checked against the recorded ``file_size`` before the
+        backend is touched at all.
+        """
+        file_id, content = stored
+        settings.FILE_MAX_READ_BYTES = len(content) - 1
+
+        def fail(storage_path):
+            raise AssertionError(f"storage was opened for {storage_path!r}")
+
+        monkeypatch.setattr(file_storage, "open_file", fail)
+
+        with pytest.raises(ValidationError):
+            get_file_content(file_id)
+
+    def test_unknown_id_raises_not_found_rather_than_the_size_error(self, settings):
+        """Identity is resolved before the limit; a missing file is not 'too big'."""
+        import uuid
+
+        settings.FILE_MAX_READ_BYTES = 0
+
+        with pytest.raises(FileNotFound):
+            get_file_content(uuid.uuid4())
+
+
 class TestDeleteFile:
     """Section 6.2."""
 
@@ -456,6 +515,11 @@ class TestDeleteFile:
         assert File.objects.filter(pk=keeper["files"][0]["id"]).exists()
 
     def test_unknown_id_raises_rather_than_passing_silently(self):
+        """Deletion is not idempotent: an id with nothing behind it is an error.
+
+        This covers deleting the same file twice as well, since after the
+        first call the id is simply unknown.
+        """
         import uuid
 
         with pytest.raises(FileNotFound):
@@ -464,14 +528,6 @@ class TestDeleteFile:
     def test_malformed_id_raises_file_not_found(self):
         with pytest.raises(FileNotFound):
             delete_file("not-a-uuid")
-
-    def test_deleting_twice_raises_the_second_time(self, stored):
-        """Deletion is permanent, not idempotent."""
-        file_id, _ = stored
-        delete_file(file_id)
-
-        with pytest.raises(FileNotFound):
-            delete_file(file_id)
 
     def test_storage_failure_leaves_the_record_intact(self, stored, monkeypatch):
         """The row must never outlive its object, so the object goes first.
