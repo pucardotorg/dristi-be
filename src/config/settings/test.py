@@ -18,6 +18,15 @@ DATABASES = {
     ),
 }
 
+# Use an in-memory cache in tests so cachalot exercises real caching/
+# invalidation behavior without depending on a Redis service in CI.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "KEY_PREFIX": "dristi-test",
+    },
+}
+
 # Dramatiq runs synchronously in tests so assertions are straightforward.
 DRAMATIQ_BROKER = {
     "BROKER": "dramatiq.brokers.stub.StubBroker",

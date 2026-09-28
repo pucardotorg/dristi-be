@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "django_dramatiq",
     "health_check",
     "simple_history",
+    "cachalot",
     # Project apps
     "apps.core",
     "apps.users",
@@ -206,10 +207,32 @@ SPECTACULAR_SETTINGS = {
 # ---------------------------------------------------------------------------
 CACHES = {
     "default": env.cache(
-        var="CACHE_URL",
+        var="CACHE_REDIS_URL",
         default="redis://localhost:6379/1",
     ),
 }
+
+CACHE_ENABLED = env.bool("CACHE_ENABLED", default=True)
+CACHE_KEY_PREFIX = env("CACHE_KEY_PREFIX", default="dristi")
+CACHES["default"]["KEY_PREFIX"] = CACHE_KEY_PREFIX
+
+if not CACHE_ENABLED:
+    CACHES["default"] = {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}
+
+# ---------------------------------------------------------------------------
+# django-cachalot (automatic ORM query caching, Redis-backed)
+# ---------------------------------------------------------------------------
+CACHALOT_ENABLED = env.bool("CACHALOT_ENABLED", default=CACHE_ENABLED)
+CACHALOT_CACHE = "default"
+CACHALOT_TIMEOUT = env.int("CACHALOT_TIMEOUT", default=120)
+
+# Phase 1: allow-list only low-churn, non-user-scoped reference data.
+CACHALOT_ONLY_CACHABLE_APPS = ("locations",)
+CACHALOT_UNCACHABLE_TABLES = (
+    "users_user",
+    "authtoken_token",
+    "django_session",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +327,11 @@ LOGGING = {
             "propagate": False,
         },
         "dramatiq": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "cachalot": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
