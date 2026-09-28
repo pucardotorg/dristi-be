@@ -15,6 +15,7 @@ from apps.files.services import (
     MAX_CONTENT_TYPE_LENGTH,
     MAX_FILE_NAME_LENGTH,
     FileNotFound,
+    delete_file,
     get_file,
     get_file_content,
     get_file_url,
@@ -423,6 +424,94 @@ class TestGetFile:
     def test_malformed_id_raises_file_not_found(self):
         with pytest.raises(FileNotFound):
             get_file("not-a-uuid")
+
+
+class TestDeleteFile:
+    """Section 6.2."""
+
+    @pytest.fixture
+    def stored(self, user):
+        """Return ``(file_id, storage_path)`` for an uploaded, tagged file."""
+        result = upload_file(payload(user, files=[entry(tags=["retired", "invoice"])]))
+        file_id = result["files"][0]["id"]
+        return file_id, File.objects.get(pk=file_id).storage_path
+
+    def test_removes_the_object_and_the_record(self, stored):
+        file_id, path = stored
+
+        assert delete_file(file_id) is None
+
+        assert not File.objects.filter(pk=file_id).exists()
+        assert not file_storage.get_file_storage().exists(path)
+        assert stored_file_count() == 0
+
+    def test_tag_links_go_but_the_tags_survive(self, stored, user):
+        """Other files may still carry the tag, so only the link is removed."""
+        file_id, _ = stored
+        keeper = upload_file(payload(user, files=[entry(tags=["invoice"])]))
+
+        delete_file(file_id)
+
+        assert FileTag.objects.filter(name__in=["retired", "invoice"]).count() == 2
+        assert File.objects.filter(pk=keeper["files"][0]["id"]).exists()
+
+    def test_unknown_id_raises_rather_than_passing_silently(self):
+        import uuid
+
+        with pytest.raises(FileNotFound):
+            delete_file(uuid.uuid4())
+
+    def test_malformed_id_raises_file_not_found(self):
+        with pytest.raises(FileNotFound):
+            delete_file("not-a-uuid")
+
+    def test_deleting_twice_raises_the_second_time(self, stored):
+        """Deletion is permanent, not idempotent."""
+        file_id, _ = stored
+        delete_file(file_id)
+
+        with pytest.raises(FileNotFound):
+            delete_file(file_id)
+
+    def test_storage_failure_leaves_the_record_intact(self, stored, monkeypatch):
+        """The row must never outlive its object, so the object goes first.
+
+        If the backend cannot confirm the deletion the error propagates and
+        the metadata stays, leaving the file readable and the caller able to
+        retry.
+        """
+        file_id, path = stored
+
+        def fail(storage_path):
+            raise OSError("storage is unavailable")
+
+        monkeypatch.setattr(file_storage, "delete", fail)
+
+        with pytest.raises(OSError):
+            delete_file(file_id)
+
+        assert File.objects.filter(pk=file_id).exists()
+        assert get_file(file_id)["id"] == file_id
+        assert file_storage.get_file_storage().exists(path)
+
+    def test_a_deactivated_file_can_still_be_deleted(self, stored):
+        """Cleanup has to reach the rows every read path hides."""
+        file_id, path = stored
+        File.objects.filter(pk=file_id).update(is_active=False)
+
+        delete_file(file_id)
+
+        assert not File.objects.filter(pk=file_id).exists()
+        assert not file_storage.get_file_storage().exists(path)
+
+    def test_other_files_are_untouched(self, stored, user):
+        file_id, _ = stored
+        survivor = upload_file(payload(user, files=[entry(upload("b.pdf"))]))["files"][0]["id"]
+
+        delete_file(file_id)
+
+        assert get_file(survivor)["file_name"] == "b.pdf"
+        assert get_file_content(survivor).read() == b"hello"
 
 
 class TestSearchFile:
