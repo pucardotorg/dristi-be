@@ -104,7 +104,7 @@ def search_file(filters=None, page=1, page_size=20):
     for name in _validated_tag_names(filters.get("tags"), "tags"):
         queryset = queryset.filter(tags__name=_normalized_tag(name))
 
-    paginator = Paginator(queryset.distinct(), page_size)
+    paginator = Paginator(queryset.distinct().prefetch_related("tags"), page_size)
     current_page = paginator.get_page(page)
     return {
         "results": [_as_dict(file) for file in current_page],
@@ -324,7 +324,13 @@ def _instance(file_id):
 
 
 def _as_dict(file):
-    """Serialize a File for callers, without exposing its storage key."""
+    """Serialize a File for callers, without exposing its storage key.
+
+    Tags are read through ``tags.all()`` rather than ``tags.values_list()`` so
+    that a caller which prefetched them -- ``search_file`` does -- is served
+    from the prefetch cache. ``values_list`` ignores that cache and would issue
+    one query per file in the page.
+    """
     return {
         "id": file.id,
         "organization_id": file.organization_id,
@@ -333,7 +339,7 @@ def _as_dict(file):
         "file_name": file.file_name,
         "content_type": file.content_type,
         "file_size": file.file_size,
-        "tags": sorted(file.tags.values_list("name", flat=True)),
+        "tags": sorted(tag.name for tag in file.tags.all()),
         "created_at": file.created_at,
     }
 
