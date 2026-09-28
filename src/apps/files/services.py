@@ -87,15 +87,6 @@ def get_file_content(file_id):
     return file_storage.open_file(file.storage_path)
 
 
-def get_file_url(file_id):
-    """Return a URL for a file's stored content.
-
-    With the S3 backend this is a short-lived pre-signed URL, which lets a
-    caller hand the file to a client without proxying the bytes.
-    """
-    return file_storage.get_url(_instance(file_id).storage_path)
-
-
 def delete_file(file_id):
     """Permanently delete a file's stored object and then its metadata row.
 
