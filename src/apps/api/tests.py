@@ -55,8 +55,9 @@ class ApiVersionChangeLogAPITests(APITestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
+            mobile_number="+919000000001",
             email="changelog@example.com",
-            username="changelog",
+            name="Changelog Reader",
             password="test",
         )
 

@@ -40,7 +40,6 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "drf_spectacular",
-    "rest_framework.authtoken",
     "corsheaders",
     "django_dramatiq",
     "health_check",
@@ -108,8 +107,21 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ---------------------------------------------------------------------------
 AUTH_USER_MODEL = "users.User"
 
+# Django tries each backend in order until one returns a user, so mobile+password
+# and mobile+OTP are one authenticate() call from the caller's side.
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",  # mobile + password
+    "apps.users.services.backend.OTPBackend",  # mobile + OTP
+]
+
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        # The default list is username/first_name/last_name/email, and this
+        # User has none of the first three. Left at the default the validator
+        # compares against nothing and silently passes everything.
+        "OPTIONS": {"user_attributes": ("name", "email", "mobile_number")},
+    },
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
@@ -180,12 +192,23 @@ if all([S3_API_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY]):
 # Django REST Framework
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
+    # Registration and login are cookie-based. TokenAuthentication is the
+    # intended second mechanism but is not yet wired — see spec 0000 section 6.3.
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.TokenAuthentication",
     ],
+    # Gates are defaults so that forgetting to think about access on a new
+    # endpoint fails closed. Endpoints reachable earlier opt out explicitly.
+    #
+    # IsAuthenticated looks redundant — IsAuthenticatedAndRegistered checks
+    # authentication too — but it is not. DRF stops at the first permission
+    # that fails and reports that one's message. Listed first, an anonymous
+    # caller is told their credentials are missing; drop it and they are told
+    # their registration is incomplete, which is wrong and sends the client to
+    # the wrong screen. Keep both, in this order.
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticatedOrReadOnly",
+        "rest_framework.permissions.IsAuthenticated",
+        "apps.users.services.permissions.IsAuthenticatedAndRegistered",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
@@ -200,6 +223,22 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "OpenAPI schema for Dristi Django REST APIs.",
     "VERSION": "1.0.0",
 }
+
+# ---------------------------------------------------------------------------
+# Registration (spec 0005)
+# ---------------------------------------------------------------------------
+# Incremented by one each time new terms are published. An account whose
+# terms_version_accepted is lower than this must re-accept.
+CURRENT_TERMS_VERSION = env.int("CURRENT_TERMS_VERSION", default=1)
+
+OTP_LENGTH = env.int("OTP_LENGTH", default=6)
+OTP_TTL_SECONDS = env.int("OTP_TTL_SECONDS", default=300)
+
+# Minimum gap between two codes sent to the same number. An operational dial:
+# it trades SMS cost and abuse resistance against how long a user whose first
+# message never arrived has to wait. Validated at startup by
+# apps.users.services.checks.
+OTP_RESEND_COOLDOWN_SECONDS = env.int("OTP_RESEND_COOLDOWN_SECONDS", default=30)
 
 
 # ---------------------------------------------------------------------------

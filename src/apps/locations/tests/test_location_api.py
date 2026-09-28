@@ -233,7 +233,7 @@ class LocationWriteMethodTests(LocationAPITestCase):
 
     def test_session_cookie_post_is_not_allowed(self):
         user = self._make_user()
-        self.assertTrue(self.client.login(email=user.email, password="test"))
+        self.assertTrue(self.client.login(mobile_number=user.mobile_number, password="test"))
 
         response = self.client.post(reverse("location-list"), {"code": "MH"})
 
@@ -248,7 +248,10 @@ class LocationWriteMethodTests(LocationAPITestCase):
     def _make_user(self):
         """Create a user for permission-passing write attempts."""
         return User.objects.create_user(
-            email="editor@example.com", username="editor", password="test"
+            mobile_number="+919000000004",
+            name="Editor",
+            email="editor@example.com",
+            password="test",
         )
 
 

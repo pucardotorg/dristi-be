@@ -70,7 +70,10 @@ class TestApiVersionChangeLogHistory:
 
     def test_history_user_set_via_middleware(self):
         user = User.objects.create_user(
-            username="auditor", email="auditor@example.com", password="pw12345"
+            mobile_number="+919000000002",
+            name="Auditor",
+            email="auditor@example.com",
+            password="pw12345",
         )
         changelog = _run_with_history_user(
             user,
@@ -185,7 +188,10 @@ class TestAdditionalAttributeHistory:
 
     def test_history_user_set_via_middleware(self, content_type):
         user = User.objects.create_user(
-            username="attr_auditor", email="attr_auditor@example.com", password="pw12345"
+            mobile_number="+919000000003",
+            name="Attribute Auditor",
+            email="attr_auditor@example.com",
+            password="pw12345",
         )
         attr = _run_with_history_user(
             user,

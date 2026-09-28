@@ -42,6 +42,15 @@ DRAMATIQ_BROKER = {
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
+# The OTP code and its resend cooldown both live in the cache, so tests need a
+# real one that requires no server and resets between runs.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "dristi-tests",
+    },
+}
+
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 # Disable throttling in tests

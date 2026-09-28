@@ -12,7 +12,10 @@ from apps.core.views import index
 urlpatterns = [
     path("", index),
     path("admin/", admin.site.urls),
+    # apps.api owns the schema, docs and health routes; each domain app is
+    # mounted here so the whole API surface is visible in one file.
     path("api/", include("apps.api.urls")),
+    path("api/v1/", include("apps.users.urls")),
     path("api/v1/", include("apps.locations.urls")),
     path("api/v1/", include("apps.organizations.urls")),
     path(
