@@ -593,6 +593,26 @@ cd src && python manage.py check
 3. Should `FILE_SYSTEM_USER_ID` (#10) be a real user row, a reserved UUID, or a
    sentinel string?
 
+   It has to be a real user row. `File.user` is a non-null FK, so the value
+   must be an existing row's primary key -- not a sentinel string. And `User`
+   extends `AbstractUser`, so `User.id` is a `BigAutoField` -- not a UUID.
+
+   Open: how to pin that row down, since an auto-increment pk differs per
+   environment.
+
+   a. Setting holds a well-known email (`system@dristi.internal`); a data
+      migration creates the row; the caller resolves email to pk. One value
+      everywhere, no manual bootstrap.
+   b. Setting holds a pk pinned by the data migration. No lookup, but
+      hardcodes a pk and can collide on a populated database.
+   c. Each environment creates its own account and sets the pk in its `.env`.
+      A manual step that breaks background uploads when missed.
+
+   Deferred until a consumer exists -- nothing calls `upload_file` today, so
+   the setting would be read by no code. Note the fallback belongs to the
+   caller, not `upload_file` (#10): the service still requires `user_id`, and
+   `File.user` stays non-null.
+
 4. Should tags be global across the system or scoped to an `organization_id`?
 
 5. When searching with multiple tags, should the result match files having **all** tags or **any** of the tags?
