@@ -6,7 +6,8 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.core.files import File as FileWrapper
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
+from django.test.utils import CaptureQueriesContext
 
 from apps.files import storage as file_storage
 from apps.files.models import File, FileTag, FileType
@@ -507,6 +508,20 @@ class TestSearchFile:
 
     def test_results_omit_the_storage_path(self, corpus):
         assert all("storage_path" not in item for item in search_file()["results"])
+
+    def test_tags_cost_the_same_whatever_the_page_size(self, corpus):
+        """Tags are prefetched, so a page does not cost one query per file.
+
+        ``_as_dict`` has to read ``tags.all()`` for that to hold:
+        ``tags.values_list()`` ignores the prefetch cache and queries again for
+        every file serialized.
+        """
+        with CaptureQueriesContext(connection) as one_result:
+            search_file(page_size=1)
+        with CaptureQueriesContext(connection) as three_results:
+            search_file(page_size=3)
+
+        assert len(three_results) == len(one_result)
 
 
 class TestInactiveFiles:
