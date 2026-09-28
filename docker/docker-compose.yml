@@ -31,6 +31,11 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  httpbin:
+    image: mccutchen/go-httpbin:v2.16.2
+    ports:
+      - "8888:8080"
+
   dramatiq-dashboard:
     image: ghcr.io/thejeshgn/dramatiq-dashboard-docker:latest
     ports:
@@ -126,6 +131,8 @@ services:
     user: root
     env_file:
       - ../.env
+    environment:
+      MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin/post"
     ports:
       - "8000:8000"
     volumes:
@@ -137,6 +144,8 @@ services:
         condition: service_healthy
       rustfs-init:
         condition: service_completed_successfully
+      httpbin:
+        condition: service_started
 
   worker:
     build:
@@ -148,6 +157,8 @@ services:
     user: root
     env_file:
       - ../.env
+    environment:
+      MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin/post"
     volumes:
       - ../src:/app
     depends_on:
@@ -157,6 +168,8 @@ services:
         condition: service_healthy
       rustfs-init:
         condition: service_completed_successfully
+      httpbin:
+        condition: service_started
 
 volumes:
   postgres_data:
