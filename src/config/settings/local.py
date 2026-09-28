@@ -40,6 +40,9 @@ INTERNAL_IPS = ["127.0.0.1"]
 # Use Django's staticfiles storage in development so collectstatic is not needed
 STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticFilesStorage"
 
+# Keep the mock eSign provider locally so no C-DAC keystore is required
+ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockESignProvider")
+
 # Disable HTTPS-only cookies in development
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
