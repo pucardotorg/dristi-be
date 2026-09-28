@@ -207,6 +207,7 @@ STORAGES["files"] = STORAGES["default"]
 
 FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=10 * 1024 * 1024)
 FILE_MAX_COUNT_PER_UPLOAD = env.int("FILE_MAX_COUNT_PER_UPLOAD", default=10)
+FILE_MAX_READ_BYTES = env.int("FILE_MAX_READ_BYTES", default=FILE_MAX_SIZE_BYTES)
 
 
 # ---------------------------------------------------------------------------
