@@ -160,13 +160,6 @@ S3_BUCKET = env("S3_BUCKET", default=None)
 S3_ACCESS_KEY = env("S3_ACCESS_KEY", default=None)
 S3_SECRET_KEY = env("S3_SECRET_KEY", default=None)
 
-# Endpoint that signed URLs should name, for deployments where the address the
-# server reaches Object Storage on is not the address a client can reach. In
-# development S3_API_ENDPOINT is the compose service name, which no browser can
-# resolve, and the host cannot simply be swapped in a signed URL because
-# SigV4 signs it. Leave unset when the API endpoint is already client-reachable.
-S3_PUBLIC_ENDPOINT = env("S3_PUBLIC_ENDPOINT", default=None)
-
 if all([S3_API_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY]):
     STORAGES["default"] = {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",

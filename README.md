@@ -97,7 +97,6 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `MESSAGING_RETRY_DELAY_BASE` | Base retry delay in seconds (exponential backoff) | `60` |
 | `MESSAGING_RETRY_DELAY_MAX` | Maximum retry delay in seconds | `3600` |
 | `S3_API_ENDPOINT` | S3-compatible API endpoint for media uploads | `http://rustfs:9000` |
-| `S3_PUBLIC_ENDPOINT` | Endpoint that signed URLs name, when clients cannot reach `S3_API_ENDPOINT`. Leave blank when they can. | `http://localhost:9000` |
 | `S3_BUCKET` | S3 bucket for media uploads | `dristi-media` |
 | `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
 | `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
