@@ -1,4 +1,4 @@
-"""File storage domain services: upload, retrieval, and search.
+"""File storage domain services: upload, retrieval, search, and deletion.
 
 This module is consumed in-process by other Django apps. Every public function
 is a plain callable that takes and returns plain data structures; nothing here
@@ -77,6 +77,31 @@ def get_file_url(file_id):
     caller hand the file to a client without proxying the bytes.
     """
     return file_storage.get_url(_instance(file_id).storage_path)
+
+
+def delete_file(file_id):
+    """Permanently delete a file's stored object and then its metadata row.
+
+    The object is removed first, and that call is deliberately left
+    unguarded: if the storage backend cannot confirm the deletion the error
+    propagates and the ``File`` row stays put, so a row never points at an
+    object that is already gone. The reverse order would orphan the object
+    with nothing left in the database to find it by.
+
+    Deactivated files are deletable, which is why the lookup goes through
+    ``File.objects`` rather than the ``active()`` queryset every read path
+    uses. They are exactly the rows a caller is most likely to be cleaning
+    up, and no other entry point can reach them.
+
+    Deletion is not idempotent: an unknown id raises ``FileNotFound`` rather
+    than returning quietly, so a caller that deletes the same id twice finds
+    out. Django's deletion collector removes the tag through-rows in the same
+    transaction as the file; the ``FileTag`` rows themselves survive, since
+    other files may still carry them.
+    """
+    file = _instance(file_id, File.objects.all())
+    file_storage.delete(file.storage_path)
+    file.delete()
 
 
 def search_file(filters=None, page=1, page_size=20):
@@ -309,16 +334,21 @@ def _validated_page_arg(value, field):
     return value
 
 
-def _instance(file_id):
-    """Return an active File by id, or raise FileNotFound.
+def _instance(file_id, queryset=None):
+    """Return a File by id from ``queryset``, or raise FileNotFound.
 
-    A deactivated file is reported as missing rather than as a distinct state:
-    callers of this module have no way to reactivate one, so the difference is
-    not actionable for them. The Django admin queries the model directly and
-    still sees every row.
+    The default queryset is the active one. A deactivated file is reported as
+    missing rather than as a distinct state: callers of this module have no
+    way to reactivate one, so the difference is not actionable for them. The
+    Django admin queries the model directly and still sees every row.
+
+    ``delete_file`` passes the unfiltered queryset instead, because cleaning
+    up a deactivated file is the one operation that has to reach one.
     """
+    if queryset is None:
+        queryset = File.objects.active()
     try:
-        return File.objects.active().get(pk=file_id)
+        return queryset.get(pk=file_id)
     except (File.DoesNotExist, ValidationError, ValueError) as exc:
         raise FileNotFound(f"No file with id {file_id!r}.") from exc
 
