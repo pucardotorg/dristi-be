@@ -1,4 +1,4 @@
-"""Shared fixtures for the simple requests app tests."""
+"""Shared fixtures for the dristi requests app tests."""
 
 import itertools
 
@@ -7,7 +7,7 @@ from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from apps.simple_requests.models import ApprovalStep, RequestType
+from apps.dristi_requests.models import ApprovalStep, RequestType
 from apps.users.models import User
 
 
@@ -23,7 +23,7 @@ def make_user(db):
     """Return a factory creating users, optionally in the given groups.
 
     Mobile numbers are handed out in creation order, which is also the order
-    :func:`apps.simple_requests.services.candidate_approvers` resolves
+    :func:`apps.dristi_requests.services.candidate_approvers` resolves
     approvers in, so "first user added to the group approves" holds in tests.
     """
     counter = itertools.count(1)

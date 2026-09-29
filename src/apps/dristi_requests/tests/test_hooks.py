@@ -11,14 +11,14 @@ import json
 import pytest
 from django.urls import reverse
 
-from apps.simple_requests import services
-from apps.simple_requests.hooks import (
+from apps.dristi_requests import services
+from apps.dristi_requests.hooks import (
     POST_APPROVAL_HOOKS,
     get_hook,
     register_hook,
     run_post_approval_hooks,
 )
-from apps.simple_requests.models import Request
+from apps.dristi_requests.models import Request
 
 
 @pytest.fixture

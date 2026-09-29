@@ -6,7 +6,7 @@ import django.db.models.deletion
 from django.conf import settings
 from django.db import migrations, models
 
-import apps.simple_requests.models
+import apps.dristi_requests.models
 
 
 class Migration(migrations.Migration):
@@ -98,7 +98,7 @@ class Migration(migrations.Migration):
                 (
                     "file",
                     models.FileField(
-                        upload_to=apps.simple_requests.models.request_document_upload_to
+                        upload_to=apps.dristi_requests.models.request_document_upload_to
                     ),
                 ),
                 ("uploaded_at", models.DateTimeField(auto_now_add=True)),
@@ -118,7 +118,7 @@ class Migration(migrations.Migration):
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
                         related_name="documents",
-                        to="simple_requests.request",
+                        to="dristi_requests.request",
                     ),
                 ),
                 (
@@ -201,7 +201,7 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(
                 on_delete=django.db.models.deletion.PROTECT,
                 related_name="requests",
-                to="simple_requests.requesttype",
+                to="dristi_requests.requesttype",
             ),
         ),
         migrations.CreateModel(
@@ -269,7 +269,7 @@ class Migration(migrations.Migration):
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
                         related_name="approval_steps",
-                        to="simple_requests.requesttype",
+                        to="dristi_requests.requesttype",
                     ),
                 ),
             ],
@@ -335,7 +335,7 @@ class Migration(migrations.Migration):
                     models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
                         related_name="approvals",
-                        to="simple_requests.request",
+                        to="dristi_requests.request",
                     ),
                 ),
                 (
@@ -345,7 +345,7 @@ class Migration(migrations.Migration):
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
                         related_name="approvals",
-                        to="simple_requests.approvalstep",
+                        to="dristi_requests.approvalstep",
                     ),
                 ),
                 (

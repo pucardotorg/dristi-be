@@ -5,7 +5,7 @@ from django.apps import apps
 from django.contrib.auth.models import Group
 from django.db import IntegrityError
 
-from apps.simple_requests.models import (
+from apps.dristi_requests.models import (
     ApprovalStep,
     Request,
     RequestApproval,
@@ -114,7 +114,7 @@ class TestModuleIsDomainAgnostic:
 
     def test_no_domain_specific_models(self):
         model_names = {
-            model.__name__ for model in apps.get_app_config("simple_requests").get_models()
+            model.__name__ for model in apps.get_app_config("dristi_requests").get_models()
         }
 
         assert model_names == {

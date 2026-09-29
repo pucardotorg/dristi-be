@@ -8,7 +8,7 @@ A consuming app registers a hook for its request type code and applies the
 side effect to its own models::
 
     # apps/users/hooks.py
-    from apps.simple_requests.hooks import register_hook
+    from apps.dristi_requests.hooks import register_hook
 
 
     @register_hook("LAWYER_BAR_UPDATE")

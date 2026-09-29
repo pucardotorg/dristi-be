@@ -4,7 +4,7 @@ This module is deliberately domain-agnostic: it knows about request types,
 requests, their documents and their approval trail, and nothing about what
 any particular request *means*. Consuming apps own their own models and
 apply their side effects from a registered post-approval hook (see
-``apps.simple_requests.hooks``).
+``apps.dristi_requests.hooks``).
 """
 
 from django.conf import settings
