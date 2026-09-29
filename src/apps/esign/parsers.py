@@ -5,7 +5,8 @@ response document as ``application/xml`` instead. Both arrive here as a flat
 mapping the provider can read; the domain never interprets the content.
 """
 
-from rest_framework.exceptions import ParseError
+from rest_framework import status
+from rest_framework.exceptions import APIException
 from rest_framework.parsers import BaseParser
 
 from . import conf
@@ -14,6 +15,19 @@ from . import conf
 # than a form. Providers look for their own field names first and fall back to
 # this one.
 RESPONSE_XML_FIELD = "response_xml"
+
+
+class CallbackBodyTooLarge(APIException):
+    """A callback body over ``ESIGN_CALLBACK_MAX_BODY_BYTES``.
+
+    Carries 413 so the XML parser path answers an oversized body the same way
+    the view's form-encoded ``Content-Length`` guard does, rather than the 400
+    a plain ``ParseError`` would give.
+    """
+
+    status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    default_detail = "The eSign response document is too large."
+    default_code = "request_entity_too_large"
 
 
 class ESignResponseXMLParser(BaseParser):
@@ -36,7 +50,7 @@ class ESignResponseXMLParser(BaseParser):
         if limit:
             body = stream.read(limit + 1)
             if len(body) > limit:
-                raise ParseError("The eSign response document is too large.")
+                raise CallbackBodyTooLarge()
         else:
             body = stream.read()
 
