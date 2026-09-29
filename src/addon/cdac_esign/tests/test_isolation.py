@@ -21,6 +21,14 @@ FORBIDDEN_MODULES = frozenset(
     {"models", "services", "tasks", "views", "serializers", "urls", "admin"}
 )
 
+# ``providers`` is a mixed package: ``providers.base`` is the contract (the ABC
+# and the request/response dataclasses), while ``providers.registry`` and
+# ``providers.mock`` are behaviour the addon must not reach into. The package
+# itself (``apps.esign.providers``) re-exports the registry, so importing it
+# bare is forbidden too.
+PROVIDERS_PACKAGE = f"{DOMAIN_PACKAGE}.providers"
+PROVIDERS_CONTRACT = f"{PROVIDERS_PACKAGE}.base"
+
 
 def forbidden_imports(source: str) -> list[str]:
     """Return ``name:line`` for every import of domain behaviour in ``source``.
@@ -29,6 +37,11 @@ def forbidden_imports(source: str) -> list[str]:
     lists and multi-line imports are all covered by the same rule.
     """
 
+    # apps.esign and apps.esign.providers are packages the addon imports *from*
+    # for both contract and (forbidden) behaviour, so ``from <pkg> import name``
+    # is judged by each name rather than by the package.
+    judged_by_name = {DOMAIN_PACKAGE, PROVIDERS_PACKAGE}
+
     offenders = []
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
@@ -36,12 +49,17 @@ def forbidden_imports(source: str) -> list[str]:
                 if _is_forbidden_module(alias.name):
                     offenders.append(f"{alias.name}:{node.lineno}")
         elif isinstance(node, ast.ImportFrom) and node.module:
-            if _is_forbidden_module(node.module):
-                offenders.append(f"{node.module}:{node.lineno}")
-            elif node.module == DOMAIN_PACKAGE:
+            if node.module in judged_by_name:
+                # ``from apps.esign import models`` /
+                # ``from apps.esign.providers import registry``.
                 for alias in node.names:
-                    if alias.name in FORBIDDEN_MODULES:
-                        offenders.append(f"{node.module}.{alias.name}:{node.lineno}")
+                    candidate = f"{node.module}.{alias.name}"
+                    if _is_forbidden_module(candidate):
+                        offenders.append(f"{candidate}:{node.lineno}")
+            elif _is_forbidden_module(node.module):
+                # ``from apps.esign.models import X`` /
+                # ``from apps.esign.providers.registry import get_provider``.
+                offenders.append(f"{node.module}:{node.lineno}")
     return offenders
 
 
@@ -51,6 +69,9 @@ def _is_forbidden_module(dotted: str) -> bool:
     prefix = f"{DOMAIN_PACKAGE}."
     if not dotted.startswith(prefix):
         return False
+    if dotted == PROVIDERS_PACKAGE or dotted.startswith(f"{PROVIDERS_PACKAGE}."):
+        # Everything under providers is behaviour except the contract itself.
+        return dotted != PROVIDERS_CONTRACT and not dotted.startswith(f"{PROVIDERS_CONTRACT}.")
     return dotted[len(prefix) :].split(".", 1)[0] in FORBIDDEN_MODULES
 
 
@@ -67,6 +88,13 @@ class ForbiddenImportDetectionTests(SimpleTestCase):
             "import apps.esign.services",
             "import apps.esign.services.callback",
             "from apps.esign import (\n    conf,\n    views,\n)",
+            # providers.* is behaviour except .base, in either spelling.
+            "import apps.esign.providers.registry",
+            "from apps.esign.providers.registry import get_provider",
+            "from apps.esign.providers import registry",
+            "from apps.esign.providers.mock import MockESignProvider",
+            "from apps.esign.providers import registry, mock",
+            "import apps.esign.providers",
         ):
             with self.subTest(source=source):
                 self.assertTrue(forbidden_imports(source), source)
@@ -79,6 +107,8 @@ class ForbiddenImportDetectionTests(SimpleTestCase):
             "from apps.esign.checks import is_production_settings",
             "from apps.esign.exceptions import ESignResponseUntrusted",
             "from apps.esign.providers.base import ESignProvider",
+            "from apps.esign.providers import base",
+            "import apps.esign.providers.base",
             "from apps.esign.constants import ESIGN_PROVIDER_REJECTED",
             "import apps.esign",
         ):
