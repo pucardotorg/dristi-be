@@ -158,3 +158,31 @@ class PlaceholderCleanupTests(ESignTestCase):
         self.assertEqual(cleanup_placeholders(), 1)
         transaction.refresh_from_db()
         self.assertEqual(transaction.placeholder_file_id, "")
+
+    def test_a_row_that_changed_since_the_read_is_not_cleared(self):
+        """The update is a compare-and-set, so a moved-on row is left alone.
+
+        The row is rewritten between the queryset read and the update, which
+        is the window a second sweep — or a concurrent write — occupies.
+        """
+        transaction = self.create_transaction(provider_transaction_id="orders-moved")
+        transaction.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+        age(transaction, timedelta(days=30))
+        stale_id = transaction.placeholder_file_id
+        current_id = self.files.add(b"%PDF-current\n%%EOF\n")
+
+        original_delete = self.files.delete
+
+        def delete_and_move_the_row(file_id):
+            original_delete(file_id)
+            ESignTransaction.objects.filter(pk=transaction.pk).update(
+                placeholder_file_id=current_id
+            )
+
+        self.files.delete = delete_and_move_the_row
+
+        self.assertEqual(cleanup_placeholders(), 0)
+
+        transaction.refresh_from_db()
+        self.assertEqual(transaction.placeholder_file_id, current_id)
+        self.assertEqual(self.files.deleted, [stale_id])

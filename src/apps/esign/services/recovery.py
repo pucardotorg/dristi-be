@@ -39,16 +39,18 @@ from .initiation import (
 
 
 def retry_transaction(parent: ESignTransaction, *, user=None) -> InitiationResult:
-    """Create a fresh attempt from a ``FAILURE``/``EXPIRED`` transaction."""
+    """Create a fresh attempt from a ``FAILURE``/``EXPIRED`` transaction.
+
+    An attempt may be retried exactly once. Without that rule the budget could
+    be walked around entirely: ``attempt_count`` is derived from the parent, so
+    repeatedly retrying the same dead row would mint sibling attempts that all
+    claim the same number and never exhaust ``ESIGN_MAX_ATTEMPTS``. The check
+    and the insert therefore happen together, under a row lock, so two
+    concurrent retries cannot both pass.
+    """
 
     if not conf.is_enabled():
         raise ESignDisabled()
-    if not parent.is_retryable:
-        raise ESignNotRetryable()
-
-    attempt_count = parent.attempt_count + 1
-    if attempt_count > conf.max_attempts():
-        raise ESignMaxAttemptsExceeded()
 
     provider = get_provider()
     actor = user if user is not None else parent.signer
@@ -60,41 +62,83 @@ def retry_transaction(parent: ESignTransaction, *, user=None) -> InitiationResul
         organization_id=parent.organization_id,
     )
 
-    placeholder_file_id = parent.placeholder_file_id
-    document_hash = parent.document_hash
-    field_name = parent.signature_field_name
+    transaction = _claim_retry(parent, provider=provider)
 
-    if not _placeholder_available(placeholder_file_id):
-        placeholder_file_id, document_hash, field_name = _reprepare(parent, actor)
-
-    transaction = ESignTransaction.objects.create(
-        organization_id=parent.organization_id,
-        module=parent.module,
-        entity_type=parent.entity_type,
-        entity_id=parent.entity_id,
-        signer=parent.signer,
-        provider=provider.name,
-        source_file_id=parent.source_file_id,
-        placeholder_file_id=placeholder_file_id,
-        sign_placeholder=parent.sign_placeholder,
-        document_hash=document_hash,
-        signature_field_name=field_name,
-        status=ESignStatus.PENDING.value,
-        attempt_count=attempt_count,
-        retry_of=parent,
-        expires_at=timezone.now() + conf.transaction_ttl(),
-        created_by=parent.created_by,
-        updated_by=parent.updated_by,
-    )
+    # Re-preparing calls the PDF and File Storage services, so it happens after
+    # the lock is released; the claimed row records a failure if it cannot be
+    # done, exactly as any other post-creation failure does.
+    if not _placeholder_available(transaction.placeholder_file_id):
+        _repair_placeholder(transaction, actor)
 
     initiation = build_provider_request(transaction, provider=provider)
     log_event(
         EVENT_ESIGN_RETRIED,
         transaction,
         retry_of=str(parent.pk),
-        attempt_count=attempt_count,
+        attempt_count=transaction.attempt_count,
     )
     return InitiationResult(transaction=transaction, initiation=initiation)
+
+
+def _claim_retry(parent: ESignTransaction, *, provider) -> ESignTransaction:
+    """Validate eligibility and create the next attempt under a row lock."""
+
+    with db_transaction.atomic():
+        locked = _lock(parent.pk)
+        if locked is None or not locked.is_retryable:
+            raise ESignNotRetryable()
+        if locked.retries.exists():
+            raise ESignNotRetryable(
+                "This attempt has already been retried; continue from the newer attempt."
+            )
+
+        attempt_count = locked.attempt_count + 1
+        if attempt_count > conf.max_attempts():
+            raise ESignMaxAttemptsExceeded()
+
+        return ESignTransaction.objects.create(
+            organization_id=locked.organization_id,
+            module=locked.module,
+            entity_type=locked.entity_type,
+            entity_id=locked.entity_id,
+            signer=locked.signer,
+            provider=provider.name,
+            source_file_id=locked.source_file_id,
+            placeholder_file_id=locked.placeholder_file_id,
+            sign_placeholder=locked.sign_placeholder,
+            document_hash=locked.document_hash,
+            signature_field_name=locked.signature_field_name,
+            status=ESignStatus.PENDING.value,
+            attempt_count=attempt_count,
+            retry_of=locked,
+            expires_at=timezone.now() + conf.transaction_ttl(),
+            created_by=locked.created_by,
+            updated_by=locked.updated_by,
+        )
+
+
+def _repair_placeholder(transaction: ESignTransaction, actor) -> None:
+    """Re-prepare the source document for a claimed retry, or fail the row."""
+
+    try:
+        placeholder_file_id, document_hash, field_name = _reprepare(transaction, actor)
+    except ESignError as exc:
+        transaction.mark_failed(exc.code, exc.message)
+        log_event(EVENT_ESIGN_FAILED, transaction, failure_code=exc.code)
+        exc.transaction = transaction
+        raise
+
+    transaction.placeholder_file_id = placeholder_file_id
+    transaction.document_hash = document_hash
+    transaction.signature_field_name = field_name
+    transaction.save(
+        update_fields=[
+            "placeholder_file_id",
+            "document_hash",
+            "signature_field_name",
+            "updated_at",
+        ]
+    )
 
 
 def expire_stale_transactions(now=None) -> int:
@@ -165,10 +209,14 @@ def cleanup_placeholders(now=None) -> int:
             # Storage trouble: leave the id in place for the next run rather
             # than forgetting a file that still exists.
             continue
-        ESignTransaction.objects.filter(pk=transaction.pk).update(
-            placeholder_file_id="", updated_at=timezone.now()
-        )
-        removed += 1
+        # Compare-and-set against what was read: the row may have moved on
+        # since the iterator produced it, and clearing an id this sweep never
+        # deleted would lose the only reference to a file that still exists.
+        removed += ESignTransaction.objects.filter(
+            pk=transaction.pk,
+            status__in=TERMINAL_STATUSES,
+            placeholder_file_id=transaction.placeholder_file_id,
+        ).update(placeholder_file_id="", updated_at=timezone.now())
     return removed
 
 

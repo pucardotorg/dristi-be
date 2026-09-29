@@ -375,3 +375,61 @@ class CallbackFailureRedirectTests(ESignTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_302_FOUND)
         self.assertIn("status=FAILURE", response["Location"])
+
+
+class CallbackBodyLimitTests(ESignTestCase):
+    """The public callback bounds what it will read (spec 0015 #6.3, #12)."""
+
+    def setUp(self):
+        """Create a PENDING transaction and drop the session."""
+        super().setUp()
+        self.transaction = self.create_transaction()
+        self.client.force_authenticate(user=None)
+        self.url = reverse("esign-callback")
+
+    @override_settings(ESIGN_CALLBACK_MAX_BODY_BYTES=64)
+    def test_oversized_xml_body_is_refused_by_the_parser(self):
+        """The parser bounds its own read rather than trusting Content-Length."""
+        document = "<EsignResp txn='orders-1'>" + ("x" * 4096) + "</EsignResp>"
+
+        response = self.client.post(self.url, document, content_type="application/xml")
+
+        self.assertIn(
+            response.status_code,
+            (status.HTTP_400_BAD_REQUEST, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE),
+        )
+        self.transaction.refresh_from_db()
+        self.assertEqual(self.transaction.status, ESignStatus.PENDING.value)
+
+    @override_settings(ESIGN_CALLBACK_MAX_BODY_BYTES=64)
+    def test_parser_read_is_bounded_even_without_a_content_length(self):
+        """Called directly, the parser still refuses to buffer the whole body."""
+        import io
+
+        from rest_framework.exceptions import ParseError
+
+        from apps.esign.parsers import ESignResponseXMLParser
+
+        with self.assertRaises(ParseError):
+            ESignResponseXMLParser().parse(io.BytesIO(b"<EsignResp/>" + b"x" * 8192))
+
+    @override_settings(ESIGN_CALLBACK_MAX_BODY_BYTES=4096)
+    def test_a_body_inside_the_limit_is_parsed(self):
+        """The limit does not truncate a legitimate response document."""
+        import io
+
+        from apps.esign.parsers import RESPONSE_XML_FIELD, ESignResponseXMLParser
+
+        parsed = ESignResponseXMLParser().parse(io.BytesIO(b"<EsignResp txn='a'/>"))
+        self.assertEqual(parsed, {RESPONSE_XML_FIELD: "<EsignResp txn='a'/>"})
+
+    @override_settings(ESIGN_CALLBACK_MAX_BODY_BYTES=0)
+    def test_the_limit_can_be_switched_off(self):
+        """Zero means no limit, for a deployment that bounds bodies upstream."""
+        import io
+
+        from apps.esign.parsers import RESPONSE_XML_FIELD, ESignResponseXMLParser
+
+        body = b"<EsignResp txn='a'>" + b"x" * 5000 + b"</EsignResp>"
+        parsed = ESignResponseXMLParser().parse(io.BytesIO(body))
+        self.assertEqual(len(parsed[RESPONSE_XML_FIELD]), len(body))
