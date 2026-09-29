@@ -47,7 +47,7 @@ def candidate_approvers(step, request):
             "approver_role or approver_group configured."
         )
 
-    return queryset.exclude(pk=request.requester_id).order_by("email").distinct()
+    return queryset.exclude(pk=request.requester_id).order_by("mobile_number").distinct()
 
 
 def resolve_approver(step, request):

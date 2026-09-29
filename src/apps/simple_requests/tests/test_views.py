@@ -5,8 +5,8 @@ import json
 import pytest
 from django.urls import reverse
 
-from apps.requests import services
-from apps.requests.models import Request, RequestApproval
+from apps.simple_requests import services
+from apps.simple_requests.models import Request, RequestApproval
 
 
 def create_url():

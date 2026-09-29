@@ -16,8 +16,8 @@ SCHEMA = {
 
 def seed(apps, schema_editor):
     """Create the request type, approval step and approver group."""
-    RequestType = apps.get_model("requests", "RequestType")
-    ApprovalStep = apps.get_model("requests", "ApprovalStep")
+    RequestType = apps.get_model("simple_requests", "RequestType")
+    ApprovalStep = apps.get_model("simple_requests", "ApprovalStep")
     Group = apps.get_model("auth", "Group")
 
     request_type, _ = RequestType.objects.update_or_create(
@@ -40,7 +40,7 @@ def seed(apps, schema_editor):
 
 def unseed(apps, schema_editor):
     """Remove the seeded request type (and its steps)."""
-    RequestType = apps.get_model("requests", "RequestType")
+    RequestType = apps.get_model("simple_requests", "RequestType")
     RequestType.objects.filter(code=CODE).delete()
 
 
@@ -48,7 +48,7 @@ class Migration(migrations.Migration):
     """Data migration seeding the first request type."""
 
     dependencies = [
-        ("requests", "0001_initial"),
+        ("simple_requests", "0001_initial"),
         ("auth", "0012_alter_user_first_name_max_length"),
     ]
 

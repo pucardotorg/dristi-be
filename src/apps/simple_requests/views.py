@@ -24,8 +24,8 @@ from .serializers import (
 
 
 @extend_schema_view(
-    list=extend_schema(tags=["requests"]),
-    retrieve=extend_schema(tags=["requests"]),
+    list=extend_schema(tags=["simple_requests"]),
+    retrieve=extend_schema(tags=["simple_requests"]),
 )
 class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """List available request types and their schemas."""
@@ -36,12 +36,16 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
 
 
 @extend_schema_view(
-    list=extend_schema(tags=["requests"]),
-    retrieve=extend_schema(tags=["requests"], responses=RequestDetailSerializer),
-    create=extend_schema(tags=["requests"], responses=RequestDetailSerializer),
-    approvals=extend_schema(tags=["requests"], responses=RequestApprovalSerializer(many=True)),
-    resubmit=extend_schema(tags=["requests"], request=None, responses=RequestDetailSerializer),
-    cancel=extend_schema(tags=["requests"], request=None, responses=RequestDetailSerializer),
+    list=extend_schema(tags=["simple_requests"]),
+    retrieve=extend_schema(tags=["simple_requests"], responses=RequestDetailSerializer),
+    create=extend_schema(tags=["simple_requests"], responses=RequestDetailSerializer),
+    approvals=extend_schema(
+        tags=["simple_requests"], responses=RequestApprovalSerializer(many=True)
+    ),
+    resubmit=extend_schema(
+        tags=["simple_requests"], request=None, responses=RequestDetailSerializer
+    ),
+    cancel=extend_schema(tags=["simple_requests"], request=None, responses=RequestDetailSerializer),
 )
 class RequestViewSet(
     mixins.CreateModelMixin,
@@ -124,7 +128,7 @@ class RequestViewSet(
 
 @extend_schema_view(
     list=extend_schema(
-        tags=["requests"],
+        tags=["simple_requests"],
         parameters=[
             OpenApiParameter(
                 name="status",
@@ -136,9 +140,9 @@ class RequestViewSet(
             )
         ],
     ),
-    retrieve=extend_schema(tags=["requests"], responses=RequestApprovalDetailSerializer),
+    retrieve=extend_schema(tags=["simple_requests"], responses=RequestApprovalDetailSerializer),
     decide=extend_schema(
-        tags=["requests"],
+        tags=["simple_requests"],
         request=DecisionSerializer,
         responses=RequestApprovalDetailSerializer,
     ),
@@ -197,7 +201,7 @@ class RequestDocumentDownloadView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["requests"],
+        tags=["simple_requests"],
         operation_id="requests_documents_download",
         responses={(200, "application/octet-stream"): OpenApiTypes.BINARY},
     )

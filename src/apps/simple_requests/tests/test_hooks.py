@@ -11,14 +11,14 @@ import json
 import pytest
 from django.urls import reverse
 
-from apps.requests import services
-from apps.requests.hooks import (
+from apps.simple_requests import services
+from apps.simple_requests.hooks import (
     POST_APPROVAL_HOOKS,
     get_hook,
     register_hook,
     run_post_approval_hooks,
 )
-from apps.requests.models import Request
+from apps.simple_requests.models import Request
 
 
 @pytest.fixture
@@ -128,7 +128,7 @@ class TestConsumingAppIntegration:
 
     Stands in for the real consumer: the hook reads ``data`` and the uploaded
     ``RequestDocument`` off the approved request and applies them to a model
-    the requests app knows nothing about (here, the user itself).
+    this app knows nothing about (here, the user itself).
     """
 
     def test_bar_id_flow_applies_side_effect_in_the_consuming_app(
@@ -144,8 +144,8 @@ class TestConsumingAppIntegration:
             applied["bar_number"] = request.data["bar_number"]
             applied["document_id"] = document.pk
             applied["filename"] = document.filename
-            request.requester.first_name = request.data["name"]
-            request.requester.save(update_fields=["first_name"])
+            request.requester.name = request.data["name"]
+            request.requester.save(update_fields=["name"])
 
         create_response = auth_client(requester).post(
             reverse("request-list"),
@@ -177,7 +177,7 @@ class TestConsumingAppIntegration:
         assert applied["bar_number"] == "KAR/1234/2019"
         assert applied["document_id"] == request.documents.first().pk
         assert applied["filename"] == "bar-certificate.pdf"
-        assert requester.first_name == "Jane Doe"
+        assert requester.name == "Jane Doe"
 
     def test_rejected_then_resubmitted_applies_once(
         self, temporary_registry, lawyer_bar_type, requester, bar_approver, pdf_file

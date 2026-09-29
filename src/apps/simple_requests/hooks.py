@@ -1,14 +1,14 @@
 """Post-approval hook registry.
 
 This is the integration point between the generic request engine and the
-apps that use it. The requests app owns the *workflow*; the consuming app
+apps that use it. This app owns the *workflow*; the consuming app
 owns the *meaning* of a request type and any side effect of approving it.
 
 A consuming app registers a hook for its request type code and applies the
 side effect to its own models::
 
     # apps/users/hooks.py
-    from apps.requests.hooks import register_hook
+    from apps.simple_requests.hooks import register_hook
 
 
     @register_hook("LAWYER_BAR_UPDATE")

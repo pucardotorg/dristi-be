@@ -1,4 +1,4 @@
-"""URL routing for the requests app."""
+"""URL routing for the simple requests app."""
 
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter

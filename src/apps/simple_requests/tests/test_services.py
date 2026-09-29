@@ -3,11 +3,11 @@
 import pytest
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from apps.requests import services
-from apps.requests.conditions import evaluate_condition
-from apps.requests.exceptions import ApprovalRoutingError
-from apps.requests.models import ApprovalStep, Request, RequestApproval, RequestDocument
-from apps.requests.schema import SchemaValidationError, validate_against_schema
+from apps.simple_requests import services
+from apps.simple_requests.conditions import evaluate_condition
+from apps.simple_requests.exceptions import ApprovalRoutingError
+from apps.simple_requests.models import ApprovalStep, Request, RequestApproval, RequestDocument
+from apps.simple_requests.schema import SchemaValidationError, validate_against_schema
 
 
 @pytest.mark.django_db

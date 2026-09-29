@@ -58,7 +58,7 @@ class ApproverSerializer(serializers.ModelSerializer):
         """Meta options."""
 
         model = User
-        fields = ["id", "email", "username"]
+        fields = ["id", "name", "mobile_number", "email"]
 
 
 class RequestDocumentSerializer(serializers.ModelSerializer):

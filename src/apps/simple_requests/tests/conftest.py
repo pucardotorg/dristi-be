@@ -1,11 +1,13 @@
-"""Shared fixtures for the requests app tests."""
+"""Shared fixtures for the simple requests app tests."""
+
+import itertools
 
 import pytest
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from apps.requests.models import ApprovalStep, RequestType
+from apps.simple_requests.models import ApprovalStep, RequestType
 from apps.users.models import User
 
 
@@ -18,12 +20,19 @@ def media_root(settings, tmp_path):
 
 @pytest.fixture
 def make_user(db):
-    """Return a factory creating users, optionally in the given groups."""
+    """Return a factory creating users, optionally in the given groups.
+
+    Mobile numbers are handed out in creation order, which is also the order
+    :func:`apps.simple_requests.services.candidate_approvers` resolves
+    approvers in, so "first user added to the group approves" holds in tests.
+    """
+    counter = itertools.count(1)
 
     def factory(email, groups=(), **kwargs):
         user = User.objects.create_user(
+            mobile_number=kwargs.pop("mobile_number", f"+9190000000{next(counter):02d}"),
             email=email,
-            username=kwargs.pop("username", email.split("@")[0]),
+            name=kwargs.pop("name", email.split("@")[0]),
             password=kwargs.pop("password", "test-password"),
             **kwargs,
         )

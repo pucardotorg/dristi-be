@@ -18,8 +18,9 @@ Fields are dotted paths resolved against the routing context:
 
 - ``data.<key>`` — the request's ``data`` JSON (nested paths supported)
 - ``request_type.code`` / ``request_type.name``
-- ``requester.email`` / ``requester.username`` / ``requester.id`` /
-  ``requester.groups`` (list of group names) / ``requester.is_staff``
+- ``requester.mobile_number`` / ``requester.name`` / ``requester.email`` /
+  ``requester.role`` / ``requester.id`` / ``requester.groups`` (list of group
+  names) / ``requester.is_staff``
 - ``version``, ``current_step``, ``status``
 """
 
@@ -43,8 +44,10 @@ def build_context(request) -> dict:
         },
         "requester": {
             "id": str(requester.pk) if requester else None,
+            "mobile_number": getattr(requester, "mobile_number", None),
+            "name": getattr(requester, "name", None),
             "email": getattr(requester, "email", None),
-            "username": getattr(requester, "username", None),
+            "role": getattr(requester, "role", None),
             "is_staff": getattr(requester, "is_staff", False),
             "groups": (list(requester.groups.values_list("name", flat=True)) if requester else []),
         },
