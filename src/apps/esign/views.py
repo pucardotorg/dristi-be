@@ -239,7 +239,7 @@ class ESignCallbackView(APIView):
                 )
             ),
             400: OpenApiResponse(description="Rejected callback (plain text)."),
-            413: OpenApiResponse(description="Payload too large (plain text)."),
+            413: OpenApiResponse(description="Callback body exceeds the configured limit."),
         },
     )
     def post(self, request):

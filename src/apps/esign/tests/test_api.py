@@ -388,30 +388,26 @@ class CallbackBodyLimitTests(ESignTestCase):
         self.url = reverse("esign-callback")
 
     @override_settings(ESIGN_CALLBACK_MAX_BODY_BYTES=64)
-    def test_oversized_xml_body_is_refused_by_the_parser(self):
-        """The parser bounds its own read rather than trusting Content-Length."""
+    def test_oversized_xml_body_is_refused_with_413(self):
+        """An oversized XML body answers 413, like the form-encoded guard."""
         document = "<EsignResp txn='orders-1'>" + ("x" * 4096) + "</EsignResp>"
 
         response = self.client.post(self.url, document, content_type="application/xml")
 
-        self.assertIn(
-            response.status_code,
-            (status.HTTP_400_BAD_REQUEST, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE),
-        )
+        self.assertEqual(response.status_code, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         self.transaction.refresh_from_db()
         self.assertEqual(self.transaction.status, ESignStatus.PENDING.value)
 
     @override_settings(ESIGN_CALLBACK_MAX_BODY_BYTES=64)
     def test_parser_read_is_bounded_even_without_a_content_length(self):
-        """Called directly, the parser still refuses to buffer the whole body."""
+        """Called directly, the parser refuses to buffer the whole body, with 413."""
         import io
 
-        from rest_framework.exceptions import ParseError
+        from apps.esign.parsers import CallbackBodyTooLarge, ESignResponseXMLParser
 
-        from apps.esign.parsers import ESignResponseXMLParser
-
-        with self.assertRaises(ParseError):
+        with self.assertRaises(CallbackBodyTooLarge) as caught:
             ESignResponseXMLParser().parse(io.BytesIO(b"<EsignResp/>" + b"x" * 8192))
+        self.assertEqual(caught.exception.status_code, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
 
     @override_settings(ESIGN_CALLBACK_MAX_BODY_BYTES=4096)
     def test_a_body_inside_the_limit_is_parsed(self):
