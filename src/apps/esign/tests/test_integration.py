@@ -1,11 +1,18 @@
 """End-to-end flow, duplicate and concurrent callbacks, retry (spec 0015 #14)."""
 
+from unittest.mock import patch
+
 from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 
-from apps.esign.constants import ESignStatus
+from apps.esign.constants import (
+    ESIGN_MAX_ATTEMPTS_EXCEEDED,
+    ESIGN_NOT_RETRYABLE,
+    ESignStatus,
+)
 from apps.esign.models import ESignTransaction
+from apps.esign.providers import get_provider
 from apps.esign.services import process_callback
 
 from .base import PKCS7_BLOB, SOURCE_PDF, ESignTestCase
@@ -154,7 +161,13 @@ class PlaceholderRecoveryTests(ESignTestCase):
     """Retry when neither the prepared document nor the source is available."""
 
     def test_retry_without_placeholder_or_source_is_refused(self):
-        """A document that cannot be rebuilt is reported, not half-retried."""
+        """A document that cannot be rebuilt is reported on the new attempt.
+
+        The attempt is claimed before the prepared document is rebuilt — the
+        rebuild calls the PDF and File Storage services and must not run under
+        the parent's row lock — so the failure is recorded on the claimed row
+        like any other post-creation failure (spec 0015 #9).
+        """
         from apps.esign.constants import ESIGN_PLACEHOLDER_MISSING
 
         transaction = self.create_transaction()
@@ -166,4 +179,94 @@ class PlaceholderRecoveryTests(ESignTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.json()["code"], ESIGN_PLACEHOLDER_MISSING)
-        self.assertEqual(ESignTransaction.objects.count(), 1)
+
+        claimed = ESignTransaction.objects.get(retry_of=transaction)
+        self.assertEqual(claimed.status, ESignStatus.FAILURE.value)
+        self.assertEqual(claimed.failure_code, ESIGN_PLACEHOLDER_MISSING)
+        self.assertEqual(claimed.provider_transaction_id, "")
+
+
+class RetryBudgetTests(ESignTestCase):
+    """An attempt may be retried once, so the budget cannot be walked around."""
+
+    @override_settings(ESIGN_MAX_ATTEMPTS=3)
+    def test_the_same_parent_cannot_be_retried_twice(self):
+        """Sibling attempts would all claim the same attempt_count."""
+        parent = self.create_transaction()
+        parent.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+        url = reverse("esign-retry", args=[parent.pk])
+
+        first = self.client.post(url)
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        second = self.client.post(url)
+        self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(second.json()["code"], ESIGN_NOT_RETRYABLE)
+        self.assertEqual(parent.retries.count(), 1)
+
+    @override_settings(ESIGN_MAX_ATTEMPTS=2)
+    def test_hammering_one_parent_cannot_exceed_the_budget(self):
+        """Ten retries of one dead attempt leave one live transaction."""
+        parent = self.create_transaction()
+        parent.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+        url = reverse("esign-retry", args=[parent.pk])
+
+        codes = {self.client.post(url).status_code for _ in range(10)}
+
+        self.assertEqual(codes, {status.HTTP_201_CREATED, status.HTTP_400_BAD_REQUEST})
+        self.assertEqual(
+            ESignTransaction.objects.filter(status=ESignStatus.PENDING.value).count(), 1
+        )
+        self.assertEqual(ESignTransaction.objects.count(), 2)
+
+    @override_settings(ESIGN_MAX_ATTEMPTS=3)
+    def test_concurrent_retries_create_exactly_one_attempt(self):
+        """The second caller runs while the first is mid-retry and is refused.
+
+        The race is reproduced deterministically by re-entering the service
+        from inside the first call's provider step — after the row lock has
+        been taken and the child created.
+        """
+        from apps.esign.exceptions import ESignError
+        from apps.esign.services import retry_transaction
+
+        parent = self.create_transaction()
+        parent.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+
+        provider = get_provider()
+        original_build = provider.build_initiation
+        refused = []
+
+        def build_while_a_second_retry_arrives(*args, **kwargs):
+            try:
+                retry_transaction(parent, user=self.user)
+            except ESignError as exc:
+                refused.append(exc.code)
+            return original_build(*args, **kwargs)
+
+        with patch.object(provider, "build_initiation", build_while_a_second_retry_arrives):
+            retry_transaction(parent, user=self.user)
+
+        self.assertEqual(refused, [ESIGN_NOT_RETRYABLE])
+        self.assertEqual(parent.retries.count(), 1)
+
+    @override_settings(ESIGN_MAX_ATTEMPTS=3)
+    def test_the_chain_is_walked_by_retrying_the_newest_attempt(self):
+        """Each attempt advances the budget, and the chain stays linear."""
+        transaction = self.create_transaction()
+        chain = [transaction]
+        for expected_attempt in (2, 3):
+            transaction.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+            payload = self.client.post(reverse("esign-retry", args=[transaction.pk])).json()
+            transaction = ESignTransaction.objects.get(pk=payload["transaction_id"])
+            self.assertEqual(transaction.attempt_count, expected_attempt)
+            chain.append(transaction)
+
+        transaction.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+        exhausted = self.client.post(reverse("esign-retry", args=[transaction.pk]))
+        self.assertEqual(exhausted.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(exhausted.json()["code"], ESIGN_MAX_ATTEMPTS_EXCEEDED)
+        self.assertEqual(
+            [row.retry_of for row in chain[1:]],
+            chain[:-1],
+        )
