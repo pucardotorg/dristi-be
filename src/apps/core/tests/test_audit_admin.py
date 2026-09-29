@@ -1,13 +1,13 @@
 """Tests for audit-field population in the Django admin."""
 
 import pytest
-from django.contrib.admin.sites import AdminSite
+from django.contrib.admin.sites import AdminSite, site
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.test import RequestFactory
 
 from apps.core.admin import AdditionalAttributeAdmin, ApiVersionChangeLogAdmin
-from apps.core.models import ApiVersionChangeLog
+from apps.core.models import ApiVersionChangeLog, BaseModel
 
 User = get_user_model()
 
@@ -20,7 +20,11 @@ def admin_instance():
 @pytest.fixture
 def staff_user(db):
     return User.objects.create_user(
-        email="staff@example.com", username="staff", password="x", is_staff=True
+        mobile_number="+919000000002",
+        name="staff",
+        email="staff@example.com",
+        password="x",
+        is_staff=True,
     )
 
 
@@ -59,7 +63,10 @@ class TestAuditUserAdminMixin:
 
     def test_save_model_keeps_created_by_on_change(self, admin_instance, request_for, staff_user):
         author = User.objects.create_user(
-            email="author@example.com", username="author", password="x"
+            mobile_number="+919000000003",
+            name="author",
+            email="author@example.com",
+            password="x",
         )
         obj = ApiVersionChangeLog.objects.create(
             version="1.0.0", change_log="Entry.", created_by=author, updated_by=author
@@ -84,3 +91,30 @@ class TestAuditUserAdminMixin:
         readonly = admin_obj.get_readonly_fields(request_for())
         assert "created_by" in readonly
         assert "updated_by" in readonly
+
+
+@pytest.mark.django_db
+class TestAuditFieldsAreNeverEditableInAdmin:
+    """The audit fields are server-controlled everywhere, not just in core.
+
+    Registering a ``BaseModel`` admin without ``AuditUserAdminMixin`` renders
+    ``created_by`` / ``updated_by`` as free-choice selects over every user,
+    which makes the attribution forgeable and leaves it unset. This locks the
+    rule across the whole admin site.
+    """
+
+    def test_no_admin_exposes_audit_fields_as_form_inputs(self, staff_user):
+        request = RequestFactory().get("/admin/")
+        request.user = staff_user
+        offenders = []
+
+        for model, model_admin in site._registry.items():
+            if not issubclass(model, BaseModel):
+                continue
+            form = model_admin.get_form(request, obj=None)
+            editable = {"created_by", "updated_by"} & set(form.base_fields)
+            readonly = set(model_admin.get_readonly_fields(request, None))
+            if editable or not {"created_by", "updated_by"} <= readonly:
+                offenders.append(model._meta.label)
+
+        assert offenders == []

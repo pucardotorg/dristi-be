@@ -3,6 +3,8 @@
 from django import forms
 from django.contrib import admin
 
+from apps.core.mixins import AuditUserAdminMixin
+
 from .models import Organization
 
 
@@ -26,7 +28,7 @@ class OrganizationAdminForm(forms.ModelForm):
 
 
 @admin.register(Organization)
-class OrganizationAdmin(admin.ModelAdmin):
+class OrganizationAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for organizations."""
 
     form = OrganizationAdminForm

@@ -13,6 +13,9 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 from rest_framework.viewsets import GenericViewSet
 
+from apps.api.serializers import AuditedModelSerializer
+from apps.core.mixins import AuditUserMixin
+
 
 def api_exception_handler(exc, context):
     """Default API exception handler wrapper.
@@ -27,8 +30,14 @@ def api_exception_handler(exc, context):
     return drf_exception_handler(exc, context)
 
 
-class APIBaseViewSet(GenericViewSet):
-    """Base viewset with serializer selection + shared hooks."""
+class APIBaseViewSet(AuditUserMixin, GenericViewSet):
+    """Base viewset with serializer selection + shared hooks.
+
+    Inherits :class:`apps.core.mixins.AuditUserMixin` so that every write
+    performed through the shared create/update pipelines stamps
+    ``created_by`` / ``updated_by`` from the request user (spec 0002 section
+    4.1). Models without those fields are left untouched.
+    """
 
     database_model: ClassVar[type | None] = None
     lookup_field = "id"
@@ -48,10 +57,20 @@ class APIBaseViewSet(GenericViewSet):
         """Return queryset derived from database_model when queryset is unset."""
 
         if self.queryset is not None:
-            return self.queryset.all()
-        if self.database_model is None:
+            queryset = self.queryset.all()
+        elif self.database_model is not None:
+            queryset = self.database_model.objects.all()
+        else:
             raise ValueError(f"{self.__class__.__name__} must define queryset or database_model")
-        return self.database_model.objects.all()
+        return self._with_audit_users(queryset)
+
+    def _with_audit_users(self, queryset):
+        """Join the audit users in when the response will serialize them."""
+
+        serializer_class = self.serializer_class or self.read_serializer_class
+        if serializer_class is None or not issubclass(serializer_class, AuditedModelSerializer):
+            return queryset
+        return AuditedModelSerializer.with_audit_users(queryset)
 
     def get_read_serializer_class(self):
         """Serializer class for list responses."""
@@ -145,9 +164,9 @@ class APICreateMixin:
         """Hook to authorize create using validated serializer."""
 
     def perform_create(self, serializer):
-        """Persist create operation."""
+        """Persist create operation, stamping the audit fields."""
 
-        return serializer.save()
+        return serializer.save(**self.get_audit_kwargs(serializer, creating=True))
 
     def _handle_create(self, request_data):
         serializer_class = self.get_create_serializer_class()
@@ -183,9 +202,9 @@ class APIUpdateMixin:
         """Hook to authorize update using validated serializer."""
 
     def perform_update(self, serializer):
-        """Persist update operation."""
+        """Persist update operation, stamping ``updated_by``."""
 
-        return serializer.save()
+        return serializer.save(**self.get_audit_kwargs(serializer, creating=False))
 
     def _handle_update(self, instance, request_data, partial=False):
         serializer_class = self.get_update_serializer_class()

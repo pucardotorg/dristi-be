@@ -12,7 +12,9 @@ User = get_user_model()
 
 @pytest.fixture
 def user(db):
-    return User.objects.create_user(email="auditor@example.com", username="auditor", password="x")
+    return User.objects.create_user(
+        mobile_number="+919000000001", name="auditor", email="auditor@example.com", password="x"
+    )
 
 
 class TestAuditFieldDefinition:

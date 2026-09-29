@@ -3,11 +3,13 @@
 from django.contrib import admin, messages
 from django.db.models import ProtectedError
 
+from apps.core.mixins import AuditUserAdminMixin
+
 from .models import Location
 
 
 @admin.register(Location)
-class LocationAdmin(admin.ModelAdmin):
+class LocationAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for locations."""
 
     list_display = (

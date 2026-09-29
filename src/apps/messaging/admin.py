@@ -2,11 +2,13 @@
 
 from django.contrib import admin
 
+from apps.core.mixins import AuditUserAdminMixin
+
 from .models import MessageLog, MessageTemplate
 
 
 @admin.register(MessageTemplate)
-class MessageTemplateAdmin(admin.ModelAdmin):
+class MessageTemplateAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     list_display = (
         "message_key",
         "message_type",

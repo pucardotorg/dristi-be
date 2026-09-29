@@ -136,3 +136,31 @@ class ClerkRegistrationSerializer(RegistrationCompletionSerializer):
     """Body of POST /clerks."""
 
     profile = ClerkProfileSerializer()
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Read-only representation of an account."""
+
+    class Meta:
+        """Meta options."""
+
+        model = get_user_model()
+        fields = ["id", "mobile_number", "name", "email", "role", "is_active", "created_at"]
+        read_only_fields = fields
+
+
+class AuditUserSerializer(serializers.ModelSerializer):
+    """Minimal identification of a user for audit attribution.
+
+    Deliberately narrower than :class:`UserSerializer`: ``created_by`` /
+    ``updated_by`` ride along on every audited resource, so anyone who can
+    read a record would otherwise also read the mobile number and email of
+    whoever touched it. An id and a display name are what attribution needs.
+    """
+
+    class Meta:
+        """Meta options."""
+
+        model = get_user_model()
+        fields = ["id", "name"]
+        read_only_fields = fields
