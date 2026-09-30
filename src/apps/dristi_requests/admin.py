@@ -2,6 +2,8 @@
 
 from django.contrib import admin
 
+from apps.core.mixins import AuditUserAdminMixin
+
 from .models import (
     ApprovalStep,
     Request,
@@ -20,7 +22,7 @@ class ApprovalStepInline(admin.TabularInline):
 
 
 @admin.register(RequestType)
-class RequestTypeAdmin(admin.ModelAdmin):
+class RequestTypeAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for request types."""
 
     list_display = ("code", "name", "min_documents", "is_active", "created_at")
@@ -31,7 +33,7 @@ class RequestTypeAdmin(admin.ModelAdmin):
 
 
 @admin.register(ApprovalStep)
-class ApprovalStepAdmin(admin.ModelAdmin):
+class ApprovalStepAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for approval step templates."""
 
     list_display = ("request_type", "order", "approver_role", "approver_group")
@@ -58,7 +60,7 @@ class RequestApprovalInline(admin.TabularInline):
 
 
 @admin.register(Request)
-class RequestAdmin(admin.ModelAdmin):
+class RequestAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for requests."""
 
     list_display = (
@@ -77,7 +79,7 @@ class RequestAdmin(admin.ModelAdmin):
 
 
 @admin.register(RequestApproval)
-class RequestApprovalAdmin(admin.ModelAdmin):
+class RequestApprovalAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for approvals."""
 
     list_display = ("request", "version", "step_order", "approver", "status", "decided_at")
@@ -87,7 +89,7 @@ class RequestApprovalAdmin(admin.ModelAdmin):
 
 
 @admin.register(RequestDocument)
-class RequestDocumentAdmin(admin.ModelAdmin):
+class RequestDocumentAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for request documents."""
 
     list_display = ("id", "request", "file", "uploaded_by", "uploaded_at")
