@@ -100,6 +100,35 @@ class FormBuildingTests(BackendTestCase):
         expected = hashlib.sha512(f"userDRISTI{form['content']}secure-key".encode()).hexdigest()
         self.assertEqual(form["key"], expected)
 
+    def test_signature_matches_the_content_actually_sent(self):
+        """A body with surrounding whitespace must not desync content and key."""
+
+        CDACSMSBackend().send(rendered(body="  Your OTP is 1234  "))
+        form = self.sent_form()
+        self.assertEqual(form["content"], "Your OTP is 1234")
+        self.assertEqual(
+            form["key"],
+            hashlib.sha512(f"userDRISTI{form['content']}secure-key".encode()).hexdigest(),
+        )
+
+    @override_settings(
+        **{
+            **GATEWAY_SETTINGS,
+            "CDAC_SMS_USERNAME": " user ",
+            "CDAC_SMS_SENDER_ID": "DRISTI ",
+            "CDAC_SMS_SECURE_KEY": " secure-key ",
+        }
+    )
+    def test_signature_matches_the_credentials_actually_sent(self):
+        CDACSMSBackend().send(rendered())
+        form = self.sent_form()
+        self.assertEqual(form["username"], "user")
+        self.assertEqual(form["senderid"], "DRISTI")
+        self.assertEqual(
+            form["key"],
+            hashlib.sha512(f"userDRISTI{form['content']}secure-key".encode()).hexdigest(),
+        )
+
     def test_mobile_prefix_is_applied(self):
         CDACSMSBackend().send(rendered())
         self.assertEqual(self.sent_form()["mobileno"], "919876512345")

@@ -15,9 +15,11 @@ def generate_password_hash(password: str) -> str:
 def generate_signature(username: str, sender_id: str, content: str, secure_key: str) -> str:
     """Return the SHA-512 request signature.
 
-    The components are stripped and concatenated with no separators. ``content``
+    The components are concatenated verbatim, with no separators and no
+    trimming: CDAC recomputes the digest over the field values it receives, so
+    the caller must sign exactly the values it puts on the wire. ``content``
     must be the final content, i.e. after any Unicode entity encoding.
     """
 
-    joined = f"{username.strip()}{sender_id.strip()}{content.strip()}{secure_key.strip()}"
+    joined = f"{username}{sender_id}{content}{secure_key}"
     return hashlib.sha512(joined.encode("utf-8")).hexdigest()
