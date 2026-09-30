@@ -45,7 +45,7 @@ The first request type built on this module is `LAWYER_BAR_UPDATE`.
 
 ### 1. Data model
 
-Location: `apps.requests.models`
+Location: `apps.dristi_requests.models`
 
 ```mermaid
 classDiagram
@@ -132,7 +132,7 @@ Routing rules (`ApprovalStep.approver_role` / `approver_group` /
 
 ### 4. `decide()` control flow
 
-Location: `apps.requests.services`
+Location: `apps.dristi_requests.services`
 
 ```mermaid
 flowchart TD
@@ -172,7 +172,7 @@ def decide(approval: RequestApproval, decision: str, actor, comments=""):
 
 ### 5. Post-approval hooks (registry pattern)
 
-Location: `apps.requests.hooks`
+Location: `apps.dristi_requests.hooks`
 
 ```python
 POST_APPROVAL_HOOKS = {}
@@ -233,7 +233,7 @@ submitted through the generic create endpoint below.
 
 ### 7. API — Submitter side
 
-Location: `apps.requests.views`, `apps.requests.serializers`
+Location: `apps.dristi_requests.views`, `apps.dristi_requests.serializers`
 
 | Method & path | Purpose |
 |---|---|
@@ -404,20 +404,20 @@ sequenceDiagram
 
 ## Affected files
 
-- `src/apps/requests/__init__.py`
-- `src/apps/requests/apps.py`
-- `src/apps/requests/models.py`
-- `src/apps/requests/serializers.py`
-- `src/apps/requests/views.py`
-- `src/apps/requests/urls.py`
-- `src/apps/requests/services.py`
-- `src/apps/requests/hooks.py`
-- `src/apps/requests/admin.py`
-- `src/apps/requests/tests/__init__.py`
-- `src/apps/requests/tests/test_models.py`
-- `src/apps/requests/tests/test_services.py`
-- `src/apps/requests/tests/test_views.py`
-- `src/apps/requests/tests/test_hooks.py`
+- `src/apps/dristi_requests/__init__.py`
+- `src/apps/dristi_requests/apps.py`
+- `src/apps/dristi_requests/models.py`
+- `src/apps/dristi_requests/serializers.py`
+- `src/apps/dristi_requests/views.py`
+- `src/apps/dristi_requests/urls.py`
+- `src/apps/dristi_requests/services.py`
+- `src/apps/dristi_requests/hooks.py`
+- `src/apps/dristi_requests/admin.py`
+- `src/apps/dristi_requests/tests/__init__.py`
+- `src/apps/dristi_requests/tests/test_models.py`
+- `src/apps/dristi_requests/tests/test_services.py`
+- `src/apps/dristi_requests/tests/test_views.py`
+- `src/apps/dristi_requests/tests/test_hooks.py`
 
 ## Open questions
 
