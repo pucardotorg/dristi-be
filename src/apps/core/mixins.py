@@ -17,14 +17,34 @@ class AuditUserMixin:
             return None
         return user
 
+    def get_audit_kwargs(self, serializer, *, creating):
+        """Return the ``save()`` kwargs that stamp the audit fields.
+
+        Returns an empty mapping when the serializer's model does not carry
+        the fields, so the mixin is safe on serializers that are not backed
+        by :class:`apps.core.models.BaseModel`.
+        """
+        model = getattr(getattr(serializer, "Meta", None), "model", None)
+        if model is None:
+            return {}
+
+        field_names = {field.name for field in model._meta.fields}
+        if not {"created_by", "updated_by"} <= field_names:
+            return {}
+
+        user = self.get_audit_user()
+        kwargs = {"updated_by": user}
+        if creating:
+            kwargs["created_by"] = user
+        return kwargs
+
     def perform_create(self, serializer):
         """Stamp both audit fields with the current user on create."""
-        user = self.get_audit_user()
-        serializer.save(created_by=user, updated_by=user)
+        return serializer.save(**self.get_audit_kwargs(serializer, creating=True))
 
     def perform_update(self, serializer):
         """Stamp only ``updated_by`` with the current user on update."""
-        serializer.save(updated_by=self.get_audit_user())
+        return serializer.save(**self.get_audit_kwargs(serializer, creating=False))
 
 
 class AuditUserAdminMixin:

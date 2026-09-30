@@ -235,6 +235,19 @@ class RegistrationCompletionTests(OTPTestCase):
         self.assertTrue(self.user.check_password(PASSWORD))
         self.assertTrue(LitigantProfile.objects.filter(user=self.user).exists())
 
+    def test_registration_attributes_the_account_and_profile_to_the_registrant(self):
+        """The registrant is the actor, so the rows are not left unattributed."""
+        response = self.client.post(reverse("litigant-create"), self.body(), format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.created_by, self.user)
+        self.assertEqual(self.user.updated_by, self.user)
+
+        profile = LitigantProfile.objects.get(user=self.user)
+        self.assertEqual(profile.created_by, self.user)
+        self.assertEqual(profile.updated_by, self.user)
+
     def test_advocate_completes_with_profile(self):
         """The nested profile is written to the advocate table."""
         response = self.client.post(

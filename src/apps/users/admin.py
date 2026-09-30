@@ -2,11 +2,13 @@
 
 from django.contrib import admin
 
+from apps.core.mixins import AuditUserAdminMixin
+
 from .models import AdvocateProfile, ClerkProfile, LitigantProfile, User
 
 
 @admin.register(User)
-class UserAdmin(admin.ModelAdmin):
+class UserAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Accounts, browsable by registration state."""
 
     list_display = (
@@ -45,7 +47,7 @@ class UserAdmin(admin.ModelAdmin):
 
 
 @admin.register(LitigantProfile)
-class LitigantProfileAdmin(admin.ModelAdmin):
+class LitigantProfileAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Litigant profiles."""
 
     list_display = ("name", "user", "created_at")
@@ -54,7 +56,7 @@ class LitigantProfileAdmin(admin.ModelAdmin):
 
 
 @admin.register(AdvocateProfile)
-class AdvocateProfileAdmin(admin.ModelAdmin):
+class AdvocateProfileAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Advocate profiles. The registration id is an unverified claim."""
 
     list_display = (
@@ -71,7 +73,7 @@ class AdvocateProfileAdmin(admin.ModelAdmin):
 
 
 @admin.register(ClerkProfile)
-class ClerkProfileAdmin(admin.ModelAdmin):
+class ClerkProfileAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Clerk profiles. The registration number is an unverified claim."""
 
     list_display = ("clerk_registration_number", "name", "user", "approval_status", "created_at")

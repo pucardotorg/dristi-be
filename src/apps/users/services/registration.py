@@ -32,6 +32,10 @@ def complete_registration(
     Terms acceptance is stamped from the server clock and server configuration;
     a client-supplied timestamp or version is unverifiable and is never used.
 
+    The account and its profile are attributed to the account itself: the
+    registrant is the actor here, so leaving the audit fields NULL would say
+    "origin unknown" about the one row whose origin is certain.
+
     Returns the profile that was created.
     """
     user.name = name
@@ -42,6 +46,9 @@ def complete_registration(
     user.terms_accepted_at = timezone.now()
     user.terms_version_accepted = settings.CURRENT_TERMS_VERSION
     user.registration_status = RegistrationStatus.COMPLETE
+    user.updated_by = user
+    if user.created_by_id is None:
+        user.created_by = user
     user.save()
 
     # approval_status is deliberately not settable here: a new claim is always
@@ -49,5 +56,7 @@ def complete_registration(
     return profile_model.objects.create(
         user=user,
         name=name,
+        created_by=user,
+        updated_by=user,
         **(profile_fields or {}),
     )
