@@ -36,9 +36,15 @@ class SignatureTests(SimpleTestCase):
         expected = hashlib.sha512(b"userSENDERcontentkey").hexdigest()
         self.assertEqual(generate_signature("user", "SENDER", "content", "key"), expected)
 
-    def test_components_are_stripped(self):
+    def test_components_are_signed_verbatim(self):
+        """Whitespace is significant: the caller signs what it sends."""
+
         self.assertEqual(
             generate_signature("  user ", " SENDER", " content ", "key  "),
+            hashlib.sha512(b"  user  SENDER content key  ").hexdigest(),
+        )
+        self.assertNotEqual(
+            generate_signature(" user", "SENDER", "content ", "key"),
             generate_signature("user", "SENDER", "content", "key"),
         )
 

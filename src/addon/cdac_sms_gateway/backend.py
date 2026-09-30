@@ -120,16 +120,26 @@ class CDACSMSBackend(SMSSender):
             ) from exc
 
     def _build_form(self, cfg, number, content, service_type, rendered_message) -> dict:
-        """Build the urlencoded form, including the SHA-512 signature."""
+        """Build the urlencoded form, including the SHA-512 signature.
+
+        The signed components are trimmed here, once, and the trimmed values are
+        what the form carries. Signing a trimmed value while sending an
+        untrimmed one would make CDAC's recomputed digest diverge from ours
+        whenever a credential or a template leaves surrounding whitespace.
+        """
+
+        username = cfg.username.strip()
+        sender_id = cfg.sender_id.strip()
+        content = content.strip()
 
         form = {
-            "username": cfg.username,
+            "username": username,
             "password": generate_password_hash(cfg.password),
-            "senderid": cfg.sender_id,
+            "senderid": sender_id,
             "content": content,
             "smsservicetype": service_type,
             "mobileno": f"{cfg.mobile_prefix}{number}",
-            "key": generate_signature(cfg.username, cfg.sender_id, content, cfg.secure_key),
+            "key": generate_signature(username, sender_id, content, cfg.secure_key.strip()),
         }
         template_id = rendered_message.provider_template_id or cfg.template_id
         if template_id:
