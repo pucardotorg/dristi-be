@@ -32,7 +32,7 @@ services:
       - "8025:8025"
 
   httpbin:
-    image: mccutchen/go-httpbin:v2.16.2
+    image: mccutchen/go-httpbin:2.25.0
     ports:
       - "8888:8080"
 
@@ -132,7 +132,7 @@ services:
     env_file:
       - ../.env
     environment:
-      MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin/post"
+      MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin:8080/post"
     ports:
       - "8000:8000"
     volumes:
@@ -158,7 +158,7 @@ services:
     env_file:
       - ../.env
     environment:
-      MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin/post"
+      MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin:8080/post"
     volumes:
       - ../src:/app
     depends_on:
