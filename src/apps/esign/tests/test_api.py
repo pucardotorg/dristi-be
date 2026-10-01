@@ -9,6 +9,7 @@ from rest_framework import status
 
 from apps.esign import permissions
 from apps.esign.constants import (
+    ESIGN_ALREADY_IN_PROGRESS,
     ESIGN_DISABLED,
     ESIGN_MAX_ATTEMPTS_EXCEEDED,
     ESIGN_NOT_PERMITTED,
@@ -110,6 +111,16 @@ class InitiateEndpointTests(ESignTestCase):
         response = self.initiate()
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json()["code"], ESIGN_NOT_PERMITTED)
+
+    def test_second_initiation_for_the_same_document_conflicts(self):
+        """A duplicate _esign while one is live returns 409, not a new attempt."""
+        first = self.initiate()
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        second = self.initiate()
+        self.assertEqual(second.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(second.json()["code"], ESIGN_ALREADY_IN_PROGRESS)
+        self.assertEqual(ESignTransaction.objects.count(), 1)
 
 
 class StatusEndpointTests(ESignTestCase):

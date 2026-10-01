@@ -54,6 +54,7 @@ ERROR_STATUS = {
     constants.ESIGN_MAX_ATTEMPTS_EXCEEDED: status.HTTP_400_BAD_REQUEST,
     constants.ESIGN_PLACEHOLDER_MISSING: status.HTTP_400_BAD_REQUEST,
     constants.ESIGN_TRANSACTION_NOT_PROCESSABLE: status.HTTP_409_CONFLICT,
+    constants.ESIGN_ALREADY_IN_PROGRESS: status.HTTP_409_CONFLICT,
     constants.ESIGN_FILE_STORAGE_UNAVAILABLE: status.HTTP_502_BAD_GATEWAY,
     constants.ESIGN_SIGNED_UPLOAD_FAILED: status.HTTP_502_BAD_GATEWAY,
     constants.ESIGN_PDF_PREPARATION_FAILED: status.HTTP_502_BAD_GATEWAY,
@@ -98,6 +99,7 @@ class ESignInitiateView(APIView):
             201: ESignInitiationResponseSerializer,
             400: OpenApiResponse(ESignErrorSerializer, "Invalid request or placement."),
             403: OpenApiResponse(ESignErrorSerializer, "Not permitted to sign this entity."),
+            409: OpenApiResponse(ESignErrorSerializer, "The document is already being signed."),
             503: OpenApiResponse(ESignErrorSerializer, "eSign is disabled or unconfigured."),
         },
     )

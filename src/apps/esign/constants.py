@@ -28,6 +28,14 @@ RETRYABLE_STATUSES = frozenset(
         ESignStatus.EXPIRED.value,
     }
 )
+# A document with a transaction in one of these states is being signed right
+# now, so a second initiation for it is refused (spec 0015 #6.4 budget intent).
+ACTIVE_STATUSES = frozenset(
+    {
+        ESignStatus.PENDING.value,
+        ESignStatus.SIGNING.value,
+    }
+)
 
 
 class EntityType(models.TextChoices):
@@ -62,6 +70,7 @@ ESIGN_FILE_STORAGE_UNAVAILABLE = "ESIGN_FILE_STORAGE_UNAVAILABLE"
 ESIGN_PROVIDER_NOT_CONFIGURED = "ESIGN_PROVIDER_NOT_CONFIGURED"
 ESIGN_REQUEST_BUILD_FAILED = "ESIGN_REQUEST_BUILD_FAILED"
 ESIGN_REQUEST_SIGNING_FAILED = "ESIGN_REQUEST_SIGNING_FAILED"
+ESIGN_ALREADY_IN_PROGRESS = "ESIGN_ALREADY_IN_PROGRESS"
 
 # Callback
 ESIGN_CALLBACK_MALFORMED = "ESIGN_CALLBACK_MALFORMED"

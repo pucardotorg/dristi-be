@@ -12,6 +12,7 @@ from apps.esign.constants import (
     ESignStatus,
 )
 from apps.esign.exceptions import (
+    ESignAlreadyInProgress,
     ESignDisabled,
     ESignFileStorageError,
     ESignInvalidPlaceholder,
@@ -235,6 +236,78 @@ class DuplicateProviderIdTests(ESignTestCase):
         self.assertEqual(duplicate.status, ESignStatus.FAILURE.value)
         self.assertEqual(duplicate.failure_code, ESIGN_REQUEST_BUILD_FAILED)
         self.assertEqual(duplicate.provider_transaction_id, "")
+
+
+class InProgressGuardTests(ESignTestCase):
+    """A fresh initiation is refused while the document is already being signed.
+
+    This is what stops a client bypassing the retry budget by calling ``_esign``
+    repeatedly instead of ``_retry`` (spec 0015 #6.4).
+    """
+
+    def initiate_service(self, **overrides):
+        """Call the service with the standard arguments."""
+
+        kwargs = {
+            "user": self.user,
+            "module": "orders",
+            "file_id": self.source_file_id,
+            "entity_type": "ORDER",
+            "entity_id": "9f2c0001",
+            "organization_id": None,
+            "sign_placeholder": dict(PLACEHOLDER),
+        }
+        kwargs.update(overrides)
+        return initiate_esign(**kwargs)
+
+    def test_second_initiation_while_pending_is_refused(self):
+        """A live PENDING attempt blocks a new one, and nothing is stored."""
+        self.initiate_service()
+        uploads_before = len(self.files.uploads)
+
+        with self.assertRaises(ESignAlreadyInProgress):
+            self.initiate_service()
+
+        self.assertEqual(ESignTransaction.objects.count(), 1)
+        # No placeholder was prepared or stored for the refused call.
+        self.assertEqual(len(self.files.uploads), uploads_before)
+
+    def test_initiation_while_signing_is_refused(self):
+        """An attempt mid-callback (SIGNING) also blocks a new one."""
+        first = self.create_transaction()
+        first.mark_signing()
+
+        with self.assertRaises(ESignAlreadyInProgress):
+            self.initiate_service()
+
+    def test_a_new_attempt_is_allowed_once_the_previous_one_is_terminal(self):
+        """Abandoning a signing (EXPIRED) or a failure frees the document."""
+        for terminal in (
+            ESignStatus.EXPIRED.value,
+            ESignStatus.FAILURE.value,
+            ESignStatus.SUCCESS.value,
+        ):
+            ESignTransaction.objects.all().delete()
+            self.create_transaction(status=terminal, signed_file_id="signed-1")
+
+            # A terminal transaction does not hold the document.
+            result = self.initiate_service()
+            self.assertEqual(result.transaction.status, ESignStatus.PENDING.value)
+
+    def test_a_different_document_is_not_blocked(self):
+        """The guard is scoped to one document, not the whole user."""
+        self.create_transaction()
+        other_file = self.files.add(SOURCE_PDF)
+
+        result = self.initiate_service(file_id=other_file)
+        self.assertEqual(result.transaction.source_file_id, other_file)
+
+    def test_a_different_entity_on_the_same_file_is_not_blocked(self):
+        """The same file signed for a different entity is a different document."""
+        self.create_transaction()
+
+        result = self.initiate_service(entity_type="JUDGEMENT", entity_id="different")
+        self.assertEqual(result.transaction.entity_type, "JUDGEMENT")
 
 
 class CachingExclusionTests(ESignTestCase):
