@@ -40,6 +40,13 @@ DRAMATIQ_BROKER = {
     ],
 }
 
+# eSign runs on the mock provider in tests; the CDAC addon is exercised
+# directly with override_settings and a generated test keystore.
+ESIGN_PROVIDER = "apps.esign.providers.mock.MockESignProvider"
+# The public callback throttle shares the process cache across tests, so it
+# is off by default and switched on by the test that asserts it.
+ESIGN_CALLBACK_THROTTLE_RATE = ""
+
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # The OTP code and its resend cooldown both live in the cache, so tests need a
