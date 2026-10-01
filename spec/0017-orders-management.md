@@ -720,40 +720,7 @@ PAYMENT_STATUS_POLL_INTERVAL_SECONDS
 PAYMENT_PENDING_TIMEOUT_MINUTES    # after which a PENDING payment is polled/failed
 ```
 
-### 18. Affected files
-
-Adds:
-
-```text
-apps/payments/__init__.py
-apps/payments/apps.py
-apps/payments/enums.py
-apps/payments/models.py
-apps/payments/serializers.py
-apps/payments/views.py
-apps/payments/urls.py
-apps/payments/admin.py
-apps/payments/exceptions.py
-apps/payments/selectors.py
-apps/payments/tasks.py
-apps/payments/services/{__init__,demands,payments,allocation}.py
-apps/payments/providers/{__init__,base,registry}.py
-apps/payments/migrations/__init__.py
-apps/payments/tests/{__init__,test_models,test_demand_service,test_payment_service,
-                     test_allocation,test_idempotency,test_concurrency,test_tasks,test_api}.py
-```
-
-Updates:
-
-```text
-config/settings/base.py       # INSTALLED_APPS += ["apps.payments"], PAYMENT_* settings
-config/urls.py                # include apps.payments urls under /api/v1/
-.env.example
-.env.prod.example
-README.md
-```
-
-### 19. Testing
+### 18. Testing
 
 * **Demand:** single item; multiple items; empty item list rejected; `quantity <= 0` and negative `unit_amount` rejected; `amount`/`total_amount` computed correctly; client-supplied `status`/`paid_amount` ignored; item and demand cancellation; cancellation of a `PAID` item rejected.
 * **Line item wise collection:** pay one item, assert that item is `PAID`, the others `UNPAID`, and the demand `PARTIALLY_PAID`; pay the remaining items one by one until the demand is `PAID`.
@@ -766,14 +733,6 @@ README.md
 * **State:** `SUCCESS` updates item and demand balances; `FAILED`/`CANCELLED` leave balances untouched and the item re-payable; confirming a terminal payment raises.
 * **Provider:** a fake provider addon drives initiate → pending → confirm and initiate → failure; unknown provider name; provider timeout retry; a callback that tries to write a balance directly is impossible because the write path is `PaymentService` only.
 * **API:** success paths, permissions, `meta` envelope, pagination, filters, read-only field enforcement, error shapes.
-
-Quality checks before committing:
-
-```bash
-cd src && DJANGO_SETTINGS_MODULE=config.settings.test pytest
-cd src && ruff check . && ruff format .
-cd src && python manage.py check
-```
 
 ---
 
