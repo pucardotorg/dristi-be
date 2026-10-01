@@ -17,6 +17,7 @@ from .. import conf, permissions
 from ..clients import get_file_client, get_pdf_client
 from ..clients.pdf import PreparedDocument
 from ..constants import (
+    ACTIVE_STATUSES,
     EVENT_ESIGN_FAILED,
     EVENT_ESIGN_INITIATED,
     EVENT_PDF_PREPARED,
@@ -29,6 +30,7 @@ from ..constants import (
     ESignStatus,
 )
 from ..exceptions import (
+    ESignAlreadyInProgress,
     ESignDisabled,
     ESignError,
     ESignNotAPDF,
@@ -84,6 +86,8 @@ def initiate_esign(
         organization_id=organization_id,
     )
 
+    _reject_if_in_progress(file_id=file_id, entity_type=entity_type, entity_id=entity_id)
+
     prepared = prepare_document(file_id=file_id, sign_placeholder=placeholder)
     placeholder_file_id = store_placeholder(
         prepared.prepared_document,
@@ -122,6 +126,30 @@ def initiate_esign(
         attempt_count=transaction.attempt_count,
     )
     return InitiationResult(transaction=transaction, initiation=initiation)
+
+
+def _reject_if_in_progress(*, file_id: str, entity_type: str, entity_id: str) -> None:
+    """Refuse a fresh initiation while the document is already being signed.
+
+    Checked before any PDF work so a duplicate call stores nothing. A retry of
+    a failed/expired attempt goes through ``_retry`` instead, which reuses the
+    prepared document; this guard only blocks a *new* attempt stacking on top of
+    a live one. It is an application-level check, so the narrow window between
+    two simultaneous initiations is not closed here — the common case it targets
+    is a client calling ``_esign`` repeatedly.
+    """
+
+    if (
+        ESignTransaction.objects.filter(
+            source_file_id=str(file_id),
+            entity_type=entity_type,
+            entity_id=entity_id,
+            status__in=ACTIVE_STATUSES,
+        )
+        .only("id")
+        .exists()
+    ):
+        raise ESignAlreadyInProgress()
 
 
 def prepare_document(*, file_id: str, sign_placeholder: dict) -> PreparedDocument:

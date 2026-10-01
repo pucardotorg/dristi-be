@@ -66,6 +66,18 @@ class ESignNotPermitted(ESignError):  # noqa: N818
     default_message = "You are not permitted to sign this document."
 
 
+class ESignAlreadyInProgress(ESignError):  # noqa: N818
+    """Raised when the document already has an active signing transaction.
+
+    A fresh initiation is refused while a ``PENDING``/``SIGNING`` transaction
+    exists for the same document, so a caller cannot pile up parallel attempts
+    by calling ``_esign`` instead of ``_retry`` (spec 0015 #6.4).
+    """
+
+    code = constants.ESIGN_ALREADY_IN_PROGRESS
+    default_message = "A signing request for this document is already in progress."
+
+
 class ESignSourceNotFound(ESignError):  # noqa: N818
     """Raised when the source ``file_id`` does not resolve."""
 
