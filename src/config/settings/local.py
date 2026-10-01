@@ -11,7 +11,14 @@ environ.Env.read_env(BASE_DIR.parent / ".env")
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
 
 from .base import *  # noqa: E402,F401,F403
-from .base import INSTALLED_APPS, MIDDLEWARE, REST_FRAMEWORK, STORAGES, env  # noqa: E402,F401
+from .base import (  # noqa: E402,F401
+    INSTALLED_APPS,
+    MESSAGING_BACKENDS,
+    MIDDLEWARE,
+    REST_FRAMEWORK,
+    STORAGES,
+    env,
+)
 
 DEBUG = env.bool("DEBUG", default=True)
 SECRET_KEY = env("SECRET_KEY", default="local-dev-secret-key-not-for-production")
@@ -39,6 +46,9 @@ INTERNAL_IPS = ["127.0.0.1"]
 
 # Use Django's staticfiles storage in development so collectstatic is not needed
 STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticFilesStorage"
+
+# Keep the dummy SMS backend locally so no CDAC credentials are required
+MESSAGING_BACKENDS = {**MESSAGING_BACKENDS, "sms": "apps.messaging.senders.sms.DummySMSBackend"}
 
 # Disable HTTPS-only cookies in development
 SESSION_COOKIE_SECURE = False

@@ -2,11 +2,17 @@
 
 from unittest.mock import patch
 
+from django.conf import settings
 from django.test import TestCase, override_settings
 
 from apps.messaging.models import MessageLog, MessageTemplate
 from apps.messaging.senders import clear_backend_cache
-from apps.messaging.services import MessageTemplateNotFound
+from apps.messaging.services import (
+    MessagePermanentError,
+    MessageSendError,
+    MessageTemplateNotFound,
+    RecipientFilteredError,
+)
 from apps.messaging.tasks import (
     enqueue_email,
     enqueue_push,
@@ -224,3 +230,137 @@ class SendMessageTaskTests(TestCase):
         self.assertEqual(log.status, MessageLog.Status.FAILED.value)
         self.assertIn("No active template", log.error_message)
         mock_retry.assert_not_called()
+
+
+class FailureClassificationTests(TestCase):
+    """Filtered / permanent / transient outcome classification."""
+
+    def setUp(self):
+        self.template = MessageTemplate.objects.create(
+            message_key="GATEWAY_CLASSIFICATION_SMS",
+            message_type=MessageTemplate.MessageType.SMS.value,
+            subject="",
+            content="Hello {{ name }}",
+            max_retries=2,
+        )
+        clear_backend_cache()
+
+    def tearDown(self):
+        clear_backend_cache()
+
+    def _log(self, max_retries=2):
+        return MessageLog.objects.create(
+            template=self.template,
+            message_type=MessageTemplate.MessageType.SMS.value,
+            message_key="GATEWAY_CLASSIFICATION_SMS",
+            recipient={"phone_number": "9876512345"},
+            context={"name": "Alice"},
+            max_retries=max_retries,
+        )
+
+    def _send(self, exc):
+        with patch(
+            "apps.messaging.senders.sms.DummySMSBackend.send",
+            side_effect=exc,
+        ):
+            log = self._log()
+            send_message.fn(str(log.id))
+        log.refresh_from_db()
+        return log
+
+    @override_settings(MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"})
+    @patch("apps.messaging.tasks.send_message.send_with_options")
+    def test_filtered_recipient_is_not_retried(self, mock_retry):
+        log = self._send(RecipientFilteredError("suppressed", reason="blacklist"))
+        self.assertEqual(log.status, MessageLog.Status.FILTERED.value)
+        self.assertEqual(log.failure_code, "blacklist")
+        self.assertIsNone(log.failed_at)
+        mock_retry.assert_not_called()
+
+    @override_settings(MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"})
+    @patch("apps.messaging.tasks.send_message.send_with_options")
+    def test_permanent_error_fails_without_retry(self, mock_retry):
+        log = self._send(
+            MessagePermanentError("bad config", code="INVALID_CONFIGURATION", gateway_status="")
+        )
+        self.assertEqual(log.status, MessageLog.Status.FAILED.value)
+        self.assertEqual(log.failure_code, "INVALID_CONFIGURATION")
+        self.assertIsNotNone(log.failed_at)
+        mock_retry.assert_not_called()
+
+    @override_settings(MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"})
+    @patch("apps.messaging.tasks.send_message.send_with_options")
+    def test_transient_error_is_retried_and_records_gateway_status(self, mock_retry):
+        log = self._send(
+            MessageSendError("gateway busy", code="GATEWAY_ERROR", gateway_status="503")
+        )
+        self.assertEqual(log.status, MessageLog.Status.PENDING.value)
+        self.assertEqual(log.failure_code, "GATEWAY_ERROR")
+        self.assertEqual(log.gateway_status, "503")
+        mock_retry.assert_called_once()
+
+    @override_settings(MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"})
+    @patch("apps.messaging.tasks.send_message.send_with_options")
+    def test_filtered_log_is_skipped_on_reentry(self, mock_retry):
+        log = self._send(RecipientFilteredError("suppressed", reason="disabled"))
+        send_message.fn(str(log.id))
+        log.refresh_from_db()
+        self.assertEqual(log.attempt_count, 1)
+        mock_retry.assert_not_called()
+
+    @override_settings(MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"})
+    @patch("apps.messaging.tasks.send_message.send_with_options")
+    def test_provider_name_is_recorded_on_success(self, mock_retry):
+        log = self._log()
+        with (
+            patch(
+                "apps.messaging.senders.sms.DummySMSBackend.send",
+                return_value="provider-1",
+            ),
+            patch(
+                "apps.messaging.senders.sms.DummySMSBackend.provider_name",
+                "dummy",
+            ),
+        ):
+            send_message.fn(str(log.id))
+        log.refresh_from_db()
+        self.assertEqual(log.status, MessageLog.Status.SENT.value)
+        self.assertEqual(log.provider, "dummy")
+        self.assertEqual(log.provider_message_id, "provider-1")
+
+
+class CorrelationIdTests(TestCase):
+    """correlation_id propagation through enqueue helpers."""
+
+    def setUp(self):
+        self.template = MessageTemplate.objects.create(
+            message_key="CORRELATION_TEST_SMS",
+            message_type=MessageTemplate.MessageType.SMS.value,
+            subject="",
+            content="Hello",
+        )
+
+    @patch("apps.messaging.tasks.send_message.send")
+    def test_defaults_to_the_log_id(self, mock_send):
+        log = enqueue_sms("CORRELATION_TEST_SMS", {"phone_number": "9876512345"}, {})
+        self.assertEqual(log.correlation_id, str(log.id))
+
+    @patch("apps.messaging.tasks.send_message.send")
+    def test_caller_supplied_value_is_kept(self, mock_send):
+        log = enqueue_sms(
+            "CORRELATION_TEST_SMS",
+            {"phone_number": "9876512345"},
+            {},
+            correlation_id="corr-1",
+        )
+        self.assertEqual(log.correlation_id, "corr-1")
+
+
+class ActorConfigurationTests(TestCase):
+    """The actor must carry an explicit time limit."""
+
+    def test_time_limit_is_set_explicitly(self):
+        self.assertEqual(
+            send_message.options["time_limit"],
+            settings.MESSAGING_TASK_TIME_LIMIT,
+        )

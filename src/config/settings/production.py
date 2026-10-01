@@ -1,7 +1,9 @@
 """Production settings."""
 
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F401,F403
-from .base import env  # noqa: F401
+from .base import CDAC_SMS_USE_DEFAULT_NUMBER, CDAC_SMS_VERIFY_SSL, env  # noqa: F401
 
 # In production, rely on environment variables injected by Docker / secrets manager.
 # Do NOT read .env files by default.
@@ -24,3 +26,14 @@ SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = "DENY"
+
+
+# ---------------------------------------------------------------------------
+# Addon guards
+# ---------------------------------------------------------------------------
+# The CDAC recipient override and disabled TLS verification are test-only
+# affordances and must never reach production.
+if CDAC_SMS_USE_DEFAULT_NUMBER:
+    raise ImproperlyConfigured("CDAC_SMS_USE_DEFAULT_NUMBER must be disabled in production.")
+if not CDAC_SMS_VERIFY_SSL:
+    raise ImproperlyConfigured("CDAC_SMS_VERIFY_SSL must be enabled in production.")
