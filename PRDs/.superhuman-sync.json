@@ -1,0 +1,95 @@
+{
+  "docUri": "superhuman://docs/KtL_rwN6Qw",
+  "parentPageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu",
+  "parentPageTitle": "PRDs",
+  "files": {
+    "account-creation-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-Ebr9Pgtqan",
+      "title": "Account Creation Handover",
+      "contentHash": "f3ed8bf0791c",
+      "pageUpdatedAt": 1790530691.605
+    },
+    "efiling-scrutiny-registration-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
+      "title": "E-Filing Scrutiny Registration Handover",
+      "contentHash": "a983ed0ac244",
+      "pageUpdatedAt": 1790828668.264,
+      "calloutElementId": "eca-iRCUzGTNF0",
+      "note": "Force-synced 2026-10-01 (user-approved, discarding the unverified 2026-09-28 09:51 page edit). Coda explodes each markdown chunk into many native blocks, so `sections` is left unrecorded; the next local edit needs another explicit force-sync confirmation. One page-side deviation: in section 22 the bare `<step>` was stripped as HTML on insert, so the line was patched by hand to read 'Up to \u2039step\u203a' (block cl--6Yq8t93v9). Backtick it in the source to fix it for good. 4 live views recreated (Pending tasks Court/Citizen, Notifications, Events)."
+    },
+    "case-numbers.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
+      "title": "Case Numbers",
+      "contentHash": "fcef8c1f1367",
+      "pageUpdatedAt": 1790147140.045
+    },
+    "order-template-catalogue.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
+      "title": "Order Template Catalogue",
+      "contentHash": "53cf51ede131",
+      "pageUpdatedAt": 1790434764.704
+    },
+    "join-a-case-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WxtSmHU5wu",
+      "title": "Join a Case Handover",
+      "contentHash": "e8f477bb8fae",
+      "pageUpdatedAt": 1789621394.284
+    },
+    "case-lifecycle-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-oci-tqnIPh",
+      "title": "Case Lifecycle Handover",
+      "contentHash": "265a5f96fa25",
+      "pageUpdatedAt": 1789468915.138
+    },
+    "pending-tasks-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-brLkhW_t8M",
+      "title": "Pending Tasks Handover",
+      "contentHash": "6ef1d259a9b4",
+      "pageUpdatedAt": 1789456825.959
+    },
+    "view-case-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
+      "title": "View Case Handover",
+      "contentHash": "db7defd529a2",
+      "pageUpdatedAt": 1789647525.696
+    },
+    "cognizance-cheat-sheet.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
+      "title": "Cognizance Cheat Sheet",
+      "contentHash": "dae49b8d04a8",
+      "pageUpdatedAt": 1790435416.815
+    },
+    "process-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
+      "title": "Process Handover",
+      "contentHash": "ce6536be1b5a",
+      "pageUpdatedAt": 1790828003.316,
+      "calloutElementId": "eca-bHRMWLWRsl",
+      "note": "Force-synced 2026-10-01 (user-approved). Coda explodes each markdown chunk into many native blocks, so `sections` is left unrecorded; the next local edit needs another explicit force-sync confirmation. Live view 'Pending tasks (Citizen-Side) \u2014 Process' = .../section-7id_OHaaSJ/tables/table-SK008Zu8WP/views/v-qfT2ThtVYQ."
+    },
+    "bulk-filing-problem-statement.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kNAxc6VmZ1",
+      "title": "Bulk Filing Problem Statement",
+      "contentHash": "0d66b208552b",
+      "pageUpdatedAt": 1790146275.87
+    },
+    "dashboards-proposal.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-RwijzgVqck",
+      "title": "Dashboards Proposal",
+      "contentHash": "7ca1e41459d4",
+      "pageUpdatedAt": 1789634456.011
+    },
+    "order-generation.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
+      "title": "Order Generation",
+      "contentHash": "dc1b0bf519ed",
+      "pageUpdatedAt": 1790149923.315
+    },
+    "application-lifecycle.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
+      "title": "Application Lifecycle",
+      "contentHash": "5243da8c94b5",
+      "pageUpdatedAt": 1790240328.441
+    }
+  }
+}
