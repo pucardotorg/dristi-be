@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     # Project apps
     "apps.core",
     "apps.users",
+    "apps.dristi_requests",
     "apps.api",
     "apps.messaging",
     "apps.organizations",
