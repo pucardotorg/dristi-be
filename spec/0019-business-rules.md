@@ -1,4 +1,4 @@
-# 0019 — Business Rules (`apps.rules`)
+# 0019 — Business Rules (part of `apps.core`)
 
 ## Status
 
@@ -11,7 +11,12 @@ engineering reasons: court fee slabs, whether a summons may be generated, how a
 case is assigned, penalty computation. Encoding these in Python means a release
 cycle for every notification or circular.
 
-This spec introduces `apps.rules`, which answers exactly one question:
+This spec adds a business rules module to `apps.core`. It does not create a
+separate Django app, which matches how [`0018`](0018-configuration-store.md) adds
+the configuration store. Like the configuration store, rules are owned by no
+particular domain and consumed in-process by all of them. Core already provides
+the base models, audit mixins, and history support they depend on. The module
+answers exactly one question:
 
 > **Which rule should be evaluated, with which engine, against which declared
 > input, and what output shape does the caller get back?**
@@ -23,7 +28,7 @@ validates both ends of the evaluation, and returns a normalized result.
 It **MUST**, in this iteration, ship a complete and usable evaluation path for
 both engines: the `RuleEngine` abstraction plus two working adapters that import
 their library and execute the stored expression against the caller's input
-in-process, inside this app. Nothing about evaluation is stubbed, deferred to a
+in-process, inside `apps.core`. Nothing about evaluation is stubbed, deferred to a
 later spec, or delegated to an external service.
 
 Two engines are supported, both fully implemented here:
@@ -60,6 +65,19 @@ be maintained:
 
 Without that line, the configuration store slowly becomes an untyped rule store.
 
+Both modules now live in `apps.core`, so this line is a code boundary as well as a
+conceptual one:
+
+* `Configuration` and `BusinessRule` are separate models, tables, services, and
+  admin pages. Neither imports the other's service.
+* A rule MUST NOT read configuration during evaluation. That would be I/O from
+  inside an expression (#4.1). If a rule needs a tunable value, the **caller**
+  reads it from `apps.core.services` and passes it in `payload`, where
+  `rule_input_schema` declares it.
+* Core still MUST NOT know which rule codes exist. Codes, payload construction,
+  and what a consumer does with the result belong to the consuming app, just as
+  config keys do in 0018's [Clear boundary](0018-configuration-store.md#clear-boundary).
+
 **This iteration does not expose any REST API.** The module is consumed in-process
 through service-level functions only, plus Django admin for authoring. A thin DRF
 layer MAY be added later on top of the same functions.
@@ -76,7 +94,7 @@ layer MAY be added later on top of the same functions.
 * Define the `RuleEngine` abstraction **and implement both adapters completely**,
   so a rule of either engine can be authored and evaluated as soon as this module
   lands.
-* Execute rules in-process inside this app by importing `rule-engine` and
+* Execute rules in-process inside `apps.core` by importing `rule-engine` and
   `zen-engine` — no external rule service, sidecar, or HTTP hop.
 * Reuse `rule_input_schema` as the engine's **type** contract, not only as a
   payload validator, so a type error in an expression is caught when the rule is
@@ -103,38 +121,62 @@ layer MAY be added later on top of the same functions.
 
 ## Proposed changes
 
-### 1. App layout
+### 1. Layout inside `apps.core`
 
-Location: `apps.rules` (registered as `"apps.rules"` in `INSTALLED_APPS`).
+There is no new app, no new `AppConfig`, and no `INSTALLED_APPS` change.
+`apps.core` is already installed. The model and admin go into core's existing
+modules. Everything else rule-specific lives in a `apps.core.rules` subpackage, so
+core's top-level namespace stays small and the configuration store's
+`apps.core.services` is not mixed with engine code.
 
 ```text
-apps/rules/
-├── __init__.py
-├── apps.py                 # name = "apps.rules"
-├── models.py               # BusinessRule
-├── services.py             # BusinessRuleService
-├── schemas.py              # JSON Schema validation helpers
-├── exceptions.py
-├── admin.py
-├── forms.py                # admin form with dry-run validation
-├── engines/
-│   ├── __init__.py         # registry: engine -> implementation
-│   ├── base.py             # RuleEngine abstract base class
-│   ├── expression.py       # rule-engine adapter (not named rule_engine.py)
-│   └── gorules.py          # zen-engine adapter
+apps/core/
+├── models.py               # + BusinessRule (next to Configuration, AdditionalAttribute)
+├── admin.py                # + BusinessRuleAdmin
+├── apps.py                 # CoreConfig.ready() builds the engine registry (#4.6)
+├── services.py             # ConfigurationService (0018), not touched by this spec
+├── rules/
+│   ├── __init__.py
+│   ├── services.py         # BusinessRuleService
+│   ├── schemas.py          # JSON Schema validation + DataType mapping
+│   ├── exceptions.py       # RuleError hierarchy
+│   ├── forms.py            # admin form with dry-run validation
+│   └── engines/
+│       ├── __init__.py     # registry: engine -> implementation
+│       ├── base.py         # RuleEngine abstract base class
+│       ├── expression.py   # rule-engine adapter (not named rule_engine.py)
+│       └── gorules.py      # zen-engine adapter
 ├── migrations/
+│   └── 000N_businessrule.py
 └── tests/
-    ├── __init__.py
-    ├── test_models.py
-    ├── test_services.py
-    └── test_engines.py
+    ├── test_rules_models.py
+    ├── test_rules_services.py
+    ├── test_rules_engines.py
+    └── test_rules_admin.py
 ```
 
-No `serializers.py`, `views.py`, or `urls.py` in this iteration.
+Rules:
+
+* `BusinessRule` MUST be defined in `apps.core.models`, not in
+  `apps.core.rules`. Core keeps all of its models in one module, so Django model
+  discovery, migrations, and the `core_` table prefix work without re-exports.
+* The migration is the next one in core. It is `0006_businessrule` if 0018's
+  `0005_configuration` lands first. Number it when the work is implemented,
+  never by hand-editing an existing migration.
+* The tables are `core_businessrule` and, through `BaseAuditableModel`,
+  `core_historicalbusinessrule`.
+* Exceptions live in their own `exceptions.py`, rather than in `services.py` as
+  0018 does, because the engine adapters raise them too. Defining them in
+  `services.py` would create a circular import between the service and the
+  engines.
+* Test files are prefixed `test_rules_` to sit alongside core's existing flat
+  `tests/` package.
+
+No `serializers.py`, `views.py`, or `urls.py` changes in this iteration.
 
 ### 2. Data model
 
-Location: `apps.rules.models`
+Location: `apps.core.models`
 
 ```mermaid
 classDiagram
@@ -155,9 +197,9 @@ classDiagram
     }
 ```
 
-`BusinessRule` MUST inherit `apps.core.models.BaseModel`,
-`apps.core.models.BaseActivatableModel`, and `apps.core.models.BaseAuditableModel`,
-per [`0000`](0000-api-coding-spec.md) #3.1. History is not optional here: rules are
+`BusinessRule` MUST inherit `BaseModel`, `BaseActivatableModel`, and
+`BaseAuditableModel`, defined in the same module, per
+[`0000`](0000-api-coding-spec.md) #3.1. History is not optional here: rules are
 editable in admin (#9), so the `simple_history` table from
 [`0004`](0004-simple-audit-history.md) is the only record of what an expression
 looked like when an earlier decision was taken.
@@ -306,8 +348,10 @@ JSON Schema types map onto `rule_engine.types.DataType` as follows:
 
 Rules:
 
-* The mapping lives in `apps.rules.schemas` and is shared by the adapter and the
-  admin form, so authoring and runtime cannot disagree.
+* The mapping lives in `apps.core.rules.schemas` and is shared by the adapter and
+  the admin form, so authoring and runtime cannot disagree. It is separate from
+  `apps.core.validators`, which serves additional attributes and MUST NOT be
+  reused or changed for rules.
 * A property the mapping cannot type MUST become `UNDEFINED` rather than a guess.
   `UNDEFINED` disables type checking for that symbol only; it MUST NOT silently
   disable it for the whole rule.
@@ -360,7 +404,7 @@ Consequences, stated plainly:
 * Retiring a rule means `is_active = False`, never `delete()`.
 
 Explicit versioning with pinned evaluation is deliberately deferred; it is an open
-question (#11.6) and the natural next iteration if a consumer needs reproducible
+question (#11.9) and the natural next iteration if a consumer needs reproducible
 replay rather than an audit trail.
 
 ### 4. Engine abstraction
@@ -378,7 +422,7 @@ BusinessRuleService
 
 #### 4.1 Abstract base class
 
-Location: `apps.rules.engines.base`
+Location: `apps.core.rules.engines.base`
 
 `RuleEngine` is an `abc.ABC`. Every abstract method below MUST be implemented by
 both adapters in this iteration; there is no placeholder engine.
@@ -429,7 +473,7 @@ Rules for implementations:
 
 #### 4.2 Runtime selection and registry
 
-`apps.rules.engines.__init__` exposes `get_engine(engine) -> RuleEngine`, backed by
+`apps.core.rules.engines.__init__` exposes `get_engine(engine) -> RuleEngine`, backed by
 an explicit mapping from `RuleEngineType` values to adapter instances.
 
 ```text
@@ -455,7 +499,7 @@ An engine value with no registered adapter raises `EngineNotAvailable`.
 
 #### 4.4 Rule Engine adapter
 
-Location: `apps.rules.engines.expression`
+Location: `apps.core.rules.engines.expression`
 
 The module is deliberately **not** named `rule_engine.py`: it would shadow nothing
 under absolute imports, but a file importing a library with its own name is a
@@ -522,13 +566,13 @@ Rules:
   resolver is rule-specific.
 * No custom attributes or builtins are registered in this iteration. Each one
   creates a vocabulary that every stored expression then silently depends on; see
-  #11.12.
+  #11.6.
 * Every `rule_engine` exception (`EngineError`, `SymbolResolutionError`,
   `EvaluationError`, type errors) MUST be translated into `RuleDefinitionError` at
   parse time or `RuleEvaluationError` at evaluation time, and MUST NOT escape the
   adapter.
 * Because the library is pure Python, the #8 timeout can be enforced with an
-  ordinary thread/signal guard — unlike the GoRules adapter (#11.11).
+  ordinary thread/signal guard — unlike the GoRules adapter (#11.5).
 
 `validate()`, `referenced_inputs()`, and `evaluate()` take the input schema as an
 argument here, so the `RuleEngine` signatures in #4.1 pass `rule_input_schema` to
@@ -536,7 +580,7 @@ every adapter; the GoRules adapter ignores it.
 
 #### 4.5 GoRules adapter
 
-Location: `apps.rules.engines.gorules`
+Location: `apps.core.rules.engines.gorules`
 
 Backed by [`zen-engine`](https://pypi.org/project/zen-engine/), the official
 GoRules ZEN Python binding, which evaluates a JDM graph in-process.
@@ -594,17 +638,24 @@ dependencies = [
 ]
 ```
 
-Adapters are instantiated once per process and registered in the #4.2 registry at
-app load, so a missing or broken dependency fails at startup rather than at the
-first evaluation.
+Adapters are instantiated once per process and registered in the #4.2 registry
+from `CoreConfig.ready()`, so a missing or broken dependency fails at startup
+rather than at the first evaluation.
+
+Because this happens in core rather than an optional app, `rule-engine`,
+`zen-engine`, and `jsonschema` become hard dependencies of **every** process that
+loads Django: `web`, `worker`, management commands, and tests. This is accepted
+because every environment that runs core needs to evaluate rules. `ready()` MUST
+still only build the registry. It MUST NOT query `BusinessRule` or touch the
+database, because `ready()` also runs during `migrate` and `check`.
 
 `zen-engine` ships a compiled Rust extension, so the Docker base image MUST be
 verified to provide a wheel for its platform; otherwise the image build needs a
-Rust toolchain (#11.10).
+Rust toolchain (#11.4).
 
 ### 5. Service interface
 
-Location: `apps.rules.services`
+Location: `apps.core.rules.services`
 
 ```text
 evaluate(code, payload)                -> dict   # result envelope
@@ -613,8 +664,10 @@ validate_rule(rule)                    -> None   # expression + schemas (#2.6)
 dry_run(rule, payload)                 -> dict   # evaluate without requiring active
 ```
 
-Consumers MUST use this service and MUST NOT import `apps.rules.engines` or query
-`BusinessRule.objects` directly.
+Consumers MUST use this service and MUST NOT import `apps.core.rules.engines` or
+query `BusinessRule.objects` directly. Being inside core does not change this.
+Other core code follows the same rule, and the configuration service in
+`apps.core.services` MUST NOT call into rules (or vice versa).
 
 #### 5.1 `evaluate()`
 
@@ -724,9 +777,12 @@ court fee is worse than a failed request; the caller decides the fallback.
 
 Rule rows are read-heavy and change rarely.
 
-* `rules_businessrule` SHOULD be added to the cachalot allow-list per
-  [`0012`](0012-redis-caching.md), so the lookup by `code` is served from Redis and
-  invalidated on write.
+* The `core_businessrule` table SHOULD be added to the cachalot allow-list through
+  `CACHALOT_ONLY_CACHABLE_TABLES` per [`0012`](0012-redis-caching.md), so the
+  lookup by `code` is served from Redis and invalidated on write. As in 0018 #4,
+  the `core` app MUST NOT be added to `CACHALOT_ONLY_CACHABLE_APPS`, and
+  `core_historicalbusinessrule` MUST NOT be cached. The history table is
+  write-heavy relative to its reads and is only used for audit.
 * Compiled artefacts (a `rule_engine.Rule` with its `Context`, a loaded GoRules
   graph) and compiled JSON
   Schema validators MAY be memoized keyed on `(rule.id, rule.updated_at)` — the
@@ -754,7 +810,7 @@ save-time error into a runtime one.
 
 Admin is the authoring surface in this iteration.
 
-Location: `apps.rules.admin`, `apps.rules.forms`
+Location: `apps.core.admin` (registration), `apps.core.rules.forms` (form)
 
 * `BusinessRule` MUST be registered with `list_display` of `code`, `name`,
   `engine`, `is_active`, `updated_at`; `list_filter` on `engine` and `is_active`;
@@ -762,9 +818,12 @@ Location: `apps.rules.admin`, `apps.rules.forms`
 * `code`, `name`, `description`, `engine`, `rule_expression`,
   `rule_input_schema`, `rule_output_schema`, and `is_active` are all editable —
   rules are expected to be maintained by operators, not by deployments.
-* `created_by` / `updated_by` MUST be read-only and stamped from the request user.
+* `created_by` / `updated_by` MUST be read-only and stamped from the request user,
+  using core's existing `AuditUserAdminMixin`. The stamping logic MUST NOT be
+  reimplemented.
 * The admin MUST use `SimpleHistoryAdmin` from [`0004`](0004-simple-audit-history.md)
-  so every edit is inspectable.
+  so every edit is inspectable:
+  `class BusinessRuleAdmin(AuditUserAdminMixin, SimpleHistoryAdmin)`.
 
 #### 9.1 Save-time validation
 
@@ -781,7 +840,7 @@ For step 4 the form exposes a non-model textarea, `test_input`, holding a sample
 payload:
 
 ```text
-Rule expression    : input.case_value > 100000 ? {"fee": 500} : {"fee": 100}
+Rule expression    : case_value > 100000 ? {"fee": 500} : {"fee": 100}
 Test input (JSON)  : {"case_value": 150000, "case_type": "civil"}
 Expected result    : {"fee": 500}        # optional
 ```
@@ -797,7 +856,7 @@ Rules:
 * An optional `expected_result` field MAY be provided; when present, the dry-run
   output MUST equal it or the save is rejected.
 * `test_input` and `expected_result` are **not persisted** in this iteration.
-  Promoting them to columns (a stored regression sample per rule) is #11.5.
+  Promoting them to columns (a stored regression sample per rule) is #11.8.
 * `RULES_ADMIN_DRY_RUN_REQUIRED` (#8) controls whether step 4 is mandatory; it
   MUST default to on. Steps 1–3 are always mandatory.
 
@@ -868,7 +927,7 @@ cd src && python manage.py check
    should value-producing logic be pushed to GoRules decision tables and
    `rule_engine` reserved for eligibility/validation booleans?
 3. Should an evaluation audit trail (`RuleEvaluation`: rule, payload hash, result,
-   timestamp) live in this module or in each consumer? Court fee computation
+   timestamp) live in core or in each consumer? Court fee computation
    probably wants it; eligibility checks would flood it.
 4. Does the project's Docker base image get a prebuilt `zen-engine` wheel, or
     does the image need a Rust toolchain (#4.6)?
@@ -882,6 +941,13 @@ cd src && python manage.py check
 7. How should numeric output be normalized (#4.4) — `Decimal` to `float` (lossy
     but JSON-native) or to a decimal string (exact, but typed as `string` in the
     output schema)? Court fees are money, so this is not a cosmetic choice.
+8. Should `test_input` / `expected_result` be persisted per rule as a stored
+    regression sample (#9.1), so that every later edit is re-checked against it?
+9. Is the audit trail of #3 enough, or does a consumer need explicit `version`
+    rows with pinned evaluation and reproducible replay?
+10. If `apps.core.rules` grows (more engines, evaluation audit, REST layer), at
+    what point should it be extracted into its own app? Keeping all imports
+    behind `apps.core.rules.services` is what makes that move cheap later.
 
 ---
 
