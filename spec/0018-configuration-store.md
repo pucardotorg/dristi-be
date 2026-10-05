@@ -1,4 +1,4 @@
-# 0018 — Configuration Store (`apps.configuration`)
+# 0018 — Configuration Store (part of `apps.core`)
 
 ## Status
 
@@ -12,9 +12,11 @@ stays valid, which sender ID the SMS gateway uses. Today each module would eithe
 hardcode these or add yet another environment variable, which forces a redeploy
 and spreads the same pattern across apps.
 
-This spec introduces a **generic, non-sensitive key/value configuration store**,
-`apps.configuration`, owned by no particular domain and consumed in-process by all
-of them.
+This spec introduces a **generic, non-sensitive key/value configuration store**
+as part of `apps.core`. Core already holds the shared, domain-agnostic building 
+blocks (`BaseModel`, `BaseActivatableModel`, `BaseAuditableModel`, `AuditUserAdminMixin`, 
+`AdditionalAttribute`) that every other app depends on. A store that is owned by 
+no particular domain and consumed in-process by all of them belongs in the same place.
 
 Example:
 
@@ -58,7 +60,10 @@ of the same functions.
 
 ### 1. Data model
 
-Location: `apps.configuration.models`
+Location: `apps.core.models` (alongside `AdditionalAttribute` and
+`ApiVersionChangeLog`). The migration is the next one in core
+(`apps/core/migrations/0005_configuration.py`), and the resulting table is
+`core_configuration`.
 
 ```mermaid
 classDiagram
@@ -80,7 +85,9 @@ classDiagram
 `created_at`, `updated_at`, `created_by`, `updated_by`, explicit `Meta.ordering`)
 and `apps.core.models.BaseActivatableModel` (`is_active` plus the `active()`
 queryset helper). Audit fields are
-therefore FKs to `AUTH_USER_MODEL`, not strings.
+therefore FKs to `AUTH_USER_MODEL`, not strings. Because the model lives in core,
+the abstract bases are imported locally from the same module, not from another
+app.
 
 ### 1.1 Fields
 
@@ -143,11 +150,13 @@ in environment variables / the deployment secret store.
 
 Enforcement is by convention and review in this iteration. A key-name denylist
 (`*_secret`, `*_password`, `*_key`, `*_token`) MAY be added as a model validator;
-see.
+see Open question 1 and [Notes](#notes).
 
 ### 3. Service interface
 
-Location: `apps.configuration.services`
+Location: `apps.core.services` (new module in core; the exceptions
+`ConfigurationError`, `ConfigurationNotFound`, `ConfigurationValueError` live in
+the same module, following the `apps.messaging.services` convention).
 
 Consumers MUST access configuration through this interface and MUST NOT query
 `Configuration.objects` directly. This keeps the active-only rule, caching, and
@@ -196,6 +205,10 @@ Rules:
   missing value is a normal state and uses the default.
 * `get_bool` MUST accept `true/false`, `1/0`, `yes/no`, `on/off`,
   case-insensitively, and reject everything else.
+* `get_int` MAY reuse `apps.core.validators.coerce_integer`, re-raising its
+  `ValidationError` as `ConfigurationValueError`. `get_bool` MUST NOT reuse
+  `coerce_boolean`, which only accepts `true`/`false` (the additional-attributes
+  contract). Changing that function would change additional-attribute behaviour.
 
 #### 3.3 Style
 
@@ -208,9 +221,13 @@ Rules:
 This table is read-heavy and very low-churn, which is exactly the profile
 [`0012`](0012-redis-caching.md) targets.
 
-* `configuration_configuration` SHOULD be added to the cachalot allow-list
-  (`CACHALOT_ONLY_CACHABLE_TABLES`) so reads are served from Redis and writes
-  invalidate automatically.
+* The `core_configuration` table SHOULD be added to the cachalot allow-list
+  through `CACHALOT_ONLY_CACHABLE_TABLES`, so reads are served from Redis and
+  writes invalidate automatically. The `core` app MUST NOT be added to
+  `CACHALOT_ONLY_CACHABLE_APPS`, because that would also cache
+  `AdditionalAttribute`, `ApiVersionChangeLog`, and their history tables. Verify
+  that the existing app allow-list (`("locations",)`) and the new table
+  allow-list together give the union of both.
 * The service layer MUST NOT add a second, hand-rolled cache on top in this
   iteration. One invalidation mechanism is enough; a module-level dict cache would
   survive admin edits and is the classic source of "I changed it but nothing
@@ -222,19 +239,25 @@ This table is read-heavy and very low-churn, which is exactly the profile
 
 * Every consuming module MUST pass an explicit `default` or document the key as
   required.
-* Known keys SHOULD be seeded via a data migration or a `loadconfig` management
-  command so a fresh environment boots with sane values.
+* Known keys SHOULD be seeded so a fresh environment boots with sane values.
+  Seeding is owned by the **consuming** app, through a data migration in that
+  app that depends on `core`'s `0005_configuration` migration. Core MUST NOT
+  ship seed rows for other domains' keys. A generic
+  `loadconfig` command MAY live in `apps/core/management/commands/` but loads
+  data supplied by the caller.
 * A missing key MUST NOT crash a request path when a sensible default exists.
 
 ### 6. Admin
 
-Location: `apps.configuration.admin`
+Location: `apps.core.admin`
 
-* `Configuration` MUST be registered with `list_display` of `config_set`,
+* `Configuration` MUST be registered using the existing
+  `AuditUserAdminMixin`, the same way `AdditionalAttributeAdmin` is, with `list_display` of `config_set`,
   `config_key`, `config_value`, `is_active`, `updated_at`.
 * `list_filter` on `config_set` and `is_active`; `search_fields` on `config_key`
   and `description`.
-* `created_by` / `updated_by` MUST be read-only and populated from the request user.
+* `created_by` / `updated_by` MUST be read-only and populated from the request
+  user. `AuditUserAdminMixin` already does this; it MUST NOT be reimplemented.
 * Admin is the primary editing surface in this iteration.
 
 ### 7. Validation and error handling
@@ -250,6 +273,8 @@ Both module exceptions SHOULD derive from a common `ConfigurationError` base so
 callers can catch broadly.
 
 ### 8. Testing
+
+Location: `src/apps/core/tests/test_configuration.py`.
 
 Required coverage:
 
@@ -278,9 +303,58 @@ Required coverage:
 4. Should there be a `required` flag so a startup check can assert that all
    required keys exist in the target environment?
 5. Does the first consumer need change history (`simple_history`) on this table,
-   or are `updated_at` / `updated_by` sufficient?
+   or are `updated_at` / `updated_by` sufficient? Core already provides
+   `BaseAuditableModel`, so adding it is a one-line mixin plus a
+   `core_historicalconfiguration` table.
 6. Should `get_set()` return a plain dict or a frozen mapping to discourage
    callers from mutating a cached object?
+
+---
+
+## Notes
+
+### Config vs secret
+
+| | Configuration (this store) | Secret (env / secret store) |
+| --- | --- | --- |
+| Examples | `max_records_per_pdf`, `payment_expiry_minutes`, `sms.sender_id`, timeouts, page sizes | DB/Redis URLs with credentials, `SECRET_KEY`, gateway passwords, API keys, tokens, signing/private keys, certificates |
+| Who may see it | Any admin user and any module in the process | Only the process that needs it and the deployment operators |
+| Where it lives | `core_configuration` table | Environment variables (`.env`, `.env.prod.example`, deployment secret store), read in `config/settings/*` |
+| How it changes | Django admin, at runtime, no deploy | Redeploy / restart with new injected value |
+| Cached / logged / dumped | Yes: cachalot/Redis, fixtures, DB backups, admin history | Never |
+| Leak impact | Low: an operational value is visible | High: credentials are compromised |
+
+Rule of thumb: if the value would be redacted in a log, or rotating it would be a
+security incident, it is a secret and MUST NOT go into this store. When a value
+has both parts (for example a gateway), split it: the endpoint, timeouts, and
+sender ID are configuration; the username, password, and key are secrets read
+from settings.
+
+### Clear boundary
+
+The store lives in `apps.core`, but it MUST stay generic. Being in core is not a
+licence to pull domain logic into core.
+
+* **Dependency direction is one-way.** Domain apps (`messaging`, `esign`,
+  `dristi_requests`, ...) depend on `apps.core.services`. Core MUST NOT import
+  from any domain app, and it MUST NOT know which sets or keys exist.
+* **Keys are owned by consumers.** Key names, defaults, meaning, and type
+  expectations belong to the consuming app, for example as constants in that
+  app's own module, next to the code that reads them. Core holds no constants,
+  enums, or seed rows for `pdf`, `payment`, `sms`, etc. (see Open question 3).
+* **Interpretation is owned by consumers.** Core returns strings and parses only
+  primitive types. Thresholds, branching, and composite meaning ("if X then
+  Y") stay in the consumer. Core MUST NOT gain per-key behaviour.
+* **Access goes only through the service interface.** Consumers use
+  `apps.core.services` and never query `Configuration.objects` directly. This
+  keeps the active-only rule, normalization, and caching in one place.
+* **Separate from additional attributes.** `AdditionalAttribute` describes
+  schema on model instances. `Configuration` holds process-wide operational
+  values. They share core but MUST NOT share tables, validators that change
+  behaviour, or semantics.
+* **Separate from Django settings.** Infrastructure wiring and secrets stay in
+  `config/settings/*` and environment variables. A value MUST NOT exist in both
+  places; if it does, it is unclear which one wins.
 
 ---
 
