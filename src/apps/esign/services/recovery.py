@@ -12,6 +12,7 @@ from django.utils import timezone
 from .. import conf, permissions
 from ..clients import get_file_client
 from ..constants import (
+    ACTIVE_STATUSES,
     EVENT_ESIGN_EXPIRED,
     EVENT_ESIGN_FAILED,
     EVENT_ESIGN_RETRIED,
@@ -188,7 +189,10 @@ def cleanup_placeholders(now=None) -> int:
     """Delete placeholder PDFs of old terminal transactions and clear the id.
 
     Source and signed files are never touched: only the intermediate prepared
-    document this module created is cleaned up.
+    document this module created is cleaned up. A placeholder is also kept while
+    any live transaction still points at it — a retry reuses its parent's
+    ``placeholder_file_id``, so the terminal parent and the active child share
+    one file, and deleting it would break the child's callback.
     """
 
     now = now or timezone.now()
@@ -198,10 +202,17 @@ def cleanup_placeholders(now=None) -> int:
     for transaction in (
         ESignTransaction.objects.filter(status__in=TERMINAL_STATUSES, updated_at__lt=cutoff)
         .exclude(placeholder_file_id="")
+        .exclude(placeholder_file_id__in=_active_placeholder_ids())
         .iterator()
     ):
+        file_id = transaction.placeholder_file_id
+        # Re-check just before deleting: a retry may have started referencing
+        # this placeholder since the iterator snapshot was taken.
+        if _is_referenced_by_active(file_id):
+            continue
+
         try:
-            files.delete(transaction.placeholder_file_id)
+            files.delete(file_id)
         except ESignSourceNotFound:
             # Already gone; the id must still be forgotten.
             pass
@@ -215,9 +226,27 @@ def cleanup_placeholders(now=None) -> int:
         removed += ESignTransaction.objects.filter(
             pk=transaction.pk,
             status__in=TERMINAL_STATUSES,
-            placeholder_file_id=transaction.placeholder_file_id,
+            placeholder_file_id=file_id,
         ).update(placeholder_file_id="", updated_at=timezone.now())
     return removed
+
+
+def _active_placeholder_ids():
+    """Placeholder ids still referenced by a ``PENDING``/``SIGNING`` transaction."""
+
+    return (
+        ESignTransaction.objects.filter(status__in=ACTIVE_STATUSES)
+        .exclude(placeholder_file_id="")
+        .values_list("placeholder_file_id", flat=True)
+    )
+
+
+def _is_referenced_by_active(file_id: str) -> bool:
+    """Whether a live transaction still points at ``file_id``."""
+
+    return ESignTransaction.objects.filter(
+        status__in=ACTIVE_STATUSES, placeholder_file_id=file_id
+    ).exists()
 
 
 def _reprepare(parent: ESignTransaction, actor):

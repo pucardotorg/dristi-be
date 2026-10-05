@@ -186,3 +186,45 @@ class PlaceholderCleanupTests(ESignTestCase):
         transaction.refresh_from_db()
         self.assertEqual(transaction.placeholder_file_id, current_id)
         self.assertEqual(self.files.deleted, [stale_id])
+
+    @override_settings(ESIGN_PLACEHOLDER_RETENTION=7)
+    def test_placeholder_shared_with_an_active_retry_is_not_deleted(self):
+        """A retry reuses the parent's placeholder, so cleanup must keep it."""
+        parent = self.create_transaction(provider_transaction_id="orders-parent")
+        parent.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+        child = self.create_transaction(
+            provider_transaction_id="orders-child",
+            placeholder_file_id=parent.placeholder_file_id,
+            retry_of=parent,
+        )
+        # The terminal parent is old enough to be swept.
+        age(parent, timedelta(days=30))
+
+        self.assertEqual(cleanup_placeholders(), 0)
+        self.assertEqual(self.files.deleted, [])
+        parent.refresh_from_db()
+        self.assertEqual(parent.placeholder_file_id, child.placeholder_file_id)
+        self.assertIn(child.placeholder_file_id, self.files.storage)
+
+    @override_settings(ESIGN_PLACEHOLDER_RETENTION=7)
+    def test_shared_placeholder_is_swept_once_the_retry_is_terminal(self):
+        """When no live transaction references it, the file is finally cleaned up."""
+        parent = self.create_transaction(provider_transaction_id="orders-parent")
+        parent.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+        shared_id = parent.placeholder_file_id
+        child = self.create_transaction(
+            provider_transaction_id="orders-child",
+            placeholder_file_id=shared_id,
+            retry_of=parent,
+        )
+        child.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+        age(parent, timedelta(days=30))
+        age(child, timedelta(days=30))
+
+        removed = cleanup_placeholders()
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(self.files.deleted, [shared_id])
+        for row in (parent, child):
+            row.refresh_from_db()
+            self.assertEqual(row.placeholder_file_id, "")
