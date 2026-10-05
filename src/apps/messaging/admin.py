@@ -31,13 +31,12 @@ class MessageLogAdmin(admin.ModelAdmin):
         "message_type",
         "status",
         "provider",
-        "failure_code",
         "attempt_count",
         "max_retries",
         "sent_at",
         "failed_at",
     )
-    list_filter = ("message_type", "status", "provider", "failure_code")
+    list_filter = ("message_type", "status", "provider")
     search_fields = (
         "message_key",
         "recipient",

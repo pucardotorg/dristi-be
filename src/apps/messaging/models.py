@@ -142,11 +142,11 @@ class MessageLog(BaseModel):
     provider_message_id = models.CharField(max_length=255, blank=True)
     correlation_id = models.CharField(max_length=255, blank=True, db_index=True)
     provider = models.CharField(max_length=50, blank=True)
-    gateway_status = models.CharField(max_length=20, blank=True)
-    failure_code = models.CharField(max_length=50, blank=True)
     error_message = models.TextField(blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     failed_at = models.DateTimeField(null=True, blank=True)
+    # Provider-specific delivery details (e.g. failure_code, gateway_status).
+    provider_metadata = models.JSONField(default=dict, blank=True)
 
     class Meta(BaseModel.Meta):
         """Meta options."""

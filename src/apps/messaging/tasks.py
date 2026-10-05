@@ -20,8 +20,7 @@ logger = logging.getLogger(__name__)
 _FAILURE_FIELDS = [
     "failed_at",
     "error_message",
-    "failure_code",
-    "gateway_status",
+    "provider_metadata",
     "provider",
     "updated_at",
 ]
@@ -84,8 +83,7 @@ def send_message(log_id: str) -> None:
         log.status = MessageLog.Status.SENT.value
         log.sent_at = timezone.now()
         log.error_message = ""
-        log.failure_code = ""
-        log.gateway_status = ""
+        log.provider_metadata = {}
         if provider_message_id:
             log.provider_message_id = str(provider_message_id)
         log.save(
@@ -93,8 +91,7 @@ def send_message(log_id: str) -> None:
                 "status",
                 "sent_at",
                 "error_message",
-                "failure_code",
-                "gateway_status",
+                "provider_metadata",
                 "provider",
                 "provider_message_id",
                 "updated_at",
@@ -111,22 +108,33 @@ def _record_failure(log: MessageLog, exc: Exception) -> None:
     if isinstance(exc, RecipientFilteredError):
         log.status = MessageLog.Status.FILTERED.value
         log.error_message = str(exc)
-        log.failure_code = exc.reason
+        log.provider_metadata = {"failure_code": exc.reason}
         log.save(
-            update_fields=["status", "error_message", "failure_code", "provider", "updated_at"]
+            update_fields=["status", "error_message", "provider_metadata", "provider", "updated_at"]
         )
         _log_event("FILTERED", log, status=log.status, reason=exc.reason)
         return
 
     log.failed_at = timezone.now()
     log.error_message = str(exc)
-    log.failure_code = getattr(exc, "code", "") or ""
-    log.gateway_status = getattr(exc, "gateway_status", "") or ""
+    log.provider_metadata = {
+        key: value
+        for key, value in (
+            ("failure_code", getattr(exc, "code", "")),
+            ("gateway_status", getattr(exc, "gateway_status", "")),
+        )
+        if value
+    }
 
     if isinstance(exc, MessagePermanentError):
         log.status = MessageLog.Status.FAILED.value
         log.save(update_fields=_FAILURE_FIELDS + ["status"])
-        _log_event("FAILED", log, status=log.status, failure_code=log.failure_code)
+        _log_event(
+            "FAILED",
+            log,
+            status=log.status,
+            failure_code=log.provider_metadata.get("failure_code", ""),
+        )
         return
 
     if log.can_retry():
@@ -137,7 +145,12 @@ def _record_failure(log: MessageLog, exc: Exception) -> None:
     else:
         log.status = MessageLog.Status.FAILED.value
         log.save(update_fields=_FAILURE_FIELDS + ["status"])
-        _log_event("FAILED", log, status=log.status, failure_code=log.failure_code)
+        _log_event(
+            "FAILED",
+            log,
+            status=log.status,
+            failure_code=log.provider_metadata.get("failure_code", ""),
+        )
 
 
 def get_retry_delay_ms(attempt_count: int) -> int:

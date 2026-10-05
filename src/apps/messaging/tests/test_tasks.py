@@ -273,7 +273,7 @@ class FailureClassificationTests(TestCase):
     def test_filtered_recipient_is_not_retried(self, mock_retry):
         log = self._send(RecipientFilteredError("suppressed", reason="blacklist"))
         self.assertEqual(log.status, MessageLog.Status.FILTERED.value)
-        self.assertEqual(log.failure_code, "blacklist")
+        self.assertEqual(log.provider_metadata.get("failure_code"), "blacklist")
         self.assertIsNone(log.failed_at)
         mock_retry.assert_not_called()
 
@@ -284,7 +284,7 @@ class FailureClassificationTests(TestCase):
             MessagePermanentError("bad config", code="INVALID_CONFIGURATION", gateway_status="")
         )
         self.assertEqual(log.status, MessageLog.Status.FAILED.value)
-        self.assertEqual(log.failure_code, "INVALID_CONFIGURATION")
+        self.assertEqual(log.provider_metadata.get("failure_code"), "INVALID_CONFIGURATION")
         self.assertIsNotNone(log.failed_at)
         mock_retry.assert_not_called()
 
@@ -295,8 +295,8 @@ class FailureClassificationTests(TestCase):
             MessageSendError("gateway busy", code="GATEWAY_ERROR", gateway_status="503")
         )
         self.assertEqual(log.status, MessageLog.Status.PENDING.value)
-        self.assertEqual(log.failure_code, "GATEWAY_ERROR")
-        self.assertEqual(log.gateway_status, "503")
+        self.assertEqual(log.provider_metadata.get("failure_code"), "GATEWAY_ERROR")
+        self.assertEqual(log.provider_metadata.get("gateway_status"), "503")
         mock_retry.assert_called_once()
 
     @override_settings(MESSAGING_BACKENDS={"sms": "apps.messaging.senders.sms.DummySMSBackend"})

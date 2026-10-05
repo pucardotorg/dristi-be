@@ -23,7 +23,8 @@ class MessageSendError(Exception):
     """Raised when a backend fails to deliver a message.
 
     Backends may attach a machine-readable ``code`` and the raw
-    ``gateway_status`` they observed; both are recorded on the MessageLog.
+    ``gateway_status`` they observed; both are recorded in
+    ``MessageLog.provider_metadata``.
     """
 
     def __init__(self, message: str = "", code: str = "", gateway_status: str = ""):

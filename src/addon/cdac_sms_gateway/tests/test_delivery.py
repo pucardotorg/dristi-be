@@ -119,8 +119,8 @@ class DeliveryTests(TestCase):
         log = self.enqueue_and_run()
         self.assertEqual(log.status, MessageLog.Status.PENDING.value)
         self.assertEqual(log.attempt_count, 1)
-        self.assertEqual(log.failure_code, "GATEWAY_ERROR")
-        self.assertEqual(log.gateway_status, "503")
+        self.assertEqual(log.provider_metadata.get("failure_code"), "GATEWAY_ERROR")
+        self.assertEqual(log.provider_metadata.get("gateway_status"), "503")
         self.retry.assert_called_once()
 
         send_message.fn(str(log.id))
@@ -133,7 +133,7 @@ class DeliveryTests(TestCase):
         self.post.side_effect = requests.Timeout("timed out")
         log = self.enqueue_and_run()
         self.assertEqual(log.status, MessageLog.Status.PENDING.value)
-        self.assertEqual(log.failure_code, "GATEWAY_TIMEOUT")
+        self.assertEqual(log.provider_metadata.get("failure_code"), "GATEWAY_TIMEOUT")
         self.retry.assert_called_once()
 
     def test_permanent_failure_does_not_reenqueue(self):
@@ -141,7 +141,7 @@ class DeliveryTests(TestCase):
         self.template.save(update_fields=["category"])
         log = self.enqueue_and_run()
         self.assertEqual(log.status, MessageLog.Status.FAILED.value)
-        self.assertEqual(log.failure_code, "UNSUPPORTED_CATEGORY")
+        self.assertEqual(log.provider_metadata.get("failure_code"), "UNSUPPORTED_CATEGORY")
         self.retry.assert_not_called()
         self.post.assert_not_called()
 
@@ -149,7 +149,7 @@ class DeliveryTests(TestCase):
     def test_disabled_gateway_marks_filtered_without_calling_it(self):
         log = self.enqueue_and_run()
         self.assertEqual(log.status, MessageLog.Status.FILTERED.value)
-        self.assertEqual(log.failure_code, "disabled")
+        self.assertEqual(log.provider_metadata.get("failure_code"), "disabled")
         self.assertIsNone(log.failed_at)
         self.retry.assert_not_called()
         self.post.assert_not_called()
@@ -158,7 +158,7 @@ class DeliveryTests(TestCase):
     def test_filtered_recipient_is_not_retried(self):
         log = self.enqueue_and_run()
         self.assertEqual(log.status, MessageLog.Status.FILTERED.value)
-        self.assertEqual(log.failure_code, "whitelist")
+        self.assertEqual(log.provider_metadata.get("failure_code"), "whitelist")
         self.retry.assert_not_called()
 
     def test_filtered_log_is_not_reattempted(self):
