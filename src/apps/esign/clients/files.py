@@ -33,8 +33,13 @@ class FileClient:
             metadata = self._as_metadata_dict(metadata)
         return metadata
 
-    def get_content(self, file_id: str) -> bytes:
-        """Return the bytes of ``file_id``, honouring the configured read limit."""
+    def get_content(self, file_id: str, *, max_bytes: int | None = None) -> bytes:
+        """Return the bytes of ``file_id``, honouring a read limit.
+
+        ``max_bytes`` overrides the default ``PDF_MAX_SIGN_INPUT_BYTES`` limit;
+        ``0`` disables it. A prepared document is larger than its source, so its
+        reader passes a limit with headroom for the reserved container.
+        """
 
         services = self._service_module()
         try:
@@ -42,7 +47,9 @@ class FileClient:
         except Exception as exc:
             raise self._translate(exc) from exc
 
-        limit = int(getattr(settings, "PDF_MAX_SIGN_INPUT_BYTES", 0) or 0)
+        if max_bytes is None:
+            max_bytes = getattr(settings, "PDF_MAX_SIGN_INPUT_BYTES", 0)
+        limit = int(max_bytes or 0)
         try:
             content = stream.read(limit + 1) if limit else stream.read()
         except Exception as exc:

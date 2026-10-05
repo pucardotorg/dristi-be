@@ -86,7 +86,7 @@ def initiate_esign(
         organization_id=organization_id,
     )
 
-    _reject_if_in_progress(file_id=file_id, entity_type=entity_type, entity_id=entity_id)
+    reject_if_in_progress(file_id=file_id, entity_type=entity_type, entity_id=entity_id)
 
     prepared = prepare_document(file_id=file_id, sign_placeholder=placeholder)
     placeholder_file_id = store_placeholder(
@@ -128,7 +128,7 @@ def initiate_esign(
     return InitiationResult(transaction=transaction, initiation=initiation)
 
 
-def _reject_if_in_progress(*, file_id: str, entity_type: str, entity_id: str) -> None:
+def reject_if_in_progress(*, file_id: str, entity_type: str, entity_id: str) -> None:
     """Refuse a fresh initiation while the document is already being signed.
 
     Checked before any PDF work so a duplicate call stores nothing. A retry of

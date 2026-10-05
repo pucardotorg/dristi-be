@@ -1,16 +1,19 @@
 """Callback service tests (spec 0015 #8, #14)."""
 
+import logging
 from datetime import timedelta
 from unittest.mock import patch
 
 from django.test import override_settings
 from django.utils import timezone
 
+from apps.esign.clients.pdf import prepared_document_max_bytes
 from apps.esign.constants import (
     ESIGN_PDF_EMBED_FAILED,
     ESIGN_PROVIDER_REJECTED,
     ESIGN_SIGNATURE_MISSING,
     ESIGN_SIGNED_UPLOAD_FAILED,
+    ESIGN_SIGNING_INTERRUPTED,
     ESignStatus,
 )
 from apps.esign.exceptions import (
@@ -24,7 +27,12 @@ from apps.esign.exceptions import (
     ESignSignedUploadError,
     ESignTransactionNotFound,
 )
-from apps.esign.services import process_callback
+from apps.esign.models import ESignTransaction
+from apps.esign.services import (
+    process_callback,
+    reconcile_signing_transactions,
+    retry_transaction,
+)
 
 from .base import PKCS7_BLOB, ESignTestCase
 from .fakes import SIGNED_MARKER
@@ -207,3 +215,68 @@ class CallbackTests(ESignTestCase):
         serialised = str(self.transaction.response_audit)
         self.assertNotIn("signature'", serialised.replace("signature_count", ""))
         self.assertNotIn(PKCS7_BLOB.hex(), serialised)
+
+    @override_settings(PDF_MAX_SIGN_INPUT_BYTES=1000, PDF_SIGNATURE_CONTAINER_BYTES=100)
+    def test_placeholder_is_read_with_room_for_the_signature_container(self):
+        """A source accepted at the limit must not be rejected as a placeholder.
+
+        The prepared document is the source plus the reserved container, so
+        reading it under the source limit would fail after the signer's OTP.
+        """
+        process_callback(self.callback_payload(self.transaction))
+
+        reads = dict(self.files.content_reads)
+        limit = reads[self.transaction.placeholder_file_id]
+        self.assertEqual(limit, prepared_document_max_bytes())
+        self.assertGreater(limit, 1000 + 2 * 100)
+
+
+class CompletionCompareAndSetTests(ESignTestCase):
+    """Completion only succeeds if the row is still SIGNING when it commits."""
+
+    def setUp(self):
+        """Start from a PENDING transaction awaiting its callback."""
+        super().setUp()
+        self.transaction = self.create_transaction()
+
+    def reconcile_during_upload(self):
+        """Make the stuck-SIGNING reconciler win the race during the upload."""
+        original_upload = self.files.upload
+
+        def upload_then_reconcile(*args, **kwargs):
+            file_id = original_upload(*args, **kwargs)
+            # Far enough in the future that the row counts as stuck.
+            reconcile_signing_transactions(now=timezone.now() + timedelta(hours=1))
+            return file_id
+
+        self.files.upload = upload_then_reconcile
+
+    def test_a_reconciled_row_is_not_resurrected_as_success(self):
+        """FAILURE is a dead end; a late completion must not overwrite it."""
+        self.reconcile_during_upload()
+
+        with self.assertLogs("apps.esign", level=logging.WARNING) as captured:
+            outcome = process_callback(self.callback_payload(self.transaction))
+
+        self.transaction.refresh_from_db()
+        self.assertEqual(self.transaction.status, ESignStatus.FAILURE.value)
+        self.assertEqual(self.transaction.failure_code, ESIGN_SIGNING_INTERRUPTED)
+        self.assertEqual(self.transaction.signed_file_id, "")
+        self.assertEqual(outcome.status, ESignStatus.FAILURE.value)
+
+        # Support can locate the signed PDF that no transaction now owns.
+        orphan = self.files.uploads[-1]["id"]
+        self.assertIn(f"orphaned_signed_file_id={orphan!r}", "\n".join(captured.output))
+
+    def test_a_reconciled_row_stays_retryable_without_a_live_sibling(self):
+        """The retry the user starts after reconciliation is the only live attempt."""
+        self.reconcile_during_upload()
+        process_callback(self.callback_payload(self.transaction))
+
+        self.transaction.refresh_from_db()
+        result = retry_transaction(self.transaction, user=self.user)
+
+        self.assertEqual(result.transaction.status, ESignStatus.PENDING.value)
+        self.assertEqual(
+            ESignTransaction.objects.filter(status=ESignStatus.SUCCESS.value).count(), 0
+        )

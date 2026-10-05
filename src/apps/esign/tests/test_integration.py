@@ -7,6 +7,7 @@ from django.urls import reverse
 from rest_framework import status
 
 from apps.esign.constants import (
+    ESIGN_ALREADY_IN_PROGRESS,
     ESIGN_MAX_ATTEMPTS_EXCEEDED,
     ESIGN_NOT_RETRYABLE,
     ESignStatus,
@@ -270,3 +271,35 @@ class RetryBudgetTests(ESignTestCase):
             [row.retry_of for row in chain[1:]],
             chain[:-1],
         )
+
+
+class RetryInProgressGuardTests(ESignTestCase):
+    """A retry must not stack a second live attempt on a document."""
+
+    def test_retry_is_refused_while_a_fresh_initiation_is_live(self):
+        """A fails, B is started fresh, then retrying A would create live C."""
+        attempt_a = self.create_transaction(provider_transaction_id="orders-a")
+        attempt_a.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+
+        # A is terminal, so a fresh initiation B is allowed.
+        fresh = self.initiate()
+        self.assertEqual(fresh.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(reverse("esign-retry", args=[attempt_a.pk]))
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.json()["code"], ESIGN_ALREADY_IN_PROGRESS)
+        self.assertFalse(attempt_a.retries.exists())
+        self.assertEqual(
+            ESignTransaction.objects.filter(status__in=["PENDING", "SIGNING"]).count(), 1
+        )
+
+    def test_retry_is_allowed_once_the_fresh_attempt_is_terminal(self):
+        """The guard only blocks while another attempt is live."""
+        attempt_a = self.create_transaction(provider_transaction_id="orders-a")
+        attempt_a.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+        fresh = ESignTransaction.objects.get(pk=self.initiate().json()["transaction_id"])
+        fresh.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
+
+        response = self.client.post(reverse("esign-retry", args=[attempt_a.pk]))
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)

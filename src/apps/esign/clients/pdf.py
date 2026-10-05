@@ -19,6 +19,27 @@ SIGNING_SERVICE_MODULE = "apps.pdf.services.signing"
 # "the document cannot be prepared".
 PLACEMENT_ERROR_NAMES = frozenset({"PDFPageOutOfRange", "PDFInvalidPlaceholder"})
 
+# Allowance for the rest of the incremental update the PDF Service appends when
+# it reserves the container: the signature dictionary, widget annotation,
+# appearance stream and cross-reference section.
+PREPARED_DOCUMENT_OVERHEAD_BYTES = 65536
+
+
+def prepared_document_max_bytes() -> int:
+    """Read limit for a prepared document; ``0`` when inputs are unlimited.
+
+    A prepared document is the source plus a reserved signature container of
+    ``PDF_SIGNATURE_CONTAINER_BYTES``, written hex-encoded (two characters per
+    byte). Reading it back under the source limit would reject a source that
+    was accepted at initiation — after the signer has already completed OTP.
+    """
+
+    source_limit = int(getattr(settings, "PDF_MAX_SIGN_INPUT_BYTES", 0) or 0)
+    if not source_limit:
+        return 0
+    container = int(getattr(settings, "PDF_SIGNATURE_CONTAINER_BYTES", 0) or 0)
+    return source_limit + 2 * container + PREPARED_DOCUMENT_OVERHEAD_BYTES
+
 
 @dataclass(frozen=True)
 class PreparedDocument:

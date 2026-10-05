@@ -10,12 +10,14 @@ file per transaction however many times C-DAC delivers the callback.
 
 import base64
 import binascii
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from django.db import transaction as db_transaction
 
 from ..clients import get_file_client, get_pdf_client
+from ..clients.pdf import prepared_document_max_bytes
 from ..constants import (
     EVENT_CALLBACK_RECEIVED,
     EVENT_CALLBACK_VERIFIED,
@@ -156,7 +158,9 @@ def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> C
 
     files = get_file_client()
     try:
-        prepared = files.get_content(transaction.placeholder_file_id)
+        prepared = files.get_content(
+            transaction.placeholder_file_id, max_bytes=prepared_document_max_bytes()
+        )
     except ESignError as exc:
         raise _fail(transaction, exc, parsed) from exc
     except Exception as exc:
@@ -185,13 +189,27 @@ def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> C
         raise _fail(transaction, ESignSignedUploadError(), parsed) from exc
     log_event(EVENT_SIGNED_STORED, transaction, signed_file_id=signed_file_id)
 
+    # Compare-and-set on SIGNING: the embed and upload ran outside any lock, so
+    # the reconciler may have failed the row meanwhile and a retry may already
+    # exist. Completing the stale in-memory instance would resurrect a FAILURE.
     with db_transaction.atomic():
-        transaction.mark_success(
+        locked = ESignTransaction.objects.select_for_update().get(pk=transaction.pk)
+        if locked.status != ESignStatus.SIGNING.value:
+            log_event(
+                EVENT_ESIGN_FAILED,
+                locked,
+                level=logging.WARNING,
+                failure_code=locked.failure_code,
+                detail="completion refused; row left SIGNING before the signed PDF was stored",
+                orphaned_signed_file_id=signed_file_id,
+            )
+            return CallbackOutcome(transaction=locked, status=locked.status)
+        locked.mark_success(
             signed_file_id=signed_file_id,
             response_audit=_response_audit(parsed),
         )
-    log_event(EVENT_ESIGN_SUCCEEDED, transaction, signed_file_id=signed_file_id)
-    return CallbackOutcome(transaction=transaction, status=transaction.status)
+    log_event(EVENT_ESIGN_SUCCEEDED, locked, signed_file_id=signed_file_id)
+    return CallbackOutcome(transaction=locked, status=locked.status)
 
 
 def _decode_signature(transaction: ESignTransaction, parsed: ESignProviderResponse) -> bytes:

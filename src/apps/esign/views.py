@@ -11,6 +11,7 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -136,8 +137,8 @@ class ESignTransactionStatusView(APIView):
         operation_id="esign_transaction_status",
         parameters=[
             OpenApiParameter(
-                "id",
-                str,
+                "transaction_id",
+                OpenApiTypes.UUID,
                 OpenApiParameter.PATH,
                 description="eSign transaction id.",
             )
@@ -168,8 +169,8 @@ class ESignRetryView(APIView):
         request=None,
         parameters=[
             OpenApiParameter(
-                "id",
-                str,
+                "transaction_id",
+                OpenApiTypes.UUID,
                 OpenApiParameter.PATH,
                 description="eSign transaction id to retry.",
             )
@@ -178,6 +179,7 @@ class ESignRetryView(APIView):
             201: ESignInitiationResponseSerializer,
             400: OpenApiResponse(ESignErrorSerializer, "Not retryable or attempts exhausted."),
             404: OpenApiResponse(ESignErrorSerializer, "Unknown transaction."),
+            409: OpenApiResponse(ESignErrorSerializer, "The document is already being signed."),
         },
     )
     def post(self, request, transaction_id):

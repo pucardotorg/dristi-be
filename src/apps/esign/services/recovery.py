@@ -35,6 +35,7 @@ from .initiation import (
     InitiationResult,
     build_provider_request,
     prepare_document,
+    reject_if_in_progress,
     store_placeholder,
 )
 
@@ -92,6 +93,13 @@ def _claim_retry(parent: ESignTransaction, *, provider) -> ESignTransaction:
             raise ESignNotRetryable(
                 "This attempt has already been retried; continue from the newer attempt."
             )
+        # A fresh _esign may have started on the same document after this
+        # attempt failed; a retry must not stack a second live attempt on it.
+        reject_if_in_progress(
+            file_id=locked.source_file_id,
+            entity_type=locked.entity_type,
+            entity_id=locked.entity_id,
+        )
 
         attempt_count = locked.attempt_count + 1
         if attempt_count > conf.max_attempts():

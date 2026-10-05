@@ -7,7 +7,11 @@ from unittest.mock import patch
 from django.test import SimpleTestCase, override_settings
 
 from apps.esign.clients.files import FileClient
-from apps.esign.clients.pdf import PDFClient
+from apps.esign.clients.pdf import (
+    PREPARED_DOCUMENT_OVERHEAD_BYTES,
+    PDFClient,
+    prepared_document_max_bytes,
+)
 from apps.esign.exceptions import (
     ESignFileStorageError,
     ESignInvalidPlaceholder,
@@ -138,6 +142,19 @@ class PDFClientTests(SimpleTestCase):
         with self.assertRaises(ESignPDFError):
             self.client.prepare_for_signing(b"%PDF", dict(PLACEHOLDER))
 
+    @override_settings(PDF_MAX_SIGN_INPUT_BYTES=1000, PDF_SIGNATURE_CONTAINER_BYTES=100)
+    def test_prepared_document_limit_allows_for_the_hex_container(self):
+        """Source limit + the hex-encoded container + incremental-update overhead."""
+        self.assertEqual(
+            prepared_document_max_bytes(),
+            1000 + 2 * 100 + PREPARED_DOCUMENT_OVERHEAD_BYTES,
+        )
+
+    @override_settings(PDF_MAX_SIGN_INPUT_BYTES=0)
+    def test_prepared_document_limit_is_unlimited_when_inputs_are(self):
+        """No source limit means no prepared-document limit either."""
+        self.assertEqual(prepared_document_max_bytes(), 0)
+
 
 class FileClientTests(SimpleTestCase):
     """The narrow adapter over ``apps.files.services``."""
@@ -198,6 +215,25 @@ class FileClientTests(SimpleTestCase):
         self.use(self.service_module())
         with self.assertRaises(ESignFileStorageError):
             self.client.get_content("f1")
+
+    @override_settings(PDF_MAX_SIGN_INPUT_BYTES=2)
+    def test_max_bytes_overrides_the_default_limit(self):
+        """A caller reading a prepared document can allow for its container."""
+        self.use(self.service_module())
+        self.assertEqual(self.client.get_content("f1", max_bytes=16), b"%PDF")
+
+    @override_settings(PDF_MAX_SIGN_INPUT_BYTES=2)
+    def test_max_bytes_is_still_enforced(self):
+        """The override is a different limit, not no limit."""
+        self.use(self.service_module())
+        with self.assertRaises(ESignFileStorageError):
+            self.client.get_content("f1", max_bytes=3)
+
+    @override_settings(PDF_MAX_SIGN_INPUT_BYTES=2)
+    def test_zero_max_bytes_disables_the_limit(self):
+        """``0`` keeps meaning "unlimited", as for the setting."""
+        self.use(self.service_module())
+        self.assertEqual(self.client.get_content("f1", max_bytes=0), b"%PDF")
 
     def test_unknown_file_is_reported_as_not_found(self):
         """The storage module's not-found error is mapped, not leaked."""

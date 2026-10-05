@@ -24,6 +24,7 @@ class FakeFileClient:
         self.storage: dict[str, dict] = {}
         self.deleted: list[str] = []
         self.uploads: list[dict] = []
+        self.content_reads: list[tuple[str, int | None]] = []
         self.fail_get_content = None
         self.fail_upload = None
         self.fail_delete = None
@@ -58,9 +59,10 @@ class FakeFileClient:
             raise ESignSourceNotFound()
         return {key: value for key, value in record.items() if key != "content"}
 
-    def get_content(self, file_id: str) -> bytes:
-        """Return the stored bytes for ``file_id``."""
+    def get_content(self, file_id: str, *, max_bytes: int | None = None) -> bytes:
+        """Return the stored bytes for ``file_id``, recording the requested limit."""
 
+        self.content_reads.append((str(file_id), max_bytes))
         if self.fail_get_content is not None:
             raise self.fail_get_content
         record = self.storage.get(str(file_id))
