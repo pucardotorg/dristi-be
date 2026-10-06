@@ -129,7 +129,7 @@ enqueue_sms(message_key, recipient, context)      [apps.messaging]
   |
   +-- resolve_template() -> MessageTemplate
   +-- MessageLog.objects.create(status=pending)
-  +-- send_message.send(log_id)  ---> Redis ---> worker
+  +-- send_message.send(log_id)  ---> Redis ---> worker   (on transaction commit)
                                                    |
                                                    v
                                        send_message(log_id)     [apps.messaging]
@@ -608,9 +608,23 @@ addon benefits from them.
 - `MessageTemplate.provider_template_id = CharField(max_length=255, blank=True)`
 - `MessageLog.correlation_id = CharField(max_length=255, blank=True, db_index=True)`
 - `MessageLog.provider = CharField(max_length=50, blank=True)` (e.g. `cdac`)
-- `MessageLog.gateway_status = CharField(max_length=20, blank=True)`
-- `MessageLog.failure_code = CharField(max_length=50, blank=True)`
+- `MessageLog.provider_metadata = JSONField(default=dict, blank=True)`
 - `MessageLog.Status.FILTERED = "filtered"`
+
+`MessageLog` keeps only gateway-agnostic columns: `provider`, `error_message`
+(human-readable failure text) and `failed_at`. Attributes that do not make sense
+for every provider live in `provider_metadata` instead of dedicated columns, so
+a new gateway needs no migration. The task layer writes these keys, omitting
+empty values, and resets the column to `{}` on success:
+
+| Key | Source |
+| --- | --- |
+| `failure_code` | `MessageSendError.code`, or `RecipientFilteredError.reason` |
+| `gateway_status` | `MessageSendError.gateway_status` (raw gateway status, e.g. `503`) |
+
+```json
+{"failure_code": "GATEWAY_ERROR", "gateway_status": "503"}
+```
 
 `admin.py` — expose the new `MessageLog` fields and filters.
 
@@ -648,7 +662,8 @@ SHA-512 signature, or an unmasked form body. `CDAC_SMS_PRINT_RESPONSE`
 (default on) logs the gateway status code and body with those values redacted.
 
 Monitoring uses these logs plus `MessageLog` aggregates (counts by `status`,
-`failure_code`, `attempt_count`; latency from `created_at` → `sent_at`). No
+`provider_metadata__failure_code`, `attempt_count`; latency from `created_at` →
+`sent_at`). No
 dedicated metrics backend in this iteration.
 
 ---

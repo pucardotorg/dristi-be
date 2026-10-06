@@ -318,7 +318,7 @@ sequenceDiagram
     MT-->>E: MessageTemplate
     E->>ML: create log (status=pending)
     ML-->>E: log_id
-    E->>B: send_message(log_id)
+    E->>B: send_message(log_id) on transaction commit
     E-->>C: MessageLog
 
     B->>W: deliver send_message(log_id)
@@ -358,7 +358,7 @@ sequenceDiagram
     MT-->>E: MessageTemplate
     E->>ML: create log (status=pending)
     ML-->>E: log_id
-    E->>B: send_message(log_id)
+    E->>B: send_message(log_id) on transaction commit
     E-->>C: MessageLog
 
     B->>W: deliver send_message(log_id)
@@ -401,7 +401,7 @@ Flow:
 7. On success: set `status=sent`, record `sent_at` and `provider_message_id` if returned.
 8. On failure: record `failed_at` and `error_message`. If `attempt_count <= max_retries`, re-enqueue `send_message(log_id)` with a backoff delay; otherwise set `status=failed`.
 
-Provide convenience enqueue helpers that create the `MessageLog` row synchronously in the calling process and then enqueue the Dramatiq task. The worker only updates the existing log row.
+Provide convenience enqueue helpers that create the `MessageLog` row synchronously in the calling process and then enqueue the Dramatiq task. The task is published through `transaction.on_commit`, so a worker never receives a message before its log row is committed, and a caller whose transaction rolls back publishes nothing; outside a transaction the publish happens immediately. A broker failure at publish time still propagates to the caller. The worker only updates the existing log row, and logs a `MISSING` warning if the row no longer exists.
 
 > **Note:** Bulk sending (thousands of messages in one operation) is not supported by these helpers and is out of scope for this iteration.
 

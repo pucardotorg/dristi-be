@@ -43,6 +43,24 @@ This document helps AI coding assistants work effectively inside the **Dristi** 
 4. Create tests in `<app>/tests.py` or a `tests/` package.
 5. Register models in `<app>/admin.py` if they need admin access.
 
+## Addon modules
+
+Pluggable third-party integrations live under `src/addon/<name>/` rather than
+`src/apps/`. They follow a one-way dependency rule:
+
+- An addon may import the contract it implements from `apps.*`; no module under
+  `apps.*` may ever import `addon.*` (enforced by
+  `addon/cdac_sms_gateway/tests/test_isolation.py`).
+- An addon is referenced only as a dotted string in settings (for example
+  `MESSAGING_BACKENDS["sms"]`), resolved lazily at first use.
+- Addons contribute no models, migrations, URLs, admin, or middleware. They are
+  listed in `INSTALLED_APPS` only so `AppConfig.ready()` can register system
+  checks; `AppConfig` sets `name = "addon.<name>"` and an explicit `label`.
+- Addon settings use their own prefix (for example `CDAC_SMS_*`) in a single
+  block in `base.py`, so the integration can be removed by deleting the package
+  plus that block and the `INSTALLED_APPS` / backend entries.
+- Tests live with the addon in `addon/<name>/tests/`.
+
 ## Adding a new environment variable
 
 1. Add it to `.env.example` with a sensible default/placeholder.

@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     "apps.messaging",
     "apps.organizations",
     "apps.locations",
+    # Addons
+    "addon.cdac_sms_gateway",
 ]
 
 MIDDLEWARE = [
@@ -314,7 +316,7 @@ MESSAGING_SENDERS = {}
 # Defaults ship with the built-in SMTP email and dummy SMS backends.
 MESSAGING_BACKENDS = {
     "email": "apps.messaging.senders.email.SMTPEmailBackend",
-    "sms": "apps.messaging.senders.sms.DummySMSBackend",
+    "sms": "addon.cdac_sms_gateway.backend.CDACSMSBackend",
 }
 MESSAGING_DUMMY_SMS_ENDPOINT = env("MESSAGING_DUMMY_SMS_ENDPOINT", default=None)
 MESSAGING_DUMMY_SMS_TIMEOUT = env.int("MESSAGING_DUMMY_SMS_TIMEOUT", default=30)
@@ -329,6 +331,36 @@ MESSAGING_EMAIL_DEFAULT_FROM = env("MESSAGING_EMAIL_DEFAULT_FROM", default=None)
 MESSAGING_EMAIL_TIMEOUT = env.int("MESSAGING_EMAIL_TIMEOUT", default=30)
 MESSAGING_RETRY_DELAY_BASE = env.int("MESSAGING_RETRY_DELAY_BASE", default=60)
 MESSAGING_RETRY_DELAY_MAX = env.int("MESSAGING_RETRY_DELAY_MAX", default=3600)
+# Dramatiq time limit (milliseconds) for the send_message actor. Must stay
+# greater than any gateway HTTP timeout so a network hang surfaces as a clean
+# transient failure instead of a worker kill.
+MESSAGING_TASK_TIME_LIMIT = env.int("MESSAGING_TASK_TIME_LIMIT", default=600000)
+
+
+# ---------------------------------------------------------------------------
+# CDAC SMS gateway addon (addon.cdac_sms_gateway)
+# ---------------------------------------------------------------------------
+# Remove this block, the INSTALLED_APPS entry, and the MESSAGING_BACKENDS["sms"]
+# entry to drop the integration entirely.
+CDAC_SMS_URL = env("CDAC_SMS_URL", default="")
+CDAC_SMS_USERNAME = env("CDAC_SMS_USERNAME", default="")
+CDAC_SMS_PASSWORD = env("CDAC_SMS_PASSWORD", default="")
+CDAC_SMS_SENDER_ID = env("CDAC_SMS_SENDER_ID", default="")
+CDAC_SMS_SECURE_KEY = env("CDAC_SMS_SECURE_KEY", default="")
+CDAC_SMS_TEMPLATE_ID = env("CDAC_SMS_TEMPLATE_ID", default="")
+CDAC_SMS_MOBILE_PREFIX = env("CDAC_SMS_MOBILE_PREFIX", default="")
+CDAC_SMS_ENABLED = env.bool("CDAC_SMS_ENABLED", default=True)
+CDAC_SMS_TIMEOUT = env.int("CDAC_SMS_TIMEOUT", default=30)
+CDAC_SMS_VERIFY_SSL = env.bool("CDAC_SMS_VERIFY_SSL", default=True)
+CDAC_SMS_SUCCESS_CODES = env.list("CDAC_SMS_SUCCESS_CODES", cast=int, default=[200, 201, 202])
+CDAC_SMS_ERROR_CODES = env.list("CDAC_SMS_ERROR_CODES", cast=int, default=[])
+CDAC_SMS_VERIFY_RESPONSE = env.bool("CDAC_SMS_VERIFY_RESPONSE", default=False)
+CDAC_SMS_VERIFY_RESPONSE_CONTAINS = env("CDAC_SMS_VERIFY_RESPONSE_CONTAINS", default="")
+CDAC_SMS_PRINT_RESPONSE = env.bool("CDAC_SMS_PRINT_RESPONSE", default=True)
+CDAC_SMS_WHITELIST_NUMBERS = env.list("CDAC_SMS_WHITELIST_NUMBERS", default=[])
+CDAC_SMS_BLACKLIST_NUMBERS = env.list("CDAC_SMS_BLACKLIST_NUMBERS", default=[])
+CDAC_SMS_USE_DEFAULT_NUMBER = env.bool("CDAC_SMS_USE_DEFAULT_NUMBER", default=False)
+CDAC_SMS_DEFAULT_NUMBER = env("CDAC_SMS_DEFAULT_NUMBER", default="")
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +404,16 @@ LOGGING = {
             "propagate": False,
         },
         "cachalot": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.messaging": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "addon.cdac_sms_gateway": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
