@@ -48,6 +48,7 @@ class MessageTemplate(BaseModel, BaseActivatableModel):
         default=Category.NOTIFICATION,
     )
     max_retries = models.PositiveSmallIntegerField(default=0)
+    provider_template_id = models.CharField(max_length=255, blank=True)
 
     class Meta:
         """Meta options."""
@@ -113,6 +114,7 @@ class MessageLog(BaseModel):
         SENT = "sent", "Sent"
         FAILED = "failed", "Failed"
         CANCELLED = "cancelled", "Cancelled"
+        FILTERED = "filtered", "Filtered"
 
     template = models.ForeignKey(
         MessageTemplate,
@@ -138,9 +140,13 @@ class MessageLog(BaseModel):
     attempt_count = models.PositiveSmallIntegerField(default=0)
     max_retries = models.PositiveSmallIntegerField(default=0)
     provider_message_id = models.CharField(max_length=255, blank=True)
+    correlation_id = models.CharField(max_length=255, blank=True, db_index=True)
+    provider = models.CharField(max_length=50, blank=True)
     error_message = models.TextField(blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     failed_at = models.DateTimeField(null=True, blank=True)
+    # Provider-specific delivery details (e.g. failure_code, gateway_status).
+    provider_metadata = models.JSONField(default=dict, blank=True)
 
     class Meta(BaseModel.Meta):
         """Meta options."""
@@ -155,7 +161,8 @@ class MessageLog(BaseModel):
     def can_retry(self):
         """Return True when the message may be attempted again."""
 
-        return self.status != self.Status.SENT.value and self.attempt_count <= self.max_retries
+        terminal = (self.Status.SENT.value, self.Status.FILTERED.value)
+        return self.status not in terminal and self.attempt_count <= self.max_retries
 
     def __str__(self):
         return f"{self.message_key} ({self.status})"

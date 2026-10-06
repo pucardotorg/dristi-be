@@ -132,3 +132,40 @@ class RendererTests(TestCase):
                 self.template,
                 {"case_number": "CASE-1", "name": "Alice"},
             )
+
+
+class RenderedMessageMetadataTests(TestCase):
+    """The renderer carries gateway-agnostic metadata to backends."""
+
+    def setUp(self):
+        self.template = MessageTemplate.objects.create(
+            message_key="RENDERER_METADATA_SMS",
+            message_type=MessageTemplate.MessageType.SMS.value,
+            subject="",
+            content="Hello {{ name }}",
+            category=MessageTemplate.Category.TRANSACTION.value,
+            provider_template_id="dlt-9",
+        )
+
+    def test_metadata_is_populated(self):
+        context = {"name": "Alice", "sms_content_type": "unicode"}
+        rendered = MessageTemplateRenderer().render(
+            self.template,
+            context,
+            recipient={"phone_number": "9876512345"},
+            message_id="mid-1",
+            correlation_id="cid-1",
+            attempt=2,
+        )
+        self.assertEqual(rendered.provider_template_id, "dlt-9")
+        self.assertEqual(rendered.context, context)
+        self.assertEqual(rendered.message_id, "mid-1")
+        self.assertEqual(rendered.correlation_id, "cid-1")
+        self.assertEqual(rendered.attempt, 2)
+        self.assertEqual(rendered.category, MessageTemplate.Category.TRANSACTION.value)
+
+    def test_metadata_defaults_are_empty(self):
+        rendered = MessageTemplateRenderer().render(self.template, {"name": "Alice"})
+        self.assertEqual(rendered.message_id, "")
+        self.assertEqual(rendered.correlation_id, "")
+        self.assertEqual(rendered.attempt, 0)

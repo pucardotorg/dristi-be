@@ -99,6 +99,26 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `MESSAGING_EMAIL_TIMEOUT` | SMTP connection timeout in seconds | `30` |
 | `MESSAGING_RETRY_DELAY_BASE` | Base retry delay in seconds (exponential backoff) | `60` |
 | `MESSAGING_RETRY_DELAY_MAX` | Maximum retry delay in seconds | `3600` |
+| `MESSAGING_TASK_TIME_LIMIT` | Dramatiq time limit for `send_message` in milliseconds; must exceed any gateway timeout | `600000` |
+| `CDAC_SMS_URL` | CDAC gateway endpoint (required when the CDAC backend is active) | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
+| `CDAC_SMS_USERNAME` | CDAC username | `dristi` |
+| `CDAC_SMS_PASSWORD` | CDAC password; hashed (SHA-1) before transmission, never sent in plaintext | secret |
+| `CDAC_SMS_SENDER_ID` | Registered DLT sender ID | `DRISTI` |
+| `CDAC_SMS_SECURE_KEY` | Signature key for the SHA-512 request key; never logged | secret |
+| `CDAC_SMS_TEMPLATE_ID` | Fallback DLT template ID when the template has none | `1234567890` |
+| `CDAC_SMS_MOBILE_PREFIX` | Prefix applied to the recipient number at request time | `91` |
+| `CDAC_SMS_ENABLED` | Master kill-switch; `False` marks messages `filtered` without contacting the gateway | `True` |
+| `CDAC_SMS_TIMEOUT` | Gateway connect/read timeout in seconds | `30` |
+| `CDAC_SMS_VERIFY_SSL` | Verify gateway TLS certificates (rejected in production when `False`) | `True` |
+| `CDAC_SMS_SUCCESS_CODES` | Allowed HTTP statuses | `200,201,202` |
+| `CDAC_SMS_ERROR_CODES` | Disallowed HTTP statuses | empty |
+| `CDAC_SMS_VERIFY_RESPONSE` | Enable the response body substring check | `False` |
+| `CDAC_SMS_VERIFY_RESPONSE_CONTAINS` | Literal the gateway body must contain | `MsgID` |
+| `CDAC_SMS_PRINT_RESPONSE` | Log the gateway status and body (secrets redacted) | `True` |
+| `CDAC_SMS_WHITELIST_NUMBERS` | Allowed recipient patterns (`X` = one digit, `*` = remaining digits); empty allows all | `98765XXXXX` |
+| `CDAC_SMS_BLACKLIST_NUMBERS` | Suppressed recipient patterns | `9876*` |
+| `CDAC_SMS_USE_DEFAULT_NUMBER` | Redirect every SMS to `CDAC_SMS_DEFAULT_NUMBER` (rejected in production) | `False` |
+| `CDAC_SMS_DEFAULT_NUMBER` | 10-digit test recipient used by the override | `9000000000` |
 | `S3_API_ENDPOINT` | S3-compatible API endpoint for media uploads | `http://rustfs:9000` |
 | `S3_BUCKET` | S3 bucket for media uploads | `dristi-media` |
 | `S3_ACCESS_KEY` | S3 access key | `minioadmin` |

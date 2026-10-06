@@ -13,10 +13,16 @@ class BaseMessageSender(ABC):
     """Abstract interface for message delivery backends."""
 
     message_type: ClassVar[str]
+    provider_name: ClassVar[str] = ""
 
     @abstractmethod
     def send(self, rendered_message) -> None:
         """Deliver a rendered message."""
+
+    def get_provider_name(self) -> str:
+        """Return the provider identifier recorded on the MessageLog."""
+
+        return self.provider_name
 
     def _validate_message_type(self, rendered_message) -> None:
         """Ensure the message matches this sender's channel."""
@@ -40,6 +46,11 @@ class ConfiguredBackendSender(BaseMessageSender):
 
         self._validate_message_type(rendered_message)
         return self._get_configured_backend().send(rendered_message)
+
+    def get_provider_name(self) -> str:
+        """Return the provider name of the configured backend."""
+
+        return self._get_configured_backend().provider_name
 
     def _get_configured_backend(self):
         """Lazily load and instantiate the configured backend."""
