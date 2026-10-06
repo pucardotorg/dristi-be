@@ -1,0 +1,41 @@
+name: Enhancement Request
+description: Suggest an improvement to existing codebase
+title: "[Enhancement] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an enhancement!
+
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Describe the current behavior
+      description: A clear description of how it currently works and what the limitations are.
+    validations:
+      required: true
+
+  - type: textarea
+    id: enhancement
+    attributes:
+      label: Describe the enhancement you'd like
+      description: A clear and concise description of the improvement you want to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is this enhancement needed?
+      description: Explain the benefits (e.g., performance, usability, maintainability, scalability).
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add any other context, metrics, screenshots, or examples about the enhancement here.
+    validations:
+      required: false

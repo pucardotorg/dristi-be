@@ -11,25 +11,74 @@ A Django-based API project template using:
 
 ## Quick start
 
-1. Clone the repository and copy the example environment file:
+1. **Clone and configure environment:**
 
    ```bash
+   git clone https://github.com/pucardotorg/dristi-be.git
+   cd dristi-be
    cp .env.example .env
    ```
 
-2. Start the development stack with Docker Compose:
+2. **Start all services:**
 
    ```bash
-   docker compose --env-file .env -f docker/docker-compose.yml up -d --build
+   make up
    ```
 
-3. Open the API in your browser:
+   Or without Make:
+   ```bash
+   docker compose -f docker/docker-compose.yml up -d --build
+   ```
 
-   - API root: http://localhost:8000/api/v1/
-   - Swagger UI: http://localhost:8000/api/docs/
-   - OpenAPI schema: http://localhost:8000/api/schema/
-   - Admin: http://localhost:8000/admin/
-   - Health check: http://localhost:8000/health/
+   This starts: PostgreSQL, Redis, Django dev server, Dramatiq workers, Rustfs (S3-compatible storage), MailHog, Adminer, and monitoring dashboards.
+
+3. **Create an admin user** (first time only):
+
+   ```bash
+   make superuser
+   ```
+
+   Or without Make:
+   ```bash
+   docker compose -f docker/docker-compose.yml exec web python manage.py createsuperuser
+   ```
+
+4. **Access the application:**
+
+   | Service | URL | Notes |
+   |---------|-----|-------|
+   | 🌐 API Root | http://localhost:8000/api/v1/ | Main API endpoint |
+   | 📚 Swagger UI | http://localhost:8000/api/docs/ | Interactive API docs |
+   | 📋 OpenAPI Schema | http://localhost:8000/api/schema/ | API specification |
+   | 🔐 Admin Panel | http://localhost:8000/admin/ | Use superuser from step 3 |
+   | ✅ Health Check | http://localhost:8000/health/ | Service status |
+
+5. **Development tools:**
+
+   | Service | URL | Credentials | Purpose |
+   |---------|-----|-------------|---------|
+   | 📧 MailHog | http://localhost:8025 | - | View test emails |
+   | 🗄️ Adminer | http://localhost:9090 | See `.env` postgres credentials | Database UI |
+   | 📦 Rustfs Console | http://localhost:9001 | `admin` / `admin123` | S3 storage browser |
+   | 🔄 Dramatiq Dashboard | http://localhost:8080 | - | Background jobs monitor |
+
+## Common commands
+
+The project includes a [Makefile](Makefile) with shortcuts for common tasks:
+
+```bash
+make up          # Start all services
+make down        # Stop all services
+make logs        # View logs (press Ctrl+C to exit)
+make test        # Run tests
+make superuser   # Create Django superuser
+make shell       # Open Django shell
+make migrate     # Run migrations (rarely needed - runs automatically on startup)
+make lint        # Check code quality with ruff
+make format      # Format code with ruff
+```
+
+Run `make help` to see all available commands.
 
 ## Documentation
 
@@ -104,13 +153,25 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
 | `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
 
+## Services included
+
+The Docker Compose stack includes:
+
+- **PostgreSQL 16** - Primary database
+- **Redis 7** - Cache and message broker for Dramatiq
+- **Rustfs** - S3-compatible object storage for media files
+- **MailHog** - Email testing (catches all outgoing emails)
+- **Adminer** - Database management UI
+- **Dramatiq Dashboard** - Background job monitoring
+- **httpbin** - HTTP testing service (for dummy SMS backend)
+
 ## Docker dependency profiles
 
 The Docker image supports selecting which requirements file to install via the `REQUIREMENTS_FILE` build arg:
 
-- Local compose (`docker/docker-compose.yml`) builds with `requirements/local.txt`.
-- Production compose (`docker/docker-compose.prod.yml`) builds with `requirements/production.txt`.
-- GitHub image publishing (`.github/workflows/docker-publish.yml`) also builds with `requirements/production.txt`.
+- Local compose (`docker/docker-compose.yml`) builds with `requirements/local.txt` (includes dev tools)
+- Production compose (`docker/docker-compose.prod.yml`) builds with `requirements/production.txt`
+- GitHub image publishing (`.github/workflows/docker-publish.yml`) also builds with `requirements/production.txt`
 
 If you run `docker build` directly without setting `REQUIREMENTS_FILE`, it defaults to `requirements/production.txt`.
 
