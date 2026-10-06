@@ -13,6 +13,7 @@ from apps.core.admin import BusinessRuleAdmin
 from apps.core.mixins import AuditUserAdminMixin
 from apps.core.models import BusinessRule
 from apps.core.rules.forms import BusinessRuleAdminForm, json_equal
+from apps.core.rules.services import BusinessRuleService
 
 from .rules_samples import (
     COURT_FEE_EXPRESSION,
@@ -146,6 +147,16 @@ class TestForm:
             data=form_data(expected_result=json.dumps({"fee": 500.0, "currency": "INR"}))
         )
         assert form.is_valid(), form.errors
+
+    def test_oversized_expression_is_not_compiled_or_dry_run(self, settings, monkeypatch):
+        settings.RULES_MAX_EXPRESSION_BYTES = 20
+
+        def fail(*args, **kwargs):
+            raise AssertionError("an oversized expression must not be compiled or evaluated")
+
+        monkeypatch.setattr(BusinessRuleService, "validate_rule", fail)
+        monkeypatch.setattr(BusinessRuleService, "dry_run", fail)
+        assert self.errors_for()["rule_expression"] == ["Expression is larger than 20 bytes."]
 
     def test_dry_run_required_by_default(self):
         errors = self.errors_for(test_input="")

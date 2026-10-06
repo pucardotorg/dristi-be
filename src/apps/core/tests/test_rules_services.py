@@ -146,6 +146,17 @@ class TestInputValidation:
             BusinessRuleService.evaluate("COURT_FEE_CALCULATION", {"party": user})
         assert fake_engine.calls == []
 
+    def test_non_iso_date_time_is_an_input_error(self, fake_engine):
+        make_rule(
+            rule_input_schema={
+                "type": "object",
+                "properties": {"filed_at": {"type": "string", "format": "date-time"}},
+            }
+        )
+        with pytest.raises(RuleInputError, match=r"\$\.filed_at: 'garbage' is not a 'date-time'"):
+            BusinessRuleService.evaluate("COURT_FEE_CALCULATION", {"filed_at": "garbage"})
+        assert fake_engine.calls == []
+
     def test_engine_receives_a_copy_of_the_payload(self, fake_engine):
         make_rule()
         payload = copy.deepcopy(CIVIL_HIGH_VALUE)
@@ -168,6 +179,19 @@ class TestOutputValidation:
         fake_engine.result = {"fee": "500"}
         make_rule()
         with pytest.raises(RuleOutputError, match=r"\$\.fee: '500' is not of type 'number'"):
+            BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)
+
+    def test_non_iso_date_time_output_is_an_output_error(self, fake_engine):
+        fake_engine.result = {"deadline": "next week"}
+        make_rule(
+            rule_output_schema={
+                "type": "object",
+                "properties": {"deadline": {"type": "string", "format": "date-time"}},
+            }
+        )
+        with pytest.raises(
+            RuleOutputError, match=r"\$\.deadline: 'next week' is not a 'date-time'"
+        ):
             BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)
 
     def test_engine_exception_becomes_evaluation_error(self, fake_engine):

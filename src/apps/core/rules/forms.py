@@ -95,6 +95,10 @@ class BusinessRuleAdminForm(forms.ModelForm):
         if self.instance.pk:
             rule.pk = self.instance.pk
 
+        if len(rule.rule_expression.encode("utf-8")) > settings.RULES_MAX_EXPRESSION_BYTES:
+            # Model clean() reports the size error; don't compile or dry-run it first.
+            return cleaned
+
         # Steps 1-3: check_schema, engine.validate, undeclared-identifier check.
         try:
             BusinessRuleService.validate_rule(rule)

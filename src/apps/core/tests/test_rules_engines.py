@@ -1,6 +1,10 @@
 """Adapter-level tests against the real rule-engine and zen-engine libraries (spec 0019 #4)."""
 
 import copy
+import json
+import os
+import subprocess
+import sys
 import threading
 import time
 from decimal import Decimal
@@ -8,6 +12,7 @@ from decimal import Decimal
 import pytest
 import rule_engine
 from django.apps import apps
+from django.conf import settings as django_settings
 from rule_engine.types import DataType
 
 from apps.core.models import BusinessRule
@@ -34,6 +39,36 @@ from .rules_samples import (
     linear_graph,
     table_node,
 )
+
+# Runs the long-zen-call timeout check in a fresh interpreter. Under
+# "pytest --cov" on Linux the waiting thread is not woken until the Rust call
+# finishes, although outside the coverage-instrumented run (and in production)
+# it is released on time. The child reports whether it is traced so that
+# instrumentation leaking into it fails loudly instead of flaking.
+ZEN_TIMEOUT_CHILD = """
+import json, os, sys, time
+import django
+
+django.setup()
+from django.conf import settings
+from apps.core.rules.engines import get_engine
+from apps.core.rules.exceptions import RuleEvaluationError
+from apps.core.tests.rules_samples import expression_node, linear_graph
+
+settings.RULES_EVALUATION_TIMEOUT_SECONDS = 0.05
+graph = linear_graph(expression_node({"s": "sum(map([0..6000], sum(map([0..6000], #))))"}))
+started = time.monotonic()
+try:
+    get_engine("gorules").evaluate_with_timeout(graph, {}, {"type": "object"})
+    message = None
+except RuleEvaluationError as exc:
+    message = str(exc)
+elapsed = time.monotonic() - started
+print(json.dumps({"elapsed": elapsed, "message": message, "traced": sys.gettrace() is not None}))
+sys.stdout.flush()
+# Don't wait for the abandoned Rust computation at interpreter shutdown.
+os._exit(0)
+"""
 
 FILING_INPUT = {
     "type": "object",
@@ -390,14 +425,33 @@ class TestGoRulesAdapter:
         gorules_adapter.evaluate_with_timeout(ELIGIBILITY_GRAPH, payload, COURT_FEE_INPUT)
         assert payload == snapshot
 
-    def test_timeout_releases_caller_during_long_zen_call(self, gorules_adapter, settings):
-        """The Rust call cannot be interrupted, but the caller is released on time (#11.5)."""
-        settings.RULES_EVALUATION_TIMEOUT_SECONDS = 0.05
-        graph = linear_graph(expression_node({"s": "sum(map([0..6000], sum(map([0..6000], #))))"}))
-        started = time.monotonic()
-        with pytest.raises(RuleEvaluationError, match="timeout"):
-            gorules_adapter.evaluate_with_timeout(graph, {}, {"type": "object"})
-        assert time.monotonic() - started < 0.4
+    def test_timeout_releases_caller_during_long_zen_call(self):
+        """The Rust call cannot be interrupted, but the caller is released on time (#11.5).
+
+        Measured in a child process; see ZEN_TIMEOUT_CHILD for why.
+        """
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in ("COVERAGE_PROCESS_START", "COVERAGE_PROCESS_CONFIG")
+        }
+        env["DJANGO_SETTINGS_MODULE"] = "config.settings.test"
+        completed = subprocess.run(
+            [sys.executable, "-c", ZEN_TIMEOUT_CHILD],
+            cwd=django_settings.BASE_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+        report = json.loads(completed.stdout.strip().splitlines()[-1])
+
+        assert not report["traced"], "the timing child must not run under coverage"
+        # The watchdog fired; a late result would read "... timeout (took Ns)".
+        assert report["message"] == "Evaluation exceeded the 0.05s timeout."
+        assert report["elapsed"] < 0.4
 
     def test_graph_with_edges_to_missing_keys_is_rejected(self, gorules_adapter):
         graph = jdm([INPUT_NODE, OUTPUT_NODE], [{"id": "e", "sourceId": "in"}])

@@ -17,7 +17,8 @@ from .validators import (
     validate_default_value,
 )
 
-CODE_RE = re.compile(r"^[A-Z0-9_]+$")
+# Used with fullmatch(): "$" would also accept a trailing newline.
+CODE_RE = re.compile(r"[A-Z0-9_]+")
 
 
 class ActivatableQuerySet(models.QuerySet):
@@ -321,7 +322,7 @@ class BusinessRule(BaseModel, BaseActivatableModel, BaseAuditableModel):
         # Fields that already failed form validation hold stale values here.
         excluded = getattr(self, "_clean_exclude", set())
         errors = {}
-        if "code" not in excluded and (not self.code or not CODE_RE.match(self.code)):
+        if "code" not in excluded and (not self.code or not CODE_RE.fullmatch(self.code)):
             errors["code"] = "Must be uppercase snake_case matching ^[A-Z0-9_]+$ (e.g. COURT_FEE)."
         if "engine" not in excluded and self.engine not in self.RuleEngineType.values:
             errors["engine"] = f"Must be one of: {', '.join(self.RuleEngineType.values)}."

@@ -77,7 +77,9 @@ class TestCode:
         make_rule()
         assert "code" in clean_errors(build_rule())
 
-    @pytest.mark.parametrize("code", ["court_fee", "COURT-FEE", "Court Fee", "COURT FEE", ""])
+    @pytest.mark.parametrize(
+        "code", ["court_fee", "COURT-FEE", "Court Fee", "COURT FEE", "", "COURT_FEE\n"]
+    )
     def test_code_must_be_uppercase_snake_case(self, code):
         assert "code" in clean_errors(build_rule(code=code))
 
