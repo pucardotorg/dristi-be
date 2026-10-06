@@ -237,14 +237,15 @@ Location: `apps.dristi_requests.views`, `apps.dristi_requests.serializers`
 
 | Method & path | Purpose |
 |---|---|
-| `POST /api/v1/dristi-requests/requests/` | Create a request. Generic across types — `request_type` + `attributes` (JSON string) + `documents[]`, multipart. |
-| `GET /api/v1/dristi-requests/requests/` | List the caller's own requests. |
-| `GET /api/v1/dristi-requests/requests/{id}/` | Retrieve one request. |
-| `GET /api/v1/dristi-requests/requests/{id}/approvals/` | View the approval trail for a request. |
-| `POST /api/v1/dristi-requests/requests/{id}/resubmit/` | Resubmit a rejected request (bumps `version`, restarts routing). |
-| `POST /api/v1/dristi-requests/requests/{id}/cancel/` | Cancel a pending or rejected request. |
+| `POST /api/v1/dristi-requests/` | Create a request. Generic across types — `request_type` + `attributes` (JSON string) + `documents[]`, multipart. |
+| `GET /api/v1/dristi-requests/` | List the caller's own requests. |
+| `GET /api/v1/dristi-requests/{request_id}/` | Retrieve one request. |
+| `GET /api/v1/dristi-requests/{request_id}/approvals/` | View the approval trail for a request. |
+| `POST /api/v1/dristi-requests/{request_id}/resubmit/` | Resubmit a rejected request (bumps `version`, restarts routing). |
+| `POST /api/v1/dristi-requests/{request_id}/cancel/` | Cancel a pending or rejected request. |
 | `GET /api/v1/dristi-requests/request-types/` | List available types + schemas, for dynamic form rendering. |
-| `GET /api/v1/dristi-requests/requests/{request_id}/documents/{document_id}/` | Download a specific attached document (explicit, authorization-checked). |
+| `GET /api/v1/dristi-requests/request-types/{request_type_id}/` | Retrieve one request type. |
+| `GET /api/v1/dristi-requests/{request_id}/documents/{document_id}/` | Download a specific attached document (explicit, authorization-checked). |
 
 Request shape:
 
@@ -310,9 +311,9 @@ stricter mechanism (see Future TODO: `required_document_types`).
 |---|---|
 | `GET /api/v1/dristi-requests/approvals/` | List pending approvals assigned to the caller. |
 | `GET /api/v1/dristi-requests/approvals/?status=approved&status=rejected` | History of the caller's past decisions. |
-| `GET /api/v1/dristi-requests/approvals/{id}/` | Retrieve one approval, with the nested request (data + documents). |
-| `POST /api/v1/dristi-requests/approvals/{id}/decide/` | `{"decision": "approved"\|"rejected", "comments": "..."}` |
-| `GET /api/v1/dristi-requests/requests/{request_id}/documents/{document_id}/` | Same document-download endpoint as submitter side — authorized to any approver on the trail. |
+| `GET /api/v1/dristi-requests/approvals/{approval_id}/` | Retrieve one approval, with the nested request (data + documents). |
+| `POST /api/v1/dristi-requests/approvals/{approval_id}/decide/` | `{"decision": "approved"\|"rejected", "comments": "..."}` |
+| `GET /api/v1/dristi-requests/{request_id}/documents/{document_id}/` | Same document-download endpoint as submitter side — authorized to any approver on the trail. |
 
 ### 9. Sequence diagrams
 
@@ -325,7 +326,7 @@ sequenceDiagram
     participant DB as Database
     participant R as Routing resolver
 
-    U->>API: POST /api/v1/dristi-requests/requests/ (multipart: type, attributes, documents[])
+    U->>API: POST /api/v1/dristi-requests/ (multipart: type, attributes, documents[])
     API->>API: Parse attributes JSON, validate against RequestType.schema
     API->>API: Check documents.count >= RequestType.min_documents
     API->>DB: Create Request (status=pending)
@@ -344,7 +345,7 @@ sequenceDiagram
     participant DB as Database
     participant H as Hook registry
 
-    A->>API: POST /api/v1/dristi-requests/approvals/{id}/decide/ {decision, comments}
+    A->>API: POST /api/v1/dristi-requests/approvals/{approval_id}/decide/ {decision, comments}
     API->>DB: Fetch RequestApproval, assert pending & approver == actor
     API->>DB: Save decision, comments, decided_at
 
@@ -374,7 +375,7 @@ sequenceDiagram
     participant DB as Database
     participant R as Routing resolver
 
-    U->>API: POST /api/v1/dristi-requests/requests/{id}/resubmit/
+    U->>API: POST /api/v1/dristi-requests/{request_id}/resubmit/
     API->>DB: Assert status == rejected
     API->>DB: version += 1, status = pending, current_step = 0
     API->>R: create_first_approval_step(request)
@@ -391,7 +392,7 @@ sequenceDiagram
     participant DB as Database
     participant S as Storage
 
-    U->>API: GET /api/v1/dristi-requests/requests/{request_id}/documents/{document_id}/
+    U->>API: GET /api/v1/dristi-requests/{request_id}/documents/{document_id}/
     API->>DB: Fetch RequestDocument, join Request
     API->>API: Check requester == user OR approver on trail OR staff
     alt not authorized
@@ -424,7 +425,7 @@ sequenceDiagram
 1. Should `RequestType` support `required_document_types` (specific document
    categories, not just a count) for types that need more than "any N
    files"?
-2. Should a requester's `GET /api/v1/dristi-requests/requests/{id}/` response expose *who* is
+2. Should a requester's `GET /api/v1/dristi-requests/{request_id}/` response expose *who* is
    currently sitting on the approval, or only aggregate status + comments?
 3. If approvers can delegate (e.g. out-of-office), how should `GET
    /api/v1/dristi-requests/approvals/` and `decide()`'s actor check account for delegated-to-me

@@ -22,6 +22,11 @@ from .serializers import (
     RequestTypeSerializer,
 )
 
+# Detail routes only match UUIDs. Requests are mounted at the app's prefix
+# root, so a permissive lookup would let ``<prefix>/approvals/`` or any typo
+# be read as a request id instead of a 404 from the right route.
+UUID_REGEX = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
 
 @extend_schema_view(
     list=extend_schema(tags=["dristi_requests"]),
@@ -33,6 +38,8 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
     permission_classes = [IsAuthenticated]
     serializer_class = RequestTypeSerializer
     queryset = RequestType.objects.active().prefetch_related("approval_steps")
+    lookup_url_kwarg = "request_type_id"
+    lookup_value_regex = UUID_REGEX
 
 
 @extend_schema_view(
@@ -56,6 +63,8 @@ class RequestViewSet(
     """Submitter-side request API."""
 
     permission_classes = [IsAuthenticated]
+    lookup_url_kwarg = "request_id"
+    lookup_value_regex = UUID_REGEX
 
     def get_queryset(self):
         """Return the caller's own requests (staff see every request)."""
@@ -90,7 +99,7 @@ class RequestViewSet(
         return Response(output.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"])
-    def approvals(self, request, pk=None):
+    def approvals(self, request, request_id=None):
         """Return the approval trail for a request."""
         instance = self.get_object()
         queryset = instance.approvals.select_related("approver").all()
@@ -100,7 +109,7 @@ class RequestViewSet(
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
-    def resubmit(self, request, pk=None):
+    def resubmit(self, request, request_id=None):
         """Resubmit a rejected request, starting a new approval round."""
         instance = self._get_own_request()
         services.resubmit(instance, actor=request.user)
@@ -109,7 +118,7 @@ class RequestViewSet(
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
-    def cancel(self, request, pk=None):
+    def cancel(self, request, request_id=None):
         """Cancel a draft, pending or rejected request."""
         instance = self._get_own_request()
         services.cancel(instance, actor=request.user)
@@ -153,6 +162,8 @@ class RequestApprovalViewSet(
     """Approver-side API: pending queue, decision history, and decide()."""
 
     permission_classes = [IsAuthenticated]
+    lookup_url_kwarg = "approval_id"
+    lookup_value_regex = UUID_REGEX
 
     def get_queryset(self):
         """Return approvals assigned to the caller, filtered by status."""
@@ -178,7 +189,7 @@ class RequestApprovalViewSet(
         return RequestApprovalSerializer
 
     @action(detail=True, methods=["post"])
-    def decide(self, request, pk=None):
+    def decide(self, request, approval_id=None):
         """Approve or reject the approval assigned to the caller."""
         approval = self.get_object()
         serializer = DecisionSerializer(data=request.data)
