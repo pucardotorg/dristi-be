@@ -63,14 +63,16 @@ class DeliveryTests(TestCase):
         self.addCleanup(retry_patcher.stop)
 
     def enqueue_and_run(self, correlation_id=""):
-        """Enqueue an SMS and run the worker body once."""
+        """Enqueue an SMS, commit, and run the worker body once."""
 
-        log = enqueue_sms(
-            "GATEWAY_TEST_OTP_SMS",
-            {"phone_number": "9876512345"},
-            {"otp": "1234"},
-            correlation_id=correlation_id,
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            log = enqueue_sms(
+                "GATEWAY_TEST_OTP_SMS",
+                {"phone_number": "9876512345"},
+                {"otp": "1234"},
+                correlation_id=correlation_id,
+            )
+        self.enqueue.assert_called_once_with(str(log.id))
         send_message.fn(str(log.id))
         log.refresh_from_db()
         return log

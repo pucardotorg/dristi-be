@@ -129,7 +129,7 @@ enqueue_sms(message_key, recipient, context)      [apps.messaging]
   |
   +-- resolve_template() -> MessageTemplate
   +-- MessageLog.objects.create(status=pending)
-  +-- send_message.send(log_id)  ---> Redis ---> worker
+  +-- send_message.send(log_id)  ---> Redis ---> worker   (on transaction commit)
                                                    |
                                                    v
                                        send_message(log_id)     [apps.messaging]

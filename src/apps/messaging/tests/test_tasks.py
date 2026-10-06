@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 from django.conf import settings
+from django.db import transaction
 from django.test import TestCase, override_settings
 
 from apps.messaging.models import MessageLog, MessageTemplate
@@ -40,11 +41,12 @@ class EnqueueHelperTests(TestCase):
 
     @patch("apps.messaging.tasks.send_message.send")
     def test_enqueue_email_creates_log_and_enqueues(self, mock_send):
-        log = enqueue_email(
-            "CASE_FILING_SUBMITTED",
-            {"email": "user@example.com"},
-            {"case_number": "CASE-1", "name": "Alice"},
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            log = enqueue_email(
+                "CASE_FILING_SUBMITTED",
+                {"email": "user@example.com"},
+                {"case_number": "CASE-1", "name": "Alice"},
+            )
         self.assertEqual(log.status, MessageLog.Status.PENDING.value)
         self.assertEqual(log.attempt_count, 0)
         self.assertEqual(log.max_retries, 2)
@@ -55,13 +57,46 @@ class EnqueueHelperTests(TestCase):
         self.template.message_type = MessageTemplate.MessageType.SMS.value
         self.template.subject = ""
         self.template.save()
-        log = enqueue_sms(
-            "CASE_FILING_SUBMITTED",
-            {"phone_number": "+1234567890"},
-            {"name": "Alice"},
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            log = enqueue_sms(
+                "CASE_FILING_SUBMITTED",
+                {"phone_number": "+1234567890"},
+                {"name": "Alice"},
+            )
         self.assertEqual(log.message_type, MessageTemplate.MessageType.SMS.value)
         mock_send.assert_called_once_with(str(log.id))
+
+    @patch("apps.messaging.tasks.send_message.send")
+    def test_enqueue_publishes_only_after_commit(self, mock_send):
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            log = enqueue_email(
+                "CASE_FILING_SUBMITTED",
+                {"email": "user@example.com"},
+                {"case_number": "CASE-1", "name": "Alice"},
+            )
+            mock_send.assert_not_called()
+        self.assertEqual(len(callbacks), 1)
+        mock_send.assert_called_once_with(str(log.id))
+
+    @patch("apps.messaging.tasks.send_message.send")
+    def test_enqueue_never_publishes_when_transaction_rolls_back(self, mock_send):
+        with (
+            self.captureOnCommitCallbacks(execute=True) as callbacks,
+            self.assertNoLogs("apps.messaging.tasks", level="INFO"),
+        ):
+            try:
+                with transaction.atomic():
+                    enqueue_email(
+                        "CASE_FILING_SUBMITTED",
+                        {"email": "user@example.com"},
+                        {"case_number": "CASE-1", "name": "Alice"},
+                    )
+                    raise RuntimeError("caller failed")
+            except RuntimeError:
+                pass
+        self.assertEqual(callbacks, [])
+        mock_send.assert_not_called()
+        self.assertFalse(MessageLog.objects.exists())
 
     def test_enqueue_missing_template_raises(self):
         with self.assertRaises(MessageTemplateNotFound):
@@ -117,6 +152,12 @@ class SendMessageTaskTests(TestCase):
         MESSAGING_EMAIL_BACKEND="django",
         MESSAGING_EMAIL_DEFAULT_FROM="noreply@example.com",
     )
+    def test_send_message_warns_when_log_is_missing(self):
+        missing_id = "00000000-0000-0000-0000-000000000000"
+        with self.assertLogs("apps.messaging.tasks", level="WARNING") as logs:
+            send_message.fn(missing_id)
+        self.assertIn(f"event=MISSING message_id={missing_id}", logs.output[0])
+
     @patch("apps.messaging.tasks.send_message.send_with_options")
     def test_send_message_marks_sent(self, mock_retry):
         log = MessageLog.objects.create(

@@ -1,8 +1,10 @@
 """Asynchronous message dispatch tasks."""
 
 import logging
+from functools import partial
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from dramatiq import actor
 
@@ -48,6 +50,9 @@ def send_message(log_id: str) -> None:
     try:
         log = MessageLog.objects.get(id=log_id)
     except MessageLog.DoesNotExist:
+        # Enqueue publishes only after the row commits, so the row was deleted
+        # after it was queued.
+        logger.warning("event=MISSING message_id=%s", log_id)
         return None
 
     if log.status in (
@@ -190,9 +195,18 @@ def _enqueue(
     if not log.correlation_id:
         log.correlation_id = str(log.id)
         log.save(update_fields=["correlation_id", "updated_at"])
-    _log_event("ENQUEUED", log, status=log.status)
-    send_message.send(str(log.id))
+    # Publish only once the row is committed; inside a caller's transaction an
+    # immediate send lets the worker run before the row is visible. Outside a
+    # transaction on_commit runs the callback immediately.
+    transaction.on_commit(partial(_publish, log))
     return log
+
+
+def _publish(log: MessageLog) -> None:
+    """Hand a committed log row to the worker."""
+
+    send_message.send(str(log.id))
+    _log_event("ENQUEUED", log, status=log.status)
 
 
 def enqueue_email(
