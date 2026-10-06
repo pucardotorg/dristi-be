@@ -1,5 +1,6 @@
 """Shared File fixtures for the files test suite."""
 
+from random import randint
 from uuid import uuid4
 
 from apps.files.models import File, FileTag, FileType
@@ -16,13 +17,14 @@ DEFAULTS = {
 def make_user(**overrides):
     """Create a user that uploads can be attributed to.
 
-    Email and username default to unique values so repeated calls do not
-    collide on the uniqueness constraints of the user model.
+    Mobile number and email default to unique values so repeated calls do
+    not collide on the uniqueness constraints of the user model.
     """
-    handle = overrides.pop("username", f"uploader-{uuid4().hex[:8]}")
+    handle = f"uploader-{uuid4().hex[:8]}"
     return User.objects.create_user(
+        mobile_number=overrides.pop("mobile_number", f"+919{randint(0, 999_999_999):09d}"),
+        name=overrides.pop("name", handle),
         email=overrides.pop("email", f"{handle}@example.com"),
-        username=handle,
         password="test-password",
         **overrides,
     )

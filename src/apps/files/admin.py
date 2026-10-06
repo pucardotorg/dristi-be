@@ -2,11 +2,13 @@
 
 from django.contrib import admin
 
+from apps.core.mixins import AuditUserAdminMixin
+
 from .models import File, FileTag
 
 
 @admin.register(FileTag)
-class FileTagAdmin(admin.ModelAdmin):
+class FileTagAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for file tags."""
 
     list_display = ("name", "created_at")
@@ -16,7 +18,7 @@ class FileTagAdmin(admin.ModelAdmin):
 
 
 @admin.register(File)
-class FileAdmin(admin.ModelAdmin):
+class FileAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for files.
 
     Files are created through the upload service, which stores the object in

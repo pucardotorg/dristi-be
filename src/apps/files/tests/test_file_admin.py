@@ -26,7 +26,10 @@ def superuser_request():
     """Return an admin request from a user who holds every permission."""
     request = RequestFactory().get("/admin/files/")
     request.user = User.objects.create_superuser(
-        email="admin@example.com", username="admin", password="test-password"
+        mobile_number="+919000000001",
+        name="admin",
+        email="admin@example.com",
+        password="test-password",
     )
     return request
 
