@@ -1,10 +1,10 @@
 # Join a Case — Developer & Agent Handover
 
-**Status:** v3 — 2026-09-17; §12 Linked records now carries live views of all four
+**Status:** v5 — 2026-10-06; a mobile number entered for a party is confirmed by that party at their first sign-in before the case links to their account (JOIN-64). v4 — 2026-10-06; PoA holders can join for the complainant side and for several parties at once (one authorization document and one mobile number per party); flow outcome is Success. v3 — 2026-09-17; §12 Linked records now carries live views of all four
 master tables (pending tasks court and citizen side, notifications, events), so anything
 tagged later appears automatically. v2 — §12 Events added; later sections renumbered. v1 — all open questions resolved;
 no approval flows in V1 (replacement deferred, all joins immediate)
-**Date:** 2026-09-17
+**Date:** 2026-10-06
 **Audience:** developers and agents building the Join a Case module (front end and backend)
 
 ## Sources and precedence
@@ -29,8 +29,8 @@ Requirement IDs: `JOIN-*` — use in tickets, commits, test names.
 # 1. Scope
 
 The Join a Case flow: from first contact (summons or manual lookup) through gaining
-access to a case. Covers the accused side (litigant, party in person, PoA holder) and
-both sides for advocates.
+access to a case. Covers the accused side (litigant, party in person), and both sides
+for PoA holders and advocates.
 
 **Out of scope (separate documents):**
 - Ongoing case access management (advocate replacement, PoA changes, office management)
@@ -43,10 +43,12 @@ both sides for advocates.
 **Who uses Join a Case:**
 - The **accused** — the person named in the complaint
 - An **advocate** — representing either the complainant or the accused
-- A **PoA holder** — acting on behalf of the accused under a power of attorney
+- A **PoA holder** — acting under a power of attorney for one or more parties, on the
+  complainant side or the accused side
 
 The **complainant** never uses this flow. Their details are entered during e-filing and
-the case is linked to their account automatically (`JOIN-01`).
+the case is linked to their account automatically (`JOIN-01`). A complainant's PoA holder
+does use it (§9b).
 
 ---
 
@@ -155,7 +157,7 @@ changes at each step depends on their role and circumstances.
 | 3. Case details | Review the case before joining | Shown | Shown |
 | 4. Role selection | "How are you joining this case?" | Asked | Asked |
 | 5. Role-specific steps | Identity, party selection, documents | Varies by role | Varies by role |
-| 6. Outcome | Success or pending approval | Shown | Shown |
+| 6. Outcome | Success | Shown | Shown |
 
 ---
 
@@ -308,36 +310,63 @@ is granted; a non-PiP accused will continue to receive immediate access.
 
 ## 9b. Joining as a PoA holder
 
-The PoA holder flow collects: which party you hold power of attorney for, the
-authorization document, and optionally the accused's phone number.
+The PoA holder flow collects: which side, which party or parties you hold power of
+attorney for, an authorization document for each party, and each party's mobile number
+where the system does not have it.
 
-### Which party?
+### Which side?
 
-`JOIN-29` — The user selects which accused party they hold power of attorney for.
+`JOIN-63` — **[OWNER]** The user is asked: "Are you a PoA holder for a complainant or an
+accused?" If the user is entering from a summons, the accused side is pre-selected; the
+user can still change it.
 
-`JOIN-30` — **[OWNER]** If there is only one accused party, the system auto-selects
-them.
+### Which parties?
 
-`JOIN-31` — If another PoA holder is already managing the case for the selected party,
-the user is blocked: only one PoA holder can act at a time. The user is directed to
-contact the court.
+`JOIN-29` — **[OWNER]** The user selects the party or parties on that side they hold power
+of attorney for. This is a **multi-select** — one person can hold power of attorney for
+several parties. `[DERIVED]` All selected parties are on the same side.
 
-Note: the accused having joined in person does **not** block a PoA join — the party
-and their PoA holder both legitimately hold access.
+`JOIN-30` — **[OWNER]** If there is only one party on the selected side, the system
+auto-selects them.
 
-### Authorization document
+`JOIN-31` — If another PoA holder is already managing the case for a selected party, the
+user is blocked for that party: only one PoA holder can act for a party at a time. The
+user is directed to contact the court.
 
-`JOIN-32` — The user must upload the authorization document (affidavit signed by the
-person authorizing them). Required. Accepts JPG, JPEG, PNG, or PDF.
+Note: the party having joined in person does **not** block a PoA join — the party and
+their PoA holder both legitimately hold access.
+
+### Authorization documents
+
+`JOIN-32` — **[OWNER]** The user uploads a **separate authorization document for each
+selected party** (an affidavit signed by that party authorizing them). One upload per
+party; each is required. Accepts JPG, JPEG, PNG, or PDF.
 
 `JOIN-33` — **[PROTO]** A sample authorization document is available for download.
 
-### Accused's contact
+### Parties' contact
 
-`JOIN-34` — **[OWNER]** If the accused does not yet have an account in the system, the
-PoA holder must provide the accused's mobile number. This is **mandatory** — the system
-needs it to link the case to the accused's account. If the accused has already joined
-the case, this step is skipped (the number is already on record).
+`JOIN-34` — **[OWNER]** For **each** selected party who does not yet have an account in
+the system, the PoA holder must provide that party's mobile number. This is
+**mandatory** — the system needs it to link the case to the party's account. One field
+per party needing a number. Parties who have already joined the case are skipped (the
+number is already on record); if every selected party has joined, this step is skipped.
+The number is confirmed by the party themselves, not at entry (`JOIN-64`).
+
+`JOIN-64` — **[OWNER]** A mobile number entered for a party — by a PoA holder (`JOIN-34`)
+or an advocate (`JOIN-47`) — is **not verified by OTP at entry**, and the joining user's
+own access is not held up by it. The number is confirmed by its owner:
+
+1. When the number is entered, an SMS goes to it saying the case is waiting for them.
+2. The case is **not linked automatically**. The next time someone signs in with that
+   number — an existing account, or a new one registered with it — they are asked:
+   "Are you {party name} in case {case number}?" Signing in already requires their own
+   OTP.
+3. **Yes** → the case is linked to their account and they have access.
+4. **No** → the case is not linked and nothing else happens in the system. The party
+   stays unlinked until they join the case themselves and provide their own number. A
+   notification goes to the users on that party's side of the case, telling them the
+   number was not confirmed.
 
 ### Outcome
 
@@ -400,6 +429,8 @@ has their number.
 `JOIN-49` — `[DERIVED]` This step is skipped entirely if all selected litigants already
 have numbers on record.
 
+Each number entered here is confirmed by the litigant, not at entry (`JOIN-64`).
+
 ### Vakalatnama
 
 `JOIN-50` — **[OWNER]** In V1, the advocate must always **upload** a vakalatnama.
@@ -451,8 +482,9 @@ user. Specific rules:
 | Condition | What is auto-filled |
 | --- | --- |
 | Summons entry | The case is pre-loaded; the access code is pre-verified; the accused side is pre-selected (for advocates) |
-| Only one accused party | The "which party" dropdown is auto-selected |
-| Only one party on the selected side (advocate flow) | The party multi-select is auto-selected |
+| Only one accused party (litigant flow) | The "which party" dropdown is auto-selected |
+| Only one party on the selected side (advocate and PoA flows) | The party multi-select is auto-selected |
+| Summons entry (PoA flow) | The accused side is pre-selected |
 
 `JOIN-59` — Auto-fill never skips a step. The auto-filled value is shown to the user so
 they can confirm or change it. The step is still displayed; only the selection is
@@ -465,7 +497,7 @@ pre-made.
 | ID | Scenario | Behaviour |
 | --- | --- | --- |
 | `JOIN-60` | The accused has already joined | Blocked — sign in with the earlier account or contact the court |
-| `JOIN-61` | A PoA holder is already acting for the party | Blocked — only one PoA holder at a time |
+| `JOIN-61` | A PoA holder is already acting for a selected party | Blocked for that party — only one PoA holder per party at a time |
 | `JOIN-62` | The case is not in the system | Lookup returns no result; user told to check their papers |
 
 ---
