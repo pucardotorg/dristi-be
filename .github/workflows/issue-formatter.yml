@@ -1,0 +1,267 @@
+name: Format Issue with Claude
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  issues: write
+
+jobs:
+  format-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect issue type from labels
+        id: detect-type
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = issue.labels.map(label => label.name.toLowerCase());
+
+            // Priority: bug > feature > enhancement
+            if (labels.includes('bug')) {
+              return 'bug';
+            } else if (labels.includes('feature')) {
+              return 'feature';
+            } else if (labels.includes('enhancement')) {
+              return 'enhancement';
+            }
+
+            // No valid label found
+            return 'none';
+
+      - name: Skip if no valid label
+        if: steps.detect-type.outputs.result == 'none'
+        run: |
+          echo "No valid label (feature, bug, or enhancement) found. Skipping formatting."
+          exit 0
+
+      - name: Check if already formatted
+        id: check-format
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const issueType = ${{ steps.detect-type.outputs.result }};
+            const body = issue.body || '';
+
+            // Define format markers for each issue type
+            const formatMarkers = {
+              feature: [
+                '**Is your feature request related to a problem? Please describe.**',
+                '**Describe the solution you\'d like**'
+              ],
+              bug: [
+                '**Describe the bug**',
+                '**To Reproduce**',
+                '**Expected behavior**'
+              ],
+              enhancement: [
+                '**Describe the current behavior**',
+                '**Describe the enhancement you\'d like**',
+                '**Why is this enhancement needed?**'
+              ]
+            };
+
+            // Check if the issue type has format markers
+            if (!formatMarkers[issueType]) {
+              return 'false';
+            }
+
+            // Check if all markers are present in the issue body
+            const markers = formatMarkers[issueType];
+            const allMarkersPresent = markers.every(marker => body.includes(marker));
+
+            if (allMarkersPresent) {
+              console.log(`Issue is already properly formatted for type: ${issueType}`);
+              return 'true';
+            }
+
+            console.log(`Issue needs formatting for type: ${issueType}`);
+            return 'false';
+
+      - name: Skip if already formatted
+        if: steps.check-format.outputs.result == 'true'
+        run: |
+          echo "Issue is already in the correct format. Skipping formatting."
+          exit 0
+
+      - name: Rewrite issue body
+        if: steps.detect-type.outputs.result != 'none' && steps.check-format.outputs.result != 'true'
+        id: body
+        uses: actions/github-script@v9
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const issueType = ${{ steps.detect-type.outputs.result }};
+
+            // Define templates based on issue type
+            const templates = {
+              feature: `**Is your feature request related to a problem? Please describe.**
+A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+
+**Describe the solution you'd like**
+A clear and concise description of what you want to happen.
+
+**Describe alternatives you've considered**
+A clear and concise description of any alternative solutions or features you've considered.
+
+**Additional context**
+Add any other context or screenshots about the feature request here.`,
+
+              bug: `**Describe the bug**
+A clear and concise description of what the bug is.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Go to '...'
+2. Click on '....'
+3. Scroll down to '....'
+4. See error
+
+**Expected behavior**
+A clear and concise description of what you expected to happen.
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Additional context**
+Add any other context about the problem here.`,
+
+              enhancement: `**Describe the current behavior**
+A clear description of how it currently works and what the limitations are.
+
+**Describe the enhancement you'd like**
+A clear and concise description of the improvement you want to see.
+
+**Why is this enhancement needed?**
+Explain the benefits (e.g., performance, usability, maintainability, scalability).
+
+**Additional context**
+Add any other context, metrics, screenshots, or examples about the enhancement here.`
+            };
+
+            const template = templates[issueType];
+
+            const prompt = `Rewrite this GitHub issue body using the EXACT template below. Keep it clear and concise. Do NOT add any information that wasn't in the original issue. If a section has no relevant information from the original issue, keep the placeholder text. Output ONLY the formatted markdown, nothing else.
+
+Template to use:
+${template}
+
+Original issue title: ${issue.title}
+Original issue body:
+${issue.body || '(empty)'}`;
+
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': process.env.ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+              },
+              body: JSON.stringify({
+                model: 'claude-3-5-haiku-20241022',
+                max_tokens: 1024,
+                messages: [{
+                  role: 'user',
+                  content: prompt
+                }]
+              })
+            });
+
+            const data = await response.json();
+
+            if (!data.content || !data.content[0]) {
+              core.setFailed(`Claude API error: ${JSON.stringify(data)}`);
+              return;
+            }
+
+            return data.content[0].text;
+
+      - name: Rewrite issue title
+        if: steps.detect-type.outputs.result != 'none' && steps.check-format.outputs.result != 'true'
+        id: title
+        uses: actions/github-script@v9
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const issueType = ${{ steps.detect-type.outputs.result }};
+            const formattedBody = ${{ steps.body.outputs.result }};
+
+            // Define title format based on issue type
+            const titleFormats = {
+              feature: 'Feature',
+              bug: 'Bug',
+              enhancement: 'Enhancement'
+            };
+
+            const typePrefix = titleFormats[issueType];
+
+            const prompt = `Based on the issue body below, generate a short, descriptive title in this format:
+"[${typePrefix}] Module Name: Brief summary"
+
+Rules:
+- Start with [${typePrefix}] prefix
+- Module name should be the affected area (e.g., API, Auth, Collection, Evaluation, etc.)
+- Brief summary should be 3-5 words describing the issue/request
+- Capitalize appropriately
+- No trailing period
+
+Examples:
+- [Feature] Evaluation: Add STT metrics support
+- [Bug] Auth: Token expiry check fails
+- [Enhancement] API: Improve error messages
+
+Output ONLY the title, nothing else.
+
+Original issue title: ${issue.title}
+Issue body:
+${formattedBody}`;
+
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': process.env.ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+              },
+              body: JSON.stringify({
+                model: 'claude-3-5-haiku-20241022',
+                max_tokens: 100,
+                messages: [{
+                  role: 'user',
+                  content: prompt
+                }]
+              })
+            });
+
+            const data = await response.json();
+
+            if (!data.content || !data.content[0]) {
+              core.setFailed(`Claude API error: ${JSON.stringify(data)}`);
+              return;
+            }
+
+            return data.content[0].text.replace(/^["']|["']$/g, '');
+
+      - name: Update issue
+        if: steps.detect-type.outputs.result != 'none' && steps.check-format.outputs.result != 'true'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const formattedBody = ${{ steps.body.outputs.result }};
+            const formattedTitle = ${{ steps.title.outputs.result }};
+            const original = context.payload.issue.body || '(empty)';
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              title: formattedTitle,
+              body: `${formattedBody}\n\n<details><summary>Original issue</summary>\n\n${original}\n\n</details>`
+            });
