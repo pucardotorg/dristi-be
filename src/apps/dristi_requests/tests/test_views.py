@@ -146,7 +146,8 @@ class TestRequestCreateAPI:
         assert documents[0]["filename"] == "cert.pdf"
         assert documents[0]["uploaded_by"]["email"] == requester.email
         assert documents[0]["download_url"].endswith(
-            f"/requests/{response.json()['id']}/documents/{documents[0]['id']}/"
+            f"/api/v1/dristi-requests/requests/{response.json()['id']}"
+            f"/documents/{documents[0]['id']}/"
         )
 
 
