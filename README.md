@@ -47,20 +47,20 @@ A Django-based API project template using:
 
    | Service | URL | Notes |
    |---------|-----|-------|
-   | 🌐 API Root | http://localhost:8000/api/v1/ | Main API endpoint |
-   | 📚 Swagger UI | http://localhost:8000/api/docs/ | Interactive API docs |
-   | 📋 OpenAPI Schema | http://localhost:8000/api/schema/ | API specification |
-   | 🔐 Admin Panel | http://localhost:8000/admin/ | Use superuser from step 3 |
-   | ✅ Health Check | http://localhost:8000/health/ | Service status |
+   | API Root | http://localhost:8000/api/v1/ | Main API endpoint |
+   | Swagger UI | http://localhost:8000/api/docs/ | Interactive API docs |
+   | OpenAPI Schema | http://localhost:8000/api/schema/ | API specification |
+   | Admin Panel | http://localhost:8000/admin/ | Use superuser from step 3 |
+   | Health Check | http://localhost:8000/health/ | Service status |
 
 5. **Development tools:**
 
    | Service | URL | Credentials | Purpose |
    |---------|-----|-------------|---------|
-   | 📧 MailHog | http://localhost:8025 | - | View test emails |
-   | 🗄️ Adminer | http://localhost:9090 | See `.env` postgres credentials | Database UI |
-   | 📦 Rustfs Console | http://localhost:9001 | `admin` / `admin123` | S3 storage browser |
-   | 🔄 Dramatiq Dashboard | http://localhost:8080 | - | Background jobs monitor |
+   | MailHog | http://localhost:8025 | - | View test emails |
+   | Adminer | http://localhost:9090 | See `.env` postgres credentials | Database UI |
+   | Rustfs Console | http://localhost:9001 | `admin` / `admin123` | S3 storage browser |
+   | Dramatiq Dashboard | http://localhost:8080 | - | Background jobs monitor |
 
 ## Common commands
 
@@ -79,6 +79,22 @@ make format      # Format code with ruff
 ```
 
 Run `make help` to see all available commands.
+
+## Pre-commit hooks
+
+The repo uses [pre-commit](https://pre-commit.com/) to run Ruff (lint with auto-fix, then format) automatically on every `git commit`. The hooks are defined in [.pre-commit-config.yaml](.pre-commit-config.yaml).
+
+One-time setup after cloning:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r src/requirements/local.txt   # includes pre-commit
+pre-commit install                          # installs the git hook
+```
+
+From then on, each commit runs Ruff on the staged files. If Ruff fixes or reformats anything, the commit is stopped so you can review the changes. Run `git add` and commit again.
+
 
 ## Documentation
 
