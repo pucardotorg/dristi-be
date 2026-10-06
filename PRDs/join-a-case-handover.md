@@ -1,6 +1,6 @@
 # Join a Case — Developer & Agent Handover
 
-**Status:** v5 — 2026-10-06; a mobile number entered for a party is confirmed by that party at their first sign-in before the case links to their account (JOIN-64). v4 — 2026-10-06; PoA holders can join for the complainant side and for several parties at once (one authorization document and one mobile number per party); flow outcome is Success. v3 — 2026-09-17; §12 Linked records now carries live views of all four
+**Status:** v6 — 2026-10-06; added a placeholder for the vakalatnama payment logic. v5 — 2026-10-06; a mobile number entered for a party is confirmed by that party at their first sign-in before the case links to their account (JOIN-64). v4 — 2026-10-06; PoA holders can join for the complainant side and for several parties at once (one authorization document and one mobile number per party); flow outcome is Success. v3 — 2026-09-17; §12 Linked records now carries live views of all four
 master tables (pending tasks court and citizen side, notifications, events), so anything
 tagged later appears automatically. v2 — §12 Events added; later sections renumbered. v1 — all open questions resolved;
 no approval flows in V1 (replacement deferred, all joins immediate)
@@ -460,6 +460,10 @@ advocate **does not get access to the case until payment is complete**.
 If the advocate closes the dialog or the session ends before payment, the payment
 becomes a **pending task**. The advocate can complete it later, but does not have
 access to the case until they do.
+
+### Vakalatnama payment logic
+
+`[GAP]` To be specified — how the vakalatnama fee is calculated and collected.
 
 ### Outcome
 
