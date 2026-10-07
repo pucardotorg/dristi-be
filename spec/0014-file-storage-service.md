@@ -9,6 +9,7 @@ Proposed
 - [0000 — API Coding Spec](0000-api-coding-spec.md) — model/style constraints
 - [0016 — PDF Service](0016-pdf-services.md) — consumer: stores generated documents
 - [0015 — eSign Module and CDAC eSign Addon](0015-cdac-esign.md) — consumer: stores prepared and signed PDFs, reads content in-process, cleans up placeholders
+- [0010 — Generic Request & Approval Workflow](0010-simple-requests-flow.md) — consumer: stores request supporting documents (`pdf` / `image`), streams them on download, deletes them only to undo a failed submission
 
 ## Context
 

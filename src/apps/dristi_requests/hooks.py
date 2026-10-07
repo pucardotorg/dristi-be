@@ -16,7 +16,8 @@ side effect to its own models::
         profile = request.requester.profile
         profile.bar_number = request.data["bar_number"]
         profile.bar_id_status = profile.BarIdStatus.VERIFIED
-        profile.bar_certificate = request.documents.first()  # a RequestDocument
+        # Persist the file_id (spec 0014), not the RequestDocument row.
+        profile.bar_certificate_file_id = request.documents.first().file_id
         profile.save()
 
 Register hooks at import time and import the module from the owning app's
@@ -30,7 +31,12 @@ Contract for hook authors:
 
 - The hook receives the approved ``Request``. Everything it needs is on it:
   ``requester``, ``data`` (schema-validated at submit time), ``documents``
-  (``RequestDocument`` rows) and ``request_type``.
+  (``RequestDocument`` rows, in upload order) and ``request_type``.
+- Documents are stored by ``apps.files``. Keep a reference to one by its
+  ``file_id`` (``document.file_id``); read its content in-process with
+  ``apps.files.services.get_file_content(file_id)``. Never call
+  ``delete_file`` on it: the request still references it, and the foreign
+  key is ``PROTECT`` so the attempt fails.
 - The hook runs inside the same transaction as the approving decision, so
   raising rolls the decision back and leaves the approval pending. Keep
   hooks idempotent: a request can be rejected and resubmitted.

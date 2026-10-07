@@ -1,16 +1,21 @@
 """API views for the generic request and approval workflow."""
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.files.services import FileNotFound
+
 from . import services
+from .documents import open_document
 from .models import Request, RequestApproval, RequestDocument, RequestType
 from .serializers import (
     DecisionSerializer,
@@ -26,6 +31,14 @@ from .serializers import (
 # root, so a permissive lookup would let ``<prefix>/approvals/`` or any typo
 # be read as a request id instead of a 404 from the right route.
 UUID_REGEX = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+
+class DocumentTooLargeToServe(APIException):  # noqa: N818
+    """Raised when a stored document exceeds the configured read limit."""
+
+    status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    default_detail = "This document is too large to download."
+    default_code = "document_too_large"
 
 
 @extend_schema_view(
@@ -70,7 +83,7 @@ class RequestViewSet(
         """Return the caller's own requests (staff see every request)."""
         queryset = (
             Request.objects.select_related("request_type", "requester")
-            .prefetch_related("documents", "approvals__approver")
+            .prefetch_related("documents__file__user", "approvals__approver")
             .all()
         )
         user = getattr(self.request, "user", None)
@@ -170,7 +183,7 @@ class RequestApprovalViewSet(
         user = getattr(self.request, "user", None)
         base = RequestApproval.objects.select_related(
             "request", "request__request_type", "request__requester", "approver"
-        ).prefetch_related("request__documents")
+        ).prefetch_related("request__documents__file__user")
         if user is None or not user.is_authenticated:
             return base.none()
 
@@ -217,7 +230,12 @@ class RequestDocumentDownloadView(APIView):
         responses={(200, "application/octet-stream"): OpenApiTypes.BINARY},
     )
     def get(self, request, request_id, document_id):
-        """Stream the document if the caller is allowed to see it."""
+        """Stream the document if the caller is allowed to see it.
+
+        Access is decided here, by the request's own rules, before
+        ``apps.files`` is asked for anything: that module has no access model
+        of its own, so a file is never served by ``file_id`` alone.
+        """
         document = get_object_or_404(
             RequestDocument.objects.select_related("request"),
             pk=document_id,
@@ -226,8 +244,16 @@ class RequestDocumentDownloadView(APIView):
         if not services.can_access_document(request.user, document):
             raise Http404
 
+        try:
+            stream, metadata = open_document(document)
+        except FileNotFound:
+            raise Http404 from None
+        except DjangoValidationError:
+            raise DocumentTooLargeToServe() from None
+
         return FileResponse(
-            document.file.open("rb"),
+            stream,
             as_attachment=True,
-            filename=document.filename,
+            filename=metadata["file_name"],
+            content_type=metadata["content_type"],
         )

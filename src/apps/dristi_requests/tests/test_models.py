@@ -71,10 +71,10 @@ class TestRequestModel:
         assert request.current_approval is None
         assert list(requester.requests.all()) == [request]
 
-    def test_documents_and_approvals_relationships(self, simple_type, requester, pdf_file):
+    def test_documents_and_approvals_relationships(self, simple_type, requester, stored_file):
         request = Request.objects.create(request_type=simple_type, requester=requester)
         document = RequestDocument.objects.create(
-            request=request, file=pdf_file("a.pdf"), uploaded_by=requester
+            request=request, file=stored_file(requester, "a.pdf")
         )
         approval = RequestApproval.objects.create(request=request, approver=requester)
 
