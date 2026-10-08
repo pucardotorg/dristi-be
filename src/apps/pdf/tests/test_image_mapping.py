@@ -100,6 +100,14 @@ def test_non_image_bytes_are_rejected():
         ImageMapper().map({"source": "img", "source_type": "base64"}, {"img": encoded})
 
 
+def test_corrupt_png_is_rejected_as_request_data():
+    raw = bytearray(png_bytes())
+    raw[40] ^= 0xFF  # break the IDAT checksum
+    encoded = base64.b64encode(bytes(raw)).decode()
+    with pytest.raises(PDFRequestDataError):
+        ImageMapper().map({"source": "img", "source_type": "base64"}, {"img": encoded})
+
+
 def test_invalid_base64_is_rejected():
     with pytest.raises(PDFRequestDataError):
         ImageMapper().map({"source": "img", "source_type": "base64"}, {"img": "***"})

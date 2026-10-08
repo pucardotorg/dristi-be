@@ -59,7 +59,13 @@ def normalize_image(raw: bytes, max_width: int | None = None, max_height: int | 
             return ImageData(content=out.getvalue(), width=image.width, height=image.height)
     except PDFError:
         raise
-    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        SyntaxError,  # Pillow's verify() reports corrupt chunks as SyntaxError
+        Image.DecompressionBombError,
+    ) as exc:
         raise PDFRequestDataError("Value is not a supported image.") from exc
 
 

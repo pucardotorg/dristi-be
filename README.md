@@ -101,6 +101,8 @@ From then on, each commit runs Ruff on the staged files. If Ruff fixes or reform
 - [docs/development.md](docs/development.md) — developer setup, running tests, linting, and background jobs.
 - [docs/production.md](docs/production.md) — production deployment guide.
 - [docs/architecture.md](docs/architecture.md) — system architecture and component overview.
+- [docs/pdf-services.md](docs/pdf-services.md) — PDF Service (`apps.pdf`): template setup, API samples, end-to-end testing.
+- [docs/pdf-esign-integration-issues.md](docs/pdf-esign-integration-issues.md) — open eSign ↔ PDF Service integration issues.
 - [agents.md](agents.md) — conventions and workflows for AI coding assistants.
 
 ## Project structure

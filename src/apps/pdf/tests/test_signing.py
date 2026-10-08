@@ -245,6 +245,17 @@ class TestEmbed:
         _, _, sig = placeholder_field(prepared.prepared_document)
         assert not any(sig["/Contents"])
 
+    def test_source_at_the_size_limit_can_still_be_embedded(self, esp, settings):
+        source = simple_pdf()
+        settings.PDF_MAX_SIGN_INPUT_BYTES = len(source)
+        prepared = prepare_for_signing(source, PLACEHOLDER)
+        assert len(prepared.prepared_document) > len(source)
+
+        signed = embed_signature(
+            prepared.prepared_document, esp_sign(esp, prepared.document_hash), prepared.field_name
+        )
+        assert_valid(signed, esp)
+
     def test_unknown_field_is_missing(self, esp):
         prepared = prepare_for_signing(simple_pdf(), PLACEHOLDER)
         with pytest.raises(PDFSignatureFieldMissing):

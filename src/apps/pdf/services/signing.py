@@ -64,6 +64,9 @@ PLACEHOLDER_TEXT_KEYS = ("signer_name", "reason", "location")
 MAX_TEXT_LENGTH = 200
 FIELD_PREFIX = "Signature"
 DEFAULT_APPEARANCE_TEXT = "Digitally signed"
+# Allowance for the incremental update besides the container itself; matches
+# PREPARED_DOCUMENT_OVERHEAD_BYTES in the eSign PDF adapter (spec 0015 #4.1).
+PREPARED_OVERHEAD_BYTES = 65536
 
 
 @dataclass(frozen=True)
@@ -142,7 +145,7 @@ def embed_signature(prepared_document: bytes, pkcs7: bytes, field_name: str) -> 
     Pure and deterministic: only the reserved region changes, so the same
     inputs always produce the same output.
     """
-    reader = _open(prepared_document)
+    reader = _open(prepared_document, max_bytes=prepared_document_max_bytes())
     start, end = _reserved_region(reader, prepared_document, field_name)
     der = _validated_pkcs7(pkcs7)
 
@@ -187,11 +190,28 @@ def appearance_text(spec: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _open(document: bytes) -> PdfFileReader:
+def prepared_document_max_bytes() -> int:
+    """Size limit for a prepared document passed to ``embed_signature``.
+
+    Preparation appends the reserved container -- written hex-encoded, two
+    characters per byte -- plus the signature dictionary, widget, appearance
+    stream and cross-reference section. Checking the prepared document against
+    the source limit would reject, at embed time, a source that was accepted
+    at preparation, after the signer has already completed the ESP flow.
+    """
+    return (
+        settings.PDF_MAX_SIGN_INPUT_BYTES
+        + 2 * settings.PDF_SIGNATURE_CONTAINER_BYTES
+        + PREPARED_OVERHEAD_BYTES
+    )
+
+
+def _open(document: bytes, max_bytes: int | None = None) -> PdfFileReader:
     """Parse ``document``, enforcing size and encryption rules."""
     if not isinstance(document, bytes | bytearray):
         raise PDFNotParsable()
-    if len(document) > settings.PDF_MAX_SIGN_INPUT_BYTES:
+    limit = settings.PDF_MAX_SIGN_INPUT_BYTES if max_bytes is None else max_bytes
+    if len(document) > limit:
         raise PDFTooLarge()
     if not bytes(document[:1024]).lstrip().startswith(b"%PDF-"):
         raise PDFNotParsable()
