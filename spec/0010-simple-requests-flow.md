@@ -4,6 +4,12 @@
 
 Proposed
 
+## References
+
+- [0014 — File Storage Service](0014-file-storage-service.md) — `apps.files`,
+  owns document content and metadata; request documents reference it by
+  `file_id`.
+
 ## Context
 
 Multiple parts of the system need a way for a user to raise a request with
@@ -70,9 +76,15 @@ classDiagram
     +created_at
   }
   class RequestDocument {
-    +file
-    +uploaded_by
-    +uploaded_at
+    +file  (FK files.File)
+  }
+  class File {
+    <<apps.files>>
+    +file_name
+    +content_type
+    +file_size
+    +file_type
+    +user
   }
   class RequestApproval {
     +step_order
@@ -83,8 +95,17 @@ classDiagram
   RequestType "1" --> "many" ApprovalStep : template steps
   RequestType "1" --> "many" Request : type of
   Request "1" --> "many" RequestDocument : attaches
+  RequestDocument "many" --> "1" File : references by file_id
   Request "1" --> "many" RequestApproval : approval trail
 ```
+
+Document content and metadata are owned by the file storage service
+([0014](0014-file-storage-service.md), `apps.files`). `RequestDocument` only
+records which request a file supports, and references the file by `file_id`
+with `on_delete=PROTECT`, so `files.delete_file` cannot remove a document a
+request still relies on. The uploader and upload time are `File.user` and
+`File.created_at`; they are not duplicated here. Consuming modules persist the
+`file_id`, never the `RequestDocument` row.
 
 `ApprovalStep` is the **template** — the rules used to resolve who approves
 each step. `RequestApproval` is the **instance** — the actual per-request
@@ -237,14 +258,15 @@ Location: `apps.dristi_requests.views`, `apps.dristi_requests.serializers`
 
 | Method & path | Purpose |
 |---|---|
-| `POST /requests/` | Create a request. Generic across types — `request_type` + `attributes` (JSON string) + `documents[]`, multipart. |
-| `GET /requests/` | List the caller's own requests. |
-| `GET /requests/{id}/` | Retrieve one request. |
-| `GET /requests/{id}/approvals/` | View the approval trail for a request. |
-| `POST /requests/{id}/resubmit/` | Resubmit a rejected request (bumps `version`, restarts routing). |
-| `POST /requests/{id}/cancel/` | Cancel a pending or rejected request. |
-| `GET /request-types/` | List available types + schemas, for dynamic form rendering. |
-| `GET /requests/{request_id}/documents/{document_id}/` | Download a specific attached document (explicit, authorization-checked). |
+| `POST /api/v1/dristi-requests/` | Create a request. Generic across types — `request_type` + `attributes` (JSON string) + `documents[]`, multipart. |
+| `GET /api/v1/dristi-requests/` | List the caller's own requests. |
+| `GET /api/v1/dristi-requests/{request_id}/` | Retrieve one request. |
+| `GET /api/v1/dristi-requests/{request_id}/approvals/` | View the approval trail for a request. |
+| `POST /api/v1/dristi-requests/{request_id}/resubmit/` | Resubmit a rejected request (bumps `version`, restarts routing). |
+| `POST /api/v1/dristi-requests/{request_id}/cancel/` | Cancel a pending or rejected request. |
+| `GET /api/v1/dristi-requests/request-types/` | List available types + schemas, for dynamic form rendering. |
+| `GET /api/v1/dristi-requests/request-types/{request_type_id}/` | Retrieve one request type. |
+| `GET /api/v1/dristi-requests/{request_id}/documents/{document_id}/` | Download a specific attached document (explicit, authorization-checked). |
 
 Request shape:
 
@@ -257,11 +279,33 @@ documents:    <file1>
 documents:    <file2>
 ```
 
-#### 7.1 Document count validation
+#### 7.1 Document validation
 
-`min_documents` is checked in the generic create serializer's `validate()`,
+Documents are validated in the generic create serializer's `validate()`,
 after `attributes` has been parsed and schema-checked but before `create()`
-runs — so an under-documented submission never reaches the database:
+runs, so an invalid submission never reaches storage or the database. The
+checks live in `apps.dristi_requests.documents.validate_documents`:
+
+| Check | Limit | Error |
+|---|---|---|
+| Minimum count | `RequestType.min_documents` | 400 on `documents` |
+| Maximum count | `settings.FILE_MAX_COUNT_PER_UPLOAD` | 400 on `documents` |
+| Size per file | `settings.FILE_MAX_SIZE_BYTES` | 400 on `documents` |
+| Content type | PDF or image (see below) | 400 on `documents` |
+
+Accepted content types and the `FileType` each is stored as:
+
+| Content type | `FileType` |
+|---|---|
+| `application/pdf` | `pdf` |
+| `image/jpeg`, `image/png` | `image` |
+
+`apps.files` enforces the same size and count limits, but reports them as
+Django `ValidationError`, which DRF renders as a 500. Checking them here first
+keeps them a 400 on the `documents` field; anything `apps.files` still rejects
+is translated the same way.
+
+The original count-only check, for reference:
 
 ```python
 class GenericRequestCreateSerializer(serializers.Serializer):
@@ -299,20 +343,43 @@ class GenericRequestCreateSerializer(serializers.Serializer):
         return attrs
 ```
 
-This checks count only, not document content or type — that a bar
-certificate is actually a bar certificate, rather than any PDF, is either a
-manual check (the approver looks at it during review) or a separate,
-stricter mechanism (see Future TODO: `required_document_types`).
+The content-type check is on the declared type only; it does not inspect the
+bytes. Whether a bar certificate is actually a bar certificate, rather than
+any PDF, is either a manual check (the approver looks at it during review) or
+a separate, stricter mechanism (see Future TODO: `required_document_types`).
+
+#### 7.2 Storing documents
+
+Storage writes are not transactional, so the order of operations is what
+guarantees a failed submission leaves nothing behind:
+
+1. **Upload first, outside the request's transaction.** All documents go to
+   `files.upload_file` in a single call, so they are stored all-or-nothing.
+   Each is tagged `dristi-requests` and the request type code, and attributed
+   to the requester (`user_id`).
+2. **Then create the request atomically:** the `Request`, one
+   `RequestDocument` per `file_id` (in upload order), and the first approval.
+3. **If step 2 fails** (e.g. no approver can be resolved), call
+   `files.delete_file` for each uploaded `file_id` and re-raise. Cleanup
+   failures are logged, never raised, so they cannot mask the original error.
+
+The committed `File` rows from step 1 are what make step 3 possible: if the
+upload ran inside the request's transaction, a rollback would erase the rows
+but not the stored objects, leaving them orphaned.
+
+Cancelling, rejecting and resubmitting a request never delete its documents;
+they are part of the audit trail. Replacing a document would create a new
+`file_id` (0014 §6.3), never modify a stored one.
 
 ### 8. API — Approver side
 
 | Method & path | Purpose |
 |---|---|
-| `GET /approvals/` | List pending approvals assigned to the caller. |
-| `GET /approvals/?status=approved&status=rejected` | History of the caller's past decisions. |
-| `GET /approvals/{id}/` | Retrieve one approval, with the nested request (data + documents). |
-| `POST /approvals/{id}/decide/` | `{"decision": "approved"\|"rejected", "comments": "..."}` |
-| `GET /requests/{request_id}/documents/{document_id}/` | Same document-download endpoint as submitter side — authorized to any approver on the trail. |
+| `GET /api/v1/dristi-requests/approvals/` | List pending approvals assigned to the caller. |
+| `GET /api/v1/dristi-requests/approvals/?status=approved&status=rejected` | History of the caller's past decisions. |
+| `GET /api/v1/dristi-requests/approvals/{approval_id}/` | Retrieve one approval, with the nested request (data + documents). |
+| `POST /api/v1/dristi-requests/approvals/{approval_id}/decide/` | `{"decision": "approved"\|"rejected", "comments": "..."}` |
+| `GET /api/v1/dristi-requests/{request_id}/documents/{document_id}/` | Same document-download endpoint as submitter side — authorized to any approver on the trail. |
 
 ### 9. Sequence diagrams
 
@@ -322,17 +389,28 @@ stricter mechanism (see Future TODO: `required_document_types`).
 sequenceDiagram
     actor U as Requester
     participant API as DRF API
+    participant F as apps.files
     participant DB as Database
     participant R as Routing resolver
 
-    U->>API: POST /requests/ (multipart: type, attributes, documents[])
+    U->>API: POST /api/v1/dristi-requests/ (multipart: type, attributes, documents[])
     API->>API: Parse attributes JSON, validate against RequestType.schema
-    API->>API: Check documents.count >= RequestType.min_documents
-    API->>DB: Create Request (status=pending)
-    API->>DB: Create RequestDocument rows
+    API->>API: validate_documents: count, size, PDF/image type
+    API->>F: upload_file(documents) [outside the transaction]
+    F-->>API: file_ids
+    rect rgb(235, 245, 255)
+    note over API,R: transaction.atomic
+    API->>DB: Create Request
+    API->>DB: Create RequestDocument rows (file_id, upload order)
     API->>R: create_first_approval_step(request)
     R->>DB: Create RequestApproval (step_order=0, status=pending)
-    API-->>U: 201 Created, Request payload
+    end
+    alt transaction failed
+        API->>F: delete_file(file_id) for each upload
+        API-->>U: Error (e.g. 409 no approver), nothing left behind
+    else
+        API-->>U: 201 Created, Request payload (documents include file_id)
+    end
 ```
 
 #### 9.2 Approver decides
@@ -344,7 +422,7 @@ sequenceDiagram
     participant DB as Database
     participant H as Hook registry
 
-    A->>API: POST /approvals/{id}/decide/ {decision, comments}
+    A->>API: POST /api/v1/dristi-requests/approvals/{approval_id}/decide/ {decision, comments}
     API->>DB: Fetch RequestApproval, assert pending & approver == actor
     API->>DB: Save decision, comments, decided_at
 
@@ -374,7 +452,7 @@ sequenceDiagram
     participant DB as Database
     participant R as Routing resolver
 
-    U->>API: POST /requests/{id}/resubmit/
+    U->>API: POST /api/v1/dristi-requests/{request_id}/resubmit/
     API->>DB: Assert status == rejected
     API->>DB: version += 1, status = pending, current_step = 0
     API->>R: create_first_approval_step(request)
@@ -389,18 +467,28 @@ sequenceDiagram
     actor U as Requester or Approver
     participant API as DRF API
     participant DB as Database
-    participant S as Storage
+    participant F as apps.files
 
-    U->>API: GET /requests/{request_id}/documents/{document_id}/
+    U->>API: GET /api/v1/dristi-requests/{request_id}/documents/{document_id}/
     API->>DB: Fetch RequestDocument, join Request
     API->>API: Check requester == user OR approver on trail OR staff
     alt not authorized
         API-->>U: 404 Not Found
     else authorized
-        API->>S: Open file
-        API-->>U: 200 OK, file stream (as_attachment)
+        API->>F: get_file(file_id) + get_file_content(file_id)
+        alt file missing or deactivated
+            API-->>U: 404 Not Found
+        else over FILE_MAX_READ_BYTES
+            API-->>U: 413
+        else
+            API-->>U: 200 OK, stream (recorded content_type + file_name)
+        end
     end
 ```
+
+Access is decided by this module before `apps.files` is asked for anything.
+`apps.files` has no access model of its own (0014 Future TODO), so a document
+is never served by `file_id` alone.
 
 ## Affected files
 
@@ -411,6 +499,8 @@ sequenceDiagram
 - `src/apps/dristi_requests/views.py`
 - `src/apps/dristi_requests/urls.py`
 - `src/apps/dristi_requests/services.py`
+- `src/apps/dristi_requests/documents.py` — the only module that calls `apps.files`
+- `src/apps/dristi_requests/migrations/0003_request_document_uses_files.py`
 - `src/apps/dristi_requests/hooks.py`
 - `src/apps/dristi_requests/admin.py`
 - `src/apps/dristi_requests/tests/__init__.py`
@@ -418,20 +508,25 @@ sequenceDiagram
 - `src/apps/dristi_requests/tests/test_services.py`
 - `src/apps/dristi_requests/tests/test_views.py`
 - `src/apps/dristi_requests/tests/test_hooks.py`
+- `src/apps/dristi_requests/tests/test_documents.py`
 
 ## Open questions
 
 1. Should `RequestType` support `required_document_types` (specific document
    categories, not just a count) for types that need more than "any N
    files"?
-2. Should a requester's `GET /requests/{id}/` response expose *who* is
+2. Should a requester's `GET /api/v1/dristi-requests/{request_id}/` response expose *who* is
    currently sitting on the approval, or only aggregate status + comments?
 3. If approvers can delegate (e.g. out-of-office), how should `GET
-   /approvals/` and `decide()`'s actor check account for delegated-to-me
+   /api/v1/dristi-requests/approvals/` and `decide()`'s actor check account for delegated-to-me
    items?
 4. Document storage: stream through Django (simple, loads the app server) or
    issue short-lived signed URLs from S3/GCS (scales better, but splits
    authorization and byte-serving across two systems)?
+
+   Partly answered: documents are stored by `apps.files`, which streams
+   content (0014 §6.1) and defers signed URLs to its own open question 1.
+   Downloads stream through Django until that lands.
 5. Should every status transition (submit, each decision, resubmit, cancel,
    hook outcome) be logged in a dedicated `RequestAuditLog`, since
    `RequestApproval` rows alone don't capture cancellations or resubmission

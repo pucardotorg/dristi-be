@@ -12,10 +12,18 @@ from apps.users.models import User
 
 
 @pytest.fixture(autouse=True)
-def media_root(settings, tmp_path):
-    """Keep uploaded test files inside a temporary directory."""
-    settings.MEDIA_ROOT = tmp_path / "media"
-    return settings.MEDIA_ROOT
+def files_storage(settings):
+    """Keep document content in memory, as the apps.files suite does.
+
+    Returns the live storage so a test can assert on what was written.
+    """
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "files": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+    }
+    from django.core.files.storage import storages
+
+    return storages["files"]
 
 
 @pytest.fixture
@@ -125,8 +133,25 @@ def bar_approver(make_user):
 def pdf_file():
     """Return a factory producing small uploaded files."""
 
-    def factory(name="bar-certificate.pdf"):
-        return SimpleUploadedFile(name, b"%PDF-1.4 fake", content_type="application/pdf")
+    def factory(name="bar-certificate.pdf", content_type="application/pdf", content=None):
+        return SimpleUploadedFile(
+            name, content if content is not None else b"%PDF-1.4 fake", content_type=content_type
+        )
+
+    return factory
+
+
+@pytest.fixture
+def stored_file(pdf_file):
+    """Return a factory storing an upload through apps.files, returning the File."""
+    from apps.files import services as files
+    from apps.files.models import File, FileType
+
+    def factory(user, name="bar-certificate.pdf"):
+        result = files.upload_file(
+            {"user_id": user.pk, "files": [{"file": pdf_file(name), "file_type": FileType.PDF}]}
+        )
+        return File.objects.get(pk=result["files"][0]["id"])
 
     return factory
 

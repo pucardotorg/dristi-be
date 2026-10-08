@@ -6,8 +6,9 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from apps.dristi_requests import services
 from apps.dristi_requests.conditions import evaluate_condition
 from apps.dristi_requests.exceptions import ApprovalRoutingError
-from apps.dristi_requests.models import ApprovalStep, Request, RequestApproval, RequestDocument
+from apps.dristi_requests.models import ApprovalStep, Request, RequestApproval
 from apps.dristi_requests.schema import SchemaValidationError, validate_against_schema
+from apps.files.models import File
 
 
 @pytest.mark.django_db
@@ -36,7 +37,7 @@ class TestSubmitAndFirstApproval:
         )
 
         assert request.documents.count() == 2
-        assert request.documents.first().uploaded_by == requester
+        assert request.documents.first().file.user == requester
 
     def test_requester_is_never_their_own_approver(self, simple_type, make_user):
         requester = make_user("selfapprover@example.com", groups=["LEVEL_ONE"])
@@ -491,11 +492,19 @@ class TestSchemaValidation:
 
 @pytest.mark.django_db
 class TestDocumentModelStorage:
-    """Uploaded documents land in per-request storage paths."""
+    """Documents are stored by apps.files, never directly by this app."""
 
-    def test_upload_path(self, simple_type, requester, pdf_file):
-        request = Request.objects.create(request_type=simple_type, requester=requester)
-        document = RequestDocument.objects.create(request=request, file=pdf_file("cert.pdf"))
+    def test_document_references_an_apps_files_record(
+        self, simple_type, requester, approver_one, pdf_file
+    ):
+        request = services.create_request(
+            request_type=simple_type,
+            requester=requester,
+            data={"reason": "x"},
+            files=[pdf_file("cert.pdf")],
+        )
+        document = request.documents.get()
 
-        assert document.file.name.startswith(f"request-documents/{request.pk}/")
+        assert isinstance(document.file, File)
+        assert document.filename == "cert.pdf"
         assert ApprovalStep.objects.filter(request_type=simple_type).exists()
