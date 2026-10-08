@@ -32,7 +32,7 @@ One row per human being the system knows of, whether registered or not. A person
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| `person_id` | uuid | PK | |
+| `id` | uuid | PK | |
 | `name` | varchar(256) | NOT NULL | Full name |
 | `phone_number` | varchar(16) | NULLABLE | E.164 format, see 0005 for Indian mobile validation |
 | `email_address` | varchar(256) | NULLABLE | |
@@ -93,7 +93,7 @@ One person's (or organization's) involvement in one case, in one role. This tabl
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| `case_participant_id` | uuid | PK | |
+| `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | |
 | `person_id` | uuid | FK → person, NULLABLE | NULL when participant is an organization |
 | `organization_id` | uuid | FK → organization, NULLABLE | NULL when participant is a person |
@@ -108,7 +108,7 @@ One person's (or organization's) involvement in one case, in one role. This tabl
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
 | `end_date` | timestamp | NULLABLE | When participant was removed |
 | `is_party_in_person` | boolean | NOT NULL, default false | Appearing without an advocate |
-| `has_signed` | boolean | NOT NULL, default false | Whether they have e-signed |
+| `has_signed` | boolean | NOT NULL, default false | Value for this while be 'true' if they have e-signed or has uploaded a signed copy of the case filing |
 | `is_active` | boolean | NOT NULL, default true | Soft delete flag (spec 0006) |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
@@ -172,7 +172,7 @@ Records the authority one participant holds to act for another. A POA holder may
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| `poa_mandate_id` | uuid | PK | |
+| `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL | Denormalized for query performance |
 | `poa_participant_id` | uuid | FK → case_participant, NOT NULL | The POA holder (role = 'POA_HOLDER') |
 | `represented_participant_id` | uuid | FK → case_participant, NOT NULL | The party being represented |
@@ -210,7 +210,7 @@ Tracks which advocate represents which party in which case. Many-to-many relatio
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| `representation_id` | uuid | PK | |
+| `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL | Denormalized for query performance |
 | `advocate_id` | uuid | FK → advocate_profile (spec 0005), NOT NULL | The representing advocate |
 | `case_participant_id` | uuid | FK → case_participant, NOT NULL | The client |
@@ -249,7 +249,7 @@ A single recorded address. Rows are **immutable snapshots**: once written, never
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| `address_id` | uuid | PK | |
+| `id` | uuid | PK | |
 | `line1` | text | NOT NULL | Street address / locality |
 | `city` | varchar(128) | NOT NULL | City or town |
 | `pincode` | char(6) | NOT NULL | Indian postal code |
@@ -298,7 +298,7 @@ One filing. Holds only what every dispute type shares; type-specific data goes i
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| `case_id` | uuid | PK | |
+| `id` | uuid | PK | |
 | `case_type` | varchar(32) | NOT NULL | CHEQUE_BOUNCE for now; says which detail table to join |
 | `filing_number` | varchar(64) | UNIQUE, NULLABLE | Generated at submission, NULL while draft |
 | `case_number` | varchar(64) | UNIQUE, NULLABLE | Court-assigned at registration |
@@ -319,23 +319,13 @@ One filing. Holds only what every dispute type shares; type-specific data goes i
 
 ### 7.3 Case Status Lifecycle
 
-The `status` field is an enum with a closed set of values, tracked throughout the case lifecycle:
-
-| Status | Meaning | Can Transition To |
-|--------|---------|-------------------|
-| `DRAFT_IN_PROGRESS` | Being filled out, not submitted | PENDING_SIGN, DELETED_DRAFT |
-| `PENDING_SIGN` | Awaiting e-signature from parties | PENDING_PAYMENT, DRAFT_IN_PROGRESS |
-| `PENDING_PAYMENT` | Awaiting court fee payment | UNDER_SCRUTINY, DRAFT_IN_PROGRESS |
-| `UNDER_SCRUTINY` | Court staff reviewing for completeness | PENDING_REGISTRATION, DRAFT_IN_PROGRESS |
-| `PENDING_REGISTRATION` | Approved by scrutiny, awaiting formal registration | REGISTERED, DISMISSED |
-| `REGISTERED` | Formally registered, case number assigned | (terminal for filing purposes) |
-| `DISMISSED` | Rejected at any stage | (terminal) |
-| `DELETED_DRAFT` | User deleted before filing | (terminal, soft delete) |
-
-### 7.4 Design Decisions
-
-**Why status is an enum:**
-Keeps the state space closed and queryable. A free-text status field would fragment into dozens of variations and break queries.
+**TODO:** Case statuses and their transitions are not meant to be hardcoded.
+They will be driven by the workflow configuration in
+0011 — Case Workflows(0011-case-workflows.md) `WorkflowDefinition` /
+`WorkflowState` / `WorkflowTransition` per `case_type`, with the case's
+current state held by `CaseWorkflowInstance`. The table below describes the
+expected e-filing lifecycle for the first case type and is illustrative
+until that integration is specified.
 
 **Why three identifiers (`filing_number`, `case_number`, `cnr_number`):**
 - `filing_number`: System-generated at submission, stable throughout.
@@ -358,7 +348,7 @@ Documents filed as part of the case itself. A classification layer over the docu
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| `case_document_id` | uuid | PK | |
+| `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | |
 | `document_id` | uuid | FK → document, NOT NULL, ON DELETE PROTECT | From file storage service (spec 0014) |
 | `document_type` | varchar(64) | NOT NULL | See §8.3 |
@@ -411,7 +401,7 @@ Cheque-bounce-specific data. One row per case, with `case_id` as both PK and FK 
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| `case_id` | uuid | PK, FK → cases, ON DELETE CASCADE | |
+| `id` | uuid | PK, FK → cases, ON DELETE CASCADE | |
 | `jurisdiction_limitation` | jsonb | NOT NULL, default '{}' | Section 3 of e-filing form |
 | `adr_other_prayer` | jsonb | NOT NULL, default '{}' | Section 4 of e-filing form |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Anything else not promoted to columns |
@@ -468,7 +458,7 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
-| `case_evidence_id` | uuid | PK | |
+| `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | |
 | `case_document_id` | uuid | FK → case_document, NULLABLE | Links to the uploaded file |
 | `evidence_type` | varchar(64) | NOT NULL | CHEQUE, RETURN_MEMO, LEGAL_DEMAND_NOTICE, etc. |
