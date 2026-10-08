@@ -14,7 +14,12 @@ from apps.core.models import BaseActivatableModel, BaseModel
 
 
 def request_document_upload_to(instance, filename):
-    """Return the storage path for an uploaded request document."""
+    """Return the storage path for an uploaded request document.
+
+    No longer used by any model: document content is owned by ``apps.files``.
+    Kept only because migration ``0001_initial`` references it, and a
+    migration must stay importable for the history to load.
+    """
     return f"request-documents/{instance.request_id}/{filename}"
 
 
@@ -138,38 +143,42 @@ class Request(BaseModel):
 
 
 class RequestDocument(BaseModel):
-    """A document attached to a request."""
+    """Attaches a stored file to a request.
+
+    The content and its metadata (name, type, size, uploader, upload time)
+    are owned by ``apps.files`` and referenced by ``file_id`` (spec 0014);
+    this row only records which request a file supports. ``PROTECT`` keeps
+    ``files.services.delete_file`` from removing a document a request still
+    relies on.
+    """
 
     request = models.ForeignKey(
         Request,
         on_delete=models.CASCADE,
         related_name="documents",
     )
-    file = models.FileField(upload_to=request_document_upload_to)
-    uploaded_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="uploaded_request_documents",
+    file = models.ForeignKey(
+        "files.File",
+        on_delete=models.PROTECT,
+        related_name="request_documents",
     )
-    uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         """Meta options."""
 
-        ordering = ("uploaded_at",)
+        # Upload order: the first document is the primary one hooks read.
+        ordering = ("created_at",)
         verbose_name = "Request Document"
         verbose_name_plural = "Request Documents"
 
     def __str__(self):
         """Return the stored file name."""
-        return self.file.name or str(self.pk)
+        return self.filename or str(self.pk)
 
     @property
     def filename(self):
-        """Return the base file name without the storage directory."""
-        return (self.file.name or "").rsplit("/", 1)[-1]
+        """Return the original file name recorded by ``apps.files``."""
+        return self.file.file_name if self.file_id else ""
 
 
 class RequestApproval(BaseModel):

@@ -239,6 +239,13 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "Dristi API",
     "DESCRIPTION": "OpenAPI schema for Dristi Django REST APIs.",
     "VERSION": "1.0.0",
+    # Several models expose a ``status`` field with different choice sets;
+    # name each enum explicitly so drf-spectacular does not fall back to
+    # hash-suffixed names (drf_spectacular.W001).
+    "ENUM_NAME_OVERRIDES": {
+        "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
+        "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
+    },
 }
 
 # ---------------------------------------------------------------------------

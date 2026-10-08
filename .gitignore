@@ -69,6 +69,7 @@ static/
 .env.*
 !.env.example
 !.env.prod.example
+!.env.ci
 .venv
 env/
 venv/

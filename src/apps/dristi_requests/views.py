@@ -1,16 +1,21 @@
 """API views for the generic request and approval workflow."""
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.files.services import FileNotFound
+
 from . import services
+from .documents import open_document
 from .models import Request, RequestApproval, RequestDocument, RequestType
 from .serializers import (
     DecisionSerializer,
@@ -21,6 +26,19 @@ from .serializers import (
     RequestSerializer,
     RequestTypeSerializer,
 )
+
+# Detail routes only match UUIDs. Requests are mounted at the app's prefix
+# root, so a permissive lookup would let ``<prefix>/approvals/`` or any typo
+# be read as a request id instead of a 404 from the right route.
+UUID_REGEX = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+
+class DocumentTooLargeToServe(APIException):  # noqa: N818
+    """Raised when a stored document exceeds the configured read limit."""
+
+    status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    default_detail = "This document is too large to download."
+    default_code = "document_too_large"
 
 
 @extend_schema_view(
@@ -33,6 +51,8 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
     permission_classes = [IsAuthenticated]
     serializer_class = RequestTypeSerializer
     queryset = RequestType.objects.active().prefetch_related("approval_steps")
+    lookup_url_kwarg = "request_type_id"
+    lookup_value_regex = UUID_REGEX
 
 
 @extend_schema_view(
@@ -40,7 +60,11 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
     retrieve=extend_schema(tags=["dristi_requests"], responses=RequestDetailSerializer),
     create=extend_schema(tags=["dristi_requests"], responses=RequestDetailSerializer),
     approvals=extend_schema(
-        tags=["dristi_requests"], responses=RequestApprovalSerializer(many=True)
+        tags=["dristi_requests"],
+        # Explicit id: the default collides with RequestApprovalViewSet.list
+        # (``/dristi-requests/approvals/``).
+        operation_id="v1_dristi_requests_request_approvals_list",
+        responses=RequestApprovalSerializer(many=True),
     ),
     resubmit=extend_schema(
         tags=["dristi_requests"], request=None, responses=RequestDetailSerializer
@@ -56,12 +80,14 @@ class RequestViewSet(
     """Submitter-side request API."""
 
     permission_classes = [IsAuthenticated]
+    lookup_url_kwarg = "request_id"
+    lookup_value_regex = UUID_REGEX
 
     def get_queryset(self):
         """Return the caller's own requests (staff see every request)."""
         queryset = (
             Request.objects.select_related("request_type", "requester")
-            .prefetch_related("documents", "approvals__approver")
+            .prefetch_related("documents__file__user", "approvals__approver")
             .all()
         )
         user = getattr(self.request, "user", None)
@@ -90,7 +116,7 @@ class RequestViewSet(
         return Response(output.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"])
-    def approvals(self, request, pk=None):
+    def approvals(self, request, request_id=None):
         """Return the approval trail for a request."""
         instance = self.get_object()
         queryset = instance.approvals.select_related("approver").all()
@@ -100,7 +126,7 @@ class RequestViewSet(
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
-    def resubmit(self, request, pk=None):
+    def resubmit(self, request, request_id=None):
         """Resubmit a rejected request, starting a new approval round."""
         instance = self._get_own_request()
         services.resubmit(instance, actor=request.user)
@@ -109,7 +135,7 @@ class RequestViewSet(
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
-    def cancel(self, request, pk=None):
+    def cancel(self, request, request_id=None):
         """Cancel a draft, pending or rejected request."""
         instance = self._get_own_request()
         services.cancel(instance, actor=request.user)
@@ -153,13 +179,15 @@ class RequestApprovalViewSet(
     """Approver-side API: pending queue, decision history, and decide()."""
 
     permission_classes = [IsAuthenticated]
+    lookup_url_kwarg = "approval_id"
+    lookup_value_regex = UUID_REGEX
 
     def get_queryset(self):
         """Return approvals assigned to the caller, filtered by status."""
         user = getattr(self.request, "user", None)
         base = RequestApproval.objects.select_related(
             "request", "request__request_type", "request__requester", "approver"
-        ).prefetch_related("request__documents")
+        ).prefetch_related("request__documents__file__user")
         if user is None or not user.is_authenticated:
             return base.none()
 
@@ -178,7 +206,7 @@ class RequestApprovalViewSet(
         return RequestApprovalSerializer
 
     @action(detail=True, methods=["post"])
-    def decide(self, request, pk=None):
+    def decide(self, request, approval_id=None):
         """Approve or reject the approval assigned to the caller."""
         approval = self.get_object()
         serializer = DecisionSerializer(data=request.data)
@@ -206,7 +234,12 @@ class RequestDocumentDownloadView(APIView):
         responses={(200, "application/octet-stream"): OpenApiTypes.BINARY},
     )
     def get(self, request, request_id, document_id):
-        """Stream the document if the caller is allowed to see it."""
+        """Stream the document if the caller is allowed to see it.
+
+        Access is decided here, by the request's own rules, before
+        ``apps.files`` is asked for anything: that module has no access model
+        of its own, so a file is never served by ``file_id`` alone.
+        """
         document = get_object_or_404(
             RequestDocument.objects.select_related("request"),
             pk=document_id,
@@ -215,8 +248,16 @@ class RequestDocumentDownloadView(APIView):
         if not services.can_access_document(request.user, document):
             raise Http404
 
+        try:
+            stream, metadata = open_document(document)
+        except FileNotFound:
+            raise Http404 from None
+        except DjangoValidationError:
+            raise DocumentTooLargeToServe() from None
+
         return FileResponse(
-            document.file.open("rb"),
+            stream,
             as_attachment=True,
-            filename=document.filename,
+            filename=metadata["file_name"],
+            content_type=metadata["content_type"],
         )

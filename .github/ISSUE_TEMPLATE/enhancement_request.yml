@@ -11,7 +11,7 @@ body:
   - type: textarea
     id: current-behavior
     attributes:
-      label: Describe the current behavior
+      label: Describe the current behaviour
       description: A clear description of how it currently works and what the limitations are.
     validations:
       required: true
@@ -30,7 +30,7 @@ body:
       label: Why is this enhancement needed?
       description: Explain the benefits (e.g., performance, usability, maintainability, scalability).
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: context

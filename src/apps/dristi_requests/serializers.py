@@ -8,6 +8,7 @@ from rest_framework import serializers
 from apps.users.models import User
 
 from . import services
+from .documents import validate_documents
 from .models import (
     ApprovalStep,
     Request,
@@ -62,17 +63,37 @@ class ApproverSerializer(serializers.ModelSerializer):
 
 
 class RequestDocumentSerializer(serializers.ModelSerializer):
-    """Serializer for request documents (metadata plus download URL)."""
+    """Serializer for request documents (metadata plus download URL).
 
-    filename = serializers.CharField(read_only=True)
+    Metadata is read from the ``apps.files`` record. ``file_id`` is the
+    handle consuming modules persist (spec 0014), e.g. a profile storing the
+    approved bar certificate, or eSign signing it.
+    """
+
+    file_id = serializers.UUIDField(read_only=True)
+    filename = serializers.CharField(source="file.file_name", read_only=True)
+    content_type = serializers.CharField(source="file.content_type", read_only=True)
+    file_size = serializers.IntegerField(source="file.file_size", read_only=True)
+    file_type = serializers.CharField(source="file.file_type", read_only=True)
+    uploaded_by = ApproverSerializer(source="file.user", read_only=True)
+    uploaded_at = serializers.DateTimeField(source="file.created_at", read_only=True)
     download_url = serializers.SerializerMethodField()
-    uploaded_by = ApproverSerializer(read_only=True)
 
     class Meta:
         """Meta options."""
 
         model = RequestDocument
-        fields = ["id", "filename", "download_url", "uploaded_by", "uploaded_at"]
+        fields = [
+            "id",
+            "file_id",
+            "filename",
+            "content_type",
+            "file_size",
+            "file_type",
+            "download_url",
+            "uploaded_by",
+            "uploaded_at",
+        ]
 
     def get_download_url(self, obj) -> str:
         """Return the authorization-checked download path for the document."""
@@ -176,7 +197,11 @@ class GenericRequestCreateSerializer(serializers.Serializer):
         return parsed
 
     def validate(self, attrs):
-        """Validate attributes against the type schema and check document count."""
+        """Validate attributes against the type schema, then the documents.
+
+        Everything is checked here, before ``create()`` uploads anything, so an
+        invalid submission never reaches storage.
+        """
         request_type = attrs["request_type"]
 
         try:
@@ -184,16 +209,7 @@ class GenericRequestCreateSerializer(serializers.Serializer):
         except SchemaValidationError as exc:
             raise serializers.ValidationError({"attributes": exc.errors}) from None
 
-        doc_count = len(attrs.get("documents", []))
-        if doc_count < request_type.min_documents:
-            raise serializers.ValidationError(
-                {
-                    "documents": (
-                        f"{request_type.name} requires at least "
-                        f"{request_type.min_documents} document(s), got {doc_count}."
-                    )
-                }
-            )
+        validate_documents(attrs.get("documents", []), request_type=request_type)
         return attrs
 
     def create(self, validated_data):

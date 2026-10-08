@@ -195,13 +195,6 @@ git commit -m "chore(deps): Upgrade Django to 5.1"
    - `fix(auth): Correct token validation logic`
    - `docs(api): Enhance endpoint documentation`
 
-5. **PR checklist** (will be auto-populated):
-   - [ ] Ran `make up` and tested the changes
-   - [ ] Ran `make test` and all tests pass
-   - [ ] Ran `make lint` with no errors
-   - [ ] Added test cases for bug fixes or new features
-   - [ ] Updated documentation if needed
-
 ---
 
 ## PR Review Process
@@ -219,37 +212,6 @@ git commit -m "chore(deps): Upgrade Django to 5.1"
 3. **Approval and merge:**
    - Once approved, a maintainer will merge your PR
    - Your contribution will be part of the next release!
-
----
-
-## Reporting Bugs
-
-When reporting bugs, please use the **Bug Report** template and include:
-- Clear description of the bug
-- Steps to reproduce
-- Expected vs actual behavior
-- Screenshots if applicable
-- Environment details (OS, Python version, etc.)
-
----
-
-## Suggesting Features
-
-When suggesting features, please use the **Feature Request** template and include:
-- Problem statement (what pain point does this solve?)
-- Proposed solution
-- Alternative solutions considered
-- Additional context or mockups
-
----
-
-## Documentation Contributions
-
-Documentation improvements are always welcome! You can contribute by:
-- Fixing typos or unclear explanations
-- Adding examples to existing docs
-- Writing guides for common workflows
-- Improving API documentation
 
 ---
 

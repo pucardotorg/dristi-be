@@ -46,8 +46,11 @@ class RequestDocumentInline(admin.TabularInline):
 
     model = RequestDocument
     extra = 0
-    fields = ("file", "uploaded_by", "uploaded_at")
-    readonly_fields = ("uploaded_at",)
+    fields = ("file", "created_at")
+    # Uploads go through apps.files, so the file is picked by id, never via a
+    # select over every stored file.
+    raw_id_fields = ("file",)
+    readonly_fields = ("created_at",)
 
 
 class RequestApprovalInline(admin.TabularInline):
@@ -92,6 +95,8 @@ class RequestApprovalAdmin(AuditUserAdminMixin, admin.ModelAdmin):
 class RequestDocumentAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for request documents."""
 
-    list_display = ("id", "request", "file", "uploaded_by", "uploaded_at")
-    search_fields = ("request__id",)
-    readonly_fields = ("id", "created_at", "updated_at", "uploaded_at")
+    list_display = ("id", "request", "file", "created_at")
+    list_select_related = ("request", "file")
+    search_fields = ("request__id", "file__file_name")
+    raw_id_fields = ("request", "file")
+    readonly_fields = ("id", "created_at", "updated_at")

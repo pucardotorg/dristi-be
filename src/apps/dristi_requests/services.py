@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
+from . import documents as request_documents
 from .conditions import build_context, evaluate_condition
 from .exceptions import (
     ApprovalRoutingError,
@@ -117,21 +118,52 @@ def create_first_approval_step(request):
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
-@transaction.atomic
 def create_request(*, request_type, requester, data, files=None, submit=True):
-    """Create a request (and its documents) and optionally submit it."""
+    """Create a request (and its documents) and optionally submit it.
+
+    Documents are uploaded through ``apps.files`` *before* the request is
+    created, outside the transaction, and deleted again if creating or
+    submitting the request fails. The order matters: storage writes are not
+    transactional, so the only way to undo them is to still hold the
+    committed ``File`` rows when the request's transaction rolls back.
+    """
+    file_ids = request_documents.store_documents(
+        files or [], requester=requester, request_type=request_type
+    )
+    try:
+        return _create_request(
+            request_type=request_type,
+            requester=requester,
+            data=data,
+            file_ids=file_ids,
+            submit=submit,
+        )
+    except Exception:
+        request_documents.discard_documents(file_ids)
+        raise
+
+
+@transaction.atomic
+def _create_request(*, request_type, requester, data, file_ids, submit):
+    """Create the request and link its already-stored documents, atomically."""
     request = Request.objects.create(
         request_type=request_type,
         requester=requester,
         data=data,
         status=Request.Status.DRAFT,
     )
-    for uploaded_file in files or []:
-        RequestDocument.objects.create(
-            request=request,
-            file=uploaded_file,
-            uploaded_by=requester,
-        )
+    # bulk_create bypasses save(), so the audit fields are set explicitly.
+    RequestDocument.objects.bulk_create(
+        [
+            RequestDocument(
+                request=request,
+                file_id=file_id,
+                created_by=requester,
+                updated_by=requester,
+            )
+            for file_id in file_ids
+        ]
+    )
     if submit:
         submit_request(request)
     return request
