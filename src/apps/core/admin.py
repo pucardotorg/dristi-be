@@ -6,7 +6,7 @@ from django.contrib import admin, messages
 from simple_history.admin import SimpleHistoryAdmin
 
 from .mixins import AuditUserAdminMixin
-from .models import AdditionalAttribute, ApiVersionChangeLog, Configuration, BusinessRule
+from .models import AdditionalAttribute, ApiVersionChangeLog, BusinessRule, Configuration
 from .rules.forms import BusinessRuleAdminForm
 
 # Longest trace shown back to the author before it is truncated.
