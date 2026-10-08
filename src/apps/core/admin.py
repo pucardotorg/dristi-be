@@ -3,7 +3,7 @@
 from django.contrib import admin
 
 from .mixins import AuditUserAdminMixin
-from .models import AdditionalAttribute, ApiVersionChangeLog
+from .models import AdditionalAttribute, ApiVersionChangeLog, Configuration
 
 
 @admin.register(AdditionalAttribute)
@@ -34,4 +34,14 @@ class ApiVersionChangeLogAdmin(AuditUserAdminMixin, admin.ModelAdmin):
         "updated_by",
     )
     search_fields = ("version", "change_log")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Configuration)
+class ConfigurationAdmin(AuditUserAdminMixin, admin.ModelAdmin):
+    """Admin configuration for runtime configuration entries."""
+
+    list_display = ("config_set", "config_key", "config_value", "is_active", "updated_at")
+    list_filter = ("config_set", "is_active")
+    search_fields = ("config_key", "description")
     readonly_fields = ("id", "created_at", "updated_at")
