@@ -111,14 +111,11 @@ class FileClient:
     # -- helpers ------------------------------------------------------------
     @staticmethod
     def _service_module():
-        """Import the File Storage service module, or fail with a safe error."""
+        """Import the File Storage service module lazily, at first use."""
 
-        try:
-            from importlib import import_module
+        from importlib import import_module
 
-            return import_module(FILE_SERVICE_MODULE)
-        except ImportError as exc:
-            raise ESignFileStorageError("The file storage service is not available.") from exc
+        return import_module(FILE_SERVICE_MODULE)
 
     @staticmethod
     def _as_metadata_dict(metadata) -> dict:

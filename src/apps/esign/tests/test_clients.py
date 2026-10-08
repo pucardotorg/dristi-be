@@ -279,7 +279,20 @@ class FileClientTests(SimpleTestCase):
         self.client.delete("f1")
         self.assertEqual(deleted, ["f1"])
 
-    def test_missing_file_module_is_reported_safely(self):
-        """A deployment without the storage module fails with a safe message."""
+    def test_storage_backend_failure_on_read_is_reported_safely(self):
+        """A backend error (e.g. S3 unreachable) is mapped, not leaked."""
+        self.use(self.service_module(get_file_content=raising(ConnectionError("s3 down"))))
         with self.assertRaises(ESignFileStorageError):
-            self.client.get_metadata("f1")
+            self.client.get_content("f1")
+
+    def test_storage_backend_failure_on_upload_is_reported_safely(self):
+        """A failed store surfaces as a storage error, not the backend's own."""
+        self.use(self.service_module(upload_file=raising(ConnectionError("s3 down"))))
+        with self.assertRaises(ESignFileStorageError):
+            self.client.upload(b"%PDF", filename="a.pdf", file_type="PDF", user_id="user-1")
+
+    def test_storage_backend_failure_on_delete_is_reported_safely(self):
+        """Cleanup failures are mapped like any other storage failure."""
+        self.use(self.service_module(delete_file=raising(ConnectionError("s3 down"))))
+        with self.assertRaises(ESignFileStorageError):
+            self.client.delete("f1")
