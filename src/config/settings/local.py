@@ -50,6 +50,9 @@ STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticF
 # Keep the dummy SMS backend locally so no CDAC credentials are required
 MESSAGING_BACKENDS = {**MESSAGING_BACKENDS, "sms": "apps.messaging.senders.sms.DummySMSBackend"}
 
+# Keep the mock eSign provider locally so no C-DAC keystore is required
+ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockESignProvider")
+
 # Disable HTTPS-only cookies in development
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False

@@ -56,6 +56,8 @@ INSTALLED_APPS = [
     "apps.files",
     # Addons
     "addon.cdac_sms_gateway",
+    "apps.esign",
+    "addon.cdac_esign",
 ]
 
 MIDDLEWARE = [
@@ -298,6 +300,9 @@ CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
     "authtoken_token",
     "django_session",
+    # Signing status is read straight after it is written and changes under a
+    # lock; a cached read would report a stale outcome (spec 0015 #6.2).
+    "esign_esigntransaction",
 )
 
 
@@ -385,6 +390,65 @@ CDAC_SMS_WHITELIST_NUMBERS = env.list("CDAC_SMS_WHITELIST_NUMBERS", default=[])
 CDAC_SMS_BLACKLIST_NUMBERS = env.list("CDAC_SMS_BLACKLIST_NUMBERS", default=[])
 CDAC_SMS_USE_DEFAULT_NUMBER = env.bool("CDAC_SMS_USE_DEFAULT_NUMBER", default=False)
 CDAC_SMS_DEFAULT_NUMBER = env("CDAC_SMS_DEFAULT_NUMBER", default="")
+
+
+# ---------------------------------------------------------------------------
+# eSign (spec 0015)
+# ---------------------------------------------------------------------------
+# The provider is a dotted path so a second ESP — or the mock used locally and
+# in CI — is a configuration change, never a code change.
+ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockESignProvider")
+ESIGN_ENABLED = env.bool("ESIGN_ENABLED", default=True)
+ESIGN_TRANSACTION_TTL = env.int("ESIGN_TRANSACTION_TTL", default=900)
+ESIGN_CALLBACK_GRACE_PERIOD = env.int("ESIGN_CALLBACK_GRACE_PERIOD", default=300)
+ESIGN_SIGNING_STUCK_TIMEOUT = env.int("ESIGN_SIGNING_STUCK_TIMEOUT", default=300)
+ESIGN_MAX_ATTEMPTS = env.int("ESIGN_MAX_ATTEMPTS", default=3)
+ESIGN_PLACEHOLDER_RETENTION = env.int("ESIGN_PLACEHOLDER_RETENTION", default=7)
+# Taking the redirect target from the request would make a public endpoint an
+# open redirect, so it is server-side configuration only.
+ESIGN_UI_REDIRECT_URL = env("ESIGN_UI_REDIRECT_URL", default="")
+ESIGN_CALLBACK_THROTTLE_RATE = env("ESIGN_CALLBACK_THROTTLE_RATE", default="60/min")
+ESIGN_CALLBACK_MAX_BODY_BYTES = env.int("ESIGN_CALLBACK_MAX_BODY_BYTES", default=262144)
+# Actor recorded against uploads made on the callback leg, which has no
+# authenticated request user, when the transaction has no signer.
+ESIGN_SYSTEM_ACTOR_ID = env("ESIGN_SYSTEM_ACTOR_ID", default="system")
+# Optional map of EntityType value -> dotted path of an authorizer callable
+# owned by the module that owns that entity (spec 0015 #6.1).
+ESIGN_ENTITY_AUTHORIZERS = {}
+
+
+# ---------------------------------------------------------------------------
+# CDAC eSign addon (spec 0015 #11)
+# ---------------------------------------------------------------------------
+# Delete this block plus the INSTALLED_APPS entry and the ESIGN_PROVIDER value
+# to remove the integration entirely.
+CDAC_ESIGN_URL = env("CDAC_ESIGN_URL", default="")
+CDAC_ESIGN_ASP_ID = env("CDAC_ESIGN_ASP_ID", default="")
+CDAC_ESIGN_RESPONSE_URL = env("CDAC_ESIGN_RESPONSE_URL", default="")
+CDAC_ESIGN_KEYSTORE_PATH = env("CDAC_ESIGN_KEYSTORE_PATH", default="")
+CDAC_ESIGN_KEYSTORE_PASSWORD = env("CDAC_ESIGN_KEYSTORE_PASSWORD", default="")
+CDAC_ESIGN_RESPONSE_CERT = env("CDAC_ESIGN_RESPONSE_CERT", default="")
+CDAC_ESIGN_VERSION = env("CDAC_ESIGN_VERSION", default="2.1")
+CDAC_ESIGN_AUTH_MODE = env("CDAC_ESIGN_AUTH_MODE", default="1")
+CDAC_ESIGN_HASH_ALGORITHM = env("CDAC_ESIGN_HASH_ALGORITHM", default="SHA256")
+CDAC_ESIGN_EKYC_ID_TYPE = env("CDAC_ESIGN_EKYC_ID_TYPE", default="A")
+CDAC_ESIGN_CONSENT = env("CDAC_ESIGN_CONSENT", default="Y")
+CDAC_ESIGN_TXN_TEMPLATE = env("CDAC_ESIGN_TXN_TEMPLATE", default="{module}-{transaction_id}")
+CDAC_ESIGN_RESPONSE_MAX_SKEW = env.int("CDAC_ESIGN_RESPONSE_MAX_SKEW", default=900)
+CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE = env.bool(
+    "CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE", default=True
+)
+CDAC_ESIGN_RESPONSE_FIELD = env("CDAC_ESIGN_RESPONSE_FIELD", default="")
+
+
+# ---------------------------------------------------------------------------
+# PDF Service (spec 0016) — signing primitives consumed by apps.esign
+# ---------------------------------------------------------------------------
+# Declared here because the eSign system checks verify that the algorithm this
+# module tells the ESP about is the one the PDF Service digests with.
+PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
+PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
+PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=20971520)
 
 
 # ---------------------------------------------------------------------------

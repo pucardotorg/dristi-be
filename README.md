@@ -203,6 +203,35 @@ The Docker Compose stack includes:
 - **Adminer** - Database management UI
 - **Dramatiq Dashboard** - Background job monitoring
 - **httpbin** - HTTP testing service (for dummy SMS backend)
+| `ESIGN_PROVIDER` | Dotted path of the active eSign provider. The mock provider needs no C-DAC credentials and is the local/CI default. | `addon.cdac_esign.provider.CDACESignProvider` |
+| `ESIGN_ENABLED` | Kill switch; initiation returns 503 when disabled | `True` |
+| `ESIGN_TRANSACTION_TTL` | Seconds a transaction waits for the ESP callback | `900` |
+| `ESIGN_CALLBACK_GRACE_PERIOD` | Seconds a late callback is still accepted | `300` |
+| `ESIGN_SIGNING_STUCK_TIMEOUT` | Seconds before a row stuck in `SIGNING` is reconciled | `300` |
+| `ESIGN_MAX_ATTEMPTS` | Maximum signing attempts per document | `3` |
+| `ESIGN_PLACEHOLDER_RETENTION` | Days a prepared (placeholder) PDF is kept after a transaction ends | `7` |
+| `ESIGN_UI_REDIRECT_URL` | Server-side redirect target the ESP callback sends the browser to. Required and `https://` in production. | `https://app.example.com/esign/return` |
+| `ESIGN_CALLBACK_THROTTLE_RATE` | Per-IP throttle for the public callback; blank disables it | `60/min` |
+| `ESIGN_CALLBACK_MAX_BODY_BYTES` | Largest callback body accepted | `262144` |
+| `ESIGN_SYSTEM_ACTOR_ID` | Actor recorded for callback-leg uploads when a transaction has no signer | `system` |
+| `CDAC_ESIGN_URL` | C-DAC ESP endpoint the browser posts the signing form to | `https://esign.cdac.gov.in/...` |
+| `CDAC_ESIGN_ASP_ID` | ASP identifier issued by C-DAC | `ASP-123` |
+| `CDAC_ESIGN_RESPONSE_URL` | Absolute `https://` callback URL registered with C-DAC | `https://api.example.com/api/v1/esign/_signed` |
+| `CDAC_ESIGN_KEYSTORE_PATH` | PKCS#12 keystore holding the ASP key and certificate | `/run/secrets/asp-keystore.p12` |
+| `CDAC_ESIGN_KEYSTORE_PASSWORD` | Keystore password; never logged or persisted | secret |
+| `CDAC_ESIGN_RESPONSE_CERT` | C-DAC certificate the response signature is verified against (required in production) | PEM or base64 |
+| `CDAC_ESIGN_VERSION` | eSign API version | `2.1` |
+| `CDAC_ESIGN_AUTH_MODE` | Authentication mode (`1` = Aadhaar OTP) | `1` |
+| `CDAC_ESIGN_HASH_ALGORITHM` | Digest algorithm declared to the ESP; must match `PDF_SIGNATURE_HASH_ALGORITHM` | `SHA256` |
+| `CDAC_ESIGN_EKYC_ID_TYPE` | eKYC id type | `A` |
+| `CDAC_ESIGN_CONSENT` | Consent flag sent as `sc` | `Y` |
+| `CDAC_ESIGN_TXN_TEMPLATE` | Template for the ESP correlation id; must keep `{transaction_id}` | `{module}-{transaction_id}` |
+| `CDAC_ESIGN_RESPONSE_MAX_SKEW` | Seconds of clock skew allowed on the response `ts` | `900` |
+| `CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE` | Verify the response XMLDSig; rejected as `False` in production | `True` |
+| `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
+| `PDF_SIGNATURE_HASH_ALGORITHM` | Digest the PDF service computes over the signing ByteRange | `SHA256` |
+| `PDF_SIGNATURE_CONTAINER_BYTES` | Bytes reserved for the PKCS#7 signature container | `16384` |
+| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted for in-process signing | `20971520` |
 
 ## Docker dependency profiles
 
