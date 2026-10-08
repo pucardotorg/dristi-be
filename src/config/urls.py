@@ -26,6 +26,7 @@ urlpatterns = [
     ),
 ]
 
+# local.py installs the toolbar middleware; without its URLs every HTML page
 # fails with "'djdt' is not a registered namespace".
 if "debug_toolbar" in settings.INSTALLED_APPS:
     urlpatterns += [path("__debug__/", include("debug_toolbar.urls"))]
