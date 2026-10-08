@@ -12,9 +12,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.api.schema import error_responses
 from apps.files.services import FileNotFound
 
-from . import services
+from . import errors, services
 from .documents import open_document
 from .models import Request, RequestApproval, RequestDocument, RequestType
 from .serializers import (
@@ -36,9 +37,9 @@ UUID_REGEX = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 class DocumentTooLargeToServe(APIException):  # noqa: N818
     """Raised when a stored document exceeds the configured read limit."""
 
-    status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
-    default_detail = "This document is too large to download."
-    default_code = "document_too_large"
+    status_code = errors.DOCUMENT_TOO_LARGE.status
+    default_detail = errors.DOCUMENT_TOO_LARGE.msg
+    default_code = errors.DOCUMENT_TOO_LARGE.code
 
 
 @extend_schema_view(
@@ -58,7 +59,15 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
 @extend_schema_view(
     list=extend_schema(tags=["dristi_requests"]),
     retrieve=extend_schema(tags=["dristi_requests"], responses=RequestDetailSerializer),
-    create=extend_schema(tags=["dristi_requests"], responses=RequestDetailSerializer),
+    create=extend_schema(
+        tags=["dristi_requests"],
+        responses={
+            201: RequestDetailSerializer,
+            **error_responses(
+                errors.INVALID_ATTRIBUTES, errors.INVALID_DOCUMENTS, errors.APPROVAL_ROUTING
+            ),
+        },
+    ),
     approvals=extend_schema(
         tags=["dristi_requests"],
         # Explicit id: the default collides with RequestApprovalViewSet.list
@@ -67,9 +76,18 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
         responses=RequestApprovalSerializer(many=True),
     ),
     resubmit=extend_schema(
-        tags=["dristi_requests"], request=None, responses=RequestDetailSerializer
+        tags=["dristi_requests"],
+        request=None,
+        responses={
+            200: RequestDetailSerializer,
+            **error_responses(errors.INVALID_REQUEST_STATE, errors.APPROVAL_ROUTING),
+        },
     ),
-    cancel=extend_schema(tags=["dristi_requests"], request=None, responses=RequestDetailSerializer),
+    cancel=extend_schema(
+        tags=["dristi_requests"],
+        request=None,
+        responses={200: RequestDetailSerializer, **error_responses(errors.INVALID_REQUEST_STATE)},
+    ),
 )
 class RequestViewSet(
     mixins.CreateModelMixin,
@@ -170,7 +188,15 @@ class RequestViewSet(
     decide=extend_schema(
         tags=["dristi_requests"],
         request=DecisionSerializer,
-        responses=RequestApprovalDetailSerializer,
+        responses={
+            200: RequestApprovalDetailSerializer,
+            **error_responses(
+                errors.INVALID_APPROVAL_STATE,
+                errors.INVALID_REQUEST_STATE,
+                errors.NOT_THE_ASSIGNED_APPROVER,
+                errors.APPROVAL_ROUTING,
+            ),
+        },
     ),
 )
 class RequestApprovalViewSet(
@@ -231,7 +257,10 @@ class RequestDocumentDownloadView(APIView):
     @extend_schema(
         tags=["dristi_requests"],
         operation_id="requests_documents_download",
-        responses={(200, "application/octet-stream"): OpenApiTypes.BINARY},
+        responses={
+            (200, "application/octet-stream"): OpenApiTypes.BINARY,
+            **error_responses(errors.DOCUMENT_TOO_LARGE),
+        },
     )
     def get(self, request, request_id, document_id):
         """Stream the document if the caller is allowed to see it.

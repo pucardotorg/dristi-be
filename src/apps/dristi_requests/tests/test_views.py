@@ -59,7 +59,9 @@ class TestRequestCreateAPI:
         )
 
         assert response.status_code == 400
-        assert "attributes" in response.json()
+        [error] = response.json()["errors"]
+        assert error["code"] == "E02006"
+        assert error["field"] == "attributes"
         assert Request.objects.count() == 0
 
     def test_invalid_json_attributes(self, auth_client, simple_type, requester):
@@ -122,7 +124,9 @@ class TestRequestCreateAPI:
         )
 
         assert response.status_code == 400
-        assert "documents" in response.json()
+        [error] = response.json()["errors"]
+        assert error["code"] == "E02007"
+        assert error["field"] == "documents"
         assert Request.objects.count() == 0
 
     def test_documents_are_uploaded(

@@ -17,6 +17,10 @@
    - `spec_version`: fixed value `"1.0"`
 5. **Endpoints must be tagged in Swagger by owning app/domain by default**.
    - Example: health/liveness endpoints owned by core use `core`; user endpoints use `users`.
+6. **Every API error response uses one shape**: an `errors` array of
+   `{"code", "msg", "field"?}` items plus the usual `meta` (section 9).
+   - `code` is a registered, stable `E<domain><seq>` identifier (for example `E01001`).
+   - The full code catalogue is published in the Swagger documentation (section 10).
 
 ## Quick-start API Template
 
@@ -27,8 +31,9 @@ Use this as the default workflow for adding a new API endpoint group in any doma
 3. **View/ViewSet**: use shared DRF base viewsets by default; keep view logic thin.
 4. **Routing**: register endpoints in the domain app `urls.py` and include under `/api/v1/`.
 5. **Swagger**: add/confirm schema annotations and set default app/domain tags.
-6. **Tests**: cover success path, auth/permissions, response shape (including `meta`), and pagination where relevant.
-7. **Quality checks**: run pytest, Ruff (check + format), and Django system checks.
+6. **Errors**: define the domain's business error codes in `errors.py` (section 9.4), raise them, and list them on the endpoint with `error_responses()` (section 10.1); never hand-build an error `Response`.
+7. **Tests**: cover success path, auth/permissions, response shape (including `meta`), error codes, and pagination where relevant.
+8. **Quality checks**: run pytest, Ruff (check + format), and Django system checks.
 
 Starter conventions:
 
@@ -61,6 +66,7 @@ apps/<domain>/
 ├── serializers.py
 ├── views.py
 ├── urls.py
+├── errors.py                 # domain error codes (section 9.4), when the app has any
 ├── tasks.py                  # optional
 ├── admin.py
 ├── migrations/
@@ -171,13 +177,188 @@ Implementation behavior:
 - Object responses: append `meta` at top level.
 - Array/scalar responses: wrap as `{ "data": ..., "meta": ... }`.
 - Paginated responses: keep pagination keys and add top-level `meta`.
+- Error responses: `{ "errors": [...], "meta": ... }` (section 9).
 - Non-JSON documentation responses are excluded from this rule.
 
 ## 9. Error Handling and Validation Standards
 
-- Use `serializer.is_valid(raise_exception=True)` for serializer-driven flows.
-- Use DRF exceptions and consistent status codes.
-- Keep error response shapes stable and predictable.
+### 9.1 Error response shape
+
+Every error response — validation, business rule, authentication, permission,
+not-found, throttling — has the same body:
+
+```json
+{
+  "errors": [
+    { "code": "E01001", "msg": "Invalid or expired code." },
+    { "code": "E00002", "msg": "This field is required.", "field": "mobile_number" }
+  ],
+  "meta": {
+    "timestamp": "2026-09-16T12:34:56.123456+05:30",
+    "app_version": "abc123def",
+    "spec_version": "1.0"
+  }
+}
+```
+
+| Key | Always present | Meaning |
+| --- | --- | --- |
+| `errors` | yes | Non-empty array. One item per problem; a request can fail several ways at once. |
+| `errors[].code` | yes | Registered error code (9.2). **Clients branch on this.** |
+| `errors[].msg` | yes | Human-readable message. For display and logs only; it may vary, e.g. to name the offending value. |
+| `errors[].field` | no | Request field the error refers to. Absent when the error concerns the request as a whole. |
+| `meta` | yes | As in section 8. |
+
+`field` is a path into the request body: nested objects are dotted
+(`profile.bar_registration_id`) and list elements are indexed
+(`documents[0]`, `datapoints[2].version`). DRF's `non_field_errors` are
+reported without a `field`.
+
+The HTTP status still carries the error category (400, 401, 403, 404, 409, 413,
+429 …); `code` gives the precise reason within it. Headers DRF adds, such as
+`Retry-After` and `WWW-Authenticate`, are preserved.
+
+### 9.2 Error codes
+
+Codes have the form `E` + two-digit **domain** + three-digit **sequence**, for
+example `E01001`.
+
+| Domain | Owner | Codes |
+| --- | --- | --- |
+| `00` | common (`apps.api.errors`) | `E00001`–`E00099` field validation; `E00100`–`E00199` request-level (auth, permission, not found, throttling …) |
+| `01` | `apps.users` | registration and login |
+| `02` | `apps.dristi_requests` | request and approval workflow |
+
+Rules:
+
+- A code, once released, **never changes meaning** and is never reused. Retire
+  a code by leaving it unused, not by renumbering.
+- A new domain prefix is allocated in `apps.api.errors.DOMAINS` (and in the
+  table above) before its first code is defined.
+- Codes are registered with `apps.api.errors.define()`. Malformed codes,
+  unallocated prefixes and duplicates raise `ImproperlyConfigured` at startup.
+- Each code has a default message and HTTP status. The status in the response
+  is the exception's own; keep the two in agreement by deriving one from the
+  other (9.4).
+
+### 9.3 Validation errors
+
+Use `serializer.is_valid(raise_exception=True)` for serializer-driven flows.
+
+DRF's built-in validation codes are mapped to common codes automatically, so
+plain field validation needs no extra wiring:
+
+| DRF code | Error code |
+| --- | --- |
+| `invalid` | `E00001` |
+| `required` | `E00002` |
+| `null` | `E00003` |
+| `blank` | `E00004` |
+| `invalid_choice` | `E00005` |
+| `max_length` / `min_length` | `E00006` / `E00007` |
+| `max_value` / `min_value` | `E00008` / `E00009` |
+| `unique` | `E00010` |
+| `does_not_exist` | `E00011` |
+| `incorrect_type`, `not_a_list`, `not_a_dict` | `E00012` |
+| `empty` | `E00013` |
+| `max_digits`, `max_decimal_places`, `max_whole_digits` | `E00014` |
+
+A validation failure that encodes a **business rule** — "email already taken",
+"terms must be accepted" — gets its own domain code. Inside serializer
+validation, raise it with `ErrorCode.validation_error()`, which returns a DRF
+`ValidationError` carrying the code:
+
+```python
+from apps.users import errors
+
+
+def validate_email(self, value):
+    if taken:
+        raise errors.EMAIL_TAKEN.validation_error()  # field: "email"
+
+
+def validate(self, attrs):
+    raise errors.PASSWORD_REJECTED.validation_error({"password": messages})
+```
+
+Use this rather than `BusinessError` inside serializers: DRF only collects
+`ValidationError` there, and only then attributes it to the field being
+validated.
+
+Django's `ValidationError` — raised by model validators, `full_clean()`, or
+models that validate in `save()` such as `BaseExtendableModel` — is translated
+to a 400 with its field keys and codes kept, instead of DRF's default 500.
+
+An error whose code is neither registered nor a DRF built-in falls back to the
+common code for its HTTP status (400 → `E00001`, 403 → `E00104`, …), so every
+response carries a registered code even if a raise site was missed.
+
+### 9.4 Business errors
+
+Each domain app declares its codes in `<app>/errors.py`:
+
+```python
+# apps/users/errors.py
+from apps.api.errors import define
+
+OTP_INVALID = define("E01001", "Invalid or expired code.", status=401)
+```
+
+From views and services, raise them with `BusinessError`, which takes its
+status and code from the definition:
+
+```python
+from apps.api.errors import BusinessError
+from . import errors
+
+raise BusinessError(errors.OTP_INVALID)
+raise BusinessError(errors.OTP_INVALID, "Code expired 3 minutes ago.")  # custom msg
+raise BusinessError(errors.EMAIL_TAKEN, field="email")  # field-level
+```
+
+Domain exception classes that subclass DRF exceptions (for example
+`InvalidRequestStateError(ValidationError)`) remain fine; set their
+`default_code` (and, where they set one, `status_code`) from the registered
+code. A test checks every such class's status against its registered status:
+
+```python
+class ApprovalRoutingError(APIException):
+    status_code = errors.APPROVAL_ROUTING.status
+    default_detail = errors.APPROVAL_ROUTING.msg
+    default_code = errors.APPROVAL_ROUTING.code
+```
+
+Permission classes report their code through DRF's `code` attribute:
+
+```python
+class IsAuthenticatedAndRegistered(BasePermission):
+    message = errors.REGISTRATION_INCOMPLETE.msg
+    code = errors.REGISTRATION_INCOMPLETE.code
+```
+
+Do **not** return a hand-built error `Response` (`Response({"detail": ...}, status=401)`).
+It bypasses the exception handler, so it neither has the standard shape nor
+rolls back the transaction.
+
+### 9.5 Implementation
+
+- `REST_FRAMEWORK["EXCEPTION_HANDLER"]` is `apps.api.errors.api_exception_handler`.
+  It translates Django's `Http404`, `PermissionDenied` and `ValidationError`
+  into their DRF equivalents, delegates to DRF's handler for status, headers
+  and transaction rollback, then replaces the body with the `errors` array.
+  `MetaJSONRenderer` adds `meta`. `errors` is never empty.
+- `ApiConfig.ready()` imports every installed app's `errors` module, so the
+  catalogue is complete before the first request or schema build.
+- Requests that never reach a DRF view use Django's `handler404` /
+  `handler500`, set in `config.urls` to `apps.api.errors.handler404` /
+  `handler500`. Under `/api/` they return the standard shape: an unmatched
+  route is `E00105`, an unhandled exception is `E00100` with a generic
+  message (Django logs the exception first; its details never reach the
+  client). Other paths keep Django's pages. Neither handler runs while
+  `DEBUG` is on, when Django shows its technical pages instead.
+- The shared `upsert` action reports every failing datapoint in one `errors`
+  array, with `field` prefixed `datapoints[<index>]`, and rolls back the
+  batch. An unknown lookup value is `E00105` on that datapoint.
 
 ## 10. Swagger / OpenAPI Standards
 
@@ -189,6 +370,37 @@ Rules:
 - Add explicit schema annotations for custom actions and function-based endpoints.
 - Tag operations by owning app/domain by default.
 - Ensure schema reflects auth/permission expectations and response shapes.
+
+### 10.1 Error documentation
+
+The postprocessing hook `apps.api.schema.error_schema_hook` (configured in
+`SPECTACULAR_SETTINGS["POSTPROCESSING_HOOKS"]`) makes errors part of the
+published documentation automatically:
+
+- `ErrorItem` and `ErrorResponse` component schemas; `ErrorItem.code` is an
+  enum of every registered code.
+- A `4XX` response referencing `ErrorResponse` on every operation.
+- The **error code catalogue** — code, HTTP status, domain and default
+  message — appended to the API description shown at the top of `/api/docs/`.
+
+New codes appear in the catalogue as soon as they are defined; there is no
+separate list to maintain.
+
+When an endpoint can return specific business errors, list them with
+`error_responses()`. It files each code under its own registered status, so
+the documented status cannot drift from the returned one; the hook attaches
+the `ErrorResponse` body:
+
+```python
+from apps.api.schema import error_responses
+
+@extend_schema(
+    responses={
+        201: ACCOUNT_STATE_RESPONSE,
+        **error_responses(errors.OTP_INVALID, errors.ACCOUNT_ALREADY_REGISTERED),
+    },
+)
+```
 
 Tip: use `?format=json` for schema assertions in tests/tooling where JSON is required.
 
@@ -219,7 +431,8 @@ Required coverage for each endpoint group:
 - Success cases
 - Permission/authentication behavior
 - Response shape (including `meta`)
-- Validation/error behavior where applicable
+- Validation/error behavior where applicable, asserting the error `code`
+  (and `field` for field errors) rather than the message text
 - Pagination behavior for list endpoints
 
 ## 14. Implementation Checklist for New Endpoints
@@ -228,9 +441,10 @@ Required coverage for each endpoint group:
 2. Add serializers with explicit fields.
 3. Add views/viewsets using shared base classes where applicable.
 4. Register routes in app-level URLs and include under versioned API.
-5. Add endpoint tests in the owning app.
-6. Add/update Swagger annotations and tags.
-7. Run quality checks:
+5. Define business error codes in the app's `errors.py`; raise them, and document them with `error_responses()`.
+6. Add endpoint tests in the owning app.
+7. Add/update Swagger annotations and tags.
+8. Run quality checks:
 
 ```bash
 cd src && DJANGO_SETTINGS_MODULE=config.settings.test pytest

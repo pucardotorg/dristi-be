@@ -42,6 +42,25 @@ This document helps AI coding assistants work effectively inside the **Dristi** 
 3. Add the app to `src/config/settings/base.py` in `INSTALLED_APPS`.
 4. Create tests in `<app>/tests.py` or a `tests/` package.
 5. Register models in `<app>/admin.py` if they need admin access.
+6. Put the app's API error codes in `<app>/errors.py` (see "Adding error codes").
+
+## Adding error codes
+
+API errors are always `{"errors": [{"code", "msg", "field"?}], "meta": ...}`
+(spec 0000 section 9). Do not build error `Response`s by hand.
+
+1. If the app has no domain prefix yet, allocate one in
+   `apps.api.errors.DOMAINS` and in the table in spec 0000 section 9.2.
+2. Define codes in `src/apps/<app>/errors.py` with
+   `apps.api.errors.define("E<domain><seq>", "Default message.", status=...)`.
+   Never renumber or reuse a released code.
+3. Raise them: `BusinessError(errors.X)` from views and services,
+   `errors.X.validation_error(...)` inside serializer validation, or set
+   `default_code` / `status_code` on a DRF exception subclass.
+4. Document them on the endpoint:
+   `@extend_schema(responses={200: Out, **error_responses(errors.X)})`.
+   The Swagger code catalogue updates itself.
+5. In tests, assert the error `code` (and `field`), not the message text.
 
 ## Addon modules
 

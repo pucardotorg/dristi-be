@@ -17,6 +17,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.api.errors import BusinessError
+from apps.api.schema import error_responses
+
+from . import errors
 from .models import (
     AdvocateProfile,
     AdvocateType,
@@ -58,10 +62,10 @@ class OTPResendThrottled(Throttled):
     seconds," which says nothing about what was throttled or what to do.
     """
 
-    default_detail = "A code was already sent to this number."
+    default_detail = errors.OTP_RESEND_TOO_SOON.msg
     extra_detail_singular = "You can request another in {wait} second."
     extra_detail_plural = "You can request another in {wait} seconds."
-    default_code = "otp_resend_too_soon"
+    default_code = errors.OTP_RESEND_TOO_SOON.code
 
 
 # Response shapes, declared for the OpenAPI schema only. These endpoints build
@@ -218,7 +222,10 @@ class OTPRequestView(APIView):
     permission_classes = [AllowAny]
     serializer_class = OTPRequestSerializer
 
-    @extend_schema(tags=["auth"], responses={202: DETAIL_RESPONSE})
+    @extend_schema(
+        tags=["auth"],
+        responses={202: DETAIL_RESPONSE, **error_responses(errors.OTP_RESEND_TOO_SOON)},
+    )
     def post(self, request):
         """Issue a code, or refuse with the seconds remaining on the cooldown."""
         serializer = OTPRequestSerializer(data=request.data)
@@ -253,8 +260,7 @@ class UserCreateView(APIView):
         responses={
             201: ACCOUNT_STATE_RESPONSE,
             200: ACCOUNT_STATE_RESPONSE,
-            401: DETAIL_RESPONSE,
-            409: DETAIL_RESPONSE,
+            **error_responses(errors.OTP_INVALID, errors.ACCOUNT_ALREADY_REGISTERED),
         },
     )
     def post(self, request):
@@ -266,10 +272,7 @@ class UserCreateView(APIView):
         if not verify_and_consume_otp(
             mobile_number, serializer.validated_data["otp"], Purpose.REGISTER
         ):
-            return Response(
-                {"detail": "Invalid or expired code."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            raise BusinessError(errors.OTP_INVALID)
 
         user_model = get_user_model()
         user = user_model.objects.filter(mobile_number=mobile_number).first()
@@ -278,10 +281,7 @@ class UserCreateView(APIView):
             user = user_model.objects.create_user(mobile_number=mobile_number)
             response_status = status.HTTP_201_CREATED
         elif user.is_registration_complete:
-            return Response(
-                {"detail": "Account already registered with this mobile number."},
-                status=status.HTTP_409_CONFLICT,
-            )
+            raise BusinessError(errors.ACCOUNT_ALREADY_REGISTERED)
         else:
             # An incomplete registration is resumable, never a lockout.
             response_status = status.HTTP_200_OK
@@ -314,7 +314,10 @@ class SessionView(APIView):
 
     @extend_schema(
         tags=["auth"],
-        responses={200: SESSION_RESPONSE, 401: DETAIL_RESPONSE, 403: PENDING_SESSION_RESPONSE},
+        responses={
+            200: ACCOUNT_STATE_RESPONSE,
+            **error_responses(errors.CREDENTIAL_CHOICE, errors.INVALID_CREDENTIALS),
+        },
     )
     def post(self, request):
         """Authenticate by OTP or password and issue a session cookie."""
@@ -331,10 +334,7 @@ class SessionView(APIView):
             purpose=Purpose.LOGIN,
         )
         if user is None:
-            return Response(
-                {"detail": "Invalid credentials."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            raise BusinessError(errors.INVALID_CREDENTIALS)
 
         # Checked before `login`, so a pending advocate or clerk gets no session.
         # The body carries the same account state as a successful login, so
@@ -397,16 +397,21 @@ class BaseRegistrationCompletionView(APIView):
 
     @extend_schema(
         tags=["registration"],
-        responses={201: REGISTERED_ACCOUNT_RESPONSE, 409: DETAIL_RESPONSE},
+        responses={
+            201: REGISTERED_ACCOUNT_RESPONSE,
+            **error_responses(
+                errors.EMAIL_TAKEN,
+                errors.TERMS_NOT_ACCEPTED,
+                errors.PASSWORD_REJECTED,
+                errors.REGISTRATION_ALREADY_COMPLETE,
+            ),
+        },
     )
     def post(self, request):
         """Write the profile and the account state as one unit."""
         user = request.user
         if user.is_registration_complete:
-            return Response(
-                {"detail": "Registration is already complete."},
-                status=status.HTTP_409_CONFLICT,
-            )
+            raise BusinessError(errors.REGISTRATION_ALREADY_COMPLETE)
 
         serializer = self.serializer_class(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)

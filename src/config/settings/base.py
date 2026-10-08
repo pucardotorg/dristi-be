@@ -243,6 +243,8 @@ REST_FRAMEWORK = {
         "apps.api.renderers.MetaJSONRenderer",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Renders every error as {"errors": [{"code", "msg", "field"?}]} — spec 0000 section 9.
+    "EXCEPTION_HANDLER": "apps.api.errors.api_exception_handler",
 }
 
 SPECTACULAR_SETTINGS = {
@@ -256,6 +258,11 @@ SPECTACULAR_SETTINGS = {
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
     },
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        # Error response schema and the error code catalogue — spec 0000 section 10.
+        "apps.api.schema.error_schema_hook",
+    ],
 }
 
 # ---------------------------------------------------------------------------

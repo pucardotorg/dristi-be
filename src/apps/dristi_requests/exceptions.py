@@ -1,11 +1,13 @@
 """Domain exceptions for the request workflow.
 
 They subclass DRF exceptions so the default exception handler renders them
-in the project's standard error format without extra wiring.
+in the project's standard error format without extra wiring. ``default_code``
+is the registered error code (``apps.dristi_requests.errors``).
 """
 
-from rest_framework import status
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
+
+from . import errors
 
 __all__ = [
     "InvalidRequestStateError",
@@ -18,24 +20,27 @@ __all__ = [
 class InvalidRequestStateError(ValidationError):
     """Raised when an operation is not allowed for the request's current status."""
 
-    default_detail = "The request is not in a state that allows this operation."
+    default_detail = errors.INVALID_REQUEST_STATE.msg
+    default_code = errors.INVALID_REQUEST_STATE.code
 
 
 class InvalidApprovalStateError(ValidationError):
     """Raised when an approval has already been decided or is not actionable."""
 
-    default_detail = "This approval is not pending and cannot be decided."
+    default_detail = errors.INVALID_APPROVAL_STATE.msg
+    default_code = errors.INVALID_APPROVAL_STATE.code
 
 
 class ApprovalRoutingError(APIException):
     """Raised when no approver can be resolved for a required approval step."""
 
-    status_code = status.HTTP_409_CONFLICT
-    default_detail = "No approver could be resolved for the next approval step."
-    default_code = "approval_routing_error"
+    status_code = errors.APPROVAL_ROUTING.status
+    default_detail = errors.APPROVAL_ROUTING.msg
+    default_code = errors.APPROVAL_ROUTING.code
 
 
 class NotTheAssignedApproverError(PermissionDenied):
     """Raised when someone other than the assigned approver tries to decide."""
 
-    default_detail = "Only the assigned approver can decide this approval."
+    default_detail = errors.NOT_THE_ASSIGNED_APPROVER.msg
+    default_code = errors.NOT_THE_ASSIGNED_APPROVER.code
