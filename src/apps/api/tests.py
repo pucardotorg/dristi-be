@@ -1,8 +1,10 @@
 """API app tests."""
 
+import io
 import json
 from datetime import datetime
 
+from django.core.management import call_command
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -43,6 +45,10 @@ class APIDocumentationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         payload = json.loads(response.content.decode("utf-8"))
         self.assertIn("openapi", payload)
+
+    def test_schema_generates_without_warnings(self):
+        """Schema generation emits no drf-spectacular warnings or errors."""
+        call_command("spectacular", "--fail-on-warn", "--validate", stdout=io.StringIO())
 
     def test_swagger_docs_endpoint_is_available(self):
         """The Swagger docs endpoint returns 200."""
