@@ -1,9 +1,16 @@
 """Core admin registration."""
 
-from django.contrib import admin
+import json
+
+from django.contrib import admin, messages
+from simple_history.admin import SimpleHistoryAdmin
 
 from .mixins import AuditUserAdminMixin
-from .models import AdditionalAttribute, ApiVersionChangeLog, Configuration
+from .models import AdditionalAttribute, ApiVersionChangeLog, BusinessRule, Configuration
+from .rules.forms import BusinessRuleAdminForm
+
+# Longest trace shown back to the author before it is truncated.
+DRY_RUN_TRACE_DISPLAY_CHARS = 4000
 
 
 @admin.register(AdditionalAttribute)
@@ -45,3 +52,39 @@ class ConfigurationAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     list_filter = ("config_set", "is_active")
     search_fields = ("config_key", "description")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(BusinessRule)
+class BusinessRuleAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
+    """Authoring surface for business rules; saving requires a passing dry run."""
+
+    form = BusinessRuleAdminForm
+    list_display = ("code", "name", "engine", "is_active", "updated_at")
+    list_filter = ("engine", "is_active")
+    search_fields = ("code", "name", "description")
+    readonly_fields = ("id", "created_at", "updated_at")
+    fieldsets = (
+        (None, {"fields": ("code", "name", "description", "engine", "is_active")}),
+        ("Rule", {"fields": ("rule_expression", "rule_input_schema", "rule_output_schema")}),
+        (
+            "Dry run",
+            {
+                "fields": ("test_input", "expected_result"),
+                "description": "Evaluated on save against the rule as edited. Not stored.",
+            },
+        ),
+        ("Audit", {"fields": ("id", "created_at", "updated_at", "created_by", "updated_by")}),
+    )
+
+    def save_model(self, request, obj, form, change):
+        """Save, then show the author what the dry run returned."""
+        super().save_model(request, obj, form, change)
+        envelope = getattr(form, "dry_run_result", None)
+        if envelope is None:
+            return
+        messages.success(request, f"Dry run result: {json.dumps(envelope['result'])}")
+        if "trace" in envelope:
+            trace = json.dumps(envelope["trace"])
+            if len(trace) > DRY_RUN_TRACE_DISPLAY_CHARS:
+                trace = trace[:DRY_RUN_TRACE_DISPLAY_CHARS] + "… (truncated)"
+            messages.info(request, f"Dry run trace: {trace}")

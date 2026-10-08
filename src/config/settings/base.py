@@ -293,12 +293,26 @@ CACHALOT_TIMEOUT = env.int("CACHALOT_TIMEOUT", default=120)
 CACHALOT_ONLY_CACHABLE_APPS = ("locations",)
 # Cachalot unions these with the app allow-list. List the table rather than the
 # core app so AdditionalAttribute and the history tables stay uncached.
-CACHALOT_ONLY_CACHABLE_TABLES = ("core_configuration",)
+CACHALOT_ONLY_CACHABLE_TABLES = (
+    "core_configuration",
+    "core_businessrule",
+)
 CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
     "authtoken_token",
     "django_session",
 )
+
+
+# ---------------------------------------------------------------------------
+# Business rules (spec 0019)
+# ---------------------------------------------------------------------------
+# Wall-clock guard on one rule evaluation, in seconds.
+RULES_EVALUATION_TIMEOUT_SECONDS = env.float("RULES_EVALUATION_TIMEOUT_SECONDS", default=2.0)
+# Upper bound on the UTF-8 size of a stored rule_expression (JDM documents included).
+RULES_MAX_EXPRESSION_BYTES = env.int("RULES_MAX_EXPRESSION_BYTES", default=262144)
+# Require a passing sample evaluation (dry run) before admin saves a rule.
+RULES_ADMIN_DRY_RUN_REQUIRED = env.bool("RULES_ADMIN_DRY_RUN_REQUIRED", default=True)
 
 
 # ---------------------------------------------------------------------------
