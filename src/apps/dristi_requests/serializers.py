@@ -7,7 +7,7 @@ from rest_framework import serializers
 
 from apps.users.models import User
 
-from . import services
+from . import errors, services
 from .documents import validate_documents
 from .models import (
     ApprovalStep,
@@ -207,7 +207,7 @@ class GenericRequestCreateSerializer(serializers.Serializer):
         try:
             validate_against_schema(request_type.schema, attrs["attributes"])
         except SchemaValidationError as exc:
-            raise serializers.ValidationError({"attributes": exc.errors}) from None
+            raise errors.INVALID_ATTRIBUTES.validation_error({"attributes": exc.errors}) from None
 
         validate_documents(attrs.get("documents", []), request_type=request_type)
         return attrs
