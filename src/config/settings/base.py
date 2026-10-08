@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "apps.organizations",
     "apps.locations",
     "apps.files",
+    "apps.pdf",
     # Addons
     "addon.cdac_sms_gateway",
 ]
@@ -203,6 +204,44 @@ STORAGES["files"] = STORAGES["default"]
 FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=10 * 1024 * 1024)
 FILE_MAX_COUNT_PER_UPLOAD = env.int("FILE_MAX_COUNT_PER_UPLOAD", default=10)
 FILE_MAX_READ_BYTES = env.int("FILE_MAX_READ_BYTES", default=FILE_MAX_SIZE_BYTES)
+# User that background/system uploads are attributed to (spec 0014 #10): the
+# system account's email, mobile number, or primary key.
+FILE_SYSTEM_USER_ID = env("FILE_SYSTEM_USER_ID", default="")
+
+
+# ---------------------------------------------------------------------------
+# PDF service (apps.pdf, spec 0016)
+# ---------------------------------------------------------------------------
+PDF_EXTERNAL_API_TIMEOUT_SECONDS = env.int("PDF_EXTERNAL_API_TIMEOUT_SECONDS", default=10)
+PDF_EXTERNAL_API_MAX_RETRIES = env.int("PDF_EXTERNAL_API_MAX_RETRIES", default=2)
+# Upper bound on distinct external API calls one document may make.
+PDF_EXTERNAL_API_MAX_CALLS_PER_JOB = env.int("PDF_EXTERNAL_API_MAX_CALLS_PER_JOB", default=20)
+PDF_IMAGE_DOWNLOAD_TIMEOUT_SECONDS = env.int("PDF_IMAGE_DOWNLOAD_TIMEOUT_SECONDS", default=10)
+PDF_IMAGE_MAX_BYTES = env.int("PDF_IMAGE_MAX_BYTES", default=5 * 1024 * 1024)
+# Hosts external API and image URLs may point at; empty allows any host.
+PDF_FETCH_ALLOWED_HOSTS = env.list("PDF_FETCH_ALLOWED_HOSTS", default=[])
+PDF_MAX_RECORDS_PER_DOCUMENT = env.int("PDF_MAX_RECORDS_PER_DOCUMENT", default=100)
+PDF_BULK_MAX_PARALLEL_CHUNKS = env.int("PDF_BULK_MAX_PARALLEL_CHUNKS", default=4)
+PDF_SYNC_RENDER_TIMEOUT_SECONDS = env.int("PDF_SYNC_RENDER_TIMEOUT_SECONDS", default=10)
+PDF_MAX_REQUEST_DATA_BYTES = env.int("PDF_MAX_REQUEST_DATA_BYTES", default=2 * 1024 * 1024)
+PDF_CONFIG_CACHE_TIMEOUT_SECONDS = env.int("PDF_CONFIG_CACHE_TIMEOUT_SECONDS", default=3600)
+PDF_LOCALIZATION_BASE_URL = env("PDF_LOCALIZATION_BASE_URL", default="")
+PDF_LOCALIZATION_CACHE_TIMEOUT_SECONDS = env.int(
+    "PDF_LOCALIZATION_CACHE_TIMEOUT_SECONDS", default=3600
+)
+# Job-level retries for transient failures, with exponential backoff.
+PDF_JOB_MAX_RETRIES = env.int("PDF_JOB_MAX_RETRIES", default=3)
+PDF_RETRY_DELAY_BASE_SECONDS = env.int("PDF_RETRY_DELAY_BASE_SECONDS", default=30)
+PDF_RETRY_DELAY_MAX_SECONDS = env.int("PDF_RETRY_DELAY_MAX_SECONDS", default=900)
+PDF_TASK_TIME_LIMIT_MS = env.int("PDF_TASK_TIME_LIMIT_MS", default=600000)
+# Signing primitives consumed by eSign (spec 0016 #14).
+PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
+PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
+PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=FILE_MAX_SIZE_BYTES)
+# Service credentials external API mappings may reference by name, e.g.
+# {"hrms": {"Authorization": "Bearer ..."}}. Configure in code or via the
+# environment-specific settings module; never stored on jobs.
+PDF_SERVICE_CREDENTIALS = {}
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +469,11 @@ LOGGING = {
             "propagate": False,
         },
         "apps.messaging": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.pdf": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

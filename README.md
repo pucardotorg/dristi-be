@@ -191,6 +191,27 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `FILE_MAX_SIZE_BYTES` | Largest single file `apps.files` will accept | `10485760` |
 | `FILE_MAX_COUNT_PER_UPLOAD` | Most files allowed in one `upload_file` call | `10` |
 | `FILE_MAX_READ_BYTES` | Largest file `get_file_content()` will open into memory. Defaults to `FILE_MAX_SIZE_BYTES`. | `10485760` |
+| `FILE_SYSTEM_USER_ID` | System account (email, mobile number or pk) that background uploads such as generated PDFs are attributed to | `system@dristi.internal` |
+| `PDF_EXTERNAL_API_TIMEOUT_SECONDS` | Connect/read timeout for external API and localization calls made by PDF mappings | `10` |
+| `PDF_EXTERNAL_API_MAX_RETRIES` | In-call retries for external API / localization / image fetches on timeouts and 5xx | `2` |
+| `PDF_EXTERNAL_API_MAX_CALLS_PER_JOB` | Maximum distinct external API calls one document may make | `20` |
+| `PDF_IMAGE_DOWNLOAD_TIMEOUT_SECONDS` | Timeout for image downloads | `10` |
+| `PDF_IMAGE_MAX_BYTES` | Largest image a PDF mapping will fetch or accept | `5242880` |
+| `PDF_FETCH_ALLOWED_HOSTS` | Hosts external API/image URLs may target; empty allows any | `hrms.internal,cdn.internal` |
+| `PDF_MAX_RECORDS_PER_DOCUMENT` | Bulk chunk size (records per generated document) | `100` |
+| `PDF_BULK_MAX_PARALLEL_CHUNKS` | Bulk chunks in flight per job | `4` |
+| `PDF_SYNC_RENDER_TIMEOUT_SECONDS` | Hard deadline for `POST /api/v1/pdf/render/` | `10` |
+| `PDF_MAX_REQUEST_DATA_BYTES` | Largest `data` payload accepted by the PDF APIs | `2097152` |
+| `PDF_CONFIG_CACHE_TIMEOUT_SECONDS` | Cache lifetime of PDF template configuration | `3600` |
+| `PDF_LOCALIZATION_BASE_URL` | Localization service queried by `localization` mappings; empty uses inline messages only | `https://l10n.internal/messages` |
+| `PDF_LOCALIZATION_CACHE_TIMEOUT_SECONDS` | Cache lifetime of localization messages per tenant/module/locale | `3600` |
+| `PDF_JOB_MAX_RETRIES` | Job-level retries for transient PDF generation failures | `3` |
+| `PDF_RETRY_DELAY_BASE_SECONDS` | Base of the exponential backoff between PDF retries | `30` |
+| `PDF_RETRY_DELAY_MAX_SECONDS` | Cap of the PDF retry backoff | `900` |
+| `PDF_TASK_TIME_LIMIT_MS` | Dramatiq time limit for PDF actors in milliseconds | `600000` |
+| `PDF_SIGNATURE_CONTAINER_BYTES` | Signature container reserved by `prepare_for_signing`; must exceed the largest ESP PKCS#7 | `16384` |
+| `PDF_SIGNATURE_HASH_ALGORITHM` | ByteRange digest algorithm (`SHA256`, `SHA384`, `SHA512`); must match the ESP request | `SHA256` |
+| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives | `10485760` |
 
 ## Services included
 
