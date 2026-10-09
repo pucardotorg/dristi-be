@@ -5,6 +5,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
+from .documents import validate_registration_document
 from .models import AdvocateProfile, AdvocateType, ClerkProfile, mobile_number_validator
 from .services.otp import Purpose
 
@@ -127,15 +128,28 @@ class ClerkProfileSerializer(serializers.ModelSerializer):
 
 
 class AdvocateRegistrationSerializer(RegistrationCompletionSerializer):
-    """Body of POST /advocates."""
+    """Body of POST /advocates, sent as multipart so it can carry the bar ID."""
 
     profile = AdvocateProfileSerializer()
+    bar_id_document = serializers.FileField(write_only=True)
+
+    def validate_bar_id_document(self, value):
+        """Accept only a PDF or image within the size limit."""
+        return validate_registration_document(value)
 
 
 class ClerkRegistrationSerializer(RegistrationCompletionSerializer):
-    """Body of POST /clerks."""
+    """Body of POST /clerks.
+
+    The bar ID is optional: only some clerks are asked for one.
+    """
 
     profile = ClerkProfileSerializer()
+    bar_id_document = serializers.FileField(write_only=True, required=False)
+
+    def validate_bar_id_document(self, value):
+        """Accept only a PDF or image within the size limit."""
+        return validate_registration_document(value)
 
 
 class UserSerializer(serializers.ModelSerializer):

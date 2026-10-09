@@ -1,7 +1,9 @@
 """Request documents, stored through ``apps.files`` (spec 0014).
 
-Supporting documents are PDFs or images. Each content type maps onto the
-``FileType`` it is stored as, and that mapping is also the allowlist.
+Which formats are accepted, and how an upload is checked, stored and
+discarded, is ``apps.files.documents``'s to say. This module adds what is
+specific to requests: the per-type document count, the tags a request
+document is stored with, and reporting refusals under ``documents``.
 """
 
 import logging
@@ -10,31 +12,14 @@ from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
+from apps.files import documents as file_documents
 from apps.files import services as files
-from apps.files.models import FileType
 
 logger = logging.getLogger(__name__)
 
 # Tag applied to every stored request document, so they can be found with
 # ``files.search_file`` without knowing which requests exist.
 DOCUMENT_TAG = "dristi-requests"
-
-# Accepted content types and the FileType each is stored as.
-CONTENT_TYPE_FILE_TYPES = {
-    "application/pdf": FileType.PDF,
-    "image/jpeg": FileType.IMAGE,
-    "image/png": FileType.IMAGE,
-}
-
-
-def allowed_content_types():
-    """Return the accepted content types, sorted for stable error messages."""
-    return sorted(CONTENT_TYPE_FILE_TYPES)
-
-
-def file_type_for(upload):
-    """Return the FileType for an upload, or ``None`` if it is not accepted."""
-    return CONTENT_TYPE_FILE_TYPES.get(_content_type(upload))
 
 
 def validate_documents(documents, *, request_type):
@@ -62,17 +47,11 @@ def validate_documents(documents, *, request_type):
             {"documents": f"At most {max_count} documents can be attached, got {count}."}
         )
 
-    max_size = settings.FILE_MAX_SIZE_BYTES
     errors = []
     for upload in documents:
-        name = getattr(upload, "name", "") or "document"
-        if file_type_for(upload) is None:
-            errors.append(
-                f"{name}: unsupported type {_content_type(upload)!r}; "
-                f"allowed: {', '.join(allowed_content_types())}."
-            )
-        elif upload.size > max_size:
-            errors.append(f"{name}: exceeds the {max_size} byte limit.")
+        error = file_documents.document_error(upload)
+        if error:
+            errors.append(f"{getattr(upload, 'name', '') or 'document'}: {error}")
     if errors:
         raise serializers.ValidationError({"documents": errors})
 
@@ -80,26 +59,16 @@ def validate_documents(documents, *, request_type):
 def store_documents(documents, *, requester, request_type):
     """Upload documents through ``apps.files`` and return their file ids, in order.
 
-    One ``upload_file`` call for the whole set, so the documents of a request
-    are stored all-or-nothing. Any error ``apps.files`` still raises is
-    reported under ``documents`` rather than escaping as a 500.
+    The documents of a request are stored all-or-nothing. Any error
+    ``apps.files`` still raises is reported under ``documents`` rather than
+    escaping as a 500.
     """
-    if not documents:
-        return []
-
-    tags = [DOCUMENT_TAG, request_type.code]
-    payload = {
-        "user_id": requester.pk,
-        "files": [
-            {"file": upload, "file_type": file_type_for(upload), "tags": tags}
-            for upload in documents
-        ],
-    }
     try:
-        result = files.upload_file(payload)
+        return file_documents.store_documents(
+            documents, user_id=requester.pk, tags=[DOCUMENT_TAG, request_type.code]
+        )
     except DjangoValidationError as exc:
         raise serializers.ValidationError({"documents": exc.messages}) from exc
-    return [entry["id"] for entry in result["files"]]
 
 
 def discard_documents(file_ids):
@@ -109,11 +78,9 @@ def discard_documents(file_ids):
     afterwards. Cleanup errors are logged and swallowed so they cannot mask
     the error that caused the rollback; the worst case is an orphaned file.
     """
-    for file_id in file_ids:
-        try:
-            files.delete_file(file_id)
-        except Exception:  # noqa: BLE001
-            logger.exception("Could not discard request document file %s", file_id)
+    file_documents.discard_documents(
+        file_ids, log=logger, message="Could not discard request document file %s"
+    )
 
 
 def open_document(document):
@@ -124,8 +91,3 @@ def open_document(document):
     """
     metadata = files.get_file(document.file_id)
     return files.get_file_content(document.file_id), metadata
-
-
-def _content_type(upload):
-    """Return an upload's declared content type, without parameters, lower-cased."""
-    return (getattr(upload, "content_type", "") or "").split(";")[0].strip().lower()
