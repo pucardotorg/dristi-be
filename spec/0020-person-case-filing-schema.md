@@ -40,7 +40,8 @@ One row per human being the system knows of, whether registered or not. A person
 | `relative_name` | varchar(256) | NULLABLE | Father's / spouse's / guardian's name |
 | `date_of_birth` | date | NULLABLE | |
 | `gender` | varchar(16) | NULLABLE | One of: MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY |
-| `organization_id` | uuid | FK → organization, NULLABLE | When representing an organization |
+| `institution_id` | uuid | FK → institution, NULLABLE | When acting for an institution (see §3) |
+| `designation` | varchar(128) | NULLABLE | Role within the institution, e.g. Director, Branch Manager, Authorised Signatory |
 | `permanent_address_id` | uuid | FK → address, NULLABLE | Current permanent address |
 | `correspondence_address_id` | uuid | FK → address, NULLABLE | Current mailing address |
 | `disability_status` | varchar(16) | NULLABLE | NONE, VISUAL, HEARING, MOBILITY, COGNITIVE, OTHER |
@@ -72,8 +73,12 @@ Identity verification is a spectrum. The `verification_level` field records how 
 - Not every person has a phone number at creation (a minor, an uncontacted party).
 
 **Why addresses are FKs, not embedded:**
-- Immutability requirement (see §6) — addresses are snapshots, not live fields.
+- Immutability requirement (see §7) — addresses are snapshots, not live fields.
 - Multiple persons can share an address without duplication.
+
+**Why `designation` lives on `person`:**
+- It describes the person's role at the institution in `institution_id` (for example, the Director who files for a company), so it is only meaningful when `institution_id` is set.
+- Like the rest of `person`, it holds current data. If a filing must preserve the designation as it was at filing time, it belongs in the participant snapshot (§4).
 
 ### 2.5 Open Questions
 
@@ -83,20 +88,66 @@ The current schema permits duplicate persons with the same name and no phone num
 - Otherwise create a new row at `ASSERTED`.
 - Duplicate asserted records resolve when the person registers and claims their row.
 
-## 3. Case Participation: The `case_participant` Table
+## 3. Legal Entities: The `institution` Table
 
 ### 3.1 Purpose
 
-One person's (or organization's) involvement in one case, in one role. This table freezes participant data at filing time, while the `person` table remains current.
+One row per non-human party the system knows of: a company, LLP, partnership firm, proprietorship, society or trust, and so on. An institution can be a complainant or an accused in a case, and acts through people (`person.institution_id` with a `designation`).
 
 ### 3.2 Schema
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
+| `entity_type` | varchar(32) | NOT NULL | See §3.3 |
+| `entity_name` | varchar(256) | NOT NULL | Registered / legal name |
+| `contact_number` | varchar(16) | NULLABLE | Main contact number; may be a landline |
+| `email_address` | varchar(256) | NULLABLE | Main contact email |
+| `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
+| `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
+| `created_at` | timestamp | NOT NULL, auto | From BaseModel (spec 0002) |
+| `updated_at` | timestamp | NOT NULL, auto | From BaseModel (spec 0002) |
+
+**Constraints:**
+- `CHECK (entity_type IN (...))` — values from §3.3
+- Index on `entity_name` — lookup when naming a party at filing
+
+### 3.3 Entity Types (enum)
+
+Initial set, to be confirmed:
+
+| Value | Meaning |
+|-------|---------|
+| `PRIVATE_LIMITED_COMPANY` | Company limited by shares whose shares are not offered to the public (e.g. "ABC Pvt Ltd") |
+| `PUBLIC_LIMITED_COMPANY` | Company limited by shares whose shares may be offered to the public, listed or unlisted (e.g. "ABC Ltd") |
+| `LLP` | Limited liability partnership registered under the LLP Act, 2008 |
+| `PARTNERSHIP_FIRM` | Registered or unregistered partnership firm |
+| `PROPRIETORSHIP` | Sole proprietorship trading under a business name |
+| `SOCIETY_TRUST` | Registered society, cooperative society, or public/private trust |
+| `OTHER_ENTITY` | Any legal entity not covered above (e.g. government department, local body, bank) |
+
+### 3.4 Design Decisions
+
+**Why a separate table instead of `organization` (spec 0008):**
+`Organization` models the court hierarchy: its `OrganizationType` holds only court types, and it carries a parent chain and jurisdictions. Litigant entities share none of that. Keeping them separate means a court can never be recorded as a party by mistake, and each table only has the fields it needs.
+
+**Why `contact_number` is not validated as a mobile number:**
+Unlike `person.phone_number`, an institution's number is often a landline or a toll-free line, so the Indian mobile pattern from spec 0005 does not apply.
+
+## 4. Case Participation: The `case_participant` Table
+
+### 4.1 Purpose
+
+One person's (or institution's) involvement in one case, in one role. This table freezes participant data at filing time, while the `person` table remains current.
+
+### 4.2 Schema
+
+| Field | Type | Constraints | Notes |
+|-------|------|-------------|-------|
+| `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | |
-| `person_id` | uuid | FK → person, NULLABLE | NULL when participant is an organization |
-| `organization_id` | uuid | FK → organization, NULLABLE | NULL when participant is a person |
+| `person_id` | uuid | FK → person, NULLABLE | NULL when participant is an institution |
+| `institution_id` | uuid | FK → institution, NULLABLE | NULL when participant is a person |
 | `role` | varchar(32) | NOT NULL | COMPLAINANT, ACCUSED, WITNESS, POA_HOLDER |
 | `ordinal` | smallint | NOT NULL | 1, 2, 3… (complainant #1, accused #2) |
 | `name_at_filing` | varchar(256) | NOT NULL | Frozen snapshot of name |
@@ -104,7 +155,7 @@ One person's (or organization's) involvement in one case, in one role. This tabl
 | `gender_at_filing` | varchar(16) | NULLABLE | Frozen snapshot of gender |
 | `address_id` | uuid | FK → address, NULLABLE | The address for service of notice |
 | `called_by_participant_id` | uuid | FK → case_participant, NULLABLE | For witnesses: which party called them |
-| `additional_details` | jsonb | NOT NULL, default '{}' | Role-specific data (see §3.3) |
+| `additional_details` | jsonb | NOT NULL, default '{}' | Role-specific data (see §4.3) |
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
 | `end_date` | timestamp | NULLABLE | When participant was removed |
 | `is_party_in_person` | boolean | NOT NULL, default false | Appearing without an advocate |
@@ -116,12 +167,12 @@ One person's (or organization's) involvement in one case, in one role. This tabl
 | `updated_at` | timestamp | NOT NULL, auto | From BaseModel |
 
 **Constraints:**
-- `CHECK (person_id IS NOT NULL OR organization_id IS NOT NULL)` — at least one must be set
-- `CHECK (person_id IS NULL OR organization_id IS NULL)` — but not both
+- `CHECK (person_id IS NOT NULL OR institution_id IS NOT NULL)` — at least one must be set
+- `CHECK (person_id IS NULL OR institution_id IS NULL)` — but not both
 - `UNIQUE (case_id, role, ordinal)` — each ordinal is unique per role per case
 - Index on `(case_id, role, is_active)` — common query pattern
 
-### 3.3 Role-Specific `additional_details`
+### 4.3 Role-Specific `additional_details`
 
 The `additional_details` JSONB column can store data that varies by role:
 
@@ -148,13 +199,13 @@ The `additional_details` JSONB column can store data that varies by role:
 }
 ```
 
-### 3.4 Design Decisions
+### 4.4 Design Decisions
 
 **Why freeze data at filing (`name_at_filing`, etc.):**
 Court records must not change with people. If notice was served to an address in January, the case file must show that exact address forever. The `person` row holds current data; `case_participant` holds the filing snapshot.
 
-**Why both `person_id` and `organization_id`:**
-A participant can be either a natural person or a legal entity. When an individual files on behalf of a company, both are set: `person_id` points to the individual, `organization_id` to the company.
+**Why both `person_id` and `institution_id`:**
+A participant can be either a natural person or a legal entity. When an individual files on behalf of a company, both are set: `person_id` points to the individual, `institution_id` to the company.
 
 **Why `ordinal` is separate from `role`:**
 "All accused" and "accused #2" are both queryable without parsing a combined field. The ordinal resets per role: complainant #1, complainant #2, accused #1, accused #2.
@@ -162,13 +213,13 @@ A participant can be either a natural person or a legal entity. When an individu
 **Why `called_by_participant_id` for witnesses:**
 Tracks which party called this witness, creating a clear evidence chain. A witness can be re-called by the opposing party in a new row with a different `called_by_participant_id`.
 
-## 4. Power of Attorney: The `poa_mandate` Table
+## 5. Power of Attorney: The `poa_mandate` Table
 
-### 4.1 Purpose
+### 5.1 Purpose
 
 Records the authority one participant holds to act for another. A POA holder may act for some parties on a case and not others, so this is a separate table, not a column on `case_participant`.
 
-### 4.2 Schema
+### 5.2 Schema
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
@@ -192,7 +243,7 @@ Records the authority one participant holds to act for another. A POA holder may
 - Index on `(case_id, is_active)`
 - FK constraint ensures `poa_participant_id` has `role = 'POA_HOLDER'` (enforced via trigger or app validation)
 
-### 4.3 Design Decisions
+### 5.3 Design Decisions
 
 **Why `case_id` is denormalized:**
 Derivable via `poa_participant_id → case_participant → case_id`, but kept so "all POAs on this case" needs no join. This is a read-heavy query pattern.
@@ -200,13 +251,13 @@ Derivable via `poa_participant_id → case_participant → case_id`, but kept so
 **Why `is_active` instead of deleting:**
 POA history is part of the case record. Who had authority when is material to service of notice and procedural compliance.
 
-## 5. Advocate Representation: The `representation` Table
+## 6. Advocate Representation: The `representation` Table
 
-### 5.1 Purpose
+### 6.1 Purpose
 
 Tracks which advocate represents which party in which case. Many-to-many relationship because one advocate can represent multiple parties, and a party can change advocates.
 
-### 5.2 Schema
+### 6.2 Schema
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
@@ -228,7 +279,7 @@ Tracks which advocate represents which party in which case. Many-to-many relatio
 - Index on `(advocate_id, is_active)` — "all active cases for this advocate"
 - Index on `(case_participant_id, is_active)` — "who represents this party"
 
-### 5.3 Design Decisions
+### 6.3 Design Decisions
 
 **Why three rows for three clients:**
 If advocate A represents complainants #1, #2, and #3, that's three `representation` rows with the same `advocate_id`. This keeps queries simple: "who does advocate A represent" is just `WHERE advocate_id = A`.
@@ -239,13 +290,13 @@ If advocate A represents complainants #1, #2, and #3, that's three `representati
 **Why `case_id` is denormalized:**
 Same reason as `poa_mandate`: "all advocates on this case" is a common query and should not require joining through `case_participant`.
 
-## 6. Immutable Addresses: The `address` Table
+## 7. Immutable Addresses: The `address` Table
 
-### 6.1 Purpose
+### 7.1 Purpose
 
 A single recorded address. Rows are **immutable snapshots**: once written, never updated. A new address means a new row.
 
-### 6.2 Schema
+### 7.2 Schema
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
@@ -261,7 +312,7 @@ A single recorded address. Rows are **immutable snapshots**: once written, never
 - `CHECK (pincode ~ '^[1-9][0-9]{5}$')` — 6 digits, not starting with 0
 - Index on `pincode` for geolocation queries
 
-### 6.3 Design Decisions
+### 7.3 Design Decisions
 
 **Why immutable:**
 Court records require stable addresses. If notice was served to 123 Main St in January, the case file must forever show that address, even if the person has since moved. Editing an address creates a new row and repoints the FK.
@@ -272,7 +323,7 @@ Use the [India Post Pincode API](https://api.postalpincode.in/pincode/{pincode})
 **Why no `updated_at`:**
 Rows are never updated. The absence of this field from BaseModel is intentional — it signals immutability to future maintainers.
 
-### 6.4 Deduplication Strategy
+### 7.4 Deduplication Strategy
 
 Two addresses with identical fields should reuse the same row:
 
@@ -288,13 +339,13 @@ address, created = Address.objects.get_or_create(
 
 Hash the canonical form and add a `hash` column with a unique index for faster lookups.
 
-## 7. Core Case Record: The `cases` Table
+## 8. Core Case Record: The `cases` Table
 
-### 7.1 Purpose
+### 8.1 Purpose
 
 One filing. Holds only what every dispute type shares; type-specific data goes in its own table (e.g., `cheque_bounce_case`).
 
-### 7.2 Schema
+### 8.2 Schema
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
@@ -303,7 +354,7 @@ One filing. Holds only what every dispute type shares; type-specific data goes i
 | `filing_number` | varchar(64) | UNIQUE, NULLABLE | Generated at submission, NULL while draft |
 | `case_number` | varchar(64) | UNIQUE, NULLABLE | Court-assigned at registration |
 | `cnr_number` | varchar(64) | UNIQUE, NULLABLE | National case number |
-| `status` | varchar(32) | NOT NULL | See §7.3 |
+| `status` | varchar(32) | NOT NULL | See §8.3 |
 | `court_id` | varchar(64) | NULLABLE | FK to court master data |
 | `filed_at` | timestamp | NULLABLE | When submission completed, NULL while draft |
 | `registered_at` | timestamp | NULLABLE | When court accepted the case |
@@ -317,7 +368,7 @@ One filing. Holds only what every dispute type shares; type-specific data goes i
 - `(filing_number)` — unique constraint also serves as index
 - `(case_type, status)` — case type queries
 
-### 7.3 Case Status Lifecycle
+### 8.3 Case Status Lifecycle
 
 **TODO:** Case statuses and their transitions are not meant to be hardcoded.
 They will be driven by the workflow configuration in
@@ -338,20 +389,20 @@ Every case has a filer. System-created cases (migrations, imports) should use a 
 **Why `court_id` is nullable:**
 Drafts may not have a court assigned yet. Could be tightened with a constraint: `CHECK (status != 'FILED' OR court_id IS NOT NULL)`.
 
-## 8. Case Documents: The `case_document` Table
+## 9. Case Documents: The `case_document` Table
 
-### 8.1 Purpose
+### 9.1 Purpose
 
 Documents filed as part of the case itself. A classification layer over the document store (spec 0014), holding only case-level documents rather than party-specific or relationship-specific ones.
 
-### 8.2 Schema
+### 9.2 Schema
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | |
 | `document_id` | uuid | FK → document, NOT NULL, ON DELETE PROTECT | From file storage service (spec 0014) |
-| `document_type` | varchar(64) | NOT NULL | See §8.3 |
+| `document_type` | varchar(64) | NOT NULL | See §9.3 |
 | `is_active` | boolean | NOT NULL, default true | Soft delete — documents get replaced during scrutiny |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Type-specific metadata |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
@@ -363,7 +414,7 @@ Documents filed as part of the case itself. A classification layer over the docu
 - `UNIQUE (case_id, document_id)` — the same file can't be filed twice under one case
 - Index on `(case_id, document_type, is_active)` — "show me this case's active return memos"
 
-### 8.3 Document Types (enum)
+### 9.3 Document Types (enum)
 
 The `document_type` field drives upload checklists and completeness gates:
 
@@ -380,7 +431,7 @@ The `document_type` field drives upload checklists and completeness gates:
 
 New case types add new enums without altering the table structure.
 
-### 8.4 Design Decisions
+### 9.4 Design Decisions
 
 **Why `document_type` is an enum:**
 It drives the upload checklist UI and the completeness gate before preview. An unrecognized value would silently break both, so the set must be closed.
@@ -391,13 +442,13 @@ Party-specific documents (e.g., a witness's affidavit) would require adding a `c
 **Why `ON DELETE PROTECT` on `document_id`:**
 Deleting the underlying file should not cascade to case records. If a document must be removed from the case, set `is_active = false`.
 
-## 9. Cheque Bounce Cases: The `cheque_bounce_case` Table
+## 10. Cheque Bounce Cases: The `cheque_bounce_case` Table
 
-### 9.1 Purpose
+### 10.1 Purpose
 
 Cheque-bounce-specific data. One row per case, with `case_id` as both PK and FK to enforce a strict 1:1 relationship with `cases`.
 
-### 9.2 Schema
+### 10.2 Schema
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
@@ -410,7 +461,7 @@ Cheque-bounce-specific data. One row per case, with `case_id` as both PK and FK 
 | `created_at` | timestamp | NOT NULL, auto | From BaseModel |
 | `updated_at` | timestamp | NOT NULL, auto | From BaseModel |
 
-### 9.3 JSONB Structure
+### 10.3 JSONB Structure
 
 Each JSONB column corresponds to one section of the filing form, stored as it is displayed:
 
@@ -437,7 +488,7 @@ Each JSONB column corresponds to one section of the filing form, stored as it is
 }
 ```
 
-### 9.4 Design Decisions
+### 10.4 Design Decisions
 
 **Why one JSONB column per UI section:**
 Data is stored the way it is read back. Fetching "Section 3" data means reading one JSONB column, not reassembling it from scattered fields.
@@ -448,13 +499,13 @@ Enforces 1:1 with `cases`. No separate `cheque_bounce_case_id`; the case ID is t
 **When to promote fields to columns:**
 If a field drives frequent queries or filtering (e.g., "all cases where limitation is non-compliant"), promote it from JSONB to a real column with an index. Start with JSONB for flexibility; promote as query patterns emerge.
 
-## 10. Case Evidence: The `case_evidence` Table
+## 11. Case Evidence: The `case_evidence` Table
 
-### 10.1 Purpose
+### 11.1 Purpose
 
 Evidence attached to a case: the cheque, return memo, demand notice, postal acknowledgment, affidavits, and other supporting material. Type-specific details are stored in JSONB; frequently queried fields may later be promoted to columns.
 
-### 10.2 Schema
+### 11.2 Schema
 
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
@@ -463,7 +514,7 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 | `case_document_id` | uuid | FK → case_document, NULLABLE | Links to the uploaded file |
 | `evidence_type` | varchar(64) | NOT NULL | CHEQUE, RETURN_MEMO, LEGAL_DEMAND_NOTICE, etc. |
 | `ordinal` | smallint | NOT NULL | Cheque #1, cheque #2, demand notice #1 |
-| `evidence_info` | jsonb | NOT NULL, default '{}' | Type-specific details, see §10.3 |
+| `evidence_info` | jsonb | NOT NULL, default '{}' | Type-specific details, see §11.3 |
 | `is_active` | boolean | NOT NULL, default true | Soft delete |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Future extensibility |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
@@ -475,7 +526,7 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 - `UNIQUE (case_id, evidence_type, ordinal, is_active)` WHERE `is_active = true`
 - Index on `(case_id, evidence_type, is_active)`
 
-### 10.3 Evidence Info Structure by Type
+### 11.3 Evidence Info Structure by Type
 
 **For `evidence_type = 'CHEQUE'`:**
 ```json
@@ -508,7 +559,7 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 }
 ```
 
-### 10.4 Design Decisions
+### 11.4 Design Decisions
 
 **Why separate from `case_document`:**
 `case_document` classifies uploads; `case_evidence` structures the legal evidence with metadata. A cheque scan is both a document (classification) and evidence (legal artifact with amount, date, bank). Keeping them separate follows single responsibility.
@@ -522,9 +573,9 @@ If queries filter by amount (`WHERE evidence_info->>'amount' > 100000`), promote
 **Why link to `case_document_id`:**
 A piece of evidence may have no uploaded file yet (entered as metadata before scanning), so the FK is nullable. When the file is uploaded, link it.
 
-## 11. Migration Path
+## 12. Migration Path
 
-### 11.1 Existing User Model
+### 12.1 Existing User Model
 
 This spec assumes spec 0005's `User` model is already in place:
 - `mobile_number` as `USERNAME_FIELD`
@@ -533,7 +584,7 @@ This spec assumes spec 0005's `User` model is already in place:
 
 The `person.user_id` FK points to this existing model.
 
-### 11.2 Backfill Strategy
+### 12.2 Backfill Strategy
 
 When introducing `person` to an existing deployment with registered users:
 
@@ -547,7 +598,7 @@ When introducing `person` to an existing deployment with registered users:
    ```
 3. For advocates and clerks, their professional profiles already exist — link via `user_id` but do not duplicate into `person` unless they are also parties to a case.
 
-### 11.3 Adding New Case Types
+### 12.3 Adding New Case Types
 
 To add a second case type (e.g., civil suit):
 
@@ -556,7 +607,7 @@ To add a second case type (e.g., civil suit):
 3. Define new `document_type` and `evidence_type` values for that case type.
 4. No changes to core tables (`cases`, `case_participant`, `representation`, etc.).
 
-## 12. Scenarios Covered
+## 13. Scenarios Covered
 
 | # | Scenario | Tables Involved | Key Fields |
 |---|----------|-----------------|------------|
@@ -571,27 +622,29 @@ To add a second case type (e.g., civil suit):
 | 9 | Multiple cheques in one case | `case_evidence` | `evidence_type = CHEQUE`, `ordinal = 1/2/3` |
 | 10 | Case transitions through scrutiny | `cases.status` | DRAFT_IN_PROGRESS → PENDING_SIGN → ... → REGISTERED |
 | 11 | Document replaced during scrutiny | `case_document` | Old row: `is_active = false`, new row: `is_active = true` |
-| 12 | Organization as complainant, represented by CEO | `case_participant` | `organization_id` set, `person_id` set for CEO |
+| 12 | Institution as complainant, represented by CEO | `case_participant`, `person` | `institution_id` set, `person_id` set for CEO; CEO's `person.institution_id` and `designation` set |
 
-## 13. Validation Rules
+## 14. Validation Rules
 
-### 13.1 Application-Layer Checks
+### 14.1 Application-Layer Checks
 
-- `case_participant`: Exactly one of `person_id` or `organization_id` must be set.
+- `case_participant`: Exactly one of `person_id` or `institution_id` must be set.
+- `person.designation`: Only meaningful when `person.institution_id` is set.
 - `poa_mandate`: `poa_participant_id` must have `role = 'POA_HOLDER'`.
 - `representation`: `advocate_id` must point to a valid `AdvocateProfile` (spec 0005).
 - `case_evidence.ordinal`: Must be unique per `(case_id, evidence_type)` when `is_active = true`.
 - `person.phone_number`: When not null, must match Indian mobile pattern (spec 0005).
 
-### 13.2 Database Constraints
+### 14.2 Database Constraints
 
 Implement via `CHECK` constraints and triggers:
 - `person`: `CHECK ((phone_number IS NULL) OR (phone_number ~ '^\+91[6-9]\d{9}$'))`
-- `case_participant`: `CHECK ((person_id IS NOT NULL)::int + (organization_id IS NOT NULL)::int = 1)`
+- `case_participant`: `CHECK ((person_id IS NOT NULL)::int + (institution_id IS NOT NULL)::int = 1)`
+- `institution.entity_type`: `CHECK (entity_type IN ('PRIVATE_LIMITED_COMPANY', 'PUBLIC_LIMITED_COMPANY', 'LLP', ...))`
 - `address.pincode`: `CHECK (pincode ~ '^[1-9][0-9]{5}$')`
 - `cases.status`: `CHECK (status IN ('DRAFT_IN_PROGRESS', 'PENDING_SIGN', ...))`
 
-## 14. References
+## 15. References
 
 - **Spec 0002**: BaseModel audit fields
 - **Spec 0005**: User model and registration
@@ -600,9 +653,9 @@ Implement via `CHECK` constraints and triggers:
 - **Spec 0014**: File storage service for document management
 - **India Post Pincode API**: https://api.postalpincode.in/pincode/{pincode}
 
-## 15. Future Enhancements
+## 16. Future Enhancements
 
-### 15.1 Separate Witness Table
+### 16.1 Separate Witness Table
 If witness-specific data grows (testimony dates, cross-examination notes), extract to:
 ```sql
 CREATE TABLE witness (
@@ -614,12 +667,12 @@ CREATE TABLE witness (
 );
 ```
 
-### 15.2 Evidence Versioning
+### 16.2 Evidence Versioning
 Track amendments to evidence records:
 ```sql
 ALTER TABLE case_evidence ADD COLUMN version smallint DEFAULT 1;
 ALTER TABLE case_evidence ADD COLUMN supersedes_evidence_id uuid REFERENCES case_evidence;
 ```
 
-### 15.3 Audit History Integration
+### 16.3 Audit History Integration
 Apply spec 0004 (Simple Audit History) to track who changed what when on `cases`, `case_participant`, and `representation` tables.
