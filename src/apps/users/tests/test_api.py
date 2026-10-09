@@ -2,13 +2,18 @@
 
 from unittest.mock import patch
 
+from django.conf import settings
 from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import path, reverse
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.files.models import File, FileType
+from apps.users.documents import BAR_COUNCIL_ID_TAG
 from apps.users.models import (
     AdvocateProfile,
     AdvocateType,
@@ -24,6 +29,22 @@ from apps.users.services.otp import Purpose
 from config.urls import urlpatterns as project_urlpatterns
 
 from .base import MOBILE, PASSWORD, OTPTestCase
+
+# Sentinel for "use the default document", so None can mean "send none".
+MISSING = object()
+
+PDF_CONTENT = b"%PDF-1.4\n%test bar council id\n"
+
+# Keep uploaded documents in memory so tests never touch the filesystem.
+IN_MEMORY_FILES = {
+    **settings.STORAGES,
+    "files": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+}
+
+
+def pdf_upload(name="bar-id.pdf", content=PDF_CONTENT, content_type="application/pdf"):
+    """Return a fresh upload; an upload is consumed by the request it is sent in."""
+    return SimpleUploadedFile(name, content, content_type=content_type)
 
 
 class OTPRequestTests(OTPTestCase):
@@ -205,6 +226,7 @@ class UserCreateTests(OTPTestCase):
         self.assertNotIn(code, response.content.decode())
 
 
+@override_settings(STORAGES=IN_MEMORY_FILES)
 class RegistrationCompletionTests(OTPTestCase):
     """POST /litigants, /advocates and /clerks."""
 
@@ -223,6 +245,21 @@ class RegistrationCompletionTests(OTPTestCase):
             "terms_accepted": True,
             **extra,
         }
+
+    def post_advocate(self, profile=None, document=MISSING, **extra):
+        """POST /advocates as multipart, with a valid bar ID unless overridden.
+
+        A multipart body cannot nest, so the profile goes as `profile.<field>`
+        keys, which is what a client sends too.
+        """
+        data = self.body(**extra)
+        for key, value in (profile or {}).items():
+            data[f"profile.{key}"] = value
+        if document is MISSING:
+            document = pdf_upload()
+        if document is not None:
+            data["bar_id_document"] = document
+        return self.client.post(reverse("advocate-create"), data, format="multipart")
 
     def test_litigant_completes(self):
         """A litigant gets a profile, a role and COMPLETE status."""
@@ -250,11 +287,7 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_advocate_completes_with_profile(self):
         """The nested profile is written to the advocate table."""
-        response = self.client.post(
-            reverse("advocate-create"),
-            self.body(profile={"bar_registration_id": "KER/1234/2019"}),
-            format="json",
-        )
+        response = self.post_advocate(profile={"bar_registration_id": "KER/1234/2019"})
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         profile = AdvocateProfile.objects.get(user=self.user)
         self.assertEqual(profile.bar_registration_id, "KER/1234/2019")
@@ -264,15 +297,11 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_advocate_can_state_a_practice_area(self):
         """advocate_type is optional, and is stored when supplied."""
-        response = self.client.post(
-            reverse("advocate-create"),
-            self.body(
-                profile={
-                    "bar_registration_id": "KER/5678/2021",
-                    "advocate_type": AdvocateType.CRIMINAL,
-                }
-            ),
-            format="json",
+        response = self.post_advocate(
+            profile={
+                "bar_registration_id": "KER/5678/2021",
+                "advocate_type": AdvocateType.CRIMINAL,
+            }
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(
@@ -282,18 +311,15 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_unknown_practice_area_is_rejected(self):
         """Only the declared choices are accepted."""
-        response = self.client.post(
-            reverse("advocate-create"),
-            self.body(
-                profile={
-                    "bar_registration_id": "KER/9999/2021",
-                    "advocate_type": "TAX",
-                }
-            ),
-            format="json",
+        response = self.post_advocate(
+            profile={
+                "bar_registration_id": "KER/9999/2021",
+                "advocate_type": "TAX",
+            }
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(AdvocateProfile.objects.exists())
+        self.assertFalse(File.objects.exists())
 
     def test_overlong_password_is_rejected_before_hashing(self):
         """A password past the cap is a 400, not work for the hasher."""
@@ -365,21 +391,17 @@ class RegistrationCompletionTests(OTPTestCase):
         The uniqueness is on the column, so without a model-aware serializer
         the duplicate reaches Postgres and surfaces as a server error.
         """
-        self.client.post(
-            reverse("advocate-create"),
-            self.body(profile={"bar_registration_id": "KER/1234/2019"}),
-            format="json",
-        )
+        self.post_advocate(profile={"bar_registration_id": "KER/1234/2019"})
         self.register_second_account()
 
-        response = self.client.post(
-            reverse("advocate-create"),
-            self.body(email="other@example.com", profile={"bar_registration_id": "KER/1234/2019"}),
-            format="json",
+        response = self.post_advocate(
+            email="other@example.com", profile={"bar_registration_id": "KER/1234/2019"}
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("bar_registration_id", response.data["profile"])
         self.assertEqual(AdvocateProfile.objects.count(), 1)
+        # Rejected before the upload, so only the first advocate's file exists.
+        self.assertEqual(File.objects.count(), 1)
 
     def test_duplicate_clerk_registration_number_is_rejected(self):
         """A clerk number already claimed answers 400, not 500."""
@@ -417,11 +439,55 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_advocate_requires_profile(self):
         """A missing profile block is a 400, and nothing is written."""
-        response = self.client.post(reverse("advocate-create"), self.body(), format="json")
+        response = self.post_advocate()
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(File.objects.exists())
 
         self.user.refresh_from_db()
         self.assertEqual(self.user.registration_status, RegistrationStatus.PENDING_PROFILE)
+
+    def test_advocate_bar_id_is_stored_against_the_registrant(self):
+        """The bar ID lands in the files module, owned and tagged."""
+        response = self.post_advocate(profile={"bar_registration_id": "KER/1234/2019"})
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        stored = File.objects.get()
+        self.assertEqual(stored.user, self.user)
+        self.assertEqual(stored.file_type, FileType.PDF)
+        self.assertEqual(stored.file_name, "bar-id.pdf")
+        self.assertEqual(list(stored.tags.values_list("name", flat=True)), [BAR_COUNCIL_ID_TAG])
+
+    def test_advocate_requires_bar_id(self):
+        """An advocate without the document is a 400, and nothing is written."""
+        response = self.post_advocate(
+            profile={"bar_registration_id": "KER/1234/2019"}, document=None
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("bar_id_document", response.data)
+        self.assertFalse(AdvocateProfile.objects.exists())
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.registration_status, RegistrationStatus.PENDING_PROFILE)
+
+    def assert_document_rejected(self, document):
+        """POST the document and assert it is refused before anything is stored."""
+        response = self.post_advocate(
+            profile={"bar_registration_id": "KER/1234/2019"}, document=document
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("bar_id_document", response.data)
+        self.assertFalse(File.objects.exists())
+        self.assertFalse(AdvocateProfile.objects.exists())
+
+    def test_unsupported_document_type_is_rejected(self):
+        """Only PDF, JPEG and PNG are accepted."""
+        self.assert_document_rejected(pdf_upload("bar-id.txt", b"hello", "text/plain"))
+
+    def test_document_refused_by_the_files_module_is_a_400(self):
+        """A refusal from apps.files is reported on the field, not as a 500."""
+        refusal = DjangoValidationError({"files[0].file": "refused by the files module."})
+        with patch("apps.files.services.upload_file", side_effect=refusal):
+            self.assert_document_rejected(pdf_upload())
 
     def test_terms_must_be_accepted(self):
         """A false acceptance rejects the registration rather than warning."""

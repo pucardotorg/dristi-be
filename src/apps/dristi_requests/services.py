@@ -118,16 +118,20 @@ def create_first_approval_step(request):
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
-def create_request(*, request_type, requester, data, files=None, submit=True):
+def create_request(*, request_type, requester, data, files=None, file_ids=None, submit=True):
     """Create a request (and its documents) and optionally submit it.
 
-    Documents are uploaded through ``apps.files`` *before* the request is
+    ``files`` are uploads, stored here. ``file_ids`` are files the caller has
+    already stored through ``apps.files`` (a registration document, say); they
+    are only linked, and stay the caller's to clean up if this fails.
+
+    Uploads are stored through ``apps.files`` *before* the request is
     created, outside the transaction, and deleted again if creating or
     submitting the request fails. The order matters: storage writes are not
     transactional, so the only way to undo them is to still hold the
     committed ``File`` rows when the request's transaction rolls back.
     """
-    file_ids = request_documents.store_documents(
+    stored_ids = request_documents.store_documents(
         files or [], requester=requester, request_type=request_type
     )
     try:
@@ -135,11 +139,11 @@ def create_request(*, request_type, requester, data, files=None, submit=True):
             request_type=request_type,
             requester=requester,
             data=data,
-            file_ids=file_ids,
+            file_ids=[*(file_ids or []), *stored_ids],
             submit=submit,
         )
     except Exception:
-        request_documents.discard_documents(file_ids)
+        request_documents.discard_documents(stored_ids)
         raise
 
 

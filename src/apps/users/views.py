@@ -9,14 +9,23 @@ from django.contrib.auth import (
 )
 from django.utils.decorators import method_decorator
 from django.views.decorators.debug import sensitive_post_parameters
-from drf_spectacular.utils import extend_schema, inline_serializer
+from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.exceptions import Throttled
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import AdvocateProfile, ClerkProfile, LitigantProfile, RegistrationStatus, Role
+from .documents import BAR_COUNCIL_ID_TAG
+from .models import (
+    AdvocateProfile,
+    AdvocateType,
+    ClerkProfile,
+    LitigantProfile,
+    RegistrationStatus,
+    Role,
+)
 from .serializers import (
     AdvocateRegistrationSerializer,
     ClerkRegistrationSerializer,
@@ -26,7 +35,12 @@ from .serializers import (
     SessionCreateSerializer,
 )
 from .services.otp import Purpose, ResendTooSoonError, issue_otp, verify_and_consume_otp
-from .services.registration import complete_registration
+from .services.registration import (
+    DocumentRejected,
+    complete_registration,
+    complete_registration_with_document,
+)
+from .tasks import schedule_registration_verification
 
 OTP_BACKEND = "apps.users.services.backend.OTPBackend"
 
@@ -69,6 +83,59 @@ REGISTERED_ACCOUNT_RESPONSE = inline_serializer(
         "registration_status": serializers.ChoiceField(choices=RegistrationStatus.choices),
         "next": serializers.CharField(allow_null=True),
     },
+)
+
+
+def _registration_form(profile_properties, *, document_required):
+    """Return the multipart body of a registration that can carry the bar ID.
+
+    Described by hand because the serializer nests ``profile``, and a
+    multipart body cannot nest: clients send ``profile.<field>`` keys, which
+    is what DRF reads back into the nested serializer. Inferring from the
+    serializer would document a ``profile`` object Swagger UI sends as one
+    JSON string, and the file as a URI with no file picker.
+    """
+    required = [
+        "name",
+        "password",
+        "terms_accepted",
+        *(
+            f"profile.{name}"
+            for name, (_, is_required) in profile_properties.items()
+            if is_required
+        ),
+    ]
+    if document_required:
+        required.append("bar_id_document")
+    return {
+        "type": "object",
+        "required": required,
+        "properties": {
+            "name": {"type": "string", "maxLength": 256},
+            "email": {"type": "string", "format": "email"},
+            "password": {"type": "string", "format": "password", "maxLength": 128},
+            "terms_accepted": {"type": "boolean"},
+            **{f"profile.{name}": schema for name, (schema, _) in profile_properties.items()},
+            "bar_id_document": {
+                "type": "string",
+                "format": "binary",
+                "description": "Bar council ID as a PDF, JPEG or PNG.",
+            },
+        },
+    }
+
+
+ADVOCATE_REGISTRATION_FORM = _registration_form(
+    {
+        "bar_registration_id": ({"type": "string", "maxLength": 64}, True),
+        "advocate_type": ({"type": "string", "enum": AdvocateType.values}, False),
+    },
+    document_required=True,
+)
+
+CLERK_REGISTRATION_FORM = _registration_form(
+    {"clerk_registration_number": ({"type": "string", "maxLength": 64}, True)},
+    document_required=False,
 )
 
 
@@ -230,6 +297,8 @@ class BaseRegistrationCompletionView(APIView):
     role = None
     profile_model = None
     serializer_class = RegistrationCompletionSerializer
+    # Tag recorded on the bar ID document, for roles whose serializer accepts one.
+    document_tag = None
 
     @extend_schema(
         tags=["registration"],
@@ -248,15 +317,32 @@ class BaseRegistrationCompletionView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        complete_registration(
-            user=user,
-            role=self.role,
-            profile_model=self.profile_model,
-            name=data["name"],
-            password=data["password"],
-            email=data.get("email"),
-            profile_fields=data.get("profile", {}),
-        )
+        registration = {
+            "user": user,
+            "role": self.role,
+            "profile_model": self.profile_model,
+            "name": data["name"],
+            "password": data["password"],
+            "email": data.get("email"),
+            "profile_fields": data.get("profile", {}),
+        }
+        document = data.get("bar_id_document")
+        file_id = None
+        if document is None:
+            complete_registration(**registration)
+        else:
+            try:
+                _, file_id = complete_registration_with_document(
+                    document=document,
+                    document_tag=self.document_tag,
+                    **registration,
+                )
+            except DocumentRejected as exc:
+                raise serializers.ValidationError({"bar_id_document": exc.messages}) from exc
+
+        # Verification is raised in the background so a slow or failing
+        # request flow never fails a registration that has already committed.
+        schedule_registration_verification(user, file_id)
 
         # Session handling stays in the view: setting a password rotates the
         # session auth hash, which would log the user out at the moment they
@@ -281,17 +367,38 @@ class LitigantRegistrationView(BaseRegistrationCompletionView):
     profile_model = LitigantProfile
 
 
+@extend_schema_view(
+    post=extend_schema(request={"multipart/form-data": ADVOCATE_REGISTRATION_FORM}),
+)
 class AdvocateRegistrationView(BaseRegistrationCompletionView):
-    """POST /advocates."""
+    """POST /advocates.
+
+    Multipart only: the bar ID document is required, and a JSON body cannot
+    carry it. The nested profile is sent as ``profile.<field>`` form keys.
+    """
 
     role = Role.ADVOCATE
     profile_model = AdvocateProfile
     serializer_class = AdvocateRegistrationSerializer
+    parser_classes = [MultiPartParser, FormParser]
+    document_tag = BAR_COUNCIL_ID_TAG
 
 
+@extend_schema_view(
+    post=extend_schema(
+        request={
+            "application/json": ClerkRegistrationSerializer,
+            "multipart/form-data": CLERK_REGISTRATION_FORM,
+        }
+    ),
+)
 class ClerkRegistrationView(BaseRegistrationCompletionView):
-    """POST /clerks."""
+    """POST /clerks.
+
+    Accepts JSON, or multipart when the optional bar ID document is sent.
+    """
 
     role = Role.CLERK
     profile_model = ClerkProfile
     serializer_class = ClerkRegistrationSerializer
+    document_tag = BAR_COUNCIL_ID_TAG
