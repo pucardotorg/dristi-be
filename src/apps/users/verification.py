@@ -11,7 +11,9 @@ role, and what the request carries.
 
 from dataclasses import dataclass
 
-from .models import Role
+from django.core.exceptions import ObjectDoesNotExist
+
+from .models import ApprovalStatus, Role
 
 ADVOCATE_REGISTRATION = "ADVOCATE_REGISTRATION"
 CLERK_REGISTRATION = "CLERK_REGISTRATION"
@@ -45,3 +47,19 @@ VERIFICATIONS = {
 }
 
 VERIFICATIONS_BY_CODE = {v.request_type_code: v for v in VERIFICATIONS.values()}
+
+
+def is_pending_approval(user):
+    """Return True if the user's registration is still waiting on the approver.
+
+    False for roles that are not verified, and for an incomplete registration
+    whose profile does not exist yet.
+    """
+    verification = VERIFICATIONS.get(user.role)
+    if verification is None:
+        return False
+    try:
+        profile = verification.profile_of(user)
+    except ObjectDoesNotExist:
+        return False
+    return profile.approval_status == ApprovalStatus.PENDING

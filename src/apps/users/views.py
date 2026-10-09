@@ -41,6 +41,7 @@ from .services.registration import (
     complete_registration_with_document,
 )
 from .tasks import schedule_registration_verification
+from .verification import is_pending_approval
 
 OTP_BACKEND = "apps.users.services.backend.OTPBackend"
 
@@ -243,7 +244,7 @@ class SessionView(APIView):
 
     @extend_schema(
         tags=["auth"],
-        responses={200: ACCOUNT_STATE_RESPONSE, 401: DETAIL_RESPONSE},
+        responses={200: ACCOUNT_STATE_RESPONSE, 401: DETAIL_RESPONSE, 403: DETAIL_RESPONSE},
     )
     def post(self, request):
         """Authenticate by OTP or password and issue a session cookie."""
@@ -263,6 +264,13 @@ class SessionView(APIView):
             return Response(
                 {"detail": "Invalid credentials."},
                 status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Checked before `login`, so a pending advocate or clerk gets no session.
+        if is_pending_approval(user):
+            return Response(
+                {"detail": "Account approval is pending"},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         login(request._request, user)

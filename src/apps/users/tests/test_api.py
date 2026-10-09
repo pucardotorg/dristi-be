@@ -612,6 +612,47 @@ class SessionTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["next"], "profile")
 
+    def make_professional(self, role, approval_status):
+        """Turn the account into an advocate or clerk with the given approval."""
+        self.user.role = role
+        self.user.save()
+        if role == Role.ADVOCATE:
+            AdvocateProfile.objects.create(
+                user=self.user, bar_registration_id="K/1/2020", approval_status=approval_status
+            )
+        else:
+            ClerkProfile.objects.create(
+                user=self.user, clerk_registration_number="CL-1", approval_status=approval_status
+            )
+
+    def test_pending_professional_is_refused(self):
+        """An advocate or clerk awaiting approval is told so and gets no session."""
+        for role in (Role.ADVOCATE, Role.CLERK):
+            with self.subTest(role=role):
+                AdvocateProfile.objects.all().delete()
+                ClerkProfile.objects.all().delete()
+                self.make_professional(role, ApprovalStatus.PENDING)
+
+                response = self.client.post(
+                    reverse("session"),
+                    {"mobile_number": MOBILE, "password": PASSWORD},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+                self.assertEqual(response.json()["detail"], "Account approval is pending")
+                self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_accepted_professional_logs_in(self):
+        """Once approved, an advocate logs in as before."""
+        self.make_professional(Role.ADVOCATE, ApprovalStatus.ACCEPTED)
+
+        response = self.client.post(
+            reverse("session"),
+            {"mobile_number": MOBILE, "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_logout_discards_the_session(self):
         """DELETE /sessions clears the cookie."""
         self.client.post(
