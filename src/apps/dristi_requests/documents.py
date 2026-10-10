@@ -8,10 +8,11 @@ import logging
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from rest_framework import serializers
 
 from apps.files import services as files
 from apps.files.models import FileType
+
+from . import errors
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def validate_documents(documents, *, request_type):
     """
     count = len(documents)
     if count < request_type.min_documents:
-        raise serializers.ValidationError(
+        raise errors.INVALID_DOCUMENTS.validation_error(
             {
                 "documents": (
                     f"{request_type.name} requires at least "
@@ -58,23 +59,23 @@ def validate_documents(documents, *, request_type):
 
     max_count = settings.FILE_MAX_COUNT_PER_UPLOAD
     if count > max_count:
-        raise serializers.ValidationError(
+        raise errors.INVALID_DOCUMENTS.validation_error(
             {"documents": f"At most {max_count} documents can be attached, got {count}."}
         )
 
     max_size = settings.FILE_MAX_SIZE_BYTES
-    errors = []
+    problems = []
     for upload in documents:
         name = getattr(upload, "name", "") or "document"
         if file_type_for(upload) is None:
-            errors.append(
+            problems.append(
                 f"{name}: unsupported type {_content_type(upload)!r}; "
                 f"allowed: {', '.join(allowed_content_types())}."
             )
         elif upload.size > max_size:
-            errors.append(f"{name}: exceeds the {max_size} byte limit.")
-    if errors:
-        raise serializers.ValidationError({"documents": errors})
+            problems.append(f"{name}: exceeds the {max_size} byte limit.")
+    if problems:
+        raise errors.INVALID_DOCUMENTS.validation_error({"documents": problems})
 
 
 def store_documents(documents, *, requester, request_type):
@@ -98,7 +99,7 @@ def store_documents(documents, *, requester, request_type):
     try:
         result = files.upload_file(payload)
     except DjangoValidationError as exc:
-        raise serializers.ValidationError({"documents": exc.messages}) from exc
+        raise errors.INVALID_DOCUMENTS.validation_error({"documents": exc.messages}) from exc
     return [entry["id"] for entry in result["files"]]
 
 

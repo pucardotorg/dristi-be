@@ -30,3 +30,7 @@ urlpatterns = [
 # fails with "'djdt' is not a registered namespace".
 if "debug_toolbar" in settings.INSTALLED_APPS:
     urlpatterns += [path("__debug__/", include("debug_toolbar.urls"))]
+
+# Standard error shape for /api/ requests that never reach DRF — spec 0000 section 9.5.
+handler404 = "apps.api.errors.handler404"
+handler500 = "apps.api.errors.handler500"

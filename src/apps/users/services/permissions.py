@@ -7,6 +7,8 @@ opt out explicitly.
 
 from rest_framework.permissions import BasePermission
 
+from apps.users import errors
+
 
 class IsAuthenticatedAndRegistered(BasePermission):
     """Allows only signed-in accounts that finished the registration wizard.
@@ -15,7 +17,8 @@ class IsAuthenticatedAndRegistered(BasePermission):
     is valid but gated: `POST /users/` sets a cookie before the wizard is done.
     """
 
-    message = "Registration is not complete."
+    message = errors.REGISTRATION_INCOMPLETE.msg
+    code = errors.REGISTRATION_INCOMPLETE.code
 
     def has_permission(self, request, view):
         """Return whether the caller is signed in and past the wizard."""
@@ -30,7 +33,8 @@ class HasAcceptedCurrentTerms(BasePermission):
     sends the user to the wizard, the other to a re-acceptance screen.
     """
 
-    message = "The current terms have not been accepted."
+    message = errors.TERMS_NOT_CURRENT.msg
+    code = errors.TERMS_NOT_CURRENT.code
 
     def has_permission(self, request, view):
         """Return whether the caller's accepted terms are current."""
