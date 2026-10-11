@@ -415,7 +415,7 @@ Repeats per demand notice.
 | ID | Field | Type | Validation | Logic |
 | --- | --- | --- | --- | --- |
 | LDN-1 | Nature of debt/liability | Dropdown, MDMS | — | Always visible. Tooltip: purpose/underlying transaction for the cheque |
-| LDN-2 | Date of dispatch of demand notice | Date picker | **[OWNER]** at least one cheque's date of return (CHQ-9) must be **on or before** the dispatch date. **No 30-day warning** (removed by owner; the receipt-of-information date is not collected) | — |
+| LDN-2 | Date of dispatch of demand notice | Date picker | **[OWNER]** at least one cheque's date of return (CHQ-9) must be **on or before** the dispatch date. **No 30-day warning** — the receipt-of-information date is not collected | — |
 | LDN-3 | Mode of service | Dropdown, MDMS | — | — |
 | LDN-4 | Tracking number | Text | Optional | Tooltip: used to track delivery |
 | LDN-5 | Whether delivered? | Radio Yes/No | — | — |
@@ -447,7 +447,7 @@ Repeats per demand notice.
 | JUR-12 | Reason for praying condonation of delay | Textarea | — | Visible if delay exists |
 
 Delay basis **[OWNER]**: one **calendar month** from the **date of cause of action**
-(xlsx; the workflow PDF's "from service" wording is superseded). When the DCA attaches
+— not from the date of service. When the DCA attaches
 it carries the INR 20 fee (§19) and the `REF-04` refiling rule.
 
 **[OWNER]** The bank-details block (JUR-2…5 / JUR-6a) **repeats per cheque as needed**
@@ -841,10 +841,9 @@ reconciled with a single generated PDF.
 The PDF is not a print-out of the screens. A developer who assumes screen order and print
 order are the same will get it wrong in the places below, and nowhere else.
 
-**[OWNER]** As of this revision, every Case details screen prints as exactly **one**
-section, in the screen's own field order (§9→2.1, §10→2.2, §11→2.3, §12→2.4). There is
-no longer a case of one screen splitting across several print sections, or of a screen's
-own field order being disturbed, anywhere in Case details. Two structural exceptions
+**[OWNER]** Every Case details screen prints as exactly **one** section, in the screen's
+own field order (§9→2.1, §10→2.2, §11→2.3, §12→2.4). No screen splits across several
+print sections, and no screen's own field order is disturbed, anywhere in Case details. Two structural exceptions
 remain, plus the Party details exception below — none of them a field reordering:
 
 | Form screen | Print sections |
@@ -891,7 +890,7 @@ backend data and never reaches the case file (§8).
 
 [complaint-pdf-worked-example.pdf](https://codahosted.io/docs/KtL_rwN6Qw/blobs/bl-jLA4zutOUt/c183c9e3f40deaf3d41b9e55b3ce93d34e3845fdba82f0cf5062b290608a3b652b495a91ae9654e1736c3468b7fe50e527e81941ad245619424a5ad80c8bd6544e403da2b84c7efb6b7d82d90184dcf3be3bf981275ee7c03d1697b9fd18d37806806397)
 — **[STALE]** this link is the pre-merge, nine-page version. **[OWNER]** regenerated
-2026-09-28 against the merged §16.4 print order (v23/v24); the current file is
+2026-09-28 against the merged §16.4 print order; the current file is
 `efiling-reference/complaint-pdf-worked-example.pdf` in the repo — re-upload it here and
 replace this link once done.
 
@@ -1498,7 +1497,7 @@ on 2026-09-03 and now matches it.
   confirmations (now spec, §18); fee dialog with per-line rate × addresses ×
   rounds, priced per accused (§19.3); simulated payment; success dialog with
   generated case number. Every sandbox surface says so in place.
-- **Dashboard**: continue-draft cards ("X vs Y", last saved, "Up to <step>", % bar),
+- **Dashboard**: continue-draft cards ("X vs Y", last saved, "Up to `<step>`", % bar),
   discard-draft with confirm, start-a-new-case cards, recently-filed table whose status
   honestly reads "Submitted from this browser — registry status is not connected yet".
 

@@ -465,7 +465,6 @@ A signed, dispatched process may be overtaken by events. Two cases are handled.
 |---|---|
 | `PIA-01` | **It is no longer wanted.** The judge recalls the warrant or grants bail. The system marks every process for that addressee, in that round, Recalled — not just the one a court user happens to be looking at. Where the channel's send is by the system, the receiving system is told; where it is manual, the CMO or Post Officer records that the recall was communicated. |
 | `PIA-02` | **The hearing date changes.** A warrant does not print its date (`PRC-06`), so nothing on it becomes wrong. No replacement is generated, signed or dispatched; the warrant stays live, and the QR code shows the new date. |
-| ~~`PIA-03`~~ | ~~Replacement process rules.~~ Removed 2026-10-01 — there is no replacement process (`PIA-02`). |
 
 `PIA-01` and `PIA-02` apply to warrants. Whether a summons, notice or custom process also
 carries a QR code in place of a printed date is open — see `Q-4`.

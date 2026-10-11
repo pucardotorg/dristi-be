@@ -1,6 +1,6 @@
 # Application Lifecycle
 
-**Status:** v31 — 2026-10-11; closed `Q-9`: an application in Pending Signature can be moved back to Draft and edited there, by anyone who could have created and edited the draft (`ALC-31`, new). Closed `Q-10`: the signer may use any signing mode enabled for the deployment. `ALC-28` tightened: only the person selected in Raised by signs, not any advocate or PiP on the case. v30 — 2026-10-11; **no setting a date before onboarding.** Review (step 2) now offers only Onboard or Dismiss; a date is set only after onboarding (3b). `ALC-05`, `ALC-06` and `ALC-20` are withdrawn, and the "set a date once, then dismiss promoted" rule goes with them, along with the note on deriving whether it had been used. v29 — 2026-10-11; rewrote the workflow as six linear steps — **Filing, Review, Onboarding, Objections, Decision, After the decision** — each with its own prose and its own requirements. "The workflow" now opens with the step list and a one-row-per-step table; "The decision points" is gone, its content moved into the steps; the full status table moves to the end as **Every status change**. Filing is written out in full: who drafts, signs and pays, how the status moves, and steps 1.1–1.8. New requirements `ALC-26`–`ALC-30` (types offered, resumable drafts, who signs, who pays, and expiry — only Advance / Prepone and Postpone expire, when their hearing passes; an unsubmitted application never does); every existing `ALC-` ID is kept. New open questions `Q-8`–`Q-12`. v28 — 2026-10-11; **Fields by application type**: every application can now carry optional, named supporting documents. Case Settlement gets a reason for settlement. Case Transfer's requested court and Case Withdrawal's reason for withdrawal are now text, not dropdowns. Advance / Postpone loses Prayer. PoA Change: Prayer is replaced by a reason for change; litigants appointing the applicant are a multi-select, and an existing PoA is a property of the litigant, not a field; the PoA instruments become one authorization document per litigant. Absent Application gets a reason for absence, Reopen Evidence a reason for reopening and Objection a reason for objection, all text. Bail's supporting documents are replaced by a proof of solvency, one per surety; other documents are optional, under Supporting documents. Edit Litigant Details: Complainant type / Accused type is now Litigant type; CIN or PAN is optional with no format validation; an accused institution's representatives are no longer edited with the institution, but as individual accused; an individual accused's name allows special characters, and the individual accused gains an optional Designation. v27 — 2026-10-09; rebuilt **Fields by application type** from the
+**Status:** v32 — 2026-10-11; payment simplified: anyone on the same side of the case as the application may pay for it (`ALC-29`). Removed the placeholder rows for the withdrawn `ALC-05`, `ALC-06` and `ALC-20`; those numbers are not reused. Added **Decision Date** as an application attribute. Added **Number formats by state** (temporary identifier and application number, per state; Kerala filled from DRISTI 1.0's code, the rest unknown) and `Q-13`. **Linked records** now also shows live views of the Notifications and Events master tables; pending tasks, notifications and events live only in those master tables, not in this file. Added `Q-14`. Punjab & Haryana's formats added: `CRM/[sequence]/[year]` and `CRM-[sequence]-[year]`. Reopen Evidence is available always. v31 — 2026-10-11; closed `Q-9`: an application in Pending Signature can be moved back to Draft and edited there, by anyone who could have created and edited the draft (`ALC-31`, new). Closed `Q-10`: the signer may use any signing mode enabled for the deployment. `ALC-28` tightened: only the person selected in Raised by signs, not any advocate or PiP on the case. v30 — 2026-10-11; **no setting a date before onboarding.** Review (step 2) now offers only Onboard or Dismiss; a date is set only after onboarding (3b). `ALC-05`, `ALC-06` and `ALC-20` are withdrawn, and the "set a date once, then dismiss promoted" rule goes with them, along with the note on deriving whether it had been used. v29 — 2026-10-11; rewrote the workflow as six linear steps — **Filing, Review, Onboarding, Objections, Decision, After the decision** — each with its own prose and its own requirements. "The workflow" now opens with the step list and a one-row-per-step table; "The decision points" is gone, its content moved into the steps; the full status table moves to the end as **Every status change**. Filing is written out in full: who drafts, signs and pays, how the status moves, and steps 1.1–1.8. New requirements `ALC-26`–`ALC-30` (types offered, resumable drafts, who signs, who pays, and expiry — only Advance / Prepone and Postpone expire, when their hearing passes; an unsubmitted application never does); every existing `ALC-` ID is kept. New open questions `Q-8`–`Q-12`. v28 — 2026-10-11; **Fields by application type**: every application can now carry optional, named supporting documents. Case Settlement gets a reason for settlement. Case Transfer's requested court and Case Withdrawal's reason for withdrawal are now text, not dropdowns. Advance / Postpone loses Prayer. PoA Change: Prayer is replaced by a reason for change; litigants appointing the applicant are a multi-select, and an existing PoA is a property of the litigant, not a field; the PoA instruments become one authorization document per litigant. Absent Application gets a reason for absence, Reopen Evidence a reason for reopening and Objection a reason for objection, all text. Bail's supporting documents are replaced by a proof of solvency, one per surety; other documents are optional, under Supporting documents. Edit Litigant Details: Complainant type / Accused type is now Litigant type; CIN or PAN is optional with no format validation; an accused institution's representatives are no longer edited with the institution, but as individual accused; an individual accused's name allows special characters, and the individual accused gains an optional Designation. v27 — 2026-10-09; rebuilt **Fields by application type** from the
 application print templates — each type now lists its template, its fields,
 who fills each (filer or system) and its field type. Updated **Application types**: renamed
 "Bail — Bail Bond" to Bail (the bail bond workflow on acceptance stays); Certified Copy removed; Warrant by
@@ -162,7 +162,7 @@ invites objections.
 
 | Step | What happens | Who acts | Status when the step ends |
 |---|---|---|---|
-| 1. Filing | Choose the type, fill in the form, sign, pay. | Advocate/PiP; a clerk or junior advocate may draft; the litigant or PoA-holder may pay | Pending Review (Objection: Submitted) |
+| 1. Filing | Choose the type, fill in the form, sign, pay. | Advocate/PiP; a clerk or junior advocate may draft; anyone on the filer's side may pay | Pending Review (Objection: Submitted) |
 | 2. Review | Onboard or dismiss. | Magistrate | Pending Decision once onboarded, or Dismissed |
 | 3. Onboarding | The application number is allotted, the other party can see it, and the magistrate chooses to deal with it now or on a date. | Magistrate | Pending Decision |
 | 4. Objections | The other party may file one objection, due by midnight the day before the decision date. | The other party | Pending Decision (unchanged) |
@@ -172,8 +172,9 @@ invites objections.
 ![Application lifecycle state diagram: Draft through Pending Signature, Pending Payment, Pending Review and Pending Decision to Accepted, Rejected, Dismissed, Submitted or Expired](https://codahosted.io/docs/KtL_rwN6Qw/blobs/bl-mU4WA9f9C5/bc11f1388ca64f3444395bbea36635929c423c3c9b0960a2e487ccfd0fd440e172372fbb2a53668bdb2328851d59631aff09804a71bba74d7545e184260413b6b3a723d97de7caddc5da9a43bb6ec6f993e4c3e6475d87df5072a6cdb22e922bc2015ce1)
 
 Accepted, Rejected, Dismissed, Submitted and Expired have no arrow leaving them — that's what makes them
-terminal. Moving the decision date (`ALC-15`) doesn't change status, so it is shown as a note rather than a loop. The
-diagram still shows "set a date" before onboarding, withdrawn in v30; it needs re-rendering.
+terminal. Moving the decision date (`ALC-15`) doesn't change status, so it is shown as a note rather than a loop.
+**The diagram is out of date:** it still shows a date being set before onboarding, and expiry
+from Draft, Pending Signature and Pending Payment. It needs re-rendering.
 
 The steps are set out one at a time below. Every status change is listed in one table at
 the end, under "Every status change".
@@ -185,20 +186,20 @@ the end, under "Every status change".
 - **Advocate/PiP**
   - Create a draft
   - Sign own drafts and drafts by associated clerks/junior advocates
-  - Pay for own applications and those associated clerks/junior advocates created
+  - Pay for any application raised by their side of the case
   - View own and associated drafts
   - View all submitted applications on the case, subject to `ALC-17` if on the opposing side
   - File an objection, if invited (`ALC-12`)
 - **Clerk and Junior Advocate**
   - Create drafts
   - View own drafts and drafts created by associated advocates
-  - Pay for own applications and those associated advocates created
+  - Pay for any application raised by their side of the case
   - View all submitted applications, same visibility gate as their advocate (`ALC-17`)
 - **Litigant**
-  - Pay for all applications submitted on their behalf
+  - Pay for any application raised by their side of the case
   - View all submitted applications, subject to `ALC-17` if on the opposing side
 - **PoA-Holder**
-  - Pay for all applications submitted on their litigant's behalf
+  - Pay for any application raised by their side of the case
   - View all submitted applications, subject to `ALC-17`
 - **Magistrate**
   - View all submitted applications, **including before onboarding** — `ALC-17`'s
@@ -216,7 +217,7 @@ the end, under "Every status change".
     restricted to the magistrate (`ALC-22`)
 
 The **objection-filing** action on Advocate/PiP is signed and paid for like any other
-application type — confirmed, no longer open.
+application type.
 
 | ID | Requirement |
 |---|---|
@@ -238,7 +239,7 @@ application that is never submitted stays where it is; it does not expire.
 |---|---|---|
 | Drafter | The advocate/PiP, or a clerk or junior advocate working for them | Create the draft, fill it in, send it for signature |
 | Signer | The advocate/PiP selected in **Raised by** — anyone with advocate access on the case, or a party-in-person. For PoA Change, the incoming PoA holder. | Sign, in any signing mode enabled for the deployment. Only the signer can move the application past Pending Signature. |
-| Payer | The advocate/PiP, a clerk or junior advocate for their associated advocate, the litigant it is raised for, or that litigant's PoA-holder | Pay |
+| Payer | Anyone on the same side of the case as the application — any advocate/PiP, clerk, junior advocate, litigant or PoA-holder on that side | Pay |
 
 The litigant and the PoA-holder do not draft or sign; they can only pay, and see the
 application once it is submitted. Which **types** a filer may raise depends on each type's
@@ -291,9 +292,8 @@ advocate (`ALC-28`). For a PoA Change, it is the incoming PoA holder who signs. 
 may use any of the signing modes enabled for the deployment. Signing moves the application
 to **Pending Payment**.
 
-**1.6 Pay.** The application is paid for by any one of: the advocate/PiP, a clerk or
-junior advocate for their associated advocate's application, the litigant it was raised
-for, or that litigant's PoA-holder (`ALC-29`). Payment can be left for later; the
+**1.6 Pay.** Anyone on the same side of the case as the application can pay for it
+(`ALC-29`). Payment can be left for later; the
 application then waits in Pending Payment, and a pay task links back to it. `ALC-01`
 requires payment only "where the type carries a fee"; what a type with no fee does at this
 step is not yet decided (`Q-11`).
@@ -314,7 +314,7 @@ step is not yet decided (`Q-11`).
 | `ALC-26` | The filer is offered only the application types whose "Available when" rule (see "Application types") is met for them and the case. Objection is not offered; it is raised only from a File objection task (`ALC-12`). |
 | `ALC-27` | A draft saves with everything filled in, and reopens that way. Draft is a resumable status, not a discarded one. |
 | `ALC-28` | An application is signed only by the person selected in **Raised by** (for PoA Change, the incoming PoA holder) — not by any other advocate or PiP on the case. A clerk or junior advocate may draft and send for signature, but cannot sign. The signer may use any signing mode enabled for the deployment. |
-| `ALC-29` | The payer may be the advocate/PiP, a clerk or junior advocate for their associated advocate's application, the litigant on whose behalf it is raised, or that litigant's PoA-holder. When payment is left for later, a pay task is raised that links back to the application. |
+| `ALC-29` | Anyone on the same side of the case as the application may pay for it — any advocate/PiP, clerk, junior advocate, litigant or PoA-holder on that side. When payment is left for later, a pay task is raised that links back to the application. |
 | `ALC-31` | An application in Pending Signature can be moved back to Draft, and edited there, by anyone who could have created and edited that draft. It is edited only in Draft; once edited, it goes through Proceed to sign again. |
 | `ALC-02` | On submission the application is allotted a **temporary identifier**. It can be shown to the user, but it is never cited in an order or any other document. The court-facing **application number** is allotted only on being onboarded (`ALC-04`). *(This reverses which of the two numbers `order-generation.md`'s `APL-02`/`APL-03` and `case-numbers.md`'s rows 6–7 currently name — see `Q-5`.)* |
 | `ALC-03` | On submission the system raises a **Review application** task for the magistrate, due the next working day. Filing time is not a factor in this version; a later version may bring the due date forward to the same day when the application is filed during working hours on a working day. |
@@ -337,10 +337,7 @@ onboarded (3b).
 
 | ID | Requirement |
 |---|---|
-| `ALC-05` | *Withdrawn in v30.* There is no "set a date" before onboarding. A date is set only after onboarding (`ALC-09`). |
-| `ALC-06` | *Withdrawn in v30*, with `ALC-05`. |
 | `ALC-19` | **Dismissing an application** is an order item, effective on the magistrate's signature, worded per [`order-generation.md`](order-generation.md) `APL-04`–`APL-06`. Any of the magistrate, the bench clerk or the typist may draft it; only the magistrate signs (an order, `ALC-22`). It's available on the **Review application** task the whole time it's open, alongside onboarding. |
-| `ALC-20` | *Withdrawn in v30*, with `ALC-05`. |
 
 ---
 
@@ -483,8 +480,8 @@ Used when setting the decision date at onboarding (3b), the only place a date is
 | Draft | Proceed to sign | Advocate/PiP, or a clerk/junior advocate | Pending Signature | 1 | |
 | Pending Signature | Move back to draft, to edit | Anyone who could have created and edited the draft | Draft | 1 | `ALC-31` |
 | Pending Signature | Sign | The person selected in Raised by (PoA Change: the incoming PoA holder) | Pending Payment | 1 | `ALC-28` |
-| Pending Payment | Pay | Advocate/PiP, clerk/junior advocate, litigant, or PoA-holder | Pending Review | 1 | `ALC-02`, `ALC-29` |
-| Pending Payment — **Objection only** | Pay | Advocate/PiP, clerk/junior advocate, litigant, or PoA-holder on the objecting side | **Submitted** — terminal; no `Pending Review` | 1, 4 | `ALC-24` |
+| Pending Payment | Pay | Anyone on the filer's side of the case | Pending Review | 1 | `ALC-02`, `ALC-29` |
+| Pending Payment — **Objection only** | Pay | Anyone on the objecting side of the case | **Submitted** — terminal; no `Pending Review` | 1, 4 | `ALC-24` |
 | Not yet accepted or rejected (which statuses exactly: `Q-8`) — **Advance / Prepone and Postpone only** | Its hearing passes | System | Expired | Expiry | `ALC-30` |
 | Pending Review | Onboard application | Magistrate | Pending Decision | 2, 3 | `ALC-04` |
 | Pending Review | Dismiss application | Magistrate | Dismissed | 2 | `ALC-19` |
@@ -509,6 +506,7 @@ entirely, so it doesn't belong in this application's own status column.
 | Date Created | The date the draft was originally created. |
 | Date Submitted | The date the application was formally submitted (signed and paid). |
 | Date Onboarded | The date the application number was allotted (`ALC-04`). |
+| Decision Date | The date the court will decide the application. Set at onboarding: the date chosen under "deal with it on a date" (`ALC-09`), or the onboarding date itself under "deal with it now" (`ALC-08`). Updated whenever the decision is moved (`ALC-15`). The Decide application task is due on this date, and the objection deadline is midnight the day before it (`ALC-13`). Empty until onboarding, and for a dismissed application. |
 | Application Raised By | The advocate/PiP who signed the application. |
 | Application Raised On Behalf Of | The litigant on whose behalf the application was raised. |
 | Status | **Draft · Pending Signature · Pending Payment · Pending Review · Pending Decision · Accepted · Rejected · Dismissed · Submitted · Expired.** `Pending Decision` sits between onboarding and the accept/reject order; `Dismissed` is a disposal distinct from `Rejected`; `Submitted` is Objection's own terminal status — never separately accepted or rejected — see "The workflow". |
@@ -519,13 +517,23 @@ entirely, so it doesn't belong in this application's own status column.
 
 ### What looks missing
 
-- **Decision Date isn't in this table on purpose** — it's just the **Decide application**
-  task's due date (`ALC-09`), not a separate stored field. Flagging in case you'd rather
-  have it as its own attribute (e.g. for reporting without joining to the task).
 - **Who onboarded / who dismissed / who decided** isn't listed separately — each is
   recoverable from `Linked Order`'s own signer, or from `Date Onboarded` plus whoever was
   logged in, so it didn't seem to need its own field. Worth a second look if audit needs
   more than that.
+
+---
+
+## Number formats by state
+
+`[CURRENT]` is how DRISTI 1.0 behaves today, not a requirement. `?` is not known.
+
+| State | Temporary identifier | Application number |
+|---|---|---|
+| Kerala | `[filing number]-AP[n]` — e.g. `KL-000123-2024-AP1` `[CURRENT]` | `CMP/[n]/[YYYY]` — e.g. `CMP/2/2024` `[CURRENT]` |
+| Punjab & Haryana | `CRM/[sequence]/[year]` — e.g. `CRM/11289/2025` | `CRM-[sequence]-[year]` — e.g. `CRM-1953-2025` |
+
+Whether each sequence runs per case or per court is open (`Q-13`).
 
 ---
 
@@ -549,7 +557,7 @@ Each type's own fields are in "Fields by application type," below.
 | Addition of Witness | Always | On acceptance, the witness is added to the case. | Request the addition of a witness to the case. |
 | Warrant by Hand | Always | — The decision screen directs the magistrate to issue a warrant with the channel set to **By hand**; nothing runs automatically. | Request that a warrant be issued for delivery by hand. |
 | Absent Application | Always | — | Notify the court of a party's absence and seek related directions. |
-| Reopen Evidence | *?* | — | Request that evidence be reopened for further examination or submission. |
+| Reopen Evidence | Always | — | Request that evidence be reopened for further examination or submission. |
 | **Objection** | Only against another application, raised via that application's **File objection** task (`ALC-12`) — not independently started by a filer | No accept/reject of its own: ends at `Submitted`, not `Pending Review` — read alongside the original application when the magistrate decides it (`ALC-14`, `ALC-23`), and becomes that application's `Objection (Linked Application)` (`ALC-24`) | State an objection to another party's application. |
 
 Hearing-linked types (Advance / Prepone, Postpone) expire if their hearing passes before
@@ -558,8 +566,7 @@ open (`Q-8`). Until real per-type configuration of
 "decide now vs. must offer objection" exists, `ALC-25` is the placeholder: every type
 behaves the same.
 
-Objection goes through the same Draft → Sign → Pay steps as every other type — confirmed
-(`Q-6`, now closed). It only diverges after payment: `Submitted`, not `Pending Review`.
+Objection goes through the same Draft → Sign → Pay steps as every other type. It only diverges after payment: `Submitted`, not `Pending Review`.
 
 ---
 
@@ -830,8 +837,8 @@ application type. The magistrate is then left with the decision alone.
 
 Live views of the master tables, filtered to this document. Each master table is the
 single source of truth and the place to edit its rows; anything tagged
-`application-lifecycle` there appears here automatically. A downloaded copy of this
-document is a snapshot.
+`application-lifecycle` there appears here automatically. A section showing nothing
+means nothing is tagged for it yet. A downloaded copy of this document is a snapshot.
 
 ### Pending tasks (Court Side)
 
@@ -849,6 +856,22 @@ tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-FICR
 filter: PRDs.Contains("application-lifecycle")
 ```
 
+### Notifications
+
+```superhuman-view
+name: Notifications — Application Lifecycle
+tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-xnftvTkudd/tables/grid-3FTjQhdfYv
+filter: PRDs.Contains("application-lifecycle")
+```
+
+### Events
+
+```superhuman-view
+name: Events — Application Lifecycle
+tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-2x28DoUtbn/tables/grid-GPg4dKS-s9
+filter: PRDs.Contains("application-lifecycle")
+```
+
 ---
 
 ## Open questions
@@ -858,4 +881,6 @@ filter: PRDs.Contains("application-lifecycle")
 | `Q-5` | This file calls the number assigned **at filing** the "temporary identifier," and the number assigned **at onboarding** the "application number." Two other files that also talk about these numbers use the **opposite** pairing: `order-generation.md` (`APL-02`, `APL-03`) calls the at-filing one the "application number," and `case-numbers.md` (rows 6–7) calls the at-onboarding one the "CMP number." Should those two files be updated to match the naming here, or does this file just stay different from them on purpose? | Yes |
 | `Q-8` | Expiry of Advance / Prepone and Postpone (`ALC-30`): (a) does it apply at every status before a decision — Draft, Pending Signature and Pending Payment as well as Pending Review and Pending Decision? (b) Does a hearing that is **moved**, not just one that passes, also expire the application? (c) On expiry, are its open tasks (Review application, Decide application, File objection) closed? | No |
 | `Q-11` | `ALC-01` requires payment only "where the type carries a fee". Does a type with no fee skip Pending Payment and go straight from signing to Pending Review? | No |
-| `Q-12` | The filer-side tasks for signing and paying (the pay task in `ALC-29`, and a sign task for the advocate/PiP) are not in the Pending tasks (Citizen-Side) table yet. Should they be added there? | No |
+| `Q-12` | The filer-side tasks (Sign application, Complete payment) and this lifecycle's notifications were added to the master tables from the original application spec, along with the notification to the opposing side moved to onboarding. Confirm them. | No |
+| `Q-13` | Is the counter in each application number kept **per case** (as DRISTI 1.0 does: `AP1`, `AP2` within a case; `CMP/[n]/[YYYY]` restarting per case each year) or **per court/courtroom** (as `case-numbers.md` rows 6–7 describe)? This decides whether either number is unique on its own. | No |
+| `Q-14` | Which further moments notify anyone or raise an event: an application dismissed at review, an Advance / Prepone or Postpone application expiring, a decision date being moved, an objection being filed, an application being onboarded? | No |

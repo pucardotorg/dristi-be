@@ -580,4 +580,4 @@ These are deliberate shortcuts. Each must be revisited before V1 exits pilot.
 
 # 14. Open questions
 
-No blocking open questions remain. All questions from v1 have been resolved inline.
+No blocking open questions remain.

@@ -369,12 +369,7 @@ others.
 
 ## Not in V1
 
-Order types removed from V1 scope. Retained here for future reference.
-
-The Dristi app's `order-templates.ts` carried all three of these as live, selectable
-order types until 2026-09-25 — a drift from this doc that had gone unnoticed. Removed
-from the app (screen, hearing-purpose suggestions, and tests) on that date to match V1
-scope.
+Order types outside V1 scope. Kept here for future reference; they are not offered in V1.
 
 | Order type | Was | Template | Locked variables | Workflow |
 |---|---|---|---|---|
@@ -386,7 +381,7 @@ scope.
 
 ## Application types covered by generic accept/reject
 
-The generic "Accept application" (#5) and "Reject application" (#6) rows above replace what were previously separate order types. These application types all use the same template and have no order-level workflow — any workflow triggered belongs to the application type itself.
+The generic "Accept application" (#5) and "Reject application" (#6) rows above cover every application type below. They all use the same template and have no order-level workflow — any workflow triggered belongs to the application type itself.
 
 | Application type | Notes |
 |---|---|
