@@ -18,7 +18,7 @@
 5. **Endpoints must be tagged in Swagger by owning app/domain by default**.
    - Example: health/liveness endpoints owned by core use `core`; user endpoints use `users`.
 6. **Every API error response uses one shape**: an `errors` array of
-   `{"code", "msg", "field"?}` items plus the usual `meta` (section 9).
+   `{"code", "message", "field"?}` items plus the usual `meta` (section 9).
    - `code` is a registered, stable `E<domain><seq>` identifier (for example `E01001`).
    - The full code catalogue is published in the Swagger documentation (section 10).
 
@@ -180,6 +180,13 @@ Implementation behavior:
 - Error responses: `{ "errors": [...], "meta": ... }` (section 9).
 - Non-JSON documentation responses are excluded from this rule.
 
+The OpenAPI schema documents the envelope exactly as the renderer applies it
+(section 10.1): object bodies gain a `meta` property, arrays and scalars are
+documented as `{ "data": ..., "meta": ... }`, and all of them reference one
+`ResponseMeta` component. Endpoints need no annotation for this, but their
+documented success body must be the right *kind* — a list action that
+returns `Serializer(many=True)` data must say so (section 10.2).
+
 ## 9. Error Handling and Validation Standards
 
 ### 9.1 Error response shape
@@ -190,8 +197,8 @@ not-found, throttling — has the same body:
 ```json
 {
   "errors": [
-    { "code": "E01001", "msg": "Invalid or expired code." },
-    { "code": "E00002", "msg": "This field is required.", "field": "mobile_number" }
+    { "code": "E01001", "message": "Invalid or expired code." },
+    { "code": "E00002", "message": "This field is required.", "field": "mobile_number" }
   ],
   "meta": {
     "timestamp": "2026-09-16T12:34:56.123456+05:30",
@@ -205,7 +212,7 @@ not-found, throttling — has the same body:
 | --- | --- | --- |
 | `errors` | yes | Non-empty array. One item per problem; a request can fail several ways at once. |
 | `errors[].code` | yes | Registered error code (9.2). **Clients branch on this.** |
-| `errors[].msg` | yes | Human-readable message. For display and logs only; it may vary, e.g. to name the offending value. |
+| `errors[].message` | yes | Human-readable message. For display and logs only; it may vary, e.g. to name the offending value. |
 | `errors[].field` | no | Request field the error refers to. Absent when the error concerns the request as a whole. |
 | `meta` | yes | As in section 8. |
 
@@ -290,8 +297,11 @@ models that validate in `save()` such as `BaseExtendableModel` — is translated
 to a 400 with its field keys and codes kept, instead of DRF's default 500.
 
 An error whose code is neither registered nor a DRF built-in falls back to the
-common code for its HTTP status (400 → `E00001`, 403 → `E00104`, …), so every
-response carries a registered code even if a raise site was missed.
+common code for its HTTP status (400 → `E00001`, 403 → `E00104`, …). A status
+with no common code of its own falls back by class: any other 4xx (413, 422 …)
+→ `E00001`, anything else → `E00100`. A client error is never given a
+server-error code, and every response carries a registered code even if a
+raise site was missed.
 
 ### 9.4 Business errors
 
@@ -312,7 +322,7 @@ from apps.api.errors import BusinessError
 from . import errors
 
 raise BusinessError(errors.OTP_INVALID)
-raise BusinessError(errors.OTP_INVALID, "Code expired 3 minutes ago.")  # custom msg
+raise BusinessError(errors.OTP_INVALID, "Code expired 3 minutes ago.")  # custom message
 raise BusinessError(errors.EMAIL_TAKEN, field="email")  # field-level
 ```
 
@@ -324,7 +334,7 @@ code. A test checks every such class's status against its registered status:
 ```python
 class ApprovalRoutingError(APIException):
     status_code = errors.APPROVAL_ROUTING.status
-    default_detail = errors.APPROVAL_ROUTING.msg
+    default_detail = errors.APPROVAL_ROUTING.message
     default_code = errors.APPROVAL_ROUTING.code
 ```
 
@@ -332,7 +342,7 @@ Permission classes report their code through DRF's `code` attribute:
 
 ```python
 class IsAuthenticatedAndRegistered(BasePermission):
-    message = errors.REGISTRATION_INCOMPLETE.msg
+    message = errors.REGISTRATION_INCOMPLETE.message
     code = errors.REGISTRATION_INCOMPLETE.code
 ```
 
@@ -358,7 +368,10 @@ rolls back the transaction.
   `DEBUG` is on, when Django shows its technical pages instead.
 - The shared `upsert` action reports every failing datapoint in one `errors`
   array, with `field` prefixed `datapoints[<index>]`, and rolls back the
-  batch. An unknown lookup value is `E00105` on that datapoint.
+  batch. An unknown lookup value is `E00105` on that datapoint. The response
+  status summarises the failures: if they all share one status, that status
+  (a batch refused only for permissions is a 403); if they differ, a 5xx wins
+  as 500, then 401, then 403, otherwise 400.
 
 ## 10. Swagger / OpenAPI Standards
 
@@ -373,34 +386,83 @@ Rules:
 
 ### 10.1 Error documentation
 
-The postprocessing hook `apps.api.schema.error_schema_hook` (configured in
-`SPECTACULAR_SETTINGS["POSTPROCESSING_HOOKS"]`) makes errors part of the
-published documentation automatically:
+Errors are part of the published documentation without per-endpoint
+boilerplate. Two pieces do this.
+
+**`apps.api.schema.error_schema_hook`** (in
+`SPECTACULAR_SETTINGS["POSTPROCESSING_HOOKS"]`) adds, once for the whole API:
 
 - `ErrorItem` and `ErrorResponse` component schemas; `ErrorItem.code` is an
-  enum of every registered code.
-- A `4XX` response referencing `ErrorResponse` on every operation.
+  enum of every registered code. The schemas carry no property-level examples:
+  Swagger would combine those into one sample shared by every endpoint.
+- A `4XX` catch-all response referencing `ErrorResponse` on every operation.
 - The **error code catalogue** — code, HTTP status, domain and default
   message — appended to the API description shown at the top of `/api/docs/`.
+  New codes appear as soon as they are defined.
 
-New codes appear in the catalogue as soon as they are defined; there is no
-separate list to maintain.
+**`apps.api.schema.ApiAutoSchema`** (the `DEFAULT_SCHEMA_CLASS`) documents the
+response envelope per operation:
 
-When an endpoint can return specific business errors, list them with
-`error_responses()`. It files each code under its own registered status, so
-the documented status cannot drift from the returned one; the hook attaches
-the `ErrorResponse` body:
+- **Success bodies include `meta`**, for views rendered by `MetaJSONRenderer`
+  (the schema endpoint itself is not, and is left alone).
+- **Errors get one named example per scenario**, shown in Swagger as a
+  dropdown per status. It derives these from the view:
+
+| Scenario | When | Example |
+| --- | --- | --- |
+| Missing required field | `POST`/`PUT` with a request serializer | `E00002` on the first required field (`PATCH`: `E00001` on the first writable field) |
+| Not authenticated | an anonymous caller is refused by the view's permissions for that method | `E00102` — 403 under session auth, 401 when the authenticator sends a challenge |
+| Coded permission | a permission class declares a registered `code` | e.g. `E01006` registration incomplete |
+| Not found | the route has path parameters | `E00105` naming the model |
+| Throttled | the view has throttles | `E00110` |
+
+Permissions are probed with an anonymous request for the operation's method,
+so `IsAuthenticatedOrReadOnly` reads are correctly shown as public.
+
+Business errors are not derivable, so declare them with `error_responses()`.
+It files each code under its own registered status, so the documented status
+cannot drift from the returned one. Use `.example()` to give the field the
+error is reported on, or the exact message when it is more specific than the
+default:
 
 ```python
 from apps.api.schema import error_responses
 
 @extend_schema(
     responses={
-        201: ACCOUNT_STATE_RESPONSE,
-        **error_responses(errors.OTP_INVALID, errors.ACCOUNT_ALREADY_REGISTERED),
+        201: REGISTERED_ACCOUNT_RESPONSE,
+        **error_responses(
+            errors.REGISTRATION_ALREADY_COMPLETE,
+            errors.EMAIL_TAKEN.example(field="email"),
+            errors.INVALID_REQUEST_STATE.example("A approved request cannot be cancelled."),
+        ),
     },
 )
 ```
+
+Validation an endpoint performs outside its request serializer — query
+parameter checks in `get_queryset()`, for instance — is declared the same way
+(see `LocationViewSet.list`).
+
+### 10.2 Documenting list responses
+
+drf-spectacular infers the response from the view's `serializer_class`, which
+is a single object. A custom action that returns a list must declare it, or
+both its body and its `meta` envelope are documented wrongly:
+
+```python
+@extend_schema_view(
+    children=extend_schema(responses=LocationSerializer(many=True)),   # paginated
+    ancestors=extend_schema(responses=LocationSerializer(many=True)),  # plain list
+)
+class LocationViewSet(APIModelReadOnlyViewSet):
+    # Returned whole, so documented as {"data": [...], "meta": ...}.
+    unpaginated_actions = {"ancestors", "ancestors_by_code"}
+```
+
+A `many=True` response is documented as paginated whenever the view has a
+pagination class; list actions that return everything in one response go in
+`unpaginated_actions`.
 
 Tip: use `?format=json` for schema assertions in tests/tooling where JSON is required.
 
@@ -441,7 +503,7 @@ Required coverage for each endpoint group:
 2. Add serializers with explicit fields.
 3. Add views/viewsets using shared base classes where applicable.
 4. Register routes in app-level URLs and include under versioned API.
-5. Define business error codes in the app's `errors.py`; raise them, and document them with `error_responses()`.
+5. Define business error codes in the app's `errors.py`; raise them, and declare them with `error_responses()` (plus any validation done outside the request serializer).
 6. Add endpoint tests in the owning app.
 7. Add/update Swagger annotations and tags.
 8. Run quality checks:

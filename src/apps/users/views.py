@@ -62,7 +62,7 @@ class OTPResendThrottled(Throttled):
     seconds," which says nothing about what was throttled or what to do.
     """
 
-    default_detail = errors.OTP_RESEND_TOO_SOON.msg
+    default_detail = errors.OTP_RESEND_TOO_SOON.message
     extra_detail_singular = "You can request another in {wait} second."
     extra_detail_plural = "You can request another in {wait} seconds."
     default_code = errors.OTP_RESEND_TOO_SOON.code
@@ -224,7 +224,14 @@ class OTPRequestView(APIView):
 
     @extend_schema(
         tags=["auth"],
-        responses={202: DETAIL_RESPONSE, **error_responses(errors.OTP_RESEND_TOO_SOON)},
+        responses={
+            202: DETAIL_RESPONSE,
+            **error_responses(
+                errors.OTP_RESEND_TOO_SOON.example(
+                    "A code was already sent to this number. You can request another in 25 seconds."
+                )
+            ),
+        },
     )
     def post(self, request):
         """Issue a code, or refuse with the seconds remaining on the cooldown."""
@@ -400,9 +407,12 @@ class BaseRegistrationCompletionView(APIView):
         responses={
             201: REGISTERED_ACCOUNT_RESPONSE,
             **error_responses(
-                errors.EMAIL_TAKEN,
-                errors.TERMS_NOT_ACCEPTED,
-                errors.PASSWORD_REJECTED,
+                errors.EMAIL_TAKEN.example(field="email"),
+                errors.TERMS_NOT_ACCEPTED.example(field="terms_accepted"),
+                errors.PASSWORD_REJECTED.example(
+                    "This password is too short. It must contain at least 8 characters.",
+                    field="password",
+                ),
                 errors.REGISTRATION_ALREADY_COMPLETE,
             ),
         },

@@ -248,6 +248,26 @@ class APIDestroyMixin:
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def batch_error_status(statuses: list[int]) -> int:
+    """Return the HTTP status for a batch whose items failed with ``statuses``.
+
+    Every item's own error code is in the body; the status summarises them. If
+    all failures agree, that status is kept, so a batch refused only for
+    permissions is a 403, not a 400. When they differ, the failure the client
+    cannot fix by correcting its data wins: a server error (500), then
+    authentication (401), then permission (403). Otherwise it is a 400.
+    """
+    distinct = set(statuses)
+    if len(distinct) == 1:
+        return distinct.pop()
+    if any(code >= 500 for code in distinct):
+        return status.HTTP_500_INTERNAL_SERVER_ERROR
+    for code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN):
+        if code in distinct:
+            return code
+    return status.HTTP_400_BAD_REQUEST
+
+
 class APIUpsertMixin:
     """Optional bulk upsert action using the shared create/update pipelines."""
 
@@ -273,6 +293,7 @@ class APIUpsertMixin:
 
         results: list[dict[str, Any]] = []
         error_items: list[dict[str, Any]] = []
+        error_statuses: list[int] = []
 
         with transaction.atomic():
             for index, item in enumerate(datapoints):
@@ -280,10 +301,11 @@ class APIUpsertMixin:
                 # client can match them back to its own payload.
                 field = f"datapoints[{index}]"
                 if not isinstance(item, dict):
+                    error_statuses.append(status.HTTP_400_BAD_REQUEST)
                     error_items.append(
                         {
                             "code": errors.INCORRECT_TYPE.code,
-                            "msg": "Each datapoint must be an object.",
+                            "message": "Each datapoint must be an object.",
                             "field": field,
                         }
                     )
@@ -311,15 +333,15 @@ class APIUpsertMixin:
                     DjangoPermissionDenied,
                     DjangoValidationError,
                 ) as exc:
-                    error_items.extend(
-                        errors.error_items(errors.as_api_exception(exc), field=field)
-                    )
+                    api_exc = errors.as_api_exception(exc)
+                    error_statuses.append(api_exc.status_code)
+                    error_items.extend(errors.error_items(api_exc, field=field))
 
             # All-or-nothing: one bad datapoint rolls back the whole batch,
             # so only the errors are reported.
             if error_items:
                 transaction.set_rollback(True)
-                return Response({"errors": error_items}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"errors": error_items}, status=batch_error_status(error_statuses))
 
         return Response(results, status=status.HTTP_200_OK)
 

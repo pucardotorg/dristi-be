@@ -2,9 +2,9 @@
 
 Every error an API returns is rendered as::
 
-    {"errors": [{"code": "E01001", "msg": "Invalid or expired code."}], "meta": {...}}
+    {"errors": [{"code": "E01001", "message": "Invalid or expired code."}], "meta": {...}}
 
-``code`` is a stable, registered identifier clients branch on; ``msg`` is the
+``code`` is a stable, registered identifier clients branch on; ``message`` is the
 human-readable text and may vary (it can carry the offending value). Errors
 tied to one request field also carry ``field``.
 
@@ -47,7 +47,7 @@ class ErrorCode:
     """A registered error: its code, default message and HTTP status."""
 
     code: str
-    msg: str
+    message: str
     status: int
 
     @property
@@ -66,16 +66,35 @@ class ErrorCode:
             raise errors.EMAIL_TAKEN.validation_error()
             raise errors.INVALID_DOCUMENTS.validation_error({"documents": problems})
         """
-        return exceptions.ValidationError(self.msg if detail is None else detail, code=self.code)
+        return exceptions.ValidationError(
+            self.message if detail is None else detail, code=self.code
+        )
+
+    def example(self, message: str | None = None, *, field: str | None = None) -> ErrorExample:
+        """Describe how this code appears in a response, for ``error_responses()``.
+
+        ``message`` is the message the endpoint actually sends, when it is more
+        specific than the default; ``field`` the request field it is reported on.
+        """
+        return ErrorExample(self, message or self.message, field)
 
     def __str__(self) -> str:
         return self.code
 
 
+@dataclass(frozen=True)
+class ErrorExample:
+    """An error code as one endpoint reports it: its message and optional field."""
+
+    error: ErrorCode
+    message: str
+    field: str | None = None
+
+
 _REGISTRY: dict[str, ErrorCode] = {}
 
 
-def define(code: str, msg: str, *, status: int = 400) -> ErrorCode:
+def define(code: str, message: str, *, status: int = 400) -> ErrorCode:
     """Register and return an error code.
 
     Raises ``ImproperlyConfigured`` at import time for a malformed code, an
@@ -90,7 +109,7 @@ def define(code: str, msg: str, *, status: int = 400) -> ErrorCode:
     if code in _REGISTRY:
         raise ImproperlyConfigured(f"Error code {code} is already defined.")
 
-    error = ErrorCode(code=code, msg=msg, status=status)
+    error = ErrorCode(code=code, message=message, status=status)
     _REGISTRY[code] = error
     return error
 
@@ -173,7 +192,9 @@ DRF_CODE_MAP: dict[str, ErrorCode] = {
 }
 
 # Last resort for an exception whose code is neither registered nor a DRF
-# built-in: pick by status so the client still gets the right category.
+# built-in: pick by status so the client still gets the right category. A
+# status not listed here falls back by class (see resolve_error), so a client
+# error is never reported with a server-error code.
 STATUS_FALLBACK: dict[int, ErrorCode] = {
     400: INVALID,
     401: NOT_AUTHENTICATED,
@@ -191,7 +212,7 @@ class BusinessError(exceptions.APIException):
     """A business-rule failure carrying a registered error code.
 
     Raise from views and services. The status comes from the error code.
-    ``msg`` overrides the default message, typically to include specifics;
+    ``message`` overrides the default message, typically to include specifics;
     ``field`` attributes the error to one request field. Inside serializer
     validation use ``ErrorCode.validation_error()`` instead::
 
@@ -199,19 +220,26 @@ class BusinessError(exceptions.APIException):
         raise BusinessError(errors.EMAIL_TAKEN, field="email")
     """
 
-    def __init__(self, error: ErrorCode, msg: str | None = None, *, field: str | None = None):
+    def __init__(self, error: ErrorCode, message: str | None = None, *, field: str | None = None):
         self.error = error
         self.status_code = error.status
-        message = error.msg if msg is None else msg
+        if message is None:
+            message = error.message
         super().__init__(detail={field: [message]} if field else message, code=error.code)
 
 
 def resolve_error(code: str | None, status_code: int) -> ErrorCode:
-    """Return the registered error for a DRF error-detail code."""
+    """Return the registered error for a DRF error-detail code.
+
+    Tries, in order: a registered code, a DRF built-in code, the common code
+    for the exact status, then the status class — ``E00001`` for any other
+    4xx (413, 422 …), ``E00100`` for everything else.
+    """
     return (
         get_error(code)
         or DRF_CODE_MAP.get(code or "")
-        or STATUS_FALLBACK.get(status_code, SERVER_ERROR)
+        or STATUS_FALLBACK.get(status_code)
+        or (INVALID if 400 <= status_code < 500 else SERVER_ERROR)
     )
 
 
@@ -226,14 +254,16 @@ def error_items(exc: exceptions.APIException, *, field: str | None = None) -> li
     items = list(_flatten(exc.detail, field, exc.status_code))
     if not items:
         error = resolve_error(None, exc.status_code)
-        items = [{"code": error.code, "msg": error.msg, **({"field": field} if field else {})}]
+        items = [
+            {"code": error.code, "message": error.message, **({"field": field} if field else {})}
+        ]
     return items
 
 
 def error_body(*errors: ErrorCode) -> dict:
     """Return a complete error body, ``meta`` included, for non-DRF responses."""
     return {
-        "errors": [{"code": error.code, "msg": error.msg} for error in errors],
+        "errors": [{"code": error.code, "message": error.message} for error in errors],
         "meta": build_response_meta(),
     }
 
@@ -250,7 +280,7 @@ def _flatten(detail, field: str | None, status_code: int) -> Iterator[dict]:
             yield from _flatten(value, child, status_code)
     else:
         error = resolve_error(getattr(detail, "code", None), status_code)
-        item = {"code": error.code, "msg": str(detail)}
+        item = {"code": error.code, "message": str(detail)}
         if field:
             item["field"] = field
         yield item

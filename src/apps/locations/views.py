@@ -10,6 +10,8 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
+from apps.api import errors
+from apps.api.schema import error_responses
 from apps.api.viewsets import APIModelReadOnlyViewSet
 
 from .models import Location
@@ -21,13 +23,30 @@ BOOLEAN_VALUES = {"true": True, "false": False}
 
 
 @extend_schema_view(
-    list=extend_schema(tags=["locations"]),
+    list=extend_schema(
+        tags=["locations"],
+        responses={
+            200: LocationSerializer(many=True),
+            **error_responses(
+                errors.INVALID.example(
+                    f"Must be one of: {', '.join(Location.LocationType.values)}.",
+                    field="location_type",
+                ),
+                errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
+                errors.INVALID.example("No location exists with code 'XX'.", field="parent_code"),
+                errors.INVALID.example("Must be 'true' or 'false'.", field="is_active"),
+                errors.INVALID.example(
+                    "parent_id and parent_code are mutually exclusive; supply only one."
+                ),
+            ),
+        },
+    ),
     retrieve=extend_schema(tags=["locations"]),
-    children=extend_schema(tags=["locations"]),
-    ancestors=extend_schema(tags=["locations"]),
+    children=extend_schema(tags=["locations"], responses=LocationSerializer(many=True)),
+    ancestors=extend_schema(tags=["locations"], responses=LocationSerializer(many=True)),
     by_code=extend_schema(tags=["locations"]),
-    children_by_code=extend_schema(tags=["locations"]),
-    ancestors_by_code=extend_schema(tags=["locations"]),
+    children_by_code=extend_schema(tags=["locations"], responses=LocationSerializer(many=True)),
+    ancestors_by_code=extend_schema(tags=["locations"], responses=LocationSerializer(many=True)),
 )
 class LocationViewSet(APIModelReadOnlyViewSet):
     """Read-only location API with hierarchy lookups by id or code."""
@@ -37,6 +56,8 @@ class LocationViewSet(APIModelReadOnlyViewSet):
     queryset = Location.objects.select_related("parent").all()
     serializer_class = LocationSerializer
     lookup_value_regex = UUID_REGEX
+    # Ancestor chains are short and returned whole; documented as plain lists.
+    unpaginated_actions = {"ancestors", "ancestors_by_code"}
 
     def get_queryset(self):
         """Apply the location_type, parent and is_active query filters."""

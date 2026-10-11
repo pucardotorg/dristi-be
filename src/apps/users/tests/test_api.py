@@ -88,7 +88,7 @@ class OTPRequestTests(OTPTestCase):
         # The message names what was throttled and what to do about it.
         [error] = response.json()["errors"]
         self.assertEqual(error["code"], "E01005")
-        detail = error["msg"]
+        detail = error["message"]
         self.assertIn("A code was already sent", detail)
         self.assertIn("You can request another in", detail)
         self.assertNotIn("Request was throttled", detail)
@@ -336,7 +336,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", [error["field"] for error in response.data["errors"]])
+        self.assertIn(
+            {"code": "E00006", "field": "password"},
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+        )
         self.user.refresh_from_db()
         self.assertEqual(self.user.registration_status, RegistrationStatus.PENDING_PROFILE)
 
@@ -352,7 +355,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", [error["field"] for error in response.data["errors"]])
+        self.assertIn(
+            {"code": "E01011", "field": "password"},
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+        )
 
     def test_password_similar_to_the_submitted_email_is_rejected(self):
         """Likewise the email, which is also only in the request body."""
@@ -362,7 +368,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", [error["field"] for error in response.data["errors"]])
+        self.assertIn(
+            {"code": "E01011", "field": "password"},
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+        )
 
     def test_password_similar_to_the_mobile_number_is_rejected(self):
         """The mobile number is on the row, but is not in Django's default list.
@@ -376,7 +385,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", [error["field"] for error in response.data["errors"]])
+        self.assertIn(
+            {"code": "E01011", "field": "password"},
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+        )
 
     def test_password_at_the_cap_is_accepted(self):
         """The cap is inclusive, so a password of exactly that length works."""

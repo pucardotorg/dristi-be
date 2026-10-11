@@ -16,9 +16,10 @@ from rest_framework.test import APITestCase
 
 from apps.api import errors
 from apps.api.errors import BusinessError, define, error_items
-from apps.api.schema import error_responses
+from apps.api.schema import ErrorScenario, _examples, error_responses
 from apps.api.serializers import AuditedModelSerializer
 from apps.api.viewsets import APIModelViewSet
+from apps.api.viewsets.base import batch_error_status
 from apps.core.models import ApiVersionChangeLog
 from apps.users.models import RegistrationStatus, User
 
@@ -38,6 +39,11 @@ class ChangeLogViewSet(APIModelViewSet):
 
     queryset = ApiVersionChangeLog.objects.all()
     serializer_class = ChangeLogSerializer
+
+    def authorize_update(self, serializer, model_instance):
+        """Refuse updates to a 'locked' entry, to exercise permission failures."""
+        if model_instance.version == "locked":
+            raise exceptions.PermissionDenied()
 
 
 @api_view(["GET"])
@@ -70,15 +76,17 @@ class ErrorItemsTests(SimpleTestCase):
     def test_business_error_carries_its_code_and_status(self):
         exc = BusinessError(errors.CONFLICT)
         self.assertEqual(exc.status_code, 409)
-        self.assertEqual(error_items(exc), [{"code": "E00108", "msg": errors.CONFLICT.msg}])
+        self.assertEqual(error_items(exc), [{"code": "E00108", "message": errors.CONFLICT.message}])
 
     def test_business_error_message_and_field_can_be_overridden(self):
         exc = BusinessError(errors.INVALID, "Wrong OTP", field="otp")
-        self.assertEqual(error_items(exc), [{"code": "E00001", "msg": "Wrong OTP", "field": "otp"}])
+        self.assertEqual(
+            error_items(exc), [{"code": "E00001", "message": "Wrong OTP", "field": "otp"}]
+        )
 
     def test_drf_codes_are_mapped_to_registered_codes(self):
         exc = serializers.ValidationError({"name": [exceptions.ErrorDetail("x", code="required")]})
-        self.assertEqual(error_items(exc), [{"code": "E00002", "msg": "x", "field": "name"}])
+        self.assertEqual(error_items(exc), [{"code": "E00002", "message": "x", "field": "name"}])
 
     def test_nested_fields_become_dotted_and_indexed_paths(self):
         exc = serializers.ValidationError(
@@ -89,7 +97,7 @@ class ErrorItemsTests(SimpleTestCase):
             }
         )
         self.assertEqual(
-            [(item.get("field"), item["msg"]) for item in error_items(exc)],
+            [(item.get("field"), item["message"]) for item in error_items(exc)],
             [("profile.bar_number", "bad"), ("items[1].qty", "too small"), (None, "whole object")],
         )
 
@@ -100,17 +108,35 @@ class ErrorItemsTests(SimpleTestCase):
 
         self.assertEqual(error_items(Teapot())[0]["code"], errors.PERMISSION_DENIED.code)
 
+    def test_unmapped_client_status_never_gets_a_server_error_code(self):
+        class TooLarge(exceptions.APIException):
+            status_code = 413
+            default_code = "something_custom"
+
+        self.assertEqual(error_items(TooLarge())[0]["code"], errors.INVALID.code)
+        empty = TooLarge(detail={})
+        self.assertEqual(error_items(empty)[0]["code"], errors.INVALID.code)
+
+    def test_unmapped_server_status_gets_the_server_error_code(self):
+        class Unavailable(exceptions.APIException):
+            status_code = 503
+            default_code = "something_custom"
+
+        self.assertEqual(error_items(Unavailable())[0]["code"], errors.SERVER_ERROR.code)
+
     def test_empty_detail_still_yields_one_error(self):
         self.assertEqual(
             error_items(serializers.ValidationError({})),
-            [{"code": "E00001", "msg": errors.INVALID.msg}],
+            [{"code": "E00001", "message": errors.INVALID.message}],
         )
 
     def test_validation_error_helper_carries_the_code(self):
         exc = errors.CONFLICT.validation_error({"name": ["taken"]})
-        self.assertEqual(error_items(exc), [{"code": "E00108", "msg": "taken", "field": "name"}])
         self.assertEqual(
-            error_items(errors.CONFLICT.validation_error())[0]["msg"], errors.CONFLICT.msg
+            error_items(exc), [{"code": "E00108", "message": "taken", "field": "name"}]
+        )
+        self.assertEqual(
+            error_items(errors.CONFLICT.validation_error())[0]["message"], errors.CONFLICT.message
         )
 
     def test_error_responses_group_codes_by_their_status(self):
@@ -123,6 +149,22 @@ class ErrorItemsTests(SimpleTestCase):
         self.assertEqual(
             error_items(exc, field="datapoints[2]")[0]["field"], "datapoints[2].version"
         )
+
+
+class BatchErrorStatusTests(SimpleTestCase):
+    """The status of an aggregated upsert failure."""
+
+    def test_uniform_failures_keep_their_status(self):
+        self.assertEqual(batch_error_status([403, 403]), 403)
+        self.assertEqual(batch_error_status([404]), 404)
+
+    def test_mixed_client_failures_are_a_400(self):
+        self.assertEqual(batch_error_status([400, 404, 409]), 400)
+
+    def test_mixed_failures_follow_the_precedence(self):
+        self.assertEqual(batch_error_status([400, 403]), 403)
+        self.assertEqual(batch_error_status([400, 403, 401]), 401)
+        self.assertEqual(batch_error_status([400, 401, 503]), 500)
 
 
 class ErrorRegistryTests(SimpleTestCase):
@@ -219,7 +261,7 @@ class ErrorResponseAPITests(APITestCase):
         response = self.client.get(reverse("django-validation"))
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         [error] = self.assert_error_body(response, "E00006")
-        self.assertEqual(error, {"code": "E00006", "msg": "Bad name.", "field": "name"})
+        self.assertEqual(error, {"code": "E00006", "message": "Bad name.", "field": "name"})
 
     def test_model_validation_on_save_is_reported_on_its_field(self):
         """BaseExtendableModel validates in save(); a shared CRUD create must not 500."""
@@ -296,6 +338,39 @@ class ErrorResponseAPITests(APITestCase):
         self.assertEqual(by_field["datapoints[0]"], "E00105")
         self.assertEqual(by_field["datapoints[1]"], "E00001")
 
+    def test_upsert_permission_failure_keeps_its_403(self):
+        locked = ApiVersionChangeLog.objects.create(version="locked", change_log="x")
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            reverse("test-errors-changelog-upsert"),
+            {"datapoints": [{"id": str(locked.pk), "version": "locked", "change_log": "y"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        [error] = self.assert_error_body(response, "E00104")
+        self.assertEqual(error["field"], "datapoints[0]")
+
+    def test_upsert_mixed_permission_and_validation_failures(self):
+        """Every failure is still reported; the permission failure sets the status."""
+        locked = ApiVersionChangeLog.objects.create(version="locked", change_log="x")
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            reverse("test-errors-changelog-upsert"),
+            {
+                "datapoints": [
+                    {"change_log": "missing version"},
+                    {"id": str(locked.pk), "version": "locked", "change_log": "y"},
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        by_field = {error["field"]: error["code"] for error in response.json()["errors"]}
+        self.assertEqual(by_field["datapoints[0].version"], "E00002")
+        self.assertEqual(by_field["datapoints[1]"], "E00104")
+        locked.refresh_from_db()
+        self.assertEqual(locked.change_log, "x")
+
 
 class ProjectUrlconfTests(APITestCase):
     """The real URL configuration has the API error handlers wired in."""
@@ -347,3 +422,109 @@ class ErrorSchemaTests(APITestCase):
         self.assertIn("E02002", decide["400"]["description"])
         self.assertIn("E02004", decide["403"]["description"])
         self.assertIn("E02003", decide["409"]["description"])
+
+
+def operation_examples(schema, path, method):
+    """Return {status: {example name: example}} for one operation."""
+    responses = schema["paths"][path][method]["responses"]
+    return {
+        status_code: response["content"]["application/json"]["examples"]
+        for status_code, response in responses.items()
+        if "examples" in response.get("content", {}).get("application/json", {})
+    }
+
+
+@override_settings(ROOT_URLCONF="config.urls")
+class ErrorExampleTests(APITestCase):
+    """Each operation shows its own error scenarios as named examples."""
+
+    def setUp(self):
+        response = self.client.get(f"{reverse('api-schema')}?format=json")
+        self.schema = json.loads(response.content)
+
+    def test_no_shared_sample_built_from_property_examples(self):
+        """Property-level examples made one generic sample for every endpoint."""
+        item = self.schema["components"]["schemas"]["ErrorItem"]
+        for prop in item["properties"].values():
+            self.assertNotIn("example", prop)
+
+    def test_every_example_is_well_formed_and_under_its_codes_status(self):
+        checked = 0
+        for route, item in self.schema["paths"].items():
+            for method in item:
+                for status_code, examples in operation_examples(self.schema, route, method).items():
+                    for name, example in examples.items():
+                        value = example["value"]
+                        self.assertEqual(set(value), {"errors", "meta"}, name)
+                        [error] = value["errors"]
+                        registered = errors.get_error(error["code"])
+                        self.assertIsNotNone(registered, name)
+                        self.assertTrue(name.startswith(error["code"]), name)
+                        self.assertEqual(example["summary"], error["message"])
+                        # Not-authenticated is the one status DRF decides at runtime.
+                        if error["code"] != errors.NOT_AUTHENTICATED.code:
+                            self.assertEqual(int(status_code), registered.status, (route, name))
+                        checked += 1
+        self.assertGreater(checked, 30)
+
+    def test_business_errors_with_their_fields(self):
+        examples = operation_examples(self.schema, "/api/v1/litigants/", "post")
+        email = examples["400"]["E01009 (email)"]["value"]["errors"][0]
+        self.assertEqual(
+            email,
+            {"code": "E01009", "message": errors.get_error("E01009").message, "field": "email"},
+        )
+        self.assertIn("E01004", examples["409"])
+
+    def test_validation_example_names_a_real_required_field(self):
+        examples = operation_examples(self.schema, "/api/v1/users/", "post")
+        self.assertIn("E00002 (mobile_number)", examples["400"])
+        self.assertIn("E01001", examples["401"])
+        self.assertIn("E01002", examples["409"])
+
+    def test_authenticated_endpoint_shows_not_authenticated_as_403(self):
+        examples = operation_examples(self.schema, "/api/v1/litigants/", "post")
+        self.assertIn("E00102", examples["403"])
+
+    def test_public_endpoints_show_no_authentication_error(self):
+        otp = operation_examples(self.schema, "/api/v1/auth/otp/request/", "post")
+        self.assertNotIn("403", otp)
+        # IsAuthenticatedOrReadOnly: reads are public.
+        location = operation_examples(self.schema, "/api/v1/locations/{id}/", "get")
+        self.assertNotIn("403", location)
+
+    def test_detail_routes_show_not_found_naming_the_model(self):
+        examples = operation_examples(self.schema, "/api/v1/locations/{id}/", "get")
+        self.assertEqual(
+            examples["404"]["E00105"]["summary"], "No Location matches the given query."
+        )
+
+    def test_query_parameter_errors_use_the_real_messages(self):
+        examples = operation_examples(self.schema, "/api/v1/locations/", "get")["400"]
+        self.assertEqual(examples["E00001 (parent_id)"]["summary"], "Must be a valid UUID.")
+        self.assertIn("mutually exclusive", examples["E00001"]["summary"])
+
+    def test_list_success_response_stays_paginated(self):
+        list_200 = self.schema["paths"]["/api/v1/locations/"]["get"]["responses"]["200"]
+        self.assertIn("Paginated", json.dumps(list_200))
+
+
+class DefaultPermissionExampleTests(SimpleTestCase):
+    """A view on the project's default permissions documents the registration gate."""
+
+    def test_coded_permission_classes_become_examples(self):
+        from drf_spectacular.generators import SchemaGenerator
+
+        schema = SchemaGenerator(patterns=urlpatterns).get_schema(request=None, public=True)
+        examples = operation_examples(schema, "/test-api/changelogs/", "get")
+        self.assertIn("E00102", examples["403"])
+        self.assertIn("E01006", examples["403"])
+
+    def test_repeated_codes_get_distinct_example_names(self):
+        examples = _examples(
+            [
+                ErrorScenario(errors.INVALID, "first"),
+                ErrorScenario(errors.INVALID, "second"),
+            ]
+        )
+        self.assertEqual(list(examples), ["E00001", "E00001 #2"])

@@ -46,7 +46,7 @@ This document helps AI coding assistants work effectively inside the **Dristi** 
 
 ## Adding error codes
 
-API errors are always `{"errors": [{"code", "msg", "field"?}], "meta": ...}`
+API errors are always `{"errors": [{"code", "message", "field"?}], "meta": ...}`
 (spec 0000 section 9). Do not build error `Response`s by hand.
 
 1. If the app has no domain prefix yet, allocate one in
@@ -57,9 +57,10 @@ API errors are always `{"errors": [{"code", "msg", "field"?}], "meta": ...}`
 3. Raise them: `BusinessError(errors.X)` from views and services,
    `errors.X.validation_error(...)` inside serializer validation, or set
    `default_code` / `status_code` on a DRF exception subclass.
-4. Document them on the endpoint:
-   `@extend_schema(responses={200: Out, **error_responses(errors.X)})`.
-   The Swagger code catalogue updates itself.
+4. Declare them on the endpoint, with the field / exact message where it helps:
+   `@extend_schema(responses={200: Out, **error_responses(errors.X.example(field="f"))})`.
+   Validation, auth, not-found and throttling examples are generated from the
+   view; the Swagger code catalogue updates itself.
 5. In tests, assert the error `code` (and `field`), not the message text.
 
 ## Addon modules

@@ -38,7 +38,7 @@ class DocumentTooLargeToServe(APIException):  # noqa: N818
     """Raised when a stored document exceeds the configured read limit."""
 
     status_code = errors.DOCUMENT_TOO_LARGE.status
-    default_detail = errors.DOCUMENT_TOO_LARGE.msg
+    default_detail = errors.DOCUMENT_TOO_LARGE.message
     default_code = errors.DOCUMENT_TOO_LARGE.code
 
 
@@ -64,7 +64,15 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
         responses={
             201: RequestDetailSerializer,
             **error_responses(
-                errors.INVALID_ATTRIBUTES, errors.INVALID_DOCUMENTS, errors.APPROVAL_ROUTING
+                errors.INVALID_ATTRIBUTES.example(
+                    "attributes: 'reason' is required.", field="attributes"
+                ),
+                errors.INVALID_DOCUMENTS.example(
+                    "At most 10 documents can be attached, got 11.", field="documents"
+                ),
+                errors.APPROVAL_ROUTING.example(
+                    "No eligible approver found for step 1 of LEAVE_REQUEST."
+                ),
             ),
         },
     ),
@@ -80,13 +88,25 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
         request=None,
         responses={
             200: RequestDetailSerializer,
-            **error_responses(errors.INVALID_REQUEST_STATE, errors.APPROVAL_ROUTING),
+            **error_responses(
+                errors.INVALID_REQUEST_STATE.example(
+                    "Only rejected requests can be resubmitted (current status: pending)."
+                ),
+                errors.APPROVAL_ROUTING.example(
+                    "No eligible approver found for step 1 of LEAVE_REQUEST."
+                ),
+            ),
         },
     ),
     cancel=extend_schema(
         tags=["dristi_requests"],
         request=None,
-        responses={200: RequestDetailSerializer, **error_responses(errors.INVALID_REQUEST_STATE)},
+        responses={
+            200: RequestDetailSerializer,
+            **error_responses(
+                errors.INVALID_REQUEST_STATE.example("A approved request cannot be cancelled.")
+            ),
+        },
     ),
 )
 class RequestViewSet(
@@ -191,10 +211,16 @@ class RequestViewSet(
         responses={
             200: RequestApprovalDetailSerializer,
             **error_responses(
-                errors.INVALID_APPROVAL_STATE,
-                errors.INVALID_REQUEST_STATE,
+                errors.INVALID_APPROVAL_STATE.example(
+                    "Approval has already been approved and cannot be decided again."
+                ),
+                errors.INVALID_REQUEST_STATE.example(
+                    "The request is cancelled and is no longer awaiting approval."
+                ),
                 errors.NOT_THE_ASSIGNED_APPROVER,
-                errors.APPROVAL_ROUTING,
+                errors.APPROVAL_ROUTING.example(
+                    "No eligible approver found for step 2 of LEAVE_REQUEST."
+                ),
             ),
         },
     ),

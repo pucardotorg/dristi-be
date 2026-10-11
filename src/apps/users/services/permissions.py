@@ -20,7 +20,7 @@ class IsAuthenticatedAndRegistered(BasePermission):
     is valid but gated: `POST /users/` sets a cookie before the wizard is done.
     """
 
-    message = errors.REGISTRATION_INCOMPLETE.msg
+    message = errors.REGISTRATION_INCOMPLETE.message
     code = errors.REGISTRATION_INCOMPLETE.code
 
     def has_permission(self, request, view):
@@ -72,7 +72,7 @@ class HasAcceptedCurrentTerms(BasePermission):
     sends the user to the wizard, the other to a re-acceptance screen.
     """
 
-    message = errors.TERMS_NOT_CURRENT.msg
+    message = errors.TERMS_NOT_CURRENT.message
     code = errors.TERMS_NOT_CURRENT.code
 
     def has_permission(self, request, view):
