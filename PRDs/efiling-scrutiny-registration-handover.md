@@ -1,6 +1,14 @@
 # E-Filing, Scrutiny and Registration — Developer & Agent Handover
 
-**Status:** v25 — 2026-09-28; **§16.10 removed** — everything in it (`ACC-5` renamed,
+**Status:** v27 — 2026-10-08; **CIN or PAN for an institutional complainant**
+(`LIT-18a`, new, §6): mandatory, with a note that it identifies cases belonging to the
+same complainant; the filer may skip it only after declaring they understand the
+consequence.
+v26 — 2026-10-08; **re-signing after a send-back is the e-filing signing
+step, unchanged** (`SIG-07`, new, §18; `LIFE-13`, §4): after corrections, the case goes
+back to signing and runs it exactly as at filing — same mode choice, signatories and
+rules; every party signs again.
+v25 — 2026-09-28; **§16.10 removed** — everything in it (`ACC-5` renamed,
 the added fields, "print per `DOC-01`") was already stated in §8's field table, §16.2's
 terminology note and the batch-8 log (§20); the section restated settled history rather
 than specifying anything. **§16.9's sample PDF regenerated** against the merged §16.4
@@ -214,7 +222,8 @@ don't build it. **When someone is removed from a case, they lose access to it.**
   skipped**. No automatic refund when lower; the system later auto-generates a **refund
   note** the filer uses to claim the refund.
 - `LIFE-13` — corrections require re-signing. **[OWNER]** any edit to the case
-  **invalidates all signatures**.
+  **invalidates all signatures**. The signing step is the same as at filing (`SIG-07`,
+  §18).
 - `LIFE-14` **[OWNER]** — **Delete Draft.** A draft can be deleted, subject to:
   - **Who:** only the user who **created** the draft — not every user with scope-predicate
     access. This is the one action where creator identity matters, not association.
@@ -314,6 +323,7 @@ Repeats per complainant. Individual vs Institution branches the section.
 | LIT-16 | PoA Current Address | Address composite | — | PoA = Yes AND same = No |
 | LIT-17 | Type of Institution | Dropdown | Values from MDMS | Institution |
 | LIT-18 | Institution Name | Text | — | Institution |
+| LIT-18a | CIN or PAN | Text, stored upper-case | — | Institution. **[OWNER]** **Mandatory, but skippable.** Help text: "This will be used to identify cases belonging to the same complainant." Leaving the section without it asks first; skipping needs a declaration that the filer understands the consequence — "I understand that without it, this case will not be linked to the complainant's other cases." |
 | LIT-19 | Phone Number (Institution Contact) | Phone | Valid; optional | Institution |
 | LIT-20 | Email ID (Institution Contact) | Email | Valid; optional | Institution |
 | LIT-21 | Institution Address | Address composite | — | Institution |
@@ -352,7 +362,7 @@ Repeats per accused. Individual vs Institution branches.
 | ID | Field | Type | Validation | Visible when / logic |
 | --- | --- | --- | --- | --- |
 | ACC-1 | Accused Type | Radio Individual/Institution | — | — |
-| ACC-2 | Full Name | Text | Alphabetic | Individual |
+| ACC-2 | Full Name | Text | Alphabetic; special characters allowed | Individual |
 | ACC-3 | Age | Number | Integer ≥ 1; optional | Individual |
 | ACC-4 | Type of Institution | Dropdown | Values from MDMS | Institution |
 | ACC-5 | Institution Name | Text | — | Institution |
@@ -1039,6 +1049,12 @@ backend data, not added to the case file **[OWNER]**):
   with the phone number entered for them in order to sign — creating their account; in
   **upload** mode the per-party OTP verification creates it.
 - `ROLE-08` — clerks cannot e-sign; enforce server-side.
+- `SIG-07` **[OWNER]** — **re-signing after a send-back is the same signing step as at
+  filing.** Once the filer has made the corrections asked for by scrutiny or the
+  magistrate and proceeds to sign (`LIFE-13`), the case goes through this section
+  exactly as it did at e-filing — same mode choice, same signatories, same rules
+  (`SIG-01` to `SIG-06`, `ROLE-08`). Nothing carries over from the earlier round:
+  every edit invalidates all signatures, so every required party signs again.
 
 E-sign provider selection, failure modes, retry/timeout: left to engineering at
 integration time (with §19's gateway equivalents).
