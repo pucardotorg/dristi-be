@@ -301,15 +301,19 @@ A single recorded address. Rows are **immutable snapshots**: once written, never
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
-| `line1` | text | NOT NULL | Street address / locality |
-| `city` | varchar(128) | NOT NULL | City or town |
-| `pincode` | char(6) | NOT NULL | Indian postal code |
-| `district` | varchar(128) | NOT NULL | Auto-filled from pincode, then stored |
-| `state` | varchar(128) | NOT NULL | Auto-filled from pincode, then stored |
+| `line1` | varchar(255) | NOT NULL | Street address / locality |
+| `city` | varchar(100) | NOT NULL | City or town |
+| `pincode` | varchar(6) | NOT NULL | Indian postal code |
+| `district` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
+| `state` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
+| `police_station` | varchar(255) | NOT NULL | Police station with jurisdiction over the address, needed for service of notice |
+| `hash` | varchar(64) | NOT NULL, UNIQUE | SHA-256 of the canonical form, see §7.4 |
 | `created_at` | timestamp | NOT NULL, default now() | Creation timestamp only, no `updated_at` |
+| `created_by` | uuid | FK → app_user, NULLABLE, ON DELETE PROTECT | Who first recorded the address; no `updated_by` |
 
 **Constraints:**
 - `CHECK (pincode ~ '^[1-9][0-9]{5}$')` — 6 digits, not starting with 0
+- `UNIQUE (hash)` — one row per distinct address
 - Index on `pincode` for geolocation queries
 
 ### 7.3 Design Decisions
@@ -320,24 +324,40 @@ Court records require stable addresses. If notice was served to 123 Main St in J
 **Why auto-fill district and state:**
 Use the [India Post Pincode API](https://api.postalpincode.in/pincode/{pincode}) to populate district and state at entry time, then store them. This denormalizes the data but makes queries faster and survives API unavailability.
 
-**Why no `updated_at`:**
-Rows are never updated. The absence of this field from BaseModel is intentional — it signals immutability to future maintainers.
+**Why no `updated_at` or `updated_by`:**
+Rows are never updated. The absence of these fields, and of BaseModel itself, is intentional — it signals immutability to future maintainers.
+
+**Why `created_by` is `ON DELETE PROTECT`:**
+`SET_NULL` would rewrite existing rows when a user is deleted, breaking immutability. A user who recorded an address is deactivated rather than deleted.
+
+**How immutability is enforced:**
+`Address.save()` inserts only and raises `AddressImmutableError` on an existing row; `Address.delete()` always raises. To change an address, call `address.revise(created_by=user, **changes)`, which returns the row holding the new values, and repoint the FK at it. The admin allows adding and viewing only. Bulk `QuerySet.update()` / `.delete()` and raw SQL bypass these checks; a database trigger rejecting `UPDATE` and `DELETE` would close that gap if needed.
 
 ### 7.4 Deduplication Strategy
 
-Two addresses with identical fields should reuse the same row:
+Two addresses with identical content reuse the same row. Create addresses through the manager rather than `Address.objects.create`:
 
 ```python
-address, created = Address.objects.get_or_create(
-    line1=normalized_line1,
+address, created = Address.objects.get_or_create_address(
+    created_by=request.user,
+    line1=line1,
     city=city,
     pincode=pincode,
     district=district,
     state=state,
+    police_station=police_station,
 )
 ```
 
-Hash the canonical form and add a `hash` column with a unique index for faster lookups.
+**Canonical form:** each content field (`line1`, `city`, `state`, `pincode`, `district`, `police_station`) is trimmed and inner whitespace collapsed to one space; `pincode` keeps no spaces (`"560 001"` → `"560001"`). Values are stored in this form with their original case.
+
+**Hash:** SHA-256 of the case-folded canonical fields joined by a unit separator (`\x1f`), stored in `hash` with a unique index. `"12  MG Road"` and `"12 mg road"` are therefore the same address; the row keeps the casing first stored. `save()` always recomputes the hash, so a stored hash always matches the stored values.
+
+**Behaviour:**
+- An existing match is returned as is, keeping its original `created_by`. `created_by` is not part of the hash, so two users recording the same address share one row.
+- `revise()` goes through the same path, so revising to an address that already exists returns that row, and a revision with no changes returns the original.
+- Concurrent callers are safe: the unique index makes the losing insert fall back to the existing row.
+- A direct duplicate insert fails at the unique index; model validation (and so the admin add form) reports "This address already exists." instead.
 
 ## 8. Core Case Record: The `cases` Table
 
