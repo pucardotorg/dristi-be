@@ -22,7 +22,8 @@ import zen
 
 from apps.core.models import BusinessRule
 
-from ..exceptions import RuleDefinitionError, RuleEvaluationError
+from .. import schemas
+from ..exceptions import RuleDefinitionError, RuleEvaluationError, RuleSchemaError
 from .base import RuleEngine
 
 SUPPORTED_NODE_TYPES = frozenset(
@@ -195,6 +196,19 @@ class GoRulesRuleEngine(RuleEngine):
     def validate(self, rule_expression, rule_input_schema=None):
         self._decision(rule_expression)
 
+    def validate_output_schema(self, rule_output_schema):
+        # ZEN returns {} (or [] under a "collect" hit policy) when no table row
+        # matches. A schema that accepts that would let a gap in a table reach
+        # the caller as a silent default (spec 0019 #6).
+        validator = schemas.compile_validator(rule_output_schema)
+        if validator.is_valid({}) or validator.is_valid([]):
+            raise RuleSchemaError(
+                "A GoRules output schema must reject an empty result ({} or []), which "
+                'ZEN returns when no table row matches. Declare non-empty "required" '
+                'or "minProperties" for an object, or "minItems" for an array.',
+                field="rule_output_schema",
+            )
+
     def referenced_inputs(self, rule_expression, rule_input_schema=None):
         graph = self._load(rule_expression)
         reads, produces = {}, {}
@@ -263,12 +277,12 @@ class GoRulesRuleEngine(RuleEngine):
         """Compile the graph, raising RuleDefinitionError for anything ZEN refuses."""
         graph = self._load(rule_expression)
         for node in graph["nodes"]:
-            for source in self._standard_expressions(node):
-                problem = zen.validate_expression(source)
+            for where, source, compile_ in self._expressions(node):
+                problem = self._compile_problem(compile_, source)
                 if problem:
                     raise RuleDefinitionError(
-                        f"Node {node.get('name') or node['id']!r}: invalid expression "
-                        f"{source!r} ({problem['type']}: {problem['source']})."
+                        f"Node {node.get('name') or node['id']!r}: invalid {where} "
+                        f"{source!r} ({problem})."
                     )
         try:
             decision = self._engine.create_decision(rule_expression)
@@ -278,20 +292,56 @@ class GoRulesRuleEngine(RuleEngine):
         return decision
 
     @staticmethod
-    def _standard_expressions(node):
-        """Yield the full (non-unary) expressions in a node, for syntax checks.
+    def _compile_problem(compile_, source):
+        """Return why ``source`` does not compile, or None."""
+        if not isinstance(source, str):
+            return f"expected an expression string, got {type(source).__name__}"
+        try:
+            compile_(source)
+        except Exception as exc:
+            try:
+                error = json.loads(str(exc))
+                return f"{error['type']}: {error['source']}"
+            except (ValueError, TypeError, KeyError):
+                return str(exc)
+        return None
 
-        Decision-table cells are left to ZEN and the dry run: ZEN accepts cell
-        forms (such as comma lists) that its standalone validators reject.
+    @staticmethod
+    def _expressions(node):
+        """Yield ``(description, source, compiler)`` for every expression in a node.
+
+        ``decision.validate()`` does not compile decision-table cells, and at
+        runtime ZEN treats a malformed input cell as "no match" and drops a
+        malformed output cell, so a broken table would silently return ``{}``.
+        Every non-blank cell is therefore compiled here, with the parser ZEN
+        uses for it: an input cell under a ``field`` is a unary test (``> 5``,
+        ``"a", "b"``), any other cell is a full expression. Blank cells are
+        skipped: ZEN reads an empty input cell as "any" and an empty output
+        cell as "no value".
         """
         content = node.get("content") or {}
         if node["type"] == "expressionNode":
             for expression in content.get("expressions") or []:
-                yield expression.get("value", "")
+                yield "expression", expression.get("value", ""), zen.compile_expression
         elif node["type"] == "switchNode":
             for statement in content.get("statements") or []:
                 if statement.get("condition"):
-                    yield statement["condition"]
+                    yield "condition", statement["condition"], zen.compile_expression
+        elif node["type"] == "decisionTableNode":
+            columns = [
+                (
+                    column,
+                    zen.compile_unary_expression if column.get("field") else zen.compile_expression,
+                )
+                for column in content.get("inputs") or []
+            ] + [(column, zen.compile_expression) for column in content.get("outputs") or []]
+            for index, row in enumerate(content.get("rules") or [], start=1):
+                for column, compile_ in columns:
+                    cell = row.get(column.get("id"))
+                    if cell is None or (isinstance(cell, str) and not cell.strip()):
+                        continue
+                    label = column.get("name") or column.get("field") or column.get("id")
+                    yield f"cell (row {index}, column {label!r})", cell, compile_
 
     @staticmethod
     def _node_io(node):

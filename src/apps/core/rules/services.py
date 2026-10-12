@@ -62,13 +62,15 @@ class BusinessRuleService:
 
     @staticmethod
     def validate_rule(rule):
-        """Check the schemas, compile the expression, and run the #2.6 identifier check.
+        """Check the schemas (including the engine's own output-schema requirement),
+        compile the expression, and run the #2.6 identifier check.
 
         Raises RuleSchemaError (with ``field``) or RuleDefinitionError.
         """
         schemas.check_schema(rule.rule_input_schema, field="rule_input_schema")
         schemas.check_schema(rule.rule_output_schema, field="rule_output_schema")
         engine = get_engine(rule.engine)
+        engine.validate_output_schema(rule.rule_output_schema)
         engine.validate(rule.rule_expression, rule.rule_input_schema)
         undeclared = engine.referenced_inputs(
             rule.rule_expression, rule.rule_input_schema

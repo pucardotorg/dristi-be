@@ -29,8 +29,11 @@ from apps.core.rules.services import BusinessRuleService
 from .rules_samples import (
     COURT_FEE_INPUT,
     ELIGIBILITY_GRAPH,
+    ELIGIBILITY_OUTPUT,
+    linear_graph,
     make_gorules_rule,
     make_rule,
+    table_node,
 )
 
 User = get_user_model()
@@ -304,6 +307,26 @@ class TestEndToEndGoRules:
         assert BusinessRuleService.evaluate(
             "SUMMONS_GENERATION_ELIGIBILITY", {"case_value": 150000, "case_type": "criminal"}
         )["result"] == {"eligible": False}
+
+    @pytest.mark.parametrize("hit_policy", ["first", "collect"])
+    def test_no_matching_row_is_an_error_not_an_empty_result(self, hit_policy):
+        table = table_node()
+        table["content"]["hitPolicy"] = hit_policy
+        del table["content"]["rules"][1]  # drop the catch-all row: criminal cases match nothing
+        output = (
+            ELIGIBILITY_OUTPUT
+            if hit_policy == "first"
+            else {"type": "array", "items": ELIGIBILITY_OUTPUT, "minItems": 1}
+        )
+        rule = make_gorules_rule(rule_expression=linear_graph(table), rule_output_schema=output)
+        rule.full_clean()  # the save-time checks accept it
+        assert BusinessRuleService.evaluate("SUMMONS_GENERATION_ELIGIBILITY", CIVIL_HIGH_VALUE)[
+            "result"
+        ] in ({"eligible": True}, [{"eligible": True}])
+        with pytest.raises(RuleOutputError):
+            BusinessRuleService.evaluate(
+                "SUMMONS_GENERATION_ELIGIBILITY", {"case_value": 1, "case_type": "criminal"}
+            )
 
     def test_input_validation_applies_to_gorules(self):
         make_gorules_rule()

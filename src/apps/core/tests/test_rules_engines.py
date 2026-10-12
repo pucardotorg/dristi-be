@@ -25,12 +25,14 @@ from apps.core.rules.exceptions import (
     EngineNotAvailable,
     RuleDefinitionError,
     RuleEvaluationError,
+    RuleSchemaError,
 )
 from apps.core.rules.schemas import datatype_for_property, datatypes_from_json_schema
 
 from .rules_samples import (
     COURT_FEE_INPUT,
     ELIGIBILITY_GRAPH,
+    ELIGIBILITY_OUTPUT,
     INPUT_NODE,
     OUTPUT_NODE,
     edge,
@@ -160,6 +162,10 @@ class TestSchemaToDataType:
 class TestRuleEngineAdapter:
     def test_validate_accepts_typed_expression(self, expression_adapter):
         expression_adapter.validate("case_value > 100000 ? 500 : 100", COURT_FEE_INPUT)
+
+    def test_any_valid_output_schema_is_accepted(self, expression_adapter):
+        # An empty result from rule_engine is an explicit return value, not a no-match.
+        expression_adapter.validate_output_schema({"type": "object"})
 
     def test_syntax_error_is_definition_error(self, expression_adapter):
         with pytest.raises(RuleDefinitionError, match="syntax error"):
@@ -327,6 +333,66 @@ class TestGoRulesAdapter:
     def test_malformed_documents_are_definition_errors(self, gorules_adapter, document, message):
         with pytest.raises(RuleDefinitionError, match=message):
             gorules_adapter.validate(document)
+
+    @pytest.mark.parametrize(
+        ("column", "cell"),
+        [
+            ("value", "> > 5"),  # malformed input cell: ZEN would treat it as "no match"
+            ("value", "[1.."),
+            ("eligible", "true +* 2"),  # malformed output cell: ZEN would drop it
+            ("eligible", 1),
+        ],
+    )
+    def test_malformed_table_cells_are_definition_errors(self, gorules_adapter, column, cell):
+        table = table_node()
+        table["content"]["rules"][0][column] = cell
+        with pytest.raises(RuleDefinitionError, match=r"invalid cell \(row 1, column"):
+            gorules_adapter.validate(linear_graph(table))
+
+    def test_input_cell_without_a_field_must_be_a_full_expression(self, gorules_adapter):
+        table = table_node()
+        del table["content"]["inputs"][0]["field"]
+        table["content"]["rules"][0]["value"] = "> 100000"
+        with pytest.raises(RuleDefinitionError, match="invalid cell"):
+            gorules_adapter.validate(linear_graph(table))
+        table["content"]["rules"][0]["value"] = "case_value > 100000"
+        gorules_adapter.validate(linear_graph(table))
+
+    @pytest.mark.parametrize(
+        "cell", ["> 100000", "1, 2, 3", "[1..100000]", "> 1 and < 100000", "$ > 1", "", "  "]
+    )
+    def test_table_cell_forms_zen_accepts_are_valid(self, gorules_adapter, cell):
+        table = table_node()
+        table["content"]["rules"][0]["value"] = cell
+        gorules_adapter.validate(linear_graph(table))
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            {"type": "object"},
+            {"type": "object", "properties": {"eligible": {"type": "boolean"}}},
+            {"type": "object", "required": []},
+            {"type": "array"},
+            {"type": "array", "minItems": 0},
+            {"type": ["object", "array"], "minProperties": 1},
+        ],
+    )
+    def test_output_schema_accepting_an_empty_result_is_rejected(self, gorules_adapter, schema):
+        with pytest.raises(RuleSchemaError, match="must reject an empty result") as exc_info:
+            gorules_adapter.validate_output_schema(schema)
+        assert exc_info.value.field == "rule_output_schema"
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            ELIGIBILITY_OUTPUT,
+            {"type": "object", "minProperties": 1},
+            {"type": "array", "minItems": 1},
+            {"type": "boolean"},
+        ],
+    )
+    def test_output_schema_rejecting_an_empty_result_is_accepted(self, gorules_adapter, schema):
+        gorules_adapter.validate_output_schema(schema)
 
     def test_cross_graph_reference_is_rejected(self, gorules_adapter):
         graph = linear_graph(

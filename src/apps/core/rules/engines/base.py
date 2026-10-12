@@ -64,6 +64,14 @@ class RuleEngine(abc.ABC):
     ) -> Any:
         """Return the raw engine output for the expression applied to payload."""
 
+    def validate_output_schema(self, rule_output_schema: dict) -> None:
+        """Raise RuleSchemaError if the output schema cannot guard this engine's output.
+
+        Called with a schema that has already passed ``check_schema()``. The
+        default accepts any valid schema.
+        """
+        return None
+
     def trace(self, rule_expression: str, payload: dict, rule_input_schema: dict) -> Any:
         """Return engine-native trace data for one evaluation, or ``None``.
 

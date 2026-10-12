@@ -15,12 +15,16 @@ from .rules_samples import (
     COURT_FEE_EXPRESSION,
     COURT_FEE_INPUT,
     COURT_FEE_OUTPUT,
+    ELIGIBILITY_GRAPH,
+    ELIGIBILITY_OUTPUT,
     INPUT_NODE,
     OUTPUT_NODE,
     edge,
     jdm,
+    linear_graph,
     make_gorules_rule,
     make_rule,
+    table_node,
 )
 
 
@@ -138,6 +142,34 @@ class TestClean:
             build_rule(engine=BusinessRule.RuleEngineType.GORULES, rule_expression=graph)
         )
         assert "not declared in rule_input_schema: court_level" in errors["rule_expression"][0]
+
+    def test_rejects_gorules_output_schema_that_accepts_an_empty_result(self):
+        errors = clean_errors(
+            build_rule(
+                engine=BusinessRule.RuleEngineType.GORULES,
+                rule_expression=ELIGIBILITY_GRAPH,
+                rule_output_schema={"type": "object"},
+            )
+        )
+        assert "must reject an empty result" in errors["rule_output_schema"][0]
+
+    def test_rule_engine_output_schema_may_accept_an_empty_result(self):
+        build_rule(
+            rule_expression="case_value > 100000 ? {'fee': 500} : {}",
+            rule_output_schema={"type": "object"},
+        ).full_clean()
+
+    def test_rejects_gorules_table_with_malformed_cell(self):
+        table = table_node()
+        table["content"]["rules"][0]["value"] = "> > 100000"
+        errors = clean_errors(
+            build_rule(
+                engine=BusinessRule.RuleEngineType.GORULES,
+                rule_expression=linear_graph(table),
+                rule_output_schema=ELIGIBILITY_OUTPUT,
+            )
+        )
+        assert "invalid cell (row 1, column 'Case value')" in errors["rule_expression"][0]
 
     def test_rejects_expression_that_does_not_compile(self):
         errors = clean_errors(build_rule(rule_expression="case_value >"))
