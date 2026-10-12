@@ -1,5 +1,9 @@
 """Tests for the BusinessRule model: fields, clean(), history and caching (spec 0019)."""
 
+import os
+import subprocess
+import sys
+
 import pytest
 from cachalot.settings import cachalot_settings
 from django.conf import settings
@@ -228,6 +232,31 @@ class TestHistory:
 
     def test_gorules_rule_saves(self):
         assert make_gorules_rule().history.count() == 1
+
+
+class TestRuleSettings:
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "RULES_EVALUATION_TIMEOUT_SECONDS",
+            "RULES_MAX_EXPRESSION_BYTES",
+            "RULES_MAX_CONCURRENT_EVALUATIONS",
+        ],
+    )
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_non_positive_value_refuses_to_start(self, name, value):
+        # Settings are read at import, so load them in a fresh interpreter.
+        completed = subprocess.run(
+            [sys.executable, "-c", "import config.settings.base"],
+            cwd=settings.BASE_DIR,
+            env={**os.environ, name: value},
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert completed.returncode != 0
+        assert f"ImproperlyConfigured: {name} must be greater than 0." in completed.stderr
 
 
 class TestCachingSettings:

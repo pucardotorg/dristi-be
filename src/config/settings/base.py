@@ -9,6 +9,7 @@ Environment-specific settings live in:
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -316,6 +317,16 @@ RULES_MAX_EXPRESSION_BYTES = env.int("RULES_MAX_EXPRESSION_BYTES", default=26214
 RULES_MAX_CONCURRENT_EVALUATIONS = env.int("RULES_MAX_CONCURRENT_EVALUATIONS", default=16)
 # Require a passing sample evaluation (dry run) before admin saves a rule.
 RULES_ADMIN_DRY_RUN_REQUIRED = env.bool("RULES_ADMIN_DRY_RUN_REQUIRED", default=True)
+# A non-positive value would make every evaluation (or every save) fail, so
+# refuse to start instead.
+for _name in (
+    "RULES_EVALUATION_TIMEOUT_SECONDS",
+    "RULES_MAX_EXPRESSION_BYTES",
+    "RULES_MAX_CONCURRENT_EVALUATIONS",
+):
+    if globals()[_name] <= 0:
+        raise ImproperlyConfigured(f"{_name} must be greater than 0.")
+del _name
 
 
 # ---------------------------------------------------------------------------
