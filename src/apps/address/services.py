@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 CACHE_KEY = "address:pincode:{pincode}"
 
+USER_AGENT = "dristi-be"
+
 
 class PincodeNotFoundError(Exception):
     """India Post answered, and it has no record of the pincode."""
@@ -61,7 +63,9 @@ def _fetch(pincode):
     """Call India Post and turn its answer into details or an error."""
     url = settings.PINCODE_API_URL.format(pincode=pincode)
     try:
-        response = requests.get(url, timeout=settings.PINCODE_API_TIMEOUT)
+        response = requests.get(
+            url, headers={"User-Agent": USER_AGENT}, timeout=settings.PINCODE_API_TIMEOUT
+        )
     except requests.RequestException as exc:
         logger.warning("Pincode API request failed for %s: %s", pincode, exc)
         raise PincodeServiceUnavailableError from exc
@@ -69,11 +73,6 @@ def _fetch(pincode):
     if response.status_code != 200:
         logger.warning("Pincode API returned HTTP %s for %s", response.status_code, pincode)
         raise PincodeServiceUnavailableError
-
-    # A good answer is a one-element list:
-    #   [{"Status": "Success", "PostOffice": [{"District": ..., "State": ...}, ...]}]
-    # An unknown pincode is:
-    #   [{"Status": "Error", "Message": "No records found", "PostOffice": null}]
     try:
         entry = response.json()[0]
         status = entry["Status"]
