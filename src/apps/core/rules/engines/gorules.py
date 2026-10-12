@@ -10,7 +10,9 @@ thread. Evaluation therefore awaits ``async_evaluate``, which runs on ZEN's
 own Rust thread pool with the GIL released, so the guard returns a
 RuleEvaluationError on time. The Rust computation itself cannot be cancelled:
 a timed-out evaluation runs to completion in the background and its result is
-discarded.
+discarded. It keeps holding its evaluation slot until then, so a rule that
+keeps timing out exhausts RULES_MAX_CONCURRENT_EVALUATIONS and further
+evaluations are refused rather than piling up more background work.
 """
 
 import asyncio

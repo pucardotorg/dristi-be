@@ -17,6 +17,7 @@ from rule_engine.types import DataType
 
 from apps.core.models import BusinessRule
 from apps.core.rules import engines
+from apps.core.rules.engines import base as base_module
 from apps.core.rules.engines import get_engine
 from apps.core.rules.engines import gorules as gorules_module
 from apps.core.rules.engines.expression import RuleEngineAdapter, normalize
@@ -532,3 +533,87 @@ class TestGoRulesAdapter:
             [edge("in", "a"), edge("a", "b"), edge("b", "out")],
         )
         assert gorules_adapter.referenced_inputs(graph) == {"case_value", "fee"}
+
+
+class TestEvaluationSlots:
+    """A timed-out evaluation holds its slot until its thread exits (spec 0019 #11.5)."""
+
+    @pytest.fixture
+    def adapter(self, settings):
+        settings.RULES_EVALUATION_TIMEOUT_SECONDS = 0.05
+        settings.RULES_MAX_CONCURRENT_EVALUATIONS = 1
+        # A private instance, so held slots never leak into the registry's adapters.
+        return RuleEngineAdapter()
+
+    @staticmethod
+    def stuck_call(release):
+        """Simulate native code: a blocking C call the interrupt cannot break into."""
+        return lambda: release.wait(5)
+
+    def test_abandoned_evaluation_holds_its_slot_and_new_ones_are_refused(self, adapter):
+        release = threading.Event()
+        with pytest.raises(RuleEvaluationError, match="timeout"):
+            adapter._guarded(self.stuck_call(release))
+        assert adapter.abandoned_evaluations() == 1
+
+        calls = []
+        with pytest.raises(RuleEvaluationError, match=r"1 slots taken, 1 abandoned"):
+            adapter._guarded(lambda: calls.append(1))
+        assert calls == []  # refused before the call ran
+
+        release.set()
+        for thread in guard_threads():
+            thread.join(timeout=2)
+        assert adapter.abandoned_evaluations() == 0
+        assert adapter._guarded(lambda: "ok") == "ok"
+
+    @pytest.mark.parametrize("call", [lambda: "ok", lambda: 1 / 0])
+    def test_slot_is_freed_after_success_or_failure(self, adapter, call):
+        try:
+            adapter._guarded(call)
+        except RuleEvaluationError:
+            pass
+        assert adapter._slots == {}
+
+    def test_timeout_logs_the_abandoned_count(self, adapter, caplog):
+        release = threading.Event()
+        with pytest.raises(RuleEvaluationError):
+            adapter._guarded(self.stuck_call(release))
+        release.set()
+        assert "1 abandoned evaluation(s) still running" in caplog.text
+
+    def test_slot_survives_an_interrupt_landing_on_release(self, adapter):
+        class InterruptFirstPop(dict):
+            interrupted = False
+
+            def pop(self, *args):
+                if not self.interrupted:
+                    self.interrupted = True
+                    raise base_module._EvaluationInterrupted
+                return super().pop(*args)
+
+        adapter._slots = InterruptFirstPop()
+        assert adapter._guarded(lambda: "ok") == "ok"
+        assert adapter._slots.interrupted
+        assert adapter._slots == {}
+
+    def test_interrupting_a_finished_thread_is_not_an_error(self):
+        thread = threading.Thread(target=lambda: None)
+        thread.start()
+        thread.join()
+        assert base_module._interrupt(thread) is False
+
+    def test_interrupt_hitting_several_threads_is_undone(self, monkeypatch):
+        calls = []
+
+        def fake(ident, exc):
+            calls.append(exc)
+            return 2 if len(calls) == 1 else 1
+
+        monkeypatch.setattr(base_module.ctypes.pythonapi, "PyThreadState_SetAsyncExc", fake)
+        thread = threading.Thread(target=lambda: None)
+        thread.start()
+        thread.join()
+        with pytest.raises(SystemError, match="hit 2 threads"):
+            base_module._interrupt(thread)
+        assert calls[1] is None  # the request was reverted

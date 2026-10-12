@@ -1,5 +1,7 @@
 """Business rule service: the only entry point for consumers (spec 0019 #5)."""
 
+import hashlib
+import json
 import threading
 from collections import OrderedDict
 
@@ -14,7 +16,7 @@ from .exceptions import (
     RuleOutputError,
 )
 
-# Compiled JSON Schema validators, keyed on (rule.id, rule.updated_at, side).
+# Compiled JSON Schema validators, keyed on (*_cache_key(rule), side).
 _VALIDATORS = OrderedDict()
 _VALIDATORS_LOCK = threading.Lock()
 _VALIDATORS_MAX_ENTRIES = 512
@@ -23,17 +25,23 @@ _VALIDATORS_MAX_ENTRIES = 512
 def _cache_key(rule):
     """Memo key for a rule's compiled artefacts, or None for an unsaved rule.
 
-    ``updated_at`` is mandatory: rules are edited in place, and a key on ``id``
-    alone would keep serving the old expression after an admin edit.
+    Rules are edited in place, so the key carries a digest of everything the
+    artefacts are built from. ``updated_at`` is not enough: a write that skips
+    ``save()`` (``QuerySet.update()``, raw SQL) leaves it unchanged and would
+    keep serving the old expression or schemas.
     """
-    if rule._state.adding or rule.updated_at is None:
+    if rule._state.adding:
         return None
-    return (rule.pk, rule.updated_at)
+    content = json.dumps(
+        [rule.engine, rule.rule_expression, rule.rule_input_schema, rule.rule_output_schema],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return (rule.pk, hashlib.sha256(content.encode("utf-8")).hexdigest())
 
 
-def _validator(rule, side):
+def _validator(rule, side, key):
     schema = rule.rule_input_schema if side == "input" else rule.rule_output_schema
-    key = _cache_key(rule)
     if key is None:
         return schemas.compile_validator(schema)
     key = (*key, side)
@@ -107,16 +115,17 @@ class BusinessRuleService:
     def _evaluate(rule, payload):
         # Input is checked before the engine is touched: a bad payload is a
         # caller bug, not a rule failure.
+        key = _cache_key(rule)
         schemas.ensure_plain_json(payload, error_class=RuleInputError)
         schemas.validate_instance(
-            _validator(rule, "input"), payload, error_class=RuleInputError, label="Input"
+            _validator(rule, "input", key), payload, error_class=RuleInputError, label="Input"
         )
         engine = get_engine(rule.engine)
         result = engine.evaluate_with_timeout(
-            rule.rule_expression, payload, rule.rule_input_schema, cache_key=_cache_key(rule)
+            rule.rule_expression, payload, rule.rule_input_schema, cache_key=key
         )
         schemas.ensure_plain_json(result, error_class=RuleOutputError)
         schemas.validate_instance(
-            _validator(rule, "output"), result, error_class=RuleOutputError, label="Output"
+            _validator(rule, "output", key), result, error_class=RuleOutputError, label="Output"
         )
         return {"code": rule.code, "engine": rule.engine, "result": result}

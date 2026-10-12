@@ -311,6 +311,9 @@ CACHALOT_UNCACHABLE_TABLES = (
 RULES_EVALUATION_TIMEOUT_SECONDS = env.float("RULES_EVALUATION_TIMEOUT_SECONDS", default=2.0)
 # Upper bound on the UTF-8 size of a stored rule_expression (JDM documents included).
 RULES_MAX_EXPRESSION_BYTES = env.int("RULES_MAX_EXPRESSION_BYTES", default=262144)
+# Per-process, per-engine cap on rule evaluations in flight, including timed-out
+# GoRules calls still finishing in the background; beyond it evaluations fail fast.
+RULES_MAX_CONCURRENT_EVALUATIONS = env.int("RULES_MAX_CONCURRENT_EVALUATIONS", default=16)
 # Require a passing sample evaluation (dry run) before admin saves a rule.
 RULES_ADMIN_DRY_RUN_REQUIRED = env.bool("RULES_ADMIN_DRY_RUN_REQUIRED", default=True)
 

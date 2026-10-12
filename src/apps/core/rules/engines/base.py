@@ -3,6 +3,7 @@
 import abc
 import copy
 import ctypes
+import logging
 import threading
 import time
 from collections import OrderedDict
@@ -11,6 +12,8 @@ from typing import Any
 from django.conf import settings
 
 from ..exceptions import RuleError, RuleEvaluationError
+
+logger = logging.getLogger(__name__)
 
 # Upper bound on memoized compiled artefacts per adapter.
 MEMO_MAX_ENTRIES = 256
@@ -29,18 +32,34 @@ def _interrupt(thread):
 
     This stops pure-Python work (rule-engine). Code running inside a native
     extension only sees it once control returns to Python (spec 0019 #11.5).
+    Returns False when the thread had already finished.
     """
-    ctypes.pythonapi.PyThreadState_SetAsyncExc(
-        ctypes.c_ulong(thread.ident), ctypes.py_object(_EvaluationInterrupted)
+    ident = ctypes.c_ulong(thread.ident)
+    affected = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+        ident, ctypes.py_object(_EvaluationInterrupted)
     )
+    if affected > 1:
+        # CPython documents this as unrecoverable unless the request is undone.
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(ident, None)
+        raise SystemError(
+            f"Interrupting rule evaluation thread {thread.ident} hit {affected} threads."
+        )
+    return affected == 1
 
 
 class RuleEngine(abc.ABC):
     """Engine-agnostic contract for compiling and evaluating a rule expression.
 
-    ``cache_key`` is an optional, opaque ``(rule.id, rule.updated_at)`` tuple
-    under which an adapter may memoize its compiled artefact (spec 0019 #7).
-    Callers evaluating an unsaved rule (the admin dry run) pass ``None``.
+    ``cache_key`` is an optional, opaque key that changes whenever the rule's
+    content changes, under which an adapter may memoize its compiled artefact
+    (spec 0019 #7). Callers evaluating an unsaved rule (the admin dry run)
+    pass ``None``.
+
+    Every evaluation holds one of ``RULES_MAX_CONCURRENT_EVALUATIONS`` slots
+    until its guard thread exits. A timed-out GoRules call keeps running in
+    native code (#11.5), so its slot stays taken until it really finishes;
+    once every slot is taken, new evaluations are refused instead of piling
+    up more background work.
     """
 
     engine: str  # BusinessRule.RuleEngineType value
@@ -48,6 +67,10 @@ class RuleEngine(abc.ABC):
     def __init__(self):
         self._memo = OrderedDict()
         self._memo_lock = threading.Lock()
+        # Evaluation slots: token -> monotonic deadline. A slot still held after
+        # its deadline belongs to an abandoned (timed-out) evaluation.
+        self._slots = {}
+        self._slots_lock = threading.Lock()
 
     @abc.abstractmethod
     def validate(self, rule_expression: str, rule_input_schema: dict) -> None:
@@ -101,22 +124,46 @@ class RuleEngine(abc.ABC):
         RuleEvaluationError.
         """
         timeout = settings.RULES_EVALUATION_TIMEOUT_SECONDS
+        token = object()
+        self._acquire_slot(token, timeout)
         outcome = {}
 
         def target():
             try:
-                outcome["value"] = call()
-            except _EvaluationInterrupted:
-                pass
-            except BaseException as exc:  # noqa: BLE001 - re-raised in the caller's thread
-                outcome["error"] = exc
+                try:
+                    outcome["value"] = call()
+                except _EvaluationInterrupted:
+                    pass
+                except BaseException as exc:  # noqa: BLE001 - re-raised in the caller's thread
+                    outcome["error"] = exc
+            finally:
+                # Inlined rather than a call: a pending interrupt can fire on
+                # function entry, before any try inside the callee. dict.pop is
+                # one C call, so retrying until it runs never leaks the slot.
+                while True:
+                    try:
+                        self._slots.pop(token, None)
+                        break
+                    except _EvaluationInterrupted:
+                        pass
 
         thread = threading.Thread(target=target, name=f"rule-eval-{self.engine}", daemon=True)
         started = time.monotonic()
-        thread.start()
+        try:
+            thread.start()
+        except BaseException:
+            self._slots.pop(token, None)
+            raise
         thread.join(timeout)
         if thread.is_alive():
-            _interrupt(thread)
+            if _interrupt(thread):
+                logger.warning(
+                    "%s rule evaluation exceeded the %ss timeout; %d abandoned evaluation(s) "
+                    "still running in this process.",
+                    self.engine,
+                    timeout,
+                    self.abandoned_evaluations(),
+                )
             raise RuleEvaluationError(f"Evaluation exceeded the {timeout}s timeout.")
         # A long call inside a C extension (a backtracking regex, a huge
         # $range) holds the GIL, so join() only returns once it has finished.
@@ -132,6 +179,30 @@ class RuleEngine(abc.ABC):
                 raise exc
             raise RuleEvaluationError(f"Evaluation failed: {exc}") from exc
         return outcome["value"]
+
+    def abandoned_evaluations(self):
+        """Return how many timed-out evaluations are still running."""
+        now = time.monotonic()
+        return sum(1 for deadline in list(self._slots.values()) if deadline < now)
+
+    def _acquire_slot(self, token, timeout):
+        """Take an evaluation slot or raise RuleEvaluationError when none is free."""
+        limit = settings.RULES_MAX_CONCURRENT_EVALUATIONS
+        with self._slots_lock:
+            if len(self._slots) < limit:
+                self._slots[token] = time.monotonic() + timeout
+                return
+        abandoned = self.abandoned_evaluations()
+        logger.warning(
+            "%s rule evaluation refused: all %d slots are taken (%d abandoned after timing out).",
+            self.engine,
+            limit,
+            abandoned,
+        )
+        raise RuleEvaluationError(
+            f"Too many rule evaluations in progress ({limit} slots taken, "
+            f"{abandoned} abandoned after timing out); try again later."
+        )
 
     def _memoized(self, cache_key, factory):
         """Return ``factory()``, memoized under ``cache_key`` when one is given."""

@@ -6,11 +6,9 @@ the bottom use the real rule-engine and zen-engine libraries, unmocked.
 """
 
 import copy
-from datetime import timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 
 from apps.core.models import BusinessRule
 from apps.core.rules import engines
@@ -28,6 +26,7 @@ from apps.core.rules.services import BusinessRuleService
 
 from .rules_samples import (
     COURT_FEE_INPUT,
+    COURT_FEE_OUTPUT,
     ELIGIBILITY_GRAPH,
     ELIGIBILITY_OUTPUT,
     linear_graph,
@@ -365,25 +364,53 @@ class TestCompiledArtefactCache:
             == 750
         )
 
-    def test_cache_key_is_updated_at_not_the_expression(self):
+    def test_write_that_bypasses_save_changes_the_next_evaluation(self):
         rule = make_rule()
         BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)
+        updated_at = BusinessRule.objects.get(pk=rule.pk).updated_at
 
-        # A write that bypasses save() leaves updated_at alone, so the
-        # memoized compilation for (id, updated_at) is still served.
+        # QuerySet.update() leaves updated_at alone; the content digest still changes.
         BusinessRule.objects.filter(pk=rule.pk).update(rule_expression='{"fee": 750}')
-        assert (
-            BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)["result"]["fee"]
-            == 500
-        )
-
-        BusinessRule.objects.filter(pk=rule.pk).update(
-            updated_at=timezone.now() + timedelta(seconds=1)
-        )
+        assert BusinessRule.objects.get(pk=rule.pk).updated_at == updated_at
         assert (
             BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)["result"]["fee"]
             == 750
         )
+
+    def test_schema_write_that_bypasses_save_changes_the_next_validation(self):
+        rule = make_rule()
+        BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)
+
+        BusinessRule.objects.filter(pk=rule.pk).update(
+            rule_output_schema={**COURT_FEE_OUTPUT, "required": ["fee", "receipt"]}
+        )
+        with pytest.raises(RuleOutputError, match="'receipt' is a required property"):
+            BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)
+
+        BusinessRule.objects.filter(pk=rule.pk).update(
+            rule_input_schema={**COURT_FEE_INPUT, "required": ["case_value", "case_type", "court"]}
+        )
+        with pytest.raises(RuleInputError, match="'court' is a required property"):
+            BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)
+
+    def test_non_content_edit_reuses_the_compiled_rule(self, monkeypatch):
+        rule = make_rule()
+        adapter = get_engine(BusinessRule.RuleEngineType.RULE_ENGINE)
+        compiles = []
+        original = adapter._compile
+
+        def counting(*args, **kwargs):
+            compiles.append(args)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(adapter, "_compile", counting)
+        BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)
+        assert len(compiles) == 1
+        rule.name = "Renamed"
+        rule.save()  # full_clean() compiles to validate; that is not the memo
+        compiles.clear()
+        BusinessRuleService.evaluate("COURT_FEE_CALCULATION", CIVIL_HIGH_VALUE)
+        assert compiles == []
 
     def test_gorules_graph_edit_changes_the_next_evaluation(self):
         rule = make_gorules_rule()

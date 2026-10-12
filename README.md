@@ -151,6 +151,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CACHALOT_TIMEOUT` | Default lifetime of django-cachalot cached ORM query results, in seconds. | `120` |
 | `RULES_EVALUATION_TIMEOUT_SECONDS` | Per-evaluation time limit for business rules, in seconds. A GoRules evaluation that times out still finishes in the background. | `2` |
 | `RULES_MAX_EXPRESSION_BYTES` | Maximum UTF-8 size of a stored business rule expression or JDM document. | `262144` |
+| `RULES_MAX_CONCURRENT_EVALUATIONS` | Per-process, per-engine limit on business rule evaluations in flight, including timed-out GoRules evaluations still finishing in the background. Further evaluations fail fast until a slot frees. | `16` |
 | `RULES_ADMIN_DRY_RUN_REQUIRED` | Require a passing sample evaluation (dry run) before a business rule can be saved in admin. | `True` |
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
 | `EMAIL_URL` | Email backend URL | `smtp://user:pass@smtp:587` |
