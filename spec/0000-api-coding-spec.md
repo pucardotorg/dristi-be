@@ -359,13 +359,19 @@ rolls back the transaction.
   `MetaJSONRenderer` adds `meta`. `errors` is never empty.
 - `ApiConfig.ready()` imports every installed app's `errors` module, so the
   catalogue is complete before the first request or schema build.
-- Requests that never reach a DRF view use Django's `handler404` /
-  `handler500`, set in `config.urls` to `apps.api.errors.handler404` /
-  `handler500`. Under `/api/` they return the standard shape: an unmatched
-  route is `E00105`, an unhandled exception is `E00100` with a generic
-  message (Django logs the exception first; its details never reach the
-  client). Other paths keep Django's pages. Neither handler runs while
-  `DEBUG` is on, when Django shows its technical pages instead.
+- Errors DRF's handler never sees use Django's `handler400` / `handler403` /
+  `handler404` / `handler500`, set in `config.urls` to the
+  `apps.api.errors` functions of the same name. Under `/api/` they return the
+  standard shape: a request Django rejects as bad (`SuspiciousOperation`,
+  `RequestDataTooBig`, `BadRequest`, a malformed multipart body) is `E00101`,
+  a `PermissionDenied` raised outside DRF (middleware, a plain Django view) is
+  `E00104`, an unmatched route is `E00105`, an unhandled exception is `E00100`.
+  Each uses the code's generic message, so exception details never reach the
+  client (Django logs them first). Other paths keep Django's pages. While
+  `DEBUG` is on, Django shows its technical pages for 404, 500 and most 400s
+  instead.
+- Errors on a whole object, rather than one field, carry no `field`: both
+  DRF's `non_field_errors` and Django's `__all__` key are dropped.
 - The shared `upsert` action reports every failing datapoint in one `errors`
   array, with `field` prefixed `datapoints[<index>]`, and rolls back the
   batch. An unknown lookup value is `E00105` on that datapoint. The response

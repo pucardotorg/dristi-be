@@ -20,7 +20,7 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import NON_FIELD_ERRORS, ImproperlyConfigured
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404, JsonResponse
@@ -290,7 +290,9 @@ def _join(parent: str | None, key) -> str | None:
     """Build a field path: ``profile.bar_number``, ``documents[0]``."""
     if isinstance(key, int):
         return f"{parent or ''}[{key}]"
-    if key == api_settings.NON_FIELD_ERRORS_KEY:
+    # Errors on the whole object carry no field: DRF files them under
+    # NON_FIELD_ERRORS_KEY, Django (a model's clean()) under "__all__".
+    if key in (api_settings.NON_FIELD_ERRORS_KEY, NON_FIELD_ERRORS):
         return parent
     return f"{parent}.{key}" if parent else str(key)
 
@@ -333,11 +335,28 @@ def api_exception_handler(exc, context):
     return response
 
 
-# Django-level handlers, wired in config.urls. They cover what never reaches a
-# DRF view: an /api/ URL that matches no route, and an unhandled exception
-# (logged by Django before the handler runs). Neither is used while DEBUG is
-# on, when Django shows its technical pages instead.
+# Django-level handlers, wired in config.urls. They cover what never reaches
+# DRF's exception handler: an /api/ URL that matches no route, an exception
+# Django turns into a 400 (SuspiciousOperation, RequestDataTooBig, BadRequest,
+# MultiPartParserError) or a 403 (PermissionDenied from middleware or a plain
+# Django view), and an unhandled exception (logged by Django before the
+# handler runs). While DEBUG is on, Django shows its technical pages for 404,
+# 500 and most 400s instead; the 403 handler and the multipart 400 still run.
 API_PATH_PREFIX = "/api/"
+
+
+def handler400(request, exception):
+    """400 in the standard error shape under /api/, Django's page elsewhere."""
+    if request.path.startswith(API_PATH_PREFIX):
+        return JsonResponse(error_body(MALFORMED_REQUEST), status=400)
+    return defaults.bad_request(request, exception)
+
+
+def handler403(request, exception):
+    """403 in the standard error shape under /api/, Django's page elsewhere."""
+    if request.path.startswith(API_PATH_PREFIX):
+        return JsonResponse(error_body(PERMISSION_DENIED), status=403)
+    return defaults.permission_denied(request, exception)
 
 
 def handler404(request, exception):

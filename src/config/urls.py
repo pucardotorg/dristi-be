@@ -33,5 +33,7 @@ if "debug_toolbar" in settings.INSTALLED_APPS:
     urlpatterns += [path("__debug__/", include("debug_toolbar.urls"))]
 
 # Standard error shape for /api/ requests that never reach DRF — spec 0000 section 9.5.
+handler400 = "apps.api.errors.handler400"
+handler403 = "apps.api.errors.handler403"
 handler404 = "apps.api.errors.handler404"
 handler500 = "apps.api.errors.handler500"

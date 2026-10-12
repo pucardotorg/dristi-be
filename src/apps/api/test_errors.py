@@ -4,7 +4,8 @@ import importlib
 import json
 import uuid
 
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.test import SimpleTestCase, override_settings
 from django.urls import include, path, reverse
@@ -53,6 +54,25 @@ def raise_django_validation_error(request):
     raise DjangoValidationError({"name": DjangoValidationError("Bad name.", code="max_length")})
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def raise_django_non_field_error(request):
+    """Raise the way a model's clean() reports an error on the whole object."""
+    raise DjangoValidationError({"__all__": ["Bad combination."], "name": ["Bad name."]})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def raise_suspicious(request):
+    """DRF does not handle SuspiciousOperation; Django turns it into a 400."""
+    raise SuspiciousOperation("secret internals")
+
+
+def raise_permission_denied(request):
+    """A plain Django view (or middleware) refusing the request."""
+    raise DjangoPermissionDenied("secret internals")
+
+
 def raise_unhandled(request):
     """A plain Django view that crashes."""
     raise RuntimeError("secret internals")
@@ -63,9 +83,16 @@ router.register(r"changelogs", ChangeLogViewSet, basename="test-errors-changelog
 urlpatterns = [
     path("test-api/", include(router.urls)),
     path("api/django-validation/", raise_django_validation_error, name="django-validation"),
+    path("api/django-non-field/", raise_django_non_field_error, name="django-non-field"),
+    path("api/suspicious/", raise_suspicious, name="suspicious"),
+    path("suspicious/", raise_suspicious, name="suspicious-outside-api"),
+    path("api/forbidden/", raise_permission_denied, name="forbidden"),
+    path("forbidden/", raise_permission_denied, name="forbidden-outside-api"),
     path("api/boom/", raise_unhandled, name="boom"),
     path("boom/", raise_unhandled, name="boom-outside-api"),
 ]
+handler400 = "apps.api.errors.handler400"
+handler403 = "apps.api.errors.handler403"
 handler404 = "apps.api.errors.handler404"
 handler500 = "apps.api.errors.handler500"
 
@@ -263,6 +290,15 @@ class ErrorResponseAPITests(APITestCase):
         [error] = self.assert_error_body(response, "E00006")
         self.assertEqual(error, {"code": "E00006", "message": "Bad name.", "field": "name"})
 
+    def test_django_non_field_error_carries_no_field(self):
+        """Django files whole-object errors under "__all__"; that is not a field."""
+        response = self.client.get(reverse("django-non-field"))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [(error.get("field"), error["message"]) for error in response.json()["errors"]],
+            [(None, "Bad combination."), ("name", "Bad name.")],
+        )
+
     def test_model_validation_on_save_is_reported_on_its_field(self):
         """BaseExtendableModel validates in save(); a shared CRUD create must not 500."""
         self.client.force_authenticate(user=self.user)
@@ -284,6 +320,28 @@ class ErrorResponseAPITests(APITestCase):
     def test_unknown_route_outside_api_keeps_django_page(self):
         response = self.client.get("/does-not-exist/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertNotEqual(response["Content-Type"], "application/json")
+
+    def test_bad_request_django_handles_under_api(self):
+        response = self.client.get(reverse("suspicious"))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_error_body(response, "E00101")
+        self.assertNotIn("secret internals", response.content.decode())
+
+    def test_bad_request_outside_api_keeps_django_page(self):
+        response = self.client.get(reverse("suspicious-outside-api"))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotEqual(response["Content-Type"], "application/json")
+
+    def test_permission_denied_django_handles_under_api(self):
+        response = self.client.get(reverse("forbidden"))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assert_error_body(response, "E00104")
+        self.assertNotIn("secret internals", response.content.decode())
+
+    def test_permission_denied_outside_api_keeps_django_page(self):
+        response = self.client.get(reverse("forbidden-outside-api"))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertNotEqual(response["Content-Type"], "application/json")
 
     def test_unhandled_exception_under_api(self):
@@ -380,6 +438,14 @@ class ProjectUrlconfTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.json()["errors"][0]["code"], "E00105")
         self.assertIn("meta", response.json())
+
+    def test_every_django_error_handler_is_the_api_one(self):
+        from config import urls
+
+        for status_code in (400, 403, 404, 500):
+            self.assertEqual(
+                getattr(urls, f"handler{status_code}"), f"apps.api.errors.handler{status_code}"
+            )
 
 
 @override_settings(ROOT_URLCONF="config.urls")
