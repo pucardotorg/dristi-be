@@ -64,7 +64,9 @@ class TestLookupSuccess:
         with patch(GET, return_value=fake_response(SUCCESS_BODY)) as get:
             lookup_pincode("560001")
 
-        get.assert_called_once_with("https://pincode.example/560001", timeout=3)
+        get.assert_called_once_with(
+            "https://pincode.example/560001", headers={"User-Agent": "dristi-be"}, timeout=3
+        )
 
     def test_trims_whitespace_in_the_answer(self):
         body = [

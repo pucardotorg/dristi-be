@@ -20,7 +20,7 @@ class AddressAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     audit_fields = ("created_by",)
 
     list_display = ("line1", "city", "district", "state", "pincode", "created_at")
-    list_filter = ("state",)
+    list_filter = ("district", "created_by")
     search_fields = ("line1", "city", "district", "pincode", "police_station")
     readonly_fields = ("id", "hash", "created_at")
 
