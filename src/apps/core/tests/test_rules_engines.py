@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 import rule_engine
@@ -545,27 +546,66 @@ class TestEvaluationSlots:
         # A private instance, so held slots never leak into the registry's adapters.
         return RuleEngineAdapter()
 
-    @staticmethod
-    def stuck_call(release):
-        """Simulate native code: a blocking C call the interrupt cannot break into."""
-        return lambda: release.wait(5)
+    @pytest.fixture
+    def native_call(self, monkeypatch):
+        """Model a call stuck in native code, without depending on wall-clock timing.
 
-    def test_abandoned_evaluation_holds_its_slot_and_new_ones_are_refused(self, adapter):
+        The guard's join reports the timeout at once and the interrupt has no
+        effect, as with a Rust call. (Under "pytest --cov" on Linux a real
+        join is not woken on time, so a timing-based version is not reliable
+        in CI; see ZEN_TIMEOUT_CHILD.) Yields the call and a ``finish``
+        function that lets it return and waits for its guard thread to exit.
+        """
+
+        class TimedOutThread(threading.Thread):
+            def join(self, timeout=None):
+                if timeout is None:
+                    super().join()
+
         release = threading.Event()
+        monkeypatch.setattr(
+            base_module, "threading", SimpleNamespace(Thread=TimedOutThread, Lock=threading.Lock)
+        )
+        monkeypatch.setattr(base_module, "_interrupt", lambda thread: True)
+
+        def finish(adapter):
+            release.set()
+            monkeypatch.undo()
+            for thread in guard_threads():
+                threading.Thread.join(thread, timeout=5)  # the real join, not the patched one
+            assert not adapter._slots
+
+        yield (lambda: release.wait(5)), finish
+        release.set()
+
+    def test_abandoned_evaluation_holds_its_slot_and_new_ones_are_refused(
+        self, adapter, native_call
+    ):
+        call, finish = native_call
         with pytest.raises(RuleEvaluationError, match="timeout"):
-            adapter._guarded(self.stuck_call(release))
+            adapter._guarded(call)
         assert adapter.abandoned_evaluations() == 1
+        assert len(adapter._slots) == 1  # still held while the call runs
 
         calls = []
         with pytest.raises(RuleEvaluationError, match=r"1 slots taken, 1 abandoned"):
             adapter._guarded(lambda: calls.append(1))
         assert calls == []  # refused before the call ran
 
-        release.set()
-        for thread in guard_threads():
-            thread.join(timeout=2)
+        finish(adapter)  # the abandoned call returns; its thread frees the slot
         assert adapter.abandoned_evaluations() == 0
         assert adapter._guarded(lambda: "ok") == "ok"
+
+    def test_timeout_logs_the_abandoned_count(self, adapter, native_call, caplog):
+        call, finish = native_call
+        with pytest.raises(RuleEvaluationError):
+            adapter._guarded(call)
+        finish(adapter)
+        assert "1 abandoned evaluation(s) still running" in caplog.text
+
+    def test_finished_evaluation_is_not_counted_as_abandoned(self, adapter):
+        assert adapter._guarded(lambda: "ok") == "ok"
+        assert adapter.abandoned_evaluations() == 0
 
     @pytest.mark.parametrize("call", [lambda: "ok", lambda: 1 / 0])
     def test_slot_is_freed_after_success_or_failure(self, adapter, call):
@@ -574,13 +614,6 @@ class TestEvaluationSlots:
         except RuleEvaluationError:
             pass
         assert adapter._slots == {}
-
-    def test_timeout_logs_the_abandoned_count(self, adapter, caplog):
-        release = threading.Event()
-        with pytest.raises(RuleEvaluationError):
-            adapter._guarded(self.stuck_call(release))
-        release.set()
-        assert "1 abandoned evaluation(s) still running" in caplog.text
 
     def test_slot_survives_an_interrupt_landing_on_release(self, adapter):
         class InterruptFirstPop(dict):

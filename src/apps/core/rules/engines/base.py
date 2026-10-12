@@ -67,8 +67,9 @@ class RuleEngine(abc.ABC):
     def __init__(self):
         self._memo = OrderedDict()
         self._memo_lock = threading.Lock()
-        # Evaluation slots: token -> monotonic deadline. A slot still held after
-        # its deadline belongs to an abandoned (timed-out) evaluation.
+        # Evaluation slots: token -> {"abandoned": bool}. The guard sets the flag
+        # on its own reference when it gives up on a call, so marking a slot never
+        # re-inserts one that the guard thread has already freed.
         self._slots = {}
         self._slots_lock = threading.Lock()
 
@@ -125,7 +126,7 @@ class RuleEngine(abc.ABC):
         """
         timeout = settings.RULES_EVALUATION_TIMEOUT_SECONDS
         token = object()
-        self._acquire_slot(token, timeout)
+        slot = self._acquire_slot(token)
         outcome = {}
 
         def target():
@@ -156,6 +157,7 @@ class RuleEngine(abc.ABC):
             raise
         thread.join(timeout)
         if thread.is_alive():
+            slot["abandoned"] = True
             if _interrupt(thread):
                 logger.warning(
                     "%s rule evaluation exceeded the %ss timeout; %d abandoned evaluation(s) "
@@ -182,16 +184,15 @@ class RuleEngine(abc.ABC):
 
     def abandoned_evaluations(self):
         """Return how many timed-out evaluations are still running."""
-        now = time.monotonic()
-        return sum(1 for deadline in list(self._slots.values()) if deadline < now)
+        return sum(1 for slot in list(self._slots.values()) if slot["abandoned"])
 
-    def _acquire_slot(self, token, timeout):
-        """Take an evaluation slot or raise RuleEvaluationError when none is free."""
+    def _acquire_slot(self, token):
+        """Take and return an evaluation slot, or raise RuleEvaluationError when none is free."""
         limit = settings.RULES_MAX_CONCURRENT_EVALUATIONS
         with self._slots_lock:
             if len(self._slots) < limit:
-                self._slots[token] = time.monotonic() + timeout
-                return
+                slot = self._slots[token] = {"abandoned": False}
+                return slot
         abandoned = self.abandoned_evaluations()
         logger.warning(
             "%s rule evaluation refused: all %d slots are taken (%d abandoned after timing out).",
