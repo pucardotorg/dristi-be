@@ -17,10 +17,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .documents import BAR_COUNCIL_ID_TAG
 from .models import (
     AdvocateProfile,
     AdvocateType,
+    ApprovalStatus,
     ClerkProfile,
     LitigantProfile,
     RegistrationStatus,
@@ -29,19 +29,24 @@ from .models import (
 from .serializers import (
     AdvocateRegistrationSerializer,
     ClerkRegistrationSerializer,
+    CurrentRegistrationSerializer,
     MobileOTPSerializer,
     OTPRequestSerializer,
     RegistrationCompletionSerializer,
+    RegistrationResubmissionSerializer,
     SessionCreateSerializer,
 )
 from .services.otp import Purpose, ResendTooSoonError, issue_otp, verify_and_consume_otp
+from .services.permissions import IsRejectedRegistrant
 from .services.registration import (
     DocumentRejected,
-    complete_registration,
+    RegistrationNotRejected,
     complete_registration_with_document,
+    describe_rejected_registration,
+    resubmit_registration,
 )
 from .tasks import schedule_registration_verification
-from .verification import is_pending_approval
+from .verification import approval_status_of
 
 OTP_BACKEND = "apps.users.services.backend.OTPBackend"
 
@@ -73,6 +78,45 @@ ACCOUNT_STATE_RESPONSE = inline_serializer(
         "user_id": serializers.UUIDField(),
         "registration_status": serializers.ChoiceField(choices=RegistrationStatus.choices),
         "next": serializers.CharField(allow_null=True),
+    },
+)
+
+SESSION_RESPONSE = inline_serializer(
+    name="SessionState",
+    fields={
+        "user_id": serializers.UUIDField(),
+        "registration_status": serializers.ChoiceField(choices=RegistrationStatus.choices),
+        "approval_status": serializers.ChoiceField(
+            choices=ApprovalStatus.choices,
+            allow_null=True,
+            help_text="Null for roles whose registration is not approved (litigants).",
+        ),
+        "next": serializers.CharField(
+            allow_null=True,
+            help_text=(
+                '"profile" to finish the wizard, "resubmit" to correct a rejected '
+                "registration, or null."
+            ),
+        ),
+    },
+)
+
+PENDING_SESSION_RESPONSE = inline_serializer(
+    name="PendingSessionState",
+    fields={
+        "detail": serializers.CharField(),
+        "user_id": serializers.UUIDField(),
+        "registration_status": serializers.ChoiceField(choices=RegistrationStatus.choices),
+        "approval_status": serializers.ChoiceField(choices=ApprovalStatus.choices),
+        "next": serializers.CharField(allow_null=True),
+    },
+)
+
+RESUBMITTED_RESPONSE = inline_serializer(
+    name="ResubmittedRegistration",
+    fields={
+        "application_id": serializers.UUIDField(),
+        "approval_status": serializers.ChoiceField(choices=ApprovalStatus.choices),
     },
 )
 
@@ -244,7 +288,7 @@ class SessionView(APIView):
 
     @extend_schema(
         tags=["auth"],
-        responses={200: ACCOUNT_STATE_RESPONSE, 401: DETAIL_RESPONSE, 403: DETAIL_RESPONSE},
+        responses={200: SESSION_RESPONSE, 401: DETAIL_RESPONSE, 403: PENDING_SESSION_RESPONSE},
     )
     def post(self, request):
         """Authenticate by OTP or password and issue a session cookie."""
@@ -267,21 +311,40 @@ class SessionView(APIView):
             )
 
         # Checked before `login`, so a pending advocate or clerk gets no session.
-        if is_pending_approval(user):
+        # The body carries the same account state as a successful login, so
+        # the client reads approval_status the same way on either outcome.
+        approval_status = approval_status_of(user)
+        if approval_status == ApprovalStatus.PENDING:
             return Response(
-                {"detail": "Account approval is pending"},
+                {
+                    "detail": "Account approval is pending",
+                    "user_id": str(user.pk),
+                    "registration_status": user.registration_status,
+                    "approval_status": approval_status,
+                    "next": None,
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        # A rejected advocate or clerk does get one: the rejection SMS sends
+        # them here to read the reason and resubmit. IsNotAwaitingApproval keeps
+        # that session to the resubmission endpoints.
         login(request._request, user)
 
         # An incomplete account can log in; the client needs to know so it can
         # route to the wizard instead of failing against every gated endpoint.
+        if not user.is_registration_complete:
+            next_step = "profile"
+        elif approval_status == ApprovalStatus.REJECTED:
+            next_step = "resubmit"
+        else:
+            next_step = None
         return Response(
             {
                 "user_id": str(user.pk),
                 "registration_status": user.registration_status,
-                "next": None if user.is_registration_complete else "profile",
+                "approval_status": approval_status,
+                "next": next_step,
             }
         )
 
@@ -305,8 +368,6 @@ class BaseRegistrationCompletionView(APIView):
     role = None
     profile_model = None
     serializer_class = RegistrationCompletionSerializer
-    # Tag recorded on the bar ID document, for roles whose serializer accepts one.
-    document_tag = None
 
     @extend_schema(
         tags=["registration"],
@@ -325,28 +386,19 @@ class BaseRegistrationCompletionView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        registration = {
-            "user": user,
-            "role": self.role,
-            "profile_model": self.profile_model,
-            "name": data["name"],
-            "password": data["password"],
-            "email": data.get("email"),
-            "profile_fields": data.get("profile", {}),
-        }
-        document = data.get("bar_id_document")
-        file_id = None
-        if document is None:
-            complete_registration(**registration)
-        else:
-            try:
-                _, file_id = complete_registration_with_document(
-                    document=document,
-                    document_tag=self.document_tag,
-                    **registration,
-                )
-            except DocumentRejected as exc:
-                raise serializers.ValidationError({"bar_id_document": exc.messages}) from exc
+        try:
+            _, file_id = complete_registration_with_document(
+                user=user,
+                document=data.get("bar_id_document"),
+                role=self.role,
+                profile_model=self.profile_model,
+                name=data["name"],
+                password=data["password"],
+                email=data.get("email"),
+                profile_fields=data.get("profile", {}),
+            )
+        except DocumentRejected as exc:
+            raise serializers.ValidationError({"bar_id_document": exc.messages}) from exc
 
         # Verification is raised in the background so a slow or failing
         # request flow never fails a registration that has already committed.
@@ -389,7 +441,6 @@ class AdvocateRegistrationView(BaseRegistrationCompletionView):
     profile_model = AdvocateProfile
     serializer_class = AdvocateRegistrationSerializer
     parser_classes = [MultiPartParser, FormParser]
-    document_tag = BAR_COUNCIL_ID_TAG
 
 
 @extend_schema_view(
@@ -409,4 +460,84 @@ class ClerkRegistrationView(BaseRegistrationCompletionView):
     role = Role.CLERK
     profile_model = ClerkProfile
     serializer_class = ClerkRegistrationSerializer
-    document_tag = BAR_COUNCIL_ID_TAG
+
+
+class CurrentRegistrationView(APIView):
+    """GET /registrations/current/ — the rejected registration to correct.
+
+    Feeds the correction screens: the application id, the approver's reason
+    and the claim as last submitted, to pre-fill the steps.
+    """
+
+    permission_classes = [IsAuthenticated, IsRejectedRegistrant]
+
+    @extend_schema(
+        tags=["registration"],
+        responses={200: CurrentRegistrationSerializer, 403: DETAIL_RESPONSE, 409: DETAIL_RESPONSE},
+    )
+    def get(self, request):
+        """Return the rejected registration with the approver's reason."""
+        try:
+            registration = describe_rejected_registration(request.user)
+        except RegistrationNotRejected:
+            return _nothing_to_resubmit()
+        return Response(CurrentRegistrationSerializer(registration).data)
+
+
+class RegistrationResubmitView(APIView):
+    """POST /registrations/current/resubmit/ — send the corrected claim back.
+
+    The same application goes back for approval: the request keeps its id and
+    only its version moves on. Multipart when it carries the bar ID document.
+    """
+
+    permission_classes = [IsAuthenticated, IsRejectedRegistrant]
+
+    @extend_schema(
+        tags=["registration"],
+        request={
+            "multipart/form-data": RegistrationResubmissionSerializer,
+            "application/json": RegistrationResubmissionSerializer,
+        },
+        responses={
+            200: RESUBMITTED_RESPONSE,
+            400: DETAIL_RESPONSE,
+            403: DETAIL_RESPONSE,
+            409: DETAIL_RESPONSE,
+        },
+    )
+    def post(self, request):
+        """Apply the corrections, resubmit, and end the session."""
+        serializer = RegistrationResubmissionSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            resubmitted = resubmit_registration(
+                user=request.user,
+                name=data["name"],
+                email=data.get("email"),
+                registration_number=data["registration_number"],
+                document=data.get("bar_id_document"),
+            )
+        except DocumentRejected as exc:
+            raise serializers.ValidationError({"bar_id_document": exc.messages}) from exc
+        except RegistrationNotRejected:
+            return _nothing_to_resubmit()
+
+        # Back to PENDING, and a pending account holds no session (see
+        # SessionView). The client shows the awaiting-approval screen.
+        logout(request._request)
+        return Response(
+            {"application_id": str(resubmitted.pk), "approval_status": ApprovalStatus.PENDING}
+        )
+
+
+def _nothing_to_resubmit():
+    """Return the 409 for a registration that is not (or no longer) rejected."""
+    return Response(
+        {"detail": "There is no rejected registration to resubmit."},
+        status=status.HTTP_409_CONFLICT,
+    )

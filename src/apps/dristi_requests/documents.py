@@ -6,16 +6,12 @@ specific to requests: the per-type document count, the tags a request
 document is stored with, and reporting refusals under ``documents``.
 """
 
-import logging
-
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.files import documents as file_documents
 from apps.files import services as files
-
-logger = logging.getLogger(__name__)
 
 # Tag applied to every stored request document, so they can be found with
 # ``files.search_file`` without knowing which requests exist.
@@ -78,9 +74,7 @@ def discard_documents(file_ids):
     afterwards. Cleanup errors are logged and swallowed so they cannot mask
     the error that caused the rollback; the worst case is an orphaned file.
     """
-    file_documents.discard_documents(
-        file_ids, log=logger, message="Could not discard request document file %s"
-    )
+    file_documents.discard_documents(file_ids)
 
 
 def open_document(document):

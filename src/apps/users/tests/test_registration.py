@@ -7,7 +7,6 @@ from django.test import TestCase, override_settings
 
 from apps.files.models import File
 from apps.files.storage import STORAGE_ALIAS
-from apps.users.documents import BAR_COUNCIL_ID_TAG
 from apps.users.models import AdvocateProfile, Role, User
 from apps.users.services.registration import complete_registration_with_document
 
@@ -44,7 +43,6 @@ class CompleteRegistrationWithDocumentTests(TestCase):
         return complete_registration_with_document(
             user=self.user,
             document=pdf_upload(),
-            document_tag=BAR_COUNCIL_ID_TAG,
             role=Role.ADVOCATE,
             profile_model=AdvocateProfile,
             name="Asha Menon",

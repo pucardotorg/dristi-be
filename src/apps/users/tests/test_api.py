@@ -639,7 +639,13 @@ class SessionTests(OTPTestCase):
                     format="json",
                 )
                 self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-                self.assertEqual(response.json()["detail"], "Account approval is pending")
+                body = response.json()
+                self.assertEqual(body["detail"], "Account approval is pending")
+                # The same account state a successful login carries.
+                self.assertEqual(body["user_id"], str(self.user.pk))
+                self.assertEqual(body["registration_status"], RegistrationStatus.COMPLETE)
+                self.assertEqual(body["approval_status"], ApprovalStatus.PENDING)
+                self.assertIsNone(body["next"])
                 self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_accepted_professional_logs_in(self):

@@ -1,4 +1,4 @@
-"""Post-approval hooks for the request types the users app owns.
+"""Approval and rejection hooks for the request types the users app owns.
 
 Imported from ``UsersConfig.ready()`` so each hook registers exactly once.
 """
@@ -20,10 +20,27 @@ def accept_registration(request):
 
     Idempotent, as hooks must be: approving again leaves it ACCEPTED.
     """
+    _set_approval_status(request, ApprovalStatus.ACCEPTED, _final_approver(request))
+
+
+@register_hook(ADVOCATE_REGISTRATION, on=RequestApproval.Status.REJECTED)
+@register_hook(CLERK_REGISTRATION, on=RequestApproval.Status.REJECTED)
+def reject_registration(request, approval):
+    """Mark the requester's profile REJECTED once verification is rejected.
+
+    Attributed to the approver who rejected it.
+
+    Idempotent, as hooks must be: rejecting again leaves it REJECTED.
+    """
+    _set_approval_status(request, ApprovalStatus.REJECTED, approval.approver)
+
+
+def _set_approval_status(request, approval_status, approver):
+    """Record the approver's outcome on the requester's profile."""
     verification = VERIFICATIONS_BY_CODE[request.request_type.code]
     profile = verification.profile_of(request.requester)
-    profile.approval_status = ApprovalStatus.ACCEPTED
-    profile.updated_by = _final_approver(request)
+    profile.approval_status = approval_status
+    profile.updated_by = approver
     profile.save(update_fields=["approval_status", "updated_by", "updated_at"])
 
 

@@ -80,17 +80,17 @@ def store_documents(uploads, *, user_id, tags):
     return [entry["id"] for entry in result["files"]]
 
 
-def discard_documents(file_ids, *, log=logger, message="Could not discard document %s"):
+def discard_documents(file_ids):
     """Undo ``store_documents`` when the work that follows it fails.
 
-    Cleanup errors are logged on ``log`` and swallowed so they cannot mask the
-    error that caused the rollback.
+    Cleanup errors are logged and swallowed so they cannot mask the error
+    that caused the rollback.
     """
     for file_id in file_ids:
         try:
             services.delete_file(file_id)
         except Exception:  # noqa: BLE001
-            log.exception(message, file_id)
+            logger.exception("Could not discard document %s", file_id)
 
 
 def _content_type(upload):

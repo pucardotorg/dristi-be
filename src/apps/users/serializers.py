@@ -6,8 +6,16 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .documents import validate_registration_document
-from .models import AdvocateProfile, AdvocateType, ClerkProfile, mobile_number_validator
+from .models import (
+    AdvocateProfile,
+    AdvocateType,
+    ApprovalStatus,
+    ClerkProfile,
+    Role,
+    mobile_number_validator,
+)
 from .services.otp import Purpose
+from .verification import VERIFICATIONS
 
 MAX_PASSWORD_LENGTH = 128
 
@@ -42,6 +50,23 @@ class SessionCreateSerializer(serializers.Serializer):
         if bool(attrs.get("otp")) == bool(attrs.get("password")):
             raise serializers.ValidationError("Provide exactly one of otp or password.")
         return attrs
+
+
+def _unclaimed_email(value, current):
+    """Return the email, or None for none, refusing one another account holds."""
+    if not value:
+        return None
+    taken = get_user_model().objects.filter(email__iexact=value).exclude(pk=current.pk).exists()
+    if taken:
+        raise serializers.ValidationError("An account with this email already exists.")
+    return value
+
+
+class RegistrationDocumentField(serializers.FileField):
+    """The bar ID document: a PDF or image within the size limit."""
+
+    def __init__(self, **kwargs):
+        super().__init__(write_only=True, validators=[validate_registration_document], **kwargs)
 
 
 class RegistrationCompletionSerializer(serializers.Serializer):
@@ -80,13 +105,7 @@ class RegistrationCompletionSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         """Reject an email already claimed by another account."""
-        if not value:
-            return None
-        current = self.context["request"].user
-        taken = get_user_model().objects.filter(email__iexact=value).exclude(pk=current.pk).exists()
-        if taken:
-            raise serializers.ValidationError("An account with this email already exists.")
-        return value
+        return _unclaimed_email(value, self.context["request"].user)
 
     def validate_terms_accepted(self, value):
         """A missing or false acceptance rejects the registration."""
@@ -131,11 +150,7 @@ class AdvocateRegistrationSerializer(RegistrationCompletionSerializer):
     """Body of POST /advocates, sent as multipart so it can carry the bar ID."""
 
     profile = AdvocateProfileSerializer()
-    bar_id_document = serializers.FileField(write_only=True)
-
-    def validate_bar_id_document(self, value):
-        """Accept only a PDF or image within the size limit."""
-        return validate_registration_document(value)
+    bar_id_document = RegistrationDocumentField()
 
 
 class ClerkRegistrationSerializer(RegistrationCompletionSerializer):
@@ -145,11 +160,68 @@ class ClerkRegistrationSerializer(RegistrationCompletionSerializer):
     """
 
     profile = ClerkProfileSerializer()
-    bar_id_document = serializers.FileField(write_only=True, required=False)
+    bar_id_document = RegistrationDocumentField(required=False)
 
-    def validate_bar_id_document(self, value):
-        """Accept only a PDF or image within the size limit."""
-        return validate_registration_document(value)
+
+class RegistrationResubmissionSerializer(serializers.Serializer):
+    """Body of POST /registrations/current/resubmit/: the corrected claim.
+
+    The registration steps minus what cannot change: the mobile number was
+    proven by OTP and is what the person signs in with, and the role, password
+    and terms stand. ``registration_number`` is the bar registration ID for an
+    advocate and the clerk registration number for a clerk.
+    """
+
+    name = serializers.CharField(max_length=256)
+    email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
+    registration_number = serializers.CharField(max_length=64)
+    bar_id_document = RegistrationDocumentField(required=False)
+
+    def validate_email(self, value):
+        """Reject an email already claimed by another account."""
+        return _unclaimed_email(value, self.context["request"].user)
+
+    def validate_registration_number(self, value):
+        """Reject a number another profile of the same role already claims."""
+        user = self.context["request"].user
+        verification = VERIFICATIONS[user.role]
+        taken = (
+            verification.profile_model.objects.filter(**{verification.number_field: value})
+            .exclude(user=user)
+            .exists()
+        )
+        if taken:
+            raise serializers.ValidationError("This registration number is already registered.")
+        return value
+
+    def validate(self, attrs):
+        """Require the bar ID document of the roles that must send one."""
+        verification = VERIFICATIONS[self.context["request"].user.role]
+        if verification.document_required and not attrs.get("bar_id_document"):
+            raise serializers.ValidationError({"bar_id_document": "This field is required."})
+        return attrs
+
+
+class RegistrationDocumentSerializer(serializers.Serializer):
+    """The document a registration was last submitted with."""
+
+    file_id = serializers.UUIDField()
+    file_name = serializers.CharField()
+
+
+class CurrentRegistrationSerializer(serializers.Serializer):
+    """Body of GET /registrations/current/: what the correction screens show."""
+
+    application_id = serializers.UUIDField()
+    approval_status = serializers.ChoiceField(choices=ApprovalStatus.choices)
+    role = serializers.ChoiceField(choices=Role.choices)
+    officer_message = serializers.CharField(allow_blank=True)
+    rejected_at = serializers.DateTimeField(allow_null=True)
+    name = serializers.CharField(allow_blank=True)
+    email = serializers.EmailField(allow_null=True)
+    mobile_number = serializers.CharField()
+    registration_number = serializers.CharField()
+    document = RegistrationDocumentSerializer(allow_null=True)
 
 
 class UserSerializer(serializers.ModelSerializer):

@@ -8,10 +8,10 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from dramatiq import actor
 
-from apps.dristi_requests.models import Request, RequestType
+from apps.dristi_requests.models import RequestType
 from apps.dristi_requests.services import create_request
 
-from .verification import VERIFICATIONS
+from .verification import VERIFICATIONS, verification_request_of
 
 logger = logging.getLogger(__name__)
 
@@ -71,16 +71,10 @@ def request_registration_verification(user_id: str, file_id: str | None) -> None
             )
             return
 
-        request_type = RequestType.objects.active().get(code=verification.request_type_code)
-
-        already_requested = (
-            Request.objects.filter(request_type=request_type, requester=user)
-            .exclude(status=Request.Status.CANCELLED)
-            .exists()
-        )
-        if already_requested:
+        if verification_request_of(user) is not None:
             return
 
+        request_type = RequestType.objects.active().get(code=verification.request_type_code)
         create_request(
             request_type=request_type,
             requester=user,

@@ -352,6 +352,28 @@ class TestApproverAPI:
         assert response.status_code == 200
         assert request.status == Request.Status.REJECTED
 
+    @pytest.mark.parametrize("comments", [None, "", "   "])
+    def test_reject_requires_a_reason(
+        self, auth_client, simple_type, requester, approver_one, comments
+    ):
+        request = services.create_request(
+            request_type=simple_type, requester=requester, data={"reason": "x"}
+        )
+        body = {"decision": "rejected"}
+        if comments is not None:
+            body["comments"] = comments
+
+        response = auth_client(approver_one).post(
+            reverse("request-approval-decide", args=[request.current_approval.pk]),
+            body,
+            format="json",
+        )
+        request.refresh_from_db()
+
+        assert response.status_code == 400
+        assert "comments" in response.json()
+        assert request.status == Request.Status.PENDING
+
     def test_other_user_cannot_decide(
         self, auth_client, simple_type, requester, approver_one, approver_two
     ):
@@ -403,7 +425,7 @@ class TestApproverAPI:
         client = auth_client(approver_one)
         client.post(url, {"decision": "approved"}, format="json")
 
-        response = client.post(url, {"decision": "rejected"}, format="json")
+        response = client.post(url, {"decision": "rejected", "comments": "late"}, format="json")
 
         assert response.status_code == 400
 
