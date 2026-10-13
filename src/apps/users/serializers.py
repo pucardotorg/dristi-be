@@ -3,9 +3,16 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema_field
 from rest_framework import serializers
 
-from .models import AdvocateProfile, AdvocateType, ClerkProfile, mobile_number_validator
+from .models import (
+    AdvocateProfile,
+    AdvocateType,
+    ClerkProfile,
+    LitigantProfile,
+    mobile_number_validator,
+)
 from .services.otp import Purpose
 
 MAX_PASSWORD_LENGTH = 128
@@ -163,6 +170,104 @@ class UserSerializer(serializers.ModelSerializer):
         model = get_user_model()
         fields = ["id", "mobile_number", "name", "email", "role", "is_active", "created_at"]
         read_only_fields = fields
+
+
+class LitigantProfileReadSerializer(serializers.ModelSerializer):
+    """A litigant's profile as returned by GET /users/me."""
+
+    class Meta:
+        """Meta options."""
+
+        model = LitigantProfile
+        fields = ["id", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
+class AdvocateProfileReadSerializer(serializers.ModelSerializer):
+    """An advocate's profile as returned by GET /users/me."""
+
+    class Meta:
+        """Meta options."""
+
+        model = AdvocateProfile
+        fields = [
+            "id",
+            "bar_registration_id",
+            "advocate_type",
+            "approval_status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ClerkProfileReadSerializer(serializers.ModelSerializer):
+    """An advocate clerk's profile as returned by GET /users/me."""
+
+    class Meta:
+        """Meta options."""
+
+        model = ClerkProfile
+        fields = [
+            "id",
+            "clerk_registration_number",
+            "approval_status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+PROFILE_SERIALIZERS = {
+    LitigantProfile: LitigantProfileReadSerializer,
+    AdvocateProfile: AdvocateProfileReadSerializer,
+    ClerkProfile: ClerkProfileReadSerializer,
+}
+
+
+class CurrentUserSerializer(serializers.ModelSerializer):
+    """Body of GET /users/me: the caller's account plus their role's profile.
+
+    `profile` is null until registration completes, and for a role that has
+    no profile table. The display name lives on the account only.
+    """
+
+    has_current_terms = serializers.BooleanField(read_only=True)
+    profile = serializers.SerializerMethodField()
+
+    class Meta:
+        """Meta options."""
+
+        model = get_user_model()
+        fields = [
+            "id",
+            "mobile_number",
+            "name",
+            "email",
+            "role",
+            "registration_status",
+            "terms_accepted_at",
+            "terms_version_accepted",
+            "has_current_terms",
+            "created_at",
+            "profile",
+        ]
+        read_only_fields = fields
+
+    @extend_schema_field(
+        PolymorphicProxySerializer(
+            component_name="Profile",
+            serializers=list(PROFILE_SERIALIZERS.values()),
+            resource_type_field_name=None,
+            allow_null=True,
+        )
+    )
+    def get_profile(self, user):
+        """Serialize the profile matching the user's role, or None."""
+        profile = user.profile
+        if profile is None:
+            return None
+        return PROFILE_SERIALIZERS[type(profile)](profile).data
 
 
 class AuditUserSerializer(serializers.ModelSerializer):

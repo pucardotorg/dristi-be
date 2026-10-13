@@ -17,10 +17,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import AdvocateProfile, ClerkProfile, LitigantProfile, RegistrationStatus, Role
+from .models import PROFILE_MODELS, RegistrationStatus, Role
 from .serializers import (
     AdvocateRegistrationSerializer,
     ClerkRegistrationSerializer,
+    CurrentUserSerializer,
     MobileOTPSerializer,
     OTPRequestSerializer,
     PasswordResetSerializer,
@@ -294,6 +295,21 @@ class PasswordResetView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class CurrentUserView(APIView):
+    """GET /users/me — the logged-in user's account and profile.
+
+    Gated on IsAuthenticated alone: a client resuming an unfinished
+    registration needs to read the account to know where it left off.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(tags=["users"], responses={200: CurrentUserSerializer})
+    def get(self, request):
+        """Return the caller's account with the profile for their role."""
+        return Response(CurrentUserSerializer(request.user).data)
+
+
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")
 class BaseRegistrationCompletionView(APIView):
     """Shared body of POST /litigants, /advocates and /clerks.
@@ -305,7 +321,6 @@ class BaseRegistrationCompletionView(APIView):
     permission_classes = [IsAuthenticated]
 
     role = None
-    profile_model = None
     serializer_class = RegistrationCompletionSerializer
 
     @extend_schema(
@@ -328,7 +343,7 @@ class BaseRegistrationCompletionView(APIView):
         complete_registration(
             user=user,
             role=self.role,
-            profile_model=self.profile_model,
+            profile_model=PROFILE_MODELS[self.role],
             name=data["name"],
             password=data["password"],
             email=data.get("email"),
@@ -355,14 +370,12 @@ class LitigantRegistrationView(BaseRegistrationCompletionView):
     """POST /litigants."""
 
     role = Role.LITIGANT
-    profile_model = LitigantProfile
 
 
 class AdvocateRegistrationView(BaseRegistrationCompletionView):
     """POST /advocates."""
 
     role = Role.ADVOCATE
-    profile_model = AdvocateProfile
     serializer_class = AdvocateRegistrationSerializer
 
 
@@ -370,5 +383,4 @@ class ClerkRegistrationView(BaseRegistrationCompletionView):
     """POST /clerks."""
 
     role = Role.CLERK
-    profile_model = ClerkProfile
     serializer_class = ClerkRegistrationSerializer
