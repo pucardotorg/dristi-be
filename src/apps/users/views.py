@@ -27,6 +27,8 @@ from .serializers import (
     PasswordResetSerializer,
     RegistrationCompletionSerializer,
     SessionCreateSerializer,
+    TermsAcceptanceSerializer,
+    TermsStatusSerializer,
 )
 from .services.otp import Purpose, ResendTooSoonError, issue_otp, verify_and_consume_otp
 from .services.password import (
@@ -34,7 +36,9 @@ from .services.password import (
     reset_password,
     verify_password_reset_code,
 )
+from .services.permissions import next_step
 from .services.registration import complete_registration
+from .services.terms import accept_current_terms
 
 OTP_BACKEND = "apps.users.services.backend.OTPBackend"
 
@@ -218,13 +222,14 @@ class SessionView(APIView):
 
         login(request._request, user)
 
-        # An incomplete account can log in; the client needs to know so it can
-        # route to the wizard instead of failing against every gated endpoint.
+        # An incomplete account, or one that has not accepted the current
+        # terms, can still log in; the client needs to know so it can route to
+        # the right screen instead of failing against every gated endpoint.
         return Response(
             {
                 "user_id": str(user.pk),
                 "registration_status": user.registration_status,
-                "next": None if user.is_registration_complete else "profile",
+                "next": next_step(user),
             }
         )
 
@@ -308,6 +313,29 @@ class CurrentUserView(APIView):
     def get(self, request):
         """Return the caller's account with the profile for their role."""
         return Response(CurrentUserSerializer(request.user).data)
+
+
+class TermsView(APIView):
+    """POST /users/me/terms — accept the terms in force.
+
+    The way in for accounts that never passed through the wizard, such as those
+    created through filing, and for every account once the terms are revised.
+
+    Gated on IsAuthenticated alone: this is the endpoint that satisfies
+    HasAcceptedCurrentTerms, so it cannot require it.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = TermsAcceptanceSerializer
+
+    @extend_schema(tags=["users"], responses={200: TermsStatusSerializer})
+    def post(self, request):
+        """Record acceptance of the version in force. Repeating it changes nothing."""
+        serializer = TermsAcceptanceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        accept_current_terms(request.user)
+        return Response(TermsStatusSerializer(request.user).data)
 
 
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")

@@ -1,5 +1,6 @@
 """Request validation for the registration and login endpoints."""
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -14,6 +15,7 @@ from .models import (
     mobile_number_validator,
 )
 from .services.otp import Purpose
+from .services.permissions import next_step
 
 MAX_PASSWORD_LENGTH = 128
 
@@ -104,6 +106,51 @@ class RegistrationCompletionSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("The terms must be accepted to register.")
         return value
+
+
+class TermsAcceptanceSerializer(serializers.Serializer):
+    """Body of POST /users/me/terms.
+
+    As with registration, `terms_version` is deliberately not declared: what was
+    accepted is whatever the server has in force, never what the client says.
+    """
+
+    terms_accepted = serializers.BooleanField()
+
+    def validate_terms_accepted(self, value):
+        """A missing or false acceptance is refused rather than recorded."""
+        if not value:
+            raise serializers.ValidationError("The terms must be accepted to continue.")
+        return value
+
+
+class TermsStatusSerializer(serializers.ModelSerializer):
+    """Response of POST /users/me/terms: where the account stands on the terms."""
+
+    current_terms_version = serializers.SerializerMethodField()
+    has_current_terms = serializers.BooleanField(read_only=True)
+    next = serializers.SerializerMethodField()
+
+    class Meta:
+        """Meta options."""
+
+        model = get_user_model()
+        fields = [
+            "current_terms_version",
+            "terms_version_accepted",
+            "terms_accepted_at",
+            "has_current_terms",
+            "next",
+        ]
+        read_only_fields = fields
+
+    def get_current_terms_version(self, user) -> int:
+        """The version in force."""
+        return settings.CURRENT_TERMS_VERSION
+
+    def get_next(self, user) -> str | None:
+        """Where the client should send the user next, or None."""
+        return next_step(user)
 
 
 class PasswordResetSerializer(serializers.Serializer):

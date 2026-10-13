@@ -5,11 +5,10 @@ the rule "the profile row and the account never disagree" is stated once and is
 testable without an HTTP request.
 """
 
-from django.conf import settings
 from django.db import transaction
-from django.utils import timezone
 
 from ..models import RegistrationStatus
+from .terms import stamp_current_terms
 
 
 @transaction.atomic
@@ -43,8 +42,7 @@ def complete_registration(
     user.email = email or None
     user.role = role
     user.set_password(password)
-    user.terms_accepted_at = timezone.now()
-    user.terms_version_accepted = settings.CURRENT_TERMS_VERSION
+    stamp_current_terms(user)
     user.registration_status = RegistrationStatus.COMPLETE
     user.updated_by = user
     if user.created_by_id is None:

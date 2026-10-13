@@ -223,9 +223,14 @@ REST_FRAMEWORK = {
     # caller is told their credentials are missing; drop it and they are told
     # their registration is incomplete, which is wrong and sends the client to
     # the wrong screen. Keep both, in this order.
+    #
+    # HasAcceptedCurrentTerms comes last for the same reason: an unfinished
+    # account accepts the terms inside the wizard, so it must be told to finish
+    # registering, not sent to the standalone terms screen.
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
         "apps.users.services.permissions.IsAuthenticatedAndRegistered",
+        "apps.users.services.permissions.HasAcceptedCurrentTerms",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,

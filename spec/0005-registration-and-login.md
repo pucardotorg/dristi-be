@@ -460,6 +460,46 @@ The timestamp comes from the server clock and the version from server configurat
 
 Every user type accepts terms; only some have a profile.
 
+### 6.5 Accepting the terms outside the wizard
+
+Some accounts never pass through the wizard — those created through filing, or
+carried over from an earlier system — so they reach the platform with
+`registration_status = COMPLETE` and no terms on record. Every account is in
+the same position once `CURRENT_TERMS_VERSION` is bumped.
+
+`HasAcceptedCurrentTerms` is therefore a default permission class, after
+`IsAuthenticatedAndRegistered`, and such accounts accept the terms through a
+dedicated endpoint gated on `IsAuthenticated` alone:
+
+```
+POST /users/me/terms/   { "terms_accepted": true }
+```
+
+There is no GET: `GET /users/me/` already carries `terms_version_accepted`,
+`terms_accepted_at` and `has_current_terms`, and login's `next` says when the
+terms screen is due. The POST returns the updated standing:
+
+```json
+{
+  "current_terms_version": 3,
+  "terms_version_accepted": 3,
+  "terms_accepted_at": "2026-10-13T09:30:00Z",
+  "has_current_terms": true,
+  "next": null
+}
+```
+
+Login can still succeed for these accounts. `POST /sessions/` sets `next` to
+`"profile"` for an unfinished registration, else `"terms"` when the current terms
+are not held, else `null`. The wizard takes acceptance itself, so `"profile"`
+always wins.
+
+#### 6.5.1 Why a repeat acceptance is a no-op
+
+If the account already holds the current version, POST writes nothing.
+Re-stamping would replace the moment of acceptance with the moment of a repeated
+click, overwriting the evidence these fields exist to keep.
+
 ## 7. Cleanup (NON-PRIORITY)
 
 A scheduled job deletes accounts still in `PENDING_PROFILE` after N days. It is a retention control rather than housekeeping.

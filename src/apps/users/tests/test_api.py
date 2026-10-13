@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+from django.conf import settings
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import path, reverse
@@ -477,6 +478,7 @@ class SessionTests(OTPTestCase):
             name="Asha Menon",
             role=Role.LITIGANT,
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.client.logout()
 
@@ -545,6 +547,32 @@ class SessionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["next"], "profile")
+
+    def test_account_without_current_terms_can_log_in_and_is_told_so(self):
+        """An account created outside the wizard logs in and is routed to the terms."""
+        self.user.terms_version_accepted = None
+        self.user.save()
+
+        response = self.client.post(
+            reverse("session"),
+            {"mobile_number": MOBILE, "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["next"], "terms")
+
+    def test_incomplete_account_is_sent_to_the_wizard_before_the_terms(self):
+        """The wizard takes the terms itself, so it wins when both are missing."""
+        self.user.registration_status = RegistrationStatus.PENDING_PROFILE
+        self.user.terms_version_accepted = None
+        self.user.save()
+
+        response = self.client.post(
+            reverse("session"),
+            {"mobile_number": MOBILE, "password": PASSWORD},
+            format="json",
+        )
         self.assertEqual(response.json()["next"], "profile")
 
     def test_logout_discards_the_session(self):
@@ -706,15 +734,38 @@ class GateTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_complete_account_passes(self):
-        """A finished account reaches the same endpoint."""
+        """A finished account holding the current terms reaches the same endpoint."""
         user = User.objects.create_user(
             mobile_number=MOBILE,
             password=PASSWORD,
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.client.force_authenticate(user=user)
         response = self.client.get(reverse("gated-probe"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_complete_account_without_terms_is_gated(self):
+        """An account created outside the wizard is refused until it accepts the terms."""
+        user = User.objects.create_user(
+            mobile_number=MOBILE,
+            registration_status=RegistrationStatus.COMPLETE,
+        )
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get(reverse("gated-probe"))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.json()["detail"], "The current terms have not been accepted.")
+
+        self.client.post(reverse("user-terms"), {"terms_accepted": True}, format="json")
+        response = self.client.get(reverse("gated-probe"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_incomplete_account_is_told_about_registration_not_terms(self):
+        """With both missing, the refusal names the wizard, which takes the terms itself."""
+        self.create_account()
+        response = self.client.get(reverse("gated-probe"))
+        self.assertEqual(response.json()["detail"], "Registration is not complete.")
 
 
 class ResponseEnvelopeTests(OTPTestCase):
