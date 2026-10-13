@@ -128,14 +128,6 @@ class RejectedSignInTests(RejectionTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_pending_session_from_registration_reaches_nothing(self):
-        """The session left from signing up is gated while approval is pending."""
-        self.register()
-
-        response = self.client.get(reverse("gated-probe"))
-
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
 
 class CurrentRegistrationTests(RejectionTestCase):
     """GET /registrations/current/."""

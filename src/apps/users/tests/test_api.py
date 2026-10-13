@@ -523,6 +523,12 @@ class RegistrationCompletionTests(OTPTestCase):
         response = self.client.post(reverse("litigant-create"), self.body(), format="json")
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)  # not 403
 
+    def test_registration_awaiting_approval_ends_the_session(self):
+        """An advocate awaiting approval holds no session, as at login."""
+        response = self.post_advocate(profile={"bar_registration_id": "KER/1234/2019"})
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
     def test_anonymous_caller_is_refused(self):
         """Completion requires the session issued by POST /users."""
         self.client.logout()

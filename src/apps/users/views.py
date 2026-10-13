@@ -404,10 +404,10 @@ class BaseRegistrationCompletionView(APIView):
         # request flow never fails a registration that has already committed.
         schedule_registration_verification(user, file_id)
 
-        # Session handling stays in the view: setting a password rotates the
-        # session auth hash, which would log the user out at the moment they
-        # finished signing up.
-        update_session_auth_hash(request._request, user)
+        if approval_status_of(user) == ApprovalStatus.PENDING:
+            logout(request._request)
+        else:
+            update_session_auth_hash(request._request, user)
 
         return Response(
             {
