@@ -1,6 +1,6 @@
 # Process — Notice, Summons, Warrant, Proclamation, Attachment
 
-**Status:** v10 — 2026-09-30; **police is now a channel, not a flag.** The channels are
+**Status:** v10 — 2026-09-30; 2026-10-12: **recipient vs addressee clarified** (§2) — the recipient is the person the process names and never changes; a warrant, proclamation or attachment is *addressed* to the police; "addressee" no longer used for the person named (`SGN-01`, `DSP-04`, `PIA-01`, `Q-2`). **police is now a channel, not a flag.** The channels are
 SMS, Email, RPAD, e-Post, Police (RPAD), Police (NSTEP) and Police (iCOPS) (§6.2); which
 are available is configured per deployment (`PRC-04`) — Kerala runs Police (iCOPS) in
 place of Police (NSTEP). **Send and update status are two separate steps**, each set per
@@ -184,9 +184,11 @@ While a process is live, the case carries the matching **secondary stage** — N
 Summons, Warrant, Proclamation or Attachment. Stage rules are owned by
 [`case-lifecycle-handover.md`](case-lifecycle-handover.md).
 
-The **recipient** (addressee) never changes — it's who a summons is for, who a warrant is
-against. On a police channel the process goes to the entered police station, but the
-recipient is still the person it names.
+The **recipient** never changes — it's the person the process names: who a summons is
+for, who a warrant is against. The recipient is not always the addressee. A summons or
+notice is addressed to the recipient; a warrant, proclamation or attachment is addressed
+to the police, who execute it on the recipient (§A2). On a police channel the process goes
+to the entered police station, but the recipient is still the person it names.
 
 ---
 
@@ -394,7 +396,7 @@ the system.
 
 | ID | Requirement |
 |---|---|
-| `SGN-01` | Who signs is set by the process type: the CMO or the Magistrate. A warrant is signed by the Magistrate. Notice, summons, proclamation, attachment and custom process are signed by the CMO (see `Q-11`). Every process for the same addressee, whatever its channel or address (§3), carries the same content — it doesn't vary by channel (`TPL-01`). |
+| `SGN-01` | Who signs is set by the process type: the CMO or the Magistrate. A warrant is signed by the Magistrate. Notice, summons, proclamation, attachment and custom process are signed by the CMO (see `Q-11`). Every process for the same recipient, whatever its channel or address (§3), carries the same content — it doesn't vary by channel (`TPL-01`). |
 | `SGN-02` | Once its fee (§7) and envelope (§8) prerequisites are met, a process is listed at Pending signature for the signer for that process type (`SGN-01`). Court-side work on a process — signing, marking sent, recording the outcome, recording that a recall was communicated — is not a pending task. It is a list of processes, segregated by status. |
 | `SGN-03` | Each process is signed separately, with its own signature, timestamp and audit record, even where its content is identical to another process's. Several processes may be selected and signed in one action on screen; each is still signed separately underneath. |
 | `SGN-04` | Signing does not dispatch the process. It moves the process to a distinct **Signed** status — signed, awaiting send — which is a separate backend stage from both Pending signature and Sent (§10), with its own timestamp. A screen may act on sign and send together in one click; the two stages are still recorded separately underneath. |
@@ -418,7 +420,7 @@ warrant-signing to the Presiding Officer (`SG-04` in `saras-2.0-gap-register.md`
 | `DSP-01` | Send is a separate act from signing (`SGN-04`). Send and update status are themselves two separate steps. Each is done either by the system or by a person, set per channel (§6.2), independently of the other. |
 | `DSP-02` | Where a channel's send is by the system, the system sends the process as soon as it is Signed; no court user acts to send it. Where a channel's status update is by the system, the system updates the process's status from what the receiving system reports — by polling or by callback. |
 | `DSP-03` | Where a channel's send is manual, a person marks the process sent once the document has actually left in that form. Where a channel's status update is manual, a person records the outcome when the acknowledgement, tracking update or report comes back. Who that person is, per channel, is in §6.2 — the CMO for RPAD and Police (RPAD), the Post Officer for e-Post. |
-| `DSP-04` | Every process carries its own status, status date and remark, independent of every other process — including another process for the same addressee (§3). There is no status that spans several processes. |
+| `DSP-04` | Every process carries its own status, status date and remark, independent of every other process — including another process for the same recipient (§3). There is no status that spans several processes. |
 | `DSP-05` | A process's status moves through the vocabulary in §10.1 only. |
 | `DSP-06` | A process is closed when it reaches a terminal status, or when the expiry date passes (§11). |
 | `DSP-07` | A process's non-delivery does not create a new process. A fresh process requires a fresh order, which starts a new round. |
@@ -463,7 +465,7 @@ A signed, dispatched process may be overtaken by events. Two cases are handled.
 
 | ID | Requirement |
 |---|---|
-| `PIA-01` | **It is no longer wanted.** The judge recalls the warrant or grants bail. The system marks every process for that addressee, in that round, Recalled — not just the one a court user happens to be looking at. Where the channel's send is by the system, the receiving system is told; where it is manual, the CMO or Post Officer records that the recall was communicated. |
+| `PIA-01` | **It is no longer wanted.** The judge recalls the warrant or grants bail. The system marks every process for that recipient, in that round, Recalled — not just the one a court user happens to be looking at. Where the channel's send is by the system, the receiving system is told; where it is manual, the CMO or Post Officer records that the recall was communicated. |
 | `PIA-02` | **The hearing date changes.** A warrant does not print its date (`PRC-06`), so nothing on it becomes wrong. No replacement is generated, signed or dispatched; the warrant stays live, and the QR code shows the new date. |
 
 `PIA-01` and `PIA-02` apply to warrants. Whether a summons, notice or custom process also
@@ -509,7 +511,7 @@ filter: PRDs.Contains("process-handover")
 | # | Question | Blocking? |
 |---|---|---|
 | `Q-1` | Confirm the channel-by-process-type matrix in §6.3. | Yes |
-| `Q-2` | A proclamation is published by affixation at the addressee's house and at the courthouse, and sometimes in a newspaper. None of these are in the channel list. How are they represented and tracked? | Yes |
+| `Q-2` | A proclamation is published by affixation at the recipient's house and at the courthouse, and sometimes in a newspaper. None of these are in the channel list. How are they represented and tracked? | Yes |
 | ~~`Q-3`~~ | ~~Do SMS and WhatsApp carry a fee, or are they free?~~ Resolved 2026-09-30 — only e-Post has a channel fee, and not at launch (`FEE-02`). | — |
 | `Q-4` | Does a summons, notice or custom process carry a QR code in place of a printed hearing date, as a warrant does (`PRC-06`)? If not, what happens to a live one when the hearing date moves? | Yes |
 | `Q-5` | For Gujarat and Punjab, which steps does the connected system remove — the envelope, the party payment, the manual status recording, or all three? | No |
