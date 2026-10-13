@@ -1,6 +1,7 @@
 """Shared base model used across the project."""
 
 import copy
+import re
 import uuid
 
 from django.conf import settings
@@ -214,3 +215,63 @@ class ApiVersionChangeLog(BaseExtendableModel, BaseModel, BaseActivatableModel, 
         ordering = ("-created_at",)
         verbose_name = "API Version Change Log"
         verbose_name_plural = "API Version Change Logs"
+
+
+CONFIG_NAME_PATTERN = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)*$")
+
+
+def normalize_config_name(value: str) -> str:
+    """Return a configuration set/key trimmed and lowercased."""
+    return value.strip().lower() if isinstance(value, str) else value
+
+
+class Configuration(BaseModel, BaseActivatableModel):
+    """A non-sensitive, runtime-editable key/value configuration entry.
+
+    Values are opaque strings; read them through ``apps.core.services`` rather
+    than querying this model directly. Secrets MUST NOT be stored here.
+    """
+
+    config_set = models.CharField(max_length=100)
+    config_key = models.CharField(max_length=255)
+    config_value = models.TextField(blank=True)
+    description = models.TextField(null=True, blank=True)
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("config_set", "config_key")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("config_set", "config_key"),
+                name="core_configuration_unique_set_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("config_set",), name="core_config_set_idx"),
+        ]
+        verbose_name = "Configuration"
+        verbose_name_plural = "Configurations"
+
+    def __str__(self):
+        return f"{self.config_set}.{self.config_key}"
+
+    def clean(self):
+        """Normalize the set and key, then validate their format."""
+        super().clean()
+        self.config_set = normalize_config_name(self.config_set)
+        self.config_key = normalize_config_name(self.config_key)
+        errors = {}
+        for field in ("config_set", "config_key"):
+            if not CONFIG_NAME_PATTERN.match(getattr(self, field) or ""):
+                errors[field] = (
+                    "Use lowercase letters, numbers, and underscores, optionally "
+                    "grouped with dots (for example 'gateway.cdac.timeout')."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        """Validate the model before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
