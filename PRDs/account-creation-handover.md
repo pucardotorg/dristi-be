@@ -1,6 +1,7 @@
 # Account Creation — Developer & Agent Handover
 
-**Status:** v8 — 2026-09-27; `REG-34`'s unexplained "reasonable — confirm" dropped ·
+**Status:** v9 — 2026-10-13; `REG-13` no Bar Council database lookup of the Bar Registration ID — verified against the card photo only.
+v8 — 2026-09-27; `REG-34`'s unexplained "reasonable — confirm" dropped ·
 §6.1 courtroom mapping generalised (no longer names Gujarat/a specific courtroom count,
 states the 1:1-formally/differs-in-practice pattern for any employee role) · §7 accused
 onboarding trimmed to the account-creation claim only, onboarding-journey detail now
@@ -163,7 +164,7 @@ Two phases: the user submits their details, then a scrutiny officer approves.
 | `REG-10` | Enter mobile number | Yes | ✓ | ✓ | Primary key · **completed in the entry flow (§3)** |
 | `REG-11` | Verify OTP | Yes | ✓ | ✓ | **Completed in the entry flow (§3)** |
 | `REG-12` | Full Name | Yes | ✓ | ✓ | |
-| `REG-13` | Bar Registration ID | Yes | ✓ | — | Looked up against the Bar Council database |
+| `REG-13` | Bar Registration ID | Yes | ✓ | — | **[OWNER]** not looked up against any database; the scrutiny officer verifies it against the Bar ID card photo (`REG-14`) |
 | `REG-13a` | Clerk Registration Number | Yes | — | ✓ | **[OWNER]** clerks use their own identifier |
 | `REG-14` | Photo of Bar ID card | Yes | ✓ | — | Uploaded; scrutiny officer uses it to verify |
 | `REG-14a` | Photo of Clerk ID card | Yes | — | ✓ | **[OWNER]** |
@@ -328,6 +329,10 @@ filter: PRDs.Contains("account-creation-handover")
 ---
 
 # 10. Owner decisions log
+
+**2026-10-13** — No Bar Council check: the Bar Registration ID is not looked up against
+the Bar Council database at registration; the scrutiny officer verifies it against the
+Bar ID card photo (`REG-13`, `REG-14`).
 
 **2026-09-03** — Simplified litigant registration confirmed (phone + OTP + name only) ·
 clerks use clerk registration number + clerk ID card photo · address and ID proof
