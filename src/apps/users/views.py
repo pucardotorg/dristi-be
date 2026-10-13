@@ -131,6 +131,17 @@ REGISTERED_ACCOUNT_RESPONSE = inline_serializer(
 )
 
 
+# Shared by the hand-written multipart forms below.
+NAME_PROPERTY = {"type": "string", "maxLength": 256}
+EMAIL_PROPERTY = {"type": "string", "format": "email"}
+REGISTRATION_NUMBER_PROPERTY = {"type": "string", "maxLength": 64}
+BAR_ID_DOCUMENT_PROPERTY = {
+    "type": "string",
+    "format": "binary",
+    "description": "Bar council ID as a PDF, JPEG or PNG.",
+}
+
+
 def _registration_form(profile_properties, *, document_required):
     """Return the multipart body of a registration that can carry the bar ID.
 
@@ -156,32 +167,47 @@ def _registration_form(profile_properties, *, document_required):
         "type": "object",
         "required": required,
         "properties": {
-            "name": {"type": "string", "maxLength": 256},
-            "email": {"type": "string", "format": "email"},
+            "name": NAME_PROPERTY,
+            "email": EMAIL_PROPERTY,
             "password": {"type": "string", "format": "password", "maxLength": 128},
             "terms_accepted": {"type": "boolean"},
             **{f"profile.{name}": schema for name, (schema, _) in profile_properties.items()},
-            "bar_id_document": {
-                "type": "string",
-                "format": "binary",
-                "description": "Bar council ID as a PDF, JPEG or PNG.",
-            },
+            "bar_id_document": BAR_ID_DOCUMENT_PROPERTY,
         },
     }
 
 
 ADVOCATE_REGISTRATION_FORM = _registration_form(
     {
-        "bar_registration_id": ({"type": "string", "maxLength": 64}, True),
+        "bar_registration_id": (REGISTRATION_NUMBER_PROPERTY, True),
         "advocate_type": ({"type": "string", "enum": AdvocateType.values}, False),
     },
     document_required=True,
 )
 
 CLERK_REGISTRATION_FORM = _registration_form(
-    {"clerk_registration_number": ({"type": "string", "maxLength": 64}, True)},
+    {"clerk_registration_number": (REGISTRATION_NUMBER_PROPERTY, True)},
     document_required=False,
 )
+
+# Described by hand for the same reason as the registration forms: inferred
+# from the serializer, the document is a URI string with no file picker.
+RESUBMISSION_FORM = {
+    "type": "object",
+    "required": ["name", "registration_number"],
+    "properties": {
+        "name": NAME_PROPERTY,
+        "email": EMAIL_PROPERTY,
+        "registration_number": REGISTRATION_NUMBER_PROPERTY,
+        "bar_id_document": {
+            **BAR_ID_DOCUMENT_PROPERTY,
+            "description": (
+                "Bar council ID as a PDF, JPEG or PNG. Required for an advocate; "
+                "a clerk who omits it keeps the document already on file."
+            ),
+        },
+    },
+}
 
 
 @method_decorator(sensitive_post_parameters("otp"), name="dispatch")
@@ -496,7 +522,7 @@ class RegistrationResubmitView(APIView):
     @extend_schema(
         tags=["registration"],
         request={
-            "multipart/form-data": RegistrationResubmissionSerializer,
+            "multipart/form-data": RESUBMISSION_FORM,
             "application/json": RegistrationResubmissionSerializer,
         },
         responses={
