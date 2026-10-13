@@ -170,8 +170,29 @@ _JOB_TRANSITIONS = {
 }
 
 
+class PDFJobQuerySet(models.QuerySet):
+    """Query helpers for jobs."""
+
+    def owned_by(self, user):
+        """Return only the jobs ``user`` requested.
+
+        A job belongs to the user who requested it, and every API operation on
+        a job (search, retrieve, cancel, download, delete) is limited to that
+        user -- there is no staff override. Anonymous users own nothing, and
+        jobs created in-process without a user are not reachable through the
+        API at all.
+        """
+        if user is None or not getattr(user, "is_authenticated", False):
+            return self.none()
+        return self.filter(requested_by=user)
+
+
 class PDFJob(BaseModel):
-    """One request to generate a document (or a bulk set of documents)."""
+    """One request to generate a document (or a bulk set of documents).
+
+    ``requested_by`` is the job's owner: only that user can see or act on the
+    job through the API (``PDFJob.objects.owned_by``).
+    """
 
     key = models.CharField(max_length=100)
     template_version = models.ForeignKey(
@@ -214,6 +235,8 @@ class PDFJob(BaseModel):
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     files_deleted_at = models.DateTimeField(null=True, blank=True)
+
+    objects = PDFJobQuerySet.as_manager()
 
     class Meta(BaseModel.Meta):
         """Meta options."""

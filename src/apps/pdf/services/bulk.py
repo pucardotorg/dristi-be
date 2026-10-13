@@ -147,7 +147,9 @@ def claim_record(job_id, sequence, attempt: int = 0) -> tuple[PDFJob, PDFJobReco
 
     A chunk whose job was cancelled is marked ``CANCELLED`` here, at the chunk
     boundary, so no further work starts for a cancelled job (#12). As with
-    jobs, a chunk is only claimed by the message for its current attempt.
+    jobs (see ``claim_job``), a message is dropped only when the chunk's
+    ``attempt_count`` is already past its attempt, so a retry after a claim
+    that rolled back on a database error can still claim the chunk.
     """
     with transaction.atomic():
         record = (
@@ -163,10 +165,10 @@ def claim_record(job_id, sequence, attempt: int = 0) -> tuple[PDFJob, PDFJobReco
             record.status = PDFJobRecordStatus.CANCELLED
             record.save(update_fields=["status", "updated_at"])
             return None
-        if job.status != PDFJobStatus.PROCESSING or record.attempt_count != attempt:
+        if job.status != PDFJobStatus.PROCESSING or record.attempt_count > attempt:
             return None
         record.status = PDFJobRecordStatus.PROCESSING
-        record.attempt_count += 1
+        record.attempt_count = attempt + 1
         record.save(update_fields=["status", "attempt_count", "updated_at"])
         return job, record
 

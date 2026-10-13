@@ -85,8 +85,9 @@ def create_job(request: JobRequest, *, user=None) -> tuple[PDFJob, bool]:
         data_config=data_config,
         request_data=request.data,
     )
+    requester = user if getattr(user, "is_authenticated", False) else None
     if not request.force_regenerate:
-        existing = find_reusable_job(reuse_key)
+        existing = find_reusable_job(reuse_key, requested_by=requester)
         if existing is not None:
             log_event("PDF_JOB_REUSED", existing)
             return existing, True
@@ -98,8 +99,8 @@ def create_job(request: JobRequest, *, user=None) -> tuple[PDFJob, bool]:
             tenant_id=request.tenant_id,
             entity_id=request.entity_id,
             organization_id=request.organization_id,
-            requested_by=user if getattr(user, "is_authenticated", False) else None,
-            created_by=user if getattr(user, "is_authenticated", False) else None,
+            requested_by=requester,
+            created_by=requester,
             locale=request.locale,
             correlation_id=request.correlation_id,
             is_bulk=bulk,
@@ -122,15 +123,40 @@ def _enqueue(job: PDFJob) -> None:
     log_event("PDF_JOB_QUEUED", job)
 
 
-def cancel_job(job_id) -> PDFJob:
+class PDFJobNotFound(PDFError):  # noqa: N818
+    """No job with that id belongs to the caller."""
+
+    code = "PDF_JOB_NOT_FOUND"
+    default_message = "No such PDF job."
+
+
+def _owned(user):
+    """Return the job queryset ``user`` may act on.
+
+    ``user=None`` is the in-process (worker / system) path, which is not
+    limited; API callers always pass the request user, so they only ever
+    reach their own jobs. ``PDFJob.objects.owned_by`` defines ownership.
+    """
+    if user is None:
+        return PDFJob.objects.all()
+    return PDFJob.objects.owned_by(user)
+
+
+def cancel_job(job_id, *, user=None) -> PDFJob:
     """Cancel a non-terminal job; raise ``PDFJobStateError`` for terminal ones.
 
     Pending chunks are cancelled immediately; chunks already running finish
     their in-flight work but their output is discarded (#12). Documents
     already persisted for the job are deleted through the File Storage Service.
+
+    With ``user`` given, only that user's own job can be cancelled; any other
+    id raises ``PDFJobNotFound``. The ownership check runs inside the locked
+    read, so it cannot be bypassed by racing the view's lookup.
     """
     with transaction.atomic():
-        job = PDFJob.objects.select_for_update().get(pk=job_id)
+        job = _owned(user).select_for_update().filter(pk=job_id).first()
+        if job is None:
+            raise PDFJobNotFound()
         if job.status not in CANCELLABLE_JOB_STATUSES:
             raise PDFJobStateError(f"A {job.status} job cannot be cancelled.")
         job.transition_to(PDFJobStatus.CANCELLED)
@@ -147,8 +173,14 @@ def cancel_job(job_id) -> PDFJob:
     return job
 
 
-def delete_job_documents(job: PDFJob) -> PDFJob:
-    """Delete every document a job produced and mark it no longer downloadable."""
+def delete_job_documents(job: PDFJob, *, user=None) -> PDFJob:
+    """Delete every document a job produced and mark it no longer downloadable.
+
+    With ``user`` given, only that user's own job is accepted; any other job
+    raises ``PDFJobNotFound`` before anything is deleted.
+    """
+    if not _owned(user).filter(pk=job.pk).exists():
+        raise PDFJobNotFound()
     file_ids = list(job.file_ids or []) + list(
         job.records.exclude(file_id="").values_list("file_id", flat=True)
     )
@@ -236,6 +268,7 @@ def _render_in_thread(config, data, context) -> bytes:
 
 __all__ = [
     "JobRequest",
+    "PDFJobNotFound",
     "PDFSyncRenderNotAllowed",
     "PDFSyncRenderTimeout",
     "cancel_job",

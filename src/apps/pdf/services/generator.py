@@ -117,23 +117,28 @@ def uploader_id(job: PDFJob):
 def claim_job(job_id, attempt: int = 0) -> PDFJob | None:
     """Move a queued job to ``PROCESSING``; return ``None`` when there is nothing to do.
 
-    Every message carries the attempt number it was sent for, and a job is
-    only claimed when its ``attempt_count`` still equals that number. The
-    first delivery of attempt 0 claims a ``QUEUED`` job; a retry message
-    (attempt n) re-claims the ``PROCESSING`` job left by attempt n-1. A
-    duplicate delivery finds the counter already advanced, and deliveries for
-    cancelled or finished jobs find a terminal status: both return ``None``,
-    so duplicates never produce a second document (#10).
+    Every message carries the attempt number it was sent for. A successful
+    claim of attempt ``n`` records ``attempt_count = n + 1``, so any later
+    delivery of a message for attempt ``n`` or earlier finds the counter
+    already past it and is dropped: duplicates never produce a second
+    document (#10). Deliveries for cancelled or finished jobs find a terminal
+    status and are dropped too.
+
+    The counter is only compared with ``>``, never required to equal the
+    attempt. If a claim's own transaction fails (a database error), the
+    rollback leaves the counter where it was, and the retry message for
+    ``n + 1`` must still be able to claim the job rather than be discarded as
+    a duplicate -- otherwise the job would stay ``QUEUED`` forever.
     """
     with transaction.atomic():
         job = PDFJob.objects.select_for_update().filter(pk=job_id).first()
         if job is None or job.is_terminal or job.status == PDFJobStatus.CREATED:
             return None
-        if job.attempt_count != attempt:
+        if job.attempt_count > attempt:
             return None
         if job.status == PDFJobStatus.QUEUED:
             job.transition_to(PDFJobStatus.PROCESSING)
-        job.attempt_count += 1
+        job.attempt_count = attempt + 1
         job.save(update_fields=["status", "started_at", "attempt_count", "updated_at"])
         log_event("PDF_JOB_PROCESSING", job, attempt=job.attempt_count)
         return job

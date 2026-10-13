@@ -104,6 +104,59 @@ def test_duplicate_delivery_produces_exactly_one_document(version, user, broker)
     assert job.attempt_count == 1
 
 
+def test_retry_after_a_claim_rolled_back_by_a_database_error(version, user, broker, no_retry_delay):
+    job = create(user)
+    real_save = PDFJob.save
+    calls = []
+
+    def save_fails_once(self, *args, **kwargs):
+        if self.pk == job.pk and not calls:
+            calls.append(1)
+            raise OperationalError("connection lost")
+        return real_save(self, *args, **kwargs)
+
+    with patch.object(PDFJob, "save", save_fails_once):
+        drain(broker)
+    job.refresh_from_db()
+
+    assert calls == [1]
+    assert job.status == PDFJobStatus.COMPLETED
+    assert job.attempt_count == 2  # claimed by the retry message (attempt 1)
+    assert File.objects.count() == 1
+
+
+def test_database_errors_on_every_claim_end_in_failed(
+    version, user, broker, settings, no_retry_delay
+):
+    settings.PDF_JOB_MAX_RETRIES = 2
+    job = create(user)
+    real_save = PDFJob.save
+
+    def claim_save_fails(self, *args, **kwargs):
+        if self.pk == job.pk and "attempt_count" in (kwargs.get("update_fields") or []):
+            raise OperationalError("connection lost")
+        return real_save(self, *args, **kwargs)
+
+    with patch.object(PDFJob, "save", claim_save_fails):
+        drain(broker)
+    job.refresh_from_db()
+
+    assert job.status == PDFJobStatus.FAILED
+    assert job.error_code == "PDF_DATABASE_UNAVAILABLE"
+    assert File.objects.count() == 0
+
+
+def test_older_attempt_messages_are_dropped_after_a_later_claim(version, user, broker):
+    job = create(user)
+    drain(broker)
+    job.refresh_from_db()
+    assert job.attempt_count == 1
+
+    for attempt in (0, 1):
+        generate_pdf.fn(str(job.id), attempt)
+    assert File.objects.count() == 1
+
+
 def test_terminal_and_unknown_jobs_are_ignored(version, user, broker):
     job = create(user)
     drain(broker)

@@ -98,6 +98,24 @@ class TestCreate:
         assert response.json()["file_ids"] == first.file_ids
         assert PDFJob.objects.count() == 1
 
+    def test_reuse_does_not_cross_users(self, client, version, broker):
+        first = completed_job(client, broker)
+        other = APIClient()
+        other.force_authenticate(user=make_user())
+
+        response = create(other)
+        assert response.status_code == 202
+        body = response.json()
+        assert body["id"] != str(first.id)
+        assert body["reused"] is False
+        assert body["file_ids"] == []
+        # The new job belongs to the second user, who can poll and download it.
+        drain(broker)
+        job_url = reverse("pdf-job-detail", kwargs={"id": body["id"]})
+        assert other.get(job_url).json()["status"] == "COMPLETED"
+        download_url = reverse("pdf-job-download", kwargs={"id": body["id"]})
+        assert other.get(download_url).status_code == 200
+
     def test_force_regenerate_creates_a_new_job(self, client, version, broker):
         completed_job(client, broker)
         response = create(client, force_regenerate=True)
@@ -219,16 +237,49 @@ class TestSearchAndRetrieve:
         other.force_authenticate(user=make_user())
 
         assert other.get(reverse(JOBS)).json()["count"] == 0
+        assert other.get(reverse(JOBS), {"entity_id": "case-1"}).json()["count"] == 0
         assert other.get(detail("detail", job)).status_code == 404
         assert other.get(detail("download", job)).status_code == 404
-        assert other.post(detail("cancel", job)).status_code == 404
-        assert other.delete(detail("detail", job)).status_code == 404
 
-    def test_staff_see_every_job(self, client, version, broker):
-        completed_job(client, broker)
-        staff = APIClient()
-        staff.force_authenticate(user=make_user(is_staff=True))
-        assert staff.get(reverse(JOBS)).json()["count"] == 1
+    def test_list_contains_only_the_callers_jobs(self, client, user, version, broker):
+        mine = PDFJob.objects.get(pk=create(client).json()["id"])
+        other = APIClient()
+        other.force_authenticate(user=make_user())
+        theirs = PDFJob.objects.get(pk=create(other).json()["id"])
+
+        mine_ids = [job["id"] for job in client.get(reverse(JOBS)).json()["results"]]
+        theirs_ids = [job["id"] for job in other.get(reverse(JOBS)).json()["results"]]
+        assert mine_ids == [str(mine.id)]
+        assert theirs_ids == [str(theirs.id)]
+
+    def test_another_users_job_answers_like_an_unknown_id(self, client, version, broker):
+        job = completed_job(client, broker)
+        other = APIClient()
+        other.force_authenticate(user=make_user())
+        unknown = reverse("pdf-job-detail", kwargs={"id": "00000000-0000-0000-0000-000000000000"})
+
+        foreign = other.get(detail("detail", job))
+        missing = other.get(unknown)
+        assert foreign.status_code == missing.status_code == 404
+        assert foreign.json()["detail"] == missing.json()["detail"]
+
+    @pytest.mark.parametrize("flag", ["is_staff", "is_superuser"])
+    def test_staff_and_superusers_have_no_override(self, client, version, broker, flag):
+        job = completed_job(client, broker)
+        admin_client = APIClient()
+        admin_client.force_authenticate(user=make_user(**{flag: True}))
+
+        assert admin_client.get(reverse(JOBS)).json()["count"] == 0
+        assert admin_client.get(detail("detail", job)).status_code == 404
+        assert admin_client.get(detail("download", job)).status_code == 404
+        assert admin_client.post(detail("cancel", job)).status_code == 404
+        assert admin_client.delete(detail("detail", job)).status_code == 404
+
+    def test_jobs_without_an_owner_are_not_reachable(self, client, version):
+        orphan = PDFJob.objects.get(pk=create(client).json()["id"])
+        PDFJob.objects.filter(pk=orphan.pk).update(requested_by=None)
+        assert client.get(detail("detail", orphan)).status_code == 404
+        assert client.get(reverse(JOBS)).json()["count"] == 0
 
 
 class TestCancel:
@@ -244,6 +295,20 @@ class TestCancel:
         response = client.post(detail("cancel", job))
         assert response.status_code == 409
         assert response.json()["code"] == "PDF_INVALID_TRANSITION"
+
+    def test_cannot_cancel_another_users_job(self, client, version, broker):
+        job = PDFJob.objects.get(pk=create(client).json()["id"])
+        other = APIClient()
+        other.force_authenticate(user=make_user())
+
+        response = other.post(detail("cancel", job))
+        assert response.status_code == 404
+        job.refresh_from_db()
+        assert job.status == PDFJobStatus.QUEUED
+
+        drain(broker)
+        job.refresh_from_db()
+        assert job.status == PDFJobStatus.COMPLETED
 
     def test_cancelled_job_is_never_processed(self, client, version, broker):
         job = PDFJob.objects.get(pk=create(client).json()["id"])
@@ -295,6 +360,18 @@ class TestDownloadAndDelete:
         assert client.get(detail("download", job)).status_code == 404
         # A job whose documents were deleted is never reused.
         assert create(client).status_code == 202
+
+    def test_cannot_delete_or_download_another_users_documents(self, client, version, broker):
+        job = completed_job(client, broker)
+        other = APIClient()
+        other.force_authenticate(user=make_user())
+
+        assert other.get(detail("download", job)).status_code == 404
+        assert other.delete(detail("detail", job)).status_code == 404
+        job.refresh_from_db()
+        assert len(job.file_ids) == 1 and job.files_deleted_at is None
+        assert File.objects.count() == 1
+        assert client.get(detail("download", job)).status_code == 200
 
     def test_delete_active_job_conflicts(self, client, version):
         job = PDFJob.objects.get(pk=create(client).json()["id"])

@@ -43,17 +43,30 @@ def compute_reuse_key(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def find_reusable_job(reuse_key: str) -> PDFJob | None:
+def find_reusable_job(reuse_key: str, *, requested_by=None) -> PDFJob | None:
     """Return the newest completed, still-downloadable job with ``reuse_key``.
+
+    Reuse is scoped to the requester: only a job created by the same user is
+    returned (or, for in-process callers with no user, a job that also has no
+    user). Jobs are visible only to the user who requested them, so handing
+    another user's job back would both leak its metadata and leave the caller
+    with ids it cannot retrieve or download. ``reuse_key`` itself stays the
+    spec 0016 #7 hash; the scoping is applied as a filter.
 
     ``CANCELLED``, ``FAILED`` and ``PARTIAL_SUCCESS`` jobs are never reused, nor
     are jobs whose documents have been deleted.
     """
+    owner = (
+        {"requested_by": requested_by}
+        if getattr(requested_by, "pk", None) is not None
+        else {"requested_by__isnull": True}
+    )
     return (
         PDFJob.objects.filter(
             reuse_key=reuse_key,
             status=PDFJobStatus.COMPLETED,
             files_deleted_at__isnull=True,
+            **owner,
         )
         .order_by("-completed_at", "-created_at")
         .first()

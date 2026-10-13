@@ -6,7 +6,7 @@ import pytest
 
 from apps.files.models import File
 from apps.pdf.exceptions import PDFDependencyError, PDFRequestDataError
-from apps.pdf.models import PDFJob, PDFJobRecordStatus, PDFJobStatus
+from apps.pdf.models import PDFJob, PDFJobRecord, PDFJobRecordStatus, PDFJobStatus
 from apps.pdf.renderer.merge import page_count
 from apps.pdf.services import bulk, jobs
 from apps.pdf.services.documents import read_document
@@ -187,6 +187,29 @@ def test_chunk_retry_does_not_regenerate_other_chunks(user, broker, no_retry_del
 
     assert job.status == PDFJobStatus.COMPLETED
     assert sorted(calls) == [1, 3, 3]
+
+
+def test_chunk_retry_after_a_claim_rolled_back_by_a_database_error(user, broker, no_retry_delay):
+    from django.db import OperationalError
+
+    make_bulk_template(merge=False)
+    job = create(user, 2)
+    real_save = PDFJobRecord.save
+    calls = []
+
+    def claim_save_fails_once(self, *args, **kwargs):
+        if "attempt_count" in (kwargs.get("update_fields") or []) and not calls:
+            calls.append(1)
+            raise OperationalError("connection lost")
+        return real_save(self, *args, **kwargs)
+
+    with patch.object(PDFJobRecord, "save", claim_save_fails_once):
+        drain(broker)
+    job.refresh_from_db()
+
+    assert calls == [1]
+    assert job.status == PDFJobStatus.COMPLETED
+    assert job.records.get().attempt_count == 2
 
 
 def test_duplicate_chunk_delivery_is_ignored(user, broker):

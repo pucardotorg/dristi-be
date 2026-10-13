@@ -4,7 +4,7 @@ import pytest
 
 from apps.pdf.models import PDFJob, PDFJobStatus
 from apps.pdf.services.reuse import compute_reuse_key, find_reusable_job
-from apps.pdf.tests.factories import make_template
+from apps.pdf.tests.factories import make_template, make_user
 
 BASE = {
     "tenant_id": "kl",
@@ -85,3 +85,17 @@ class TestFindReusableJob:
 
         self.make(version, PDFJobStatus.COMPLETED, files_deleted_at=timezone.now())
         assert find_reusable_job("r" * 64) is None
+
+    def test_reuse_is_scoped_to_the_requesting_user(self, version):
+        owner, other = make_user(), make_user()
+        job = self.make(version, PDFJobStatus.COMPLETED, requested_by=owner)
+
+        assert find_reusable_job("r" * 64, requested_by=owner) == job
+        assert find_reusable_job("r" * 64, requested_by=other) is None
+        assert find_reusable_job("r" * 64) is None
+
+    def test_jobs_without_a_user_are_reused_only_by_callers_without_a_user(self, version):
+        job = self.make(version, PDFJobStatus.COMPLETED)
+
+        assert find_reusable_job("r" * 64) == job
+        assert find_reusable_job("r" * 64, requested_by=make_user()) is None

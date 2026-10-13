@@ -3,7 +3,10 @@
 Views validate input, call ``apps.pdf.services.jobs`` and serialize the
 result. Mapping, rendering and storage happen in services and workers.
 
-Jobs are visible to the user who requested them; staff see every job.
+A job belongs to the user who requested it. Every job endpoint -- search,
+retrieve, cancel, download and delete -- operates only on the caller's own
+jobs; there is no staff override. Another user's job id answers ``404``, the
+same as an unknown id, so ids cannot be probed.
 """
 
 from django.http import FileResponse, HttpResponse
@@ -72,7 +75,7 @@ class PDFTimeout(APIException):
 def to_api_error(exc: PDFError) -> APIException:
     """Translate a service error into a DRF exception with a stable ``code``."""
     detail = {"detail": exc.safe_message, "code": exc.code}
-    if isinstance(exc, PDFTemplateNotFound):
+    if isinstance(exc, PDFTemplateNotFound | jobs.PDFJobNotFound):
         return NotFound(detail)
     if isinstance(exc, PDFRequestDataError | jobs.PDFSyncRenderNotAllowed):
         return ValidationError(detail)
@@ -138,14 +141,16 @@ class PDFJobViewSet(APIModelReadOnlyViewSet):
     lookup_field = "id"
 
     def get_queryset(self):
-        """Return the caller's jobs (all jobs for staff), filtered on list."""
-        queryset = PDFJob.objects.select_related("template_version")
+        """Return only the caller's own jobs, filtered on list.
+
+        Every detail action resolves its job through ``get_object()``, which
+        uses this queryset, so ownership is enforced in one place for
+        retrieve, cancel, download and delete alike.
+        """
         if getattr(self, "swagger_fake_view", False):
             # Schema generation has no real user; the model is all it needs.
-            return queryset.none()
-        user = self.request.user
-        if not (user.is_staff or user.is_superuser):
-            queryset = queryset.filter(requested_by=user)
+            return PDFJob.objects.none()
+        queryset = PDFJob.objects.owned_by(self.request.user).select_related("template_version")
         if self.action == "list":
             filters = PDFJobFilterSerializer(data=self.request.query_params)
             filters.is_valid(raise_exception=True)
@@ -201,7 +206,7 @@ class PDFJobViewSet(APIModelReadOnlyViewSet):
                 }
             )
         try:
-            job = jobs.delete_job_documents(job)
+            job = jobs.delete_job_documents(job, user=request.user)
         except PDFError as exc:
             raise to_api_error(exc) from exc
         return self._respond(job)
@@ -211,7 +216,7 @@ class PDFJobViewSet(APIModelReadOnlyViewSet):
         """Cancel a ``CREATED``/``QUEUED``/``PROCESSING`` job; terminal jobs conflict."""
         job = self.get_object()
         try:
-            job = jobs.cancel_job(job.pk)
+            job = jobs.cancel_job(job.pk, user=request.user)
         except PDFError as exc:
             raise to_api_error(exc) from exc
         return self._respond(job)
