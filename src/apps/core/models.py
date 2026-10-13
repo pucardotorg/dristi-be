@@ -17,6 +17,9 @@ from .validators import (
     validate_default_value,
 )
 
+# Used with fullmatch(): "$" would also accept a trailing newline.
+CODE_RE = re.compile(r"[A-Z0-9_]+")
+
 
 class ActivatableQuerySet(models.QuerySet):
     """QuerySet helpers for models with an is_active flag."""
@@ -273,5 +276,100 @@ class Configuration(BaseModel, BaseActivatableModel):
 
     def save(self, *args, **kwargs):
         """Validate the model before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class BusinessRule(BaseModel, BaseActivatableModel, BaseAuditableModel):
+    """A business rule evaluated in-process by one of the supported engines (spec 0019).
+
+    Consumers evaluate rules through ``apps.core.rules.services.BusinessRuleService``
+    only; they never query this model directly.
+    """
+
+    class RuleEngineType(models.TextChoices):
+        """Engines that can evaluate ``rule_expression``."""
+
+        RULE_ENGINE = "rule_engine", "Rule Engine"
+        GORULES = "gorules", "GoRules"
+
+    code = models.CharField(max_length=50, unique=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    engine = models.CharField(max_length=50, choices=RuleEngineType.choices, db_index=True)
+    rule_expression = models.TextField()
+    rule_input_schema = models.JSONField()
+    rule_output_schema = models.JSONField()
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("code",)
+        verbose_name = "Business Rule"
+        verbose_name_plural = "Business Rules"
+
+    def __str__(self):
+        """Return a readable label for admin and logs."""
+        return f"{self.name} ({self.code})"
+
+    def clean(self):
+        """Validate the code, the expression size, both schemas, and expression/schema agreement."""
+        # Imported here: the rules package imports this module.
+        from .rules.exceptions import EngineNotAvailable, RuleDefinitionError, RuleSchemaError
+        from .rules.services import BusinessRuleService
+
+        super().clean()
+        # Fields that already failed form validation hold stale values here.
+        excluded = getattr(self, "_clean_exclude", set())
+        errors = {}
+        if "code" not in excluded and (not self.code or not CODE_RE.fullmatch(self.code)):
+            errors["code"] = "Must be uppercase snake_case matching ^[A-Z0-9_]+$ (e.g. COURT_FEE)."
+        if "engine" not in excluded and self.engine not in self.RuleEngineType.values:
+            errors["engine"] = f"Must be one of: {', '.join(self.RuleEngineType.values)}."
+        expression = self.rule_expression or ""
+        if "rule_expression" not in excluded:
+            if not expression.strip():
+                errors["rule_expression"] = "A rule expression is required."
+            elif len(expression.encode("utf-8")) > settings.RULES_MAX_EXPRESSION_BYTES:
+                errors["rule_expression"] = (
+                    f"Expression is larger than {settings.RULES_MAX_EXPRESSION_BYTES} bytes."
+                )
+        for field in ("rule_input_schema", "rule_output_schema"):
+            value = getattr(self, field)
+            if field not in excluded and (not isinstance(value, dict) or not value):
+                errors[field] = "A non-empty JSON Schema object is required."
+
+        rule_fields = {"engine", "rule_expression", "rule_input_schema", "rule_output_schema"}
+        if not (errors.keys() | excluded) & rule_fields:
+            try:
+                BusinessRuleService.validate_rule(self)
+            except RuleSchemaError as exc:
+                errors[exc.field] = str(exc)
+            except (RuleDefinitionError, EngineNotAvailable) as exc:
+                errors["rule_expression"] = str(exc)
+
+        if errors:
+            raise ValidationError(errors)
+
+    def full_clean(self, exclude=None, validate_unique=True, validate_constraints=True):
+        """Let clean() skip the fields the caller excluded.
+
+        A ModelForm excludes fields that already failed form validation. Those
+        fields were never assigned to the instance, so re-checking them in
+        clean() would report a misleading second error (or, on an edit,
+        silently re-validate the old value).
+        """
+        self._clean_exclude = set(exclude or ())
+        try:
+            super().full_clean(
+                exclude=exclude,
+                validate_unique=validate_unique,
+                validate_constraints=validate_constraints,
+            )
+        finally:
+            del self._clean_exclude
+
+    def save(self, *args, **kwargs):
+        """Validate the model before saving, so no write path stores a broken rule."""
         self.full_clean()
         super().save(*args, **kwargs)
