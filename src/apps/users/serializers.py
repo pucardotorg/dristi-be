@@ -11,6 +11,14 @@ from .services.otp import Purpose
 MAX_PASSWORD_LENGTH = 128
 
 
+def run_password_validators(field, password, user):
+    """Run AUTH_PASSWORD_VALIDATORS, reporting failures under `field`."""
+    try:
+        validate_password(password, user=user)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError({field: list(exc.messages)}) from exc
+
+
 class OTPRequestSerializer(serializers.Serializer):
     """Body of POST /auth/otp/request."""
 
@@ -71,10 +79,7 @@ class RegistrationCompletionSerializer(serializers.Serializer):
             name=attrs.get("name", ""),
             email=attrs.get("email") or "",
         )
-        try:
-            validate_password(attrs["password"], user=candidate)
-        except DjangoValidationError as exc:
-            raise serializers.ValidationError({"password": list(exc.messages)}) from exc
+        run_password_validators("password", attrs["password"], candidate)
         return attrs
 
     def validate_email(self, value):
@@ -92,6 +97,17 @@ class RegistrationCompletionSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("The terms must be accepted to register.")
         return value
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    """Body of POST /auth/password-reset. The verified session is the credential."""
+
+    new_password = serializers.CharField(max_length=MAX_PASSWORD_LENGTH, write_only=True)
+
+    def validate(self, attrs):
+        """Run the password through AUTH_PASSWORD_VALIDATORS against the account."""
+        run_password_validators("new_password", attrs["new_password"], self.context["user"])
+        return attrs
 
 
 class AdvocateProfileSerializer(serializers.ModelSerializer):

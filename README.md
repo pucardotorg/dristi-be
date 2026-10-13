@@ -165,6 +165,8 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `MESSAGING_RETRY_DELAY_BASE` | Base retry delay in seconds (exponential backoff) | `60` |
 | `MESSAGING_RETRY_DELAY_MAX` | Maximum retry delay in seconds | `3600` |
 | `MESSAGING_TASK_TIME_LIMIT` | Dramatiq time limit for `send_message` in milliseconds; must exceed any gateway timeout | `600000` |
+| `OTP_MAX_ATTEMPTS` | Wrong guesses allowed against one OTP before it is destroyed | `5` |
+| `PASSWORD_RESET_WINDOW_SECONDS` | How long a verified password-reset code allows the new password to be set, in seconds | `600` |
 | `CDAC_SMS_URL` | CDAC gateway endpoint (required when the CDAC backend is active) | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
 | `CDAC_SMS_USERNAME` | CDAC username | `dristi` |
 | `CDAC_SMS_PASSWORD` | CDAC password; hashed (SHA-1) before transmission, never sent in plaintext | secret |

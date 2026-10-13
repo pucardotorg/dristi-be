@@ -1,5 +1,6 @@
 """Registration and login endpoints (spec 0005 section 4)."""
 
+from django.conf import settings
 from django.contrib.auth import (
     authenticate,
     get_user_model,
@@ -22,10 +23,16 @@ from .serializers import (
     ClerkRegistrationSerializer,
     MobileOTPSerializer,
     OTPRequestSerializer,
+    PasswordResetSerializer,
     RegistrationCompletionSerializer,
     SessionCreateSerializer,
 )
 from .services.otp import Purpose, ResendTooSoonError, issue_otp, verify_and_consume_otp
+from .services.password import (
+    get_password_reset_user,
+    reset_password,
+    verify_password_reset_code,
+)
 from .services.registration import complete_registration
 
 OTP_BACKEND = "apps.users.services.backend.OTPBackend"
@@ -70,6 +77,16 @@ REGISTERED_ACCOUNT_RESPONSE = inline_serializer(
         "next": serializers.CharField(allow_null=True),
     },
 )
+
+PASSWORD_RESET_VERIFIED_RESPONSE = inline_serializer(
+    name="PasswordResetVerified",
+    fields={
+        "detail": serializers.CharField(),
+        "expires_in": serializers.IntegerField(),
+    },
+)
+
+INVALID_CODE_DETAIL = "Invalid or expired code."
 
 
 @method_decorator(sensitive_post_parameters("otp"), name="dispatch")
@@ -129,7 +146,7 @@ class UserCreateView(APIView):
             mobile_number, serializer.validated_data["otp"], Purpose.REGISTER
         ):
             return Response(
-                {"detail": "Invalid or expired code."},
+                {"detail": INVALID_CODE_DETAIL},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
@@ -214,6 +231,66 @@ class SessionView(APIView):
     def delete(self, request):
         """Discard the session."""
         logout(request._request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@method_decorator(sensitive_post_parameters("otp"), name="dispatch")
+class PasswordResetVerifyView(APIView):
+    """POST /auth/password-reset/verify — prove control of the number. Logs nobody in."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    serializer_class = MobileOTPSerializer
+
+    @extend_schema(
+        tags=["auth"],
+        responses={200: PASSWORD_RESET_VERIFIED_RESPONSE, 401: DETAIL_RESPONSE},
+    )
+    def post(self, request):
+        """Consume a password_reset code and allow this session to set a password."""
+        serializer = MobileOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if not verify_password_reset_code(
+            request.session,
+            serializer.validated_data["mobile_number"],
+            serializer.validated_data["otp"],
+        ):
+            return Response(
+                {"detail": INVALID_CODE_DETAIL},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        return Response(
+            {
+                "detail": "Code verified. Set a new password.",
+                "expires_in": settings.PASSWORD_RESET_WINDOW_SECONDS,
+            }
+        )
+
+
+@method_decorator(sensitive_post_parameters("new_password"), name="dispatch")
+class PasswordResetView(APIView):
+    """POST /auth/password-reset — set a new password after verification."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    serializer_class = PasswordResetSerializer
+
+    @extend_schema(tags=["auth"], responses={204: None, 401: DETAIL_RESPONSE})
+    def post(self, request):
+        """Set the password once, then require a fresh login with it."""
+        user = get_password_reset_user(request.session)
+        if user is None:
+            return Response(
+                {"detail": "Verify a password reset code first, or request a new one."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        serializer = PasswordResetSerializer(data=request.data, context={"user": user})
+        serializer.is_valid(raise_exception=True)
+
+        reset_password(request.session, user, serializer.validated_data["new_password"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

@@ -264,6 +264,13 @@ OTP_TTL_SECONDS = env.int("OTP_TTL_SECONDS", default=300)
 # apps.users.services.checks.
 OTP_RESEND_COOLDOWN_SECONDS = env.int("OTP_RESEND_COOLDOWN_SECONDS", default=30)
 
+# Wrong guesses allowed against one code before it is destroyed and a new one
+# must be requested.
+OTP_MAX_ATTEMPTS = env.int("OTP_MAX_ATTEMPTS", default=5)
+
+# How long a verified password-reset code lets the session set a new password.
+PASSWORD_RESET_WINDOW_SECONDS = env.int("PASSWORD_RESET_WINDOW_SECONDS", default=600)
+
 
 # ---------------------------------------------------------------------------
 # Cache (Redis)
