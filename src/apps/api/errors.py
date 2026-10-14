@@ -20,7 +20,7 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from django.core.exceptions import NON_FIELD_ERRORS, ImproperlyConfigured
+from django.core.exceptions import NON_FIELD_ERRORS, ImproperlyConfigured, RequestDataTooBig
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404, JsonResponse
@@ -158,6 +158,7 @@ NOT_ACCEPTABLE = define("E00107", "Could not satisfy the request Accept header."
 CONFLICT = define("E00108", "The request conflicts with the current state.", status=409)
 UNSUPPORTED_MEDIA_TYPE = define("E00109", "Unsupported media type in request.", status=415)
 THROTTLED = define("E00110", "Request was throttled.", status=429)
+REQUEST_TOO_LARGE = define("E00111", "Request is too large.", status=413)
 
 # DRF's own error codes (ErrorDetail.code) -> registered code.
 DRF_CODE_MAP: dict[str, ErrorCode] = {
@@ -203,6 +204,7 @@ STATUS_FALLBACK: dict[int, ErrorCode] = {
     405: METHOD_NOT_ALLOWED,
     406: NOT_ACCEPTABLE,
     409: CONFLICT,
+    413: REQUEST_TOO_LARGE,
     415: UNSUPPORTED_MEDIA_TYPE,
     429: THROTTLED,
 }
@@ -233,7 +235,7 @@ def resolve_error(code: str | None, status_code: int) -> ErrorCode:
 
     Tries, in order: a registered code, a DRF built-in code, the common code
     for the exact status, then the status class — ``E00001`` for any other
-    4xx (413, 422 …), ``E00100`` for everything else.
+    4xx (422 …), ``E00100`` for everything else.
     """
     return (
         get_error(code)
@@ -337,17 +339,26 @@ def api_exception_handler(exc, context):
 
 # Django-level handlers, wired in config.urls. They cover what never reaches
 # DRF's exception handler: an /api/ URL that matches no route, an exception
-# Django turns into a 400 (SuspiciousOperation, RequestDataTooBig, BadRequest,
-# MultiPartParserError) or a 403 (PermissionDenied from middleware or a plain
-# Django view), and an unhandled exception (logged by Django before the
-# handler runs). While DEBUG is on, Django shows its technical pages for 404,
-# 500 and most 400s instead; the 403 handler and the multipart 400 still run.
+# Django turns into a 400 (SuspiciousOperation, RequestDataTooBig — reported as
+# a 413 — BadRequest, MultiPartParserError) or a 403 (PermissionDenied from
+# middleware or a plain Django view), and an unhandled exception (logged by
+# Django before the handler runs). While DEBUG is on, Django shows its
+# technical pages for 404, 500 and most 400s instead; the 403 handler and the
+# multipart 400 still run.
 API_PATH_PREFIX = "/api/"
 
 
 def handler400(request, exception):
-    """400 in the standard error shape under /api/, Django's page elsewhere."""
+    """400 in the standard error shape under /api/, Django's page elsewhere.
+
+    A body over Django's built-in ``DATA_UPLOAD_MAX_MEMORY_SIZE`` setting (left
+    at Django's 2.5 MB default) is reported as a 413, not a 400: the request is
+    well-formed, only too large, and a client should react differently (send
+    less rather than fix its payload).
+    """
     if request.path.startswith(API_PATH_PREFIX):
+        if isinstance(exception, RequestDataTooBig):
+            return JsonResponse(error_body(REQUEST_TOO_LARGE), status=413)
         return JsonResponse(error_body(MALFORMED_REQUEST), status=400)
     return defaults.bad_request(request, exception)
 

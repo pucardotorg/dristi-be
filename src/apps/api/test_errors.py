@@ -4,7 +4,7 @@ import importlib
 import json
 import uuid
 
-from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
+from django.core.exceptions import ImproperlyConfigured, RequestDataTooBig, SuspiciousOperation
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.test import SimpleTestCase, override_settings
@@ -12,6 +12,7 @@ from django.urls import include, path, reverse
 from rest_framework import exceptions, serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 from rest_framework.routers import DefaultRouter
 from rest_framework.test import APITestCase
 
@@ -68,6 +69,20 @@ def raise_suspicious(request):
     raise SuspiciousOperation("secret internals")
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def raise_too_big(request):
+    """Raise the way Django does for a body over DATA_UPLOAD_MAX_MEMORY_SIZE."""
+    raise RequestDataTooBig("secret internals")
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def read_body(request):
+    """Parse the request body, so Django's upload limits apply."""
+    return Response(dict(request.data))
+
+
 def raise_permission_denied(request):
     """A plain Django view (or middleware) refusing the request."""
     raise DjangoPermissionDenied("secret internals")
@@ -86,6 +101,8 @@ urlpatterns = [
     path("api/django-non-field/", raise_django_non_field_error, name="django-non-field"),
     path("api/suspicious/", raise_suspicious, name="suspicious"),
     path("suspicious/", raise_suspicious, name="suspicious-outside-api"),
+    path("api/too-big/", raise_too_big, name="too-big"),
+    path("api/read-body/", read_body, name="read-body"),
     path("api/forbidden/", raise_permission_denied, name="forbidden"),
     path("forbidden/", raise_permission_denied, name="forbidden-outside-api"),
     path("api/boom/", raise_unhandled, name="boom"),
@@ -136,13 +153,20 @@ class ErrorItemsTests(SimpleTestCase):
         self.assertEqual(error_items(Teapot())[0]["code"], errors.PERMISSION_DENIED.code)
 
     def test_unmapped_client_status_never_gets_a_server_error_code(self):
+        class Unprocessable(exceptions.APIException):
+            status_code = 422
+            default_code = "something_custom"
+
+        self.assertEqual(error_items(Unprocessable())[0]["code"], errors.INVALID.code)
+        empty = Unprocessable(detail={})
+        self.assertEqual(error_items(empty)[0]["code"], errors.INVALID.code)
+
+    def test_unknown_too_large_status_gets_the_too_large_code(self):
         class TooLarge(exceptions.APIException):
             status_code = 413
             default_code = "something_custom"
 
-        self.assertEqual(error_items(TooLarge())[0]["code"], errors.INVALID.code)
-        empty = TooLarge(detail={})
-        self.assertEqual(error_items(empty)[0]["code"], errors.INVALID.code)
+        self.assertEqual(error_items(TooLarge())[0]["code"], errors.REQUEST_TOO_LARGE.code)
 
     def test_unmapped_server_status_gets_the_server_error_code(self):
         class Unavailable(exceptions.APIException):
@@ -327,6 +351,18 @@ class ErrorResponseAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assert_error_body(response, "E00101")
         self.assertNotIn("secret internals", response.content.decode())
+
+    def test_request_too_big_has_its_own_code_and_status(self):
+        response = self.client.get(reverse("too-big"))
+        self.assertEqual(response.status_code, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        self.assert_error_body(response, "E00111")
+        self.assertNotIn("secret internals", response.content.decode())
+
+    @override_settings(DATA_UPLOAD_MAX_MEMORY_SIZE=10)
+    def test_oversized_multipart_body_is_413(self):
+        response = self.client.post(reverse("read-body"), {"note": "x" * 100})
+        self.assertEqual(response.status_code, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        self.assert_error_body(response, "E00111")
 
     def test_bad_request_outside_api_keeps_django_page(self):
         response = self.client.get(reverse("suspicious-outside-api"))

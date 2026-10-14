@@ -86,15 +86,15 @@ def error_responses(*items: ErrorCode | ErrorExample) -> dict[int, OpenApiRespon
     message the endpoint sends::
 
         @extend_schema(
-            responses={
-                201: Out,
-                **error_responses(
-                    errors.OTP_INVALID,
-                    errors.EMAIL_TAKEN.example(field="email"),
-                    errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
-                ),
-            }
+            responses=error_responses(
+                errors.OTP_INVALID,
+                errors.EMAIL_TAKEN.example(field="email"),
+                errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
+            )
         )
+
+    On its own it keeps the inferred success response; merge it with an
+    explicit one (``{201: Out, **error_responses(...)}``) when that differs.
     """
     by_status: dict[int, list[ErrorScenario]] = {}
     for item in items:
@@ -106,10 +106,27 @@ def error_responses(*items: ErrorCode | ErrorExample) -> dict[int, OpenApiRespon
 class ApiAutoSchema(AutoSchema):
     """``AutoSchema`` that documents the project's response envelope.
 
-    Adds ``meta`` to success bodies and per-operation error examples. A view
-    can list actions that return a plain, unpaginated list in
-    ``unpaginated_actions``, so they are not documented as paginated.
+    Adds ``meta`` to success bodies and per-operation error examples, and
+    fills in what views would otherwise repeat on every operation:
+
+    - the tag is the owning app (``apps.<app>``), unless ``tags=`` is given;
+    - custom actions named in the view's ``list_actions`` return a paginated
+      list, those in ``unpaginated_actions`` a plain list;
+    - ``responses=error_responses(...)`` with no success entry keeps the
+      inferred success response.
     """
+
+    def get_tags(self):
+        app = _owning_app(self.view, self.method)
+        return [app] if app else super().get_tags()
+
+    def _is_list_view(self, serializer=None):
+        action = getattr(self.view, "action", None)
+        if action in getattr(self.view, "list_actions", ()) or action in getattr(
+            self.view, "unpaginated_actions", ()
+        ):
+            return True
+        return super()._is_list_view(serializer)
 
     def _get_paginator(self):
         if getattr(self.view, "action", None) in getattr(self.view, "unpaginated_actions", ()):
@@ -120,6 +137,9 @@ class ApiAutoSchema(AutoSchema):
         responses = super()._get_response_bodies(direction)
         if direction != "response":
             return responses
+
+        if self._declares_only_errors():
+            responses = {**self._inferred_success(), **responses}
 
         if self._renders_meta():
             for status_code, response in responses.items():
@@ -144,6 +164,22 @@ class ApiAutoSchema(AutoSchema):
                 },
             }
         return responses
+
+    def _declares_only_errors(self) -> bool:
+        """Whether ``responses=`` lists error_responses() and no success response."""
+        declared = self.get_response_serializers()
+        return (
+            isinstance(declared, dict)
+            and bool(declared)
+            and all(isinstance(response, DeclaredErrors) for response in declared.values())
+        )
+
+    def _inferred_success(self) -> dict:
+        """The success response drf-spectacular infers when nothing is declared."""
+        if self.method == "DELETE":
+            return {"204": {"description": "No response body"}}
+        code = "201" if self._is_create_operation() else "200"
+        return {code: self._get_response_for_code(self._get_serializer(), code)}
 
     def _renders_meta(self) -> bool:
         """Whether this view's JSON goes through MetaJSONRenderer (the schema view does not)."""
@@ -258,6 +294,16 @@ class ApiAutoSchema(AutoSchema):
             return []
         message = "Request was throttled. Expected available in 60 seconds."
         return [ErrorScenario(errors.THROTTLED, message)]
+
+
+def _owning_app(view, method: str) -> str | None:
+    """``<app>`` for a view defined in ``apps.<app>``, else None."""
+    module = type(view).__module__
+    if module.startswith("rest_framework."):
+        # @api_view builds its view class inside DRF; the handler is the function.
+        module = getattr(getattr(view, method.lower(), None), "__module__", None) or ""
+    parts = module.split(".")
+    return parts[1] if len(parts) > 2 and parts[0] == "apps" else None
 
 
 def with_meta(schema: dict) -> dict:

@@ -30,7 +30,10 @@ Use this as the default workflow for adding a new API endpoint group in any doma
 2. **Serializer**: add DRF serializer(s) with explicit fields and read-only server fields.
 3. **View/ViewSet**: use shared DRF base viewsets by default; keep view logic thin.
 4. **Routing**: register endpoints in the domain app `urls.py` and include under `/api/v1/`.
-5. **Swagger**: add/confirm schema annotations and set default app/domain tags.
+5. **Swagger**: declare only what the schema cannot infer (section 10.2): list
+   custom actions that return lists in `list_actions` / `unpaginated_actions`,
+   and give a `responses=` success body only when it differs from the
+   serializer. Tags come from the owning app automatically.
 6. **Errors**: define the domain's business error codes in `errors.py` (section 9.4), raise them, and list them on the endpoint with `error_responses()` (section 10.1); never hand-build an error `Response`.
 7. **Tests**: cover success path, auth/permissions, response shape (including `meta`), error codes, and pagination where relevant.
 8. **Quality checks**: run pytest, Ruff (check + format), and Django system checks.
@@ -185,7 +188,7 @@ The OpenAPI schema documents the envelope exactly as the renderer applies it
 documented as `{ "data": ..., "meta": ... }`, and all of them reference one
 `ResponseMeta` component. Endpoints need no annotation for this, but their
 documented success body must be the right *kind* — a list action that
-returns `Serializer(many=True)` data must say so (section 10.2).
+returns `Serializer(many=True)` data is named in `list_actions` (section 10.2).
 
 ## 9. Error Handling and Validation Standards
 
@@ -298,7 +301,7 @@ to a 400 with its field keys and codes kept, instead of DRF's default 500.
 
 An error whose code is neither registered nor a DRF built-in falls back to the
 common code for its HTTP status (400 → `E00001`, 403 → `E00104`, …). A status
-with no common code of its own falls back by class: any other 4xx (413, 422 …)
+with no common code of its own falls back by class: any other 4xx (422 …)
 → `E00001`, anything else → `E00100`. A client error is never given a
 server-error code, and every response carries a registered code even if a
 raise site was missed.
@@ -363,9 +366,11 @@ rolls back the transaction.
   `handler404` / `handler500`, set in `config.urls` to the
   `apps.api.errors` functions of the same name. Under `/api/` they return the
   standard shape: a request Django rejects as bad (`SuspiciousOperation`,
-  `RequestDataTooBig`, `BadRequest`, a malformed multipart body) is `E00101`,
-  a `PermissionDenied` raised outside DRF (middleware, a plain Django view) is
-  `E00104`, an unmatched route is `E00105`, an unhandled exception is `E00100`.
+  `BadRequest`, a malformed multipart body) is `E00101`; a body over Django's
+  built-in size limit (`RequestDataTooBig`) is a 413 with `E00111`, since the request
+  is well-formed, only too large; a `PermissionDenied` raised outside DRF
+  (middleware, a plain Django view) is `E00104`, an unmatched route is
+  `E00105`, an unhandled exception is `E00100`.
   Each uses the code's generic message, so exception details never reach the
   client (Django logs them first). Other paths keep Django's pages. While
   `DEBUG` is on, Django shows its technical pages for 404, 500 and most 400s
@@ -435,14 +440,11 @@ default:
 from apps.api.schema import error_responses
 
 @extend_schema(
-    responses={
-        201: REGISTERED_ACCOUNT_RESPONSE,
-        **error_responses(
-            errors.REGISTRATION_ALREADY_COMPLETE,
-            errors.EMAIL_TAKEN.example(field="email"),
-            errors.INVALID_REQUEST_STATE.example("A approved request cannot be cancelled."),
-        ),
-    },
+    responses=error_responses(
+        errors.REGISTRATION_ALREADY_COMPLETE,
+        errors.EMAIL_TAKEN.example(field="email"),
+        errors.INVALID_REQUEST_STATE.example("A approved request cannot be cancelled."),
+    ),
 )
 ```
 
@@ -450,25 +452,28 @@ Validation an endpoint performs outside its request serializer — query
 parameter checks in `get_queryset()`, for instance — is declared the same way
 (see `LocationViewSet.list`).
 
-### 10.2 Documenting list responses
+### 10.2 What views do not need to declare
 
-drf-spectacular infers the response from the view's `serializer_class`, which
-is a single object. A custom action that returns a list must declare it, or
-both its body and its `meta` envelope are documented wrongly:
+`ApiAutoSchema` fills in what would otherwise be repeated on every operation,
+so a view only declares what is specific to it (usually its business errors):
 
-```python
-@extend_schema_view(
-    children=extend_schema(responses=LocationSerializer(many=True)),   # paginated
-    ancestors=extend_schema(responses=LocationSerializer(many=True)),  # plain list
-)
-class LocationViewSet(APIModelReadOnlyViewSet):
-    # Returned whole, so documented as {"data": [...], "meta": ...}.
-    unpaginated_actions = {"ancestors", "ancestors_by_code"}
-```
+- **Tags.** An operation is tagged with its owning app (`apps.<app>`).
+  Pass `tags=` only for a different grouping, e.g. `auth` in `apps.users`.
+- **List actions.** drf-spectacular treats only `list` as returning a list.
+  Name custom actions that return one on the view instead of declaring
+  `responses=Serializer(many=True)` on each:
 
-A `many=True` response is documented as paginated whenever the view has a
-pagination class; list actions that return everything in one response go in
-`unpaginated_actions`.
+  ```python
+  class LocationViewSet(APIModelReadOnlyViewSet):
+      list_actions = {"children", "children_by_code"}  # paginated
+      unpaginated_actions = {"ancestors", "ancestors_by_code"}  # returned whole
+  ```
+
+  An action that returns another model's objects selects that serializer in
+  `get_serializer_class()`, which both the response and the schema then use.
+- **Success response.** `responses=error_responses(...)` on its own keeps the
+  inferred success response. Write `{200: Out, **error_responses(...)}` only
+  when the success body differs from the view's serializer.
 
 Tip: use `?format=json` for schema assertions in tests/tooling where JSON is required.
 
@@ -511,7 +516,9 @@ Required coverage for each endpoint group:
 4. Register routes in app-level URLs and include under versioned API.
 5. Define business error codes in the app's `errors.py`; raise them, and declare them with `error_responses()` (plus any validation done outside the request serializer).
 6. Add endpoint tests in the owning app.
-7. Add/update Swagger annotations and tags.
+7. Check the endpoint in `/api/docs/`: success body (object, paginated list or
+   plain list) and error examples. Fix gaps with the section 10.2 conventions,
+   not per-operation `tags=` or `responses=Serializer(many=True)`.
 8. Run quality checks:
 
 ```bash

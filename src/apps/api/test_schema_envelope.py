@@ -119,3 +119,36 @@ class DocumentedShapeMatchesResponseTests(APITestCase):
 
     def test_function_view(self):
         self.assert_matches(reverse("health"), "/api/v1/health/")
+
+
+@override_settings(ROOT_URLCONF="config.urls")
+class SchemaConventionTests(APITestCase):
+    """ApiAutoSchema fills in what views would otherwise declare per operation."""
+
+    def setUp(self):
+        self.schema = load_schema(self.client)
+
+    def operation(self, path, method="get"):
+        return self.schema["paths"][path][method]
+
+    def test_tag_defaults_to_the_owning_app(self):
+        self.assertEqual(self.operation("/api/v1/organizations/{id}/")["tags"], ["organizations"])
+        self.assertEqual(self.operation("/api/v1/health/")["tags"], ["core"])  # @api_view
+
+    def test_explicit_tags_win(self):
+        self.assertEqual(self.operation("/api/v1/sessions/", "post")["tags"], ["auth"])
+
+    def test_list_actions_are_documented_as_paginated_lists(self):
+        body = success_schema(self.schema, "/api/v1/organizations/{id}/children/")
+        self.assertIn("results", documented_keys(self.schema, body))
+
+    def test_list_action_uses_the_action_serializer(self):
+        body = json.dumps(success_schema(self.schema, "/api/v1/organizations/{id}/jurisdictions/"))
+        self.assertIn("Location", body)
+        self.assertNotIn("Organization", body)
+
+    def test_error_responses_alone_keep_the_inferred_success(self):
+        body = success_schema(self.schema, "/api/v1/organizations/")
+        self.assertIn("results", documented_keys(self.schema, body))
+        responses = self.operation("/api/v1/organizations/")["responses"]
+        self.assertIn("parent_id", json.dumps(responses["400"]))

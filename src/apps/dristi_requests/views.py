@@ -42,10 +42,6 @@ class DocumentTooLargeToServe(APIException):  # noqa: N818
     default_code = errors.DOCUMENT_TOO_LARGE.code
 
 
-@extend_schema_view(
-    list=extend_schema(tags=["dristi_requests"]),
-    retrieve=extend_schema(tags=["dristi_requests"]),
-)
 class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """List available request types and their schemas."""
 
@@ -57,10 +53,8 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
 
 
 @extend_schema_view(
-    list=extend_schema(tags=["dristi_requests"]),
-    retrieve=extend_schema(tags=["dristi_requests"], responses=RequestDetailSerializer),
+    retrieve=extend_schema(responses=RequestDetailSerializer),
     create=extend_schema(
-        tags=["dristi_requests"],
         responses={
             201: RequestDetailSerializer,
             **error_responses(
@@ -77,14 +71,12 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
         },
     ),
     approvals=extend_schema(
-        tags=["dristi_requests"],
         # Explicit id: the default collides with RequestApprovalViewSet.list
         # (``/dristi-requests/approvals/``).
         operation_id="v1_dristi_requests_request_approvals_list",
         responses=RequestApprovalSerializer(many=True),
     ),
     resubmit=extend_schema(
-        tags=["dristi_requests"],
         request=None,
         responses={
             200: RequestDetailSerializer,
@@ -99,7 +91,6 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
         },
     ),
     cancel=extend_schema(
-        tags=["dristi_requests"],
         request=None,
         responses={
             200: RequestDetailSerializer,
@@ -192,7 +183,6 @@ class RequestViewSet(
 
 @extend_schema_view(
     list=extend_schema(
-        tags=["dristi_requests"],
         parameters=[
             OpenApiParameter(
                 name="status",
@@ -204,9 +194,8 @@ class RequestViewSet(
             )
         ],
     ),
-    retrieve=extend_schema(tags=["dristi_requests"], responses=RequestApprovalDetailSerializer),
+    retrieve=extend_schema(responses=RequestApprovalDetailSerializer),
     decide=extend_schema(
-        tags=["dristi_requests"],
         request=DecisionSerializer,
         responses={
             200: RequestApprovalDetailSerializer,
@@ -281,7 +270,6 @@ class RequestDocumentDownloadView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["dristi_requests"],
         operation_id="requests_documents_download",
         responses={
             (200, "application/octet-stream"): OpenApiTypes.BINARY,
