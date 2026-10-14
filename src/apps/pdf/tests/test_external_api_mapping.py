@@ -60,7 +60,8 @@ def test_get_with_templated_url_params_and_field_projection():
 
     assert value == {"name": "Adv. Rao", "bar": "K/1/2000"}
     args, kwargs = request.call_args
-    assert args == ("GET", "https://hrms.example/advocates/a 1&x")  # not HTML-escaped
+    # Percent-encoded as one path segment, not HTML-escaped.
+    assert args == ("GET", "https://hrms.example/advocates/a%201%26x")
     assert kwargs["params"] == {"tenant": "kl"}
     assert kwargs["timeout"] == (10, 10)
     assert kwargs["headers"]["X-Tenant-Id"] == "kl"

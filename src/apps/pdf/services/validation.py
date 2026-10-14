@@ -14,7 +14,7 @@ from django.core.exceptions import ValidationError
 from jinja2 import TemplateError
 
 from ..exceptions import PDFConfigurationError
-from .templating import check_expression, check_template
+from .templating import check_expression, check_template, check_url_template
 
 # ---------------------------------------------------------------------------
 # format_config
@@ -489,7 +489,7 @@ def validate_data_config(config) -> None:
             for name, path in (spec.get("columns") or {}).items():
                 check_path(path, f"{here}/columns/{name}")
         elif kind == "external_api":
-            _check(check_template, spec["url"], f"{here}/url", errors)
+            _check(check_url_template, spec["url"], f"{here}/url", errors)
             for name, value in (spec.get("params") or {}).items():
                 if isinstance(value, str):
                     _check(check_template, value, f"{here}/params/{name}", errors)

@@ -13,7 +13,24 @@ JSONPath. Mapping shape::
      "many": false, "default": null}
 
 ``url`` and every ``params`` value are template strings, so parameters can be
-built from request data, ``meta`` and earlier mapping targets. Responses are
+built from request data, ``meta`` and earlier mapping targets.
+
+URL encoding: every ``{{ ... }}`` value inserted into ``url`` is
+percent-encoded as a single path segment / query value, whatever the URL's
+shape (``…/cases/{{ type }}/{{ no }}``, ``…/search?q={{ term }}``, …). A value
+such as ``KL/123/2020`` stays one segment (``KL%2F123%2F2020``); ``#``, ``?``,
+``&``, ``@`` and ``..`` in data cannot truncate the URL, add a query or
+parameter, climb to another endpoint or change the host -- which matters
+because the request carries service credentials. Consequences for authors:
+
+* scheme, host and fixed path are written literally in the template; a base
+  URL or host cannot come from data;
+* a value meant to supply several path segments must opt in with
+  ``{{ data.path | url_path }}`` (each segment still encoded, ``.``/``..``
+  rejected);
+* ``params`` need no care: ``requests`` encodes query strings and JSON bodies.
+
+Responses are
 cached per job for the duration of one ``DataMapper.map`` call, so mappings that
 hit the same URL with the same parameters share one request.
 """
@@ -26,7 +43,7 @@ from django.conf import settings
 
 from ...exceptions import PDFDependencyError, PDFRequestDataError
 from .. import http
-from ..templating import render_text
+from ..templating import render_text, render_url
 from .direct import find_all, find_first
 
 
@@ -43,7 +60,7 @@ class ExternalAPIMapper:
     def map(self, spec: dict, variables: dict):
         """Return the value extracted from the external API response."""
         method = spec.get("method", "GET").upper()
-        url = render_text(spec["url"], variables, escape_output=False)
+        url = render_url(spec["url"], variables)
         params = {
             name: render_text(value, variables, escape_output=False)
             if isinstance(value, str)
