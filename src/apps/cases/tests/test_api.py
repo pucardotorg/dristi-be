@@ -7,8 +7,10 @@ from django.urls import reverse
 
 from apps.cases.models import Case, CaseDocument, CaseStatus, CaseType
 from apps.files.models import File
+from apps.organizations.models import OrganizationType
+from apps.organizations.tests.factories import make_organization
 
-from .conftest import CHEQUE_INFO
+from .conftest import CHEQUE_INFO, DEMAND_NOTICE_INFO, RETURN_MEMO_INFO
 
 pytestmark = pytest.mark.django_db
 
@@ -27,6 +29,30 @@ def add_cheque(client, case_id, **extra):
         {"evidence_type": "CHEQUE", "evidence_info": CHEQUE_INFO, **extra},
         format="json",
     )
+
+
+class TestCaseTypes:
+    def test_list_describes_every_case_type(self, client):
+        response = client.get(reverse("case-type-list"))
+
+        assert response.status_code == 200
+        assert [item["case_type"] for item in response.json()["data"]] == ["CHEQUE_BOUNCE"]
+
+    def test_detail_lists_documents_and_evidence_schemas(self, client):
+        body = client.get(reverse("case-type-detail", args=["CHEQUE_BOUNCE"])).json()
+
+        assert body["label"] == "Cheque bounce"
+        sections = {item["code"]: item["schema"] for item in body["sections"]}
+        assert list(sections) == ["jurisdiction_limitation", "adr_other_prayer"]
+        assert sections["adr_other_prayer"]["required"] == ["final_relief"]
+        assert {"code": "REPLY_TO_DEMAND_NOTICE", "label": "Reply to demand notice"} in body[
+            "document_types"
+        ]
+        cheque = next(item for item in body["evidence_types"] if item["code"] == "CHEQUE")
+        assert "ifsc_code" in cheque["schema"]["required"]
+
+    def test_unknown_case_type_is_404(self, client):
+        assert client.get(reverse("case-type-detail", args=["CIVIL"])).status_code == 404
 
 
 class TestDraftsAndListing:
@@ -74,17 +100,20 @@ class TestDraftsAndListing:
 
 class TestByNumber:
     def test_any_user_finds_a_registered_case(self, client_for, user, other_user):
+        court = make_organization(organization_type=OrganizationType.MAGISTRATE_COURT)
         Case.objects.create(
             case_type=CaseType.CHEQUE_BOUNCE,
             created_by=other_user,
             case_number="CC/123/2024",
             status=CaseStatus.REGISTERED,
+            court=court,
         )
 
         response = client_for(user).get(reverse("case-by-number", args=["CC/123/2024"]))
 
         assert response.status_code == 200
         assert response.json()["case_number"] == "CC/123/2024"
+        assert response.json()["court_id"] == str(court.pk)
 
     def test_unregistered_case_is_not_found(self, client, user):
         Case.objects.create(
@@ -119,6 +148,17 @@ class TestDocuments:
 
         assert everything.json()["count"] == 2
         assert [doc["document_type"] for doc in memos.json()["results"]] == ["RETURN_MEMO"]
+
+    @pytest.mark.parametrize(
+        "document_type", ["PROOF_OF_DELIVERY_OF_DEMAND_NOTICE", "REPLY_TO_DEMAND_NOTICE"]
+    )
+    def test_demand_notice_follow_up_documents_are_accepted(
+        self, client, draft, pdf, document_type
+    ):
+        response = upload(client, draft, pdf, document_type=document_type)
+
+        assert response.status_code == 201
+        assert response.json()["document_type"] == document_type
 
     @pytest.mark.parametrize("document_type", ["UNKNOWN_TYPE", "VAKALATNAMA"])
     def test_invalid_document_type_is_400_and_creates_nothing(
@@ -166,9 +206,24 @@ class TestDocuments:
         assert outsider.delete(detail).status_code == 404
 
 
+JURISDICTION = {
+    "cheque_deposited_by_payee": True,
+    "payee_ifsc_code": "HDFC0000512",
+    "payee_bank_name": "HDFC Bank",
+    "payee_bank_branch": "Kochi",
+    "bank_police_station": "Ernakulam Central",
+    "other_complaints_pending": False,
+    "cause_of_action_date": "2024-02-21",
+}
+
+
+def put_section(client, case_id, section, data):
+    return client.put(reverse("case-details-section", args=[case_id, section]), data, format="json")
+
+
 class TestDetails:
     def test_first_put_on_a_draft_creates_the_case(self, client, draft):
-        section = {"jurisdiction_grounds": "Within territory", "limitation_compliance": True}
+        section = JURISDICTION
 
         response = client.put(
             reverse("case-details-section", args=[draft, "jurisdiction_limitation"]),
@@ -191,6 +246,44 @@ class TestDetails:
 
         assert response.status_code == 400
         assert Case.objects.count() == 0
+
+    @pytest.mark.parametrize(
+        ("section", "data"),
+        [
+            # Deposited by the payee, but no payee bank details.
+            (
+                "jurisdiction_limitation",
+                {"cheque_deposited_by_payee": True, "cause_of_action_date": "2024-02-21"},
+            ),
+            ("jurisdiction_limitation", {**JURISDICTION, "payee_ifsc_code": "HDFC512"}),
+            ("jurisdiction_limitation", {**JURISDICTION, "limitation_notes": "typo"}),
+            ("adr_other_prayer", {"adr_preference": "YES"}),  # no final relief
+            ("adr_other_prayer", {"adr_preference": "SOMETIMES", "final_relief": "Convict"}),
+        ],
+    )
+    def test_invalid_section_is_400_and_creates_nothing(self, client, draft, section, data):
+        response = put_section(client, draft, section, data)
+
+        assert response.status_code == 400
+        assert "data" in response.json()
+        assert Case.objects.count() == 0
+
+    def test_payee_bank_details_not_needed_when_not_deposited_by_payee(self, client, draft):
+        data = {"cheque_deposited_by_payee": False, "cause_of_action_date": "2024-02-21"}
+
+        assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
+
+    def test_adr_other_prayer_round_trip(self, client, draft):
+        data = {
+            "adr_preference": "MAYBE",
+            "other_details": "",
+            "interim_relief": "<p>Interim compensation under Section 143A.</p>",
+            "final_relief": "<p>Take cognizance of the offence under Section 138.</p>",
+        }
+
+        assert put_section(client, draft, "adr_other_prayer", data).status_code == 200
+        details = client.get(reverse("case-details", args=[draft])).json()
+        assert details["adr_other_prayer"] == data
 
     def test_details_of_a_draft_with_no_case_yet_are_not_found(self, client, draft):
         assert client.get(reverse("case-details", args=[draft])).status_code == 404
@@ -223,6 +316,9 @@ class TestEvidence:
             {key: value for key, value in CHEQUE_INFO.items() if key != "amount"},
             {**CHEQUE_INFO, "amount": -1},
             {**CHEQUE_INFO, "cheque_date": "15/01/2024"},
+            {**CHEQUE_INFO, "cheque_number": "1234567"},
+            {**CHEQUE_INFO, "ifsc_code": "SBIN1234"},
+            {**CHEQUE_INFO, "drawee_bank": "SBI"},  # unknown key
         ],
     )
     def test_invalid_evidence_info_is_400_and_creates_nothing(self, client, draft, evidence_info):
@@ -235,6 +331,55 @@ class TestEvidence:
         assert response.status_code == 400
         assert "evidence_info" in response.json()
         assert Case.objects.count() == 0
+
+    @pytest.mark.parametrize(
+        ("evidence_type", "evidence_info"),
+        [("RETURN_MEMO", RETURN_MEMO_INFO), ("LEGAL_DEMAND_NOTICE", DEMAND_NOTICE_INFO)],
+    )
+    def test_return_memo_and_demand_notice_are_accepted(
+        self, client, draft, evidence_type, evidence_info
+    ):
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": evidence_type, "evidence_info": evidence_info},
+            format="json",
+        )
+
+        assert response.status_code == 201
+        assert response.json()["evidence_info"] == evidence_info
+
+    @pytest.mark.parametrize(
+        "evidence_info",
+        [
+            # Delivered, but no delivery date.
+            {k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"},
+            {**DEMAND_NOTICE_INFO, "is_delivered": "yes"},
+            {**DEMAND_NOTICE_INFO, "mode_of_service": ""},
+        ],
+    )
+    def test_invalid_demand_notice_is_400(self, client, draft, evidence_info):
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "LEGAL_DEMAND_NOTICE", "evidence_info": evidence_info},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert "evidence_info" in response.json()
+
+    def test_undelivered_demand_notice_needs_no_delivery_date(self, client, draft):
+        info = {k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"}
+
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {
+                "evidence_type": "LEGAL_DEMAND_NOTICE",
+                "evidence_info": {**info, "is_delivered": False},
+            },
+            format="json",
+        )
+
+        assert response.status_code == 201
 
     def test_invalid_patch_is_400(self, client, draft):
         evidence_id = add_cheque(client, draft).json()["case_evidence_id"]

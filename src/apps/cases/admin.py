@@ -14,6 +14,7 @@ class CaseAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     list_display = ("id", "case_type", "status", "filing_number", "case_number", "created_at")
     list_filter = ("case_type", "status")
     search_fields = ("id", "filing_number", "case_number", "cnr_number")
+    raw_id_fields = ("court",)
     readonly_fields = ("id", "created_at", "updated_at")
 
 

@@ -5,17 +5,13 @@ from django.db.models import Q
 
 from apps.core.models import BaseActivatableModel, BaseModel
 
-
-class CaseType(models.TextChoices):
-    """Dispute types; each one names its detail table."""
-
-    CHEQUE_BOUNCE = "CHEQUE_BOUNCE", "Cheque bounce"
+from .services.case_types import CaseType, DocumentType, EvidenceType
 
 
 class CaseStatus(models.TextChoices):
     """E-filing lifecycle.
 
-    Illustrative until statuses come from the case workflow configuration
+    Important: Illustrative until statuses come from the case workflow configuration
     (spec 0020 §8.3, spec 0011).
     """
 
@@ -43,13 +39,21 @@ class Case(BaseModel):
     """
 
     case_type = models.CharField(max_length=32, choices=CaseType.choices)
+    # all the "number" fields are not final yet, may differ in future
     filing_number = models.CharField(max_length=64, unique=True, null=True, blank=True)
     case_number = models.CharField(max_length=64, unique=True, null=True, blank=True)
     cnr_number = models.CharField(max_length=64, unique=True, null=True, blank=True)
     status = models.CharField(
         max_length=32, choices=CaseStatus.choices, default=CaseStatus.DRAFT_IN_PROGRESS
     )
-    court_id = models.CharField(max_length=64, null=True, blank=True)
+    # The court is an Organization; drafts may not have one yet.
+    court = models.ForeignKey(
+        "organizations.Organization",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cases",
+    )
     filed_at = models.DateTimeField(null=True, blank=True)
     registered_at = models.DateTimeField(null=True, blank=True)
 
@@ -63,20 +67,6 @@ class Case(BaseModel):
 
     def __str__(self):
         return self.case_number or self.filing_number or f"{self.case_type} draft {self.id}"
-
-
-class DocumentType(models.TextChoices):
-    """Case-level document types for cheque bounce cases (spec 0020 §9.3)."""
-
-    BOUNCED_CHEQUE = "BOUNCED_CHEQUE", "Bounced cheque"
-    RETURN_MEMO = "RETURN_MEMO", "Return memo"
-    LEGAL_DEMAND_NOTICE = "LEGAL_DEMAND_NOTICE", "Legal demand notice"
-    PROOF_OF_DISPATCH = "PROOF_OF_DISPATCH", "Proof of dispatch"
-    PROOF_OF_DEBT = "PROOF_OF_DEBT", "Proof of debt"
-    AFFIDAVIT = "AFFIDAVIT", "Affidavit"
-    VAKALATNAMA = "VAKALATNAMA", "Vakalatnama"
-    POA_DOCUMENT = "POA_DOCUMENT", "POA document"
-    OTHER_SUPPORTING_DOCUMENT = "OTHER_SUPPORTING_DOCUMENT", "Other supporting document"
 
 
 class CaseDocument(BaseModel, BaseActivatableModel):
@@ -111,7 +101,8 @@ class ChequeBounceCase(BaseModel):
     """Cheque bounce details, one row per case (spec 0020 §10).
 
     The case id is the primary key, which enforces the 1:1 relationship.
-    Each JSON column holds one section of the filing form.
+    Each JSON column holds one section of the filing form; the editable ones
+    are listed in ``case_types.CASE_TYPES``.
     """
 
     # Replaces BaseModel's own UUID key.
@@ -127,19 +118,8 @@ class ChequeBounceCase(BaseModel):
     adr_other_prayer = models.JSONField(default=dict, blank=True)
     additional_details = models.JSONField(default=dict, blank=True)
 
-    # The sections PUT /cases/{id}/details/{section} may replace.
-    SECTIONS = ("jurisdiction_limitation", "adr_other_prayer")
-
     def __str__(self):
         return f"Cheque bounce details for {self.case_id}"
-
-
-class EvidenceType(models.TextChoices):
-    """Evidence types with an ``evidence_info`` schema (spec 0021 §5.2)."""
-
-    CHEQUE = "CHEQUE", "Cheque"
-    RETURN_MEMO = "RETURN_MEMO", "Return memo"
-    LEGAL_DEMAND_NOTICE = "LEGAL_DEMAND_NOTICE", "Legal demand notice"
 
 
 class CaseEvidence(BaseModel, BaseActivatableModel):

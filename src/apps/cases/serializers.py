@@ -2,16 +2,9 @@
 
 from rest_framework import serializers
 
-from . import services
-from .models import Case, CaseDocument, CaseEvidence, CaseType, DocumentType, EvidenceType
-
-# VAKALATNAMA and POA_DOCUMENT are filed with their representation or mandate,
-# not through the case documents endpoint (spec 0021 §3.4).
-UPLOADABLE_DOCUMENT_TYPES = [
-    choice
-    for choice in DocumentType.choices
-    if choice[0] not in (DocumentType.VAKALATNAMA, DocumentType.POA_DOCUMENT)
-]
+from .models import Case, CaseDocument, CaseEvidence
+from .services import services
+from .services.case_types import CaseType, DocumentType, EvidenceType
 
 
 class DraftSessionSerializer(serializers.Serializer):
@@ -48,10 +41,14 @@ class CaseSerializer(serializers.ModelSerializer):
 
 
 class CaseDocumentUploadSerializer(serializers.Serializer):
-    """Multipart body of POST /cases/{id}/documents."""
+    """Multipart body of POST /cases/{id}/documents.
+
+    ``document_type`` must be a known type here; whether the case's type
+    accepts it is checked by the service.
+    """
 
     file = serializers.FileField()
-    document_type = serializers.ChoiceField(choices=UPLOADABLE_DOCUMENT_TYPES)
+    document_type = serializers.ChoiceField(choices=DocumentType.choices)
 
     def validate_file(self, upload):
         """Accept PDFs and images only."""
@@ -86,16 +83,14 @@ class CaseDocumentSerializer(serializers.ModelSerializer):
 
 
 class EvidenceCreateSerializer(serializers.Serializer):
-    """Body of POST /cases/{id}/evidence."""
+    """Body of POST /cases/{id}/evidence.
+
+    ``evidence_info`` is checked against the case type's schema by the service.
+    """
 
     evidence_type = serializers.ChoiceField(choices=EvidenceType.choices)
     case_document_id = serializers.UUIDField(required=False, allow_null=True)
     evidence_info = serializers.DictField()
-
-    def validate(self, attrs):
-        """Check ``evidence_info`` against the schema for its type."""
-        services.validate_evidence_info(attrs["evidence_type"], attrs["evidence_info"])
-        return attrs
 
 
 class EvidenceUpdateSerializer(serializers.Serializer):

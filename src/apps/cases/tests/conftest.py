@@ -7,8 +7,8 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from apps.cases import services
 from apps.cases.models import CaseType
+from apps.cases.services import services
 from apps.users.models import RegistrationStatus, Role, User
 
 _numbers = itertools.count(1)
@@ -91,9 +91,28 @@ def pdf():
 
 
 CHEQUE_INFO = {
-    "cheque_number": "456789",
-    "bank_account_number": "1234567890",
-    "drawee_bank": "State Bank of India",
-    "amount": 50000.0,
     "cheque_date": "2024-01-15",
+    "amount": 50000.0,
+    "cheque_number": "456789",
+    "ifsc_code": "SBIN0001234",
+    "bank_name": "State Bank of India",
+    "bank_branch": "MG Road",
+}
+
+RETURN_MEMO_INFO = {
+    "presentation_date": "2024-01-18",
+    "return_date": "2024-01-22",
+    "return_reason": "Funds insufficient",
+}
+
+DEMAND_NOTICE_INFO = {
+    "nature_of_debt": "Loan",
+    "cheque_issue_reason": "Repayment of loan",
+    "dispatch_date": "2024-02-01",
+    "mode_of_service": "Registered post",
+    "tracking_number": "RR123456789IN",
+    "is_delivered": True,
+    "delivery_date": "2024-02-05",
+    "accused_replied": False,
+    "payment_status": "No payment",
 }

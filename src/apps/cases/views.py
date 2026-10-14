@@ -1,19 +1,18 @@
 """Case filing API views (spec 0021 §2, §3, §5).
 
 Ids in POST/PUT paths may be a case id or a draft session id; the first save
-on a draft creates the case (see ``services.case_for_write``). Every other
+on a draft creates the case (see ``services.get_or_create_case``). Every other
 route takes a case id. Callers only ever reach their own cases.
 """
 
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics, status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import services
 from .models import NOT_JOINABLE_STATUSES, Case, CaseDocument, CaseEvidence, CaseStatus
 from .serializers import (
     CaseDocumentSerializer,
@@ -24,8 +23,38 @@ from .serializers import (
     EvidenceCreateSerializer,
     EvidenceUpdateSerializer,
 )
+from .services import case_types, services
 
 TAGS = ["cases"]
+
+
+@extend_schema(tags=TAGS)
+class CaseTypeListView(APIView):
+    """GET /case-types — every case type and what it accepts."""
+
+    @extend_schema(
+        tags=TAGS,
+        # Explicit: the default collides with the detail route's.
+        operation_id="v1_case_types_list",
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def get(self, request):
+        """Return each case type's sections, document types and evidence schemas."""
+        return Response(
+            [case_types.get_description(case_type) for case_type in case_types.CASE_TYPES]
+        )
+
+
+@extend_schema(tags=TAGS)
+class CaseTypeDetailView(APIView):
+    """GET /case-types/{case_type} — what one case type accepts."""
+
+    @extend_schema(tags=TAGS, responses={200: OpenApiTypes.OBJECT})
+    def get(self, request, case_type):
+        """Return the case type's sections, document types and evidence schemas."""
+        if case_type not in case_types.CASE_TYPES:
+            raise NotFound("Unknown case type.")
+        return Response(case_types.get_description(case_type))
 
 
 @extend_schema(

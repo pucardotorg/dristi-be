@@ -20,22 +20,13 @@ from rest_framework.exceptions import NotFound
 from apps.files import services as files
 from apps.files.models import FileType
 
-from .models import (
-    Case,
-    CaseDocument,
-    CaseEvidence,
-    CaseType,
-    ChequeBounceCase,
-    EvidenceType,
-)
+from ..models import Case, CaseDocument, CaseEvidence
+from .case_types import get_config
 
 logger = logging.getLogger(__name__)
 
 DRAFT_SESSION_TTL_SECONDS = 60 * 60 * 24
 DRAFT_CACHE_KEY = "cases:draft:{draft_session_id}"
-
-# The type-specific detail table for each case type.
-DETAIL_MODELS = {CaseType.CHEQUE_BOUNCE: ChequeBounceCase}
 
 # Accepted upload content types and the FileType each is stored as.
 CONTENT_TYPE_FILE_TYPES = {
@@ -44,51 +35,8 @@ CONTENT_TYPE_FILE_TYPES = {
     "image/png": FileType.IMAGE,
 }
 
-# evidence_info schemas per evidence type (spec 0021 §5.2).
-EVIDENCE_SCHEMAS = {
-    EvidenceType.CHEQUE: {
-        "type": "object",
-        "required": [
-            "cheque_number",
-            "bank_account_number",
-            "drawee_bank",
-            "amount",
-            "cheque_date",
-        ],
-        "properties": {
-            "cheque_number": {"type": "string"},
-            "bank_account_number": {"type": "string"},
-            "drawee_bank": {"type": "string"},
-            "amount": {"type": "number", "minimum": 0},
-            "cheque_date": {"type": "string", "format": "date"},
-            "return_memo_date": {"type": "string", "format": "date"},
-        },
-    },
-    EvidenceType.RETURN_MEMO: {
-        "type": "object",
-        "required": ["return_reason", "return_date", "bank_name"],
-        "properties": {
-            "return_reason": {"type": "string"},
-            "return_date": {"type": "string", "format": "date"},
-            "bank_name": {"type": "string"},
-        },
-    },
-    EvidenceType.LEGAL_DEMAND_NOTICE: {
-        "type": "object",
-        "required": ["notice_date", "dispatch_date", "dispatch_method"],
-        "properties": {
-            "notice_date": {"type": "string", "format": "date"},
-            "dispatch_date": {"type": "string", "format": "date"},
-            "dispatch_method": {"type": "string"},
-            "tracking_number": {"type": "string"},
-        },
-    },
-}
 
-
-# ---------------------------------------------------------------------------
 # Draft sessions and case resolution
-# ---------------------------------------------------------------------------
 
 
 def start_draft(user, case_type):
@@ -99,25 +47,34 @@ def start_draft(user, case_type):
         "created_by": str(user.pk),
         "created_at": timezone.now().isoformat(),
     }
-    cache.set(_draft_key(draft["draft_session_id"]), draft, DRAFT_SESSION_TTL_SECONDS)
+    cache.set(_get_draft_key(draft["draft_session_id"]), draft, DRAFT_SESSION_TTL_SECONDS)
     return draft
 
 
 def get_case(case_id, user):
     """Return ``user``'s case, or raise ``NotFound``. Other users' cases are not found."""
-    case = _owned_case(case_id, user)
+    case = _get_owned_case(case_id, user)
     if case is None:
         raise NotFound("Case not found.")
     return case
 
 
-def ensure_case_or_draft(case_or_draft_id, user):
-    """Raise ``NotFound`` unless the id is ``user``'s case or live draft session."""
-    if _owned_case(case_or_draft_id, user) is None and _draft(case_or_draft_id, user) is None:
-        raise NotFound("Case or draft session not found.")
+def get_case_type(case_or_draft_id, user):
+    """Return the case type of ``user``'s case or live draft session.
+
+    Raises ``NotFound`` for anything else. Lets a write be validated against
+    its case type before a case is created or a file is stored.
+    """
+    case = _get_owned_case(case_or_draft_id, user)
+    if case is not None:
+        return case.case_type
+    draft = _get_owned_draft(case_or_draft_id, user)
+    if draft is not None:
+        return draft["case_type"]
+    raise NotFound("Case or draft session not found.")
 
 
-def case_for_write(case_or_draft_id, user):
+def get_or_create_case(case_or_draft_id, user):
     """Return ``user``'s case, creating it from their draft session on first save.
 
     Must run inside ``transaction.atomic()`` so the case and the data saved
@@ -128,11 +85,11 @@ def case_for_write(case_or_draft_id, user):
     through and ``get_or_create`` hands the others that row. Exactly one case
     is created per draft.
     """
-    case = _owned_case(case_or_draft_id, user)
+    case = _get_owned_case(case_or_draft_id, user)
     if case is not None:
         return case
 
-    draft = _draft(case_or_draft_id, user)
+    draft = _get_owned_draft(case_or_draft_id, user)
     if draft is None:
         # A concurrent first save may have created the case, and dropped the
         # draft, since the lookup above.
@@ -143,30 +100,40 @@ def case_for_write(case_or_draft_id, user):
         defaults={"case_type": draft["case_type"], "created_by": user, "updated_by": user},
     )
     if created:
-        DETAIL_MODELS[case.case_type].objects.create(case=case, created_by=user, updated_by=user)
-        key = _draft_key(case_or_draft_id)
+        detail_model = get_config(case.case_type).get_detail_model()
+        detail_model.objects.create(case=case, created_by=user, updated_by=user)
+        key = _get_draft_key(case_or_draft_id)
         transaction.on_commit(lambda: cache.delete(key))
     return case
 
 
-def _owned_case(case_id, user):
+def _get_owned_case(case_id, user):
     return Case.objects.filter(pk=case_id, created_by=user).first()
 
 
-def _draft(draft_session_id, user):
-    draft = cache.get(_draft_key(draft_session_id))
+def _get_owned_draft(draft_session_id, user):
+    draft = cache.get(_get_draft_key(draft_session_id))
     if draft is None or draft["created_by"] != str(user.pk):
         return None
     return draft
 
 
-def _draft_key(draft_session_id):
+def _get_draft_key(draft_session_id):
     return DRAFT_CACHE_KEY.format(draft_session_id=draft_session_id)
 
 
-# ---------------------------------------------------------------------------
+def _require_allowed(value, allowed, field, case_type):
+    """Raise a 400 on ``field`` unless ``value`` is allowed for ``case_type``."""
+    if value not in allowed:
+        raise serializers.ValidationError(
+            {
+                field: f"'{value}' is not accepted for {case_type} cases. "
+                f"Must be one of: {', '.join(allowed)}."
+            }
+        )
+
+
 # Documents (spec 0021 §3)
-# ---------------------------------------------------------------------------
 
 
 def add_document(case_or_draft_id, user, upload, document_type):
@@ -175,11 +142,13 @@ def add_document(case_or_draft_id, user, upload, document_type):
     The file is written to storage before the database transaction, as
     ``apps.files`` requires; if the transaction fails the file is deleted again.
     """
-    ensure_case_or_draft(case_or_draft_id, user)
+    case_type = get_case_type(case_or_draft_id, user)
+    allowed = get_config(case_type).document_types
+    _require_allowed(document_type, allowed, "document_type", case_type)
     file_id = _store_file(upload, user)
     try:
         with transaction.atomic():
-            case = case_for_write(case_or_draft_id, user)
+            case = get_or_create_case(case_or_draft_id, user)
             return CaseDocument.objects.create(
                 case=case,
                 document_id=file_id,
@@ -188,13 +157,13 @@ def add_document(case_or_draft_id, user, upload, document_type):
                 updated_by=user,
             )
     except Exception:
-        _discard_file(file_id)
+        _delete_file(file_id)
         raise
 
 
 def remove_document(case_id, case_document_id, user):
     """Soft-delete a case document. The stored file is kept."""
-    document = _get_active(CaseDocument, case_id, case_document_id, user)
+    document = _get_active_case_item(CaseDocument, case_id, case_document_id, user)
     document.is_active = False
     document.updated_by = user
     document.save(update_fields=["is_active", "updated_by", "updated_at"])
@@ -213,32 +182,36 @@ def _store_file(upload, user):
     return result["files"][0]["id"]
 
 
-def _discard_file(file_id):
+def _delete_file(file_id):
     try:
         files.delete_file(file_id)
     except Exception:  # noqa: BLE001 - must not mask the error being handled
-        logger.exception("Could not discard case document file %s", file_id)
+        logger.exception("Could not delete case document file %s", file_id)
 
 
-# ---------------------------------------------------------------------------
 # Evidence (spec 0021 §5.1)
-# ---------------------------------------------------------------------------
 
 
-def validate_evidence_info(evidence_type, evidence_info):
-    """Raise a DRF ``ValidationError`` unless ``evidence_info`` fits its type's schema."""
-    validator = jsonschema.Draft202012Validator(
-        EVIDENCE_SCHEMAS[evidence_type], format_checker=jsonschema.FormatChecker()
-    )
-    messages = [error.message for error in validator.iter_errors(evidence_info)]
+def validate_evidence(case_type, evidence_type, evidence_info):
+    """Raise a 400 unless ``case_type`` accepts ``evidence_type`` and the info fits its schema."""
+    schemas = get_config(case_type).evidence_schemas
+    _require_allowed(evidence_type, tuple(schemas), "evidence_type", case_type)
+    _validate_schema(schemas[evidence_type], evidence_info, "evidence_info")
+
+
+def _validate_schema(schema, data, field):
+    """Raise a 400 on ``field`` listing every way ``data`` breaks ``schema``."""
+    validator = jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
+    messages = [error.message for error in validator.iter_errors(data)]
     if messages:
-        raise serializers.ValidationError({"evidence_info": messages})
+        raise serializers.ValidationError({field: messages})
 
 
 def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_document_id=None):
     """Add evidence with the next ordinal for its type, creating the case on first save."""
+    validate_evidence(get_case_type(case_or_draft_id, user), evidence_type, evidence_info)
     with transaction.atomic():
-        case = case_for_write(case_or_draft_id, user)
+        case = get_or_create_case(case_or_draft_id, user)
         # Serialises ordinal assignment for the case.
         Case.objects.select_for_update().filter(pk=case.pk).first()
 
@@ -268,12 +241,12 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
 
 def get_evidence(case_id, case_evidence_id, user):
     """Return active evidence on ``user``'s case, or raise ``NotFound``."""
-    return _get_active(CaseEvidence, case_id, case_evidence_id, user)
+    return _get_active_case_item(CaseEvidence, case_id, case_evidence_id, user)
 
 
 def update_evidence(evidence, user, evidence_info):
     """Replace ``evidence_info``. The evidence type cannot change."""
-    validate_evidence_info(evidence.evidence_type, evidence_info)
+    validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
     evidence.evidence_info = evidence_info
     evidence.updated_by = user
     evidence.save(update_fields=["evidence_info", "updated_by", "updated_at"])
@@ -287,7 +260,7 @@ def remove_evidence(evidence, user):
     evidence.save(update_fields=["is_active", "updated_by", "updated_at"])
 
 
-def _get_active(model, case_id, object_id, user):
+def _get_active_case_item(model, case_id, object_id, user):
     found = model.objects.active().filter(pk=object_id, case_id=case_id, case__created_by=user)
     instance = found.first()
     if instance is None:
@@ -295,31 +268,30 @@ def _get_active(model, case_id, object_id, user):
     return instance
 
 
-# ---------------------------------------------------------------------------
 # Case details (spec 0021 §5.3)
-# ---------------------------------------------------------------------------
 
 
 def get_details(case_id, user):
     """Return every details section of ``user``'s case."""
-    detail = _detail_row(get_case(case_id, user))
-    return {section: getattr(detail, section) for section in detail.SECTIONS}
+    case = get_case(case_id, user)
+    detail = _get_detail_row(case)
+    return {section: getattr(detail, section) for section in get_config(case.case_type).sections}
 
 
 def save_details_section(case_or_draft_id, user, section, data):
     """Replace one details section, creating the case on first save."""
+    case_type = get_case_type(case_or_draft_id, user)
+    schemas = get_config(case_type).section_schemas
+    _require_allowed(section, tuple(schemas), "section", case_type)
+    _validate_schema(schemas[section], data, "data")
     with transaction.atomic():
-        case = case_for_write(case_or_draft_id, user)
-        detail = _detail_row(case)
-        if section not in detail.SECTIONS:
-            raise serializers.ValidationError(
-                {"section": f"Must be one of: {', '.join(detail.SECTIONS)}."}
-            )
+        case = get_or_create_case(case_or_draft_id, user)
+        detail = _get_detail_row(case)
         setattr(detail, section, data)
         detail.updated_by = user
         detail.save(update_fields=[section, "updated_by", "updated_at"])
         return case
 
 
-def _detail_row(case):
-    return DETAIL_MODELS[case.case_type].objects.get(case=case)
+def _get_detail_row(case):
+    return get_config(case.case_type).get_detail_model().objects.get(case=case)

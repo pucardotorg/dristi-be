@@ -5,6 +5,12 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path("case-types/", views.CaseTypeListView.as_view(), name="case-type-list"),
+    path(
+        "case-types/<str:case_type>/",
+        views.CaseTypeDetailView.as_view(),
+        name="case-type-detail",
+    ),
     path("cases/", views.CaseListView.as_view(), name="case-list"),
     # Case numbers contain slashes (CC/123/2024).
     path(

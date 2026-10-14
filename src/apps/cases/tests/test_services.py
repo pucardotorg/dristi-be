@@ -8,15 +8,15 @@ import pytest
 from django.db import connection, transaction
 from rest_framework.exceptions import NotFound
 
-from apps.cases import services
 from apps.cases.models import Case, CaseEvidence, ChequeBounceCase, EvidenceType
+from apps.cases.services import services
 
 from .conftest import CHEQUE_INFO
 
 
 def create_from(draft, user):
     with transaction.atomic():
-        return services.case_for_write(draft, user)
+        return services.get_or_create_case(draft, user)
 
 
 @pytest.mark.django_db
@@ -45,13 +45,13 @@ class TestDraftSessions:
         with django_capture_on_commit_callbacks(execute=True):
             create_from(draft, user)
 
-        assert services._draft(draft, user) is None
+        assert services._get_owned_draft(draft, user) is None
         assert create_from(draft, user).pk == uuid.UUID(draft)
 
     def test_concurrent_first_save_gets_the_case_the_other_created(self, user, draft):
         # The other request created the case after this one looked for it.
         create_from(draft, user)
-        with patch.object(services, "_owned_case", return_value=None):
+        with patch.object(services, "_get_owned_case", return_value=None):
             case = create_from(draft, user)
 
         assert str(case.pk) == draft
@@ -68,7 +68,7 @@ class TestDraftSessions:
 
     def test_failed_first_save_creates_no_case(self, user, draft):
         with pytest.raises(Exception, match="boom"), transaction.atomic():
-            services.case_for_write(draft, user)
+            services.get_or_create_case(draft, user)
             raise RuntimeError("boom")
 
         assert Case.objects.count() == 0
