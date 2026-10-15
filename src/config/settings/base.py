@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "apps.organizations",
     "apps.locations",
     "apps.files",
+    "apps.cms",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
@@ -300,7 +301,7 @@ CACHALOT_CACHE = "default"
 CACHALOT_TIMEOUT = env.int("CACHALOT_TIMEOUT", default=120)
 
 # Phase 1: allow-list only low-churn, non-user-scoped reference data.
-CACHALOT_ONLY_CACHABLE_APPS = ("locations",)
+CACHALOT_ONLY_CACHABLE_APPS = ("locations", "cms")
 # Cachalot unions these with the app allow-list. List the table rather than the
 # core app so AdditionalAttribute and the history tables stay uncached.
 CACHALOT_ONLY_CACHABLE_TABLES = (
