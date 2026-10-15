@@ -232,6 +232,7 @@ class ClerkProfile(BaseModel):
         """Return a readable label."""
         return self.clerk_registration_number
 
+
 # The profile table each role registers into. A role absent from here has none.
 PROFILE_MODELS = {
     Role.LITIGANT: LitigantProfile,
