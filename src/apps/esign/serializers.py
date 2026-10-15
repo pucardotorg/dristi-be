@@ -35,9 +35,9 @@ class SignPlaceholderSerializer(serializers.Serializer):
         if isinstance(data, dict):
             unknown = sorted(set(data) - set(self.fields))
             if unknown:
-                raise serializers.ValidationError(
-                    {"sign_placeholder": f"Unknown key(s): {', '.join(unknown)}."}
-                )
+                # No key of its own: the parent already files this serializer's
+                # errors under ``sign_placeholder``.
+                raise serializers.ValidationError(f"Unknown key(s): {', '.join(unknown)}.")
         return super().to_internal_value(data)
 
     def validate_page(self, value):

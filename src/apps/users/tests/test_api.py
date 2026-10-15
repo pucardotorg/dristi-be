@@ -143,8 +143,13 @@ class MobileNumberFormatTests(OTPTestCase):
                     reverse("otp-request"), {"mobile_number": number}, format="json"
                 )
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-                fields = [error["field"] for error in response.json()["errors"]]
-                self.assertIn("mobile_number", fields)
+                self.assertEqual(
+                    [
+                        {"code": e["code"], "field": e.get("field")}
+                        for e in response.json()["errors"]
+                    ],
+                    [{"code": "E00001", "field": "mobile_number"}],
+                )
 
     def test_non_indian_numbers_are_rejected_on_user_create(self):
         """POST /users refuses the same set, before the OTP is even consulted."""
@@ -156,8 +161,13 @@ class MobileNumberFormatTests(OTPTestCase):
                     format="json",
                 )
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-                fields = [error["field"] for error in response.json()["errors"]]
-                self.assertIn("mobile_number", fields)
+                self.assertEqual(
+                    [
+                        {"code": e["code"], "field": e.get("field")}
+                        for e in response.json()["errors"]
+                    ],
+                    [{"code": "E00001", "field": "mobile_number"}],
+                )
 
     def test_indian_mobile_ranges_are_accepted(self):
         """India allocates mobile numbers on leading digits 6 through 9."""
@@ -417,8 +427,10 @@ class RegistrationCompletionTests(OTPTestCase):
             email="other@example.com", profile={"bar_registration_id": "KER/1234/2019"}
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        fields = [error["field"] for error in response.data["errors"]]
-        self.assertIn("profile.bar_registration_id", fields)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+            [{"code": "E00010", "field": "profile.bar_registration_id"}],
+        )
         self.assertEqual(AdvocateProfile.objects.count(), 1)
         # Rejected before the upload, so only the first advocate's file exists.
         self.assertEqual(File.objects.count(), 1)
@@ -441,8 +453,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        fields = [error["field"] for error in response.data["errors"]]
-        self.assertIn("profile.clerk_registration_number", fields)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+            [{"code": "E00010", "field": "profile.clerk_registration_number"}],
+        )
         self.assertEqual(ClerkProfile.objects.count(), 1)
 
     def test_clerk_completes_with_profile(self):
@@ -484,8 +498,10 @@ class RegistrationCompletionTests(OTPTestCase):
             profile={"bar_registration_id": "KER/1234/2019"}, document=None
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        fields = [error["field"] for error in response.data["errors"]]
-        self.assertIn("bar_id_document", fields)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+            [{"code": "E00002", "field": "bar_id_document"}],
+        )
         self.assertFalse(AdvocateProfile.objects.exists())
 
         self.user.refresh_from_db()
@@ -497,8 +513,10 @@ class RegistrationCompletionTests(OTPTestCase):
             profile={"bar_registration_id": "KER/1234/2019"}, document=document
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        fields = [error["field"] for error in response.data["errors"]]
-        self.assertIn("bar_id_document", fields)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+            [{"code": "E00001", "field": "bar_id_document"}],
+        )
         self.assertFalse(File.objects.exists())
         self.assertFalse(AdvocateProfile.objects.exists())
 

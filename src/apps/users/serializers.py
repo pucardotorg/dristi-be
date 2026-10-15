@@ -5,6 +5,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
+from apps.api import errors as api_errors
+
 from . import errors
 from .documents import validate_registration_document
 from .models import (
@@ -192,14 +194,18 @@ class RegistrationResubmissionSerializer(serializers.Serializer):
             .exists()
         )
         if taken:
-            raise serializers.ValidationError("This registration number is already registered.")
+            raise api_errors.UNIQUE.validation_error(
+                "This registration number is already registered."
+            )
         return value
 
     def validate(self, attrs):
         """Require the bar ID document of the roles that must send one."""
         verification = VERIFICATIONS[self.context["request"].user.role]
         if verification.document_required and not attrs.get("bar_id_document"):
-            raise serializers.ValidationError({"bar_id_document": "This field is required."})
+            raise api_errors.REQUIRED.validation_error(
+                {"bar_id_document": api_errors.REQUIRED.message}
+            )
         return attrs
 
 

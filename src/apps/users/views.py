@@ -528,6 +528,9 @@ class RegistrationResubmitView(APIView):
             200: RESUBMITTED_RESPONSE,
             **error_responses(
                 api_errors.REQUIRED.example(field="name"),
+                api_errors.UNIQUE.example(
+                    "This registration number is already registered.", field="registration_number"
+                ),
                 errors.EMAIL_TAKEN.example(field="email"),
                 errors.NOTHING_TO_RESUBMIT,
             ),

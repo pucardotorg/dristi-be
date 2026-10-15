@@ -273,8 +273,10 @@ class ResubmissionTests(RejectionTestCase):
         response = self.resubmit(bar_id_document=None)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        fields = [error["field"] for error in response.json()["errors"]]
-        self.assertIn("bar_id_document", fields)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": "E00002", "field": "bar_id_document"}],
+        )
         self.assertEqual(self.request_of(self.user).status, Request.Status.REJECTED)
 
     def test_registration_number_held_by_another_advocate_is_refused(self):
@@ -286,8 +288,10 @@ class ResubmissionTests(RejectionTestCase):
         response = self.resubmit(registration_number="K/2000/2020")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        fields = [error["field"] for error in response.json()["errors"]]
-        self.assertIn("registration_number", fields)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": "E00010", "field": "registration_number"}],
+        )
 
     def test_email_held_by_another_account_is_refused(self):
         """The email stays unique across accounts."""

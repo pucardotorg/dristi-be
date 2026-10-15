@@ -26,7 +26,7 @@ BOOLEAN_VALUES = {"true": True, "false": False}
     # Query parameters are validated in get_queryset(), outside any serializer.
     list=extend_schema(
         responses=error_responses(
-            errors.INVALID.example(
+            errors.INVALID_CHOICE.example(
                 f"Must be one of: {', '.join(Location.LocationType.values)}.",
                 field="location_type",
             ),
@@ -59,7 +59,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         location_type = params.get("location_type")
         if location_type is not None:
             if location_type not in Location.LocationType.values:
-                raise ValidationError(
+                raise errors.INVALID_CHOICE.validation_error(
                     {
                         "location_type": (
                             f"Must be one of: {', '.join(Location.LocationType.values)}."

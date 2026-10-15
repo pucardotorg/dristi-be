@@ -5,6 +5,7 @@ import json
 from django.urls import reverse
 from rest_framework import serializers
 
+from apps.api import errors as api_errors
 from apps.users.models import User
 
 from . import errors, services
@@ -236,5 +237,7 @@ class DecisionSerializer(serializers.Serializer):
     def validate(self, attrs):
         """Require a reason with a rejection: it is what the requester is told."""
         if attrs["decision"] == RequestApproval.Status.REJECTED and not attrs["comments"].strip():
-            raise serializers.ValidationError({"comments": "A reason is required to reject."})
+            raise api_errors.REQUIRED.validation_error(
+                {"comments": "A reason is required to reject."}
+            )
         return attrs

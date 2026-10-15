@@ -78,7 +78,7 @@ class InitiateEndpointTests(ESignTestCase):
     def test_unknown_placement_keys_are_rejected(self):
         """A placement key the PDF Service would refuse fails fast."""
         response = self.initiate(sign_placeholder={"page": 1, "x": 1, "y": 1, "rotate": 90})
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_error(response, api_errors.INVALID, field="sign_placeholder")
 
     def test_incomplete_placement_is_rejected(self):
         """Coordinates and size are required."""

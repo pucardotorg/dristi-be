@@ -12,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.api import errors as api_errors
 from apps.api.schema import error_responses
 from apps.files.services import FileNotFound
 
@@ -201,6 +202,7 @@ class RequestViewSet(
         responses={
             200: RequestApprovalDetailSerializer,
             **error_responses(
+                api_errors.REQUIRED.example("A reason is required to reject.", field="comments"),
                 errors.INVALID_APPROVAL_STATE.example(
                     "Approval has already been approved and cannot be decided again."
                 ),
