@@ -4,18 +4,13 @@ import re
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import serializers, status
+from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import PINCODE_REGEX
+from .serializers import PincodeDetailsSerializer
 from .services import PincodeNotFoundError, PincodeServiceUnavailableError, lookup_pincode
-
-# Each failure carries a stable ``code`` the frontend can branch on; on
-# ``pincode_service_unavailable`` it should let the user type district and
-# state by hand.
-INVALID_PINCODE = "invalid_pincode"
-PINCODE_NOT_FOUND = "pincode_not_found"
-PINCODE_SERVICE_UNAVAILABLE = "pincode_service_unavailable"
 
 ERROR_RESPONSE = inline_serializer(
     name="PincodeLookupError",
@@ -23,12 +18,35 @@ ERROR_RESPONSE = inline_serializer(
 )
 
 
-class PincodeDetailsSerializer(serializers.Serializer):
-    """District and state for a pincode."""
+class PincodeLookupError(APIException):
+    """A pincode lookup failure, with a stable ``code`` the frontend can branch on.
 
-    pincode = serializers.CharField()
-    district = serializers.CharField()
-    state = serializers.CharField()
+    The body is ``{"detail": ..., "code": ...}``: DRF renders a dict ``detail``
+    as is, so the code reaches the client alongside the message.
+    """
+
+    def __init__(self):
+        super().__init__(detail={"detail": self.default_detail, "code": self.default_code})
+
+
+class InvalidPincode(PincodeLookupError):  # noqa: N818 - named after its code
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_detail = "Enter a valid 6-digit pincode not starting with 0."
+    default_code = "invalid_pincode"
+
+
+class PincodeNotFound(PincodeLookupError):  # noqa: N818
+    status_code = status.HTTP_404_NOT_FOUND
+    default_detail = "No district or state is recorded for this pincode."
+    default_code = "pincode_not_found"
+
+
+class PincodeServiceUnavailable(PincodeLookupError):  # noqa: N818
+    """India Post is down: the frontend should let the user type district and state."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "The pincode lookup service is unavailable. Enter district and state manually."
+    default_code = "pincode_service_unavailable"
 
 
 class PincodeLookupView(APIView):
@@ -38,13 +56,17 @@ class PincodeLookupView(APIView):
         tags=["address"],
         responses={
             200: PincodeDetailsSerializer,
-            400: OpenApiResponse(ERROR_RESPONSE, description=f"code = {INVALID_PINCODE}"),
-            404: OpenApiResponse(ERROR_RESPONSE, description=f"code = {PINCODE_NOT_FOUND}"),
+            400: OpenApiResponse(
+                ERROR_RESPONSE, description=f"code = {InvalidPincode.default_code}"
+            ),
+            404: OpenApiResponse(
+                ERROR_RESPONSE, description=f"code = {PincodeNotFound.default_code}"
+            ),
             503: OpenApiResponse(
                 ERROR_RESPONSE,
                 description=(
-                    f"code = {PINCODE_SERVICE_UNAVAILABLE}; the India Post API is down, "
-                    "so district and state must be entered manually."
+                    f"code = {PincodeServiceUnavailable.default_code}; the India Post API "
+                    "is down, so district and state must be entered manually."
                 ),
             ),
         },
@@ -52,30 +74,11 @@ class PincodeLookupView(APIView):
     def get(self, request, pincode):
         """Look the pincode up with India Post."""
         if not re.fullmatch(PINCODE_REGEX, pincode):
-            return _error(
-                status.HTTP_400_BAD_REQUEST,
-                INVALID_PINCODE,
-                "Enter a valid 6-digit pincode not starting with 0.",
-            )
-
+            raise InvalidPincode
         try:
             details = lookup_pincode(pincode)
-        except PincodeNotFoundError:
-            return _error(
-                status.HTTP_404_NOT_FOUND,
-                PINCODE_NOT_FOUND,
-                "No district or state is recorded for this pincode.",
-            )
-        except PincodeServiceUnavailableError:
-            return _error(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                PINCODE_SERVICE_UNAVAILABLE,
-                "The pincode lookup service is unavailable. Enter district and state manually.",
-            )
-
+        except PincodeNotFoundError as exc:
+            raise PincodeNotFound from exc
+        except PincodeServiceUnavailableError as exc:
+            raise PincodeServiceUnavailable from exc
         return Response(PincodeDetailsSerializer(details).data)
-
-
-def _error(status_code, code, detail):
-    """Return an error body with a machine-readable ``code``."""
-    return Response({"detail": detail, "code": code}, status=status_code)

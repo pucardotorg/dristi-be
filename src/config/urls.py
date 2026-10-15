@@ -22,6 +22,7 @@ urlpatterns = [
     path("api/v1/", include("apps.dristi_requests.urls")),
     path("api/v1/", include("apps.address.urls")),
     path("api/v1/", include("apps.cases.urls")),
+    path("api/v1/", include("apps.esign.urls")),
     path(
         "health/",
         HealthCheckView.as_view(checks=[DatabaseBackend, CacheBackend, RedisHealthCheck]),

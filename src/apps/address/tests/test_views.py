@@ -88,3 +88,44 @@ class TestPincodeLookupView:
         response = APIClient().get(url("560001"))
 
         assert response.status_code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+
+
+@pytest.mark.django_db
+class TestApiStandards:
+    """Spec 0000: the registration gate (§6) and the ``meta`` envelope (§8)."""
+
+    def test_accounts_mid_registration_are_refused(self):
+        user = User.objects.create_user(
+            mobile_number="+919811111111",
+            registration_status=RegistrationStatus.PENDING_PROFILE,
+        )
+        client = APIClient()
+        client.force_authenticate(user)
+
+        with patch(LOOKUP) as lookup:
+            response = client.get(url("560001"))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        lookup.assert_not_called()
+
+    def test_success_response_has_meta(self, client):
+        details = PincodeDetails(pincode="560001", district="Bengaluru Urban", state="Karnataka")
+        with patch(LOOKUP, return_value=details):
+            body = client.get(url("560001")).json()
+
+        assert set(body["meta"]) == {"timestamp", "app_version", "spec_version"}
+
+    @pytest.mark.parametrize(
+        ("pincode", "side_effect", "code"),
+        [
+            ("012345", None, "invalid_pincode"),
+            ("560001", PincodeNotFoundError, "pincode_not_found"),
+            ("560001", PincodeServiceUnavailableError, "pincode_service_unavailable"),
+        ],
+    )
+    def test_error_responses_have_detail_code_and_meta(self, client, pincode, side_effect, code):
+        with patch(LOOKUP, side_effect=side_effect):
+            body = client.get(url(pincode)).json()
+
+        assert set(body) == {"detail", "code", "meta"}
+        assert body["code"] == code

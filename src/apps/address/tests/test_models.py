@@ -1,5 +1,7 @@
 """Tests for the immutable, deduplicated Address model (spec 0020 §7)."""
 
+import unicodedata
+
 import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -27,10 +29,37 @@ class TestNormalization:
     def test_case_is_kept(self):
         assert normalize_field("city", "Bengaluru") == "Bengaluru"
 
-    def test_hash_ignores_case_and_spacing(self):
-        messy = {**ADDRESS_DEFAULTS, "line1": "  12  mg ROAD", "pincode": "560 001"}
+    def test_unicode_is_stored_in_nfc_form(self):
+        decomposed = unicodedata.normalize("NFD", "കൊച്ചി")
+
+        assert normalize_field("city", decomposed) == unicodedata.normalize("NFC", "കൊച്ചി")
+
+    def test_same_visible_text_hashes_alike_whatever_the_input_method(self):
+        # "क़" typed as one precomposed character, and as "क" plus a nukta.
+        precomposed = {**ADDRESS_DEFAULTS, "city": "\u0958"}
+        decomposed = {**ADDRESS_DEFAULTS, "city": "\u0915\u093c"}
+
+        assert address_hash(precomposed) == address_hash(decomposed)
+
+    @pytest.mark.parametrize("invisible", ["\u200b", "\u2060", "\ufeff"])
+    def test_invisible_characters_are_removed(self, invisible):
+        assert normalize_field("line1", f"12 MG{invisible} Road") == "12 MG Road"
+
+    @pytest.mark.parametrize("joiner", ["\u200c", "\u200d"])
+    def test_joiners_are_kept_because_they_change_how_letters_join(self, joiner):
+        text = f"ന{joiner}്"
+
+        assert normalize_field("line1", text) == text
+
+    def test_hash_ignores_spacing(self):
+        messy = {**ADDRESS_DEFAULTS, "line1": "  12  MG   Road ", "pincode": "560 001"}
 
         assert address_hash(messy) == address_hash(ADDRESS_DEFAULTS)
+
+    def test_hash_is_case_sensitive(self):
+        lower = {**ADDRESS_DEFAULTS, "line1": "12 mg road"}
+
+        assert address_hash(lower) != address_hash(ADDRESS_DEFAULTS)
 
     def test_hash_changes_with_any_content_field(self):
         base = address_hash(ADDRESS_DEFAULTS)
@@ -96,18 +125,18 @@ class TestDeduplication:
         assert second.pk == first.pk
         assert Address.objects.count() == 1
 
-    def test_case_and_spacing_differences_reuse_the_row(self):
+    def test_spacing_differences_reuse_the_row(self):
         first = make_address()
-        second = make_address(line1="12  mg road ", city="BENGALURU", pincode="560 001")
+        second = make_address(line1="12  MG Road ", city=" Bengaluru", pincode="560 001")
 
         assert second.pk == first.pk
 
-    def test_reused_row_keeps_the_values_first_stored(self):
-        make_address(line1="12 MG Road")
+    def test_case_differences_are_different_addresses(self):
+        first = make_address(line1="12 mg road")
+        second = make_address(line1="12 MG Road")
 
-        reused = make_address(line1="12 mg road")
-
-        assert reused.line1 == "12 MG Road"
+        assert second.pk != first.pk
+        assert (first.line1, second.line1) == ("12 mg road", "12 MG Road")
 
     def test_different_police_station_is_a_different_address(self):
         first = make_address()
@@ -141,11 +170,11 @@ class TestDeduplication:
         Address.objects.create(**ADDRESS_DEFAULTS)
 
         with pytest.raises(IntegrityError), transaction.atomic():
-            Address.objects.create(**{**ADDRESS_DEFAULTS, "line1": "12 mg road"})
+            Address.objects.create(**{**ADDRESS_DEFAULTS, "line1": "12  MG Road "})
 
     def test_validate_unique_rejects_a_duplicate(self):
         make_address()
-        duplicate = Address(**{**ADDRESS_DEFAULTS, "city": "bengaluru"})
+        duplicate = Address(**{**ADDRESS_DEFAULTS, "city": "  Bengaluru "})
 
         with pytest.raises(ValidationError) as exc:
             duplicate.full_clean()
@@ -156,6 +185,47 @@ class TestDeduplication:
         make_address()
 
         Address(**{**ADDRESS_DEFAULTS, "line1": "99 Brigade Road"}).full_clean()
+
+    @pytest.mark.parametrize("field", Address.CONTENT_FIELDS)
+    @pytest.mark.parametrize("missing", [None, "", "   "])
+    def test_full_clean_reports_a_missing_field_instead_of_crashing(self, field, missing):
+        address = Address(**{**ADDRESS_DEFAULTS, field: missing})
+
+        with pytest.raises(ValidationError) as exc:
+            address.full_clean()
+
+        assert field in exc.value.message_dict
+
+    def test_validate_unique_skips_the_duplicate_check_while_a_field_is_missing(self):
+        make_address()
+
+        Address(**{**ADDRESS_DEFAULTS, "line1": None}).validate_unique()
+
+
+@pytest.mark.django_db
+class TestBulkCreate:
+    """``bulk_create`` skips ``save()``; the manager hashes the rows itself."""
+
+    def test_bulk_created_rows_are_normalized_and_hashed(self):
+        Address.objects.bulk_create([Address(**{**ADDRESS_DEFAULTS, "line1": " 12  MG Road "})])
+
+        stored = Address.objects.get()
+        assert stored.line1 == "12 MG Road"
+        assert stored.hash == address_hash(ADDRESS_DEFAULTS)
+
+    def test_bulk_created_rows_deduplicate_with_saved_ones(self):
+        Address.objects.bulk_create([Address(**ADDRESS_DEFAULTS)])
+
+        _, created = Address.objects.get_or_create_address(**ADDRESS_DEFAULTS)
+
+        assert not created
+        assert Address.objects.count() == 1
+
+    def test_database_rejects_a_row_without_its_hash(self):
+        make_address()
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Address.objects.update(hash="")
 
 
 @pytest.mark.django_db
@@ -221,11 +291,20 @@ class TestRevise:
 
         assert original.revise().pk == original.pk
 
+    def test_revise_can_correct_casing_only(self):
+        original = make_address(city="bengaluru")
+
+        corrected = original.revise(city="Bengaluru")
+
+        assert corrected.pk != original.pk
+        assert corrected.city == "Bengaluru"
+        assert Address.objects.get(pk=original.pk).city == "bengaluru"
+
     def test_revise_to_an_existing_address_reuses_it(self):
         existing = make_address(line1="45 New Rd")
         original = make_address(line1="123 Main St")
 
-        assert original.revise(line1="45 new rd").pk == existing.pk
+        assert original.revise(line1="45  New Rd ").pk == existing.pk
 
     def test_revise_validates_the_new_values(self):
         with pytest.raises(ValidationError):
@@ -241,3 +320,11 @@ def test_str_lists_the_address_parts():
     address = make_address()
 
     assert str(address) == "12 MG Road, Bengaluru, Bengaluru Urban, Karnataka - 560001"
+
+
+@pytest.mark.django_db
+def test_addresses_list_newest_first():
+    older = make_address(line1="1 Old Road")
+    newer = make_address(line1="2 New Road")
+
+    assert list(Address.objects.all()) == [newer, older]

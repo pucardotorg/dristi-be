@@ -46,7 +46,7 @@ class TestAddressAdmin:
         make_address()
         form_class = admin_instance.get_form(request_with_admin)
 
-        form = form_class(data={**ADDRESS_DEFAULTS, "line1": "12 mg road"})
+        form = form_class(data={**ADDRESS_DEFAULTS, "line1": "12  MG Road "})
 
         assert not form.is_valid()
         assert "This address already exists." in str(form.errors)
