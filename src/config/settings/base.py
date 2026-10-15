@@ -227,15 +227,20 @@ REST_FRAMEWORK = {
     # their registration is incomplete, which is wrong and sends the client to
     # the wrong screen. Keep both, in this order.
     #
-    # IsNotAwaitingApproval comes last, for the same reason: it is only
+    # IsNotAwaitingApproval comes after it, for the same reason: it is only
     # meaningful for a signed-in, registered account. It keeps an advocate or
     # clerk whose registration is awaiting approval, or was not approved, out
     # of everything except the endpoints that serve that state (login, and the
     # resubmission of a rejected registration).
+    #
+    # HasAcceptedCurrentTerms comes last: an unfinished account accepts the
+    # terms inside the wizard, so it must be told to finish registering, and a
+    # rejected one must resubmit before re-accepting would get it anywhere.
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
         "apps.users.services.permissions.IsAuthenticatedAndRegistered",
         "apps.users.services.permissions.IsNotAwaitingApproval",
+        "apps.users.services.permissions.HasAcceptedCurrentTerms",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
@@ -273,6 +278,13 @@ OTP_TTL_SECONDS = env.int("OTP_TTL_SECONDS", default=300)
 # message never arrived has to wait. Validated at startup by
 # apps.users.services.checks.
 OTP_RESEND_COOLDOWN_SECONDS = env.int("OTP_RESEND_COOLDOWN_SECONDS", default=30)
+
+# Wrong guesses allowed against one code before it is destroyed and a new one
+# must be requested.
+OTP_MAX_ATTEMPTS = env.int("OTP_MAX_ATTEMPTS", default=5)
+
+# How long a verified password-reset code lets the session set a new password.
+PASSWORD_RESET_WINDOW_SECONDS = env.int("PASSWORD_RESET_WINDOW_SECONDS", default=600)
 
 
 # ---------------------------------------------------------------------------

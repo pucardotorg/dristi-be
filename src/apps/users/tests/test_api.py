@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 from apps.files.models import File, FileType
 from apps.users.documents import BAR_COUNCIL_ID_TAG
 from apps.users.models import (
+    PROFILE_MODELS,
     AdvocateProfile,
     AdvocateType,
     ApprovalStatus,
@@ -24,7 +25,7 @@ from apps.users.models import (
     Role,
     User,
 )
-from apps.users.serializers import MAX_PASSWORD_LENGTH
+from apps.users.serializers import MAX_PASSWORD_LENGTH, PROFILE_SERIALIZERS
 from apps.users.services.otp import Purpose
 from config.urls import urlpatterns as project_urlpatterns
 
@@ -548,6 +549,7 @@ class SessionTests(OTPTestCase):
             name="Asha Menon",
             role=Role.LITIGANT,
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.client.logout()
 
@@ -618,6 +620,32 @@ class SessionTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["next"], "profile")
 
+    def test_account_without_current_terms_can_log_in_and_is_told_so(self):
+        """An account created outside the wizard logs in and is routed to the terms."""
+        self.user.terms_version_accepted = None
+        self.user.save()
+
+        response = self.client.post(
+            reverse("session"),
+            {"mobile_number": MOBILE, "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["next"], "terms")
+
+    def test_incomplete_account_is_sent_to_the_wizard_before_the_terms(self):
+        """The wizard takes the terms itself, so it wins when both are missing."""
+        self.user.registration_status = RegistrationStatus.PENDING_PROFILE
+        self.user.terms_version_accepted = None
+        self.user.save()
+
+        response = self.client.post(
+            reverse("session"),
+            {"mobile_number": MOBILE, "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(response.json()["next"], "profile")
+
     def make_professional(self, role, approval_status):
         """Turn the account into an advocate or clerk with the given approval."""
         self.user.role = role
@@ -665,6 +693,20 @@ class SessionTests(OTPTestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    def test_rejected_professional_is_sent_to_resubmit_before_the_terms(self):
+        """Re-accepting the terms opens nothing while the registration stands rejected."""
+        self.make_professional(Role.ADVOCATE, ApprovalStatus.REJECTED)
+        self.user.terms_version_accepted = None
+        self.user.save()
+
+        response = self.client.post(
+            reverse("session"),
+            {"mobile_number": MOBILE, "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["next"], "resubmit")
+
     def test_logout_discards_the_session(self):
         """DELETE /sessions clears the cookie."""
         self.client.post(
@@ -674,6 +716,118 @@ class SessionTests(OTPTestCase):
         )
         response = self.client.delete(reverse("session"))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+
+class CurrentUserTests(OTPTestCase):
+    """GET /users/me."""
+
+    def make_user(self, **fields):
+        """Create a registered account and authenticate as it."""
+        defaults = {
+            "mobile_number": MOBILE,
+            "password": PASSWORD,
+            "name": "Asha Menon",
+            "registration_status": RegistrationStatus.COMPLETE,
+        }
+        user = User.objects.create_user(**{**defaults, **fields})
+        self.client.force_authenticate(user=user)
+        return user
+
+    def test_anonymous_caller_is_refused(self):
+        """No session, no profile."""
+        response = self.client.get(reverse("user-me"))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_litigant_sees_account_and_profile(self):
+        """The account fields and the litigant profile are returned."""
+        user = self.make_user(role=Role.LITIGANT, email="asha@example.com")
+        LitigantProfile.objects.create(user=user, name="Asha Menon")
+
+        response = self.client.get(reverse("user-me"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertEqual(body["id"], str(user.pk))
+        self.assertEqual(body["mobile_number"], MOBILE)
+        self.assertEqual(body["name"], "Asha Menon")
+        self.assertEqual(body["email"], "asha@example.com")
+        self.assertEqual(body["role"], Role.LITIGANT)
+        self.assertEqual(body["registration_status"], RegistrationStatus.COMPLETE)
+        self.assertNotIn("password", body)
+        self.assertEqual(set(body["profile"]), {"id", "created_at", "updated_at"})
+
+    def test_advocate_sees_their_claim_and_its_status(self):
+        """The advocate profile carries the bar id and approval status."""
+        user = self.make_user(role=Role.ADVOCATE)
+        AdvocateProfile.objects.create(
+            user=user,
+            name="Asha Menon",
+            bar_registration_id="KER/1234/2019",
+            advocate_type=AdvocateType.CIVIL,
+        )
+
+        profile = self.client.get(reverse("user-me")).json()["profile"]
+
+        self.assertEqual(
+            set(profile),
+            {
+                "id",
+                "bar_registration_id",
+                "advocate_type",
+                "approval_status",
+                "created_at",
+                "updated_at",
+            },
+        )
+        self.assertEqual(profile["bar_registration_id"], "KER/1234/2019")
+        self.assertEqual(profile["advocate_type"], AdvocateType.CIVIL)
+        self.assertEqual(profile["approval_status"], ApprovalStatus.PENDING)
+
+    def test_clerk_sees_their_claim_and_its_status(self):
+        """The clerk profile carries the registration number and approval status."""
+        user = self.make_user(role=Role.CLERK)
+        ClerkProfile.objects.create(user=user, name="Asha Menon", clerk_registration_number="C-42")
+
+        profile = self.client.get(reverse("user-me")).json()["profile"]
+
+        self.assertEqual(
+            set(profile),
+            {"id", "clerk_registration_number", "approval_status", "created_at", "updated_at"},
+        )
+        self.assertEqual(profile["clerk_registration_number"], "C-42")
+        self.assertEqual(profile["approval_status"], ApprovalStatus.PENDING)
+
+    def test_incomplete_account_can_read_itself(self):
+        """An unfinished registration is readable, with no profile yet."""
+        self.make_user(name="", registration_status=RegistrationStatus.PENDING_PROFILE)
+
+        response = self.client.get(reverse("user-me"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertEqual(body["registration_status"], RegistrationStatus.PENDING_PROFILE)
+        self.assertIsNone(body["role"])
+        self.assertIsNone(body["profile"])
+
+    def test_role_with_no_profile_row_yet_has_null_profile(self):
+        """A role with a profile table but no row is null, not an error."""
+        self.make_user(role=Role.ADVOCATE)
+        response = self.client.get(reverse("user-me"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.json()["profile"])
+
+    def test_role_without_a_profile_table_has_null_profile(self):
+        """Power of attorney has no profile model, so profile is null."""
+        self.make_user(role=Role.POWER_OF_ATTORNEY)
+        response = self.client.get(reverse("user-me"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.json()["profile"])
+
+    def test_every_profile_model_has_a_read_serializer(self):
+        """A role added to PROFILE_MODELS without a serializer would 500 here."""
+        for role, profile_model in PROFILE_MODELS.items():
+            with self.subTest(role):
+                self.assertIs(PROFILE_SERIALIZERS[profile_model].Meta.model, profile_model)
 
 
 class GatedProbeView(APIView):
@@ -712,15 +866,38 @@ class GateTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_complete_account_passes(self):
-        """A finished account reaches the same endpoint."""
+        """A finished account holding the current terms reaches the same endpoint."""
         user = User.objects.create_user(
             mobile_number=MOBILE,
             password=PASSWORD,
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.client.force_authenticate(user=user)
         response = self.client.get(reverse("gated-probe"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_complete_account_without_terms_is_gated(self):
+        """An account created outside the wizard is refused until it accepts the terms."""
+        user = User.objects.create_user(
+            mobile_number=MOBILE,
+            registration_status=RegistrationStatus.COMPLETE,
+        )
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get(reverse("gated-probe"))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.json()["detail"], "The current terms have not been accepted.")
+
+        self.client.post(reverse("user-terms"), {"terms_accepted": True}, format="json")
+        response = self.client.get(reverse("gated-probe"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_incomplete_account_is_told_about_registration_not_terms(self):
+        """With both missing, the refusal names the wizard, which takes the terms itself."""
+        self.create_account()
+        response = self.client.get(reverse("gated-probe"))
+        self.assertEqual(response.json()["detail"], "Registration is not complete.")
 
 
 class ResponseEnvelopeTests(OTPTestCase):

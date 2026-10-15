@@ -118,6 +118,14 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         return self.registration_status == RegistrationStatus.COMPLETE
 
     @property
+    def profile(self):
+        """The profile row for this account's role, or None if there is none yet."""
+        profile_model = PROFILE_MODELS.get(self.role)
+        if profile_model is None:
+            return None
+        return profile_model.objects.filter(user=self).first()
+
+    @property
     def has_current_terms(self) -> bool:
         """Whether the accepted terms are still the ones in force.
 
@@ -223,3 +231,11 @@ class ClerkProfile(BaseModel):
     def __str__(self):
         """Return a readable label."""
         return self.clerk_registration_number
+
+
+# The profile table each role registers into. A role absent from here has none.
+PROFILE_MODELS = {
+    Role.LITIGANT: LitigantProfile,
+    Role.ADVOCATE: AdvocateProfile,
+    Role.CLERK: ClerkProfile,
+}

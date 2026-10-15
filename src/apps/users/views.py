@@ -1,5 +1,6 @@
 """Registration and login endpoints (spec 0005 section 4)."""
 
+from django.conf import settings
 from django.contrib.auth import (
     authenticate,
     get_user_model,
@@ -18,11 +19,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import (
-    AdvocateProfile,
+    PROFILE_MODELS,
     AdvocateType,
     ApprovalStatus,
-    ClerkProfile,
-    LitigantProfile,
     RegistrationStatus,
     Role,
 )
@@ -30,14 +29,23 @@ from .serializers import (
     AdvocateRegistrationSerializer,
     ClerkRegistrationSerializer,
     CurrentRegistrationSerializer,
+    CurrentUserSerializer,
     MobileOTPSerializer,
     OTPRequestSerializer,
+    PasswordResetSerializer,
     RegistrationCompletionSerializer,
     RegistrationResubmissionSerializer,
     SessionCreateSerializer,
+    TermsAcceptanceSerializer,
+    TermsStatusSerializer,
 )
 from .services.otp import Purpose, ResendTooSoonError, issue_otp, verify_and_consume_otp
-from .services.permissions import IsRejectedRegistrant
+from .services.password import (
+    get_password_reset_user,
+    reset_password,
+    verify_password_reset_code,
+)
+from .services.permissions import IsRejectedRegistrant, next_step
 from .services.registration import (
     DocumentRejected,
     RegistrationNotRejected,
@@ -45,6 +53,7 @@ from .services.registration import (
     describe_rejected_registration,
     resubmit_registration,
 )
+from .services.terms import accept_current_terms
 from .tasks import schedule_registration_verification
 from .verification import approval_status_of
 
@@ -95,7 +104,7 @@ SESSION_RESPONSE = inline_serializer(
             allow_null=True,
             help_text=(
                 '"profile" to finish the wizard, "resubmit" to correct a rejected '
-                "registration, or null."
+                'registration, "terms" to accept the current terms, or null.'
             ),
         ),
     },
@@ -129,6 +138,16 @@ REGISTERED_ACCOUNT_RESPONSE = inline_serializer(
         "next": serializers.CharField(allow_null=True),
     },
 )
+
+PASSWORD_RESET_VERIFIED_RESPONSE = inline_serializer(
+    name="PasswordResetVerified",
+    fields={
+        "detail": serializers.CharField(),
+        "expires_in": serializers.IntegerField(),
+    },
+)
+
+INVALID_CODE_DETAIL = "Invalid or expired code."
 
 
 # Shared by the hand-written multipart forms below.
@@ -267,7 +286,7 @@ class UserCreateView(APIView):
             mobile_number, serializer.validated_data["otp"], Purpose.REGISTER
         ):
             return Response(
-                {"detail": "Invalid or expired code."},
+                {"detail": INVALID_CODE_DETAIL},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
@@ -357,20 +376,16 @@ class SessionView(APIView):
         # that session to the resubmission endpoints.
         login(request._request, user)
 
-        # An incomplete account can log in; the client needs to know so it can
-        # route to the wizard instead of failing against every gated endpoint.
-        if not user.is_registration_complete:
-            next_step = "profile"
-        elif approval_status == ApprovalStatus.REJECTED:
-            next_step = "resubmit"
-        else:
-            next_step = None
+        # An incomplete account, a rejected one, or one that has not accepted
+        # the current terms can still log in; the client needs to know so it
+        # can route to the right screen instead of failing against every gated
+        # endpoint.
         return Response(
             {
                 "user_id": str(user.pk),
                 "registration_status": user.registration_status,
                 "approval_status": approval_status,
-                "next": next_step,
+                "next": next_step(user),
             }
         )
 
@@ -379,6 +394,104 @@ class SessionView(APIView):
         """Discard the session."""
         logout(request._request)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@method_decorator(sensitive_post_parameters("otp"), name="dispatch")
+class PasswordResetVerifyView(APIView):
+    """POST /auth/password-reset/verify — prove control of the number. Logs nobody in."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    serializer_class = MobileOTPSerializer
+
+    @extend_schema(
+        tags=["auth"],
+        responses={200: PASSWORD_RESET_VERIFIED_RESPONSE, 401: DETAIL_RESPONSE},
+    )
+    def post(self, request):
+        """Consume a password_reset code and allow this session to set a password."""
+        serializer = MobileOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if not verify_password_reset_code(
+            request.session,
+            serializer.validated_data["mobile_number"],
+            serializer.validated_data["otp"],
+        ):
+            return Response(
+                {"detail": INVALID_CODE_DETAIL},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        return Response(
+            {
+                "detail": "Code verified. Set a new password.",
+                "expires_in": settings.PASSWORD_RESET_WINDOW_SECONDS,
+            }
+        )
+
+
+@method_decorator(sensitive_post_parameters("new_password"), name="dispatch")
+class PasswordResetView(APIView):
+    """POST /auth/password-reset — set a new password after verification."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    serializer_class = PasswordResetSerializer
+
+    @extend_schema(tags=["auth"], responses={204: None, 401: DETAIL_RESPONSE})
+    def post(self, request):
+        """Set the password once, then require a fresh login with it."""
+        user = get_password_reset_user(request.session)
+        if user is None:
+            return Response(
+                {"detail": "Verify a password reset code first, or request a new one."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        serializer = PasswordResetSerializer(data=request.data, context={"user": user})
+        serializer.is_valid(raise_exception=True)
+
+        reset_password(request.session, user, serializer.validated_data["new_password"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CurrentUserView(APIView):
+    """GET /users/me — the logged-in user's account and profile.
+
+    Gated on IsAuthenticated alone: a client resuming an unfinished
+    registration needs to read the account to know where it left off.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(tags=["users"], responses={200: CurrentUserSerializer})
+    def get(self, request):
+        """Return the caller's account with the profile for their role."""
+        return Response(CurrentUserSerializer(request.user).data)
+
+
+class TermsView(APIView):
+    """POST /users/me/terms — accept the terms in force.
+
+    The way in for accounts that never passed through the wizard, such as those
+    created through filing, and for every account once the terms are revised.
+
+    Gated on IsAuthenticated alone: this is the endpoint that satisfies
+    HasAcceptedCurrentTerms, so it cannot require it.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = TermsAcceptanceSerializer
+
+    @extend_schema(tags=["users"], responses={200: TermsStatusSerializer})
+    def post(self, request):
+        """Record acceptance of the version in force. Repeating it changes nothing."""
+        serializer = TermsAcceptanceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        accept_current_terms(request.user)
+        return Response(TermsStatusSerializer(request.user).data)
 
 
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")
@@ -392,7 +505,6 @@ class BaseRegistrationCompletionView(APIView):
     permission_classes = [IsAuthenticated]
 
     role = None
-    profile_model = None
     serializer_class = RegistrationCompletionSerializer
 
     @extend_schema(
@@ -417,7 +529,7 @@ class BaseRegistrationCompletionView(APIView):
                 user=user,
                 document=data.get("bar_id_document"),
                 role=self.role,
-                profile_model=self.profile_model,
+                profile_model=PROFILE_MODELS[self.role],
                 name=data["name"],
                 password=data["password"],
                 email=data.get("email"),
@@ -450,7 +562,6 @@ class LitigantRegistrationView(BaseRegistrationCompletionView):
     """POST /litigants."""
 
     role = Role.LITIGANT
-    profile_model = LitigantProfile
 
 
 @extend_schema_view(
@@ -464,7 +575,6 @@ class AdvocateRegistrationView(BaseRegistrationCompletionView):
     """
 
     role = Role.ADVOCATE
-    profile_model = AdvocateProfile
     serializer_class = AdvocateRegistrationSerializer
     parser_classes = [MultiPartParser, FormParser]
 
@@ -484,7 +594,6 @@ class ClerkRegistrationView(BaseRegistrationCompletionView):
     """
 
     role = Role.CLERK
-    profile_model = ClerkProfile
     serializer_class = ClerkRegistrationSerializer
 
 

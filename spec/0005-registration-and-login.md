@@ -15,6 +15,7 @@ Create user accounts for four user types — litigant, power of attorney, advoca
 - A registration abandoned midway is resumable, never corrupt, and never locks the user out.
 - The type-specific profile row and the account can never disagree about whether registration finished.
 - Terms acceptance is provable after the fact, including which version was accepted.
+- A forgotten password is recoverable without revealing which numbers hold an account.
 
 Registration does not decide an advocate's or clerk's claim. It stores the claim and the bar council ID, then raises a request under 0010 (Generic Request & Approval Workflow), which owns the approver routing and the decision. This app applies the outcome through 0010 hooks (section 7).
 
@@ -195,8 +196,9 @@ The call creates a row. An endpoint named `verify` reads as a side-effect-free c
 
 An incomplete account can log in. Without the status in the response, the client receives a `200` and a cookie and then fails against every gated endpoint with no explanation. Returning it gives the client a single rule regardless of which endpoint issued the session: if `registration_status != COMPLETE`, route to the wizard.
 
-The same holds for approval. The response also carries `approval_status` (null
-for litigants and for an account with no profile yet) and `next`:
+The same holds for approval and for terms. The response also carries
+`approval_status` (null for litigants and for an account with no profile yet)
+and `next`:
 
 ```json
 { "user_id": "8f2a...", "registration_status": "COMPLETE", "approval_status": "REJECTED", "next": "resubmit" }
@@ -207,7 +209,12 @@ for litigants and for an account with no profile yet) and `next`:
 | `PENDING_PROFILE` | `200` | issued | `"profile"` |
 | Advocate or clerk, `PENDING` | `403` | not issued | `null` |
 | Advocate or clerk, `REJECTED` | `200` | issued, gated (section 7.5) | `"resubmit"` |
+| Current terms not held (section 4.4) | `200` | issued, gated | `"terms"` |
 | Advocate or clerk `ACCEPTED`, or litigant | `200` | issued | `null` |
+
+The rows are checked in that order and the first match wins. The wizard
+collects terms itself, so `"profile"` beats `"terms"`; a rejected registration
+opens nothing until it is resubmitted, so `"resubmit"` beats `"terms"`.
 
 The `403` body carries the same fields plus `detail`, so the client reads the
 account state the same way on either outcome.
@@ -222,6 +229,9 @@ from a user tapping "resend".
 The cooldown is **configurable, not hardcoded**. It is read from server
 configuration as a whole number of seconds:
 
+```bash
+OTP_RESEND_COOLDOWN_SECONDS=30
+```
 
 The default is 30 seconds. The value must be a positive integer; a value of zero
 or less disables the cooldown and is a misconfiguration, so it is rejected at
@@ -271,6 +281,7 @@ Each purpose has its own template, resolved by key at send time:
 |---|---|
 | `register` | `ACCOUNT_REGISTRATION_OTP_SMS` — seeded by a users migration |
 | `login` | `ACCOUNT_LOGIN_OTP_SMS` — ships with the messaging app |
+| `password_reset` | `ACCOUNT_PASSWORD_RESET_OTP_SMS` — seeded by a users migration |
 
 A purpose without a template is a runtime failure rather than a compile-time
 one, so a test asserts every member of `Purpose.CHOICES` has a seeded template.
@@ -380,6 +391,117 @@ would leave an object with no row to find it by. The upload runs first; if the
 registration then fails, the file is discarded. A document the files module
 refuses is a `400` on `bar_id_document`.
 
+### 4.3 Reading the current account
+
+```http
+GET    /users/me/             cookie auth
+```
+
+Returns the account and the profile for its role:
+
+```json
+{
+  "id": "8f2a...",
+  "mobile_number": "+919876543210",
+  "name": "...",
+  "email": "...",
+  "role": "ADVOCATE",
+  "registration_status": "COMPLETE",
+  "terms_accepted_at": "2026-10-13T09:30:00Z",
+  "terms_version_accepted": 3,
+  "has_current_terms": true,
+  "created_at": "2026-10-01T06:12:00Z",
+  "profile": {
+    "id": "c41d...",
+    "bar_registration_id": "KER/1234/2019",
+    "advocate_type": "CIVIL",
+    "approval_status": "PENDING",
+    "created_at": "2026-10-01T06:15:00Z",
+    "updated_at": "2026-10-01T06:15:00Z"
+  }
+}
+```
+
+`profile` holds the role's fields from section 3 plus `id`, `created_at` and
+`updated_at` (a litigant's has only those three). It is `null` before
+registration completes and for power of attorney. The profile's `name` is not
+returned; `name` comes from the account.
+
+Gated on `IsAuthenticated` alone: a client mid-registration, or one sent to the
+terms screen, needs to read the account to know where it stands.
+
+### 4.4 Accepting the terms
+
+```http
+POST   /users/me/terms/       cookie auth     { "terms_accepted": true }
+```
+
+For accounts that hold no terms or out-of-date terms (section 6.5).
+`HasAcceptedCurrentTerms` is a default permission class, last, after
+`IsAuthenticatedAndRegistered` and `IsNotAwaitingApproval`, so this endpoint is gated on `IsAuthenticated`
+alone. A missing or `false` `terms_accepted` is a `400`. The response:
+
+```json
+{
+  "current_terms_version": 3,
+  "terms_version_accepted": 3,
+  "terms_accepted_at": "2026-10-13T09:30:00Z",
+  "has_current_terms": true,
+  "next": null
+}
+```
+
+- **A repeat acceptance writes nothing.** Re-stamping would replace the real
+  acceptance time with the time of a repeat click.
+- **There is no GET.** `GET /users/me/` already returns the terms fields, and
+  login's `next` says when the terms screen is due (section 4.1.2).
+
+### 4.5 Password reset
+
+```http
+POST   /auth/otp/request/            { mobile_number, purpose: "password_reset" }   no credential
+POST   /auth/password-reset/verify/  { mobile_number, otp }                         OTP is the credential
+POST   /auth/password-reset/         { new_password }                               verified session
+```
+
+Neither step logs anyone in. The code request does not look the number up: a
+code is sent to any well-formed number, so the request reveals nothing about
+which numbers have accounts.
+
+**Verify** consumes the code, cycles the session key, and stores the account id
+and verification time on the session. The client must send the resulting
+session cookie with the reset call.
+
+```json
+{ "detail": "Code verified. Set a new password.", "expires_in": 600 }
+```
+
+A wrong code, an unknown number, an inactive account and an incomplete
+registration all return the same `401 { "detail": "Invalid or expired code." }`.
+An incomplete registration has no password; it resumes through `POST /users/`.
+
+**Reset** sets the password for the verified account:
+
+| Code | Condition |
+|---|---|
+| `204` | Password set; the user must log in again |
+| `400` | `new_password` fails `AUTH_PASSWORD_VALIDATORS` (can be retried) |
+| `401` | Session not verified, `PASSWORD_RESET_WINDOW_SECONDS` (default `600`) has passed, or the reset was already used |
+
+The permission is single-use, and the new password invalidates every existing
+session for the account. Section 4.2.1's rules apply to `otp` and
+`new_password`.
+
+Design decisions:
+
+- **Two calls, not one.** The code is consumed when entered, and the password
+  can then be retried against the validators without spending a new code.
+- **Verified state is on the session, not a returned token.** A token would be
+  a second bearer secret to issue and revoke. Cycling the session key means the
+  privilege attaches to a session id no one could have planted in advance.
+- **The window is a setting**, read on each request and rejected at startup if
+  below 1, like the resend cooldown (section 4.1.3.2).
+
 ## 5. Authentication
 
 Both mobile+password and mobile+OTP are supported by registering two backends. Django tries each in order until one returns a user.
@@ -428,6 +550,11 @@ credential check differs.
 ### 5.1 Why the OTP must be consumed, not merely verified
 
 A verified-but-unconsumed code is replayable. Single-use invalidation is the entire security property of the flow; without it the OTP is a static password with a short life.
+
+Wrong guesses are limited too. Each one increments a per-purpose, per-number
+cache counter (`cache.add()` then `cache.incr()`, so concurrent guesses count
+correctly). At `OTP_MAX_ATTEMPTS` (default `5`) the code is destroyed and a new
+one must be requested. Issuing a code resets the counter.
 
 ### 5.2 Why the mobile number is validated rather than normalised
 
@@ -501,6 +628,13 @@ The timestamp comes from the server clock and the version from server configurat
 ### 6.4 Why on the account rather than the profile
 
 Every user type accepts terms; only some have a profile.
+
+### 6.5 Accepting the terms outside the wizard
+
+Accounts that never pass through the wizard (created through filing, or migrated
+from an earlier system) reach `COMPLETE` with no terms on record, and every
+account is in that position once `CURRENT_TERMS_VERSION` is increased. They
+accept through `POST /users/me/terms/` (section 4.4).
 
 ## 7. Approval and Rejection
 
@@ -634,10 +768,11 @@ unrelated requests.
 | `approval_status` | Session | Reachable |
 |---|---|---|
 | `PENDING` | none | nothing gated |
-| `REJECTED` | gated | the section 7.4 endpoints, `DELETE /sessions/` |
+| `REJECTED` | gated | the section 7.4 endpoints, `GET /users/me/`, `POST /users/me/terms/`, `DELETE /sessions/` |
 | `ACCEPTED` | full | everything a registered account can reach |
 
-`IsNotAwaitingApproval`, last in the default permission classes, refuses a
+`IsNotAwaitingApproval`, in the default permission classes after
+`IsAuthenticatedAndRegistered` and before `HasAcceptedCurrentTerms`, refuses a
 `PENDING` or `REJECTED` advocate or clerk. `IsRejectedRegistrant` admits only a
 `REJECTED` one, and guards the section 7.4 endpoints.
 
@@ -666,7 +801,7 @@ An abandoned registration keeps personal data for an account that was never comp
 3. **Apply access gates as default permission classes**, opting out explicitly on the endpoints that need it, so an omission fails closed.
 4. **Keep registration status and terms currency as separate checks** — they have different failure remedies.
 5. **Require the mobile number in E.164 and reject anything else**, rather than rewriting it server-side. One canonical form in the column, and the server never guesses a country code.
-6. **Consume the OTP on use.** Verification without invalidation permits replay.
+6. **Consume the OTP on use, and destroy it after `OTP_MAX_ATTEMPTS` wrong guesses.** Verification without invalidation permits replay; unlimited guessing permits brute force.
 7. **Hold the OTP resend cooldown in the cache, not the database.** `cache.add()` is atomic; a read-then-write check on the last issued row races and sends two messages.
 8. **Read the resend cooldown from settings at request time**, never as a literal in the throttle and never captured at import. It is an operational dial, and tests must be able to set it without sleeping.
 9. **Treat the OTP in a request body as a credential, not as input.** Never log it, never echo it back, and scrub it from error reports alongside the password.
@@ -674,8 +809,9 @@ An abandoned registration keeps personal data for an account that was never comp
 11. **Reference the user model indirectly** — `settings.AUTH_USER_MODEL` in model definitions, `get_user_model()` in code. Never import `User` directly.
 12. **Name endpoints after the resource they act on**, not after the check they perform, so side effects are visible from the route.
 13. **Document what `PENDING_PROFILE` means in the API contract**, including that a session issued to such an account is valid but gated.
-14. **Never accept `approval_status` from a request body.** Only the 0010 hooks set `ACCEPTED` or `REJECTED`.
-15. **Raise the verification request after commit, in the background, idempotently.**
-16. **Keep the rejection reason on the request, not the profile.**
-17. **Resubmit the same request** rather than raising a new one.
-18. **Give a pending advocate or clerk no session, and a rejected one a gated session** — one can only wait, the other must correct and resubmit.
+14. **Answer every failed password-reset verification identically**, so the endpoint cannot be used to find registered numbers.
+15. **Never accept `approval_status` from a request body.** Only the 0010 hooks set `ACCEPTED` or `REJECTED`.
+16. **Raise the verification request after commit, in the background, idempotently.**
+17. **Keep the rejection reason on the request, not the profile.**
+18. **Resubmit the same request** rather than raising a new one.
+19. **Give a pending advocate or clerk no session, and a rejected one a gated session** — one can only wait, the other must correct and resubmit.
