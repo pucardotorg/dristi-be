@@ -9,6 +9,7 @@ Environment-specific settings live in:
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -241,6 +242,13 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "Dristi API",
     "DESCRIPTION": "OpenAPI schema for Dristi Django REST APIs.",
     "VERSION": "1.0.0",
+    # Several models expose a ``status`` field with different choice sets;
+    # name each enum explicitly so drf-spectacular does not fall back to
+    # hash-suffixed names (drf_spectacular.W001).
+    "ENUM_NAME_OVERRIDES": {
+        "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
+        "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -286,6 +294,12 @@ CACHALOT_TIMEOUT = env.int("CACHALOT_TIMEOUT", default=120)
 
 # Phase 1: allow-list only low-churn, non-user-scoped reference data.
 CACHALOT_ONLY_CACHABLE_APPS = ("locations",)
+# Cachalot unions these with the app allow-list. List the table rather than the
+# core app so AdditionalAttribute and the history tables stay uncached.
+CACHALOT_ONLY_CACHABLE_TABLES = (
+    "core_configuration",
+    "core_businessrule",
+)
 CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
     "authtoken_token",
@@ -294,6 +308,30 @@ CACHALOT_UNCACHABLE_TABLES = (
     # lock; a cached read would report a stale outcome (spec 0015 #6.2).
     "esign_esigntransaction",
 )
+
+
+# ---------------------------------------------------------------------------
+# Business rules (spec 0019)
+# ---------------------------------------------------------------------------
+# Wall-clock guard on one rule evaluation, in seconds.
+RULES_EVALUATION_TIMEOUT_SECONDS = env.float("RULES_EVALUATION_TIMEOUT_SECONDS", default=2.0)
+# Upper bound on the UTF-8 size of a stored rule_expression (JDM documents included).
+RULES_MAX_EXPRESSION_BYTES = env.int("RULES_MAX_EXPRESSION_BYTES", default=262144)
+# Per-process, per-engine cap on rule evaluations in flight, including timed-out
+# GoRules calls still finishing in the background; beyond it evaluations fail fast.
+RULES_MAX_CONCURRENT_EVALUATIONS = env.int("RULES_MAX_CONCURRENT_EVALUATIONS", default=16)
+# Require a passing sample evaluation (dry run) before admin saves a rule.
+RULES_ADMIN_DRY_RUN_REQUIRED = env.bool("RULES_ADMIN_DRY_RUN_REQUIRED", default=True)
+# A non-positive value would make every evaluation (or every save) fail, so
+# refuse to start instead.
+for _name in (
+    "RULES_EVALUATION_TIMEOUT_SECONDS",
+    "RULES_MAX_EXPRESSION_BYTES",
+    "RULES_MAX_CONCURRENT_EVALUATIONS",
+):
+    if globals()[_name] <= 0:
+        raise ImproperlyConfigured(f"{_name} must be greater than 0.")
+del _name
 
 
 # ---------------------------------------------------------------------------

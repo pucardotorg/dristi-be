@@ -60,7 +60,11 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
     retrieve=extend_schema(tags=["dristi_requests"], responses=RequestDetailSerializer),
     create=extend_schema(tags=["dristi_requests"], responses=RequestDetailSerializer),
     approvals=extend_schema(
-        tags=["dristi_requests"], responses=RequestApprovalSerializer(many=True)
+        tags=["dristi_requests"],
+        # Explicit id: the default collides with RequestApprovalViewSet.list
+        # (``/dristi-requests/approvals/``).
+        operation_id="v1_dristi_requests_request_approvals_list",
+        responses=RequestApprovalSerializer(many=True),
     ),
     resubmit=extend_schema(
         tags=["dristi_requests"], request=None, responses=RequestDetailSerializer
