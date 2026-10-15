@@ -17,6 +17,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.api import errors as api_errors
+from apps.api.errors import BusinessError
+from apps.api.schema import error_responses
+
+from . import errors
 from .models import (
     AdvocateProfile,
     AdvocateType,
@@ -58,10 +63,10 @@ class OTPResendThrottled(Throttled):
     seconds," which says nothing about what was throttled or what to do.
     """
 
-    default_detail = "A code was already sent to this number."
+    default_detail = errors.OTP_RESEND_TOO_SOON.message
     extra_detail_singular = "You can request another in {wait} second."
     extra_detail_plural = "You can request another in {wait} seconds."
-    default_code = "otp_resend_too_soon"
+    default_code = errors.OTP_RESEND_TOO_SOON.code
 
 
 # Response shapes, declared for the OpenAPI schema only. These endpoints build
@@ -98,17 +103,6 @@ SESSION_RESPONSE = inline_serializer(
                 "registration, or null."
             ),
         ),
-    },
-)
-
-PENDING_SESSION_RESPONSE = inline_serializer(
-    name="PendingSessionState",
-    fields={
-        "detail": serializers.CharField(),
-        "user_id": serializers.UUIDField(),
-        "registration_status": serializers.ChoiceField(choices=RegistrationStatus.choices),
-        "approval_status": serializers.ChoiceField(choices=ApprovalStatus.choices),
-        "next": serializers.CharField(allow_null=True),
     },
 )
 
@@ -218,7 +212,17 @@ class OTPRequestView(APIView):
     permission_classes = [AllowAny]
     serializer_class = OTPRequestSerializer
 
-    @extend_schema(tags=["auth"], responses={202: DETAIL_RESPONSE})
+    @extend_schema(
+        tags=["auth"],
+        responses={
+            202: DETAIL_RESPONSE,
+            **error_responses(
+                errors.OTP_RESEND_TOO_SOON.example(
+                    "A code was already sent to this number. You can request another in 25 seconds."
+                )
+            ),
+        },
+    )
     def post(self, request):
         """Issue a code, or refuse with the seconds remaining on the cooldown."""
         serializer = OTPRequestSerializer(data=request.data)
@@ -253,8 +257,7 @@ class UserCreateView(APIView):
         responses={
             201: ACCOUNT_STATE_RESPONSE,
             200: ACCOUNT_STATE_RESPONSE,
-            401: DETAIL_RESPONSE,
-            409: DETAIL_RESPONSE,
+            **error_responses(errors.OTP_INVALID, errors.ACCOUNT_ALREADY_REGISTERED),
         },
     )
     def post(self, request):
@@ -266,10 +269,7 @@ class UserCreateView(APIView):
         if not verify_and_consume_otp(
             mobile_number, serializer.validated_data["otp"], Purpose.REGISTER
         ):
-            return Response(
-                {"detail": "Invalid or expired code."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            raise BusinessError(errors.OTP_INVALID)
 
         user_model = get_user_model()
         user = user_model.objects.filter(mobile_number=mobile_number).first()
@@ -278,10 +278,7 @@ class UserCreateView(APIView):
             user = user_model.objects.create_user(mobile_number=mobile_number)
             response_status = status.HTTP_201_CREATED
         elif user.is_registration_complete:
-            return Response(
-                {"detail": "Account already registered with this mobile number."},
-                status=status.HTTP_409_CONFLICT,
-            )
+            raise BusinessError(errors.ACCOUNT_ALREADY_REGISTERED)
         else:
             # An incomplete registration is resumable, never a lockout.
             response_status = status.HTTP_200_OK
@@ -314,7 +311,12 @@ class SessionView(APIView):
 
     @extend_schema(
         tags=["auth"],
-        responses={200: SESSION_RESPONSE, 401: DETAIL_RESPONSE, 403: PENDING_SESSION_RESPONSE},
+        responses={
+            200: SESSION_RESPONSE,
+            **error_responses(
+                errors.CREDENTIAL_CHOICE, errors.INVALID_CREDENTIALS, errors.APPROVAL_PENDING
+            ),
+        },
     )
     def post(self, request):
         """Authenticate by OTP or password and issue a session cookie."""
@@ -331,26 +333,12 @@ class SessionView(APIView):
             purpose=Purpose.LOGIN,
         )
         if user is None:
-            return Response(
-                {"detail": "Invalid credentials."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            raise BusinessError(errors.INVALID_CREDENTIALS)
 
         # Checked before `login`, so a pending advocate or clerk gets no session.
-        # The body carries the same account state as a successful login, so
-        # the client reads approval_status the same way on either outcome.
         approval_status = approval_status_of(user)
         if approval_status == ApprovalStatus.PENDING:
-            return Response(
-                {
-                    "detail": "Account approval is pending",
-                    "user_id": str(user.pk),
-                    "registration_status": user.registration_status,
-                    "approval_status": approval_status,
-                    "next": None,
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            raise BusinessError(errors.APPROVAL_PENDING)
 
         # A rejected advocate or clerk does get one: the rejection SMS sends
         # them here to read the reason and resubmit. IsNotAwaitingApproval keeps
@@ -397,16 +385,24 @@ class BaseRegistrationCompletionView(APIView):
 
     @extend_schema(
         tags=["registration"],
-        responses={201: REGISTERED_ACCOUNT_RESPONSE, 409: DETAIL_RESPONSE},
+        responses={
+            201: REGISTERED_ACCOUNT_RESPONSE,
+            **error_responses(
+                errors.EMAIL_TAKEN.example(field="email"),
+                errors.TERMS_NOT_ACCEPTED.example(field="terms_accepted"),
+                errors.PASSWORD_REJECTED.example(
+                    "This password is too short. It must contain at least 8 characters.",
+                    field="password",
+                ),
+                errors.REGISTRATION_ALREADY_COMPLETE,
+            ),
+        },
     )
     def post(self, request):
         """Write the profile and the account state as one unit."""
         user = request.user
         if user.is_registration_complete:
-            return Response(
-                {"detail": "Registration is already complete."},
-                status=status.HTTP_409_CONFLICT,
-            )
+            raise BusinessError(errors.REGISTRATION_ALREADY_COMPLETE)
 
         serializer = self.serializer_class(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -499,14 +495,17 @@ class CurrentRegistrationView(APIView):
 
     @extend_schema(
         tags=["registration"],
-        responses={200: CurrentRegistrationSerializer, 403: DETAIL_RESPONSE, 409: DETAIL_RESPONSE},
+        responses={
+            200: CurrentRegistrationSerializer,
+            **error_responses(errors.NOTHING_TO_RESUBMIT),
+        },
     )
     def get(self, request):
         """Return the rejected registration with the approver's reason."""
         try:
             registration = describe_rejected_registration(request.user)
-        except RegistrationNotRejected:
-            return _nothing_to_resubmit()
+        except RegistrationNotRejected as exc:
+            raise BusinessError(errors.NOTHING_TO_RESUBMIT) from exc
         return Response(CurrentRegistrationSerializer(registration).data)
 
 
@@ -527,9 +526,14 @@ class RegistrationResubmitView(APIView):
         },
         responses={
             200: RESUBMITTED_RESPONSE,
-            400: DETAIL_RESPONSE,
-            403: DETAIL_RESPONSE,
-            409: DETAIL_RESPONSE,
+            **error_responses(
+                api_errors.REQUIRED.example(field="name"),
+                api_errors.UNIQUE.example(
+                    "This registration number is already registered.", field="registration_number"
+                ),
+                errors.EMAIL_TAKEN.example(field="email"),
+                errors.NOTHING_TO_RESUBMIT,
+            ),
         },
     )
     def post(self, request):
@@ -550,8 +554,8 @@ class RegistrationResubmitView(APIView):
             )
         except DocumentRejected as exc:
             raise serializers.ValidationError({"bar_id_document": exc.messages}) from exc
-        except RegistrationNotRejected:
-            return _nothing_to_resubmit()
+        except RegistrationNotRejected as exc:
+            raise BusinessError(errors.NOTHING_TO_RESUBMIT) from exc
 
         # Back to PENDING, and a pending account holds no session (see
         # SessionView). The client shows the awaiting-approval screen.
@@ -559,11 +563,3 @@ class RegistrationResubmitView(APIView):
         return Response(
             {"application_id": str(resubmitted.pk), "approval_status": ApprovalStatus.PENDING}
         )
-
-
-def _nothing_to_resubmit():
-    """Return the 409 for a registration that is not (or no longer) rejected."""
-    return Response(
-        {"detail": "There is no rejected registration to resubmit."},
-        status=status.HTTP_409_CONFLICT,
-    )

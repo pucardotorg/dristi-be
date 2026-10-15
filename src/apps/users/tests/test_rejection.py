@@ -1,5 +1,7 @@
 """A rejected registration: told why, corrected, and resubmitted as the same application."""
 
+from unittest.mock import patch
+
 import dramatiq
 from django.contrib.auth.models import Group
 from django.test import override_settings
@@ -9,7 +11,9 @@ from rest_framework import status
 from apps.dristi_requests.models import Request, RequestApproval
 from apps.dristi_requests.services import decide
 from apps.files.models import File
+from apps.users import errors
 from apps.users.models import AdvocateProfile, ApprovalStatus, ClerkProfile, Role, User
+from apps.users.services.registration import RegistrationNotRejected
 from apps.users.tasks import request_registration_verification
 
 from .base import MOBILE, PASSWORD, OTPTestCase
@@ -177,6 +181,22 @@ class CurrentRegistrationTests(RejectionTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_registration_gone_since_the_permission_check_is_a_409(self):
+        """A rejection undone after the permission passed has nothing to show."""
+        user = self.register()
+        self.reject(user)
+        self.sign_in()
+
+        with patch(
+            "apps.users.views.describe_rejected_registration",
+            side_effect=RegistrationNotRejected,
+        ):
+            response = self.client.get(reverse("registration-current"))
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        [error] = response.json()["errors"]
+        self.assertEqual(error["code"], errors.NOTHING_TO_RESUBMIT.code)
+
 
 class ResubmissionTests(RejectionTestCase):
     """POST /registrations/current/resubmit/."""
@@ -253,7 +273,10 @@ class ResubmissionTests(RejectionTestCase):
         response = self.resubmit(bar_id_document=None)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("bar_id_document", response.json())
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": "E00002", "field": "bar_id_document"}],
+        )
         self.assertEqual(self.request_of(self.user).status, Request.Status.REJECTED)
 
     def test_registration_number_held_by_another_advocate_is_refused(self):
@@ -265,7 +288,10 @@ class ResubmissionTests(RejectionTestCase):
         response = self.resubmit(registration_number="K/2000/2020")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("registration_number", response.json())
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": "E00010", "field": "registration_number"}],
+        )
 
     def test_email_held_by_another_account_is_refused(self):
         """The email stays unique across accounts."""
@@ -274,7 +300,9 @@ class ResubmissionTests(RejectionTestCase):
         response = self.resubmit(email="taken@example.com")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("email", response.json())
+        [error] = response.json()["errors"]
+        self.assertEqual(error["code"], errors.EMAIL_TAKEN.code)
+        self.assertEqual(error["field"], "email")
 
     def test_resubmission_can_be_approved(self):
         """Approving the corrected round accepts the advocate."""
