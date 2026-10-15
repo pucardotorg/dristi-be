@@ -227,9 +227,16 @@ REST_FRAMEWORK = {
     # caller is told their credentials are missing; drop it and they are told
     # their registration is incomplete, which is wrong and sends the client to
     # the wrong screen. Keep both, in this order.
+    #
+    # IsNotAwaitingApproval comes last, for the same reason: it is only
+    # meaningful for a signed-in, registered account. It keeps an advocate or
+    # clerk whose registration is awaiting approval, or was not approved, out
+    # of everything except the endpoints that serve that state (login, and the
+    # resubmission of a rejected registration).
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
         "apps.users.services.permissions.IsAuthenticatedAndRegistered",
+        "apps.users.services.permissions.IsNotAwaitingApproval",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,

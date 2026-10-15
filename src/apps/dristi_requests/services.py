@@ -19,8 +19,9 @@ from .exceptions import (
     InvalidRequestStateError,
     NotTheAssignedApproverError,
 )
-from .hooks import run_post_approval_hooks
+from .hooks import run_post_approval_hooks, run_rejection_hooks
 from .models import Request, RequestApproval, RequestDocument
+from .schema import validate_against_schema
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -118,16 +119,20 @@ def create_first_approval_step(request):
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
-def create_request(*, request_type, requester, data, files=None, submit=True):
+def create_request(*, request_type, requester, data, files=None, file_ids=None, submit=True):
     """Create a request (and its documents) and optionally submit it.
 
-    Documents are uploaded through ``apps.files`` *before* the request is
+    ``files`` are uploads, stored here. ``file_ids`` are files the caller has
+    already stored through ``apps.files`` (a registration document, say); they
+    are only linked, and stay the caller's to clean up if this fails.
+
+    Uploads are stored through ``apps.files`` *before* the request is
     created, outside the transaction, and deleted again if creating or
     submitting the request fails. The order matters: storage writes are not
     transactional, so the only way to undo them is to still hold the
     committed ``File`` rows when the request's transaction rolls back.
     """
-    file_ids = request_documents.store_documents(
+    stored_ids = request_documents.store_documents(
         files or [], requester=requester, request_type=request_type
     )
     try:
@@ -135,11 +140,11 @@ def create_request(*, request_type, requester, data, files=None, submit=True):
             request_type=request_type,
             requester=requester,
             data=data,
-            file_ids=file_ids,
+            file_ids=[*(file_ids or []), *stored_ids],
             submit=submit,
         )
     except Exception:
-        request_documents.discard_documents(file_ids)
+        request_documents.discard_documents(stored_ids)
         raise
 
 
@@ -238,6 +243,7 @@ def decide(approval, decision, actor, comments=""):
     if decision == RequestApproval.Status.REJECTED:
         request.status = Request.Status.REJECTED
         request.save(update_fields=["status", "updated_at"])
+        run_rejection_hooks(request, approval)
         return approval
 
     next_approval = get_or_create_next_step(request)
@@ -250,18 +256,46 @@ def decide(approval, decision, actor, comments=""):
 
 
 @transaction.atomic
-def resubmit(request, actor=None):
-    """Resubmit a rejected request, starting a new approval round."""
+def resubmit(request, actor=None, data=None, file_ids=None):
+    """Resubmit a rejected request, starting a new approval round.
+
+    The same request row goes back for approval, so its id stays stable
+    across rounds; only ``version`` moves on. A requester correcting what the
+    approver objected to passes the corrected ``data`` (validated against the
+    type's schema, as at submit time) and ``file_ids`` of documents already
+    stored through ``apps.files``. ``file_ids`` replaces the request's
+    documents: the old ``RequestDocument`` links go, the ``File`` rows stay.
+    Either left as ``None`` keeps what the request already holds.
+    """
     request = Request.objects.select_for_update().get(pk=request.pk)
     if request.status != Request.Status.REJECTED:
         raise InvalidRequestStateError(
             f"Only rejected requests can be resubmitted (current status: {request.status})."
         )
 
+    if data is not None:
+        validate_against_schema(request.request_type.schema, data)
+        request.data = data
+
+    if file_ids is not None:
+        request.documents.all().delete()
+        # bulk_create bypasses save(), so the audit fields are set explicitly.
+        RequestDocument.objects.bulk_create(
+            [
+                RequestDocument(
+                    request=request,
+                    file_id=file_id,
+                    created_by=actor,
+                    updated_by=actor,
+                )
+                for file_id in file_ids
+            ]
+        )
+
     request.version += 1
     request.status = Request.Status.PENDING
     request.current_step = 0
-    request.save(update_fields=["version", "status", "current_step", "updated_at"])
+    request.save(update_fields=["version", "status", "current_step", "data", "updated_at"])
 
     approval = create_first_approval_step(request)
     if approval is None:

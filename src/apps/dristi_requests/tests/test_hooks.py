@@ -14,6 +14,7 @@ from django.urls import reverse
 from apps.dristi_requests import services
 from apps.dristi_requests.hooks import (
     POST_APPROVAL_HOOKS,
+    REJECTION_HOOKS,
     get_hook,
     register_hook,
     run_post_approval_hooks,
@@ -24,10 +25,11 @@ from apps.dristi_requests.models import Request
 @pytest.fixture
 def temporary_registry():
     """Restore the hook registry after each test that mutates it."""
-    snapshot = dict(POST_APPROVAL_HOOKS)
+    snapshots = [(registry, dict(registry)) for registry in (POST_APPROVAL_HOOKS, REJECTION_HOOKS)]
     yield POST_APPROVAL_HOOKS
-    POST_APPROVAL_HOOKS.clear()
-    POST_APPROVAL_HOOKS.update(snapshot)
+    for registry, snapshot in snapshots:
+        registry.clear()
+        registry.update(snapshot)
 
 
 @pytest.mark.django_db
@@ -120,6 +122,70 @@ class TestHookRegistry:
         approval.refresh_from_db()
         assert request.status == Request.Status.PENDING
         assert approval.status == "pending"
+
+
+@pytest.mark.django_db
+class TestRejectionHooks:
+    """register_hook(..., on="rejected") / run_rejection_hooks."""
+
+    def test_unknown_event_is_refused(self, temporary_registry):
+        with pytest.raises(ValueError):
+            register_hook("SIMPLE", on="cancelled")
+
+    def test_hook_runs_on_rejection_with_the_reason(
+        self, temporary_registry, simple_type, requester, approver_one
+    ):
+        calls = []
+
+        @register_hook("SIMPLE", on="rejected")
+        def hook(request, approval):
+            calls.append((request.pk, approval.approver, approval.comments))
+
+        request = services.create_request(
+            request_type=simple_type, requester=requester, data={"reason": "x"}
+        )
+        services.decide(
+            request.current_approval, "rejected", actor=approver_one, comments="unreadable"
+        )
+
+        assert calls == [(request.pk, approver_one, "unreadable")]
+
+    def test_rejection_hook_does_not_run_on_approval(
+        self, temporary_registry, simple_type, requester, approver_one
+    ):
+        calls = []
+
+        @register_hook("SIMPLE", on="rejected")
+        def hook(request, approval):
+            calls.append(request.pk)
+
+        request = services.create_request(
+            request_type=simple_type, requester=requester, data={"reason": "x"}
+        )
+        services.decide(request.current_approval, "approved", actor=approver_one)
+
+        assert calls == []
+
+    def test_rejection_hook_failure_rolls_back_the_rejection(
+        self, temporary_registry, simple_type, requester, approver_one
+    ):
+        @register_hook("SIMPLE", on="rejected")
+        def hook(request, approval):
+            raise RuntimeError("boom")
+
+        request = services.create_request(
+            request_type=simple_type, requester=requester, data={"reason": "x"}
+        )
+        approval = request.current_approval
+
+        with pytest.raises(RuntimeError):
+            services.decide(approval, "rejected", actor=approver_one, comments="no")
+
+        request.refresh_from_db()
+        approval.refresh_from_db()
+        assert request.status == Request.Status.PENDING
+        assert approval.status == "pending"
+        assert approval.comments == ""
 
 
 @pytest.mark.django_db

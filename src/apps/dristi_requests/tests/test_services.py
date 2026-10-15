@@ -3,6 +3,7 @@
 import pytest
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
+from apps.dristi_requests import documents as request_documents
 from apps.dristi_requests import services
 from apps.dristi_requests.conditions import evaluate_condition
 from apps.dristi_requests.exceptions import ApprovalRoutingError
@@ -325,6 +326,66 @@ class TestResubmitAndCancel:
         request.refresh_from_db()
 
         assert request.status == Request.Status.APPROVED
+
+    def test_resubmit_replaces_data_and_documents_on_the_same_request(
+        self, simple_type, requester, approver_one, pdf_file
+    ):
+        request = services.create_request(
+            request_type=simple_type,
+            requester=requester,
+            data={"reason": "x"},
+            files=[pdf_file("old.pdf")],
+        )
+        old_file_id = request.documents.get().file_id
+        services.decide(request.current_approval, "rejected", actor=approver_one, comments="no")
+        [new_file_id] = request_documents.store_documents(
+            [pdf_file("new.pdf")], requester=requester, request_type=simple_type
+        )
+
+        services.resubmit(request, actor=requester, data={"reason": "y"}, file_ids=[new_file_id])
+
+        resubmitted = Request.objects.get(pk=request.pk)
+        assert Request.objects.count() == 1
+        assert resubmitted.version == 2
+        assert resubmitted.status == Request.Status.PENDING
+        assert resubmitted.data == {"reason": "y"}
+        document = resubmitted.documents.get()
+        assert document.file_id == new_file_id
+        assert document.created_by == requester
+        # The replaced document's file is kept; only its link to the request goes.
+        assert File.objects.filter(pk=old_file_id).exists()
+
+    def test_resubmit_without_changes_keeps_data_and_documents(
+        self, simple_type, requester, approver_one, pdf_file
+    ):
+        request = services.create_request(
+            request_type=simple_type,
+            requester=requester,
+            data={"reason": "x"},
+            files=[pdf_file()],
+        )
+        file_id = request.documents.get().file_id
+        services.decide(request.current_approval, "rejected", actor=approver_one, comments="no")
+
+        services.resubmit(request)
+        request.refresh_from_db()
+
+        assert request.data == {"reason": "x"}
+        assert list(request.documents.values_list("file_id", flat=True)) == [file_id]
+
+    def test_resubmit_with_invalid_data_changes_nothing(self, simple_type, requester, approver_one):
+        request = services.create_request(
+            request_type=simple_type, requester=requester, data={"reason": "x"}
+        )
+        services.decide(request.current_approval, "rejected", actor=approver_one, comments="no")
+
+        with pytest.raises(SchemaValidationError):
+            services.resubmit(request, data={"reason": ""})
+
+        request.refresh_from_db()
+        assert request.status == Request.Status.REJECTED
+        assert request.version == 1
+        assert request.data == {"reason": "x"}
 
     def test_cannot_resubmit_pending_request(self, simple_type, requester, approver_one):
         request = services.create_request(

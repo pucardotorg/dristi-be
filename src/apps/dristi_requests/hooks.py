@@ -42,37 +42,72 @@ Contract for hook authors:
   hooks idempotent: a request can be rejected and resubmitted.
 - A request type without a hook is valid; approval then only changes the
   request's own status.
+
+Rejection hooks
+---------------
+
+A consuming app that keeps its own record of the outcome (a profile's
+approval status, say) also needs to hear about a rejection. Register for it
+with ``on=RequestApproval.Status.REJECTED``; the hook receives the request and the
+deciding ``RequestApproval``, whose ``comments`` carry the approver's reason::
+
+    @register_hook("ADVOCATE_REGISTRATION", on=RequestApproval.Status.REJECTED)
+    def reject_registration(request, approval):
+        ...
+
+The same contract applies: it runs in the rejecting transaction, raising
+rolls the rejection back, and it must be idempotent, since a resubmitted
+request can be rejected again.
 """
 
 import logging
 
+from .models import RequestApproval
+
 logger = logging.getLogger(__name__)
 
 POST_APPROVAL_HOOKS = {}
+REJECTION_HOOKS = {}
+
+# A hook fires on an approver's decision, so the events are the decisions.
+_REGISTRIES = {
+    RequestApproval.Status.APPROVED: POST_APPROVAL_HOOKS,
+    RequestApproval.Status.REJECTED: REJECTION_HOOKS,
+}
 
 
-def register_hook(request_type_code):
-    """Register a post-approval hook for a request type code."""
+def register_hook(request_type_code, on=RequestApproval.Status.APPROVED):
+    """Register a hook for a request type code, run on approval or rejection."""
+    if on not in _REGISTRIES:
+        raise ValueError(f"Unknown hook event {on!r}; expected one of {', '.join(_REGISTRIES)}.")
+    registry = _REGISTRIES[on]
 
     def decorator(fn):
-        POST_APPROVAL_HOOKS[request_type_code] = fn
+        registry[request_type_code] = fn
         return fn
 
     return decorator
 
 
-def get_hook(request_type_code):
-    """Return the hook registered for a request type code, if any."""
-    return POST_APPROVAL_HOOKS.get(request_type_code)
+def get_hook(request_type_code, on=RequestApproval.Status.APPROVED):
+    """Return the hook registered for a request type code and event, if any."""
+    return _REGISTRIES[on].get(request_type_code)
 
 
 def run_post_approval_hooks(request):
     """Run the hook registered for the request's type, if one exists."""
-    hook = POST_APPROVAL_HOOKS.get(request.request_type.code)
+    _run_hook(RequestApproval.Status.APPROVED, request)
+
+
+def run_rejection_hooks(request, approval):
+    """Run the rejection hook registered for the request's type, if one exists."""
+    _run_hook(RequestApproval.Status.REJECTED, request, approval)
+
+
+def _run_hook(on, request, *args):
+    """Run the ``on`` hook registered for the request's type, if one exists."""
+    code = request.request_type.code
+    hook = get_hook(code, on=on)
     if hook:
-        logger.info(
-            "Running post-approval hook for request %s (%s)",
-            request.pk,
-            request.request_type.code,
-        )
-        hook(request)
+        logger.info("Running %s hook for request %s (%s)", on, request.pk, code)
+        hook(request, *args)
