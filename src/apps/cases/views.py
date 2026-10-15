@@ -1,12 +1,14 @@
 """Case filing API views (spec 0021 §2, §3, §5).
 
 Ids in POST/PUT paths may be a case id or a draft session id; the first save
-on a draft creates the case (see ``services.get_or_create_case``). Every other
-route takes a case id. Callers only ever reach their own cases.
+on a draft creates the case (see ``services.get_or_create_case``). Other case
+routes take a case id; a document or evidence item is changed by its own id
+(``/case-documents/{id}``, ``/case-evidence/{id}``). Callers only ever reach
+their own cases.
 """
 
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import generics, status
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -19,6 +21,8 @@ from .serializers import (
     CaseDocumentUploadSerializer,
     CaseEvidenceSerializer,
     CaseSerializer,
+    CaseTypeDescriptionSerializer,
+    DetailsSectionSerializer,
     DraftSessionSerializer,
     EvidenceCreateSerializer,
     EvidenceUpdateSerializer,
@@ -36,7 +40,7 @@ class CaseTypeListView(APIView):
         tags=TAGS,
         # Explicit: the default collides with the detail route's.
         operation_id="v1_case_types_list",
-        responses={200: OpenApiTypes.OBJECT},
+        responses={200: CaseTypeDescriptionSerializer(many=True)},
     )
     def get(self, request):
         """Return each case type's sections, document types and evidence schemas."""
@@ -49,7 +53,7 @@ class CaseTypeListView(APIView):
 class CaseTypeDetailView(APIView):
     """GET /case-types/{case_type} — what one case type accepts."""
 
-    @extend_schema(tags=TAGS, responses={200: OpenApiTypes.OBJECT})
+    @extend_schema(tags=TAGS, responses={200: CaseTypeDescriptionSerializer})
     def get(self, request, case_type):
         """Return the case type's sections, document types and evidence schemas."""
         if case_type not in case_types.CASE_TYPES:
@@ -57,12 +61,15 @@ class CaseTypeDetailView(APIView):
         return Response(case_types.get_description(case_type))
 
 
-@extend_schema(
-    tags=TAGS,
-    parameters=[
-        OpenApiParameter("status", str, description="Comma-separated statuses."),
-        OpenApiParameter("created_by", str, enum=["me"]),
-    ],
+# Filters are GET-only, so they are attached to ``get`` rather than the class.
+@extend_schema_view(
+    get=extend_schema(
+        tags=TAGS,
+        parameters=[
+            OpenApiParameter("status", str, description="Comma-separated statuses."),
+            OpenApiParameter("created_by", str, enum=["me"]),
+        ],
+    )
 )
 class CaseListView(generics.ListAPIView):
     """GET /cases — the caller's cases. POST /cases — start a draft session."""
@@ -73,14 +80,14 @@ class CaseListView(generics.ListAPIView):
         """Return the caller's cases, optionally filtered by status."""
         params = self.request.query_params
         if params.get("created_by") not in (None, "me"):
-            raise ValidationError({"created_by": "Only 'me' is supported."})
+            raise ValidationError({"created_by": ["Only 'me' is supported."]})
 
         queryset = Case.objects.filter(created_by=self.request.user)
         if params.get("status"):
             statuses = params["status"].split(",")
             unknown = sorted(set(statuses) - set(CaseStatus.values))
             if unknown:
-                raise ValidationError({"status": f"Unknown status: {', '.join(unknown)}."})
+                raise ValidationError({"status": [f"Unknown status: {', '.join(unknown)}."]})
             queryset = queryset.filter(status__in=statuses)
         return queryset
 
@@ -91,7 +98,7 @@ class CaseListView(generics.ListAPIView):
         """Start a draft session. No case is created until data is first saved."""
         serializer = DraftSessionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        draft = services.start_draft(request.user, serializer.validated_data["case_type"])
+        draft = services.start_draft(request.user, **serializer.validated_data)
         return Response(DraftSessionSerializer(draft).data, status=status.HTTP_201_CREATED)
 
 
@@ -108,9 +115,8 @@ class CaseByNumberView(generics.RetrieveAPIView):
     queryset = Case.objects.exclude(status__in=NOT_JOINABLE_STATUSES)
 
 
-@extend_schema(
-    tags=TAGS,
-    parameters=[OpenApiParameter("document_type", str)],
+@extend_schema_view(
+    get=extend_schema(tags=TAGS, parameters=[OpenApiParameter("document_type", str)])
 )
 class CaseDocumentListView(generics.ListAPIView):
     """GET /cases/{case_id}/documents — active documents. POST — upload one."""
@@ -140,12 +146,12 @@ class CaseDocumentListView(generics.ListAPIView):
 
 @extend_schema(tags=TAGS)
 class CaseDocumentDetailView(APIView):
-    """DELETE /cases/{case_id}/documents/{case_document_id} — soft delete."""
+    """DELETE /case-documents/{case_document_id} — soft delete."""
 
     @extend_schema(tags=TAGS, responses={204: None})
-    def delete(self, request, case_id, case_document_id):
-        """Remove a document from the case."""
-        services.remove_document(case_id, case_document_id, request.user)
+    def delete(self, request, case_document_id):
+        """Remove a document from its case."""
+        services.remove_document(case_document_id, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -153,6 +159,8 @@ class CaseDocumentDetailView(APIView):
 class CaseDetailsView(APIView):
     """GET /cases/{case_id}/details — every details section."""
 
+    # One key per section of the case's type, so the shape varies by case type;
+    # GET /case-types/{case_type} lists the sections and their schemas.
     @extend_schema(tags=TAGS, responses={200: OpenApiTypes.OBJECT})
     def get(self, request, case_id):
         """Return the case's details, one key per section."""
@@ -163,18 +171,23 @@ class CaseDetailsView(APIView):
 class CaseDetailsSectionView(APIView):
     """PUT /cases/{case_id}/details/{section} — replace one section."""
 
-    @extend_schema(tags=TAGS, request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
+    @extend_schema(
+        tags=TAGS,
+        # The body is the section object; its schema depends on the case type and
+        # section, and is served by GET /case-types/{case_type}.
+        request=OpenApiTypes.OBJECT,
+        responses={200: DetailsSectionSerializer},
+    )
     def put(self, request, case_id, section):
         """Replace a section; the first save on a draft creates the case."""
         if not isinstance(request.data, dict):
-            raise ValidationError({"data": "Expected a JSON object."})
+            raise ValidationError({"data": ["Expected a JSON object."]})
         case = services.save_details_section(case_id, request.user, section, request.data)
         return Response({"case_id": case.id, "section": section, "data": request.data})
 
 
-@extend_schema(
-    tags=TAGS,
-    parameters=[OpenApiParameter("evidence_type", str)],
+@extend_schema_view(
+    get=extend_schema(tags=TAGS, parameters=[OpenApiParameter("evidence_type", str)])
 )
 class CaseEvidenceListView(generics.ListAPIView):
     """GET /cases/{case_id}/evidence — active evidence. POST — add evidence."""
@@ -204,14 +217,14 @@ class CaseEvidenceListView(generics.ListAPIView):
 
 @extend_schema(tags=TAGS)
 class CaseEvidenceDetailView(APIView):
-    """PATCH or DELETE /cases/{case_id}/evidence/{case_evidence_id}."""
+    """PATCH or DELETE /case-evidence/{case_evidence_id}."""
 
     @extend_schema(
         tags=TAGS, request=EvidenceUpdateSerializer, responses={200: CaseEvidenceSerializer}
     )
-    def patch(self, request, case_id, case_evidence_id):
+    def patch(self, request, case_evidence_id):
         """Replace ``evidence_info``."""
-        evidence = services.get_evidence(case_id, case_evidence_id, request.user)
+        evidence = services.get_evidence(case_evidence_id, request.user)
         serializer = EvidenceUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         evidence = services.update_evidence(
@@ -220,8 +233,8 @@ class CaseEvidenceDetailView(APIView):
         return Response(CaseEvidenceSerializer(evidence).data)
 
     @extend_schema(tags=TAGS, responses={204: None})
-    def delete(self, request, case_id, case_evidence_id):
-        """Remove evidence from the case."""
-        evidence = services.get_evidence(case_id, case_evidence_id, request.user)
+    def delete(self, request, case_evidence_id):
+        """Remove evidence from its case."""
+        evidence = services.get_evidence(case_evidence_id, request.user)
         services.remove_evidence(evidence, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)

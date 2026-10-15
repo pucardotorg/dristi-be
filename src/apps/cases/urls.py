@@ -23,11 +23,6 @@ urlpatterns = [
         views.CaseDocumentListView.as_view(),
         name="case-document-list",
     ),
-    path(
-        "cases/<uuid:case_id>/documents/<uuid:case_document_id>/",
-        views.CaseDocumentDetailView.as_view(),
-        name="case-document-detail",
-    ),
     path("cases/<uuid:case_id>/details/", views.CaseDetailsView.as_view(), name="case-details"),
     path(
         "cases/<uuid:case_id>/details/<str:section>/",
@@ -39,8 +34,15 @@ urlpatterns = [
         views.CaseEvidenceListView.as_view(),
         name="case-evidence-list",
     ),
+    # Items are changed by their own id: it is unique across cases, and the
+    # owning case is found through it.
     path(
-        "cases/<uuid:case_id>/evidence/<uuid:case_evidence_id>/",
+        "case-documents/<uuid:case_document_id>/",
+        views.CaseDocumentDetailView.as_view(),
+        name="case-document-detail",
+    ),
+    path(
+        "case-evidence/<uuid:case_evidence_id>/",
         views.CaseEvidenceDetailView.as_view(),
         name="case-evidence-detail",
     ),

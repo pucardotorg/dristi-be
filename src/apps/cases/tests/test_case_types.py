@@ -15,9 +15,6 @@ def test_configured_codes_are_known(case_type):
 
     assert set(config.document_types) <= set(DocumentType.values)
     assert set(config.evidence_schemas) <= set(EvidenceType.values)
-    # Filed with their representation or mandate, never as case documents.
-    assert DocumentType.VAKALATNAMA not in config.document_types
-    assert DocumentType.POA_DOCUMENT not in config.document_types
 
 
 @pytest.mark.parametrize("case_type", list(CASE_TYPES))

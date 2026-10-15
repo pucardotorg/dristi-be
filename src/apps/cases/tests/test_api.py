@@ -1,11 +1,14 @@
 """Tests for the case filing endpoints (spec 0021 §2, §3, §5)."""
 
+import dataclasses
 import uuid
 
 import pytest
 from django.urls import reverse
 
 from apps.cases.models import Case, CaseDocument, CaseStatus, CaseType
+from apps.cases.services import case_types
+from apps.cases.services.case_types import DocumentType
 from apps.files.models import File
 from apps.organizations.models import OrganizationType
 from apps.organizations.tests.factories import make_organization
@@ -69,6 +72,42 @@ class TestDraftsAndListing:
 
         assert response.status_code == 400
         assert "case_type" in response.json()
+
+    def test_court_given_on_the_draft_is_set_on_the_case(self, client):
+        court = make_organization(organization_type=OrganizationType.MAGISTRATE_COURT)
+        response = client.post(
+            reverse("case-list"),
+            {"case_type": "CHEQUE_BOUNCE", "court_id": str(court.pk)},
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.json()["court_id"] == str(court.pk)
+
+        draft = response.json()["draft_session_id"]
+        add_cheque(client, draft)
+
+        assert Case.objects.get(pk=draft).court == court
+
+    def test_court_is_optional(self, client):
+        response = client.post(reverse("case-list"), {"case_type": "CHEQUE_BOUNCE"}, format="json")
+        assert response.status_code == 201
+        assert response.json()["court_id"] is None
+
+        draft = response.json()["draft_session_id"]
+        add_cheque(client, draft)
+
+        assert Case.objects.get(pk=draft).court is None
+
+    @pytest.mark.parametrize("court_id", [str(uuid.uuid4()), "not-a-uuid"])
+    def test_unknown_court_is_400(self, client, court_id):
+        response = client.post(
+            reverse("case-list"),
+            {"case_type": "CHEQUE_BOUNCE", "court_id": court_id},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert "court_id" in response.json()
 
     def test_list_shows_only_the_callers_cases(self, client, user, other_user, draft):
         add_cheque(client, draft)
@@ -150,24 +189,40 @@ class TestDocuments:
         assert [doc["document_type"] for doc in memos.json()["results"]] == ["RETURN_MEMO"]
 
     @pytest.mark.parametrize(
-        "document_type", ["PROOF_OF_DELIVERY_OF_DEMAND_NOTICE", "REPLY_TO_DEMAND_NOTICE"]
+        "document_type",
+        [
+            "PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
+            "REPLY_TO_DEMAND_NOTICE",
+            "VAKALATNAMA",
+            "POA_DOCUMENT",
+        ],
     )
-    def test_demand_notice_follow_up_documents_are_accepted(
-        self, client, draft, pdf, document_type
-    ):
+    def test_cheque_bounce_document_types_are_accepted(self, client, draft, pdf, document_type):
         response = upload(client, draft, pdf, document_type=document_type)
 
         assert response.status_code == 201
         assert response.json()["document_type"] == document_type
 
-    @pytest.mark.parametrize("document_type", ["UNKNOWN_TYPE", "VAKALATNAMA"])
-    def test_invalid_document_type_is_400_and_creates_nothing(
-        self, client, draft, pdf, document_type
-    ):
-        response = upload(client, draft, pdf, document_type=document_type)
+    def test_unknown_document_type_is_400_and_creates_nothing(self, client, draft, pdf):
+        response = upload(client, draft, pdf, document_type="UNKNOWN_TYPE")
 
         assert response.status_code == 400
         assert "document_type" in response.json()
+        assert Case.objects.count() == File.objects.count() == 0
+
+    def test_type_the_case_type_does_not_accept_is_400_and_creates_nothing(
+        self, client, draft, pdf, monkeypatch
+    ):
+        # Cheque bounce accepts every known type today, so narrow its list to
+        # exercise the per-case-type check.
+        config = case_types.CASE_TYPES[CaseType.CHEQUE_BOUNCE]
+        narrowed = dataclasses.replace(config, document_types=(DocumentType.BOUNCED_CHEQUE,))
+        monkeypatch.setitem(case_types.CASE_TYPES, CaseType.CHEQUE_BOUNCE, narrowed)
+
+        response = upload(client, draft, pdf, document_type="AFFIDAVIT")
+
+        assert response.status_code == 400
+        assert "not accepted for CHEQUE_BOUNCE" in response.json()["document_type"][0]
         assert Case.objects.count() == File.objects.count() == 0
 
     def test_unsupported_file_type_is_400(self, client, draft, pdf):
@@ -187,7 +242,7 @@ class TestDocuments:
     def test_delete_is_soft(self, client, draft, pdf):
         document_id = upload(client, draft, pdf).json()["case_document_id"]
 
-        response = client.delete(reverse("case-document-detail", args=[draft, document_id]))
+        response = client.delete(reverse("case-document-detail", args=[document_id]))
 
         assert response.status_code == 204
         assert client.get(reverse("case-document-list", args=[draft])).json()["count"] == 0
@@ -202,7 +257,7 @@ class TestDocuments:
 
         assert outsider.get(reverse("case-document-list", args=[draft])).status_code == 404
         assert upload(outsider, draft, pdf).status_code == 404
-        detail = reverse("case-document-detail", args=[draft, document_id])
+        detail = reverse("case-document-detail", args=[document_id])
         assert outsider.delete(detail).status_code == 404
 
 
@@ -298,7 +353,7 @@ class TestEvidence:
         assert [first.json()["ordinal"], second.json()["ordinal"]] == [1, 2]
 
         evidence_id = first.json()["case_evidence_id"]
-        detail = reverse("case-evidence-detail", args=[draft, evidence_id])
+        detail = reverse("case-evidence-detail", args=[evidence_id])
         changed = {**CHEQUE_INFO, "amount": 75000}
         patched = client.patch(detail, {"evidence_info": changed}, format="json")
         assert patched.status_code == 200
@@ -385,7 +440,7 @@ class TestEvidence:
         evidence_id = add_cheque(client, draft).json()["case_evidence_id"]
 
         response = client.patch(
-            reverse("case-evidence-detail", args=[draft, evidence_id]),
+            reverse("case-evidence-detail", args=[evidence_id]),
             {"evidence_info": {"cheque_number": "1"}},
             format="json",
         )
@@ -412,7 +467,7 @@ class TestEvidence:
     def test_other_users_cannot_reach_evidence(self, client, client_for, other_user, draft):
         evidence_id = add_cheque(client, draft).json()["case_evidence_id"]
         outsider = client_for(other_user)
-        detail = reverse("case-evidence-detail", args=[draft, evidence_id])
+        detail = reverse("case-evidence-detail", args=[evidence_id])
 
         assert outsider.get(reverse("case-evidence-list", args=[draft])).status_code == 404
         assert (

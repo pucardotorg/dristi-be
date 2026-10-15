@@ -39,11 +39,15 @@ CONTENT_TYPE_FILE_TYPES = {
 # Draft sessions and case resolution
 
 
-def start_draft(user, case_type):
-    """Cache a new draft session for ``user`` and return it. Nothing is written to the DB."""
+def start_draft(user, case_type, court_id=None):
+    """Cache a new draft session for ``user`` and return it. Nothing is written to the DB.
+
+    ``court_id``, when given, is applied to the case when the first save creates it.
+    """
     draft = {
         "draft_session_id": str(uuid.uuid4()),
         "case_type": case_type,
+        "court_id": str(court_id) if court_id else None,
         "created_by": str(user.pk),
         "created_at": timezone.now().isoformat(),
     }
@@ -97,7 +101,12 @@ def get_or_create_case(case_or_draft_id, user):
 
     case, created = Case.objects.get_or_create(
         pk=uuid.UUID(str(case_or_draft_id)),
-        defaults={"case_type": draft["case_type"], "created_by": user, "updated_by": user},
+        defaults={
+            "case_type": draft["case_type"],
+            "court_id": draft.get("court_id"),
+            "created_by": user,
+            "updated_by": user,
+        },
     )
     if created:
         detail_model = get_config(case.case_type).get_detail_model()
@@ -127,8 +136,10 @@ def _require_allowed(value, allowed, field, case_type):
     if value not in allowed:
         raise serializers.ValidationError(
             {
-                field: f"'{value}' is not accepted for {case_type} cases. "
-                f"Must be one of: {', '.join(allowed)}."
+                field: [
+                    f"'{value}' is not accepted for {case_type} cases. "
+                    f"Must be one of: {', '.join(allowed)}."
+                ]
             }
         )
 
@@ -161,9 +172,9 @@ def add_document(case_or_draft_id, user, upload, document_type):
         raise
 
 
-def remove_document(case_id, case_document_id, user):
+def remove_document(case_document_id, user):
     """Soft-delete a case document. The stored file is kept."""
-    document = _get_active_case_item(CaseDocument, case_id, case_document_id, user)
+    document = _get_active_case_item(CaseDocument, case_document_id, user)
     document.is_active = False
     document.updated_by = user
     document.save(update_fields=["is_active", "updated_by", "updated_at"])
@@ -220,7 +231,7 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
             and not CaseDocument.objects.active().filter(pk=case_document_id, case=case).exists()
         ):
             raise serializers.ValidationError(
-                {"case_document_id": "No active document with this id on this case."}
+                {"case_document_id": ["No active document with this id on this case."]}
             )
 
         last = (
@@ -239,9 +250,9 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
         )
 
 
-def get_evidence(case_id, case_evidence_id, user):
-    """Return active evidence on ``user``'s case, or raise ``NotFound``."""
-    return _get_active_case_item(CaseEvidence, case_id, case_evidence_id, user)
+def get_evidence(case_evidence_id, user):
+    """Return active evidence on one of ``user``'s cases, or raise ``NotFound``."""
+    return _get_active_case_item(CaseEvidence, case_evidence_id, user)
 
 
 def update_evidence(evidence, user, evidence_info):
@@ -260,9 +271,14 @@ def remove_evidence(evidence, user):
     evidence.save(update_fields=["is_active", "updated_by", "updated_at"])
 
 
-def _get_active_case_item(model, case_id, object_id, user):
-    found = model.objects.active().filter(pk=object_id, case_id=case_id, case__created_by=user)
-    instance = found.first()
+def _get_active_case_item(model, object_id, user):
+    """Return an active document or evidence row on one of ``user``'s cases.
+
+    Ownership is checked through the item's case, so other users' items are
+    not found.
+    """
+    found = model.objects.active().select_related("case")
+    instance = found.filter(pk=object_id, case__created_by=user).first()
     if instance is None:
         raise NotFound(f"{model._meta.verbose_name.capitalize()} not found.")
     return instance

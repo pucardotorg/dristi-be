@@ -57,8 +57,9 @@ class CaseTypeConfig:
     """What one case type accepts.
 
     ``document_types`` are the types uploadable through the case documents
-    endpoint. VAKALATNAMA and POA_DOCUMENT are filed with their representation
-    or mandate instead (spec 0021 §3.4), so no case type lists them here.
+    endpoint. VAKALATNAMA and POA_DOCUMENT are accepted there until the
+    advocate and POA holder endpoints exist (spec 0021 §3.4); they are then
+    linked to the case only, not to the advocate or POA holder they belong to.
     """
 
     detail_model: str
@@ -162,6 +163,8 @@ CASE_TYPES = {
             DocumentType.REPLY_TO_DEMAND_NOTICE,
             DocumentType.PROOF_OF_DEBT,
             DocumentType.AFFIDAVIT,
+            DocumentType.VAKALATNAMA,
+            DocumentType.POA_DOCUMENT,
             DocumentType.OTHER_SUPPORTING_DOCUMENT,
         ),
         # One RETURN_MEMO and one LEGAL_DEMAND_NOTICE per cheque, matched to it
