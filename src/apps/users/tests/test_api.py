@@ -484,7 +484,8 @@ class RegistrationCompletionTests(OTPTestCase):
             profile={"bar_registration_id": "KER/1234/2019"}, document=None
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("bar_id_document", response.data)
+        fields = [error["field"] for error in response.data["errors"]]
+        self.assertIn("bar_id_document", fields)
         self.assertFalse(AdvocateProfile.objects.exists())
 
         self.user.refresh_from_db()
@@ -496,7 +497,8 @@ class RegistrationCompletionTests(OTPTestCase):
             profile={"bar_registration_id": "KER/1234/2019"}, document=document
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("bar_id_document", response.data)
+        fields = [error["field"] for error in response.data["errors"]]
+        self.assertIn("bar_id_document", fields)
         self.assertFalse(File.objects.exists())
         self.assertFalse(AdvocateProfile.objects.exists())
 
@@ -667,13 +669,8 @@ class SessionTests(OTPTestCase):
                     format="json",
                 )
                 self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-                body = response.json()
-                self.assertEqual(body["detail"], "Account approval is pending")
-                # The same account state a successful login carries.
-                self.assertEqual(body["user_id"], str(self.user.pk))
-                self.assertEqual(body["registration_status"], RegistrationStatus.COMPLETE)
-                self.assertEqual(body["approval_status"], ApprovalStatus.PENDING)
-                self.assertIsNone(body["next"])
+                [error] = response.json()["errors"]
+                self.assertEqual(error["code"], "E01013")
                 self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_accepted_professional_logs_in(self):

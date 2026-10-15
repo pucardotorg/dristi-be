@@ -7,10 +7,10 @@ opt out explicitly.
 
 from rest_framework.permissions import BasePermission
 
+from apps.users import errors
+
 from ..models import ApprovalStatus
 from ..verification import approval_status_of
-
-from apps.users import errors
 
 
 class IsAuthenticatedAndRegistered(BasePermission):

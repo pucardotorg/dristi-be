@@ -74,7 +74,6 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
         # Explicit id: the default collides with RequestApprovalViewSet.list
         # (``/dristi-requests/approvals/``).
         operation_id="v1_dristi_requests_request_approvals_list",
-        responses=RequestApprovalSerializer(many=True),
     ),
     resubmit=extend_schema(
         request=None,
@@ -111,6 +110,8 @@ class RequestViewSet(
     permission_classes = [IsAuthenticated]
     lookup_url_kwarg = "request_id"
     lookup_value_regex = UUID_REGEX
+    # The approval trail is short and returned whole.
+    unpaginated_actions = {"approvals"}
 
     def get_queryset(self):
         """Return the caller's own requests (staff see every request)."""

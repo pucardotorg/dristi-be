@@ -375,7 +375,7 @@ class TestApproverAPI:
         request.refresh_from_db()
 
         assert response.status_code == 400
-        assert "comments" in response.json()
+        assert [error["field"] for error in response.json()["errors"]] == ["comments"]
         assert request.status == Request.Status.PENDING
 
     def test_other_user_cannot_decide(

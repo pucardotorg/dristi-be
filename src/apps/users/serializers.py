@@ -5,8 +5,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .documents import validate_registration_document
 from . import errors
+from .documents import validate_registration_document
 from .models import (
     AdvocateProfile,
     AdvocateType,
@@ -59,7 +59,7 @@ def _unclaimed_email(value, current):
         return None
     taken = get_user_model().objects.filter(email__iexact=value).exclude(pk=current.pk).exists()
     if taken:
-        raise serializers.ValidationError("An account with this email already exists.")
+        raise errors.EMAIL_TAKEN.validation_error()
     return value
 
 
@@ -106,13 +106,7 @@ class RegistrationCompletionSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         """Reject an email already claimed by another account."""
-        if not value:
-            return None
-        current = self.context["request"].user
-        taken = get_user_model().objects.filter(email__iexact=value).exclude(pk=current.pk).exists()
-        if taken:
-            raise errors.EMAIL_TAKEN.validation_error()
-        return value
+        return _unclaimed_email(value, self.context["request"].user)
 
     def validate_terms_accepted(self, value):
         """A missing or false acceptance rejects the registration."""

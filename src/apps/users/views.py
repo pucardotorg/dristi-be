@@ -17,6 +17,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.api import errors as api_errors
 from apps.api.errors import BusinessError
 from apps.api.schema import error_responses
 
@@ -102,17 +103,6 @@ SESSION_RESPONSE = inline_serializer(
                 "registration, or null."
             ),
         ),
-    },
-)
-
-PENDING_SESSION_RESPONSE = inline_serializer(
-    name="PendingSessionState",
-    fields={
-        "detail": serializers.CharField(),
-        "user_id": serializers.UUIDField(),
-        "registration_status": serializers.ChoiceField(choices=RegistrationStatus.choices),
-        "approval_status": serializers.ChoiceField(choices=ApprovalStatus.choices),
-        "next": serializers.CharField(allow_null=True),
     },
 )
 
@@ -322,8 +312,10 @@ class SessionView(APIView):
     @extend_schema(
         tags=["auth"],
         responses={
-            200: ACCOUNT_STATE_RESPONSE,
-            **error_responses(errors.CREDENTIAL_CHOICE, errors.INVALID_CREDENTIALS),
+            200: SESSION_RESPONSE,
+            **error_responses(
+                errors.CREDENTIAL_CHOICE, errors.INVALID_CREDENTIALS, errors.APPROVAL_PENDING
+            ),
         },
     )
     def post(self, request):
@@ -344,20 +336,9 @@ class SessionView(APIView):
             raise BusinessError(errors.INVALID_CREDENTIALS)
 
         # Checked before `login`, so a pending advocate or clerk gets no session.
-        # The body carries the same account state as a successful login, so
-        # the client reads approval_status the same way on either outcome.
         approval_status = approval_status_of(user)
         if approval_status == ApprovalStatus.PENDING:
-            return Response(
-                {
-                    "detail": "Account approval is pending",
-                    "user_id": str(user.pk),
-                    "registration_status": user.registration_status,
-                    "approval_status": approval_status,
-                    "next": None,
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            raise BusinessError(errors.APPROVAL_PENDING)
 
         # A rejected advocate or clerk does get one: the rejection SMS sends
         # them here to read the reason and resubmit. IsNotAwaitingApproval keeps
@@ -514,14 +495,17 @@ class CurrentRegistrationView(APIView):
 
     @extend_schema(
         tags=["registration"],
-        responses={200: CurrentRegistrationSerializer, 403: DETAIL_RESPONSE, 409: DETAIL_RESPONSE},
+        responses={
+            200: CurrentRegistrationSerializer,
+            **error_responses(errors.NOTHING_TO_RESUBMIT),
+        },
     )
     def get(self, request):
         """Return the rejected registration with the approver's reason."""
         try:
             registration = describe_rejected_registration(request.user)
-        except RegistrationNotRejected:
-            return _nothing_to_resubmit()
+        except RegistrationNotRejected as exc:
+            raise BusinessError(errors.NOTHING_TO_RESUBMIT) from exc
         return Response(CurrentRegistrationSerializer(registration).data)
 
 
@@ -542,9 +526,11 @@ class RegistrationResubmitView(APIView):
         },
         responses={
             200: RESUBMITTED_RESPONSE,
-            400: DETAIL_RESPONSE,
-            403: DETAIL_RESPONSE,
-            409: DETAIL_RESPONSE,
+            **error_responses(
+                api_errors.REQUIRED.example(field="name"),
+                errors.EMAIL_TAKEN.example(field="email"),
+                errors.NOTHING_TO_RESUBMIT,
+            ),
         },
     )
     def post(self, request):
@@ -565,8 +551,8 @@ class RegistrationResubmitView(APIView):
             )
         except DocumentRejected as exc:
             raise serializers.ValidationError({"bar_id_document": exc.messages}) from exc
-        except RegistrationNotRejected:
-            return _nothing_to_resubmit()
+        except RegistrationNotRejected as exc:
+            raise BusinessError(errors.NOTHING_TO_RESUBMIT) from exc
 
         # Back to PENDING, and a pending account holds no session (see
         # SessionView). The client shows the awaiting-approval screen.
@@ -574,11 +560,3 @@ class RegistrationResubmitView(APIView):
         return Response(
             {"application_id": str(resubmitted.pk), "approval_status": ApprovalStatus.PENDING}
         )
-
-
-def _nothing_to_resubmit():
-    """Return the 409 for a registration that is not (or no longer) rejected."""
-    return Response(
-        {"detail": "There is no rejected registration to resubmit."},
-        status=status.HTTP_409_CONFLICT,
-    )
