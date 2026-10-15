@@ -1,6 +1,7 @@
 """Address models (spec 0020 §7)."""
 
 import hashlib
+import unicodedata
 import uuid
 
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
@@ -19,29 +20,39 @@ class AddressImmutableError(Exception):
     """Raised when an existing address is modified or deleted in place."""
 
 
+# Invisible characters that carry no meaning in an address, often pasted in by
+# accident. The zero-width joiner and non-joiner (U+200D, U+200C) are kept:
+# Malayalam and Devanagari use them to choose how letters join.
+_INVISIBLE = dict.fromkeys(map(ord, "​⁠﻿"))
+
+
 def normalize_field(field, value):
     """Return ``value`` in the canonical form stored for ``field``.
 
+    The text is put in Unicode NFC form, so the same visible Malayalam or Hindi
+    text typed with different input methods is stored, and hashed, the same way,
+    and invisible characters such as a zero-width space are removed.
     Surrounding whitespace is dropped and inner runs collapse to one space, so
     "12  MG Road " and "12 MG Road" are the same address. A pincode keeps no
     spaces at all, so "560 001" becomes "560001". Case is kept as entered.
     """
     if value is None:
         return value
-    parts = str(value).split()
+    text = unicodedata.normalize("NFC", str(value)).translate(_INVISIBLE)
+    parts = text.split()
     return "".join(parts) if field == "pincode" else " ".join(parts)
 
 
 def address_hash(values):
     """Return the SHA-256 hex digest of the canonical form of ``values``.
 
-    Case-insensitive, so "MG Road" and "mg road" hash alike. Fields are joined
-    with a unit separator, which cannot appear in a normalized value, so
-    ("a b", "c") and ("a", "b c") never collide.
+    Only whitespace is normalized; case is significant, so "MG Road" and
+    "mg road" are different addresses. Otherwise whoever typed an address
+    first would fix its casing for everyone, and a case-only correction could
+    never be saved. Fields are joined with a unit separator, which cannot
+    appear in a normalized value, so ("a b", "c") and ("a", "b c") never collide.
     """
-    canonical = "\x1f".join(
-        normalize_field(field, values[field]).casefold() for field in CONTENT_FIELDS
-    )
+    canonical = "\x1f".join(normalize_field(field, values[field]) for field in CONTENT_FIELDS)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -69,6 +80,18 @@ class AddressManager(models.Manager):
             hash=address_hash(values),
             defaults={**values, "created_by": created_by},
         )
+
+    def bulk_create(self, objs, *args, **kwargs):
+        """Normalize and hash each address, which ``bulk_create`` would skip.
+
+        Django's ``bulk_create`` does not call ``save()``, so without this the
+        rows would be stored with an empty ``hash`` and never deduplicate.
+        """
+        objs = list(objs)
+        for address in objs:
+            address._normalize()
+            address.hash = address_hash(address._content())
+        return super().bulk_create(objs, *args, **kwargs)
 
 
 class Address(models.Model):
@@ -116,11 +139,19 @@ class Address(models.Model):
     class Meta:
         """Meta options."""
 
+        # Newest first, as for BaseModel subclasses.
+        ordering = ("-created_at",)
         constraints = [
             # A 6-digit pincode not starting with 0.
             models.CheckConstraint(
                 check=Q(pincode__regex=PINCODE_REGEX),
                 name="address_pincode_valid",
+            ),
+            # A row written without its hash (raw SQL, a bypassed save) is
+            # refused rather than stored undeduplicatable.
+            models.CheckConstraint(
+                check=Q(hash__regex=r"^[0-9a-f]{64}$"),
+                name="address_hash_is_sha256",
             ),
         ]
 
@@ -146,17 +177,41 @@ class Address(models.Model):
         """Refuse to delete an address."""
         raise AddressImmutableError(f"Address {self.pk} is immutable and cannot be deleted.")
 
+    def clean_fields(self, exclude=None):
+        """Validate the values as they will be stored.
+
+        Normalizing first means a whitespace-only value is checked as the empty
+        string it would be saved as, so "required" rejects it.
+        """
+        self._normalize()
+        super().clean_fields(exclude=exclude)
+
+    def validate_constraints(self, exclude=None):
+        """Leave the hash check to the database.
+
+        ``hash`` is derived, and ``save()`` always computes it, so an unsaved
+        address has none yet; checking it here would reject every new address.
+        """
+        super().validate_constraints(exclude={*(exclude or ()), "hash"})
+
     def validate_unique(self, exclude=None):
         """Also reject a new address identical to an existing one.
 
         ``hash`` is not a form field, so Django's own unique check skips it;
         without this the admin would hit the unique index and return a 500.
+
+        The hash needs every content field, so the check is skipped while any
+        is missing or excluded: ``full_clean`` excludes fields that already
+        failed, and reports those errors instead.
         """
         super().validate_unique(exclude=exclude)
-        if self._state.adding:
-            self._normalize()
-            if Address.objects.filter(hash=address_hash(self._content())).exists():
-                raise ValidationError({NON_FIELD_ERRORS: ["This address already exists."]})
+        if not self._state.adding or set(CONTENT_FIELDS) & set(exclude or ()):
+            return
+        self._normalize()
+        if any(value in (None, "") for value in self._content().values()):
+            return
+        if Address.objects.filter(hash=address_hash(self._content())).exists():
+            raise ValidationError({NON_FIELD_ERRORS: ["This address already exists."]})
 
     def revise(self, created_by=None, **changes):
         """Return the address holding this one's values plus ``changes``.

@@ -1,13 +1,23 @@
-"""Parties serializers."""
+"""Parties serializers.
+
+``created_by`` and ``updated_by`` are deliberately not exposed. A person or
+institution is often entered by the other side (the complainant's advocate
+records the accused), so showing who entered a record to everyone who reads it
+would reveal who on the other side typed it. They stay in the database, the
+history tables and the admin for audit.
+"""
+
+from rest_framework import serializers
 
 from apps.address.serializers import AddressSerializer
-from apps.api.serializers import AuditedModelSerializer
 
 from .models import Institution, Person
 
 
-class InstitutionSerializer(AuditedModelSerializer):
-    """Read-only representation of an institution."""
+class InstitutionSerializer(serializers.ModelSerializer):
+    """Read-only representation of an institution, with its address nested."""
+
+    address = AddressSerializer(read_only=True)
 
     class Meta:
         """Meta options."""
@@ -19,15 +29,14 @@ class InstitutionSerializer(AuditedModelSerializer):
             "entity_name",
             "contact_number",
             "email_address",
+            "address",
             "created_at",
             "updated_at",
-            "created_by",
-            "updated_by",
         ]
         read_only_fields = fields
 
 
-class PersonSerializer(AuditedModelSerializer):
+class PersonSerializer(serializers.ModelSerializer):
     """Read-only representation of a person, with addresses and institution nested."""
 
     institution = InstitutionSerializer(read_only=True)
@@ -46,6 +55,7 @@ class PersonSerializer(AuditedModelSerializer):
             "relation",
             "relative_name",
             "date_of_birth",
+            "age",
             "gender",
             "institution",
             "designation",
@@ -56,7 +66,5 @@ class PersonSerializer(AuditedModelSerializer):
             "user",
             "created_at",
             "updated_at",
-            "created_by",
-            "updated_by",
         ]
         read_only_fields = fields

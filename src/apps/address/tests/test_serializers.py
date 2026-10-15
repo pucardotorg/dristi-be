@@ -26,7 +26,6 @@ class TestAddressSerializer:
             "district",
             "police_station",
             "created_at",
-            "created_by",
         }
 
     def test_hash_is_not_exposed(self):
@@ -34,19 +33,15 @@ class TestAddressSerializer:
 
         assert "hash" not in AddressSerializer(address).data
 
-    def test_creator_is_id_and_name_only(self):
+    def test_creator_is_not_exposed(self):
+        # A shared row's creator is whoever entered it first, not its owner.
         user = User.objects.create_user(mobile_number="+919876543210", name="Priya")
         address, _ = Address.objects.get_or_create_address(created_by=user, **ADDRESS_DEFAULTS)
 
-        assert AddressSerializer(address).data["created_by"] == {
-            "id": str(user.id),
-            "name": "Priya",
-        }
+        data = AddressSerializer(address).data
 
-    def test_creator_is_null_when_unknown(self):
-        address, _ = Address.objects.get_or_create_address(**ADDRESS_DEFAULTS)
-
-        assert AddressSerializer(address).data["created_by"] is None
+        assert "created_by" not in data
+        assert "Priya" not in str(data)
 
     def test_input_is_ignored(self):
         serializer = AddressSerializer(data={**ADDRESS_DEFAULTS})
