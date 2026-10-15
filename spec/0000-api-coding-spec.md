@@ -238,6 +238,7 @@ example `E01001`.
 | `00` | common (`apps.api.errors`) | `E00001`–`E00099` field validation; `E00100`–`E00199` request-level (auth, permission, not found, throttling …) |
 | `01` | `apps.users` | registration and login |
 | `02` | `apps.dristi_requests` | request and approval workflow |
+| `03` | `apps.esign` | electronic signing (one code per spec 0015 failure code) |
 
 Rules:
 
