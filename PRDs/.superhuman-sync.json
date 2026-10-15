@@ -220,10 +220,10 @@
     "process-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
       "title": "Process Handover",
-      "contentHash": "300d2309b050",
-      "pageUpdatedAt": 1791923550.111,
+      "contentHash": "030b411b50fb",
+      "pageUpdatedAt": 1792038648.217,
       "calloutElementId": "eca-bHRMWLWRsl",
-      "note": "Patched in place 2026-10-14 (status, callout, §2 recipient paragraph, SGN-01/DSP-04/PIA-01/Q-2 table cells; PIA-03 row deleted). Live view 'Pending tasks (Citizen-Side) — Process' = .../section-7id_OHaaSJ/tables/table-SK008Zu8WP/views/v-qfT2ThtVYQ. `sections` not recorded."
+      "note": "Patched in place 2026-10-15 (By hand channel: status, callout, A2/A4/A5/§2/§6.3 prose, new A5 bullet; PRC-05, AUT-08, DSP-02, DSP-03, Delivered, Q-2 cells; By hand row in §6.2 grid; By hand column in §6.3 grid; DSP-10 row). Cells with a single inline-code span carry a trailing zero-width code span so Superhuman renders the code. Live view 'Pending tasks (Citizen-Side) — Process' = .../section-7id_OHaaSJ/tables/table-SK008Zu8WP/views/v-qfT2ThtVYQ. `sections` not recorded."
     },
     "bulk-filing-problem-statement.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kNAxc6VmZ1",
