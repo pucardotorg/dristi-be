@@ -785,9 +785,12 @@ Rule rows are read-heavy and change rarely.
   write-heavy relative to its reads and is only used for audit.
 * Compiled artefacts (a `rule_engine.Rule` with its `Context`, a loaded GoRules
   graph) and compiled JSON
-  Schema validators MAY be memoized keyed on `(rule.id, rule.updated_at)` — the
-  `updated_at` component is mandatory, because rules are editable (#3) and a cache
-  keyed on `id` alone would serve a stale expression after an admin edit.
+  Schema validators MAY be memoized keyed on `rule.id` plus a digest of the
+  rule's content (`engine`, `rule_expression` and both schemas, as canonical
+  JSON). The content component is mandatory, because rules are editable (#3): a
+  cache keyed on `id` alone would serve a stale expression after an edit, and one
+  keyed on `updated_at` would do so after a write that bypasses `save()`
+  (`QuerySet.update()`, raw SQL).
 * Evaluation results MUST NOT be cached in this iteration — the input space is
   unbounded and correctness beats the saving.
 
@@ -799,6 +802,7 @@ documented in `.env.example` and `README.md`:
 ```text
 RULES_EVALUATION_TIMEOUT_SECONDS      # per-evaluation guard, default 2
 RULES_MAX_EXPRESSION_BYTES            # guard on rule_expression size
+RULES_MAX_CONCURRENT_EVALUATIONS      # per-process, per-engine evaluation slots, default 16
 RULES_ADMIN_DRY_RUN_REQUIRED          # enforce #9.1 sample evaluation on save
 ```
 
@@ -904,7 +908,8 @@ Required coverage:
 * A fake in-memory engine registered in tests, used only for service-level
   behavior (resolution, schema validation, error mapping), so those tests stay
   fast and library-independent.
-* Cache key includes `updated_at`: editing an expression changes the next
+* Cache key includes the rule's content: editing an expression or a schema,
+  through `save()` or `QuerySet.update()`, changes the next
   evaluation (#7).
 
 Quality checks before committing:

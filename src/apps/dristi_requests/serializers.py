@@ -232,3 +232,9 @@ class DecisionSerializer(serializers.Serializer):
         ]
     )
     comments = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        """Require a reason with a rejection: it is what the requester is told."""
+        if attrs["decision"] == RequestApproval.Status.REJECTED and not attrs["comments"].strip():
+            raise serializers.ValidationError({"comments": "A reason is required to reject."})
+        return attrs

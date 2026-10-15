@@ -9,6 +9,7 @@ Environment-specific settings live in:
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -224,12 +225,19 @@ REST_FRAMEWORK = {
     # their registration is incomplete, which is wrong and sends the client to
     # the wrong screen. Keep both, in this order.
     #
-    # HasAcceptedCurrentTerms comes last for the same reason: an unfinished
-    # account accepts the terms inside the wizard, so it must be told to finish
-    # registering, not sent to the standalone terms screen.
+    # IsNotAwaitingApproval comes after it, for the same reason: it is only
+    # meaningful for a signed-in, registered account. It keeps an advocate or
+    # clerk whose registration is awaiting approval, or was not approved, out
+    # of everything except the endpoints that serve that state (login, and the
+    # resubmission of a rejected registration).
+    #
+    # HasAcceptedCurrentTerms comes last: an unfinished account accepts the
+    # terms inside the wizard, so it must be told to finish registering, and a
+    # rejected one must resubmit before re-accepting would get it anywhere.
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
         "apps.users.services.permissions.IsAuthenticatedAndRegistered",
+        "apps.users.services.permissions.IsNotAwaitingApproval",
         "apps.users.services.permissions.HasAcceptedCurrentTerms",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
@@ -305,12 +313,39 @@ CACHALOT_TIMEOUT = env.int("CACHALOT_TIMEOUT", default=120)
 CACHALOT_ONLY_CACHABLE_APPS = ("locations",)
 # Cachalot unions these with the app allow-list. List the table rather than the
 # core app so AdditionalAttribute and the history tables stay uncached.
-CACHALOT_ONLY_CACHABLE_TABLES = ("core_configuration",)
+CACHALOT_ONLY_CACHABLE_TABLES = (
+    "core_configuration",
+    "core_businessrule",
+)
 CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
     "authtoken_token",
     "django_session",
 )
+
+
+# ---------------------------------------------------------------------------
+# Business rules (spec 0019)
+# ---------------------------------------------------------------------------
+# Wall-clock guard on one rule evaluation, in seconds.
+RULES_EVALUATION_TIMEOUT_SECONDS = env.float("RULES_EVALUATION_TIMEOUT_SECONDS", default=2.0)
+# Upper bound on the UTF-8 size of a stored rule_expression (JDM documents included).
+RULES_MAX_EXPRESSION_BYTES = env.int("RULES_MAX_EXPRESSION_BYTES", default=262144)
+# Per-process, per-engine cap on rule evaluations in flight, including timed-out
+# GoRules calls still finishing in the background; beyond it evaluations fail fast.
+RULES_MAX_CONCURRENT_EVALUATIONS = env.int("RULES_MAX_CONCURRENT_EVALUATIONS", default=16)
+# Require a passing sample evaluation (dry run) before admin saves a rule.
+RULES_ADMIN_DRY_RUN_REQUIRED = env.bool("RULES_ADMIN_DRY_RUN_REQUIRED", default=True)
+# A non-positive value would make every evaluation (or every save) fail, so
+# refuse to start instead.
+for _name in (
+    "RULES_EVALUATION_TIMEOUT_SECONDS",
+    "RULES_MAX_EXPRESSION_BYTES",
+    "RULES_MAX_CONCURRENT_EVALUATIONS",
+):
+    if globals()[_name] <= 0:
+        raise ImproperlyConfigured(f"{_name} must be greater than 0.")
+del _name
 
 
 # ---------------------------------------------------------------------------

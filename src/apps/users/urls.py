@@ -23,4 +23,14 @@ urlpatterns = [
     path("litigants/", views.LitigantRegistrationView.as_view(), name="litigant-create"),
     path("advocates/", views.AdvocateRegistrationView.as_view(), name="advocate-create"),
     path("clerks/", views.ClerkRegistrationView.as_view(), name="clerk-create"),
+    path(
+        "registrations/current/",
+        views.CurrentRegistrationView.as_view(),
+        name="registration-current",
+    ),
+    path(
+        "registrations/current/resubmit/",
+        views.RegistrationResubmitView.as_view(),
+        name="registration-resubmit",
+    ),
 ]

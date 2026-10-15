@@ -47,7 +47,7 @@ def unseed_template(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("users", "0003_audit_fields"),
+        ("users", "0004_seed_registration_request_types"),
         ("messaging", "0005_seed_message_templates"),
     ]
 

@@ -67,8 +67,8 @@ class TestDocumentsAreStoredByAppsFiles:
             "SIMPLE",
             {"reason": "x"},
             [
-                pdf_file("scan.png", content_type="image/png", content=b"\x89PNG fake"),
-                pdf_file("photo.jpg", content_type="image/jpeg", content=b"\xff\xd8 fake"),
+                pdf_file("scan.png", content_type="image/png", content=b"\x89PNG\r\n\x1a\n fake"),
+                pdf_file("photo.jpg", content_type="image/jpeg", content=b"\xff\xd8\xff fake"),
             ],
         )
 
