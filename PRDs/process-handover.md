@@ -1,6 +1,6 @@
 # Process — Notice, Summons, Warrant, Proclamation, Attachment
 
-**Status:** v10 — 2026-09-30; 2026-10-12: **recipient vs addressee clarified** (§2) — the recipient is the person the process names and never changes; a warrant, proclamation or attachment is *addressed* to the police; "addressee" no longer used for the person named (`SGN-01`, `DSP-04`, `PIA-01`, `Q-2`). **police is now a channel, not a flag.** The channels are
+**Status:** v10 — 2026-09-30; 2026-10-15: **new By hand channel** (§6.2) — no envelope, no destination; the CMO marks it sent and records the outcome. Warrant may take it; **a proclamation takes By hand only**, and a screen may record it Sent and Executed once the signed copy is downloaded (`DSP-10`); `Q-2` resolved for affixation. **System send is still its own step** — whether a screen sends on signing is a UI choice (`DSP-02`). 2026-10-12: **recipient vs addressee clarified** (§2) — the recipient is the person the process names and never changes; a warrant, proclamation or attachment is *addressed* to the police; "addressee" no longer used for the person named (`SGN-01`, `DSP-04`, `PIA-01`, `Q-2`). **police is now a channel, not a flag.** The channels are
 SMS, Email, RPAD, e-Post, Police (RPAD), Police (NSTEP) and Police (iCOPS) (§6.2); which
 are available is configured per deployment (`PRC-04`) — Kerala runs Police (iCOPS) in
 place of Police (NSTEP). **Send and update status are two separate steps**, each set per
@@ -61,15 +61,16 @@ For every process, per recipient:
 
 1. **The recipient** — always entered: the accused, the witness, whoever the process
    names.
-2. **The channels** — one or more of SMS, Email, RPAD, e-Post, Police (RPAD), and
-   Police (NSTEP) or Police (iCOPS). Which channels are available is configured per
+2. **The channels** — one or more of SMS, Email, RPAD, e-Post, Police (RPAD),
+   Police (NSTEP) or Police (iCOPS), and By hand. Which channels are available is configured per
    deployment.
 3. **The police station** — entered for a police channel only.
 
 Police is a channel of its own, not a setting on the others. On a police channel the
 process goes to the police station, and the police serve or execute it on the recipient.
-A warrant, proclamation or attachment is addressed to the police, so these take police
-channels only.
+A warrant or attachment is addressed to the police, so these take police channels — and a
+warrant may also go By hand. A proclamation is published, not sent: it is printed and
+affixed, so it goes By hand only.
 
 **The document** is set by the process type and the recipient. It is the same on every
 channel. Different templates per channel may come later; they are not in scope now.
@@ -113,7 +114,8 @@ recipient (§3) runs this same line independently, on its own channel
 - **The CMO or the Magistrate** signs, depending on the process type — a warrant is
   signed by the Magistrate (§9).
 - **The CMO** runs the manual steps for RPAD and
-  Police (RPAD): collecting the envelope, marking it sent, recording the outcome.
+  Police (RPAD): collecting the envelope, marking it sent, recording the outcome. The CMO
+  does the same for By hand, without the envelope.
 - **The Post Officer** — a separate login from the CMO — does the same for e-Post, once
   it is signed: marks it sent and records the outcome. There is no envelope step for
   e-Post.
@@ -142,6 +144,9 @@ reverse.
   via CIS in an end-of-day batch, and the system polls CIS for the result.
 - **Police (iCOPS)** — Kerala's equivalent, in place of Police (NSTEP): the police system
   is called directly, and calls back with the result.
+- **By hand** — like RPAD, without the envelope and without a destination entered. The
+  CMO marks it sent and records the outcome. For a proclamation, which is simply printed
+  and affixed, the screen may mark it executed as soon as the signed copy is downloaded.
 
 ---
 
@@ -186,8 +191,8 @@ Summons, Warrant, Proclamation or Attachment. Stage rules are owned by
 
 The **recipient** never changes — it's the person the process names: who a summons is
 for, who a warrant is against. The recipient is not always the addressee. A summons or
-notice is addressed to the recipient; a warrant, proclamation or attachment is addressed
-to the police, who execute it on the recipient (§A2). On a police channel the process goes
+notice is addressed to the recipient; a warrant or attachment is addressed to the police,
+who execute it on the recipient; a proclamation is published rather than addressed (§A2). On a police channel the process goes
 to the entered police station, but the recipient is still the person it names.
 
 ---
@@ -272,7 +277,7 @@ person (§6.2, §10); and whether the process admits post-issue judicial action 
 | `PRC-02` | One process is created per recipient, per selected channel, per address (§3). Where the drawer is a company, the company and every person in charge are each a separate recipient, shown as separate options in the recipient dropdown on the order screen (`PRC-03`), and each fanning out the same way. |
 | `PRC-03` | The judge enters, per recipient, on the order screen: the recipient, and the delivery channels. For a police channel — Police (RPAD), Police (NSTEP) or Police (iCOPS) — the police station is also entered. At least one channel is required. Several channels may be selected for the same recipient, each becoming its own process, used simultaneously. |
 | `PRC-04` | Which channels are available is configured per deployment (§13). The channels offered are those available in the deployment and permitted for the process type (§6.3). |
-| `PRC-05` | Each process's destination is taken from the recipient's own record — a mobile number, an email address, or one postal address — or, on a police channel, from the entered police station. Where a recipient's record holds more than one address of the kind a selected channel uses, one process is created per address (`PRC-02`). A channel cannot be selected where the record holds no destination of that kind. |
+| `PRC-05` | Each process's destination is taken from the recipient's own record — a mobile number, an email address, or one postal address — or, on a police channel, from the entered police station. Where a recipient's record holds more than one address of the kind a selected channel uses, one process is created per address (`PRC-02`). A channel cannot be selected where the record holds no destination of that kind. By hand has no destination: it creates one process per recipient and can always be selected. |
 | `PRC-06` | The process is associated with the hearing set in the same order. A warrant does not print that hearing's date: it carries a QR code and a line of text telling the reader to scan it for the latest hearing date. Screens may show the hearing's current date rather than the date at issue. |
 | `PRC-07` | The party directed to take steps is worked out by the system wherever it can (`AUT-02`), and is named in the order. That party bears the fees (§7) and the envelope obligation (§8). |
 | `PRC-08` | A police-station master is required for every state. It maps an address to the police station with jurisdiction over it, and is what the police station on a police channel is chosen from (`AUT-04`). |
@@ -296,7 +301,7 @@ the pop-up that opens when a Process-category order item is selected.
 | `AUT-05` | **Until the accused has joined the case**, the pop-up pre-selects the accused as the recipient. Where there is more than one accused, every accused is pre-selected. |
 | `AUT-06` | **Once the accused has joined the case**, the pop-up pre-selects the witness where exactly one witness has not yet been examined. Otherwise no recipient is pre-selected and the choice is left open. |
 | `AUT-07` | Every address on a selected recipient's record is pre-selected, before and after the accused has joined. |
-| `AUT-08` | Channels are pre-selected by process type: SMS, Email and RPAD for notice and summons; Police (NSTEP) for warrant, proclamation and attachment — Police (iCOPS) in a deployment that runs it in place of Police (NSTEP) (`PRC-04`). Channels are chosen once for every recipient selected; a recipient whose record holds no destination of a channel's kind gets no process on it, and the pop-up says so beside them (`PRC-05`). |
+| `AUT-08` | Channels are pre-selected by process type: SMS, Email and RPAD for notice and summons; Police (NSTEP) for warrant and attachment — Police (iCOPS) in a deployment that runs it in place of Police (NSTEP) (`PRC-04`); By hand for proclamation. Channels are chosen once for every recipient selected; a recipient whose record holds no destination of a channel's kind gets no process on it, and the pop-up says so beside them (`PRC-05`). |
 | `AUT-09` | The pop-up may select several recipients for the same process at once. This is a convenience of the screen only: each recipient still resolves to one process per channel, per address (`PRC-02`, §3). |
 
 Further fill-in and pre-selection rules are added to this section as they are defined.
@@ -328,6 +333,7 @@ per channel as either **System** or **Manual**, independently of the other (`DSP
 | Police (RPAD) | The entered police station's postal address | Manual — the CMO marks it sent once the envelope (§8) is posted | Manual — the CMO records the station's service or execution report |
 | Police (NSTEP) | The entered police station, through NSTEP | System — via CIS in an end-of-day batch | System — polls CIS periodically |
 | Police (iCOPS) | The entered police station, through Kerala's iCOPS | System — directly to iCOPS | System — iCOPS calls back (a push, not a poll) |
+| By hand | No destination is entered — the signed document is handed over in person | Manual — the CMO marks it sent. There is no envelope (§8) | Manual — the CMO records the outcome |
 
 Today every channel is either System for both steps or Manual for both. Nothing ties the
 two together: an e-Post integration that only reports status would make e-Post Manual
@@ -340,17 +346,18 @@ the executing officer through the portal.
 
 ### 6.3 Which process type allows which channel
 
-| Process type | SMS | Email | RPAD | e-Post | Police (RPAD) | Police (NSTEP) | Police (iCOPS) |
-|---|---|---|---|---|---|---|---|
-| Notice | ● | ● | ● | ● | | | |
-| Summons | ● | ● | ● | ● | ● | ● | ● |
-| Warrant | | | | | ● | ● | ● |
-| Proclamation | | | | | ● | ● | ● |
-| Attachment | | | | | ● | ● | ● |
-| Custom process | ● | ● | ● | ● | ● | ● | ● |
+| Process type | SMS | Email | RPAD | e-Post | Police (RPAD) | Police (NSTEP) | Police (iCOPS) | By hand |
+|---|---|---|---|---|---|---|---|---|
+| Notice | ● | ● | ● | ● | | | | |
+| Summons | ● | ● | ● | ● | ● | ● | ● | |
+| Warrant | | | | | ● | ● | ● | ● |
+| Proclamation | | | | | | | | ● |
+| Attachment | | | | | ● | ● | ● | |
+| Custom process | ● | ● | ● | ● | ● | ● | ● | |
 
-Warrant, proclamation and attachment are addressed to the police, so they take police
-channels only. Notice takes SMS, Email, RPAD and e-Post only — no police channel. This matrix is a default; a deployment only offers the channels
+Warrant and attachment are addressed to the police, so they take police channels; a
+warrant may also go By hand. A proclamation is printed and affixed, so it takes By hand
+only. By hand is available for warrant and proclamation only. Notice takes SMS, Email, RPAD and e-Post only — no police channel. This matrix is a default; a deployment only offers the channels
 configured for it (`PRC-04`), and may narrow the matrix further. It is not yet
 confirmed — see `Q-1`.
 
@@ -418,14 +425,15 @@ warrant-signing to the Presiding Officer (`SG-04` in `saras-2.0-gap-register.md`
 | ID | Requirement |
 |---|---|
 | `DSP-01` | Send is a separate act from signing (`SGN-04`). Send and update status are themselves two separate steps. Each is done either by the system or by a person, set per channel (§6.2), independently of the other. |
-| `DSP-02` | Where a channel's send is by the system, the system sends the process as soon as it is Signed; no court user acts to send it. Where a channel's status update is by the system, the system updates the process's status from what the receiving system reports — by polling or by callback. |
-| `DSP-03` | Where a channel's send is manual, a person marks the process sent once the document has actually left in that form. Where a channel's status update is manual, a person records the outcome when the acknowledgement, tracking update or report comes back. Who that person is, per channel, is in §6.2 — the CMO for RPAD and Police (RPAD), the Post Officer for e-Post. |
+| `DSP-02` | Where a channel's send is by the system, the system carries out the send — but it is still its own action, separate from signing (`SGN-04`). Whether a screen sends straight after signing or waits for a separate send action is a UI decision. Where a channel's status update is by the system, the system updates the process's status from what the receiving system reports — by polling or by callback. |
+| `DSP-03` | Where a channel's send is manual, a person marks the process sent once the document has actually left in that form. Where a channel's status update is manual, a person records the outcome when the acknowledgement, tracking update or report comes back. Who that person is, per channel, is in §6.2 — the CMO for RPAD, Police (RPAD) and By hand, the Post Officer for e-Post. |
 | `DSP-04` | Every process carries its own status, status date and remark, independent of every other process — including another process for the same recipient (§3). There is no status that spans several processes. |
 | `DSP-05` | A process's status moves through the vocabulary in §10.1 only. |
 | `DSP-06` | A process is closed when it reaches a terminal status, or when the expiry date passes (§11). |
 | `DSP-07` | A process's non-delivery does not create a new process. A fresh process requires a fresh order, which starts a new round. |
 | `DSP-08` | Setting a process to a terminal outcome status carries the status itself (§10.1), a free-text comment, and an optional supporting file upload. This applies whether the status arrives through a person's manual entry or through an automatic webhook/poll report. |
 | `DSP-09` | Where the status set is negative — Not delivered or Not executed — an additional **reason** field is required, chosen from a dropdown. The reason list is a state-configurable master, not a fixed enum in this document. |
+| `DSP-10` | A proclamation By hand is signed, then sent, then Executed — three stages, each recorded separately. Since all that happens physically is that the signed copy is printed and affixed, a screen may record Sent and Executed together once the signed copy is downloaded. |
 
 `SG-10` in `saras-2.0-gap-register.md` proposes a manual police return portal for Gujarat
 instead of a system-to-system police integration (§6.2). If confirmed, the portal is a
@@ -438,7 +446,7 @@ a new row in §6.2, not a change to `DSP-02`.
 |---|---|---|
 | Pending | no | The process is signed but not yet dispatched — or a prerequisite (fee, envelope) is still outstanding. |
 | Sent | no | Dispatched. |
-| Delivered | yes | Reached its destination. Depending on the channel: a gateway delivery receipt; an acknowledgement card signed and returned; a Post Officer's recorded outcome for e-Post; a service/execution report from the station. |
+| Delivered | yes | Reached its destination. Depending on the channel: a gateway delivery receipt; an acknowledgement card signed and returned; a Post Officer's recorded outcome for e-Post; a service/execution report from the station; the CMO's recorded outcome for By hand. |
 | Not delivered | yes | The attempt reached the destination and failed — refused, addressee not found, returned undelivered. The reason is recorded as the remark. |
 | Failed | yes | Could not be carried at all — invalid number, the receiving system rejected it. Distinct from Not delivered, where an attempt was made at the destination. |
 | Expired | yes | The expiry date passed with no outcome recorded. |
@@ -511,7 +519,7 @@ filter: PRDs.Contains("process-handover")
 | # | Question | Blocking? |
 |---|---|---|
 | `Q-1` | Confirm the channel-by-process-type matrix in §6.3. | Yes |
-| `Q-2` | A proclamation is published by affixation at the recipient's house and at the courthouse, and sometimes in a newspaper. None of these are in the channel list. How are they represented and tracked? | Yes |
+| `Q-2` | A proclamation is published by affixation at the recipient's house and at the courthouse, and sometimes in a newspaper. Affixation is resolved 2026-10-15 — a proclamation goes By hand (§6.2, `DSP-10`). How is publication in a newspaper represented and tracked? | Yes |
 | ~~`Q-3`~~ | ~~Do SMS and WhatsApp carry a fee, or are they free?~~ Resolved 2026-09-30 — only e-Post has a channel fee, and not at launch (`FEE-02`). | — |
 | `Q-4` | Does a summons, notice or custom process carry a QR code in place of a printed hearing date, as a warrant does (`PRC-06`)? If not, what happens to a live one when the hearing date moves? | Yes |
 | `Q-5` | For Gujarat and Punjab, which steps does the connected system remove — the envelope, the party payment, the manual status recording, or all three? | No |
