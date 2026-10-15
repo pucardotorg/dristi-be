@@ -15,7 +15,7 @@ help:
 	@echo "  prod-up     Start the production stack"
 	@echo "  prod-down   Stop the production stack"
 
-COMPOSE_DEV=docker compose -f docker/docker-compose.yml
+COMPOSE_DEV=docker compose --env-file .env -f docker/docker-compose.yml
 COMPOSE_PROD=docker compose -f docker/docker-compose.prod.yml
 
 build:
