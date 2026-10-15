@@ -27,7 +27,7 @@ A Django-based API project template using:
 
    Or without Make:
    ```bash
-   docker compose --env-file .env -f docker/docker-compose.yml
+   docker compose --env-file .env -f docker/docker-compose.yml up -d --build
    ```
 
    This starts: PostgreSQL, Redis, Django dev server, Dramatiq workers, Rustfs (S3-compatible storage), MailHog, Adminer, and monitoring dashboards.
