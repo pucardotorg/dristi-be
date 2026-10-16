@@ -4,10 +4,10 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from apps.files import documents
 from apps.organizations.models import Organization
 
 from .models import Case, CaseDocument, CaseEvidence
-from .services import services
 from .services.case_types import CaseType, DocumentType, EvidenceType
 
 
@@ -75,11 +75,15 @@ class CaseDocumentUploadSerializer(serializers.Serializer):
     document_type = serializers.ChoiceField(choices=DocumentType.choices)
 
     def validate_file(self, upload):
-        """Accept PDFs and images only."""
-        content_type = (upload.content_type or "").split(";")[0].strip().lower()
-        if content_type not in services.CONTENT_TYPE_FILE_TYPES:
-            allowed = ", ".join(sorted(services.CONTENT_TYPE_FILE_TYPES))
-            raise serializers.ValidationError(f"Unsupported file type; allowed: {allowed}.")
+        """Accept a real PDF, JPEG or PNG within the size limit.
+
+        Uses the project's shared check: the declared type and the file name
+        are hints, the content's leading bytes decide, so a renamed or
+        mislabelled file is refused.
+        """
+        error = documents.document_error(upload)
+        if error:
+            raise serializers.ValidationError(error)
         return upload
 
 
@@ -118,9 +122,21 @@ class EvidenceCreateSerializer(serializers.Serializer):
 
 
 class EvidenceUpdateSerializer(serializers.Serializer):
-    """Body of PATCH /cases/{id}/evidence/{evidence_id}: ``evidence_info`` only."""
+    """Body of PATCH /case-evidence/{id}: either field, or both.
 
-    evidence_info = serializers.DictField()
+    ``case_document_id`` links an uploaded document to the evidence, or unlinks
+    it when ``null``; leaving it out keeps the current link. The evidence type
+    cannot change.
+    """
+
+    evidence_info = serializers.DictField(required=False)
+    case_document_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        """Require at least one change."""
+        if not attrs:
+            raise serializers.ValidationError("Send evidence_info, case_document_id, or both.")
+        return attrs
 
 
 class CaseEvidenceSerializer(serializers.ModelSerializer):

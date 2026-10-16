@@ -736,4 +736,4 @@ ALTER TABLE case_evidence ADD COLUMN supersedes_evidence_id uuid REFERENCES case
 ```
 
 ### 16.3 Audit History Integration
-Apply spec 0004 (Simple Audit History) to track who changed what when on `cases`, `case_participant`, and `representation` tables. `person` and `institution` already do (§3.4).
+Apply spec 0004 (Simple Audit History) to track who changed what when on `case_participant` and `representation` tables. `person` and `institution` already do (§3.4), as do `cases`, `case_document`, `cheque_bounce_case` and `case_evidence`, whose evidence, sections and documents are edited throughout a filing.

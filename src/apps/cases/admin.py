@@ -1,6 +1,7 @@
 """Cases admin configuration."""
 
 from django.contrib import admin
+from simple_history.admin import SimpleHistoryAdmin
 
 from apps.core.mixins import AuditUserAdminMixin
 
@@ -8,7 +9,7 @@ from .models import Case, CaseDocument, CaseEvidence, ChequeBounceCase
 
 
 @admin.register(Case)
-class CaseAdmin(AuditUserAdminMixin, admin.ModelAdmin):
+class CaseAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for cases."""
 
     list_display = ("id", "case_type", "status", "filing_number", "case_number", "created_at")
@@ -19,7 +20,7 @@ class CaseAdmin(AuditUserAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(CaseDocument)
-class CaseDocumentAdmin(AuditUserAdminMixin, admin.ModelAdmin):
+class CaseDocumentAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for case documents."""
 
     list_display = ("case", "document_type", "is_active", "created_at")
@@ -29,7 +30,7 @@ class CaseDocumentAdmin(AuditUserAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(ChequeBounceCase)
-class ChequeBounceCaseAdmin(AuditUserAdminMixin, admin.ModelAdmin):
+class ChequeBounceCaseAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for cheque bounce details."""
 
     list_display = ("case", "updated_at")
@@ -38,7 +39,7 @@ class ChequeBounceCaseAdmin(AuditUserAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(CaseEvidence)
-class CaseEvidenceAdmin(AuditUserAdminMixin, admin.ModelAdmin):
+class CaseEvidenceAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for case evidence."""
 
     list_display = ("case", "evidence_type", "ordinal", "is_active", "created_at")

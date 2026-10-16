@@ -15,6 +15,7 @@ vocabulary, with its label), then list it under each case type that accepts it.
 
 from dataclasses import dataclass, field
 
+import jsonschema
 from django.apps import apps
 from django.db import models
 
@@ -234,6 +235,16 @@ CASE_TYPES = {
 def get_config(case_type):
     """Return the configuration for ``case_type``."""
     return CASE_TYPES[case_type]
+
+
+def schema_errors(schema, data):
+    """Return every way ``data`` breaks ``schema``, as messages; empty when it fits.
+
+    Shared by the API (which reports them as a 400) and the models' ``clean()``
+    (so the admin, and any other write that validates, enforces the same rules).
+    """
+    validator = jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
+    return [error.message for error in validator.iter_errors(data)]
 
 
 def get_description(case_type):

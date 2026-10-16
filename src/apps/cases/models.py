@@ -1,11 +1,12 @@
 """Case records, documents, cheque bounce details and evidence (spec 0020 §8-11)."""
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
-from apps.core.models import BaseActivatableModel, BaseModel
+from apps.core.models import BaseActivatableModel, BaseAuditableModel, BaseModel
 
-from .services.case_types import CaseType, DocumentType, EvidenceType
+from .services.case_types import CaseType, DocumentType, EvidenceType, get_config, schema_errors
 
 
 class CaseStatus(models.TextChoices):
@@ -31,7 +32,7 @@ NOT_JOINABLE_STATUSES = (
 )
 
 
-class Case(BaseModel):
+class Case(BaseModel, BaseAuditableModel):
     """One filing: only what every dispute type shares (spec 0020 §8).
 
     A case created from a draft session keeps the session id as its primary
@@ -69,7 +70,7 @@ class Case(BaseModel):
         return self.case_number or self.filing_number or f"{self.case_type} draft {self.id}"
 
 
-class CaseDocument(BaseModel, BaseActivatableModel):
+class CaseDocument(BaseModel, BaseActivatableModel, BaseAuditableModel):
     """A stored file filed as part of a case (spec 0020 §9).
 
     Removing a document from the case sets ``is_active = False``; the file
@@ -96,8 +97,18 @@ class CaseDocument(BaseModel, BaseActivatableModel):
     def __str__(self):
         return f"{self.document_type} for {self.case_id}"
 
+    def clean(self):
+        """Accept only a document type the case's type accepts, as the API does."""
+        super().clean()
+        if self.case_id and self.document_type:
+            allowed = get_config(self.case.case_type).document_types
+            if self.document_type not in allowed:
+                raise ValidationError(
+                    {"document_type": f"Not accepted for {self.case.case_type} cases."}
+                )
 
-class ChequeBounceCase(BaseModel):
+
+class ChequeBounceCase(BaseModel, BaseAuditableModel):
     """Cheque bounce details, one row per case (spec 0020 §10).
 
     The case id is the primary key, which enforces the 1:1 relationship.
@@ -121,8 +132,25 @@ class ChequeBounceCase(BaseModel):
     def __str__(self):
         return f"Cheque bounce details for {self.case_id}"
 
+    def clean(self):
+        """Check each filled-in section against its schema, as the API does.
 
-class CaseEvidence(BaseModel, BaseActivatableModel):
+        A section left empty (``{}``) is not yet filled in, which is allowed:
+        the row is created empty with the case.
+        """
+        super().clean()
+        schemas = get_config(self.case.case_type).section_schemas
+        errors = {
+            section: messages
+            for section, schema in schemas.items()
+            if getattr(self, section)
+            and (messages := schema_errors(schema, getattr(self, section)))
+        }
+        if errors:
+            raise ValidationError(errors)
+
+
+class CaseEvidence(BaseModel, BaseActivatableModel, BaseAuditableModel):
     """A piece of evidence with type-specific details (spec 0020 §11).
 
     ``ordinal`` numbers the active evidence of one type within a case:
@@ -156,3 +184,26 @@ class CaseEvidence(BaseModel, BaseActivatableModel):
 
     def __str__(self):
         return f"{self.evidence_type} #{self.ordinal} for {self.case_id}"
+
+    def clean(self):
+        """Apply the API's rules, so the admin cannot save what the API would refuse.
+
+        The case's type must accept the evidence type, ``evidence_info`` must
+        match its schema, and a linked document must be an active document of
+        the same case.
+        """
+        super().clean()
+        if not self.case_id:
+            return
+        errors = {}
+        schemas = get_config(self.case.case_type).evidence_schemas
+        if self.evidence_type not in schemas:
+            errors["evidence_type"] = f"Not accepted for {self.case.case_type} cases."
+        elif messages := schema_errors(schemas[self.evidence_type], self.evidence_info):
+            errors["evidence_info"] = messages
+        if self.case_document_id and not (
+            self.case_document.case_id == self.case_id and self.case_document.is_active
+        ):
+            errors["case_document"] = "Must be an active document of the same case."
+        if errors:
+            raise ValidationError(errors)

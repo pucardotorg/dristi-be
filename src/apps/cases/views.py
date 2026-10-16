@@ -223,13 +223,11 @@ class CaseEvidenceDetailView(APIView):
         tags=TAGS, request=EvidenceUpdateSerializer, responses={200: CaseEvidenceSerializer}
     )
     def patch(self, request, case_evidence_id):
-        """Replace ``evidence_info``."""
+        """Replace ``evidence_info`` and/or link or unlink a document."""
         evidence = services.get_evidence(case_evidence_id, request.user)
         serializer = EvidenceUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        evidence = services.update_evidence(
-            evidence, request.user, serializer.validated_data["evidence_info"]
-        )
+        evidence = services.update_evidence(evidence, request.user, **serializer.validated_data)
         return Response(CaseEvidenceSerializer(evidence).data)
 
     @extend_schema(tags=TAGS, responses={204: None})

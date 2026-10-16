@@ -218,7 +218,8 @@ POST /cases/{case_id_or_draft_session_id}/documents
 If document upload is the first action, the case must exist before we can link the document to it. This ensures atomicity: document upload → case creation → document linking all succeed or all fail together.
 
 **Error Responses:**
-- `400 Bad Request`: Unknown `document_type` or file validation failure
+- `400 Bad Request`: Unknown `document_type`, or the file fails the shared `apps.files` check: it must be a PDF, JPEG or PNG whose content matches its type (leading bytes), with a matching extension, within the size limit. The declared content type and the file name are only hints, so a renamed or mislabelled file is refused.
+- `409 Conflict` (`case_not_editable`): the case has been submitted (§7)
 - `404 Not Found`: Neither case nor draft session exists for the provided ID
 - `413 Payload Too Large`: File exceeds size limit
 
@@ -262,7 +263,7 @@ owning case is found through it. A document on a case the caller did not
 create returns 404.
 
 **Implementation:**
-Soft delete: sets `is_active = false`. The underlying `document` row is not deleted (spec 0017 §8.4).
+Soft delete: sets `is_active = false`. The underlying `document` row is not deleted (spec 0017 §8.4). Evidence linked to the document is unlinked (`case_document_id` set to null) in the same transaction, so no evidence points at a document that is no longer part of the case.
 
 ### 3.4 Document Type Enum
 
@@ -663,7 +664,7 @@ demand notice #1.
 New case types add new `evidence_type` values and their schemas, not new endpoints or tables. This replaces type-specific calls like `POST /cheque_bounce`.
 
 **PATCH:**
-Updates `evidence_info` only. Changing `evidence_type` is not allowed; delete and recreate instead.
+Updates `evidence_info`, `case_document_id`, or both; at least one must be sent. `case_document_id` links a document uploaded after the evidence was entered (spec 0020 §11.4), and `null` unlinks it; leaving it out keeps the current link. The document must be an active document of the same case. Changing `evidence_type` is not allowed; delete and recreate instead.
 
 **DELETE:**
 Soft delete: sets `is_active = false`.
@@ -1086,6 +1087,8 @@ Client calls this before attempting to submit for signing. Invalid cases cannot 
 ## 7. Status Transitions
 
 Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle requires additional endpoints.
+
+**Only drafts can be changed.** Every write (uploading or removing a document, adding, changing or removing evidence, saving a details section) is refused with `409 Conflict` and code `case_not_editable` once the case has left `DRAFT_IN_PROGRESS`, so what the court reviews cannot change underneath it. Reads are unaffected. Every successful write also sets the case's `updated_at` (and `updated_by`), which listings show and the concurrent-modification check (§10.4) relies on.
 
 ```
 POST /cases/{case_id}/submit-for-signing

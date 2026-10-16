@@ -3,37 +3,46 @@
 ``POST /cases`` creates only a draft session in the cache (spec 0021 §2.2).
 The case row and its type-specific detail row are created by the first save
 that carries data, in the same transaction as that data (spec 0021 §9.1).
+
+Every write is refused once the case has left ``DRAFT_IN_PROGRESS``: what the
+court reviews must not change underneath it. Every write also touches the
+case's ``updated_at``, which listings show and concurrent-edit checks use.
 """
 
 import logging
 import uuid
 
-import jsonschema
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
-from rest_framework import serializers
-from rest_framework.exceptions import NotFound
+from rest_framework import serializers, status
+from rest_framework.exceptions import APIException, NotFound
 
-from apps.files import services as files
-from apps.files.models import FileType
+from apps.files import documents
 
-from ..models import Case, CaseDocument, CaseEvidence
-from .case_types import get_config
+from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
+from .case_types import get_config, schema_errors
 
 logger = logging.getLogger(__name__)
 
 DRAFT_SESSION_TTL_SECONDS = 60 * 60 * 24
 DRAFT_CACHE_KEY = "cases:draft:{draft_session_id}"
 
-# Accepted upload content types and the FileType each is stored as.
-CONTENT_TYPE_FILE_TYPES = {
-    "application/pdf": FileType.PDF,
-    "image/jpeg": FileType.IMAGE,
-    "image/png": FileType.IMAGE,
-}
+# Tag on every stored case document, so they can be found in apps.files.
+DOCUMENT_TAG = "cases"
+
+# Distinguishes "not sent" from an explicit ``None`` in partial updates.
+_UNSET = object()
+
+
+class CaseNotEditable(APIException):  # noqa: N818 - named after its code
+    """The case has been submitted, so its filing can no longer change."""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "This case has been submitted and can no longer be changed."
+    default_code = "case_not_editable"
 
 
 # Draft sessions and case resolution
@@ -64,13 +73,15 @@ def get_case(case_id, user):
 
 
 def get_case_type(case_or_draft_id, user):
-    """Return the case type of ``user``'s case or live draft session.
+    """Return the case type of ``user``'s editable case or live draft session.
 
-    Raises ``NotFound`` for anything else. Lets a write be validated against
-    its case type before a case is created or a file is stored.
+    For writes: raises ``NotFound`` for anything else, and ``CaseNotEditable``
+    for a submitted case. Lets a write be validated against its case type
+    before a case is created or a file is stored.
     """
     case = _get_owned_case(case_or_draft_id, user)
     if case is not None:
+        _ensure_editable(case)
         return case.case_type
     draft = _get_owned_draft(case_or_draft_id, user)
     if draft is not None:
@@ -79,7 +90,7 @@ def get_case_type(case_or_draft_id, user):
 
 
 def get_or_create_case(case_or_draft_id, user):
-    """Return ``user``'s case, creating it from their draft session on first save.
+    """Return ``user``'s editable case, creating it from their draft session on first save.
 
     Must run inside ``transaction.atomic()`` so the case and the data saved
     with it commit or roll back together.
@@ -91,13 +102,16 @@ def get_or_create_case(case_or_draft_id, user):
     """
     case = _get_owned_case(case_or_draft_id, user)
     if case is not None:
+        _ensure_editable(case)
         return case
 
     draft = _get_owned_draft(case_or_draft_id, user)
     if draft is None:
         # A concurrent first save may have created the case, and dropped the
         # draft, since the lookup above.
-        return get_case(case_or_draft_id, user)
+        case = get_case(case_or_draft_id, user)
+        _ensure_editable(case)
+        return case
 
     case, created = Case.objects.get_or_create(
         pk=uuid.UUID(str(case_or_draft_id)),
@@ -114,6 +128,21 @@ def get_or_create_case(case_or_draft_id, user):
         key = _get_draft_key(case_or_draft_id)
         transaction.on_commit(lambda: cache.delete(key))
     return case
+
+
+def _ensure_editable(case):
+    """Raise ``CaseNotEditable`` unless the case is still a draft."""
+    if case.status != CaseStatus.DRAFT_IN_PROGRESS:
+        raise CaseNotEditable
+
+
+def _touch(case, user):
+    """Record that ``user`` just changed something on ``case``.
+
+    A plain ``update()``: only the timestamps move, so it is not a version
+    worth keeping in the case's history.
+    """
+    Case.objects.filter(pk=case.pk).update(updated_at=timezone.now(), updated_by=user)
 
 
 def _get_owned_case(case_id, user):
@@ -150,54 +179,60 @@ def _require_allowed(value, allowed, field, case_type):
 def add_document(case_or_draft_id, user, upload, document_type):
     """Store ``upload`` and file it under the case, creating the case on first save.
 
-    The file is written to storage before the database transaction, as
-    ``apps.files`` requires; if the transaction fails the file is deleted again.
+    The upload has already passed ``apps.files.documents.document_error``
+    (content, extension and size), in the serializer. The file is written to
+    storage before the database transaction, as ``apps.files`` requires; if the
+    transaction fails the file is deleted again.
     """
     case_type = get_case_type(case_or_draft_id, user)
     allowed = get_config(case_type).document_types
     _require_allowed(document_type, allowed, "document_type", case_type)
-    file_id = _store_file(upload, user)
+    file_id = _store_file(upload, user, case_type)
     try:
         with transaction.atomic():
             case = get_or_create_case(case_or_draft_id, user)
-            return CaseDocument.objects.create(
+            document = CaseDocument.objects.create(
                 case=case,
                 document_id=file_id,
                 document_type=document_type,
                 created_by=user,
                 updated_by=user,
             )
+            _touch(case, user)
+            return document
     except Exception:
-        _delete_file(file_id)
+        documents.discard_documents([file_id])
         raise
 
 
 def remove_document(case_document_id, user):
-    """Soft-delete a case document. The stored file is kept."""
-    document = _get_active_case_item(CaseDocument, case_document_id, user)
-    document.is_active = False
-    document.updated_by = user
-    document.save(update_fields=["is_active", "updated_by", "updated_at"])
+    """Soft-delete a case document. The stored file is kept.
+
+    Evidence that pointed at it is unlinked, so no evidence keeps showing a
+    document that is no longer part of the case.
+    """
+    with transaction.atomic():
+        document = _get_active_case_item(CaseDocument, case_document_id, user)
+        _ensure_editable(document.case)
+        document.is_active = False
+        document.updated_by = user
+        document.save(update_fields=["is_active", "updated_by", "updated_at"])
+        # One save per row, not update(), so each unlink is kept in history.
+        for evidence in document.evidence.active():
+            evidence.case_document = None
+            evidence.updated_by = user
+            evidence.save(update_fields=["case_document", "updated_by", "updated_at"])
+        _touch(document.case, user)
 
 
-def _store_file(upload, user):
-    content_type = (upload.content_type or "").split(";")[0].strip().lower()
-    payload = {
-        "user_id": user.pk,
-        "files": [{"file": upload, "file_type": CONTENT_TYPE_FILE_TYPES[content_type]}],
-    }
+def _store_file(upload, user, case_type):
     try:
-        result = files.upload_file(payload)
+        (file_id,) = documents.store_documents(
+            [upload], user_id=user.pk, tags=[DOCUMENT_TAG, case_type]
+        )
     except DjangoValidationError as exc:
         raise serializers.ValidationError({"file": exc.messages}) from exc
-    return result["files"][0]["id"]
-
-
-def _delete_file(file_id):
-    try:
-        files.delete_file(file_id)
-    except Exception:  # noqa: BLE001 - must not mask the error being handled
-        logger.exception("Could not delete case document file %s", file_id)
+    return file_id
 
 
 # Evidence (spec 0021 §5.1)
@@ -212,10 +247,17 @@ def validate_evidence(case_type, evidence_type, evidence_info):
 
 def _validate_schema(schema, data, field):
     """Raise a 400 on ``field`` listing every way ``data`` breaks ``schema``."""
-    validator = jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
-    messages = [error.message for error in validator.iter_errors(data)]
+    messages = schema_errors(schema, data)
     if messages:
         raise serializers.ValidationError({field: messages})
+
+
+def _require_case_document(case, case_document_id):
+    """Raise a 400 unless ``case_document_id`` is an active document of ``case``."""
+    if not CaseDocument.objects.active().filter(pk=case_document_id, case=case).exists():
+        raise serializers.ValidationError(
+            {"case_document_id": ["No active document with this id on this case."]}
+        )
 
 
 def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_document_id=None):
@@ -226,20 +268,15 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
         # Serialises ordinal assignment for the case.
         Case.objects.select_for_update().filter(pk=case.pk).first()
 
-        if (
-            case_document_id is not None
-            and not CaseDocument.objects.active().filter(pk=case_document_id, case=case).exists()
-        ):
-            raise serializers.ValidationError(
-                {"case_document_id": ["No active document with this id on this case."]}
-            )
+        if case_document_id is not None:
+            _require_case_document(case, case_document_id)
 
         last = (
             CaseEvidence.objects.active()
             .filter(case=case, evidence_type=evidence_type)
             .aggregate(last=Max("ordinal"))["last"]
         )
-        return CaseEvidence.objects.create(
+        evidence = CaseEvidence.objects.create(
             case=case,
             case_document_id=case_document_id,
             evidence_type=evidence_type,
@@ -248,6 +285,8 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
             created_by=user,
             updated_by=user,
         )
+        _touch(case, user)
+        return evidence
 
 
 def get_evidence(case_evidence_id, user):
@@ -255,20 +294,39 @@ def get_evidence(case_evidence_id, user):
     return _get_active_case_item(CaseEvidence, case_evidence_id, user)
 
 
-def update_evidence(evidence, user, evidence_info):
-    """Replace ``evidence_info``. The evidence type cannot change."""
-    validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
-    evidence.evidence_info = evidence_info
+def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_UNSET):
+    """Replace ``evidence_info`` and/or (re)link a document; the type cannot change.
+
+    ``case_document_id=None`` unlinks the document; leaving it out keeps the
+    current link. This is how a scan uploaded after the evidence was entered is
+    linked to it (spec 0020 §11.4).
+    """
+    _ensure_editable(evidence.case)
+    fields = ["updated_by", "updated_at"]
+    if evidence_info is not _UNSET:
+        validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
+        evidence.evidence_info = evidence_info
+        fields.append("evidence_info")
+    if case_document_id is not _UNSET:
+        if case_document_id is not None:
+            _require_case_document(evidence.case, case_document_id)
+        evidence.case_document_id = case_document_id
+        fields.append("case_document")
     evidence.updated_by = user
-    evidence.save(update_fields=["evidence_info", "updated_by", "updated_at"])
+    with transaction.atomic():
+        evidence.save(update_fields=fields)
+        _touch(evidence.case, user)
     return evidence
 
 
 def remove_evidence(evidence, user):
     """Soft-delete evidence."""
+    _ensure_editable(evidence.case)
     evidence.is_active = False
     evidence.updated_by = user
-    evidence.save(update_fields=["is_active", "updated_by", "updated_at"])
+    with transaction.atomic():
+        evidence.save(update_fields=["is_active", "updated_by", "updated_at"])
+        _touch(evidence.case, user)
 
 
 def _get_active_case_item(model, object_id, user):
@@ -306,6 +364,7 @@ def save_details_section(case_or_draft_id, user, section, data):
         setattr(detail, section, data)
         detail.updated_by = user
         detail.save(update_fields=[section, "updated_by", "updated_at"])
+        _touch(case, user)
         return case
 
 
