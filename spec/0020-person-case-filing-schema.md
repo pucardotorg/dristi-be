@@ -38,8 +38,8 @@ One row per human being the system knows of, whether registered or not. A person
 | `email_address` | varchar(256) | NULLABLE | |
 | `relation` | varchar(16) | NULLABLE | Relationship type (S/O, D/O, W/O, etc.) |
 | `relative_name` | varchar(256) | NULLABLE | Father's / spouse's / guardian's name; required when `relation` is set |
-| `date_of_birth` | date | NULLABLE | Not in the future |
-| `age` | smallint | NULLABLE, CHECK 0–150 | Approximate age, for when the date of birth is unknown ("aged about 45"); must match `date_of_birth` when both are given |
+| `date_of_birth` | date | NULLABLE | Not after today's date in India (IST); `TIME_ZONE` is UTC, so the server's date is not used |
+| `age` | smallint | NULLABLE, CHECK 0–150 | Approximate age, only when the date of birth is unknown ("aged about 45"); cleared whenever `date_of_birth` is set |
 | `gender` | varchar(32) | NULLABLE | One of: MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY |
 | `institution_id` | uuid | FK → institution, NULLABLE | When acting for an institution (see §3) |
 | `designation` | varchar(128) | NULLABLE | Role within the institution, e.g. Director, Branch Manager, Authorised Signatory |
@@ -74,7 +74,7 @@ Identity verification is a spectrum. The `verification_level` field records how 
 - Not every person has a phone number at creation (a minor, an uncontacted party).
 
 **Why `age` alongside `date_of_birth`:**
-- The exact date of birth of an accused or witness is often unknown, while the complaint still states an approximate age ("aged about 45"). `age` records that. When the date of birth is known, it is the source of truth and `age` must match it. A stored age goes stale as time passes, which is why `case_participant.age_at_filing` freezes the age that was true on the filing date (§4).
+- The exact date of birth of an accused or witness is often unknown, while the complaint still states an approximate age ("aged about 45"). `age` records that. When the date of birth is known it is the only source of truth: `age` is cleared on save, and today's age is computed from the date of birth (`Person.current_age`, which the API returns as `age`). Storing both would let the stored age go stale at the next birthday and contradict the date of birth. Because any age changes over time, `case_participant.age_at_filing` freezes the age that was true on the filing date (§4).
 
 **Why `disability_status` defaults to `NONE`:**
 - Every person has a value, so queries and forms never need to treat a missing status separately. A missing or blank value is stored as `NONE`, and the column also has a database default, so a row inserted outside Django gets it too.
