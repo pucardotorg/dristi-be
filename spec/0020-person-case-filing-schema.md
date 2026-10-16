@@ -34,17 +34,18 @@ One row per human being the system knows of, whether registered or not. A person
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
 | `name` | varchar(256) | NOT NULL | Full name |
-| `phone_number` | varchar(16) | NULLABLE | E.164 format, see 0005 for Indian mobile validation |
+| `phone_number` | varchar(16) | NULLABLE | E.164 (`+`, country code, number, digits only), any country; a blank value is stored as NULL |
 | `email_address` | varchar(256) | NULLABLE | |
 | `relation` | varchar(16) | NULLABLE | Relationship type (S/O, D/O, W/O, etc.) |
-| `relative_name` | varchar(256) | NULLABLE | Father's / spouse's / guardian's name |
-| `date_of_birth` | date | NULLABLE | |
-| `gender` | varchar(16) | NULLABLE | One of: MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY |
+| `relative_name` | varchar(256) | NULLABLE | Father's / spouse's / guardian's name; required when `relation` is set |
+| `date_of_birth` | date | NULLABLE | Not after today's date in India (IST); `TIME_ZONE` is UTC, so the server's date is not used |
+| `age` | smallint | NULLABLE, CHECK 0–150 | Approximate age, only when the date of birth is unknown ("aged about 45"); cleared whenever `date_of_birth` is set |
+| `gender` | varchar(32) | NULLABLE | One of: MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY |
 | `institution_id` | uuid | FK → institution, NULLABLE | When acting for an institution (see §3) |
 | `designation` | varchar(128) | NULLABLE | Role within the institution, e.g. Director, Branch Manager, Authorised Signatory |
 | `permanent_address_id` | uuid | FK → address, NULLABLE | Current permanent address |
 | `correspondence_address_id` | uuid | FK → address, NULLABLE | Current mailing address |
-| `disability_status` | varchar(16) | NULLABLE | NONE, VISUAL, HEARING, MOBILITY, COGNITIVE, OTHER |
+| `disability_status` | varchar(16) | NOT NULL, default NONE | NONE, VISUAL, HEARING, MOBILITY, COGNITIVE, OTHER; a missing or blank value is stored as NONE |
 | `verification_level` | varchar(16) | NOT NULL, default ASSERTED | See §2.3 |
 | `user_id` | uuid | FK → app_user, NULLABLE, UNIQUE | NULL until they register |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
@@ -71,6 +72,21 @@ Identity verification is a spectrum. The `verification_level` field records how 
 
 **Why `phone_number` is nullable:**
 - Not every person has a phone number at creation (a minor, an uncontacted party).
+
+**Why `age` alongside `date_of_birth`:**
+- The exact date of birth of an accused or witness is often unknown, while the complaint still states an approximate age ("aged about 45"). `age` records that. When the date of birth is known it is the only source of truth: `age` is cleared on save, and today's age is computed from the date of birth (`Person.current_age`, which the API returns as `age`). Storing both would let the stored age go stale at the next birthday and contradict the date of birth. Because any age changes over time, `case_participant.age_at_filing` freezes the age that was true on the filing date (§4).
+
+**Why `disability_status` defaults to `NONE`:**
+- Every person has a value, so queries and forms never need to treat a missing status separately. A missing or blank value is stored as `NONE`, and the column also has a database default, so a row inserted outside Django gets it too.
+
+**Why `phone_number` is any E.164 number, not an Indian mobile:**
+- A party may live abroad, or be reachable only on a landline. Unlike a `User`'s login number (spec 0005), this number is only for contacting the person, so any country is accepted. The model validator and a `CHECK` constraint use the same pattern, `^\+[1-9][0-9]{6,14}$`.
+
+**Why every save is validated:**
+- The rules that need more than one field (a relation needs the relative's name, a designation needs an institution) and the date-of-birth check run in `full_clean()`, which Django calls only from forms. `Person.save()` and `Institution.save()` call it themselves, so a plain `create()` from a service cannot store a record that breaks them. Names are trimmed first, so a whitespace-only name is rejected as missing.
+
+**Why the API does not show who entered a person or institution:**
+- Records are often entered by the other side (the complainant's advocate records the accused). `created_by` / `updated_by` stay in the database, the history tables and the admin, but serializers do not expose them.
 
 **Why addresses are FKs, not embedded:**
 - Immutability requirement (see §7) — addresses are snapshots, not live fields.
@@ -101,8 +117,9 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 | `id` | uuid | PK | |
 | `entity_type` | varchar(32) | NOT NULL | See §3.3 |
 | `entity_name` | varchar(256) | NOT NULL | Registered / legal name |
-| `contact_number` | varchar(16) | NULLABLE | Main contact number; may be a landline |
+| `contact_number` | varchar(20) | NULLABLE | Main contact number; may be a landline. Digits only, optionally grouped with parentheses, spaces or hyphens, with an optional leading `+`; a blank value is stored as NULL |
 | `email_address` | varchar(256) | NULLABLE | Main contact email |
+| `address_id` | uuid | FK → address, NULLABLE, ON DELETE PROTECT | Registered office: where notices to the institution are served |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
 | `created_at` | timestamp | NOT NULL, auto | From BaseModel (spec 0002) |
@@ -128,11 +145,17 @@ Initial set, to be confirmed:
 
 ### 3.4 Design Decisions
 
+**Why an institution has its own address:**
+A company or firm named as a party is served at its registered office, which need not be the address of whoever signs for it, so it is recorded on the institution rather than reached through a linked person. Like every address, it is an immutable row (§7): a move is a new row and the FK is repointed.
+
+**Why `institution` and `person` keep full history:**
+Both are edited over the life of a case (a party's name or number is corrected, a company renamed), and a court record must show what the record said when a notice went out. Both use `BaseAuditableModel` (spec 0004): every insert, update and delete is copied to `parties_historicalperson` / `parties_historicalinstitution` with who made it and when. `address` needs no history table: it is immutable, so every past version is still its own row.
+
 **Why a separate table instead of `organization` (spec 0008):**
 `Organization` models the court hierarchy: its `OrganizationType` holds only court types, and it carries a parent chain and jurisdictions. Litigant entities share none of that. Keeping them separate means a court can never be recorded as a party by mistake, and each table only has the fields it needs.
 
 **Why `contact_number` is not validated as a mobile number:**
-Unlike `person.phone_number`, an institution's number is often a landline or a toll-free line, so the Indian mobile pattern from spec 0005 does not apply.
+Unlike `person.phone_number`, an institution's number is often a landline or a toll-free line, so the Indian mobile pattern from spec 0005 does not apply. It is still restricted to digits and grouping characters (`+`, parentheses, spaces, hyphens), by a model validator and a `CHECK` constraint, so letters such as `080-CALL-NOW` are rejected.
 
 ## 4. Case Participation: The `case_participant` Table
 
@@ -152,7 +175,8 @@ One person's (or institution's) involvement in one case, in one role. This table
 | `ordinal` | smallint | NOT NULL | 1, 2, 3… (complainant #1, accused #2) |
 | `name_at_filing` | varchar(256) | NOT NULL | Frozen snapshot of name |
 | `phone_number_at_filing` | varchar(16) | NULLABLE | Frozen snapshot of phone |
-| `gender_at_filing` | varchar(16) | NULLABLE | Frozen snapshot of gender |
+| `gender_at_filing` | varchar(32) | NULLABLE | Frozen snapshot of gender |
+| `age_at_filing` | smallint | NULLABLE | Frozen snapshot of age when filed: computed from `person.date_of_birth` on the filing date when known, else `person.age` |
 | `address_id` | uuid | FK → address, NULLABLE | The address for service of notice |
 | `called_by_participant_id` | uuid | FK → case_participant, NULLABLE | For witnesses: which party called them |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Role-specific data (see §4.3) |
@@ -301,15 +325,20 @@ A single recorded address. Rows are **immutable snapshots**: once written, never
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
-| `line1` | text | NOT NULL | Street address / locality |
-| `city` | varchar(128) | NOT NULL | City or town |
-| `pincode` | char(6) | NOT NULL | Indian postal code |
-| `district` | varchar(128) | NOT NULL | Auto-filled from pincode, then stored |
-| `state` | varchar(128) | NOT NULL | Auto-filled from pincode, then stored |
+| `line1` | varchar(255) | NOT NULL | Street address / locality |
+| `city` | varchar(100) | NOT NULL | City or town |
+| `pincode` | varchar(6) | NOT NULL | Indian postal code |
+| `district` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
+| `state` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
+| `police_station` | varchar(255) | NOT NULL | Police station with jurisdiction over the address, needed for service of notice |
+| `hash` | varchar(64) | NOT NULL, UNIQUE | SHA-256 of the canonical form, see §7.4 |
 | `created_at` | timestamp | NOT NULL, default now() | Creation timestamp only, no `updated_at` |
+| `created_by` | uuid | FK → app_user, NULLABLE, ON DELETE PROTECT | Who first recorded the address; no `updated_by` |
 
 **Constraints:**
 - `CHECK (pincode ~ '^[1-9][0-9]{5}$')` — 6 digits, not starting with 0
+- `UNIQUE (hash)` — one row per distinct address
+- `CHECK (hash ~ '^[0-9a-f]{64}$')` — a row written without its hash is refused
 - Index on `pincode` for geolocation queries
 
 ### 7.3 Design Decisions
@@ -317,27 +346,50 @@ A single recorded address. Rows are **immutable snapshots**: once written, never
 **Why immutable:**
 Court records require stable addresses. If notice was served to 123 Main St in January, the case file must forever show that address, even if the person has since moved. Editing an address creates a new row and repoints the FK.
 
+**Why `address` does not inherit `BaseModel`:**
+Spec 0000 makes `BaseModel` the default, but its audit fields do not fit an immutable row: `updated_at` and `updated_by` would never change, and its `created_by` is `ON DELETE SET_NULL`, which would rewrite the row when a user is deleted. `Address` declares its own UUID `id`, `created_at` and a `PROTECT` `created_by` instead, and orders newest first like `BaseModel`.
+
 **Why auto-fill district and state:**
 Use the [India Post Pincode API](https://api.postalpincode.in/pincode/{pincode}) to populate district and state at entry time, then store them. This denormalizes the data but makes queries faster and survives API unavailability.
 
-**Why no `updated_at`:**
-Rows are never updated. The absence of this field from BaseModel is intentional — it signals immutability to future maintainers.
+**Why no `updated_at` or `updated_by`:**
+Rows are never updated. The absence of these fields, and of BaseModel itself, is intentional — it signals immutability to future maintainers.
+
+**Why `created_by` is `ON DELETE PROTECT`:**
+`SET_NULL` would rewrite existing rows when a user is deleted, breaking immutability. A user who recorded an address is deactivated rather than deleted.
+
+**How immutability is enforced:**
+`Address.save()` inserts only and raises `AddressImmutableError` on an existing row; `Address.delete()` always raises. To change an address, call `address.revise(created_by=user, **changes)`, which returns the row holding the new values, and repoint the FK at it. The admin allows adding and viewing only. Bulk `QuerySet.update()` / `.delete()` and raw SQL bypass these checks; a database trigger rejecting `UPDATE` and `DELETE` would close that gap if needed. `bulk_create()` also skips `save()`, so the manager overrides it to normalize and hash each row itself; the `CHECK` on `hash` refuses any other insert that arrives without one.
 
 ### 7.4 Deduplication Strategy
 
-Two addresses with identical fields should reuse the same row:
+Two addresses with identical content reuse the same row. Create addresses through the manager rather than `Address.objects.create`:
 
 ```python
-address, created = Address.objects.get_or_create(
-    line1=normalized_line1,
+address, created = Address.objects.get_or_create_address(
+    created_by=request.user,
+    line1=line1,
     city=city,
     pincode=pincode,
     district=district,
     state=state,
+    police_station=police_station,
 )
 ```
 
-Hash the canonical form and add a `hash` column with a unique index for faster lookups.
+**Canonical form:** each content field (`line1`, `city`, `state`, `pincode`, `district`, `police_station`) is put in Unicode NFC form, cleared of invisible characters (zero-width space U+200B, word joiner U+2060, byte-order mark U+FEFF), trimmed, and has inner whitespace collapsed to one space; `pincode` keeps no spaces (`"560 001"` → `"560001"`). Values are stored in this form with their original case.
+
+NFC matters for Indian scripts: the same visible Malayalam or Hindi text can arrive as different code points depending on the keyboard or input method (`"क़"` precomposed, or `"क"` plus a nukta), and without it they would be stored as different addresses. The zero-width joiner and non-joiner (U+200D, U+200C) are kept, because Malayalam and Devanagari use them to choose how letters join.
+
+**Hash:** SHA-256 of the canonical fields joined by a unit separator (`\x1f`), stored in `hash` with a unique index. Only whitespace is normalized: `"12  MG Road"` and `"12 MG Road"` are the same address, but `"12 mg road"` is a different one. Case is significant on purpose. If it were ignored, whoever typed an address first would fix its casing for everyone after, and a case-only correction (`revise(city="Bengaluru")` on a row stored as `"bengaluru"`) could never be saved, so badly cased addresses would be printed on notices. `save()` always recomputes the hash, so a stored hash always matches the stored values.
+
+**Behaviour:**
+- An existing match is returned as is, keeping its original `created_by`. `created_by` is not part of the hash, so two users recording the same address share one row.
+- Because one row can be shared by unrelated parties (a complainant and an accused at the same place), `created_by` only says who entered it first, not who owns it. The API does not expose it; it is kept for audit in the database and admin.
+- A case-only change is a different address, so `revise()` creates a new row for it and leaves the original untouched.
+- `revise()` goes through the same path, so revising to an address that already exists returns that row, and a revision with no changes returns the original.
+- Concurrent callers are safe: the unique index makes the losing insert fall back to the existing row.
+- A direct duplicate insert fails at the unique index; model validation (and so the admin add form) reports "This address already exists." instead.
 
 ## 8. Core Case Record: The `cases` Table
 
@@ -586,6 +638,11 @@ The `person.user_id` FK points to this existing model.
 
 ### 12.2 Backfill Strategy
 
+**Not shipped:** no deployment holds real user data yet, so no backfill
+migration exists. Litigants get a `person` row as the filing flow creates
+them. The steps below apply only if `person` is introduced to a deployment that
+already has registered users.
+
 When introducing `person` to an existing deployment with registered users:
 
 1. Create all new tables with FKs nullable.
@@ -675,4 +732,4 @@ ALTER TABLE case_evidence ADD COLUMN supersedes_evidence_id uuid REFERENCES case
 ```
 
 ### 16.3 Audit History Integration
-Apply spec 0004 (Simple Audit History) to track who changed what when on `cases`, `case_participant`, and `representation` tables.
+Apply spec 0004 (Simple Audit History) to track who changed what when on `cases`, `case_participant`, and `representation` tables. `person` and `institution` already do (§3.4).
