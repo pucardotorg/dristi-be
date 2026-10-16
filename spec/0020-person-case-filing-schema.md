@@ -404,7 +404,6 @@ One filing. Holds only what every dispute type shares; type-specific data goes i
 | `id` | uuid | PK | |
 | `case_type` | varchar(32) | NOT NULL | CHEQUE_BOUNCE for now; says which detail table to join |
 | `filing_number` | varchar(64) | UNIQUE, NULLABLE | Generated at submission, NULL while draft |
-| `case_number` | varchar(64) | UNIQUE, NULLABLE | Court-assigned at registration |
 | `cnr_number` | varchar(64) | UNIQUE, NULLABLE | National case number |
 | `status` | varchar(32) | NOT NULL | See §8.3 |
 | `court_id` | varchar(64) | NULLABLE | FK to court master data |
@@ -429,11 +428,6 @@ They will be driven by the workflow configuration in
 current state held by `CaseWorkflowInstance`. The table below describes the
 expected e-filing lifecycle for the first case type and is illustrative
 until that integration is specified.
-
-**Why three identifiers (`filing_number`, `case_number`, `cnr_number`):**
-- `filing_number`: System-generated at submission, stable throughout.
-- `case_number`: Court-assigned at registration, the public identifier.
-- `cnr_number`: National identifier for inter-court tracking.
 
 **Why `created_by` is NOT NULL:**
 Every case has a filer. System-created cases (migrations, imports) should use a dedicated system user (see spec 0002, §5).
@@ -515,28 +509,29 @@ Cheque-bounce-specific data. One row per case, with `case_id` as both PK and FK 
 
 ### 10.3 JSONB Structure
 
-Each JSONB column corresponds to one section of the filing form, stored as it is displayed:
+Each JSONB column corresponds to one section of the filing form, stored as it is
+displayed. The schemas each section is validated against are in spec 0021 §5.3.
 
 **`jurisdiction_limitation`:**
 ```json
 {
-  "jurisdiction_grounds": "Cheque dishonored within territorial jurisdiction",
-  "limitation_compliance": true,
-  "limitation_notes": "Demand notice sent within 30 days of dishonor"
+  "cheque_deposited_by_payee": true,
+  "payee_ifsc_code": "HDFC0000512",
+  "payee_bank_name": "HDFC Bank",
+  "payee_bank_branch": "Kochi",
+  "bank_police_station": "Ernakulam Central",
+  "other_complaints_pending": false,
+  "cause_of_action_date": "2024-02-21"
 }
 ```
 
 **`adr_other_prayer`:**
 ```json
 {
-  "adr_attempted": true,
-  "adr_method": "Mediation",
-  "adr_outcome": "Failed",
-  "prayers": [
-    "Recovery of cheque amount",
-    "Interest at 18% per annum",
-    "Costs of litigation"
-  ]
+  "adr_preference": "MAYBE",
+  "other_details": "",
+  "interim_relief": "<p>Direct the Accused to pay interim compensation under Section 143A ...</p>",
+  "final_relief": "<p>Take cognizance of the offence committed by the Accused under Section 138 ...</p>"
 }
 ```
 
@@ -580,34 +575,43 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 
 ### 11.3 Evidence Info Structure by Type
 
+The schemas each type is validated against are in spec 0021 §5.2. For cheque
+bounce, each cheque has one `RETURN_MEMO` and one `LEGAL_DEMAND_NOTICE`,
+matched to it by `ordinal`.
+
 **For `evidence_type = 'CHEQUE'`:**
 ```json
 {
-  "cheque_number": "456789",
-  "bank_account_number": "1234567890",
-  "drawee_bank": "State Bank of India",
-  "amount": 50000.00,
   "cheque_date": "2024-01-15",
-  "return_memo_date": "2024-01-22"
+  "amount": 50000,
+  "cheque_number": "456789",
+  "ifsc_code": "SBIN0001234",
+  "bank_name": "State Bank of India",
+  "bank_branch": "MG Road"
 }
 ```
 
 **For `evidence_type = 'RETURN_MEMO'`:**
 ```json
 {
-  "return_reason": "Insufficient funds",
+  "presentation_date": "2024-01-18",
   "return_date": "2024-01-22",
-  "bank_name": "State Bank of India"
+  "return_reason": "Funds insufficient"
 }
 ```
 
 **For `evidence_type = 'LEGAL_DEMAND_NOTICE'`:**
 ```json
 {
-  "notice_date": "2024-02-01",
+  "nature_of_debt": "Loan",
+  "cheque_issue_reason": "Repayment of loan",
   "dispatch_date": "2024-02-01",
-  "dispatch_method": "Registered post",
-  "tracking_number": "RR123456789IN"
+  "mode_of_service": "Registered post",
+  "tracking_number": "RR123456789IN",
+  "is_delivered": true,
+  "delivery_date": "2024-02-05",
+  "accused_replied": false,
+  "payment_status": "No payment"
 }
 ```
 
@@ -732,4 +736,4 @@ ALTER TABLE case_evidence ADD COLUMN supersedes_evidence_id uuid REFERENCES case
 ```
 
 ### 16.3 Audit History Integration
-Apply spec 0004 (Simple Audit History) to track who changed what when on `cases`, `case_participant`, and `representation` tables. `person` and `institution` already do (§3.4).
+Apply spec 0004 (Simple Audit History) to track who changed what when on `case_participant` and `representation` tables. `person` and `institution` already do (§3.4), as do `cases`, `case_document`, `cheque_bounce_case` and `case_evidence`, whose evidence, sections and documents are edited throughout a filing.

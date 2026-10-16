@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "apps.files",
     "apps.address",
     "apps.parties",
+    "apps.cases",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
@@ -257,6 +258,7 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
+        "CaseStatusEnum": "apps.cases.models.CaseStatus",
     },
 }
 

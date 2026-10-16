@@ -33,6 +33,7 @@ The user provides a case number to join an existing, already-registered case as 
 ```
 GET /cases/by-number/{case_number}
 ```
+PLEASE NOTE: This "case number" 
 
 **Path Parameters:**
 - `case_number` (string): The court-assigned case number (e.g., `CC/123/2024`)
@@ -71,29 +72,41 @@ POST /cases
 Query Parameters:
 - `status` (comma-separated): Filter by case status
 - `created_by=me`: Show only cases I created
-- `page`, `page_size`: Pagination (spec 0000)
+- `page`: Page number (spec 0000 §11). The project's default page-number
+  pagination applies: 20 items per page, not configurable per request.
 
 **Response (200 OK):**
 ```json
 {
+  "count": 1,
+  "next": null,
+  "previous": null,
   "results": [
     {
       "case_id": "uuid",
       "case_type": "CHEQUE_BOUNCE",
       "filing_number": "FIL/2024/001234",
+      "case_number": null,
+      "cnr_number": null,
       "status": "DRAFT_IN_PROGRESS",
+      "court_id": "uuid",
+      "filed_at": null,
+      "registered_at": null,
       "created_at": "2024-03-10T14:22:00Z",
       "updated_at": "2024-03-12T09:15:00Z"
     }
   ],
   "meta": {
-    "page": 1,
-    "page_size": 20,
-    "total_count": 1,
-    "total_pages": 1
+    "timestamp": "2024-03-12T14:45:00.000000+05:30",
+    "app_version": "abc123def",
+    "spec_version": "1.0"
   }
 }
 ```
+
+`count` is the total across pages; `next` and `previous` are the URLs of the
+neighbouring pages (with the same filters), or `null`. `meta` is the standard
+response envelope (spec 0000 §8), not pagination data.
 
 **Note:**
 This endpoint lists only cases that have been created in the database (i.e., have at least one saved data entry). Draft sessions (created via `POST /cases` but not yet populated with data) are not included in this listing because they exist only in cache, not in the `cases` table.
@@ -105,15 +118,20 @@ Initializes a client-side draft session without creating database entries. Datab
 **Request Body:**
 ```json
 {
-  "case_type": "CHEQUE_BOUNCE"
+  "case_type": "CHEQUE_BOUNCE",
+  "court_id": "uuid-of-court-organization"
 }
 ```
+
+`court_id` is optional: the id of the court (an `Organization`) the case is to
+be filed in. An unknown or inactive id is a 400.
 
 **Response (201 Created):**
 ```json
 {
   "draft_session_id": "550e8400-e29b-41d4-a716-446655440000",
   "case_type": "CHEQUE_BOUNCE",
+  "court_id": "uuid-of-court-organization",
   "created_at": "2024-03-15T10:30:00Z"
 }
 ```
@@ -125,10 +143,12 @@ Initializes a client-side draft session without creating database entries. Datab
    {
      "draft_session_id": "uuid",
      "case_type": "CHEQUE_BOUNCE",
+     "court_id": "uuid or null",
      "created_by": "user_id",
      "created_at": "timestamp"
    }
    ```
+   When the first save creates the case, `court_id` from the draft is set on it.
 3. Return `draft_session_id` to client
 
 **No database entries created yet:**
@@ -151,7 +171,7 @@ Once a case is created (after the first data entry), all subsequent endpoints us
 
 ## 3. Step 1: Document Upload
 
-Every upload requires a case ID and a `document_type`. Only **case-level documents** use these endpoints. Vakalatnamas and POA documents are uploaded when creating the representation/mandate (§4.5, §4.6).
+Every upload requires a case ID and a `document_type`. Only **case-level documents** use these endpoints. Vakalatnamas and POA documents are also accepted here for now (§3.4); they are meant to move to the representation/mandate endpoints (§4.4, §4.5) once those exist.
 
 ### 3.1 Upload Document
 
@@ -198,7 +218,8 @@ POST /cases/{case_id_or_draft_session_id}/documents
 If document upload is the first action, the case must exist before we can link the document to it. This ensures atomicity: document upload → case creation → document linking all succeed or all fail together.
 
 **Error Responses:**
-- `400 Bad Request`: Unknown `document_type` or file validation failure
+- `400 Bad Request`: Unknown `document_type`, or the file fails the shared `apps.files` check: it must be a PDF, JPEG or PNG whose content matches its type (leading bytes), with a matching extension, within the size limit. The declared content type and the file name are only hints, so a renamed or mislabelled file is refused.
+- `409 Conflict` (`case_not_editable`): the case has been submitted (§7)
 - `404 Not Found`: Neither case nor draft session exists for the provided ID
 - `413 Payload Too Large`: File exceeds size limit
 
@@ -232,13 +253,17 @@ Used for in-step previews and completeness checks.
 ### 3.3 Delete Document
 
 ```
-DELETE /cases/{case_id}/documents/{case_document_id}
+DELETE /case-documents/{case_document_id}
 ```
 
 **Response (204 No Content)**
 
+The document is addressed by its own id, which is unique across cases; the
+owning case is found through it. A document on a case the caller did not
+create returns 404.
+
 **Implementation:**
-Soft delete: sets `is_active = false`. The underlying `document` row is not deleted (spec 0017 §8.4).
+Soft delete: sets `is_active = false`. The underlying `document` row is not deleted (spec 0017 §8.4). Evidence linked to the document is unlinked (`case_document_id` set to null) in the same transaction, so no evidence points at a document that is no longer part of the case.
 
 ### 3.4 Document Type Enum
 
@@ -249,15 +274,24 @@ The `document_type` must be one of:
 - `RETURN_MEMO`
 - `LEGAL_DEMAND_NOTICE`
 - `PROOF_OF_DISPATCH`
+- `PROOF_OF_DELIVERY_OF_DEMAND_NOTICE`
+- `REPLY_TO_DEMAND_NOTICE`
 - `PROOF_OF_DEBT`
 - `AFFIDAVIT`
+- `VAKALATNAMA`
+- `POA_DOCUMENT`
 - `OTHER_SUPPORTING_DOCUMENT`
 
-**Not accepted here:**
-- `VAKALATNAMA` — uploaded with advocate representation (§4.5)
-- `POA_DOCUMENT` — uploaded with POA mandate (§4.6)
+**`VAKALATNAMA` and `POA_DOCUMENT`:** accepted here until the advocate
+representation (§4.4) and POA holder (§4.5) endpoints exist. Uploaded this way
+they are linked to the case only, not to the advocate or POA holder they
+belong to; when those endpoints are built, decide whether these uploads move to
+them and how existing ones are re-linked.
 
-New case types extend this enum without changing the endpoint.
+Each case type lists the document types it accepts, in the case type registry,
+and `GET /case-types/{case_type}` serves that list. A known type the case type
+does not accept is a 400. New case types extend this enum without changing the
+endpoint.
 
 ## 4. Step 2: Party Management
 
@@ -534,10 +568,22 @@ Sets `is_active = false`, `revoked_at = now()`.
 
 ```
 POST   /cases/{case_id_or_draft_session_id}/evidence
-PATCH  /cases/{case_id}/evidence/{case_evidence_id}
-DELETE /cases/{case_id}/evidence/{case_evidence_id}
 GET    /cases/{case_id}/evidence?evidence_type={type}
+PATCH  /case-evidence/{case_evidence_id}
+DELETE /case-evidence/{case_evidence_id}
 ```
+
+Adding and listing evidence happen under the case. Updating and removing one
+piece of evidence use its own id, which is unique across cases; the owning case
+is found through it, and evidence on a case the caller did not create returns
+404.
+
+On POST, `evidence_type` is sent in the request body only, never as a query
+parameter. The `evidence_type` query parameter exists on GET, as a filter.
+
+For cheque bounce, each cheque has one `RETURN_MEMO` and one
+`LEGAL_DEMAND_NOTICE`, matched to it by `ordinal`: cheque #1, return memo #1,
+demand notice #1.
 
 **POST Request Body (Cheque):**
 ```json
@@ -545,12 +591,25 @@ GET    /cases/{case_id}/evidence?evidence_type={type}
   "evidence_type": "CHEQUE",
   "case_document_id": "uuid-of-uploaded-scan",
   "evidence_info": {
-    "cheque_number": "456789",
-    "bank_account_number": "1234567890",
-    "drawee_bank": "State Bank of India",
-    "amount": 50000.00,
     "cheque_date": "2024-01-15",
-    "return_memo_date": "2024-01-22"
+    "amount": 50000,
+    "cheque_number": "456789",
+    "ifsc_code": "SBIN0001234",
+    "bank_name": "State Bank of India",
+    "bank_branch": "MG Road"
+  }
+}
+```
+
+**POST Request Body (Return Memo):**
+```json
+{
+  "evidence_type": "RETURN_MEMO",
+  "case_document_id": "uuid",
+  "evidence_info": {
+    "presentation_date": "2024-01-18",
+    "return_date": "2024-01-22",
+    "return_reason": "Funds insufficient"
   }
 }
 ```
@@ -561,10 +620,15 @@ GET    /cases/{case_id}/evidence?evidence_type={type}
   "evidence_type": "LEGAL_DEMAND_NOTICE",
   "case_document_id": "uuid",
   "evidence_info": {
-    "notice_date": "2024-02-01",
+    "nature_of_debt": "Loan",
+    "cheque_issue_reason": "Repayment of loan",
     "dispatch_date": "2024-02-01",
-    "dispatch_method": "Registered post",
-    "tracking_number": "RR123456789IN"
+    "mode_of_service": "Registered post",
+    "tracking_number": "RR123456789IN",
+    "is_delivered": true,
+    "delivery_date": "2024-02-05",
+    "accused_replied": false,
+    "payment_status": "No payment"
   }
 }
 ```
@@ -582,23 +646,25 @@ GET    /cases/{case_id}/evidence?evidence_type={type}
 ```
 
 **Transaction Steps:**
-1. **Check if case exists and create if needed:**
+1. Resolve the case type from the `case_id` or the draft session (404 if neither belongs to the caller).
+
+2. Validate before writing anything: the case type must accept `evidence_type`, and `evidence_info` must match its schema (§5.2). A failure is a 400 and creates no case.
+
+3. **Get or create the case:**
    - If path parameter is a valid `case_id`, proceed with existing case
    - If path parameter is a `draft_session_id`, atomically create case and type-specific table (same as §4.1, step 1)
 
-2. Validate `evidence_info` against predefined schema for `evidence_type` (§5.2).
+4. Assign next `ordinal` for `(case_id, evidence_type)`: one more than the highest active ordinal, with the case row locked so concurrent adds cannot take the same number.
 
-3. Assign next `ordinal` for `(case_id, evidence_type)`.
+5. Insert `case_evidence` row.
 
-4. Insert `case_evidence` row.
-
-5. Clear preview cache.
+6. Clear preview cache.
 
 **Why one endpoint for all evidence:**
 New case types add new `evidence_type` values and their schemas, not new endpoints or tables. This replaces type-specific calls like `POST /cheque_bounce`.
 
 **PATCH:**
-Updates `evidence_info` only. Changing `evidence_type` is not allowed; delete and recreate instead.
+Updates `evidence_info`, `case_document_id`, or both; at least one must be sent. `case_document_id` links a document uploaded after the evidence was entered (spec 0020 §11.4), and `null` unlinks it; leaving it out keeps the current link. The document must be an active document of the same case. Changing `evidence_type` is not allowed; delete and recreate instead.
 
 **DELETE:**
 Soft delete: sets `is_active = false`.
@@ -608,50 +674,85 @@ Lists evidence, optionally filtered by `evidence_type`.
 
 ### 5.2 Evidence Info Schemas
 
-Each `evidence_type` has a required schema validated on POST/PATCH:
+Each `evidence_type` has a required schema validated on POST/PATCH. The
+schemas live in code, in the case type registry
+(`apps/cases/services/case_types.py`), and are served to clients by
+`GET /case-types/{case_type}` so forms are built from the same source the
+server validates against.
 
-**`CHEQUE`:**
+All schemas are strict (`"additionalProperties": false`): an unknown key is a
+400, so a typo is reported rather than silently stored. Required text fields
+must be non-empty. Dates are `YYYY-MM-DD`. Every problem is reported at once,
+under `evidence_info`.
+
+**`CHEQUE`** (as written on the cheque leaf, plus the drawer's bank):
 ```json
 {
   "type": "object",
-  "required": ["cheque_number", "bank_account_number", "drawee_bank", "amount", "cheque_date"],
+  "required": ["cheque_date", "amount", "cheque_number", "ifsc_code", "bank_name", "bank_branch"],
   "properties": {
-    "cheque_number": { "type": "string" },
-    "bank_account_number": { "type": "string" },
-    "drawee_bank": { "type": "string" },
-    "amount": { "type": "number", "minimum": 0 },
     "cheque_date": { "type": "string", "format": "date" },
-    "return_memo_date": { "type": "string", "format": "date" }
-  }
+    "amount": { "type": "number", "exclusiveMinimum": 0 },
+    "cheque_number": { "type": "string", "pattern": "^[0-9]{6}$" },
+    "ifsc_code": { "type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$" },
+    "bank_name": { "type": "string", "minLength": 1 },
+    "bank_branch": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
 }
 ```
+`cheque_number` is the six-digit number, not the full MICR line.
 
-**`RETURN_MEMO`:**
+**`RETURN_MEMO`** (from the memo the bank issued when the cheque was dishonoured):
 ```json
 {
   "type": "object",
-  "required": ["return_reason", "return_date", "bank_name"],
+  "required": ["presentation_date", "return_date", "return_reason"],
   "properties": {
-    "return_reason": { "type": "string" },
+    "presentation_date": { "type": "string", "format": "date" },
     "return_date": { "type": "string", "format": "date" },
-    "bank_name": { "type": "string" }
-  }
+    "return_reason": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
 }
 ```
 
-**`LEGAL_DEMAND_NOTICE`:**
+**`LEGAL_DEMAND_NOTICE`** (nature of debt, the statutory notice, and any payment against the cheque):
 ```json
 {
   "type": "object",
-  "required": ["notice_date", "dispatch_date", "dispatch_method"],
+  "required": [
+    "nature_of_debt", "cheque_issue_reason", "dispatch_date",
+    "mode_of_service", "is_delivered", "payment_status"
+  ],
   "properties": {
-    "notice_date": { "type": "string", "format": "date" },
+    "nature_of_debt": { "type": "string", "minLength": 1 },
+    "cheque_issue_reason": { "type": "string", "minLength": 1 },
     "dispatch_date": { "type": "string", "format": "date" },
-    "dispatch_method": { "type": "string" },
-    "tracking_number": { "type": "string" }
-  }
+    "mode_of_service": { "type": "string", "minLength": 1 },
+    "tracking_number": { "type": "string", "minLength": 1 },
+    "is_delivered": { "type": "boolean" },
+    "delivery_date": { "type": "string", "format": "date" },
+    "accused_replied": { "type": "boolean" },
+    "payment_status": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false,
+  "if": { "properties": { "is_delivered": { "const": true } }, "required": ["is_delivered"] },
+  "then": { "required": ["delivery_date"] }
 }
 ```
+`delivery_date` is required when `is_delivered` is true; the 15-day payment
+window runs from it.
+
+**Not yet enforced:**
+- `return_reason`, `nature_of_debt`, `cheque_issue_reason`, `mode_of_service`
+  and `payment_status` are dropdowns in the UI but accept any non-empty text
+  until their option lists are agreed; each then becomes an `enum`.
+- Date ordering (presentation not before the cheque date, return not before
+  presentation, delivery not before dispatch) cannot be expressed in JSON
+  Schema, and the first rule spans two evidence rows.
+- `amount` is a JSON number; a money-safe representation (integer paise or a
+  decimal string) is an open question.
 
 ### 5.3 Case Details (Sections 3 & 4: Type-Specific JSON)
 
@@ -660,12 +761,29 @@ PUT /cases/{case_id_or_draft_session_id}/details/{section}
 GET /cases/{case_id}/details
 ```
 
+The request body is the whole section object; it replaces what was stored, it
+is not merged with it.
+
 **PUT Request Body (Section 3: Jurisdiction & Limitation):**
 ```json
 {
-  "jurisdiction_grounds": "Cheque dishonored within territorial jurisdiction",
-  "limitation_compliance": true,
-  "limitation_notes": "Demand notice sent within 30 days of dishonor"
+  "cheque_deposited_by_payee": true,
+  "payee_ifsc_code": "HDFC0000512",
+  "payee_bank_name": "HDFC Bank",
+  "payee_bank_branch": "Kochi",
+  "bank_police_station": "Ernakulam Central",
+  "other_complaints_pending": false,
+  "cause_of_action_date": "2024-02-21"
+}
+```
+
+**PUT Request Body (Section 4: ADR, Other Details & Prayer):**
+```json
+{
+  "adr_preference": "MAYBE",
+  "other_details": "",
+  "interim_relief": "<p>Direct the Accused to pay interim compensation under Section 143A ...</p>",
+  "final_relief": "<p>Take cognizance of the offence committed by the Accused under Section 138 ...</p>"
 }
 ```
 
@@ -679,16 +797,74 @@ GET /cases/{case_id}/details
 ```
 
 **Implementation:**
-1. **Check if case exists and create if needed:**
+1. Resolve the case type from the `case_id` or the draft session (404 if neither belongs to the caller).
+
+2. Validate before writing anything (a failure is a 400 and creates no case):
+   - `{section}` must be one of the case type's sections. For `CHEQUE_BOUNCE`: `jurisdiction_limitation`, `adr_other_prayer`.
+   - The body must match that section's schema (below). Errors are reported under `data`.
+
+3. **Get or create the case:**
    - If path parameter is a valid `case_id`, proceed with existing case
    - If path parameter is a `draft_session_id`, atomically create case and type-specific table (same as §4.1, step 1)
 
-2. Validate `{section}` against allowed columns for this `case_type`:
-   - For `CHEQUE_BOUNCE`: `jurisdiction_limitation`, `adr_other_prayer`
+4. Replace that JSONB column on the type-detail table (`cheque_bounce_case.jurisdiction_limitation`).
 
-3. Replace that JSONB column on the type-detail table (`cheque_bounce_case.jurisdiction_limitation`).
+5. Clear preview cache.
 
-4. Clear preview cache.
+**Section schemas (`CHEQUE_BOUNCE`):** like the evidence schemas, these live in
+the case type registry, are served by `GET /case-types/{case_type}`, and are
+strict (`"additionalProperties": false`).
+
+`jurisdiction_limitation` (which court can hear the case, and whether the complaint is in time):
+```json
+{
+  "type": "object",
+  "required": ["cheque_deposited_by_payee", "cause_of_action_date"],
+  "properties": {
+    "cheque_deposited_by_payee": { "type": "boolean" },
+    "payee_ifsc_code": { "type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$" },
+    "payee_bank_name": { "type": "string", "minLength": 1 },
+    "payee_bank_branch": { "type": "string", "minLength": 1 },
+    "bank_police_station": { "type": "string", "minLength": 1 },
+    "other_complaints_pending": { "type": "boolean" },
+    "cause_of_action_date": { "type": "string", "format": "date" }
+  },
+  "additionalProperties": false,
+  "if": { "properties": { "cheque_deposited_by_payee": { "const": true } }, "required": ["cheque_deposited_by_payee"] },
+  "then": { "required": ["payee_ifsc_code", "payee_bank_name", "payee_bank_branch", "bank_police_station"] }
+}
+```
+Jurisdiction follows the branch where the cheque was presented and the
+complainant holds the account, so the payee's bank details and that branch's
+police station are required when the payee deposited the cheque.
+`other_complaints_pending` records whether another Section 138 complaint is
+pending between the same parties. The complaint filing date is not part of the
+section: it is the case's `filed_at`, set at submission.
+
+`adr_other_prayer` (willingness to settle, other details for the court, and the relief sought):
+```json
+{
+  "type": "object",
+  "required": ["final_relief"],
+  "properties": {
+    "adr_preference": { "enum": ["YES", "NO", "MAYBE"] },
+    "other_details": { "type": "string" },
+    "interim_relief": { "type": "string" },
+    "final_relief": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}
+```
+`other_details`, `interim_relief` and `final_relief` hold rich-text editor
+output and are stored as sent; they must be sanitized wherever they are
+rendered (preview, PDFs).
+
+**Open questions:**
+- `bank_police_station` is free text; if police stations become master data it
+  should hold the station's id.
+- Required fields are enforced on every save, so a section cannot be saved
+  half-filled. If the client autosaves drafts, required fields may need to move
+  to the completeness check (§6.3) instead.
 
 **Why section-based:**
 The endpoint doesn't mention "cheque bounce," so a second dispute type (e.g., civil suit) reuses the same endpoint with its own sections.
@@ -911,6 +1087,8 @@ Client calls this before attempting to submit for signing. Invalid cases cannot 
 ## 7. Status Transitions
 
 Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle requires additional endpoints.
+
+**Only drafts can be changed.** Every write (uploading or removing a document, adding, changing or removing evidence, saving a details section) is refused with `409 Conflict` and code `case_not_editable` once the case has left `DRAFT_IN_PROGRESS`, so what the court reviews cannot change underneath it. Reads are unaffected. Every successful write also sets the case's `updated_at` (and `updated_by`), which listings show and the concurrent-modification check (§10.4) relies on.
 
 ```
 POST /cases/{case_id}/submit-for-signing
@@ -1149,11 +1327,13 @@ case = Case.objects.select_related(
 
 ### 11.2 Pagination for Evidence and Documents
 
-If a case has many cheques or documents, paginate the lists:
+Evidence and document lists use the project's default page-number pagination
+(spec 0000 §11), the same as `GET /cases`: 20 items per page, selected with
+`page`:
 
 ```
-GET /cases/{id}/evidence?evidence_type=CHEQUE&page=1&page_size=10
-GET /cases/{id}/documents?page=1&page_size=20
+GET /cases/{id}/evidence?evidence_type=CHEQUE&page=1
+GET /cases/{id}/documents?page=2
 ```
 
 But the full preview (`GET /cases/{id}`) returns everything — it's cached and intended for one-time assembly.
@@ -1213,6 +1393,8 @@ CREATE INDEX ON representation (advocate_id, is_active);
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
+| GET | `/case-types` | Every case type: sections, document types, evidence schemas |
+| GET | `/case-types/{case_type}` | One case type's sections, document types, evidence schemas |
 | GET | `/cases/by-number/{case_number}` | Join existing case |
 | GET | `/cases?status=...&created_by=me` | List user's filings (DB cases only) |
 | POST | `/cases` | Initialize draft session (returns draft_session_id) |
@@ -1220,7 +1402,7 @@ CREATE INDEX ON representation (advocate_id, is_active);
 | POST | `/cases/{id}/validate` | Completeness check |
 | POST | `/cases/{id_or_draft}/documents` | Upload document (creates case if first action) |
 | GET | `/cases/{id}/documents?document_type=` | List documents |
-| DELETE | `/cases/{id}/documents/{doc_id}` | Remove document |
+| DELETE | `/case-documents/{case_document_id}` | Remove document |
 | POST | `/cases/{id_or_draft}/complainants` | Add complainant (creates case if first action) |
 | PATCH | `/cases/{id}/complainants/{participant_id}` | Update complainant |
 | DELETE | `/cases/{id}/complainants/{participant_id}` | Remove complainant |
@@ -1237,8 +1419,8 @@ CREATE INDEX ON representation (advocate_id, is_active);
 | PATCH | `/cases/{id}/poa-holders/{mandate_id}` | Update POA mandate |
 | DELETE | `/cases/{id}/poa-holders/{mandate_id}` | Revoke mandate |
 | POST | `/cases/{id_or_draft}/evidence` | Add evidence (creates case if first action) |
-| PATCH | `/cases/{id}/evidence/{evidence_id}` | Update evidence |
-| DELETE | `/cases/{id}/evidence/{evidence_id}` | Remove evidence |
+| PATCH | `/case-evidence/{case_evidence_id}` | Update evidence |
+| DELETE | `/case-evidence/{case_evidence_id}` | Remove evidence |
 | GET | `/cases/{id}/evidence?evidence_type=` | List evidence |
 | PUT | `/cases/{id_or_draft}/details/{section}` | Update case details (creates case if first action) |
 | GET | `/cases/{id}/details` | Get all case details |
