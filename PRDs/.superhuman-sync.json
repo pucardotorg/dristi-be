@@ -1,0 +1,387 @@
+{
+  "docUri": "superhuman://docs/KtL_rwN6Qw",
+  "parentPageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu",
+  "parentPageTitle": "PRDs",
+  "files": {
+    "account-creation-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-Ebr9Pgtqan",
+      "title": "Account Creation Handover",
+      "contentHash": "bedf87277a45",
+      "pageUpdatedAt": 1791923368.934,
+      "note": "Patched in place 2026-10-14 to v9 (status, callout, REG-13 row in grid-Kg5DTBtmgG, decision-log entry). `sections` not recorded.",
+      "calloutElementId": "cl-023ZWT-x7f"
+    },
+    "efiling-scrutiny-registration-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
+      "title": "E-Filing Scrutiny Registration Handover",
+      "contentHash": "a4129fcb0242",
+      "pageUpdatedAt": 1791742692.661,
+      "calloutElementId": "eca-DQo7VNEM8H",
+      "note": "Force-synced 2026-10-11 (user-approved; discarded the 2026-10-09 page edit and the page's comment anchors). Coda leaves an id-less blank block after each of the 4 live views that cannot be deleted via the API. Bold next to inline code renders inside the code span (§16.1, §16.7, §17, §20.2, §20.3a) — a Coda markdown-import quirk. The §22 `<step>` placeholder is now backticked in the source.",
+      "sections": [
+        {
+          "key": "# E-Filing, Scrutiny and Registration — Developer & Agent Handover",
+          "elementId": "cl-IbA_UJz4iO",
+          "hash": "c5ef2d01d10d"
+        },
+        {
+          "key": "## Sources and precedence",
+          "elementId": "cl-YlYr94icHC",
+          "hash": "09033c586a56"
+        },
+        {
+          "key": "idx-2",
+          "elementId": "cl-rhcVcAHhKh",
+          "hash": "3f1afcf34e4b"
+        },
+        {
+          "key": "idx-3",
+          "elementId": "grid-m2SuptcuH8",
+          "hash": "0c2f163a707e"
+        },
+        {
+          "key": "idx-4",
+          "elementId": "grid-OSj3_coIIR",
+          "hash": "8abfbb70b10a"
+        },
+        {
+          "key": "## 16.1 The generative rule — `DOC-01`",
+          "elementId": "cl-YsfyeXO6Uu",
+          "hash": "44f46da733b2"
+        },
+        {
+          "key": "## 16.2 Layout — `DOC-04`",
+          "elementId": "cl-nCFCEWQe8F",
+          "hash": "ad6a9d9ebee7"
+        },
+        {
+          "key": "## 16.3 Printing values — `DOC-05`",
+          "elementId": "cl-xkd87iQjQ-",
+          "hash": "5fc8481a24a5"
+        },
+        {
+          "key": "## 16.4 The document, in print order — `DOC-06`",
+          "elementId": "cl-mOfxIUdzCK",
+          "hash": "7421824059a2"
+        },
+        {
+          "key": "## 16.5 Cover page — `DOC-03`",
+          "elementId": "cl-ZQT5FXkEaf",
+          "hash": "c92dd41416bd"
+        },
+        {
+          "key": "## 16.6 Signature block — `DOC-02`",
+          "elementId": "cl-1D3SaOTzjR",
+          "hash": "7159338eab5e"
+        },
+        {
+          "key": "## 16.7 Appended documents — `DOC-07`",
+          "elementId": "cl--pGIbaaerJ",
+          "hash": "eb35c3842b97"
+        },
+        {
+          "key": "## 16.8 Where the printed document differs from the flow",
+          "elementId": "cl-ibdd5kkXl5",
+          "hash": "de8059ccfa13"
+        },
+        {
+          "key": "## 16.9 The filled sample",
+          "elementId": "cl-Y3rQesviTq",
+          "hash": "ab4cb9ed6d75"
+        },
+        {
+          "key": "idx-14",
+          "elementId": "cl-k8eVutTOmi",
+          "hash": "15a1636adb46"
+        },
+        {
+          "key": "## 19.1 Case filing fees",
+          "elementId": "cl-_IR8AK8M2v",
+          "hash": "f891be92834f"
+        },
+        {
+          "key": "## 19.2 Join-a-case fees",
+          "elementId": "cl-xDamlYInJg",
+          "hash": "19bdfcd378da"
+        },
+        {
+          "key": "## 19.3 Upfront process payments",
+          "elementId": "cl-RwTD6uf7mp",
+          "hash": "d1183af09124"
+        },
+        {
+          "key": "## 19.4 Resubmission",
+          "elementId": "cl-guccDn8rZL",
+          "hash": "e66e4a4522e7"
+        },
+        {
+          "key": "## 20.1 Case routing — courtroom, scrutiny officer, magistrate",
+          "elementId": "cl-eabGJ8NSxR",
+          "hash": "d94ee29c0b16"
+        },
+        {
+          "key": "## 20.2 Scrutiny workflow",
+          "elementId": "cl-tX6F0NElTS",
+          "hash": "c4df8eb9b4a8"
+        },
+        {
+          "key": "idx-22",
+          "elementId": "cl-tqfVT6ILY7",
+          "hash": "dd98e69a00d0"
+        },
+        {
+          "key": "idx-24",
+          "elementId": "cl-udW7JV3lVu",
+          "hash": "6d23c2bb476b"
+        },
+        {
+          "key": "## 20.3 Registration",
+          "elementId": "cl-F7Wwwwv3Kb",
+          "hash": "c24e99226b00"
+        },
+        {
+          "key": "## 20.3a Registration point — config",
+          "elementId": "cl-fG96KDi4tb",
+          "hash": "735fd41b350a"
+        },
+        {
+          "key": "## 20.4 Editability on send-back",
+          "elementId": "cl-fVRDY_c6cx",
+          "hash": "94f406056055"
+        },
+        {
+          "key": "## 20.5 Notifications and events",
+          "elementId": "cl--9lZpYVew0",
+          "hash": "6bcbd07ce928"
+        },
+        {
+          "key": "idx-30",
+          "elementId": "cl-zoaDTQ17y6",
+          "hash": "57d5e6193c58"
+        },
+        {
+          "key": "idx-32",
+          "elementId": "cl-7pg7AJzzB_",
+          "hash": "46df07b1df08"
+        },
+        {
+          "key": "idx-33",
+          "elementId": "cl-vz7bCcEX8D",
+          "hash": "0f917593024b"
+        }
+      ]
+    },
+    "case-numbers.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
+      "title": "Case Numbers",
+      "contentHash": "fcef8c1f1367",
+      "pageUpdatedAt": 1790147140.045
+    },
+    "order-template-catalogue.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
+      "title": "Order Template Catalogue",
+      "contentHash": "f685b6299663",
+      "pageUpdatedAt": 1791923403.645,
+      "calloutElementId": "eca-7dZ09Si6QT",
+      "note": "Patched in place 2026-10-14 (Not in V1 intro, removed app-drift paragraph, generic accept/reject sentence, callout date). '#### General variables' renders as a plain paragraph. `sections` not recorded."
+    },
+    "join-a-case-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WxtSmHU5wu",
+      "title": "Join a Case Handover",
+      "contentHash": "5691b09b500e",
+      "pageUpdatedAt": 1791953357.821,
+      "calloutElementId": "cl-_KL_8kabnW",
+      "note": "Force-rebuilt 2026-10-14 at the owner's request (local wins); the unrecorded 2026-10-06 page edit and all page comments were discarded. Live views recreated: Court Side table-7SpA4aFqK0, Citizen-Side table-XWc8kp4Y5A, Notifications table-6VFhpFf1Lu, Events table-1FusHbDJ7v. `sections` not recorded (Coda explodes chunks into native blocks)."
+    },
+    "case-lifecycle-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-oci-tqnIPh",
+      "title": "Case Lifecycle Handover",
+      "contentHash": "265a5f96fa25",
+      "pageUpdatedAt": 1789468915.138
+    },
+    "pending-tasks-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-brLkhW_t8M",
+      "title": "Pending Tasks Handover",
+      "contentHash": "6ef1d259a9b4",
+      "pageUpdatedAt": 1789456825.959
+    },
+    "view-case-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
+      "title": "View Case Handover",
+      "contentHash": "db7defd529a2",
+      "pageUpdatedAt": 1789647525.696
+    },
+    "cognizance-cheat-sheet.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
+      "title": "Cognizance Cheat Sheet",
+      "contentHash": "dae49b8d04a8",
+      "pageUpdatedAt": 1790435416.815
+    },
+    "process-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
+      "title": "Process Handover",
+      "contentHash": "300d2309b050",
+      "pageUpdatedAt": 1791923550.111,
+      "calloutElementId": "eca-bHRMWLWRsl",
+      "note": "Patched in place 2026-10-14 (status, callout, §2 recipient paragraph, SGN-01/DSP-04/PIA-01/Q-2 table cells; PIA-03 row deleted). Live view 'Pending tasks (Citizen-Side) — Process' = .../section-7id_OHaaSJ/tables/table-SK008Zu8WP/views/v-qfT2ThtVYQ. `sections` not recorded."
+    },
+    "bulk-filing-problem-statement.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kNAxc6VmZ1",
+      "title": "Bulk Filing Problem Statement",
+      "contentHash": "0d66b208552b",
+      "pageUpdatedAt": 1790146275.87
+    },
+    "dashboards-proposal.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-RwijzgVqck",
+      "title": "Dashboards Proposal",
+      "contentHash": "7ca1e41459d4",
+      "pageUpdatedAt": 1789634456.011
+    },
+    "order-generation.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
+      "title": "Order Generation",
+      "contentHash": "dc1b0bf519ed",
+      "pageUpdatedAt": 1790149923.315
+    },
+    "application-lifecycle.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
+      "title": "Application Lifecycle",
+      "contentHash": "736ebb8ca779",
+      "pageUpdatedAt": 1791923215.508,
+      "calloutElementId": "eca-BhPCutGYcD",
+      "sections": [
+        {
+          "key": "# Application Lifecycle",
+          "elementId": "cl-yXZ8cQwK6M",
+          "hash": "e887c65ad8cd"
+        },
+        {
+          "key": "idx-1",
+          "elementId": "cl-kwvO8-2qLg",
+          "hash": "0ae7f567cfdb"
+        },
+        {
+          "key": "idx-2",
+          "elementId": "cl-LeLHZMzzQ9",
+          "hash": "ec7916580509"
+        },
+        {
+          "key": "## The workflow",
+          "elementId": "cl-pwH8ASttY8",
+          "hash": "342bac6b8ac1"
+        },
+        {
+          "key": "## Users and actions",
+          "elementId": "cl-VkOisFSRm4",
+          "hash": "09e6f0b35899"
+        },
+        {
+          "key": "## Step 1 — Filing",
+          "elementId": "cl-9XsQorOAvT",
+          "hash": "1941e4da7fd4"
+        },
+        {
+          "key": "## Step 2 — Review: the first gate",
+          "elementId": "cl-JEDDA2joO4",
+          "hash": "17a326ce6d93"
+        },
+        {
+          "key": "## Step 3 — Onboarding",
+          "elementId": "cl-EoGH1CJISH",
+          "hash": "fea531586878"
+        },
+        {
+          "key": "## Step 4 — Objections",
+          "elementId": "cl-Yj5L_sejee",
+          "hash": "b38a3b774e39"
+        },
+        {
+          "key": "## Step 5 — Decision: the second gate",
+          "elementId": "cl--gcNwNIehv",
+          "hash": "cc1caa603c67"
+        },
+        {
+          "key": "## Step 6 — After the decision",
+          "elementId": "cl-v6GTdbZUuT",
+          "hash": "c9c3853d4b4d"
+        },
+        {
+          "key": "## Expiry (Advance / Prepone and Postpone only)",
+          "elementId": "cl-sY4kr25wH7",
+          "hash": "a976229adb19"
+        },
+        {
+          "key": "## Suggesting a date",
+          "elementId": "cl-UsWRZq91w5",
+          "hash": "1226afc578ce"
+        },
+        {
+          "key": "## Every status change",
+          "elementId": "cl-z_AG1HEfFL",
+          "hash": "916d2f14e2fd"
+        },
+        {
+          "key": "## Application attributes",
+          "elementId": "cl-vA1-Wwy3Qq",
+          "hash": "161315cba592"
+        },
+        {
+          "key": "## Number formats by state",
+          "elementId": "cl-p7PapqnhRK",
+          "hash": "f6cd347f48c7"
+        },
+        {
+          "key": "## Application types",
+          "elementId": "cl-v1eYVpmecp",
+          "hash": "7ea82c65fd6e"
+        },
+        {
+          "key": "## Fields by application type",
+          "elementId": "cl-yqmSvsft7o",
+          "hash": "cb7ea0c1ef2f"
+        },
+        {
+          "key": "### PoA Change",
+          "elementId": "cl-Krc7jrFwws",
+          "hash": "e40c8e0b0900"
+        },
+        {
+          "key": "## A note on onboarding",
+          "elementId": "cl-dKzSUPK_32",
+          "hash": "7b3b1c50266b"
+        },
+        {
+          "key": "## Linked records",
+          "elementId": "cl-eBzneF2HwI",
+          "hash": "6608e928d21f"
+        },
+        {
+          "key": "### Pending tasks (Citizen-Side)",
+          "elementId": "cl-wAIw3zdVAe",
+          "hash": "20c1668ccaf5"
+        },
+        {
+          "key": "### Notifications",
+          "elementId": "cl-cWSif2egvt",
+          "hash": "65ac5c2cf5a5"
+        },
+        {
+          "key": "### Events",
+          "elementId": "cl-RAtpaqCusH",
+          "hash": "72199396868f"
+        },
+        {
+          "key": "idx-28",
+          "elementId": "edl-9SkRh3LHaD",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Open questions",
+          "elementId": "cl-U1DmXiqks5",
+          "hash": "f3ab6279fff9"
+        }
+      ],
+      "note": "Rebuilt 2026-10-11 at v32 (page unedited since the previous sync; the 3 old comment threads survive unanchored). The workflow diagram (markdown image) renders as a plain link — re-insert it as an image block by hand. Coda adds an empty '### ' after each live view; those were deleted. Live views: Pending tasks Court Side, Citizen-Side, Notifications, Events. Patched 2026-10-14 to v33 (status, callout, 'Four fields' line, Other details row added to the Every application table grid-_J9bNGwp7D); section hashes for idx-1 and '## Fields by application type' not recomputed, so the next sync will re-diff those two and find nothing to change."
+    }
+  }
+}
