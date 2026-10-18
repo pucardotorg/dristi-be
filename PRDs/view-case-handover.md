@@ -1,6 +1,6 @@
 # View Case — Developer & Agent Handover
 
-**Status:** v1.7 — 2026-09-15; Complaint removed as a separate section (not attached); Notice/Process Status rewritten as a consolidated process register (recipients, rounds, channels); Hearings moved under Overview as a pop-up, with an order link; Orders cut to title/date/BoTD/PDF, opening an order shows the PDF, court-staff draft and pending-signature behaviour added; order types, mobile layout and pagination rows removed; attendance is a line of text; Applications reduced to one kind — record cut to type/status/dates/filer/side/ID/order/documents, bulk payment and bulk-or-individual signing added, type catalogues dropped
+**Status:** v1.8 — 2026-10-18; `DET-12`: Mark as Evidence and Mark as Void need the **Evidence marker** role ([`court-roles.md`](court-roles.md)), not a staff title. v1.7 — 2026-09-15; Complaint removed as a separate section (not attached); Notice/Process Status rewritten as a consolidated process register (recipients, rounds, channels); Hearings moved under Overview as a pop-up, with an order link; Orders cut to title/date/BoTD/PDF, opening an order shows the PDF, court-staff draft and pending-signature behaviour added; order types, mobile layout and pagination rows removed; attendance is a line of text; Applications reduced to one kind — record cut to type/status/dates/filer/side/ID/order/documents, bulk payment and bulk-or-individual signing added, type catalogues dropped
 **Date:** 2026-09-11
 **Audience:** developers and agents building the View Case module (front end and backend)
 
@@ -181,7 +181,7 @@ viewer on the right.
 | `DET-10` | Tree index | Nested collapsible folder tree. Selection via `?doc=` URL param. Each element is either a **heading** (collapsible, contains children) or a **root element** (leaf, corresponds to a file). |
 | `DET-11` | Document viewer | Two view modes toggled by `?view=`: PDF (iframe) and Digital (structured `DigitalRecord` component). Both views co-exist in the DOM; inactive one is `invisible`, not unmounted. |
 | `DET-13` | Default selection | Opens to the first root element in the tree |
-| `DET-12` | Context menu | Right-click on a root element: **Mark as Evidence**, **Mark as Void**, **Download** (downloads the PDF). **Mark as Evidence and Mark as Void are available to court staff and magistrate only** — not to advocates, litigants, or other parties. Download is available to everyone with case access. |
+| `DET-12` | Context menu | Right-click on a root element: **Mark as Evidence**, **Mark as Void**, **Download** (downloads the PDF). **Mark as Evidence and Mark as Void need the Evidence marker role** ([`court-roles.md`](court-roles.md)) — not available to advocates, litigants, or other parties. Download is available to everyone with case access. |
 
 ## 6.2 Case file registry
 
@@ -452,7 +452,7 @@ Same as filing statuses plus one additional state:
 
 | Value | Label | Notes |
 | --- | --- | --- |
-| `pending-review` | Pending review | Between signature and the magistrate's decision. Not present in the Applications register. |
+| `pending-review` | Pending review | Between signature and the court's decision. Not present in the Applications register. |
 
 ## 10.3 Document types
 
@@ -604,7 +604,7 @@ detail page so the header dropdown and the overview card share state.
 | Phase | What happens |
 | --- | --- |
 | `none` | No bail activity |
-| `task` | Magistrate has approved bail with terms; the task is to raise the bond |
+| `task` | The court has approved bail with terms; the task is to raise the bond |
 | `signing` | Bond generated, out for signatures |
 | `review` | Signatures complete; status review |
 

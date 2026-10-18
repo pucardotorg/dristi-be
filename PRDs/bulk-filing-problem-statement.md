@@ -1,6 +1,6 @@
 # Bulk Filing — Problem Statement
 
-**Status:** v1.2 — 2026-09-23. §3.6 adds backend-lookup fields (Bar registration, IFSC,
+**Status:** v1.3 — 2026-10-18. Appendix B: `DCM-7` proof of debt or liability is optional; natively digital now links to the handover's column config (on for Kerala). v1.2 — 2026-09-23. §3.6 adds backend-lookup fields (Bar registration, IFSC,
 pincode) alongside MDMS. §3.7 and Appendix B correct the Aadhaar note against the
 handover's actual §14 decision — masking is settled (none at launch), only storage design
 is open, and neither is bulk-specific. §4.3 now presents three signing methods (upload,
@@ -688,7 +688,7 @@ Every document a case can require. The required set is **derived from the case d
 | DCM-4 | Proof of dispatch of demand notice | Yes | = number of demand notices |
 | DCM-5 | Proof of delivery (AD card or tracking report) | No | = number of demand notices. Includes documents showing delivery was attempted and failed |
 | DCM-6 | Reply to the demand notice | No | = number of demand notices; available when `LDN-9` = Yes |
-| DCM-7 | Proof of debt or liability | Yes | 1 per case |
+| DCM-7 | Proof of debt or liability | No | 1 per case |
 | DCM-8 | Proof of reasons for delay | No | 1 per case; **exists only when the system computes a delay** |
 | DCM-9 | ID card — complainant (usually Aadhaar; named "ID Card" deliberately, see below) | Yes | = number of complainants |
 | DCM-10 | ID card — PoA holder | Yes | = number of PoA holders |
@@ -696,9 +696,9 @@ Every document a case can require. The required set is **derived from the case d
 | DCM-12 | Vakalatnama | No | Present when the case has ≥ 1 advocate |
 | DCM-13 | Other documents | No | As many as the filer adds |
 
-**"Natively digital"** is a per-document attribute, not a separate document — it is a column
-in the complaint PDF's evidence list. Whether a bulk filer states it or the system infers it
-is *(open)*.
+**"Natively digital"** is a column config, on for Kerala — see the
+[e-filing handover §14](efiling-scrutiny-registration-handover.md). Where it is on, whether
+a bulk filer states it or the system infers it is *(open)*.
 
 **ID card naming.** The handover deliberately calls `DCM-9`/`DCM-10` "ID Card," not "Aadhaar
 Card" (§14), because of Aadhaar Act s.29. Masking is already decided — none at launch, shown

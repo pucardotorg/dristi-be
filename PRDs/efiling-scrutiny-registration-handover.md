@@ -1,6 +1,21 @@
 # E-Filing, Scrutiny and Registration — Developer & Agent Handover
 
-**Status:** v27 — 2026-10-08; **CIN or PAN for an institutional complainant**
+**Status:** v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
+case can be registered at Scrutiny now follows from roles (`SCR-11`, §20.3a): a person who
+holds both the Scrutiny officer and Case registerer roles in the courtroom can register
+the case straight from Scrutiny, or forward it; anyone else forwards it to Registration.
+§3, §4, §20.2, §20.3. v31 — 2026-10-18; **court-side permissions are named by role**
+([`court-roles.md`](court-roles.md)): scrutiny actions need the **Scrutiny officer** role,
+registering and the registration send-back need the **Case registerer** role (§3, §20);
+staff titles no longer hold permissions. v30 — 2026-10-18; **cheque presented after its 3-month validity is a
+warning, never a block** (`CHQ-11`, new, §9): shown to the filer under `CHQ-8`, to the
+scrutiny officer under the presentation date (`SCR-05a`, new), and to the magistrate on
+the case timeline (`SCR-08a`, new). v29 — 2026-10-18; **the filer is on the form from the start, and must be
+on it at the end** (§5): a litigant filing is pre-filled as Complainant 1 from their
+account (`FIL-04`); an advocate filing is pre-added as Advocate 1 (`FIL-05`); one check
+before Preview requires the filer to be related to the case (`FIL-06`). v28 — 2026-10-18; **every age field is a positive integer, with no other
+validation** (`LIT-5`, `LIT-13`, `LIT-24`, `ACC-3`, `WIT-2`) — no upper limit, no minimum
+beyond 1; the authorised representative's age is now a number. v27 — 2026-10-08; **CIN or PAN for an institutional complainant**
 (`LIT-18a`, new, §6): mandatory, with a note that it identifies cases belonging to the
 same complainant; the filer may skip it only after declaring they understand the
 consequence.
@@ -144,18 +159,20 @@ Role effects at entry:
 
 | Role | Effect | Trace |
 | --- | --- | --- |
-| Advocate | PiP is **No and disabled for the 1st complainant** (an advocate-filed case needs a represented complainant) | `LIT-1` |
-| Advocate | The filing advocate **and their associated junior advocates** are auto-added to the Advocate section (juniors removable), count set accordingly | `ADV-1` |
+| Advocate | PiP for the 1st complainant is **pre-set to No** (editable; an advocate-filed case normally has a represented complainant) | `LIT-1` |
+| Advocate | The filing advocate **and their associated junior advocates** are auto-added to the Advocate section (juniors removable), count set accordingly | `FIL-05`, `ADV-1` |
 | Clerk | **[OWNER]** the advocate(s) the clerk works for are **auto-added the same way** | `ADV-1` |
 | Clerk | Cannot e-sign (only rights difference; everything else allowed, incl. moving to signing and uploading a signed copy). **Enforce server-side** | `ROLE-08` |
-| Litigant | **[OWNER]** the logged-in litigant **is Complainant 1** | §6 |
+| Litigant | **[OWNER]** the logged-in litigant **is Complainant 1**, pre-filled from their account | `FIL-04`, §6 |
+| Any | The prefills above (PiP, advocates, Complainant 1) are **editable defaults** — nothing is enforced on the form. The one check is at the end: the filer must be **related to the case** before Preview | `FIL-06` |
 
 ---
 
 # 3. Roles and permissions
 
 Filing roles: Advocate · Clerk/Junior Advocate · Litigant · PoA-Holder ·
-Party-in-Person. Court roles: Scrutiny Officer · Magistrate.
+Party-in-Person. Court roles: **Scrutiny officer** · **Case registerer** — what each allows
+is owned by [`court-roles.md`](court-roles.md); a staff account may hold both.
 
 **Scope predicates** — a user can view/edit a draft when (regardless of who created it,
 `ROLE-06`):
@@ -169,7 +186,7 @@ Party-in-Person. Court roles: Scrutiny Officer · Magistrate.
 
 Permission matrix (`ROLE-07` — additionally gated by the predicates and case state):
 
-| Action | Advocate | Clerk | Litigant | PoA | PiP | Scrutiny | Magistrate |
+| Action | Advocate | Clerk | Litigant | PoA | PiP | Scrutiny officer | Case registerer |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | Create / view / edit drafts | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
 | Delete draft | ✓ ² | ✓ ² | ✓ ² | ✓ ² | ✓ ² | — | — |
@@ -178,12 +195,14 @@ Permission matrix (`ROLE-07` — additionally gated by the predicates and case s
 | Perform e-sign | ✓ | **✗** | ✓ | ✓ | ✓ | — | — |
 | Upload signed document | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
 | Make payment / correct errors | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| Mark errors + send back / forward or register ³ | — | — | — | — | — | ✓ | — |
-| Register / send back ³ | — | — | — | — | — | — | ✓ |
+| Mark errors + send back (Scrutiny) | — | — | — | — | — | ✓ | — |
+| Forward for registration ⁴ | — | — | — | — | — | ✓ | — |
+| Register / send back (Registration) | — | — | — | — | — | — | ✓ |
+| Register at Scrutiny ³ | — | — | — | — | — | ✓ | ✓ |
 
 ¹ A PiP may add advocates **for other complainants only**.
-³ Which second scrutiny action, and whether the magistrate row applies at all, depends on
-the `registrationPoint` config — see `SCR-11` (§20.3a).
+³ Needs **both** roles in the courtroom — see `SCR-11` (§20.3a).
+⁴ Only for someone who does **not** also hold the Case registerer role — see `SCR-11`.
 ² **Creator only (preferred)** — unlike other draft actions (which use the scope predicate), delete is ideally restricted to the user who created the draft. If that adds significant complexity, v1 may use the normal scope predicate instead and tighten later. See `LIFE-14`.
 
 **[OWNER]** The clerk↔advocate mapping **exists elsewhere in the system** — consume it,
@@ -205,17 +224,17 @@ don't build it. **When someone is removed from a case, they lose access to it.**
 | Pending Payment | Delete Draft | *(deleted)* |
 | Pending Payment | Pay | Scrutiny |
 | Scrutiny | Mark Defects and Send Back | Pending Correction |
-| Scrutiny | Forward Case (`registrationPoint: magistrate`) | Registration |
-| Scrutiny | Register (`registrationPoint: scrutiny`) | Cognisance |
+| Scrutiny | Forward for registration | Registration |
+| Scrutiny | Register (`SCR-11`) | Cognisance |
 | Registration | Register | Cognisance |
 | Registration | Send Back | Pending Correction |
 | Pending Correction | Save Draft | Pending Correction |
 | Pending Correction | Proceed to Sign | Pending Signature |
 | Pending Signature *(correction loop)* | e-Sign / Upload | Scrutiny — or Pending Payment per `LIFE-12` |
 
-- The Registration row only occurs under `registrationPoint: magistrate` (the default);
-  under `registrationPoint: scrutiny` the Scrutiny → Register → Cognisance row applies
-  instead and the Registration stage never exists for that case. See `SCR-11` (§20.3a).
+- Scrutiny → Register → Cognisance is available only to a person who holds both the
+  Scrutiny officer and Case registerer roles in the courtroom, and replaces Forward for
+  them; a case registered that way never reaches the Registration stage. See `SCR-11` (§20.3a).
 - `LIFE-11` — send-backs may repeat without limit.
 - `LIFE-12` **[OWNER]** — on resubmission the amount is recalculated: **increased →
   payment step, extra amount collected before Scrutiny; not increased → payment step
@@ -233,8 +252,8 @@ don't build it. **When someone is removed from a case, they lose access to it.**
   - **When:** available in `Draft`, `Pending Signature` and `Pending Payment` — i.e.
     **up to the point that payment is made**. Once payment completes (case moves to
     `Scrutiny`), the draft cannot be deleted.
-  - **Correction cycles:** a case in `Pending Correction` (sent back by scrutiny or
-    magistrate) **cannot** be deleted — it has already been through payment and scrutiny.
+  - **Correction cycles:** a case in `Pending Correction` (sent back at scrutiny or
+    registration) **cannot** be deleted — it has already been through payment and scrutiny.
   - Deletion is permanent. Confirm before executing.
 
 ---
@@ -269,8 +288,17 @@ form — a navigation grouping only, not a content one.
 Details is complete (`FIL-01`, option A). `[DERIVED]` "complete" = every mandatory field
 of every complainant record passes validation. `FIL-02` — Delay Condonation (in §11)
 requires Legal Demand Notice completed first. **[OWNER]** — **Preview / the complaint
-PDF is accessible only after all mandatory fields are filled and validations pass**
-(§16).
+PDF is accessible only after all mandatory fields are filled, validations pass, and
+the filer is related to the case** (`FIL-06`, §16).
+
+**The filer** **[OWNER]** — the system already knows who is filing, so the form starts
+with them on it:
+
+| ID | Requirement |
+| --- | --- |
+| `FIL-04` | **A litigant filing** is pre-filled as **Complainant 1**: Individual, with their full name (`LIT-4`), phone number (`LIT-3`) and email (`LIT-6`, where their account holds one) taken from their account. The filer completes the rest of the record. The pre-filled values can be edited; the record stays linked to the filer's account unless the record itself is removed. |
+| `FIL-05` | **An advocate filing** is pre-added as **Advocate 1** in the Advocate section, with their associated junior advocates (`ADV-1`). A clerk filing has the advocates they work for pre-added the same way. These are prefills, removable; the only check is `FIL-06`. |
+| `FIL-06` | **One check, at the end:** before Preview and the complaint PDF open, the filer must be **related to the case** — added as a complainant or party-in-person (`ROLE-03/05`), as a complainant's PoA holder (`ROLE-04`), as an advocate on the case (`ROLE-01`), or as a clerk of an advocate on the case (`ROLE-02`). If they are not, the check says so and names how to fix it: add themselves back in the section they were removed from, or — for a clerk — add an advocate they work for. Enforced server-side. It is not checked section by section — a filer may remove and re-add themselves while drafting. |
 
 **Terminology** **[OWNER]**: type is **Individual / Institution** ("Institution", not
 "Entity").
@@ -292,7 +320,7 @@ then "Is the current address the same as the permanent address?", then Current a
 (shown when No). Consistent across the whole form.
 
 **Autofill** **[OWNER]** — only the logged-in user's own details are auto-filled, when
-they are filing for themselves. No cross-user lookup anywhere.
+they are filing for themselves (`FIL-04`, `FIL-05`). No cross-user lookup anywhere.
 
 ---
 
@@ -302,11 +330,11 @@ Repeats per complainant. Individual vs Institution branches the section.
 
 | ID | Field | Type | Validation | Visible when / logic |
 | --- | --- | --- | --- | --- |
-| LIT-1 | Are you representing yourself as a Party-in-Person? | Radio Yes/No | — | **No + disabled for 1st complainant if an advocate is filing.** Tooltip: "If you have an advocate, select No. You can appoint an advocate at any time during the case." |
+| LIT-1 | Are you representing yourself as a Party-in-Person? | Radio Yes/No | — | **Pre-set to No for the 1st complainant if an advocate is filing** — editable, not disabled. Tooltip: "If you have an advocate, select No. You can appoint an advocate at any time during the case." |
 | LIT-2 | Complainant Type | Radio Individual/Institution | — | — |
 | LIT-3 | Phone Number | Phone | Valid; **not same as any other complainant, accused, advocate or PoA**. Tooltip: if it is the advocate's number, error "Please do not enter the advocate's number here." | Individual |
 | LIT-4 | Full Name | Text | Alphabetic | Individual; self-autofill only (§5) |
-| LIT-5 | Age | Number | Integer, positive | Individual |
+| LIT-5 | Age | Number | Positive integer; nothing else | Individual |
 | LIT-5a | Gender | Dropdown: Male / Female / Other | — | Individual; **optional** |
 | LIT-5b | Differently abled? | Radio Yes/No | — | Individual; **optional** |
 | LIT-6 | Email ID | Email | Valid; optional | Individual |
@@ -316,7 +344,7 @@ Repeats per complainant. Individual vs Institution branches the section.
 | LIT-10 | Has this litigant transferred Power of Attorney to somebody else? | Radio Yes/No | — | Individual |
 | LIT-11 | PoA Phone Number | Phone | Valid | PoA = Yes |
 | LIT-12 | PoA Holder Full Name | Text | — | PoA = Yes |
-| LIT-13 | PoA Holder Age | Number | Integer, positive | PoA = Yes |
+| LIT-13 | PoA Holder Age | Number | Positive integer; nothing else | PoA = Yes |
 | LIT-13a | PoA Holder Email | Email | Valid; optional | PoA = Yes |
 | LIT-14 | PoA Permanent Address | Address composite | — | PoA = Yes |
 | LIT-15 | PoA current same as permanent? | Radio Yes/No | — | PoA = Yes |
@@ -329,7 +357,7 @@ Repeats per complainant. Individual vs Institution branches the section.
 | LIT-21 | Institution Address | Address composite | — | Institution |
 | LIT-22 | Authorised Representative Phone | Phone | — | Institution |
 | LIT-23 | Authorised Representative Full Name | Text | — | Institution |
-| LIT-24 | Authorised Representative Age | Number *(sheet says Text)* | — | Institution |
+| LIT-24 | Authorised Representative Age | Number | Positive integer; nothing else | Institution |
 | LIT-24a | Authorised Representative Gender | Dropdown: Male / Female / Other | — | Institution; **optional** |
 | LIT-24b | Authorised Representative Differently abled? | Radio Yes/No | — | Institution; **optional** |
 | LIT-25 | Authorised Representative Email | Email | Valid; optional | Institution |
@@ -363,7 +391,7 @@ Repeats per accused. Individual vs Institution branches.
 | --- | --- | --- | --- | --- |
 | ACC-1 | Accused Type | Radio Individual/Institution | — | — |
 | ACC-2 | Full Name | Text | Alphabetic; special characters allowed | Individual |
-| ACC-3 | Age | Number | Integer ≥ 1; optional | Individual |
+| ACC-3 | Age | Number | Positive integer; nothing else; optional | Individual |
 | ACC-4 | Type of Institution | Dropdown | Values from MDMS | Institution |
 | ACC-5 | Institution Name | Text | — | Institution |
 | ACC-6 | Mobile Number (contact) | Phone | Valid | both types; skippable per rule below |
@@ -402,9 +430,22 @@ Repeats per cheque.
 | CHQ-6 | Bank Name | Text | — | Auto from IFSC / previous cheque |
 | CHQ-7 | Bank Branch | Text | — | Auto from IFSC / previous cheque |
 | CHQ-7a | Bank Account Number | Text | — | As on the cheque; feeds SYN-9 and complaint PDF §2.1 |
-| CHQ-8 | Date of presentation/deposit | Date picker | **≥ CHQ-1** | Always visible |
+| CHQ-8 | Date of presentation/deposit | Date picker | **≥ CHQ-1**; **warning, never a block,** if after the cheque's validity (`CHQ-11`) | Always visible |
 | CHQ-9 | Date of return | Date picker | **≥ CHQ-8** | Always visible; tooltip: as on the return memo |
 | CHQ-10 | Return reason | Dropdown, MDMS | **Warning if not "Insufficient Funds"** | Always visible |
+
+`CHQ-11` **[OWNER]** **Presentation within the cheque's validity — a warning, never a
+block.** A cheque is valid for presentation for **3 months from its date** (`CHQ-1`); the
+last valid day is the day before the same date three months on. When the date of
+presentation (`CHQ-8`) is later than that, the system **warns** and does nothing else: it
+is not a failed validation for gating (§5), and it does not stop Preview, signing or
+payment. The same condition is shown to everyone who reviews the case:
+
+| Who | Where | What they see |
+| --- | --- | --- |
+| Filer | Under `CHQ-8`, per cheque — the same treatment as the `CHQ-10` warning | *"Presented after the cheque's validity. It was valid for presentation until [last valid day], 3 months from its date. Check that S-138 still applies before filing."* |
+| Scrutiny officer | `SCR-05a` | A warning line under the cheque's presentation date |
+| Case registerer | `SCR-08a` | The presentation step of the case timeline, in warning ink |
 
 ---
 
@@ -415,7 +456,7 @@ Repeats per demand notice.
 | ID | Field | Type | Validation | Logic |
 | --- | --- | --- | --- | --- |
 | LDN-1 | Nature of debt/liability | Dropdown, MDMS | — | Always visible. Tooltip: purpose/underlying transaction for the cheque |
-| LDN-2 | Date of dispatch of demand notice | Date picker | **[OWNER]** at least one cheque's date of return (CHQ-9) must be **on or before** the dispatch date. **No 30-day warning** — the receipt-of-information date is not collected | — |
+| LDN-2 | Date of dispatch of demand notice | Date picker | **[OWNER]** at least one cheque's date of return (CHQ-9) must be **on or before** the dispatch date. **[OWNER]** **Warning, never a block,** if the dispatch date is **more than 30 days after the date of return** (CHQ-9) of every cheque returned on or before it: *"Demand notice not issued within 30 days of the return of the cheque as unpaid."* The same check is shown to the court at cognizance ([cognizance cheat sheet](cognizance-cheat-sheet.md), row 6) | — |
 | LDN-3 | Mode of service | Dropdown, MDMS | — | — |
 | LDN-4 | Tracking number | Text | Optional | Tooltip: used to track delivery |
 | LDN-5 | Whether delivered? | Radio Yes/No | — | — |
@@ -462,7 +503,7 @@ the payee's branch; not deposited → the drawer's.
 | ID | Field | Type | Validation |
 | --- | --- | --- | --- |
 | PRY-5 | Would you like to settle the case outside the court through alternative methods of dispute resolution? | Radio Yes/No | — |
-| PRY-1 | Additional details (Other Details) | Text | Optional |
+| PRY-1 | Additional details (Other Details) | **Rich text** | Optional |
 | PRY-2 | Interim Relief | Rich text, pre-populated (§17 template 4), editable | — |
 | PRY-3 | Final Relief | Rich text, pre-populated (§17 template 5), editable | — |
 | PRY-4 | Affidavit | Rich text, pre-populated (§17 template 1), editable — **[OWNER]** rendered as its **own screen** (§5) | — |
@@ -477,7 +518,7 @@ and address are required.
 | ID | Field | Type | Validation |
 | --- | --- | --- | --- |
 | WIT-1 | Full Name | Text | Optional if Designation entered |
-| WIT-2 | Age | Number | Integer ≥ 1; optional |
+| WIT-2 | Age | Number | Positive integer; nothing else; optional |
 | WIT-3 | What will the witness prove | Text | Optional |
 | WIT-4 | Designation | Text | Optional if Name entered *(sheet wording corrected)* |
 | WIT-5 | Mobile Number | Phone | Valid; optional |
@@ -496,7 +537,7 @@ and address are required.
 | DCM-4 | Proof of dispatch of demand notice | Yes | = number of demand notices |
 | DCM-5 | Proof of delivery of demand notice (AD Card or Tracking Report) | No | = number of demand notices; tooltip: includes documents showing delivery was attempted but unsuccessful |
 | DCM-6 | Reply to the demand notice | No | = number of demand notices; visible when a reply was received |
-| DCM-7 | Proof of debt / liability | Yes | Always |
+| DCM-7 | Proof of debt / liability | **No** | Always |
 | DCM-8 | Proof of reasons for delay | No | Visible when there is delay |
 | DCM-9 | ID Card — Complainant | Yes | = number of complainants |
 | DCM-10 | ID Card — PoA holder | Yes | = number of PoAs |
@@ -504,8 +545,10 @@ and address are required.
 | DCM-12 | Vakalatnama | No | Present if ≥ 1 advocate on the case |
 | DCM-13 | Other documents | No | As many as the user adds |
 
-"Natively digital" is a per-document attribute (a column in the complaint PDF's
-evidence list), not a separate document. **[OWNER]** DCM-9/DCM-10 are named **"ID
+**Natively digital column** **[OWNER]** — a deployment config, `nativelyDigitalColumn`,
+**on for Kerala**. When on, each uploaded document carries a natively digital attribute
+(born-digital vs scanned), printed as a column in the complaint PDF's list of documents
+(§16.4, 3.2). When off, the column and all text about it are absent. **[OWNER]** DCM-9/DCM-10 are named **"ID
 Card"**, not "Aadhaar Card", wherever they are displayed or printed. **Aadhaar
 handling** **[OWNER]** — **no masking at launch**: the ID card is stored and appended
 exactly as uploaded (§16.7), because the court has to be able to check it. No field
@@ -513,7 +556,7 @@ collects an Aadhaar number, and nothing else may be built on the number (no extr
 no search, no display outside the document). Storage design still uncovered `[GAP]`.
 
 **ID Card visibility** **[OWNER]** — the ID card (`DCM-9`, `DCM-10`) is visible only to
-the court (today's in-product court roles, §3: Scrutiny Officer, Magistrate), never to
+the court (staff accounts in the courtroom, [`court-roles.md`](court-roles.md) `RLE-06`), never to
 the accused side. `[GAP]` how this is enforced is undecided: whether the accused-facing
 copy of the complaint PDF omits the appended ID card pages while the court's copy keeps
 them, or access is controlled at the file level regardless of which PDF it's bundled
@@ -791,7 +834,7 @@ only and not to the accused side: see §14 for the full statement.
 | 2.4. | ADR, prayer and other details | §12, `PRY-1…3`, `PRY-5` | once | One screen, one section, in the screen's own field order: `PRY-5` ADR, `PRY-1` Other details, then `PRY-2`/`PRY-3` Interim Relief and Final Relief, each full width, as the user left them |
 | 3. | **Evidence** | | | |
 | 3.1. | List of witnesses | §13, `WIT-*` | per witness | Whole section omitted when there are no witnesses |
-| 3.2. | List of documents | §14, `DCM-*` | one line per uploaded document | Columnar: `S. No.` · `Document Name` · `Natively Digital`. **Generated, never a static list**: one line per document actually uploaded, in Documents-screen order; a repeated document carries its record's number (`Cheque 2`, `ID Card — Complainant 2`); an optional document not uploaded does not appear. `Natively Digital` is the per-document attribute, not a separate document |
+| 3.2. | List of documents | §14, `DCM-*` | one line per uploaded document | Columnar: `S. No.` · `Document Name` · `Natively Digital` (only when `nativelyDigitalColumn` is on, §14). **Generated, never a static list**: one line per document actually uploaded, in Documents-screen order; a repeated document carries its record's number (`Cheque 2`, `ID Card — Complainant 2`); an optional document not uploaded does not appear. |
 | 4. | **Affidavit** | §12, `PRY-4` | once | Full width, as the user left it. Signature block follows (§16.6) |
 | — | *appended documents* | §16.7 | | |
 
@@ -879,7 +922,7 @@ will not find them:
 | Synopsis jurisdiction line — "[branch] - complainant's bank branch" | composed: the branch, plus whose branch it is, derived from `JUR-1` |
 | `Duration of delay` | computed from the cause-of-action and filing dates (`JUR-11`) |
 | Repeat numbering — `Cheque 2`, `Accused 1`, `Address 2`, `S. No.` | the generator's own counters |
-| `Natively Digital` | a per-document attribute captured at upload (§14), not a document and not a field |
+| `Natively Digital` | the per-document attribute under the `nativelyDigitalColumn` config (§14); absent when the config is off |
 | Signature names and roles | derived from the parties, their PoA holders and representatives, and their advocates (§16.6) |
 | `Documents uploaded by the Complainant.` | fixed string on its own page (§16.7) |
 
@@ -1049,8 +1092,8 @@ backend data, not added to the case file **[OWNER]**):
   **upload** mode the per-party OTP verification creates it.
 - `ROLE-08` — clerks cannot e-sign; enforce server-side.
 - `SIG-07` **[OWNER]** — **re-signing after a send-back is the same signing step as at
-  filing.** Once the filer has made the corrections asked for by scrutiny or the
-  magistrate and proceeds to sign (`LIFE-13`), the case goes through this section
+  filing.** Once the filer has made the corrections asked for at scrutiny or
+  registration and proceeds to sign (`LIFE-13`), the case goes through this section
   exactly as it did at e-filing — same mode choice, same signatories, same rules
   (`SIG-01` to `SIG-06`, `ROLE-08`). Nothing carries over from the earlier round:
   every edit invalidates all signatures, so every required party signs again.
@@ -1080,19 +1123,13 @@ Remittance accounts: Advocate Welfare Fund and Stipend Stamp go to TSB a/c
 799010100175123 · head 8031-00-102-94-07-00-00-N-V · type 01 · head ID 56685; the
 source leaves the other heads' account mapping blank `[GAP]`.
 
-## 19.2 Join-a-case fees
-
-Court Fee 12.5 + Legal Benefit Fee 12.5 — when a joining advocate is **not part of a
-previous vakalatnama**; Advocate Welfare Fund / Stipend Stamp / Clerk Welfare Fund as
-in §19.1.
-
-## 19.3 Upfront process payments
+## 19.2 Upfront process payments
 
 Everything in this section is decided **per accused, independently**. What is chosen
 for one accused says nothing about the others; a case with three accused makes the
 choice three times, and the bill states each one separately.
 
-### 19.3.1 Court fee per process
+### 19.2.1 Court fee per process
 
 A small court fee of **INR 12.50** applies to every round of every process.
 
@@ -1111,7 +1148,7 @@ the round is opted in, when it does not it is not. Like `REF-04`, this is evalua
 a filing that attracts the DCA during a correction cycle attracts the notice round with
 it. The filer may still decline it.
 
-### 19.3.2 Addresses
+### 19.2.2 Addresses
 
 `PAY-12` The filer selects which of **that accused's** addresses summons is served at;
 at least one. The summons court fee and the e-post fee are each charged once per
@@ -1121,7 +1158,7 @@ selected address, per round.
 addresses × rounds — even where a factor is 1, so the filer can see what adding an
 address or a round would cost before doing it.
 
-### 19.3.3 E-post
+### 19.2.3 E-post
 
 `PAY-14` Delivery is by **e-post**; there is no channel to choose. **INR 100** per
 address per round stands in until the real charge is supplied (`Q-1`). It is the post
@@ -1132,9 +1169,9 @@ round: an accused whose summons is prepaid for three rounds may prepay delivery 
 one, two or three of them. The exception is the mandatory first round, whose e-post is
 collected with it (batch 3). So delivery rounds run **1 … summons rounds prepaid**.
 
-### 19.3.4 What prepayment buys
+### 19.2.4 What prepayment buys
 
-When the judge later triggers a pre-paid process, one is generated **per selected
+When the court later orders a pre-paid process, one is generated **per selected
 address** and **no pending payment task is created**. Anything not prepaid is charged
 later, if and when the court orders that process.
 
@@ -1151,7 +1188,7 @@ Payment failure, timeout, reconciliation: left to engineering at integration tim
 
 # 20. Scrutiny, registration, refiling; decisions log
 
-## 20.1 Case routing — courtroom, scrutiny officer, magistrate
+## 20.1 Case routing — courtroom and roles
 
 A court establishment contains one or more courtrooms. Each courtroom has a magistrate,
 a scrutiny officer, a bench clerk, and dedicated support staff (steno / typist / judgment
@@ -1159,9 +1196,12 @@ writer). Bench clerks and support staff are strictly 1:1 per courtroom. A single
 officer may in practice handle multiple courtrooms (Gujarat today: one officer across 5
 courtrooms).
 
-After a case is filed, signed, and paid, it is **automatically assigned to a courtroom**.
-Since each courtroom has a designated scrutiny officer, the case becomes visible to that
-officer.
+Who does scrutiny and registration is not fixed by these seats: it is whoever holds the
+**Scrutiny officer** or **Case registerer** role in that courtroom
+([`court-roles.md`](court-roles.md) `RLE-02a`).
+
+After a case is filed, signed, and paid, it is **automatically assigned to a courtroom**,
+and its scrutiny task goes to those who hold the Scrutiny officer role there.
 
 **The allocation logic is configurable per court establishment.** The system carries all
 possible allocation methods; which one applies is a deployment configuration.
@@ -1179,15 +1219,15 @@ magistrates to balance workload.
 ## 20.2 Scrutiny workflow
 
 A case enters Scrutiny after signing and payment complete (§4: Pending Payment → pay →
-Scrutiny). The courtroom's scrutiny officer reviews the submitted case for defects
-before forwarding to the magistrate.
+Scrutiny). A holder of the courtroom's **Scrutiny officer** role reviews the submitted case
+for defects before forwarding it for registration.
 
 ### How a case reaches the list — pending tasks
 
 `SCR-09` There is **no separate scrutiny queue or registration queue**. Both lists are
 the application-wide **pending tasks** mechanism, filtered to the logged-in user. A case
-is in a scrutiny officer's or a magistrate's list exactly as long as its pending task is
-open. The court-side tasks, as a live view of the master Pending Tasks list:
+is in the list of a Scrutiny officer or a Case registerer exactly as long as its pending
+task is open. The court-side tasks, as a live view of the master Pending Tasks list:
 
 ```superhuman-view
 name: Pending tasks (Court Side) — E-Filing
@@ -1195,8 +1235,9 @@ tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-Kztr
 filter: PRDs.Contains("efiling-scrutiny-registration-handover")
 ```
 
-Both are assigned to the courtroom's scrutiny officer and magistrate respectively
-(§20.1), due **+0 days**, visible to **Only Users** (the assignee). Neither carries a
+Both are assigned to the holders of the courtroom's **Scrutiny officer** and **Case
+registerer** roles respectively (§20.1), due **+0 days**, visible to **Only Users** (the
+assignees; any one of them can act, [`court-roles.md`](court-roles.md) `RLE-05`). Neither carries a
 Category — the Category values are citizen-side only. Task attributes and the status
 lifecycle are in `pending-tasks-handover.md`.
 
@@ -1224,15 +1265,15 @@ name the pending-task mechanism; the requirement is as stated here.
 - **Centre**: the selected document
 - **Right**: document index (all uploaded documents)
 
-`SCR-02` The scrutiny officer can **mark any individual field as an error** and type a
+`SCR-02` A **Scrutiny officer** can **mark any individual field as an error** and type a
 comment against it. They can also **mark an entire section** as an error with a comment.
 
-`SCR-03` The scrutiny officer can **flag any document as an error**, which permits the
+`SCR-03` A **Scrutiny officer** can **flag any document as an error**, which permits the
 filer to re-upload it on send-back.
 
 ### Interlinked date auto-marking
 
-`SCR-04` When the scrutiny officer marks any interlinked date field (any node in the
+`SCR-04` When a Scrutiny officer marks any interlinked date field (any node in the
 date chain, `VAL-01/02`), **all transitive downstream dates** in the chain are
 **auto-marked** as well — the filer can then edit them without failing the ordering
 validations. This implements `REF-03` at the scrutiny stage: the officer selects one
@@ -1242,55 +1283,68 @@ date, and the system marks the rest.
 
 `SCR-05` If delay has become applicable since the case was filed — evaluated against the
 clock at the time of scrutiny, the same rule as `REF-04` — the scrutiny interface must
-**flag this to the scrutiny officer**. The Delay Condonation section may now be required
+**flag this to the Scrutiny officer**. The Delay Condonation section may now be required
 where it was not at filing.
+
+### Presentation outside validity
+
+`SCR-05a` Where a cheque was presented after its validity (`CHQ-11`), the scrutiny
+interface shows a **warning line under that cheque's date of presentation** in the case
+fields — *"Presented after validity — valid until [last valid day]"* — the same
+treatment as the interface's other per-field warnings. It is information, not a flag:
+the Scrutiny officer decides whether to mark the field as an error (`SCR-02`).
 
 ### Actions
 
-`SCR-06` Two actions. The second one depends on the `registrationPoint` config
-(`SCR-11`, §20.3a):
-- **Send back** — only the fields, sections, and documents marked as errors are flagged
-  to the filer (`REF-01`). Send-backs repeat without limit (`LIFE-11`).
-- **`registrationPoint: magistrate` (default) — Forward to magistrate** — moves the case
-  to Registration (§20.3).
-- **`registrationPoint: scrutiny` — Register** — assigns the case number itself and
-  moves the case directly to Cognisance, skipping Registration entirely (`SCR-12`).
+`SCR-06` Actions, each needing the role named:
+- **Send back** (Scrutiny officer) — only the fields, sections, and documents marked as
+  errors are flagged to the filer (`REF-01`). Send-backs repeat without limit (`LIFE-11`).
+- **Forward for registration** (Scrutiny officer, **not** also Case registerer) — moves the case to Registration (§20.3).
+- **Register** (Scrutiny officer **and** Case registerer) — assigns the case number and
+  moves the case directly to Cognisance, skipping Registration entirely (`SCR-11`,
+  `SCR-12`).
 
 ## 20.3 Registration
 
-Applies only under `registrationPoint: magistrate` (the default). Under
-`registrationPoint: scrutiny`, this stage and the *Register case* task below never
-occur — the scrutiny officer registers directly (`SCR-06`); see §20.3a.
+Applies only to a case forwarded from Scrutiny. A case registered at Scrutiny (§20.3a)
+never reaches this stage or the *Register case* task below.
 
 `SCR-07` Forwarding closes the *Scrutinise case* task and creates a ***Register case***
-pending task for the courtroom's magistrate (§20.1) — that task is the magistrate's
-list of cases to register (`SCR-09`).
+pending task for the holders of the courtroom's **Case registerer** role (§20.1) — that
+task is their list of cases to register (`SCR-09`).
 
-`SCR-08` Two actions:
+`SCR-08` Two actions, both needing the **Case registerer** role:
 - **Register** — assigns a case number and moves the case to Cognisance.
   Case number format and generation are covered in a separate document.
-- **Send back** — the magistrate types **one single overall comment** (no individual
+- **Send back** — the Case registerer types **one single overall comment** (no individual
   field marking, consistent with `REF-02`). This opens **everything** for editing.
+
+`SCR-08a` The *Register case* screen's case timeline states the statutory limit under
+each step it governs. Under the cheque's presentation it reads *within 3 months of the
+cheque date*, or — where the cheque was presented after its validity (`CHQ-11`) —
+*beyond 3 months of the cheque date* in **warning ink**. Only a step outside its window
+takes the warning ink. The warning does not stop either action. For a case registered at
+Scrutiny there is no Registration stage, and `SCR-05a` is the only court-side warning.
 
 **[OWNER]** There is **no outright rejection at this stage** — registration happens
 first; dismissal is possible only after registration (out of this module's scope).
 
-## 20.3a Registration point — config
+## 20.3a Registering at Scrutiny
 
-`SCR-11` **`registrationPoint`**, set per court establishment alongside `allocationLogic`
-(§20.1):
-- **`magistrate`** (default — today's behaviour) — scrutiny's second action is Forward;
-  the magistrate then Registers or Sends back (§20.3).
-- **`scrutiny`** — scrutiny's second action is Register, done directly by the scrutiny
-  officer. The Registration stage and the magistrate's *Register case* task (`SCR-07`)
-  do not occur for that case. There is no separate magistrate send-back under this
-  setting — only the scrutiny officer's Send back (`SCR-06`) is available before
-  Cognisance.
+There is no setting for where a case is registered. It follows from the roles the person
+at Scrutiny holds in that courtroom ([`court-roles.md`](court-roles.md) `RLE-02a`).
 
-`SCR-12` Under `registrationPoint: scrutiny`, the scrutiny officer's Register action does
-exactly what the magistrate's Register does under the default (`SCR-08`): assigns the
-case number and moves the case to Cognisance. Everything from Cognisance onward is
-identical regardless of config — this module's scope already ends there.
+`SCR-11` A person who holds **both** the Scrutiny officer and the Case registerer roles in
+the courtroom gets **Register** and Send back at Scrutiny. They do **not** get Forward
+for registration: they would only be forwarding the case to themselves. A person who holds only the Scrutiny
+officer role gets Forward for registration and Send back, not Register. A court that wants
+every case checked by two people gives the two roles to different people.
+
+`SCR-12` Register at Scrutiny does exactly what Register at Registration does (`SCR-08`):
+assigns the case number and moves the case to Cognisance. The case never reaches the
+Registration stage or its *Register case* task (`SCR-07`), so there is no registration
+send-back for it — only the Send back at Scrutiny (`SCR-06`). Everything from Cognisance
+onward is identical either way; this module's scope ends there.
 
 ## 20.4 Editability on send-back
 
@@ -1301,7 +1355,7 @@ walks it):
 CHQ-1 date on cheque
   └─ CHQ-8 presentation (≥)
        └─ CHQ-9 return (≥)
-            └─ LDN-2 dispatch (≥ return of at least one cheque)
+            └─ LDN-2 dispatch (≥ return of at least one cheque; warn > 30 days after return)
                  ├─ LDN-6 delivery (≥)   [delivered = Yes]
                  └─ LDN-7 return (≥)     [delivered = No]
                       └─ JUR-9 cause of action = service + 15 days (auto)
@@ -1313,10 +1367,10 @@ CHQ-1 date on cheque
 
 | Trigger | Opens for editing |
 | --- | --- |
-| Scrutiny officer marks errors (`REF-01`/`SCR-02/03`) | Only the marked fields/sections/documents |
+| Send back at Scrutiny, with errors marked (`REF-01`/`SCR-02/03`) | Only the marked fields/sections/documents |
 | …a marked field is an interlinked date (`REF-03`/`SCR-04`) | + all **transitive downstream** dates (auto-marked) |
 | …DCA became applicable since filing (`REF-04/05/06`) | + the Delay Condonation section, now required |
-| Magistrate sends back (`REF-02`) | Everything |
+| Send back at Registration (`REF-02`) | Everything |
 
 `REF-04` is evaluated **against the clock at refiling**, never cached — a correction
 cycle sitting for weeks silently attracts the DCA (and its fee → `LIFE-12`).
@@ -1419,6 +1473,15 @@ date auto-marks all transitive downstream dates) · delay-condonation alert to t
 scrutiny officer when delay becomes applicable since filing · registration assigns a case
 number (format in separate document) · supersedes batch 3's deferral of mark-comments to a
 separate design.
+(batch 12) — 2026-10-18: proof of debt / liability (`DCM-7`) is optional · natively
+digital is a column config only (`nativelyDigitalColumn`), on for Kerala; off removes the
+column and its text.
+(batch 11) — 2026-10-18: the 30-day dispatch warning is restored on `LDN-2`, counted from
+the date of return (`CHQ-9`), as on the cognizance cheat sheet. Supersedes batch 2's
+removal.
+(batch 10) — 2026-10-18: the `registrationPoint` config is removed; a person holding both
+the Scrutiny officer and Case registerer roles in the courtroom can register at Scrutiny
+(`SCR-11/12`). Supersedes batch 9.
 (batch 9) — 2026-09-23: registration point made configurable (`SCR-11/12`) — under
 `registrationPoint: scrutiny`, the scrutiny officer's second action is Register (assigns
 case number, → Cognisance) instead of Forward, and the magistrate's Registration
@@ -1433,15 +1496,14 @@ One item pending delivery:
 
 | # | Item | Blocks |
 | --- | --- | --- |
-| Q-1 | Pending references (owner will supply later): **MDMS sheet**, notifications master file, Event List (Coda), "PUCAR Integrations", the e-post charge (§19.3 `PAY-14`; the process court fee is settled at 12.50) | MDMS dropdowns, §19, §20 |
+| Q-1 | Pending references (owner will supply later): **MDMS sheet**, notifications master file, Event List (Coda), "PUCAR Integrations", the e-post charge (§19.2 `PAY-14`; the process court fee is settled at 12.50) | MDMS dropdowns, §19, §20 |
 
 **Resolved:**
 - ~~Q-2~~ Case number format — moved to a separate document.
-- ~~Q-3~~ Multiple scrutiny officers — answered in §20.1. Each courtroom formally has its
-  own; one officer may handle multiple courtrooms in practice. Case goes to the
-  courtroom's designated officer.
-- ~~Q-4~~ Which magistrate — answered in §20.1. The courtroom's magistrate. Case is
-  auto-assigned to a courtroom after filing; allocation logic is configurable per
+- ~~Q-3~~ Multiple scrutiny officers — answered in §20.1. The case goes to whoever holds
+  the courtroom's Scrutiny officer role; any one of them can act.
+- ~~Q-4~~ Who registers — answered in §20.1. Whoever holds the courtroom's Case
+  registerer role. Case is auto-assigned to a courtroom after filing; allocation logic is configurable per
   establishment.
 
 **Left to engineering at integration time** (owner): payment failure/timeout/
@@ -1463,7 +1525,7 @@ All `[PROTO]` (`Pucar-Dristi-2.0` @ `feature/e-filing-new`); backend seams in
 `apps/dristi-app/src/lib/filing/README.md`. The prototype predates several owner
 decisions: it free-navigates (now hard-gated), never gates preview (now gated on
 mandatory+validations), lets the cause-of-action date be typed (spec: uneditable), uses
-an explicit IFSC fetch button (spec: automatic). Its fee dialog was rebuilt to §19.3
+an explicit IFSC fetch button (spec: automatic). Its fee dialog was rebuilt to §19.2
 on 2026-09-03 and now matches it.
 
 - **Upload-first intake**: documents requested up front (per-cheque and per-party
@@ -1495,7 +1557,7 @@ on 2026-09-03 and now matches it.
 - **Sign & pay (sandbox)**: signatory rail derived from the case; mode-choice dialog
   stating consequences for other parties; upload mode with per-party phone
   confirmations (now spec, §18); fee dialog with per-line rate × addresses ×
-  rounds, priced per accused (§19.3); simulated payment; success dialog with
+  rounds, priced per accused (§19.2); simulated payment; success dialog with
   generated case number. Every sandbox surface says so in place.
 - **Dashboard**: continue-draft cards ("X vs Y", last saved, "Up to `<step>`", % bar),
   discard-draft with confirm, start-a-new-case cards, recently-filed table whose status
@@ -1513,7 +1575,7 @@ on 2026-09-03 and now matches it.
 | PoA-Holder | Power-of-Attorney holder; acts and signs on a complainant's behalf. |
 | Party-in-Person (PiP) | A complainant representing themselves; never counted as an advocate. |
 | Scrutiny | Court-staff defect review before registration. |
-| Registration | Case-number assignment that moves the case to Cognisance. Done by the magistrate (default) or directly by the scrutiny officer, per `registrationPoint` (§20.3a). |
+| Registration | Case-number assignment that moves the case to Cognisance. Needs the Case registerer role; done at its own stage, or at Scrutiny by someone who also holds the Scrutiny officer role (§20.3a). |
 | Cognisance | Post-registration stage; end of this module. |
-| Natively digital | Per-document attribute: born-digital vs scanned. |
+| Natively digital | Per-document attribute: born-digital vs scanned. Shown only under the `nativelyDigitalColumn` config (§14). |
 | Vakalatnama | The document appointing an advocate. |

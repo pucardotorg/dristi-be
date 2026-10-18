@@ -1,6 +1,10 @@
 # Application Lifecycle
 
-**Status:** v33 — 2026-10-12; **Every application** gains Other details, an optional text field on every type. v32 — 2026-10-11; payment simplified: anyone on the same side of the case as the application may pay for it (`ALC-29`). Removed the placeholder rows for the withdrawn `ALC-05`, `ALC-06` and `ALC-20`; those numbers are not reused. Added **Decision Date** as an application attribute. Added **Number formats by state** (temporary identifier and application number, per state; Kerala filled from DRISTI 1.0's code, the rest unknown) and `Q-13`. **Linked records** now also shows live views of the Notifications and Events master tables; pending tasks, notifications and events live only in those master tables, not in this file. Added `Q-14`. Punjab & Haryana's formats added: `CRM/[sequence]/[year]` and `CRM-[sequence]-[year]`. Reopen Evidence is available always. v31 — 2026-10-11; closed `Q-9`: an application in Pending Signature can be moved back to Draft and edited there, by anyone who could have created and edited the draft (`ALC-31`, new). Closed `Q-10`: the signer may use any signing mode enabled for the deployment. `ALC-28` tightened: only the person selected in Raised by signs, not any advocate or PiP on the case. v30 — 2026-10-11; **no setting a date before onboarding.** Review (step 2) now offers only Onboard or Dismiss; a date is set only after onboarding (3b). `ALC-05`, `ALC-06` and `ALC-20` are withdrawn, and the "set a date once, then dismiss promoted" rule goes with them, along with the note on deriving whether it had been used. v29 — 2026-10-11; rewrote the workflow as six linear steps — **Filing, Review, Onboarding, Objections, Decision, After the decision** — each with its own prose and its own requirements. "The workflow" now opens with the step list and a one-row-per-step table; "The decision points" is gone, its content moved into the steps; the full status table moves to the end as **Every status change**. Filing is written out in full: who drafts, signs and pays, how the status moves, and steps 1.1–1.8. New requirements `ALC-26`–`ALC-30` (types offered, resumable drafts, who signs, who pays, and expiry — only Advance / Prepone and Postpone expire, when their hearing passes; an unsubmitted application never does); every existing `ALC-` ID is kept. New open questions `Q-8`–`Q-12`. v28 — 2026-10-11; **Fields by application type**: every application can now carry optional, named supporting documents. Case Settlement gets a reason for settlement. Case Transfer's requested court and Case Withdrawal's reason for withdrawal are now text, not dropdowns. Advance / Postpone loses Prayer. PoA Change: Prayer is replaced by a reason for change; litigants appointing the applicant are a multi-select, and an existing PoA is a property of the litigant, not a field; the PoA instruments become one authorization document per litigant. Absent Application gets a reason for absence, Reopen Evidence a reason for reopening and Objection a reason for objection, all text. Bail's supporting documents are replaced by a proof of solvency, one per surety; other documents are optional, under Supporting documents. Edit Litigant Details: Complainant type / Accused type is now Litigant type; CIN or PAN is optional with no format validation; an accused institution's representatives are no longer edited with the institution, but as individual accused; an individual accused's name allows special characters, and the individual accused gains an optional Designation. v27 — 2026-10-09; rebuilt **Fields by application type** from the
+**Status:** v34 — 2026-10-18; **court-side permissions are named by role**
+([`court-roles.md`](court-roles.md)): onboarding and setting or moving the decision date
+need the **Application onboarder** role; orders are drafted by an **Order drafter** and
+signed by an **Order signer** (`ALC-22`). "Users and actions" lists roles, not staff titles.
+v33 — 2026-10-12; **Every application** gains Other details, an optional text field on every type. v32 — 2026-10-11; payment simplified: anyone on the same side of the case as the application may pay for it (`ALC-29`). Removed the placeholder rows for the withdrawn `ALC-05`, `ALC-06` and `ALC-20`; those numbers are not reused. Added **Decision Date** as an application attribute. Added **Number formats by state** (temporary identifier and application number, per state; Kerala filled from DRISTI 1.0's code, the rest unknown) and `Q-13`. **Linked records** now also shows live views of the Notifications and Events master tables; pending tasks, notifications and events live only in those master tables, not in this file. Added `Q-14`. Punjab & Haryana's formats added: `CRM/[sequence]/[year]` and `CRM-[sequence]-[year]`. Reopen Evidence is available always. v31 — 2026-10-11; closed `Q-9`: an application in Pending Signature can be moved back to Draft and edited there, by anyone who could have created and edited the draft (`ALC-31`, new). Closed `Q-10`: the signer may use any signing mode enabled for the deployment. `ALC-28` tightened: only the person selected in Raised by signs, not any advocate or PiP on the case. v30 — 2026-10-11; **no setting a date before onboarding.** Review (step 2) now offers only Onboard or Dismiss; a date is set only after onboarding (3b). `ALC-05`, `ALC-06` and `ALC-20` are withdrawn, and the "set a date once, then dismiss promoted" rule goes with them, along with the note on deriving whether it had been used. v29 — 2026-10-11; rewrote the workflow as six linear steps — **Filing, Review, Onboarding, Objections, Decision, After the decision** — each with its own prose and its own requirements. "The workflow" now opens with the step list and a one-row-per-step table; "The decision points" is gone, its content moved into the steps; the full status table moves to the end as **Every status change**. Filing is written out in full: who drafts, signs and pays, how the status moves, and steps 1.1–1.8. New requirements `ALC-26`–`ALC-30` (types offered, resumable drafts, who signs, who pays, and expiry — only Advance / Prepone and Postpone expire, when their hearing passes; an unsubmitted application never does); every existing `ALC-` ID is kept. New open questions `Q-8`–`Q-12`. v28 — 2026-10-11; **Fields by application type**: every application can now carry optional, named supporting documents. Case Settlement gets a reason for settlement. Case Transfer's requested court and Case Withdrawal's reason for withdrawal are now text, not dropdowns. Advance / Postpone loses Prayer. PoA Change: Prayer is replaced by a reason for change; litigants appointing the applicant are a multi-select, and an existing PoA is a property of the litigant, not a field; the PoA instruments become one authorization document per litigant. Absent Application gets a reason for absence, Reopen Evidence a reason for reopening and Objection a reason for objection, all text. Bail's supporting documents are replaced by a proof of solvency, one per surety; other documents are optional, under Supporting documents. Edit Litigant Details: Complainant type / Accused type is now Litigant type; CIN or PAN is optional with no format validation; an accused institution's representatives are no longer edited with the institution, but as individual accused; an individual accused's name allows special characters, and the individual accused gains an optional Designation. v27 — 2026-10-09; rebuilt **Fields by application type** from the
 application print templates — each type now lists its template, its fields,
 who fills each (filer or system) and its field type. Updated **Application types**: renamed
 "Bail — Bail Bond" to Bail (the bail bond workflow on acceptance stays); Certified Copy removed; Warrant by
@@ -148,26 +152,26 @@ owned by [`order-generation.md`](order-generation.md), pending task attributes b
 Every application moves through the same steps, in the same order:
 
 1. **Filing** — the filer side drafts, signs and pays for the application.
-2. **Review** — the magistrate decides whether to take it onto the court's file.
-3. **Onboarding** — it gets its number, and the magistrate decides when to deal with it.
+2. **Review** — the court decides whether to take it onto its file.
+3. **Onboarding** — it gets its number, and the court decides when to deal with it.
 4. **Objections** — if invited, the other party may file one objection.
-5. **Decision** — the magistrate accepts or rejects it, by order.
+5. **Decision** — the court accepts or rejects it, by order.
 6. **After the decision** — on acceptance, the application type's own workflow runs.
 
-An application can leave the flow early in two ways only: at review, the magistrate can
+An application can leave the flow early in two ways only: at review, the court can
 **dismiss** it (step 2); and an Advance / Prepone or Postpone application **expires** if
 its hearing passes before the application is dealt with ("Expiry", below). Step 4
-happens only when the magistrate chooses to deal with the application on a date and
+happens only when the court chooses to deal with the application on a date and
 invites objections.
 
 | Step | What happens | Who acts | Status when the step ends |
 |---|---|---|---|
 | 1. Filing | Choose the type, fill in the form, sign, pay. | Advocate/PiP; a clerk or junior advocate may draft; anyone on the filer's side may pay | Pending Review (Objection: Submitted) |
-| 2. Review | Onboard or dismiss. | Magistrate | Pending Decision once onboarded, or Dismissed |
-| 3. Onboarding | The application number is allotted, the other party can see it, and the magistrate chooses to deal with it now or on a date. | Magistrate | Pending Decision |
+| 2. Review | Onboard or dismiss. | Application onboarder onboards; a dismissal is an order — Order drafter drafts, Order signer signs | Pending Decision once onboarded, or Dismissed |
+| 3. Onboarding | The application number is allotted, the other party can see it, and the court chooses to deal with it now or on a date. | Application onboarder | Pending Decision |
 | 4. Objections | The other party may file one objection, due by midnight the day before the decision date. | The other party | Pending Decision (unchanged) |
-| 5. Decision | An order accepting or rejecting the application is signed. | Magistrate signs; bench clerk or typist may draft | Accepted or Rejected |
-| 6. After the decision | On acceptance, the type's workflow runs. On rejection, nothing does. | System, or the magistrate where the workflow needs a choice | Accepted or Rejected (unchanged) |
+| 5. Decision | An order accepting or rejecting the application is signed. | Order drafter drafts; Order signer signs | Accepted or Rejected |
+| 6. After the decision | On acceptance, the type's workflow runs. On rejection, nothing does. | System, or the court where the workflow needs a choice | Accepted or Rejected (unchanged) |
 
 ![Application lifecycle state diagram: Draft through Pending Signature, Pending Payment, Pending Review and Pending Decision to Accepted, Rejected, Dismissed, Submitted or Expired](https://codahosted.io/docs/KtL_rwN6Qw/blobs/bl-mU4WA9f9C5/bc11f1388ca64f3444395bbea36635929c423c3c9b0960a2e487ccfd0fd440e172372fbb2a53668bdb2328851d59631aff09804a71bba74d7545e184260413b6b3a723d97de7caddc5da9a43bb6ec6f993e4c3e6475d87df5072a6cdb22e922bc2015ce1)
 
@@ -201,27 +205,22 @@ the end, under "Every status change".
 - **PoA-Holder**
   - Pay for any application raised by their side of the case
   - View all submitted applications, subject to `ALC-17`
-- **Magistrate**
-  - View all submitted applications, **including before onboarding** — `ALC-17`'s
-    visibility gate is for the other party, not court staff
-  - Onboard an application (a system action, magistrate-only, `ALC-22`)
-  - Set or move the decision date (`ALC-09`, `ALC-15`) — also a system action,
-    magistrate-only
-  - Draft or sign a dismissal, or an accept/reject order (only the magistrate signs,
-    `ALC-22`)
-  - Sees key metadata and any objection when opening an application (`ALC-23`)
-- **Bench Clerk and Typist**
-  - View all submitted applications, including before onboarding, same as the magistrate
-  - Draft a dismissal or an accept/reject order — cannot sign it (`ALC-22`)
-  - Cannot onboard, or set/move a decision date — those are system actions
-    restricted to the magistrate (`ALC-22`)
+- **Court staff** — court-side actions need a role from [`court-roles.md`](court-roles.md);
+  a staff account may hold several.
+  - Any staff account in the courtroom: view all submitted applications, **including
+    before onboarding** — `ALC-17`'s visibility gate is for the other party, not court
+    staff; key metadata and any objection are shown when opening an application (`ALC-23`)
+  - **Application onboarder**: onboard an application (`ALC-04`); set or move the decision
+    date (`ALC-09`, `ALC-15`)
+  - **Order drafter**: draft a dismissal, or an accept/reject order (`ALC-22`)
+  - **Order signer**: sign it (`ALC-22`)
 
 The **objection-filing** action on Advocate/PiP is signed and paid for like any other
 application type.
 
 | ID | Requirement |
 |---|---|
-| `ALC-22` | **General rule on who may do what:** a **system action** — onboarding (`ALC-04`), setting or moving the decision date (`ALC-09`, `ALC-15`) — is restricted to the **magistrate**. An **order** — dismissing (`ALC-19`), accepting or rejecting (`ALC-08`) — may be **drafted** by the bench clerk or typist as well as the magistrate; only the **magistrate signs** it, per [`order-generation.md`](order-generation.md)'s standing rule. |
+| `ALC-22` | **General rule on who may do what:** a **system action** — onboarding (`ALC-04`), setting or moving the decision date (`ALC-09`, `ALC-15`) — needs the **Application onboarder** role. An **order** — dismissing (`ALC-19`), accepting or rejecting (`ALC-08`) — is **drafted** by an **Order drafter** and **signed** by an **Order signer**, per [`order-generation.md`](order-generation.md); the decision on the application within the order is order data. Roles are owned by [`court-roles.md`](court-roles.md). |
 | `ALC-24` | **"The other party"**, throughout this file, means the opposing **side** — anyone on the complainant side, if the application was raised by anyone on the accused side, or vice versa — not a specific named individual. Only **one** objection may be raised against a given application, on behalf of that side. |
 
 ---
@@ -304,7 +303,7 @@ step is not yet decided (`Q-11`).
 - It gets a **temporary identifier**, shown to the filer from this point on (`ALC-02`).
 - Its status becomes **Pending Review** — except an Objection, which becomes
   **Submitted** and goes no further (step 4).
-- A **Review application** task is raised for the magistrate, due the next working day
+- A **Review application** task is raised for the courtroom's Application onboarders, due the next working day
   (`ALC-03`).
 - The court can now see it. The other party cannot, until it is onboarded (`ALC-17`).
 
@@ -317,19 +316,19 @@ step is not yet decided (`Q-11`).
 | `ALC-29` | Anyone on the same side of the case as the application may pay for it — any advocate/PiP, clerk, junior advocate, litigant or PoA-holder on that side. When payment is left for later, a pay task is raised that links back to the application. |
 | `ALC-31` | An application in Pending Signature can be moved back to Draft, and edited there, by anyone who could have created and edited that draft. It is edited only in Draft; once edited, it goes through Proceed to sign again. |
 | `ALC-02` | On submission the application is allotted a **temporary identifier**. It can be shown to the user, but it is never cited in an order or any other document. The court-facing **application number** is allotted only on being onboarded (`ALC-04`). *(This reverses which of the two numbers `order-generation.md`'s `APL-02`/`APL-03` and `case-numbers.md`'s rows 6–7 currently name — see `Q-5`.)* |
-| `ALC-03` | On submission the system raises a **Review application** task for the magistrate, due the next working day. Filing time is not a factor in this version; a later version may bring the due date forward to the same day when the application is filed during working hours on a working day. |
+| `ALC-03` | On submission the system raises a **Review application** task for the courtroom's **Application onboarder** role, due the next working day. Filing time is not a factor in this version; a later version may bring the due date forward to the same day when the application is filed during working hours on a working day. |
 
 ---
 
 ## Step 2 — Review: the first gate
 
-The first gate is whether the magistrate takes the application onto the court's file at
+The first gate is whether the court takes the application onto its file at
 all. The term for this throughout is **onboarding**. The **Review application** task
-raised at submission gives the magistrate two choices. The status stays **Pending
+raised at submission gives two choices. The status stays **Pending
 Review** for as long as the task is open.
 
 - **2a. Onboard** — the usual path. Goes straight on to step 3.
-- **2b. Dismiss** — an order, effective on the magistrate's signature. The application ends
+- **2b. Dismiss** — an order, effective on the Order signer's signature. The application ends
   as **Dismissed**, with no application number.
 
 There is no setting a date at this step. A date is set only once the application has been
@@ -337,7 +336,7 @@ onboarded (3b).
 
 | ID | Requirement |
 |---|---|
-| `ALC-19` | **Dismissing an application** is an order item, effective on the magistrate's signature, worded per [`order-generation.md`](order-generation.md) `APL-04`–`APL-06`. Any of the magistrate, the bench clerk or the typist may draft it; only the magistrate signs (an order, `ALC-22`). It's available on the **Review application** task the whole time it's open, alongside onboarding. |
+| `ALC-19` | **Dismissing an application** is an order item, effective on signature, worded per [`order-generation.md`](order-generation.md) `APL-04`–`APL-06`. An Order drafter drafts it; an Order signer signs (an order, `ALC-22`). It's available on the **Review application** task the whole time it's open, alongside onboarding. |
 
 ---
 
@@ -351,11 +350,11 @@ action: no order, no signature, effective at once.
 - The **other party can now see the application**, whether or not objections are invited
   (`ALC-17`).
 
-In the same action, the magistrate chooses what happens next:
+In the same action, the Application onboarder chooses what happens next:
 
 - **3a. Deal with it now** — the order screen opens with the application in context. Goes
   straight to step 5.
-- **3b. Deal with it on a date** — the magistrate sets the decision date ("Suggesting a
+- **3b. Deal with it on a date** — the Application onboarder sets the decision date ("Suggesting a
   date", below) and answers whether to invite objections, checked by default. Checked
   leads to step 4; unchecked goes to step 5 on the date.
 - **3c. Open the order generation screen directly** — for something unrelated, such as
@@ -367,20 +366,20 @@ cannot be lost if a draft order is abandoned.
 
 | ID | Requirement |
 |---|---|
-| `ALC-04` | **Onboarding** an application is a system action: it allots the application number, nothing is written into any order, no signature is involved, it takes effect at once, and only the **magistrate** may do it (a system action, `ALC-22`). Available for as long as the **Review application** task is open — the usual path (dismissing, `ALC-19`, is the alternative). The application's status is **Pending Review** the whole time this task is open; nothing here is a separate status. |
+| `ALC-04` | **Onboarding** an application is a system action: it allots the application number, nothing is written into any order, no signature is involved, it takes effect at once, and it needs the **Application onboarder** role (a system action, `ALC-22`). Available for as long as the **Review application** task is open — the usual path (dismissing, `ALC-19`, is the alternative). The application's status is **Pending Review** the whole time this task is open; nothing here is a separate status. |
 | `ALC-07` | Onboarding carries this question with it: **pass the order now, or deal with it on a date?** (or open the order generation screen directly, `ALC-18`) — answered alongside onboarding. Unlike onboarding itself, answering it doesn't require the order to be signed right away (`ALC-21`). |
-| `ALC-08` | **Now** — the order screen opens with the application in context; any of the magistrate, the bench clerk or the typist may draft the accept/reject order there, but only the **magistrate** signs it (an order, `ALC-22`). |
-| `ALC-09` | **On a date** — the magistrate (only) sets the date on which it will deal with the application (a system action, `ALC-22`), and the system raises a **Decide application** task due on that date. |
+| `ALC-08` | **Now** — the order screen opens with the application in context; an **Order drafter** drafts the accept/reject order there, and an **Order signer** signs it (an order, `ALC-22`). |
+| `ALC-09` | **On a date** — an **Application onboarder** sets the date on which it will deal with the application (a system action, `ALC-22`), and the system raises a **Decide application** task due on that date. |
 | `ALC-17` | The application is **invisible to the other party until it is onboarded** (`ALC-04`). From onboarding onward it is visible regardless of whether objections are invited (`ALC-12`). |
-| `ALC-18` | The magistrate may open the **order generation screen** directly instead of answering "deal with it now" or "on a date" — e.g. to move a hearing at the same time. This has no connection to the application at all: it's the magistrate doing something unrelated on that screen, so it leaves the application's status and pending task untouched. |
-| `ALC-21` | Choosing "deal with it now" (`ALC-08`) or "deal with it on a date" (`ALC-09`) both raise a **Decide application** task — due immediately for the former, due on the set date for the latter — closing only once an accept/reject order is signed. This covers the gap between the magistrate's choice and actually drafting the order. Once the application is onboarded, this task is visible to other users too — the bench clerk or typist, who may be the one drafting the order (`ALC-22`) — not just the magistrate. |
-| `ALC-25` | Until application types carry their own configuration for this (see "Application types"), every type is treated the same: assumed to go through "deal with it on a date" (`ALC-09`) with the notify-for-objections checkbox (`ALC-11`) checked by default. The magistrate can still deselect the checkbox or choose "deal with it now" (`ALC-08`) by hand — this is a placeholder default, not a restriction on what the magistrate may do. |
+| `ALC-18` | The **order generation screen** may be opened directly instead of answering "deal with it now" or "on a date" — e.g. to move a hearing at the same time. This has no connection to the application at all: it's something unrelated done on that screen, so it leaves the application's status and pending task untouched. |
+| `ALC-21` | Choosing "deal with it now" (`ALC-08`) or "deal with it on a date" (`ALC-09`) both raise a **Decide application** task — due immediately for the former, due on the set date for the latter — closing only once an accept/reject order is signed. This covers the gap between the choice and actually drafting the order. The task is raised for the courtroom's **Order drafter** and **Order signer** roles (`ALC-22`). |
+| `ALC-25` | Until application types carry their own configuration for this (see "Application types"), every type is treated the same: assumed to go through "deal with it on a date" (`ALC-09`) with the notify-for-objections checkbox (`ALC-11`) checked by default. The Application onboarder can still deselect the checkbox or choose "deal with it now" (`ALC-08`) by hand — this is a placeholder default, not a restriction. |
 
 ---
 
 ## Step 4 — Objections
 
-Step 4 happens only when the magistrate chose "deal with it on a date" and left "invite
+Step 4 happens only when the Application onboarder chose "deal with it on a date" and left "invite
 objections" checked. Dealing with it now gives nobody the chance to object.
 
 - The other party — the whole opposing side, not a named person (`ALC-24`) — is told
@@ -392,23 +391,23 @@ objections" checked. Dealing with it now gives nobody the chance to object.
   drafted, signed and paid for. It ends at **Submitted**: it is never reviewed, onboarded,
   accepted or rejected on its own. It is linked to the application it answers.
 - Only **one** objection may be filed against an application.
-- If none is filed by the deadline, nothing happens: the magistrate goes ahead on the
+- If none is filed by the deadline, nothing happens: the court goes ahead on the
   date, and nothing is recorded or delayed because of the silence.
 - If objections are not invited, no task is raised, and the other party can still see the
   application.
 
 | ID | Requirement |
 |---|---|
-| `ALC-11` | With the date, the magistrate answers one more question: **does the other party need to file objections?** — checked by default. Asked only on this branch; an application decided at once gives nobody an opportunity to object. Until application types carry their own configuration, this defaults to checked for every type (`ALC-25`). |
+| `ALC-11` | With the date, the Application onboarder answers one more question: **does the other party need to file objections?** — checked by default. Asked only on this branch; an application decided at once gives nobody an opportunity to object. Until application types carry their own configuration, this defaults to checked for every type (`ALC-25`). |
 | `ALC-12` | **Checked** — the other party is told plainly that it must file an objection and by when, and a **File objection** task is raised on it at once. **Unchecked** — no task is raised, but the other party can still see the application regardless: visibility follows onboarding (`ALC-17`), not this choice. |
-| `ALC-13` | The objection is due by **midnight the day before** the date the court has said it will deal with the application — e.g. a decision set for the 21st puts the objection deadline at the end of the 20th — and is raised at once, when the magistrate sets the date. If no objection is filed by then, it simply doesn't matter: the magistrate proceeds with the decision as scheduled, and nothing is recorded or delayed on account of the silence. |
+| `ALC-13` | The objection is due by **midnight the day before** the date the court has said it will deal with the application — e.g. a decision set for the 21st puts the objection deadline at the end of the 20th — and is raised at once, when the date is set. If no objection is filed by then, it simply doesn't matter: the court proceeds with the decision as scheduled, and nothing is recorded or delayed on account of the silence. |
 
 ---
 
 ## Step 5 — Decision: the second gate
 
-The second gate is whether the magistrate accepts or rejects the application. It comes at
-once after onboarding (3a), or on the decision date (3b). The magistrate decides from one
+The second gate is whether the court accepts or rejects the application. It comes at
+once after onboarding (3a), or on the decision date (3b). The court decides from one
 screen showing the application, its documents, when it was filed, whether an objection
 was filed, and the objection itself if there is one.
 
@@ -417,12 +416,12 @@ was filed, and the objection itself if there is one.
 - **Reject** — an order rejecting it. Once signed, the status is **Rejected**. Nothing
   further runs.
 
-**Moving the decision date.** Where the decision was set for a date (3b), the magistrate
-can move it to another date before deciding. The Decide application task and any File
+**Moving the decision date.** Where the decision was set for a date (3b), an Application
+onboarder can move it to another date before deciding. The Decide application task and any File
 objection task move to the new date together, and the objection deadline moves with them.
 The status stays Pending Decision.
 
-The bench clerk or typist may draft the order; only the magistrate signs. Signing either
+An Order drafter drafts the order; an Order signer signs it. Signing either
 order closes the Decide application task.
 
 **Dismissed and Rejected are different outcomes.** Dismissal happens at review, before
@@ -431,16 +430,16 @@ onboarding, with no application number. Rejection happens here, after onboarding
 | ID | Requirement |
 |---|---|
 | `ALC-14` | On the date, the court allows or rejects the application, reading the application, its documents and any objection filed against it from the same screen (`APL-07`, `APL-11`). |
-| `ALC-15` | The court may instead **move the decision to another date**. The new date replaces the old one; both the court's task and the objection task (if raised) are re-dated to it, the objection task staying due before the new date (`ALC-13`). |
-| `ALC-23` | **Whenever the magistrate opens the application**, key metadata is shown alongside it: when it was filed, and whether an objection has been filed. If one has been filed, the objection itself is shown too — not just the fact that one exists. |
+| `ALC-15` | An **Application onboarder** may instead **move the decision to another date**. The new date replaces the old one; both the court's task and the objection task (if raised) are re-dated to it, the objection task staying due before the new date (`ALC-13`). |
+| `ALC-23` | **Whenever court staff open the application**, key metadata is shown alongside it: when it was filed, and whether an objection has been filed. If one has been filed, the objection itself is shown too — not just the fact that one exists. |
 
 ---
 
 ## Step 6 — After the decision
 
 Signing an order accepting the application starts the workflow that belongs to its type,
-listed under "Workflow attached" in "Application types" — for example, for Postpone, the
-magistrate selects a new hearing date and the hearing is rescheduled. Several types have no
+listed under "Workflow attached" in "Application types" — for example, for Postpone, a
+Next hearing setter selects a new hearing date and the hearing is rescheduled. Several types have no
 workflow; for them, acceptance is the end. Rejection starts nothing.
 
 | ID | Requirement |
@@ -468,7 +467,7 @@ Used when setting the decision date at onboarding (3b), the only place a date is
 
 | ID | Requirement |
 |---|---|
-| `ALC-10` | The system **suggests** a date by pre-filling the case's next hearing date, if it has one on record; if it doesn't, there is nothing to pre-fill and the magistrate sets the date manually. Later, when application work runs in dedicated asynchronous slots, the suggestion becomes the next such slot. |
+| `ALC-10` | The system **suggests** a date by pre-filling the case's next hearing date, if it has one on record; if it doesn't, there is nothing to pre-fill and the Application onboarder sets the date manually. Later, when application work runs in dedicated asynchronous slots, the suggestion becomes the next such slot. |
 
 ---
 
@@ -483,11 +482,11 @@ Used when setting the decision date at onboarding (3b), the only place a date is
 | Pending Payment | Pay | Anyone on the filer's side of the case | Pending Review | 1 | `ALC-02`, `ALC-29` |
 | Pending Payment — **Objection only** | Pay | Anyone on the objecting side of the case | **Submitted** — terminal; no `Pending Review` | 1, 4 | `ALC-24` |
 | Not yet accepted or rejected (which statuses exactly: `Q-8`) — **Advance / Prepone and Postpone only** | Its hearing passes | System | Expired | Expiry | `ALC-30` |
-| Pending Review | Onboard application | Magistrate | Pending Decision | 2, 3 | `ALC-04` |
-| Pending Review | Dismiss application | Magistrate | Dismissed | 2 | `ALC-19` |
-| Pending Decision | Accept, having dealt with it now or on a date | Magistrate | Accepted — the application type's workflow triggers | 5, 6 | `ALC-08`, `ALC-09`, `ALC-16` |
-| Pending Decision | Reject, having dealt with it now or on a date | Magistrate | Rejected — no workflow | 5 | `ALC-16` |
-| Pending Decision | Move the decision to another date | Magistrate | Pending Decision *(unchanged)* | 5 | `ALC-15` |
+| Pending Review | Onboard application | Application onboarder | Pending Decision | 2, 3 | `ALC-04` |
+| Pending Review | Dismiss application | Order drafter drafts; Order signer signs | Dismissed | 2 | `ALC-19` |
+| Pending Decision | Accept, having dealt with it now or on a date | Order drafter drafts; Order signer signs | Accepted — the application type's workflow triggers | 5, 6 | `ALC-08`, `ALC-09`, `ALC-16` |
+| Pending Decision | Reject, having dealt with it now or on a date | Order drafter drafts; Order signer signs | Rejected — no workflow | 5 | `ALC-16` |
+| Pending Decision | Move the decision to another date | Application onboarder | Pending Decision *(unchanged)* | 5 | `ALC-15` |
 
 Left out on purpose: the **File objection** task the other party gets in step 4
 (`ALC-12`) isn't a status of *this* application — it's a task on a different person
@@ -543,22 +542,22 @@ Each type's own fields are in "Fields by application type," below.
 
 | Type | Available when | Workflow attached | One-line description |
 |---|---|---|---|
-| Bail | Only for the accused | On acceptance, the magistrate can request a bail bond — a draft is created from the application. | Request bail for an accused, with supporting details and documents. |
+| Bail | Only for the accused | On acceptance, the court can request a bail bond — a draft is created from the application. | Request bail for an accused, with supporting details and documents. |
 | Edit Litigant Details | Set by a control on the workflow: who can raise it, and whose details each of them can edit | On acceptance, the requested litigant details are updated. | Request corrections to any litigant's details in the case. |
 | Case Settlement | Always | — | Request court recognition of a settlement between the parties. |
 | Case Transfer | Always | — | Request transfer of the case to another court. |
 | Case Withdrawal | Always | — | Request withdrawal of the case. |
 | Delay Condonation | Only for the complainant | — | Request condonation of a delay in filing or complying. |
 | Generic | Always | — | Submit a general application where no dedicated type applies. |
-| Advance / Prepone | Only when a hearing is scheduled in the case | On acceptance, the magistrate selects a new hearing date and the hearing is rescheduled. | Request an earlier date for a scheduled hearing. |
-| Postpone | Only when a hearing is scheduled in the case | On acceptance, the magistrate selects a new hearing date and the hearing is rescheduled. | Request a later date for a scheduled hearing. |
+| Advance / Prepone | Only when a hearing is scheduled in the case | On acceptance, a Next hearing setter selects a new hearing date and the hearing is rescheduled. | Request an earlier date for a scheduled hearing. |
+| Postpone | Only when a hearing is scheduled in the case | On acceptance, a Next hearing setter selects a new hearing date and the hearing is rescheduled. | Request a later date for a scheduled hearing. |
 | PoA Change | Always | On acceptance, the PoA holder's rights transfer to the person named in the application. | Request an update to the appointed power-of-attorney holder. |
 | Production of Documents | Always | On acceptance, the attached documents are added to the case file. | Submit documents for the court to consider in the case. |
 | Addition of Witness | Always | On acceptance, the witness is added to the case. | Request the addition of a witness to the case. |
-| Warrant by Hand | Always | — The decision screen directs the magistrate to issue a warrant with the channel set to **By hand**; nothing runs automatically. | Request that a warrant be issued for delivery by hand. |
+| Warrant by Hand | Always | — The decision screen directs the court to issue a warrant with the channel set to **By hand**; nothing runs automatically. | Request that a warrant be issued for delivery by hand. |
 | Absent Application | Always | — | Notify the court of a party's absence and seek related directions. |
 | Reopen Evidence | Always | — | Request that evidence be reopened for further examination or submission. |
-| **Objection** | Only against another application, raised via that application's **File objection** task (`ALC-12`) — not independently started by a filer | No accept/reject of its own: ends at `Submitted`, not `Pending Review` — read alongside the original application when the magistrate decides it (`ALC-14`, `ALC-23`), and becomes that application's `Objection (Linked Application)` (`ALC-24`) | State an objection to another party's application. |
+| **Objection** | Only against another application, raised via that application's **File objection** task (`ALC-12`) — not independently started by a filer | No accept/reject of its own: ends at `Submitted`, not `Pending Review` — read alongside the original application when the court decides it (`ALC-14`, `ALC-23`), and becomes that application's `Objection (Linked Application)` (`ALC-24`) | State an objection to another party's application. |
 
 Hearing-linked types (Advance / Prepone, Postpone) expire if their hearing passes before
 the application is dealt with (`ALC-30`); whether a hearing that is moved counts as well is
@@ -821,7 +820,7 @@ No template yet.
 
 **Onboarding an application carries no value of its own.** Nothing about the application
 changes, nothing is decided, and nothing is written — it allots a number. As a step in its
-own right it is one more touchpoint on the magistrate.
+own right it is one more touchpoint on the court.
 
 What the step is worth keeping for, for now, is the two answers attached to it: **whether
 the other party has to respond**, and **when the court will deal with the application** —
@@ -830,7 +829,7 @@ answer.
 
 In the future the step can go. The system assigns the date itself, on the same logic it
 already uses to suggest one, and whether the other party must respond follows from the
-application type. The magistrate is then left with the decision alone.
+application type. The court is then left with the decision alone.
 
 ---
 
