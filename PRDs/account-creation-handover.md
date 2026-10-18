@@ -1,6 +1,12 @@
 # Account Creation — Developer & Agent Handover
 
-**Status:** v9 — 2026-10-13; `REG-13` no Bar Council database lookup of the Bar Registration ID — verified against the card photo only.
+**Status:** v13 — 2026-10-18; the clerk setting is renamed **`clerkApproval`**: **`required`** (default — clerk number, ID card photo, account approver approval) or **`notRequired`** (OTP, name, terms; usable at once) — was `clerkRegistration: advocate | litigant` (`REG-25`–`REG-27`, §2, §5). v12 — 2026-10-18; **a Bar ID conflict blocks registration only when the existing number is verified** (`REG-19`): a backend-created account no one has logged in to does not block a new registration, which goes through approval as usual; what happens to the old account is `Q-2` (new). v11 — 2026-10-18; role names checked against [`court-roles.md`](court-roles.md): §6.1's example now names the **Scrutiny officer** role; no staff title holds a permission. v10 — 2026-10-18; **how a clerk registers is set per state** (§5.4,
+`REG-25`–`REG-28`, new): as an advocate does (registration number, ID card photo,
+account approver approval — the default), or as a litigant does (OTP, name, terms; no
+approval). Either way the result is a clerk account. **Court staff are described by
+roles** from [`court-roles.md`](court-roles.md): approvals are by the **account
+approver** (§2, §5), and employee accounts carry roles per courtroom (`REG-31`, §6.1).
+v9 — 2026-10-13; `REG-13` no Bar Council database lookup of the Bar Registration ID — verified against the card photo only.
 v8 — 2026-09-27; `REG-34`'s unexplained "reasonable — confirm" dropped ·
 §6.1 courtroom mapping generalised (no longer names Gujarat/a specific courtroom count,
 states the 1:1-formally/differs-in-practice pattern for any employee role) · §7 accused
@@ -45,7 +51,7 @@ Requirement IDs: `REG-nn` — use in tickets, commits, test names.
 # 1. Scope
 
 Account creation for all user types: litigants, PoA holders, advocates, clerks, court
-employees (magistrate, bench clerk, CMO, typist), and accused persons arriving via
+staff (what each can do is set by roles, [`court-roles.md`](court-roles.md)), and accused persons arriving via
 summons. Covers the entry flow (authenticate first, then route to login or
 registration), the registration flow, the advocate/clerk approval workflow, credentials
 setup and the password reminder lifecycle, accused onboarding, and password policy.
@@ -65,8 +71,8 @@ parameters (not the owner's call — belongs with whoever owns SMS/OTP infrastru
 | --- | --- | --- | --- |
 | Litigant | Yes | No | Mobile OTP |
 | PoA Holder | Yes | No | Mobile OTP |
-| Advocate | Yes | Yes — scrutiny officer | Bar ID + photo of Bar ID |
-| Clerk | Yes | Yes — scrutiny officer | Clerk registration number + photo of clerk ID card |
+| Advocate | Yes | Yes — account approver | Bar ID + photo of Bar ID |
+| Clerk | Yes | **Set per state** (§5.4): with approval by an account approver (default), or without approval | With approval: clerk registration number + photo of clerk ID card. Without approval: mobile OTP |
 | Employee | No — created by admin | N/A | HRMS / backend |
 | Accused (via summons) | Yes | No | Mobile OTP |
 
@@ -155,7 +161,9 @@ a verified phone number instead of the person's own first login.
 
 # 5. Advocate & Clerk registration
 
-Two phases: the user submits their details, then a scrutiny officer approves.
+Two phases: the user submits their details, then an **account approver**
+([`court-roles.md`](court-roles.md)) approves. A clerk
+follows this flow unless the state sets clerks to register without approval (§5.4).
 
 ## 5.1 Submission
 
@@ -164,9 +172,9 @@ Two phases: the user submits their details, then a scrutiny officer approves.
 | `REG-10` | Enter mobile number | Yes | ✓ | ✓ | Primary key · **completed in the entry flow (§3)** |
 | `REG-11` | Verify OTP | Yes | ✓ | ✓ | **Completed in the entry flow (§3)** |
 | `REG-12` | Full Name | Yes | ✓ | ✓ | |
-| `REG-13` | Bar Registration ID | Yes | ✓ | — | **[OWNER]** not looked up against any database; the scrutiny officer verifies it against the Bar ID card photo (`REG-14`) |
+| `REG-13` | Bar Registration ID | Yes | ✓ | — | **[OWNER]** not looked up against any database; the account approver verifies it against the Bar ID card photo (`REG-14`) |
 | `REG-13a` | Clerk Registration Number | Yes | — | ✓ | **[OWNER]** clerks use their own identifier |
-| `REG-14` | Photo of Bar ID card | Yes | ✓ | — | Uploaded; scrutiny officer uses it to verify |
+| `REG-14` | Photo of Bar ID card | Yes | ✓ | — | Uploaded; the account approver uses it to verify |
 | `REG-14a` | Photo of Clerk ID card | Yes | — | ✓ | **[OWNER]** |
 | `REG-15` | Add email | Optional | ✓ | ✓ | |
 | `REG-16` | Create password | Optional | ✓ | ✓ | Can be **skipped** — password reminder (§4) applies |
@@ -182,13 +190,21 @@ database.
 
 `REG-18` **[OWNER]** — the **first time** an advocate logs in after their account was
 auto-created from the backend, take them through the registration flow again with their
-details **pre-filled**. If they edit anything, the updated request goes to the scrutiny
-officer for verification (same approval flow as a fresh registration).
+details **pre-filled**. If they edit anything, the updated request goes to an account
+approver for verification (same approval flow as a fresh registration).
 
 `REG-19` **[OWNER]** — when an advocate self-registers and the Bar ID is **already in
-the system** with a different mobile number: show an error message telling them the Bar
-ID is already registered and to **contact the help desk**. Display the help desk contact
-details in the error message.
+the system** with a different mobile number, what happens depends on whether that number
+has been **verified** — confirmed by OTP, because someone registered with it through the
+app or logged in with it on a backend-created account (`REG-18`):
+
+- **Verified** — block the registration. Show an error message telling them the Bar ID is
+  already registered and to **contact the help desk**, with the help desk contact details.
+- **Not verified** — the account was created from the backend (`REG-17`) and no one has
+  ever logged in with that number. The Bar Council database may simply hold the wrong
+  number, so do not block: the registration goes ahead with the number the advocate has
+  just verified, through the same approval flow as any registration (§5.3). What happens
+  to the backend-created account is `Q-2`.
 
 `REG-20` — the case where a Bar ID exists with **no mobile number** does not arise —
 backend auto-creation only happens when a mobile number is present (`REG-17`).
@@ -198,20 +214,29 @@ backend auto-creation only happens when a mobile number is present (`REG-17`).
 | State | Action | Next state |
 | --- | --- | --- |
 | — | Submit registration | Pending Approval |
-| Pending Approval | Scrutiny officer approves | Approved — full access |
-| Pending Approval | Scrutiny officer rejects | Rejected |
+| Pending Approval | Account approver approves | Approved — full access |
+| Pending Approval | Account approver rejects | Rejected |
 | Rejected | User edits details and resubmits | Pending Approval |
 
 `REG-21` — rejections happen when details are incorrect (e.g. Bar ID doesn't match the
 photo).
 
-`REG-22` **[OWNER]** — the scrutiny officer provides a **free-text rejection reason**.
+`REG-22` **[OWNER]** — the account approver provides a **free-text rejection reason**.
 
 `REG-23` `[DERIVED]` — rejection–resubmission may repeat without limit.
 
 `REG-24` **[OWNER]** — while **Pending Approval**, the user has **no access** from
 their advocate/clerk account. If they also have a litigant account (same phone number),
 they can switch to it and deal with any cases they have as a litigant.
+
+## 5.4 Clerk registration — state setting
+
+| ID | Requirement |
+| --- | --- |
+| `REG-25` | **`clerkApproval`**, set per state deployment: **`required`** (default) or **`notRequired`**. It decides only how a clerk registers. |
+| `REG-26` | **`required` — with approval:** the clerk registers through §5 — clerk registration number (`REG-13a`), photo of the clerk ID card (`REG-14a`), and approval by an account approver (§5.3) before the account can be used. |
+| `REG-27` | **`notRequired` — without approval:** the clerk registers through the litigant steps of §4 — mobile number and OTP, name, optional email and password, terms and conditions (`REG-01`–`REG-06`). No clerk registration number or ID card photo is collected, there is no approval, and the account is usable immediately (`REG-08`). |
+| `REG-28` | Under either setting the result is a **clerk account**: the clerk is offered the same role at sign-in, and what a clerk can do once in — and the clerk-to-advocate mapping that work depends on — is the same. |
 
 ---
 
@@ -222,7 +247,7 @@ No self-registration. **[OWNER]** Backend-only is acceptable; no UI needed.
 | ID | Requirement | Notes |
 | --- | --- | --- |
 | `REG-30` | Account created via HRMS or backend | No user-facing registration flow |
-| `REG-31` | Role assigned during creation | Magistrate, Bench Clerk, CMO, Typist, Scrutiny Officer |
+| `REG-31` | **Roles** assigned during creation, **per courtroom** | One or more roles from [`court-roles.md`](court-roles.md) for each courtroom on the account's list (`REG-35`); they may differ by courtroom (`RLE-02a`), and are changed afterwards the same way (`RLE-03`) |
 | `REG-32` | System generates an initial password | |
 | `REG-33` | Credentials emailed to the user | User logs in with the emailed password |
 
@@ -231,29 +256,28 @@ requirement.
 
 ## 6.1 Courtroom mapping and login
 
-Every court employee is **mapped to one or more courtrooms**. Formally, this is a 1:1
-mapping for every employee role — magistrate, bench clerk, typist, scrutiny officer. In
-practice this doesn't always hold — one person may need to cover more than one courtroom
+Every court employee is **mapped to one or more courtrooms**. Formally, each person
+works in one courtroom. In practice this doesn't always hold — one person may need to cover more than one courtroom
 — so the design accommodates it:
 
 **Design:** rather than creating separate accounts for each courtroom a person works in,
 every employee has **one account** with a list of assigned courtrooms. After login, they
 select which courtroom they are working in. This means:
 
-- A scrutiny officer handling 5 courtrooms has one account with 5 courtrooms in their
-  list. They pick one after login and see that courtroom's cases. They can switch without
-  logging out.
-- A typist who is later asked to cover a second courtroom just gets that courtroom added
-  to their list — no new account, no architecture change.
-- A magistrate in a single courtroom has a list of one — the selector is still there but
+- A person who scrutinises filings for 5 courtrooms has one account with 5 courtrooms
+  in their list, each carrying the **Scrutiny officer** role ([`court-roles.md`](court-roles.md)). They pick one after login and
+  see that courtroom's cases. They can switch without logging out.
+- A person who is later asked to cover a second courtroom just gets that courtroom added
+  to their list, with the roles they hold there — no new account, no architecture change.
+- A person in a single courtroom has a list of one — the selector is still there but
   there is only one option.
 
 | ID | Requirement | Notes |
 | --- | --- | --- |
 | `REG-35` | Each employee account carries a list of **assigned courtrooms** | Set during backend creation |
-| `REG-36` | After login, the employee selects which courtroom to work in from their assigned list | If the employee is only mapped to one court room, this selection is not needed.  |
+| `REG-36` | After login, the employee selects which courtroom to work in from their assigned list. The roles they hold in that courtroom are the ones that apply | If the employee is only mapped to one court room, this selection is not needed.  |
 | `REG-37` | The employee can **switch courtrooms** without logging out | |
-| `REG-38` | Adding or removing a courtroom from an employee's list is a backend/admin operation | No self-service |
+| `REG-38` | Adding or removing a courtroom from an employee's list, or changing the roles they hold in one, is a backend/admin operation | No self-service |
 
 ---
 
@@ -330,6 +354,10 @@ filter: PRDs.Contains("account-creation-handover")
 
 # 10. Owner decisions log
 
+**2026-10-18** — A Bar ID already in the system with a different mobile number blocks a
+new registration only when that number has been verified by OTP; a backend-created
+account no one has logged in to does not block it (`REG-19`).
+
 **2026-10-13** — No Bar Council check: the Bar Registration ID is not looked up against
 the Bar Council database at registration; the scrutiny officer verifies it against the
 Bar ID card photo (`REG-13`, `REG-14`).
@@ -372,6 +400,7 @@ registration flow to set a password if they want and accept terms and conditions
 | # | Question | Blocks |
 | --- | --- | --- |
 | Q-1 | **Help desk contact details** — what phone number / email / URL should the "contact help desk" error message display when a Bar ID conflict is found? | `REG-19`, §5.2 |
+| Q-2 | When a registration goes ahead over an unverified backend-created account with the same Bar ID (`REG-19`), what happens to that account — replaced by the new one on approval, or merged into it? | `REG-19` |
 
 ---
 
