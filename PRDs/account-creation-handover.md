@@ -72,7 +72,7 @@ parameters (not the owner's call — belongs with whoever owns SMS/OTP infrastru
 | Litigant | Yes | No | Mobile OTP |
 | PoA Holder | Yes | No | Mobile OTP |
 | Advocate | Yes | Yes — account approver | Bar ID + photo of Bar ID |
-| Clerk | Yes | **Set per state** (§5.4): with approval by an account approver (default), or without approval | With approval: clerk registration number + photo of clerk ID card. Without approval: mobile OTP |
+| Clerk | Yes | **Set per state** (§5.4, `REG-25`): with approval by an account approver (default), or without approval | With approval: clerk registration number + photo of clerk ID card. Without approval: mobile OTP |
 | Employee | No — created by admin | N/A | HRMS / backend |
 | Accused (via summons) | Yes | No | Mobile OTP |
 
@@ -400,7 +400,7 @@ registration flow to set a password if they want and accept terms and conditions
 | # | Question | Blocks |
 | --- | --- | --- |
 | Q-1 | **Help desk contact details** — what phone number / email / URL should the "contact help desk" error message display when a Bar ID conflict is found? | `REG-19`, §5.2 |
-| Q-2 | When a registration goes ahead over an unverified backend-created account with the same Bar ID (`REG-19`), what happens to that account — replaced by the new one on approval, or merged into it? | `REG-19` |
+| Q-2 | **Unverified backend-created account** — when a registration goes ahead over one with the same Bar ID (`REG-19`), what happens to that account: replaced by the new one on approval, or merged into it? | `REG-19`, `REG-17` |
 
 ---
 
