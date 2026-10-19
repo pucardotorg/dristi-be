@@ -1,6 +1,6 @@
 # E-Filing — Developer & Agent Handover
 
-**Status:** v45 — 2026-10-19; **the PoA holder records the oath** for a complainant who signs through them (`OTH-3`, `SIG-08`, `SIG-11`); **Record oath** added to the §3 permission matrix — complainant, PoA holder or Institution representative, never advocate or clerk; a leftover paragraph offering oath upload is removed from §14a (it contradicted `OTH-1`). §3, §14a, §18, §20.2. v44 — 2026-10-19; **the oath is recorded, never uploaded** (§14a, `OTH-1`); **signing SMS** (§18.2, `SIG-11`, new) — e-sign and upload, each with and without the oath, held in the master Notifications table (the two oath rows are new); in upload mode each party confirms the OTP and records the oath **on their own device** (phone or computer with a camera), through the link (`SIG-05`). §14a, §18, §20.2. v43 — 2026-10-19; **the signature is affixed Simple or Multi-page** (`SIG-09`, §18.1) — how it appears on the document, not how signing is done; Simple affixes it once for the entire case file; upload of a physically signed copy is a fallback reached from e-sign and **must be justified** with a reason (`SIG-10`); every signatory's mobile number is verified — by the SMS link or login in e-sign, by a separate phone OTP in upload mode (`SIG-05`). Multi-page to follow. §18, §20.2. v42 — 2026-10-19; **the oath moves to signing** (§14a, rewritten): no longer a form section; each complainant records it at their e-sign or OTP confirmation (`OTH-3`, `SIG-08`), only where the state requires it (`oathRequired`, `OTH-2`, `Q-6`); shown to the scrutiny officer (`OTH-4`); not re-recorded on correction unless flagged as an error (`OTH-5`, `SIG-07`). Affidavit is now form section 10, with its own sidebar heading. §5, §14a, §14b, §16.8, §18, §20.2, §21. v41 — 2026-10-19; **payment calculation is per state and not finalised** (§19): the upfront mechanism stays; every fee head, amount, slab, cap, rate and remittance account in §19 is a Kerala illustration, to be built as per-state configuration (`Q-5`, new). §19, §10 (DCA fee), §20.2, §21, §23. v40 — 2026-10-19; **pending tasks follow actions** (§20.1): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v39 — 2026-10-19; **split into two documents** — scrutiny, registration and editability on send-back (old §20.1–§20.4, the court-side columns of the §3 matrix and rows of the §4 lifecycle, and their decisions-log and glossary entries) move to [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md); requirement IDs unchanged. §20 now holds this module's pending tasks, notifications, events and decisions log. The answered Q-2 to Q-4 rows are removed from §21. v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
+**Status:** v46 — 2026-10-19; **the oath moves into Signing** as §18.2 (was §14a; `OTH` IDs unchanged), signing SMS is now §18.3; the scrutiny officer plays and flags each oath separately (`OTH-4` → `SCR-14`) and sees the reason for a paper upload (`SIG-10` → `SCR-15`). §5, §14b, §16.8, §18, §20.2. v45 — 2026-10-19; **the PoA holder records the oath** for a complainant who signs through them (`OTH-3`, `SIG-08`, `SIG-11`); **Record oath** added to the §3 permission matrix — complainant, PoA holder or Institution representative, never advocate or clerk; a leftover paragraph offering oath upload is removed from §14a (it contradicted `OTH-1`). §3, §14a, §18, §20.2. v44 — 2026-10-19; **the oath is recorded, never uploaded** (§14a, `OTH-1`); **signing SMS** (§18.2, `SIG-11`, new) — e-sign and upload, each with and without the oath, held in the master Notifications table (the two oath rows are new); in upload mode each party confirms the OTP and records the oath **on their own device** (phone or computer with a camera), through the link (`SIG-05`). §14a, §18, §20.2. v43 — 2026-10-19; **the signature is affixed Simple or Multi-page** (`SIG-09`, §18.1) — how it appears on the document, not how signing is done; Simple affixes it once for the entire case file; upload of a physically signed copy is a fallback reached from e-sign and **must be justified** with a reason (`SIG-10`); every signatory's mobile number is verified — by the SMS link or login in e-sign, by a separate phone OTP in upload mode (`SIG-05`). Multi-page to follow. §18, §20.2. v42 — 2026-10-19; **the oath moves to signing** (§14a, rewritten): no longer a form section; each complainant records it at their e-sign or OTP confirmation (`OTH-3`, `SIG-08`), only where the state requires it (`oathRequired`, `OTH-2`, `Q-6`); shown to the scrutiny officer (`OTH-4`); not re-recorded on correction unless flagged as an error (`OTH-5`, `SIG-07`). Affidavit is now form section 10, with its own sidebar heading. §5, §14a, §14b, §16.8, §18, §20.2, §21. v41 — 2026-10-19; **payment calculation is per state and not finalised** (§19): the upfront mechanism stays; every fee head, amount, slab, cap, rate and remittance account in §19 is a Kerala illustration, to be built as per-state configuration (`Q-5`, new). §19, §10 (DCA fee), §20.2, §21, §23. v40 — 2026-10-19; **pending tasks follow actions** (§20.1): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v39 — 2026-10-19; **split into two documents** — scrutiny, registration and editability on send-back (old §20.1–§20.4, the court-side columns of the §3 matrix and rows of the §4 lifecycle, and their decisions-log and glossary entries) move to [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md); requirement IDs unchanged. §20 now holds this module's pending tasks, notifications, events and decisions log. The answered Q-2 to Q-4 rows are removed from §21. v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
 case can be registered at Scrutiny now follows from roles (`SCR-11`, §20.3a): a person who
 holds both the Scrutiny officer and Case registerer roles in the courtroom can register
 the case straight from Scrutiny, or forward it; anyone else forwards it to Registration.
@@ -266,7 +266,7 @@ Sections in order — each a screen; repeatable sections carry "N" records:
 11. Synopsis — auto-generated, shown after the case moves to signing (§15)
 
 **[OWNER]** The oath is not a form section: it is recorded during signing, in the states
-that require it (§14a).
+that require it (§18.2).
 
 **Gating** **[OWNER]**: **Advocate Details is hard-gated** — locked until Complainant
 Details is complete (`FIL-01`, option A). `[DERIVED]` "complete" = every mandatory field
@@ -555,48 +555,9 @@ document is missing, with a visible count.
 
 ---
 
-# 14a. Oath — `OTH`
-
-**[OWNER]** The oath is **not a section of the filing form**. It is recorded during
-signing (§18), and only in states that require it.
-
-| ID | Requirement |
-| --- | --- |
-| `OTH-2` | **Per state.** `oathRequired`, set per state, on or off. When off there is no oath anywhere: nothing is asked at signing and nothing is shown at scrutiny. Which states have it is `Q-6`. |
-| `OTH-3` | **Asked at signing.** When a complainant signs by e-sign, or confirms by phone OTP in upload mode (`SIG-05`), the flow asks them to record the oath as part of that step. One oath per complainant record (same complainants as §6); for an Institution complainant the authorised representative takes it, and **for a complainant who signs through a PoA holder, the PoA holder takes it**. Advocates and clerks do not record an oath. `[DERIVED]` a complainant's signature or confirmation is not complete until their oath is recorded. |
-| `OTH-4` | **Shown at scrutiny.** The oath video is shown to the scrutiny officer in the document index (`SCR-01`, [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md)) and can be flagged as an error like any document (`SCR-03`). |
-| `OTH-5` | **Not re-recorded on correction unless flagged.** When the filer signs again after a send-back (`SIG-07`), the oath is asked for again only for the complainants whose oath video was flagged as an error at scrutiny. Otherwise the recorded oath carries over — including after a registration send-back, which opens everything for editing but flags nothing. |
-
-The step shows the oath wording for the complainant to read aloud on camera, so nothing
-has to be remembered before recording.
-
-> I solemnly affirm that the contents of this complaint, and everything I have stated
-> in support of it, are true to the best of my knowledge and belief, and that I have
-> not concealed anything material to this case.
-
-**[GAP]** this wording is a placeholder — a religion-neutral affirmation in the shape of
-the Oaths Act, 1969 forms, not a verified, court-prescribed script. Confirm the exact
-required wording (and whether an oath/affirmation choice is needed, per that Act) before
-this ships.
-
-**[OWNER]** The oath is **recorded, never uploaded**: it is taken live through the
-device's camera in the signing step. There is no option to upload a video recorded
-elsewhere.
-
-| ID | Field | Type | Validation |
-| --- | --- | --- | --- |
-| OTH-1 | Oath video | Recorded in the browser through the device's camera — no file upload | **Mandatory where `oathRequired` is on.** Recording stops at 2 minutes |
-
-The oath is a separate act from the affidavit (§14b). It is not part of the `DCM`
-document list and not appended to the complaint PDF (§16.7) — a video cannot be embedded
-in a printed document. It is stored with the case file and appears in the case's
-Documents view.
-
----
-
 # 14b. Affidavit — `PRY-4`
 
-**[OWNER]** Its own screen — a separate act from the oath (§14a): the affidavit is the
+**[OWNER]** Its own screen — a separate act from the oath (§18.2): the affidavit is the
 sworn written document tendered with the complaint (compare the P&H case files, where
 "CW tendered into preliminary evidence his affidavit Ex.CA" is its own order-sheet entry,
 distinct from any deposition). It sits directly after Documents. `FIL-03` — like every other mandatory section,
@@ -875,7 +836,7 @@ remain, plus the Party details exception below — none of them a field reorderi
 | §15 Synopsis (auto-generated) | the **first page**, before print §1, drawing fields from most of the other screens. Synopsis isn't collected on any screen at all — it exists only as a generated summary — so "collection order" doesn't apply to it; it stays first by deliberate choice, as the reader's entry point |
 | §6 Litigant | **print §1.1**, including the party-in-person affidavit (`LIT-27`). The case's main affidavit (`PRY-4`) is its own screen (§5, screen 10) and prints as **print §4** — so the document carries two affidavits, sections apart. These are two different fields, not one field split in two, so there is nothing to merge here |
 
-**[OWNER]** The oath (§14a) is a recorded video taken at signing, not a form field, and
+**[OWNER]** The oath (§18.2) is a recorded video taken at signing, not a form field, and
 does not appear anywhere in the printed complaint.
 
 **Fields that do not print as their own row.**
@@ -1064,7 +1025,8 @@ backend data, not added to the case file **[OWNER]**):
   picks why e-signing did not work: the OTP didn't arrive · the DSC isn't working ·
   another party can't e-sign (offered only where there are other signatories) · the
   e-sign service isn't responding · something else. The reason and its time are recorded
-  with the signing.
+  with the signing and **shown to the scrutiny officer** (`SCR-15`,
+  [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md)).
 - `SIG-03` — required signatories: **every complainant** (or their PoA-holder) **and one
   advocate for each complainant**.
 - `SIG-04` **[OWNER]** — all parties use the same mode. **Requirement**, not a
@@ -1074,7 +1036,7 @@ backend data, not added to the case file **[OWNER]**):
   number, or logs in with it, and either verifies the number — no separate OTP. In
   upload mode nothing does that, so it is done separately: the uploader collects all
   wet signatures beforehand, and **each required party confirms via a phone OTP on their
-  own device**, through a link sent to them by SMS (§18.2). The upload counts as fully
+  own device**, through a link sent to them by SMS (§18.3). The upload counts as fully
   signed only when the document is uploaded **and every party has confirmed**.
 - `SIG-06` — e-sign is individual; the case advances when all have signed. **[OWNER]**
   **no mandated signing order.**
@@ -1095,7 +1057,7 @@ backend data, not added to the case file **[OWNER]**):
 - `SIG-08` **[OWNER]** — where the state requires an oath (`OTH-2`), the oath is
   recorded for each complainant, as part of their e-sign or OTP confirmation, by whoever
   signs for them — the complainant, their PoA holder, or an Institution's authorised
-  representative (`OTH-3`, §14a).
+  representative (`OTH-3`, §18.2).
 
 E-sign provider selection, failure modes, retry/timeout: left to engineering at
 integration time (with §19's gateway equivalents).
@@ -1107,7 +1069,44 @@ integration time (with §19's gateway equivalents).
 | **Simple** | Affixed **once, for the entire case file** |
 | **Multi-page** | To follow |
 
-## 18.2 Signing SMS — `SIG-11`
+## 18.2 Oath — `OTH`
+
+**[OWNER]** The oath is **not a section of the filing form**. It is recorded during
+signing, and only in states that require it.
+
+| ID | Requirement |
+| --- | --- |
+| `OTH-2` | **Per state.** `oathRequired`, set per state, on or off. When off there is no oath anywhere: nothing is asked at signing and nothing is shown at scrutiny. Which states have it is `Q-6`. |
+| `OTH-3` | **Asked at signing.** When a complainant signs by e-sign, or confirms by phone OTP in upload mode (`SIG-05`), the flow asks them to record the oath as part of that step. One oath per complainant record (same complainants as §6); for an Institution complainant the authorised representative takes it, and **for a complainant who signs through a PoA holder, the PoA holder takes it**. Advocates and clerks do not record an oath. `[DERIVED]` a complainant's signature or confirmation is not complete until their oath is recorded. |
+| `OTH-4` | **Shown at scrutiny.** Each oath video is shown to the scrutiny officer, who can play it and flag it as an error, one oath at a time (`SCR-14`, [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md)). |
+| `OTH-5` | **Not re-recorded on correction unless flagged.** When the filer signs again after a send-back (`SIG-07`), the oath is asked for again only for the complainants whose oath video was flagged as an error at scrutiny. Otherwise the recorded oath carries over — including after a registration send-back, which opens everything for editing but flags nothing. |
+
+The step shows the oath wording for the complainant to read aloud on camera, so nothing
+has to be remembered before recording.
+
+> I solemnly affirm that the contents of this complaint, and everything I have stated
+> in support of it, are true to the best of my knowledge and belief, and that I have
+> not concealed anything material to this case.
+
+**[GAP]** this wording is a placeholder — a religion-neutral affirmation in the shape of
+the Oaths Act, 1969 forms, not a verified, court-prescribed script. Confirm the exact
+required wording (and whether an oath/affirmation choice is needed, per that Act) before
+this ships.
+
+**[OWNER]** The oath is **recorded, never uploaded**: it is taken live through the
+device's camera in the signing step. There is no option to upload a video recorded
+elsewhere.
+
+| ID | Field | Type | Validation |
+| --- | --- | --- | --- |
+| OTH-1 | Oath video | Recorded in the browser through the device's camera — no file upload | **Mandatory where `oathRequired` is on.** Recording stops at 2 minutes |
+
+The oath is a separate act from the affidavit (§14b). It is not part of the `DCM`
+document list and not appended to the complaint PDF (§16.7) — a video cannot be embedded
+in a printed document. It is stored with the case file and appears in the case's
+Documents view.
+
+## 18.3 Signing SMS — `SIG-11`
 
 Which SMS a signatory gets follows from the signing mode (`SIG-01/02`) and whether the
 state requires an oath (`OTH-2`). The wording is in the master **Notifications** table
@@ -1338,6 +1337,8 @@ it (`oathRequired`, `Q-6`). Shown to the scrutiny officer; not re-recorded on co
 unless flagged as an error. Supersedes the v17/v18 Oath section. Later the same day: the oath
 is recorded, never uploaded; in upload mode each party confirms the OTP and records the
 oath on their own device (phone or computer with a camera), through a link sent by SMS.
+(batch 16) — 2026-10-19: the oath section moves into Signing (§18.2). The scrutiny officer
+plays and flags each oath separately, and sees the reason for a paper upload.
 (batch 16) — 2026-10-19: where a complainant signs through a PoA holder, the PoA holder
 records the oath. Advocates and clerks never do. Added to the §3 permission matrix.
 (batch 15) — 2026-10-19: two ways of affixing the signature, Simple and Multi-page —

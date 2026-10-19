@@ -1,6 +1,6 @@
 # Scrutiny and Registration — Developer & Agent Handover
 
-**Status:** v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling-handover.md`](efiling-handover.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
+**Status:** v3.2 — 2026-10-19; **oath review** (`SCR-14`, new): each oath is listed with whose it is and when it was recorded, plays in the centre panel, is flagged on its own, and shows when it carried over from an earlier round; **paper upload reason** shown to the scrutiny officer (`SCR-15`, new). Oath now at [`efiling-handover.md`](efiling-handover.md) §18.2. v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling-handover.md`](efiling-handover.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
 court-side rows of its role matrix and lifecycle, and the scrutiny and registration
 entries of its decisions log and glossary). Requirement IDs unchanged. Changes to these
 sections before this date are in the Status line of
@@ -166,9 +166,22 @@ name the pending-task mechanism; the requirement is as stated here.
 comment against it. They can also **mark an entire section** as an error with a comment.
 
 `SCR-03` A **Scrutiny officer** can **flag any document as an error**, which permits the
-filer to re-upload it on send-back. This includes a complainant's **oath video**, where
-the state requires an oath ([`efiling-handover.md`](efiling-handover.md) §14a): flagging
-it is the only way the oath is recorded again on correction (`OTH-5`).
+filer to re-upload it on send-back.
+
+`SCR-14` **Oath videos**, where the state requires an oath ([`efiling-handover.md`](efiling-handover.md)
+§18.2):
+- Each oath is listed on its own, labelled with the complainant it is for and the person
+  who recorded it — the complainant, their PoA holder or an Institution's authorised
+  representative — and when it was recorded.
+- Selecting one plays the video in the centre panel.
+- Each oath is flagged as an error on its own, with a comment. Only a flagged oath is
+  recorded again on correction, and only by that complainant (`OTH-5`).
+- After a correction cycle, an oath that was not recorded again says so, with the date it
+  was recorded, so the officer can tell it carried over from an earlier round.
+
+`SCR-15` **Paper upload reason.** Where the case was signed by uploading a physically
+signed copy, the scrutiny officer sees the reason given for not e-signing and when it was
+given (`SIG-10`, [`efiling-handover.md`](efiling-handover.md) §18).
 
 ## Interlinked date auto-marking
 
