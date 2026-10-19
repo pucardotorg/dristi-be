@@ -8,6 +8,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from apps.address import errors
 from apps.address.services import (
     PincodeDetails,
     PincodeNotFoundError,
@@ -16,6 +17,10 @@ from apps.address.services import (
 from apps.users.models import RegistrationStatus, Role, User
 
 LOOKUP = "apps.address.views.lookup_pincode"
+
+
+def error_code(response):
+    return response.json()["errors"][0]["code"]
 
 
 @pytest.fixture(autouse=True)
@@ -66,23 +71,21 @@ class TestPincodeLookupView:
 
         lookup.assert_not_called()
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert response.json()["code"] == "invalid_pincode"
+        assert error_code(response) == errors.INVALID_PINCODE.code
 
     def test_unknown_pincode_is_404(self, client):
         with patch(LOOKUP, side_effect=PincodeNotFoundError):
             response = client.get(url("999999"))
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json()["code"] == "pincode_not_found"
+        assert error_code(response) == errors.PINCODE_NOT_FOUND.code
 
     def test_india_post_down_is_503_with_a_clear_code(self, client):
         with patch(LOOKUP, side_effect=PincodeServiceUnavailableError):
             response = client.get(url("560001"))
 
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        body = response.json()
-        assert body["code"] == "pincode_service_unavailable"
-        assert "unavailable" in body["detail"]
+        assert error_code(response) == errors.PINCODE_SERVICE_UNAVAILABLE.code
 
     def test_requires_authentication(self):
         response = APIClient().get(url("560001"))
@@ -116,16 +119,18 @@ class TestApiStandards:
         assert set(body["meta"]) == {"timestamp", "app_version", "spec_version"}
 
     @pytest.mark.parametrize(
-        ("pincode", "side_effect", "code"),
+        ("pincode", "side_effect", "error"),
         [
-            ("012345", None, "invalid_pincode"),
-            ("560001", PincodeNotFoundError, "pincode_not_found"),
-            ("560001", PincodeServiceUnavailableError, "pincode_service_unavailable"),
+            ("012345", None, errors.INVALID_PINCODE),
+            ("560001", PincodeNotFoundError, errors.PINCODE_NOT_FOUND),
+            ("560001", PincodeServiceUnavailableError, errors.PINCODE_SERVICE_UNAVAILABLE),
         ],
     )
-    def test_error_responses_have_detail_code_and_meta(self, client, pincode, side_effect, code):
+    def test_error_responses_use_the_standard_shape(self, client, pincode, side_effect, error):
         with patch(LOOKUP, side_effect=side_effect):
-            body = client.get(url(pincode)).json()
+            response = client.get(url(pincode))
 
-        assert set(body) == {"detail", "code", "meta"}
-        assert body["code"] == code
+        body = response.json()
+        assert response.status_code == error.status
+        assert set(body) == {"errors", "meta"}
+        assert [item["code"] for item in body["errors"]] == [error.code]
