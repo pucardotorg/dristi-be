@@ -8,10 +8,11 @@ document is stored with, and reporting refusals under ``documents``.
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from rest_framework import serializers
 
 from apps.files import documents as file_documents
 from apps.files import services as files
+
+from . import errors
 
 # Tag applied to every stored request document, so they can be found with
 # ``files.search_file`` without knowing which requests exist.
@@ -28,7 +29,7 @@ def validate_documents(documents, *, request_type):
     """
     count = len(documents)
     if count < request_type.min_documents:
-        raise serializers.ValidationError(
+        raise errors.INVALID_DOCUMENTS.validation_error(
             {
                 "documents": (
                     f"{request_type.name} requires at least "
@@ -39,17 +40,17 @@ def validate_documents(documents, *, request_type):
 
     max_count = settings.FILE_MAX_COUNT_PER_UPLOAD
     if count > max_count:
-        raise serializers.ValidationError(
+        raise errors.INVALID_DOCUMENTS.validation_error(
             {"documents": f"At most {max_count} documents can be attached, got {count}."}
         )
 
-    errors = []
+    problems = []
     for upload in documents:
         error = file_documents.document_error(upload)
         if error:
-            errors.append(f"{getattr(upload, 'name', '') or 'document'}: {error}")
-    if errors:
-        raise serializers.ValidationError({"documents": errors})
+            problems.append(f"{getattr(upload, 'name', '') or 'document'}: {error}")
+    if problems:
+        raise errors.INVALID_DOCUMENTS.validation_error({"documents": problems})
 
 
 def store_documents(documents, *, requester, request_type):
@@ -64,7 +65,7 @@ def store_documents(documents, *, requester, request_type):
             documents, user_id=requester.pk, tags=[DOCUMENT_TAG, request_type.code]
         )
     except DjangoValidationError as exc:
-        raise serializers.ValidationError({"documents": exc.messages}) from exc
+        raise errors.INVALID_DOCUMENTS.validation_error({"documents": exc.messages}) from exc
 
 
 def discard_documents(file_ids):

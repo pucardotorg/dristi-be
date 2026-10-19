@@ -7,6 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
+from apps.api import errors
+from apps.api.schema import error_responses
 from apps.api.viewsets import APIModelReadOnlyViewSet
 from apps.locations.serializers import LocationSerializer
 
@@ -17,15 +19,15 @@ CODE_URL_PATH = r"code/(?P<code>[^/.]+)"
 
 
 @extend_schema_view(
-    list=extend_schema(tags=["organizations"]),
-    retrieve=extend_schema(tags=["organizations"]),
-    children=extend_schema(tags=["organizations"]),
-    ancestors=extend_schema(tags=["organizations"]),
-    jurisdictions=extend_schema(tags=["organizations"]),
-    by_code=extend_schema(tags=["organizations"]),
-    children_by_code=extend_schema(tags=["organizations"]),
-    ancestors_by_code=extend_schema(tags=["organizations"]),
-    jurisdictions_by_code=extend_schema(tags=["organizations"]),
+    # Query parameters are validated by OrganizationFilterSerializer.
+    list=extend_schema(
+        responses=error_responses(
+            errors.INVALID_CHOICE.example('"XX" is not a valid choice.', field="organization_type"),
+            errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
+            errors.INVALID.example('Must be "true" or "false".', field="is_active"),
+            errors.INVALID.example("parent_id and parent_code are mutually exclusive."),
+        )
+    ),
 )
 class OrganizationViewSet(APIModelReadOnlyViewSet):
     """Read-only organization API with hierarchy and jurisdiction lookups by id or code."""
@@ -35,6 +37,15 @@ class OrganizationViewSet(APIModelReadOnlyViewSet):
     queryset = Organization.objects.select_related("parent").all()
     serializer_class = OrganizationSerializer
     lookup_field = "id"
+    list_actions = {"children", "children_by_code", "jurisdictions", "jurisdictions_by_code"}
+    # Ancestor chains are short and returned whole; documented as plain lists.
+    unpaginated_actions = {"ancestors", "ancestors_by_code"}
+
+    def get_serializer_class(self):
+        """Jurisdiction actions return locations, not organizations."""
+        if self.action in {"jurisdictions", "jurisdictions_by_code"}:
+            return LocationSerializer
+        return super().get_serializer_class()
 
     def get_queryset(self):
         """Apply list-endpoint filters only when listing, not on detail lookups."""
@@ -94,8 +105,8 @@ class OrganizationViewSet(APIModelReadOnlyViewSet):
         jurisdictions = organization.jurisdictions.all()
         page = self.paginate_queryset(jurisdictions)
         if page is not None:
-            return self.get_paginated_response(LocationSerializer(page, many=True).data)
-        return Response(LocationSerializer(jurisdictions, many=True).data)
+            return self.get_paginated_response(self.get_serializer(page, many=True).data)
+        return Response(self.get_serializer(jurisdictions, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="children", url_name="children")
     def children(self, request, *args, **kwargs):
