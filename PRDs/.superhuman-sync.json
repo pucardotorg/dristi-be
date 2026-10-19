@@ -6,9 +6,9 @@
     "account-creation-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-Ebr9Pgtqan",
       "title": "Account Creation Handover",
-      "contentHash": "db58dd741172",
-      "pageUpdatedAt": 1792384915.729,
-      "note": "Patched in place 2026-10-18 to v13 (status, callout, scope, §5 intro, REG-18/19/22, new §5.4, §6.1, grids 3/8/9/10/11/13, decision-log entry). `sections` not recorded.",
+      "contentHash": "39aa995fc015",
+      "pageUpdatedAt": 1792393805.808,
+      "note": "Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded.",
       "calloutElementId": "eca-f5gQdC7hLi"
     },
     "efiling-scrutiny-registration-handover.md": {
@@ -3154,24 +3154,29 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "5e52b062422b",
-      "pageUpdatedAt": 1792378970.119,
+      "contentHash": "a4d818829bde",
+      "pageUpdatedAt": 1792393712.15,
       "calloutElementId": "eca--mndIR4CnY",
       "sections": [
         {
           "key": "# Court roles",
           "elementId": "cl-XCC5WlGTMz",
-          "hash": "30cba8499e58"
+          "hash": "2913614b50b3"
         },
         {
           "key": "## 1. How roles work",
           "elementId": "cl-FOWR_QPYdx",
-          "hash": "2d0da19a42a0"
+          "hash": "cc19d48e90e2"
         },
         {
           "key": "## 2. The roles",
           "elementId": "cl-7H8w9i70dP",
-          "hash": "5ae8d1fe9a4e"
+          "hash": "d93b964bffa7"
+        },
+        {
+          "key": "## 3. Who holds which role, by state",
+          "elementId": "cl-QNDZq8RlBI",
+          "hash": "41f457719d9b"
         }
       ]
     }
