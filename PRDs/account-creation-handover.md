@@ -1,6 +1,6 @@
 # Account Creation — Developer & Agent Handover
 
-**Status:** v14 — 2026-10-19; **Approve registration** court-side pending task added (`REG-23a`, §5.3; row in the Court Side master table, shown in §9). Who receives it is open (`Q-3`). v13 — 2026-10-18; the clerk setting is renamed **`clerkApproval`**: **`required`** (default — clerk number, ID card photo, account approver approval) or **`notRequired`** (OTP, name, terms; usable at once) — was `clerkRegistration: advocate | litigant` (`REG-25`–`REG-27`, §2, §5). v12 — 2026-10-18; **a Bar ID conflict blocks registration only when the existing number is verified** (`REG-19`): a backend-created account no one has logged in to does not block a new registration, which goes through approval as usual; what happens to the old account is `Q-2` (new). v11 — 2026-10-18; role names checked against [`court-roles.md`](court-roles.md): §6.1's example now names the **Scrutiny officer** role; no staff title holds a permission. v10 — 2026-10-18; **how a clerk registers is set per state** (§5.4,
+**Status:** v17 — 2026-10-19; **the Account approver role is held for the whole state deployment** (`REG-23b`), replacing v16's court establishment: every Account approver receives every Approve registration task (`REG-23a`). `Q-3` resolved and removed from §11. v16 — 2026-10-19; **the Account approver role is held per court establishment** (`REG-23b`), and the Approve registration task goes to every approver at the registration's establishment (`REG-23a`). How a registration is placed at an establishment is `Q-3`. v15 — 2026-10-19; **the Account approver role is not held per courtroom** (`REG-23b`, §5.3): it is held above courtroom level or independent of courtroom, and the Approve registration task goes to every approver in that scope. Which level is `Q-3`, narrowed. v14 — 2026-10-19; **Approve registration** court-side pending task added (`REG-23a`, §5.3; row in the Court Side master table, shown in §9). Who receives it is open (`Q-3`). v13 — 2026-10-18; the clerk setting is renamed **`clerkApproval`**: **`required`** (default — clerk number, ID card photo, account approver approval) or **`notRequired`** (OTP, name, terms; usable at once) — was `clerkRegistration: advocate | litigant` (`REG-25`–`REG-27`, §2, §5). v12 — 2026-10-18; **a Bar ID conflict blocks registration only when the existing number is verified** (`REG-19`): a backend-created account no one has logged in to does not block a new registration, which goes through approval as usual; what happens to the old account is `Q-2` (new). v11 — 2026-10-18; role names checked against [`court-roles.md`](court-roles.md): §6.1's example now names the **Scrutiny officer** role; no staff title holds a permission. v10 — 2026-10-18; **how a clerk registers is set per state** (§5.4,
 `REG-25`–`REG-28`, new): as an advocate does (registration number, ID card photo,
 account approver approval — the default), or as a litigant does (OTP, name, terms; no
 approval). Either way the result is a clerk account. **Court staff are described by
@@ -227,8 +227,14 @@ photo).
 
 `REG-23a` — each submission and resubmission raises an **Approve registration** pending
 task for the Account approver role, closed when the registration is approved or rejected.
-Its attributes are in the Court Side pending-tasks view (§9). Which approvers receive it
-is open (`Q-3`).
+Its attributes are in the Court Side pending-tasks view (§9). It goes to **every** Account
+approver in the state deployment, and any of them can act on it
+([`court-roles.md`](court-roles.md) `RLE-05`).
+
+`REG-23b` — the **Account approver** role is held for the **whole state deployment**, not
+per courtroom ([`court-roles.md`](court-roles.md) `RLE-02c`). Working in, or switching
+to, a courtroom does not change whether a person can approve registrations. Splitting
+registrations among approvers is not part of this version.
 
 `REG-24` **[OWNER]** — while **Pending Approval**, the user has **no access** from
 their advocate/clerk account. If they also have a litigant account (same phone number),
@@ -252,7 +258,7 @@ No self-registration. **[OWNER]** Backend-only is acceptable; no UI needed.
 | ID | Requirement | Notes |
 | --- | --- | --- |
 | `REG-30` | Account created via HRMS or backend | No user-facing registration flow |
-| `REG-31` | **Roles** assigned during creation, **per courtroom** | One or more roles from [`court-roles.md`](court-roles.md) for each courtroom on the account's list (`REG-35`); they may differ by courtroom (`RLE-02a`), and are changed afterwards the same way (`RLE-03`) |
+| `REG-31` | **Roles** assigned during creation, **per courtroom** | One or more roles from [`court-roles.md`](court-roles.md) for each courtroom on the account's list (`REG-35`); they may differ by courtroom (`RLE-02a`), and are changed afterwards the same way (`RLE-03`). The Account approver role is assigned for the whole state deployment, not per courtroom (`REG-23b`) |
 | `REG-32` | System generates an initial password | |
 | `REG-33` | Credentials emailed to the user | User logs in with the emailed password |
 
@@ -406,7 +412,6 @@ registration flow to set a password if they want and accept terms and conditions
 | --- | --- | --- |
 | Q-1 | **Help desk contact details** — what phone number / email / URL should the "contact help desk" error message display when a Bar ID conflict is found? | `REG-19`, §5.2 |
 | Q-2 | **Unverified backend-created account** — when a registration goes ahead over one with the same Bar ID (`REG-19`), what happens to that account: replaced by the new one on approval, or merged into it? | `REG-19`, `REG-17` |
-| Q-3 | **Who receives the Approve registration task** — roles are held per courtroom (`RLE-02a`), but a registration belongs to no courtroom or case. Every Account approver in the state deployment, the approvers of one designated courtroom, or some other routing? | §5.3, Approve registration task (§9) |
 
 ---
 
