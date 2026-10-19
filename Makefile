@@ -1,4 +1,4 @@
-.PHONY: help build up down logs test lint format migrate superuser shell prod-up prod-down
+.PHONY: help build up down logs test lint format migrate superuser shell prod-up prod-down check-env
 
 help:
 	@echo "Available targets:"
@@ -15,22 +15,28 @@ help:
 	@echo "  prod-up     Start the production stack"
 	@echo "  prod-down   Stop the production stack"
 
-COMPOSE_DEV=docker compose -f docker/docker-compose.yml
+COMPOSE_DEV=docker compose --env-file .env -f docker/docker-compose.yml
 COMPOSE_PROD=docker compose -f docker/docker-compose.prod.yml
 
-build:
+check-env:
+	@if [ ! -f .env ]; then \
+		echo "Missing .env. Copy .env.example to .env." >&2; \
+		exit 1; \
+	fi
+
+build: check-env
 	$(COMPOSE_DEV) build
 
-up:
+up: check-env
 	$(COMPOSE_DEV) up -d
 
-down:
+down: check-env
 	$(COMPOSE_DEV) down
 
-logs:
+logs: check-env
 	$(COMPOSE_DEV) logs -f
 
-test:
+test: check-env
 	$(COMPOSE_DEV) exec web pytest
 
 lint:
@@ -39,13 +45,13 @@ lint:
 format:
 	cd src && ruff format .
 
-migrate:
+migrate: check-env
 	$(COMPOSE_DEV) exec web python manage.py migrate
 
-superuser:
+superuser: check-env
 	$(COMPOSE_DEV) exec web python manage.py createsuperuser
 
-shell:
+shell: check-env
 	$(COMPOSE_DEV) exec web python manage.py shell
 
 prod-up:

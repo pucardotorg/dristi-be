@@ -1,5 +1,6 @@
 """Django URL configuration."""
 
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 from health_check.cache.backends import CacheBackend
@@ -20,8 +21,21 @@ urlpatterns = [
     path("api/v1/", include("apps.organizations.urls")),
     path("api/v1/", include("apps.dristi_requests.urls")),
     path("api/v1/", include("apps.pdf.urls")),
+    path("api/v1/", include("apps.address.urls")),
+    path("api/v1/", include("apps.esign.urls")),
     path(
         "health/",
         HealthCheckView.as_view(checks=[DatabaseBackend, CacheBackend, RedisHealthCheck]),
     ),
 ]
+
+# local.py installs the toolbar middleware; without its URLs every HTML page
+# fails with "'djdt' is not a registered namespace".
+if "debug_toolbar" in settings.INSTALLED_APPS:
+    urlpatterns += [path("__debug__/", include("debug_toolbar.urls"))]
+
+# Standard error shape for /api/ requests that never reach DRF — spec 0000 section 9.5.
+handler400 = "apps.api.errors.handler400"
+handler403 = "apps.api.errors.handler403"
+handler404 = "apps.api.errors.handler404"
+handler500 = "apps.api.errors.handler500"

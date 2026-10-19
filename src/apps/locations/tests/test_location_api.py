@@ -84,6 +84,10 @@ class LocationListTests(LocationAPITestCase):
         response = self.client.get(reverse("location-list"), {"location_type": "tehsil"})
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": "E00005", "field": "location_type"}],
+        )
 
     def test_rejects_malformed_parent_id(self):
         response = self.client.get(reverse("location-list"), {"parent_id": "not-a-uuid"})

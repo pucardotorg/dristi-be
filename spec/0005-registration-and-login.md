@@ -16,7 +16,7 @@ Create user accounts for four user types — litigant, power of attorney, advoca
 - The type-specific profile row and the account can never disagree about whether registration finished.
 - Terms acceptance is provable after the fact, including which version was accepted.
 
-Verifying an advocate's or clerk's claim — uploading the bar council ID and having it approved — is not part of registration. It is raised as a request type under 0010 (Generic Request & Approval Workflow), which owns the document upload, the approver routing and the outcome.
+Registration does not decide an advocate's or clerk's claim. It stores the claim and the bar council ID, then raises a request under 0010 (Generic Request & Approval Workflow), which owns the approver routing and the decision. This app applies the outcome through 0010 hooks (section 7).
 
 ## 2. Account Model
 
@@ -109,6 +109,8 @@ class AdvocateProfile(BaseModel):
 
 `bar_registration_id` is the user's own claim and is stored unverified.
 Verification happens through a 0010 request, not through fields on the profile.
+The profile carries only the outcome; a rejection's reason stays on the request
+(section 7.3).
 
 ### 3.1 Why `approval_status` lives on the profile rather than being inferred
 
@@ -192,6 +194,24 @@ The call creates a row. An endpoint named `verify` reads as a side-effect-free c
 #### 4.1.2 Why does `POST /sessions/` return `registration_status`?
 
 An incomplete account can log in. Without the status in the response, the client receives a `200` and a cookie and then fails against every gated endpoint with no explanation. Returning it gives the client a single rule regardless of which endpoint issued the session: if `registration_status != COMPLETE`, route to the wizard.
+
+The same holds for approval. The response also carries `approval_status` (null
+for litigants and for an account with no profile yet) and `next`:
+
+```json
+{ "user_id": "8f2a...", "registration_status": "COMPLETE", "approval_status": "REJECTED", "next": "resubmit" }
+```
+
+| Account state | Code | Session | `next` |
+|---|---|---|---|
+| `PENDING_PROFILE` | `200` | issued | `"profile"` |
+| Advocate or clerk, `PENDING` | `403` | not issued | `null` |
+| Advocate or clerk, `REJECTED` | `200` | issued, gated (section 7.5) | `"resubmit"` |
+| Advocate or clerk `ACCEPTED`, or litigant | `200` | issued | `null` |
+
+The `403` is a standard error (spec 0000 section 9) with code `E01013`
+(approval pending); the client branches on that code rather than on the
+account-state fields, which the error body does not carry.
 
 #### 4.1.3 Rate limit on OTP requests
 
@@ -317,6 +337,22 @@ Advocate and clerk add a nested object whose contents are written only to the pr
 `advocate_type` is optional and accepts `CIVIL` or `CRIMINAL`; omitting it
 leaves the column null (section 3.3). `ClerkProfile` has no equivalent.
 
+The bar council ID document is sent as a `bar_id_document` file field (PDF, JPEG or
+PNG): required on `POST /advocates/`, which therefore accepts
+`multipart/form-data` only, and optional on `POST /clerks/`, which accepts JSON
+or multipart. A multipart body cannot nest, so the profile block is sent as
+`profile.<field>` keys.
+
+```http
+201 Created
+
+{ "user_id": "8f2a...", "role": "ADVOCATE", "registration_status": "COMPLETE", "next": null }
+```
+
+An advocate or clerk is logged out in the same response, since the profile is
+now `PENDING` and a pending account holds no session (section 4.1.2). A
+litigant keeps the session.
+
 #### 4.2.1 Why the password is sent in the request body
 
 This is the conventional Django arrangement, not a shortcut. Django's own
@@ -337,6 +373,13 @@ The completion endpoints and `POST /sessions/` must additionally be decorated
 with `@sensitive_post_parameters("password", "otp")`. Without it, an unhandled
 `500` writes the raw password into Django's error report and into anything
 downstream of it, such as Sentry.
+
+#### 4.2.2 Why the document is stored outside the registration transaction
+
+The upload writes to object storage before its row, so a rollback around it
+would leave an object with no row to find it by. The upload runs first; if the
+registration then fails, the file is discarded. A document the files module
+refuses is a `400` on `bar_id_document`.
 
 ## 5. Authentication
 
@@ -460,16 +503,164 @@ The timestamp comes from the server clock and the version from server configurat
 
 Every user type accepts terms; only some have a profile.
 
-## 7. Cleanup (NON-PRIORITY)
+## 7. Approval and Rejection
+
+Advocates and clerks are verified; litigants are not.
+
+| Role | Request type | Number verified | Bar ID document |
+|---|---|---|---|
+| `ADVOCATE` | `ADVOCATE_REGISTRATION` | `bar_registration_id` | required |
+| `CLERK` | `CLERK_REGISTRATION` | `clerk_registration_number` | optional |
+
+Both request types are seeded by a users migration with one approval step,
+routed to the `BAR_ID_APPROVER` group. The request's `data` is the profile
+`name` and the number verified.
+
+`approval_status` moves as follows:
+
+| From | To | Moved by |
+|---|---|---|
+| — | `PENDING` | `POST /advocates/` or `POST /clerks/` |
+| `PENDING` | `ACCEPTED` | Approval hook (section 7.2) |
+| `PENDING` | `REJECTED` | Rejection hook (section 7.3) |
+| `REJECTED` | `PENDING` | `POST /registrations/current/resubmit/` (section 7.4) |
+
+### 7.1 Raising the verification request
+
+A Dramatiq actor, `request_registration_verification`, raises the request. It
+is enqueued with `transaction.on_commit`, and the bar ID stored at registration
+is linked to the request by `file_id`, not uploaded again.
+
+The actor is idempotent: it locks the user row and does nothing if a
+non-cancelled verification request already exists. If the user or profile is
+gone, it logs and drops the message; if the request type or approver is
+missing, it raises so Dramatiq retries.
+
+#### 7.1.1 Why after commit, and in the background
+
+A message sent before commit lets the worker look for a profile that is not
+visible yet. Raising it in the request would let a slow or failing request
+engine fail a registration that has already committed.
+
+### 7.2 Approval
+
+When the request is approved, the approval hook sets the profile to `ACCEPTED`,
+with `updated_by` set to the approver of the final step. The account then has
+full access.
+
+### 7.3 Rejection
+
+When the request is rejected, the rejection hook sets the profile to
+`REJECTED`, with `updated_by` set to the rejecting approver. The reason is not
+copied onto the profile; it stays in the rejecting `RequestApproval.comments`.
+
+Both hooks run inside the approver's decision transaction, so raising rolls the
+decision back. Both are idempotent, because a resubmitted request can be decided
+again.
+
+### 7.4 Correcting a rejected registration
+
+```http
+GET    /registrations/current/            cookie auth, rejected registrant only
+POST   /registrations/current/resubmit/   cookie auth, rejected registrant only
+```
+
+A rejected advocate or clerk can log in (section 4.1.2) and reach only these
+two endpoints.
+
+`GET /registrations/current/` returns the reason and the claim as last
+submitted, to pre-fill the correction screens:
+
+```json
+{
+  "application_id": "c41d...",
+  "approval_status": "REJECTED",
+  "role": "ADVOCATE",
+  "officer_message": "Bar ID is illegible.",
+  "rejected_at": "2026-10-10T09:12:00Z",
+  "name": "...",
+  "email": "...",
+  "mobile_number": "+919876543210",
+  "registration_number": "KER/1234/2019",
+  "document": { "file_id": "...", "file_name": "bar-id.pdf" }
+}
+```
+
+`application_id` is the 0010 request's id. `officer_message` and `rejected_at`
+come from the rejection in the request's current round, not earlier ones.
+
+`POST /registrations/current/resubmit/` takes the corrected claim, as JSON or
+multipart:
+
+```json
+{ "name": "...", "email": "...", "registration_number": "KER/1234/2019" }
+```
+
+`registration_number` is the bar registration ID for an advocate and the clerk
+registration number for a clerk. `bar_id_document` is required for an
+advocate; a clerk who omits it keeps the document on file. The mobile number,
+role, password and terms cannot change here.
+
+In one transaction, with the profile row locked:
+
+1. The account and profile take the corrected values.
+2. The profile returns to `PENDING`.
+3. The same 0010 request is resubmitted with the new `data`: its id is
+   unchanged and its `version` increments. A new document replaces the
+   request's document links.
+
+The user is logged out, since the account is pending again.
+
+```http
+200 OK
+
+{ "application_id": "c41d...", "approval_status": "PENDING" }
+```
+
+| Code | Condition |
+|---|---|
+| `200` | Resubmitted; session ended |
+| `400` | Validation failure, or `bar_id_document` refused |
+| `403` | Caller is not a rejected advocate or clerk |
+| `409` | Nothing to resubmit (`E01012`) |
+
+#### 7.4.1 Why resubmit the same request rather than raise a new one
+
+The application keeps one id across rounds, and approvers see every round's
+decision on a single request, keyed by `version`, rather than a chain of
+unrelated requests.
+
+### 7.5 Access gates
+
+| `approval_status` | Session | Reachable |
+|---|---|---|
+| `PENDING` | none | nothing gated |
+| `REJECTED` | gated | the section 7.4 endpoints, `DELETE /sessions/` |
+| `ACCEPTED` | full | everything a registered account can reach |
+
+`IsNotAwaitingApproval`, last in the default permission classes, refuses a
+`PENDING` or `REJECTED` advocate or clerk. `IsRejectedRegistrant` admits only a
+`REJECTED` one, and guards the section 7.4 endpoints.
+
+### 7.6 Notifications
+
+The messaging app seeds `ACCOUNT_REGISTRATION_APPROVED_SMS` and
+`ACCOUNT_REGISTRATION_REJECTED_SMS`, each taking a `link` to the login page.
+
+**Open item: nothing sends them yet.** They belong in the hooks of sections 7.2
+and 7.3, enqueued with `transaction.on_commit` so a rolled-back decision does
+not notify the registrant.
+
+## 8. Cleanup (NON-PRIORITY)
 
 A scheduled job deletes accounts still in `PENDING_PROFILE` after N days. It is a retention control rather than housekeeping.
 
-### 7.1 Why this should be considered in the future
+### 8.1 Why this should be considered in the future
 
 An abandoned registration keeps personal data for an account that was never completed, and inflates the authentication table with rows that hold a claim on a mobile number.
 
 
-## 8. Best Practices
+## 9. Best Practices
 
 1. **Never accept `terms_accepted_at` or `terms_version_accepted` from a request body.** Both come from the server.
 2. **Treat an incomplete account as unregistered** when checking whether a mobile number is taken, or an abandoned registration locks that number out permanently.
@@ -484,3 +675,8 @@ An abandoned registration keeps personal data for an account that was never comp
 11. **Reference the user model indirectly** — `settings.AUTH_USER_MODEL` in model definitions, `get_user_model()` in code. Never import `User` directly.
 12. **Name endpoints after the resource they act on**, not after the check they perform, so side effects are visible from the route.
 13. **Document what `PENDING_PROFILE` means in the API contract**, including that a session issued to such an account is valid but gated.
+14. **Never accept `approval_status` from a request body.** Only the 0010 hooks set `ACCEPTED` or `REJECTED`.
+15. **Raise the verification request after commit, in the background, idempotently.**
+16. **Keep the rejection reason on the request, not the profile.**
+17. **Resubmit the same request** rather than raising a new one.
+18. **Give a pending advocate or clerk no session, and a rejected one a gated session** — one can only wait, the other must correct and resubmit.

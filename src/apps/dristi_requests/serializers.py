@@ -5,9 +5,10 @@ import json
 from django.urls import reverse
 from rest_framework import serializers
 
+from apps.api import errors as api_errors
 from apps.users.models import User
 
-from . import services
+from . import errors, services
 from .documents import validate_documents
 from .models import (
     ApprovalStep,
@@ -207,7 +208,7 @@ class GenericRequestCreateSerializer(serializers.Serializer):
         try:
             validate_against_schema(request_type.schema, attrs["attributes"])
         except SchemaValidationError as exc:
-            raise serializers.ValidationError({"attributes": exc.errors}) from None
+            raise errors.INVALID_ATTRIBUTES.validation_error({"attributes": exc.errors}) from None
 
         validate_documents(attrs.get("documents", []), request_type=request_type)
         return attrs
@@ -232,3 +233,11 @@ class DecisionSerializer(serializers.Serializer):
         ]
     )
     comments = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        """Require a reason with a rejection: it is what the requester is told."""
+        if attrs["decision"] == RequestApproval.Status.REJECTED and not attrs["comments"].strip():
+            raise api_errors.REQUIRED.validation_error(
+                {"comments": "A reason is required to reject."}
+            )
+        return attrs

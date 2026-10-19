@@ -2,13 +2,18 @@
 
 from unittest.mock import patch
 
+from django.conf import settings
 from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import path, reverse
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.files.models import File, FileType
+from apps.users.documents import BAR_COUNCIL_ID_TAG
 from apps.users.models import (
     AdvocateProfile,
     AdvocateType,
@@ -24,6 +29,22 @@ from apps.users.services.otp import Purpose
 from config.urls import urlpatterns as project_urlpatterns
 
 from .base import MOBILE, PASSWORD, OTPTestCase
+
+# Sentinel for "use the default document", so None can mean "send none".
+MISSING = object()
+
+PDF_CONTENT = b"%PDF-1.4\n%test bar council id\n"
+
+# Keep uploaded documents in memory so tests never touch the filesystem.
+IN_MEMORY_FILES = {
+    **settings.STORAGES,
+    "files": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+}
+
+
+def pdf_upload(name="bar-id.pdf", content=PDF_CONTENT, content_type="application/pdf"):
+    """Return a fresh upload; an upload is consumed by the request it is sent in."""
+    return SimpleUploadedFile(name, content, content_type=content_type)
 
 
 class OTPRequestTests(OTPTestCase):
@@ -65,7 +86,9 @@ class OTPRequestTests(OTPTestCase):
         send.assert_not_called()
 
         # The message names what was throttled and what to do about it.
-        detail = response.json()["detail"]
+        [error] = response.json()["errors"]
+        self.assertEqual(error["code"], "E01005")
+        detail = error["message"]
         self.assertIn("A code was already sent", detail)
         self.assertIn("You can request another in", detail)
         self.assertNotIn("Request was throttled", detail)
@@ -120,7 +143,13 @@ class MobileNumberFormatTests(OTPTestCase):
                     reverse("otp-request"), {"mobile_number": number}, format="json"
                 )
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-                self.assertIn("mobile_number", response.json())
+                self.assertEqual(
+                    [
+                        {"code": e["code"], "field": e.get("field")}
+                        for e in response.json()["errors"]
+                    ],
+                    [{"code": "E00001", "field": "mobile_number"}],
+                )
 
     def test_non_indian_numbers_are_rejected_on_user_create(self):
         """POST /users refuses the same set, before the OTP is even consulted."""
@@ -132,7 +161,13 @@ class MobileNumberFormatTests(OTPTestCase):
                     format="json",
                 )
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-                self.assertIn("mobile_number", response.json())
+                self.assertEqual(
+                    [
+                        {"code": e["code"], "field": e.get("field")}
+                        for e in response.json()["errors"]
+                    ],
+                    [{"code": "E00001", "field": "mobile_number"}],
+                )
 
     def test_indian_mobile_ranges_are_accepted(self):
         """India allocates mobile numbers on leading digits 6 through 9."""
@@ -171,6 +206,8 @@ class UserCreateTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.json()["errors"][0]["code"], "E01001")
+        self.assert_meta(response.json())
         self.assertFalse(User.objects.filter(mobile_number=MOBILE).exists())
 
     def test_abandoned_registration_is_resumable(self):
@@ -193,6 +230,7 @@ class UserCreateTests(OTPTestCase):
         )
         response = self.create_account()
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.json()["errors"][0]["code"], "E01002")
 
     def test_otp_is_never_echoed(self):
         """The response body contains no trace of the credential."""
@@ -205,6 +243,7 @@ class UserCreateTests(OTPTestCase):
         self.assertNotIn(code, response.content.decode())
 
 
+@override_settings(STORAGES=IN_MEMORY_FILES)
 class RegistrationCompletionTests(OTPTestCase):
     """POST /litigants, /advocates and /clerks."""
 
@@ -223,6 +262,21 @@ class RegistrationCompletionTests(OTPTestCase):
             "terms_accepted": True,
             **extra,
         }
+
+    def post_advocate(self, profile=None, document=MISSING, **extra):
+        """POST /advocates as multipart, with a valid bar ID unless overridden.
+
+        A multipart body cannot nest, so the profile goes as `profile.<field>`
+        keys, which is what a client sends too.
+        """
+        data = self.body(**extra)
+        for key, value in (profile or {}).items():
+            data[f"profile.{key}"] = value
+        if document is MISSING:
+            document = pdf_upload()
+        if document is not None:
+            data["bar_id_document"] = document
+        return self.client.post(reverse("advocate-create"), data, format="multipart")
 
     def test_litigant_completes(self):
         """A litigant gets a profile, a role and COMPLETE status."""
@@ -250,11 +304,7 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_advocate_completes_with_profile(self):
         """The nested profile is written to the advocate table."""
-        response = self.client.post(
-            reverse("advocate-create"),
-            self.body(profile={"bar_registration_id": "KER/1234/2019"}),
-            format="json",
-        )
+        response = self.post_advocate(profile={"bar_registration_id": "KER/1234/2019"})
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         profile = AdvocateProfile.objects.get(user=self.user)
         self.assertEqual(profile.bar_registration_id, "KER/1234/2019")
@@ -264,15 +314,11 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_advocate_can_state_a_practice_area(self):
         """advocate_type is optional, and is stored when supplied."""
-        response = self.client.post(
-            reverse("advocate-create"),
-            self.body(
-                profile={
-                    "bar_registration_id": "KER/5678/2021",
-                    "advocate_type": AdvocateType.CRIMINAL,
-                }
-            ),
-            format="json",
+        response = self.post_advocate(
+            profile={
+                "bar_registration_id": "KER/5678/2021",
+                "advocate_type": AdvocateType.CRIMINAL,
+            }
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(
@@ -282,18 +328,15 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_unknown_practice_area_is_rejected(self):
         """Only the declared choices are accepted."""
-        response = self.client.post(
-            reverse("advocate-create"),
-            self.body(
-                profile={
-                    "bar_registration_id": "KER/9999/2021",
-                    "advocate_type": "TAX",
-                }
-            ),
-            format="json",
+        response = self.post_advocate(
+            profile={
+                "bar_registration_id": "KER/9999/2021",
+                "advocate_type": "TAX",
+            }
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(AdvocateProfile.objects.exists())
+        self.assertFalse(File.objects.exists())
 
     def test_overlong_password_is_rejected_before_hashing(self):
         """A password past the cap is a 400, not work for the hasher."""
@@ -303,7 +346,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", response.data)
+        self.assertIn(
+            {"code": "E00006", "field": "password"},
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+        )
         self.user.refresh_from_db()
         self.assertEqual(self.user.registration_status, RegistrationStatus.PENDING_PROFILE)
 
@@ -319,7 +365,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", response.data)
+        self.assertIn(
+            {"code": "E01011", "field": "password"},
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+        )
 
     def test_password_similar_to_the_submitted_email_is_rejected(self):
         """Likewise the email, which is also only in the request body."""
@@ -329,7 +378,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", response.data)
+        self.assertIn(
+            {"code": "E01011", "field": "password"},
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+        )
 
     def test_password_similar_to_the_mobile_number_is_rejected(self):
         """The mobile number is on the row, but is not in Django's default list.
@@ -343,7 +395,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", response.data)
+        self.assertIn(
+            {"code": "E01011", "field": "password"},
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+        )
 
     def test_password_at_the_cap_is_accepted(self):
         """The cap is inclusive, so a password of exactly that length works."""
@@ -365,21 +420,20 @@ class RegistrationCompletionTests(OTPTestCase):
         The uniqueness is on the column, so without a model-aware serializer
         the duplicate reaches Postgres and surfaces as a server error.
         """
-        self.client.post(
-            reverse("advocate-create"),
-            self.body(profile={"bar_registration_id": "KER/1234/2019"}),
-            format="json",
-        )
+        self.post_advocate(profile={"bar_registration_id": "KER/1234/2019"})
         self.register_second_account()
 
-        response = self.client.post(
-            reverse("advocate-create"),
-            self.body(email="other@example.com", profile={"bar_registration_id": "KER/1234/2019"}),
-            format="json",
+        response = self.post_advocate(
+            email="other@example.com", profile={"bar_registration_id": "KER/1234/2019"}
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("bar_registration_id", response.data["profile"])
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+            [{"code": "E00010", "field": "profile.bar_registration_id"}],
+        )
         self.assertEqual(AdvocateProfile.objects.count(), 1)
+        # Rejected before the upload, so only the first advocate's file exists.
+        self.assertEqual(File.objects.count(), 1)
 
     def test_duplicate_clerk_registration_number_is_rejected(self):
         """A clerk number already claimed answers 400, not 500."""
@@ -399,7 +453,10 @@ class RegistrationCompletionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("clerk_registration_number", response.data["profile"])
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+            [{"code": "E00010", "field": "profile.clerk_registration_number"}],
+        )
         self.assertEqual(ClerkProfile.objects.count(), 1)
 
     def test_clerk_completes_with_profile(self):
@@ -417,11 +474,61 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_advocate_requires_profile(self):
         """A missing profile block is a 400, and nothing is written."""
-        response = self.client.post(reverse("advocate-create"), self.body(), format="json")
+        response = self.post_advocate()
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(File.objects.exists())
 
         self.user.refresh_from_db()
         self.assertEqual(self.user.registration_status, RegistrationStatus.PENDING_PROFILE)
+
+    def test_advocate_bar_id_is_stored_against_the_registrant(self):
+        """The bar ID lands in the files module, owned and tagged."""
+        response = self.post_advocate(profile={"bar_registration_id": "KER/1234/2019"})
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        stored = File.objects.get()
+        self.assertEqual(stored.user, self.user)
+        self.assertEqual(stored.file_type, FileType.PDF)
+        self.assertEqual(stored.file_name, "bar-id.pdf")
+        self.assertEqual(list(stored.tags.values_list("name", flat=True)), [BAR_COUNCIL_ID_TAG])
+
+    def test_advocate_requires_bar_id(self):
+        """An advocate without the document is a 400, and nothing is written."""
+        response = self.post_advocate(
+            profile={"bar_registration_id": "KER/1234/2019"}, document=None
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+            [{"code": "E00002", "field": "bar_id_document"}],
+        )
+        self.assertFalse(AdvocateProfile.objects.exists())
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.registration_status, RegistrationStatus.PENDING_PROFILE)
+
+    def assert_document_rejected(self, document):
+        """POST the document and assert it is refused before anything is stored."""
+        response = self.post_advocate(
+            profile={"bar_registration_id": "KER/1234/2019"}, document=document
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+            [{"code": "E00001", "field": "bar_id_document"}],
+        )
+        self.assertFalse(File.objects.exists())
+        self.assertFalse(AdvocateProfile.objects.exists())
+
+    def test_unsupported_document_type_is_rejected(self):
+        """Only PDF, JPEG and PNG are accepted."""
+        self.assert_document_rejected(pdf_upload("bar-id.txt", b"hello", "text/plain"))
+
+    def test_document_refused_by_the_files_module_is_a_400(self):
+        """A refusal from apps.files is reported on the field, not as a 500."""
+        refusal = DjangoValidationError({"files[0].file": "refused by the files module."})
+        with patch("apps.files.services.upload_file", side_effect=refusal):
+            self.assert_document_rejected(pdf_upload())
 
     def test_terms_must_be_accepted(self):
         """A false acceptance rejects the registration rather than warning."""
@@ -456,6 +563,12 @@ class RegistrationCompletionTests(OTPTestCase):
         self.client.post(reverse("litigant-create"), self.body(), format="json")
         response = self.client.post(reverse("litigant-create"), self.body(), format="json")
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)  # not 403
+
+    def test_registration_awaiting_approval_ends_the_session(self):
+        """An advocate awaiting approval holds no session, as at login."""
+        response = self.post_advocate(profile={"bar_registration_id": "KER/1234/2019"})
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_anonymous_caller_is_refused(self):
         """Completion requires the session issued by POST /users."""
@@ -508,6 +621,7 @@ class SessionTests(OTPTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.json()["errors"][0]["code"], "E01003")
 
     def test_overlong_password_is_refused_without_hashing(self):
         """Login caps the password too, so the hasher is never handed the string.
@@ -545,6 +659,48 @@ class SessionTests(OTPTestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["next"], "profile")
+
+    def make_professional(self, role, approval_status):
+        """Turn the account into an advocate or clerk with the given approval."""
+        self.user.role = role
+        self.user.save()
+        if role == Role.ADVOCATE:
+            AdvocateProfile.objects.create(
+                user=self.user, bar_registration_id="K/1/2020", approval_status=approval_status
+            )
+        else:
+            ClerkProfile.objects.create(
+                user=self.user, clerk_registration_number="CL-1", approval_status=approval_status
+            )
+
+    def test_pending_professional_is_refused(self):
+        """An advocate or clerk awaiting approval is told so and gets no session."""
+        for role in (Role.ADVOCATE, Role.CLERK):
+            with self.subTest(role=role):
+                AdvocateProfile.objects.all().delete()
+                ClerkProfile.objects.all().delete()
+                self.make_professional(role, ApprovalStatus.PENDING)
+
+                response = self.client.post(
+                    reverse("session"),
+                    {"mobile_number": MOBILE, "password": PASSWORD},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+                [error] = response.json()["errors"]
+                self.assertEqual(error["code"], "E01013")
+                self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_accepted_professional_logs_in(self):
+        """Once approved, an advocate logs in as before."""
+        self.make_professional(Role.ADVOCATE, ApprovalStatus.ACCEPTED)
+
+        response = self.client.post(
+            reverse("session"),
+            {"mobile_number": MOBILE, "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_logout_discards_the_session(self):
         """DELETE /sessions clears the cookie."""

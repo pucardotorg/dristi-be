@@ -9,6 +9,7 @@ Environment-specific settings live in:
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -55,8 +56,12 @@ INSTALLED_APPS = [
     "apps.locations",
     "apps.files",
     "apps.pdf",
+    "apps.address",
+    "apps.parties",
     # Addons
     "addon.cdac_sms_gateway",
+    "apps.esign",
+    "addon.cdac_esign",
 ]
 
 MIDDLEWARE = [
@@ -262,22 +267,44 @@ REST_FRAMEWORK = {
     # caller is told their credentials are missing; drop it and they are told
     # their registration is incomplete, which is wrong and sends the client to
     # the wrong screen. Keep both, in this order.
+    #
+    # IsNotAwaitingApproval comes last, for the same reason: it is only
+    # meaningful for a signed-in, registered account. It keeps an advocate or
+    # clerk whose registration is awaiting approval, or was not approved, out
+    # of everything except the endpoints that serve that state (login, and the
+    # resubmission of a rejected registration).
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
         "apps.users.services.permissions.IsAuthenticatedAndRegistered",
+        "apps.users.services.permissions.IsNotAwaitingApproval",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": [
         "apps.api.renderers.MetaJSONRenderer",
     ],
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Documents `meta` on every response and per-operation error examples — spec 0000 section 10.
+    "DEFAULT_SCHEMA_CLASS": "apps.api.schema.ApiAutoSchema",
+    # Renders every error as {"errors": [{"code", "message", "field"?}]} — spec 0000 section 9.
+    "EXCEPTION_HANDLER": "apps.api.errors.api_exception_handler",
 }
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Dristi API",
     "DESCRIPTION": "OpenAPI schema for Dristi Django REST APIs.",
     "VERSION": "1.0.0",
+    # Several models expose a ``status`` field with different choice sets;
+    # name each enum explicitly so drf-spectacular does not fall back to
+    # hash-suffixed names (drf_spectacular.W001).
+    "ENUM_NAME_OVERRIDES": {
+        "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
+        "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
+    },
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        # Error response schema and the error code catalogue — spec 0000 section 10.
+        "apps.api.schema.error_schema_hook",
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -323,11 +350,44 @@ CACHALOT_TIMEOUT = env.int("CACHALOT_TIMEOUT", default=120)
 
 # Phase 1: allow-list only low-churn, non-user-scoped reference data.
 CACHALOT_ONLY_CACHABLE_APPS = ("locations",)
+# Cachalot unions these with the app allow-list. List the table rather than the
+# core app so AdditionalAttribute and the history tables stay uncached.
+CACHALOT_ONLY_CACHABLE_TABLES = (
+    "core_configuration",
+    "core_businessrule",
+)
 CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
     "authtoken_token",
     "django_session",
+    # Signing status is read straight after it is written and changes under a
+    # lock; a cached read would report a stale outcome (spec 0015 #6.2).
+    "esign_esigntransaction",
 )
+
+
+# ---------------------------------------------------------------------------
+# Business rules (spec 0019)
+# ---------------------------------------------------------------------------
+# Wall-clock guard on one rule evaluation, in seconds.
+RULES_EVALUATION_TIMEOUT_SECONDS = env.float("RULES_EVALUATION_TIMEOUT_SECONDS", default=2.0)
+# Upper bound on the UTF-8 size of a stored rule_expression (JDM documents included).
+RULES_MAX_EXPRESSION_BYTES = env.int("RULES_MAX_EXPRESSION_BYTES", default=262144)
+# Per-process, per-engine cap on rule evaluations in flight, including timed-out
+# GoRules calls still finishing in the background; beyond it evaluations fail fast.
+RULES_MAX_CONCURRENT_EVALUATIONS = env.int("RULES_MAX_CONCURRENT_EVALUATIONS", default=16)
+# Require a passing sample evaluation (dry run) before admin saves a rule.
+RULES_ADMIN_DRY_RUN_REQUIRED = env.bool("RULES_ADMIN_DRY_RUN_REQUIRED", default=True)
+# A non-positive value would make every evaluation (or every save) fail, so
+# refuse to start instead.
+for _name in (
+    "RULES_EVALUATION_TIMEOUT_SECONDS",
+    "RULES_MAX_EXPRESSION_BYTES",
+    "RULES_MAX_CONCURRENT_EVALUATIONS",
+):
+    if globals()[_name] <= 0:
+        raise ImproperlyConfigured(f"{_name} must be greater than 0.")
+del _name
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +451,16 @@ MESSAGING_TASK_TIME_LIMIT = env.int("MESSAGING_TASK_TIME_LIMIT", default=600000)
 
 
 # ---------------------------------------------------------------------------
+# India Post Pincode API (apps.address.services, spec 0020 §7.3)
+# ---------------------------------------------------------------------------
+# Used only to pre-fill district and state; a failure is reported to the
+# client as 503 and never blocks saving an address.
+PINCODE_API_URL = env("PINCODE_API_URL", default="https://api.postalpincode.in/pincode/{pincode}")
+PINCODE_API_TIMEOUT = env.int("PINCODE_API_TIMEOUT", default=5)
+PINCODE_API_CACHE_SECONDS = env.int("PINCODE_API_CACHE_SECONDS", default=60 * 60 * 24 * 7)
+
+
+# ---------------------------------------------------------------------------
 # CDAC SMS gateway addon (addon.cdac_sms_gateway)
 # ---------------------------------------------------------------------------
 # Remove this block, the INSTALLED_APPS entry, and the MESSAGING_BACKENDS["sms"]
@@ -414,6 +484,65 @@ CDAC_SMS_WHITELIST_NUMBERS = env.list("CDAC_SMS_WHITELIST_NUMBERS", default=[])
 CDAC_SMS_BLACKLIST_NUMBERS = env.list("CDAC_SMS_BLACKLIST_NUMBERS", default=[])
 CDAC_SMS_USE_DEFAULT_NUMBER = env.bool("CDAC_SMS_USE_DEFAULT_NUMBER", default=False)
 CDAC_SMS_DEFAULT_NUMBER = env("CDAC_SMS_DEFAULT_NUMBER", default="")
+
+
+# ---------------------------------------------------------------------------
+# eSign (spec 0015)
+# ---------------------------------------------------------------------------
+# The provider is a dotted path so a second ESP — or the mock used locally and
+# in CI — is a configuration change, never a code change.
+ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockESignProvider")
+ESIGN_ENABLED = env.bool("ESIGN_ENABLED", default=True)
+ESIGN_TRANSACTION_TTL = env.int("ESIGN_TRANSACTION_TTL", default=900)
+ESIGN_CALLBACK_GRACE_PERIOD = env.int("ESIGN_CALLBACK_GRACE_PERIOD", default=300)
+ESIGN_SIGNING_STUCK_TIMEOUT = env.int("ESIGN_SIGNING_STUCK_TIMEOUT", default=300)
+ESIGN_MAX_ATTEMPTS = env.int("ESIGN_MAX_ATTEMPTS", default=3)
+ESIGN_PLACEHOLDER_RETENTION = env.int("ESIGN_PLACEHOLDER_RETENTION", default=7)
+# Taking the redirect target from the request would make a public endpoint an
+# open redirect, so it is server-side configuration only.
+ESIGN_UI_REDIRECT_URL = env("ESIGN_UI_REDIRECT_URL", default="")
+ESIGN_CALLBACK_THROTTLE_RATE = env("ESIGN_CALLBACK_THROTTLE_RATE", default="60/min")
+ESIGN_CALLBACK_MAX_BODY_BYTES = env.int("ESIGN_CALLBACK_MAX_BODY_BYTES", default=262144)
+# Actor recorded against uploads made on the callback leg, which has no
+# authenticated request user, when the transaction has no signer.
+ESIGN_SYSTEM_ACTOR_ID = env("ESIGN_SYSTEM_ACTOR_ID", default="system")
+# Optional map of EntityType value -> dotted path of an authorizer callable
+# owned by the module that owns that entity (spec 0015 #6.1).
+ESIGN_ENTITY_AUTHORIZERS = {}
+
+
+# ---------------------------------------------------------------------------
+# CDAC eSign addon (spec 0015 #11)
+# ---------------------------------------------------------------------------
+# Delete this block plus the INSTALLED_APPS entry and the ESIGN_PROVIDER value
+# to remove the integration entirely.
+CDAC_ESIGN_URL = env("CDAC_ESIGN_URL", default="")
+CDAC_ESIGN_ASP_ID = env("CDAC_ESIGN_ASP_ID", default="")
+CDAC_ESIGN_RESPONSE_URL = env("CDAC_ESIGN_RESPONSE_URL", default="")
+CDAC_ESIGN_KEYSTORE_PATH = env("CDAC_ESIGN_KEYSTORE_PATH", default="")
+CDAC_ESIGN_KEYSTORE_PASSWORD = env("CDAC_ESIGN_KEYSTORE_PASSWORD", default="")
+CDAC_ESIGN_RESPONSE_CERT = env("CDAC_ESIGN_RESPONSE_CERT", default="")
+CDAC_ESIGN_VERSION = env("CDAC_ESIGN_VERSION", default="2.1")
+CDAC_ESIGN_AUTH_MODE = env("CDAC_ESIGN_AUTH_MODE", default="1")
+CDAC_ESIGN_HASH_ALGORITHM = env("CDAC_ESIGN_HASH_ALGORITHM", default="SHA256")
+CDAC_ESIGN_EKYC_ID_TYPE = env("CDAC_ESIGN_EKYC_ID_TYPE", default="A")
+CDAC_ESIGN_CONSENT = env("CDAC_ESIGN_CONSENT", default="Y")
+CDAC_ESIGN_TXN_TEMPLATE = env("CDAC_ESIGN_TXN_TEMPLATE", default="{module}-{transaction_id}")
+CDAC_ESIGN_RESPONSE_MAX_SKEW = env.int("CDAC_ESIGN_RESPONSE_MAX_SKEW", default=900)
+CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE = env.bool(
+    "CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE", default=True
+)
+CDAC_ESIGN_RESPONSE_FIELD = env("CDAC_ESIGN_RESPONSE_FIELD", default="")
+
+
+# ---------------------------------------------------------------------------
+# PDF Service (spec 0016) — signing primitives consumed by apps.esign
+# ---------------------------------------------------------------------------
+# Declared here because the eSign system checks verify that the algorithm this
+# module tells the ESP about is the one the PDF Service digests with.
+PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
+PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
+PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=20971520)
 
 
 # ---------------------------------------------------------------------------

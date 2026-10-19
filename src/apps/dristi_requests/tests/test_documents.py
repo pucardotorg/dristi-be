@@ -67,8 +67,8 @@ class TestDocumentsAreStoredByAppsFiles:
             "SIMPLE",
             {"reason": "x"},
             [
-                pdf_file("scan.png", content_type="image/png", content=b"\x89PNG fake"),
-                pdf_file("photo.jpg", content_type="image/jpeg", content=b"\xff\xd8 fake"),
+                pdf_file("scan.png", content_type="image/png", content=b"\x89PNG\r\n\x1a\n fake"),
+                pdf_file("photo.jpg", content_type="image/jpeg", content=b"\xff\xd8\xff fake"),
             ],
         )
 
@@ -139,7 +139,10 @@ class TestInvalidUploadsAreRejectedBeforeStorage:
         )
 
         assert response.status_code == 400
-        assert "unsupported type" in response.json()["documents"][0]
+        [error] = response.json()["errors"]
+        assert error["code"] == "E02007"
+        assert error["field"] == "documents"
+        assert "unsupported type" in error["message"]
         assert File.objects.count() == 0
         assert files_storage.listdir("")[1] == []
 
@@ -151,7 +154,10 @@ class TestInvalidUploadsAreRejectedBeforeStorage:
         response = submit(auth_client(requester), "SIMPLE", {"reason": "x"}, [pdf_file("big.pdf")])
 
         assert response.status_code == 400
-        assert "exceeds the 5 byte limit" in response.json()["documents"][0]
+        [error] = response.json()["errors"]
+        assert error["code"] == "E02007"
+        assert error["field"] == "documents"
+        assert "exceeds the 5 byte limit" in error["message"]
         assert File.objects.count() == 0
 
     def test_too_many_documents(
@@ -167,7 +173,10 @@ class TestInvalidUploadsAreRejectedBeforeStorage:
         )
 
         assert response.status_code == 400
-        assert "At most 1 documents" in response.json()["documents"][0]
+        [error] = response.json()["errors"]
+        assert error["code"] == "E02007"
+        assert error["field"] == "documents"
+        assert "At most 1 documents" in error["message"]
         assert File.objects.count() == 0
 
     def test_apps_files_validation_errors_become_400(
@@ -185,7 +194,9 @@ class TestInvalidUploadsAreRejectedBeforeStorage:
         response = submit(auth_client(requester), "SIMPLE", {"reason": "x"}, [pdf_file()])
 
         assert response.status_code == 400
-        assert response.json()["documents"] == ["storage refused this file."]
+        assert response.json()["errors"] == [
+            {"code": "E02007", "message": "storage refused this file.", "field": "documents"}
+        ]
 
 
 @pytest.mark.django_db

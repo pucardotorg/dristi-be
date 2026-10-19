@@ -27,7 +27,7 @@ A Django-based API project template using:
 
    Or without Make:
    ```bash
-   docker compose -f docker/docker-compose.yml up -d --build
+   docker compose --env-file .env -f docker/docker-compose.yml up -d --build
    ```
 
    This starts: PostgreSQL, Redis, Django dev server, Dramatiq workers, Rustfs (S3-compatible storage), MailHog, Adminer, and monitoring dashboards.
@@ -40,7 +40,7 @@ A Django-based API project template using:
 
    Or without Make:
    ```bash
-   docker compose -f docker/docker-compose.yml exec web python manage.py createsuperuser
+   docker compose --env-file .env -f docker/docker-compose.yml exec web python manage.py createsuperuser
    ```
 
 4. **Access the application:**
@@ -149,6 +149,10 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CACHE_KEY_PREFIX` | Prefix added to Django cache keys to namespace cached data. | `dristi-dev` |
 | `CACHALOT_ENABLED` | Enable or disable django-cachalot automatic ORM query caching. Defaults to `CACHE_ENABLED`. | `True` |
 | `CACHALOT_TIMEOUT` | Default lifetime of django-cachalot cached ORM query results, in seconds. | `120` |
+| `RULES_EVALUATION_TIMEOUT_SECONDS` | Per-evaluation time limit for business rules, in seconds. A GoRules evaluation that times out still finishes in the background. | `2` |
+| `RULES_MAX_EXPRESSION_BYTES` | Maximum UTF-8 size of a stored business rule expression or JDM document. | `262144` |
+| `RULES_MAX_CONCURRENT_EVALUATIONS` | Per-process, per-engine limit on business rule evaluations in flight, including timed-out GoRules evaluations still finishing in the background. Further evaluations fail fast until a slot frees. | `16` |
+| `RULES_ADMIN_DRY_RUN_REQUIRED` | Require a passing sample evaluation (dry run) before a business rule can be saved in admin. | `True` |
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
 | `EMAIL_URL` | Email backend URL | `smtp://user:pass@smtp:587` |
 | `MESSAGING_TEMPLATE_ENGINE` | Template engine for message rendering (`jinja2` or `mustache`) | `jinja2` |
@@ -165,6 +169,9 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `MESSAGING_RETRY_DELAY_BASE` | Base retry delay in seconds (exponential backoff) | `60` |
 | `MESSAGING_RETRY_DELAY_MAX` | Maximum retry delay in seconds | `3600` |
 | `MESSAGING_TASK_TIME_LIMIT` | Dramatiq time limit for `send_message` in milliseconds; must exceed any gateway timeout | `600000` |
+| `PINCODE_API_URL` | India Post Pincode API endpoint; `{pincode}` is substituted | `https://api.postalpincode.in/pincode/{pincode}` |
+| `PINCODE_API_TIMEOUT` | Pincode API connect/read timeout in seconds; on timeout the lookup returns 503 | `5` |
+| `PINCODE_API_CACHE_SECONDS` | How long a successful pincode lookup is cached | `604800` |
 | `CDAC_SMS_URL` | CDAC gateway endpoint (required when the CDAC backend is active) | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
 | `CDAC_SMS_USERNAME` | CDAC username | `dristi` |
 | `CDAC_SMS_PASSWORD` | CDAC password; hashed (SHA-1) before transmission, never sent in plaintext | secret |
@@ -224,6 +231,35 @@ The Docker Compose stack includes:
 - **Adminer** - Database management UI
 - **Dramatiq Dashboard** - Background job monitoring
 - **httpbin** - HTTP testing service (for dummy SMS backend)
+| `ESIGN_PROVIDER` | Dotted path of the active eSign provider. The mock provider needs no C-DAC credentials and is the local/CI default. | `addon.cdac_esign.provider.CDACESignProvider` |
+| `ESIGN_ENABLED` | Kill switch; initiation returns 503 when disabled | `True` |
+| `ESIGN_TRANSACTION_TTL` | Seconds a transaction waits for the ESP callback | `900` |
+| `ESIGN_CALLBACK_GRACE_PERIOD` | Seconds a late callback is still accepted | `300` |
+| `ESIGN_SIGNING_STUCK_TIMEOUT` | Seconds before a row stuck in `SIGNING` is reconciled | `300` |
+| `ESIGN_MAX_ATTEMPTS` | Maximum signing attempts per document | `3` |
+| `ESIGN_PLACEHOLDER_RETENTION` | Days a prepared (placeholder) PDF is kept after a transaction ends | `7` |
+| `ESIGN_UI_REDIRECT_URL` | Server-side redirect target the ESP callback sends the browser to. Required and `https://` in production. | `https://app.example.com/esign/return` |
+| `ESIGN_CALLBACK_THROTTLE_RATE` | Per-IP throttle for the public callback; blank disables it | `60/min` |
+| `ESIGN_CALLBACK_MAX_BODY_BYTES` | Largest callback body accepted | `262144` |
+| `ESIGN_SYSTEM_ACTOR_ID` | Actor recorded for callback-leg uploads when a transaction has no signer | `system` |
+| `CDAC_ESIGN_URL` | C-DAC ESP endpoint the browser posts the signing form to | `https://esign.cdac.gov.in/...` |
+| `CDAC_ESIGN_ASP_ID` | ASP identifier issued by C-DAC | `ASP-123` |
+| `CDAC_ESIGN_RESPONSE_URL` | Absolute `https://` callback URL registered with C-DAC | `https://api.example.com/api/v1/esign/_signed` |
+| `CDAC_ESIGN_KEYSTORE_PATH` | PKCS#12 keystore holding the ASP key and certificate | `/run/secrets/asp-keystore.p12` |
+| `CDAC_ESIGN_KEYSTORE_PASSWORD` | Keystore password; never logged or persisted | secret |
+| `CDAC_ESIGN_RESPONSE_CERT` | C-DAC certificate the response signature is verified against (required in production) | PEM or base64 |
+| `CDAC_ESIGN_VERSION` | eSign API version | `2.1` |
+| `CDAC_ESIGN_AUTH_MODE` | Authentication mode (`1` = Aadhaar OTP) | `1` |
+| `CDAC_ESIGN_HASH_ALGORITHM` | Digest algorithm declared to the ESP; must match `PDF_SIGNATURE_HASH_ALGORITHM` | `SHA256` |
+| `CDAC_ESIGN_EKYC_ID_TYPE` | eKYC id type | `A` |
+| `CDAC_ESIGN_CONSENT` | Consent flag sent as `sc` | `Y` |
+| `CDAC_ESIGN_TXN_TEMPLATE` | Template for the ESP correlation id; must keep `{transaction_id}` | `{module}-{transaction_id}` |
+| `CDAC_ESIGN_RESPONSE_MAX_SKEW` | Seconds of clock skew allowed on the response `ts` | `900` |
+| `CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE` | Verify the response XMLDSig; rejected as `False` in production | `True` |
+| `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
+| `PDF_SIGNATURE_HASH_ALGORITHM` | Digest the PDF service computes over the signing ByteRange | `SHA256` |
+| `PDF_SIGNATURE_CONTAINER_BYTES` | Bytes reserved for the PKCS#7 signature container | `16384` |
+| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted for in-process signing | `20971520` |
 
 ## Docker dependency profiles
 
