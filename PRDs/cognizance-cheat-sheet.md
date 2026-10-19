@@ -1,6 +1,6 @@
 # Cognizance Cheat Sheet
 
-**Status:** v6 — 2026-09-17; the §3 pending-task view now filters on the PRD label
+**Status:** v7 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-09-17; the §3 pending-task view now filters on the PRD label
 rather than the task name, so newly tagged tasks appear; §7 Linked records added with
 views of the remaining master tables. v5 — one positive action per tab, swappable per state on either
 tab; both positive actions now schedule a hearing and ask for the date; cognizance
@@ -69,7 +69,7 @@ month** from the date of cause of action.
 
 The fields visible on a case in the Cognizance tab. Every field is read from the filing;
 the `Source` column gives the filing field ID from
-`efiling-scrutiny-registration-handover.md`.
+`efiling-handover.md`.
 
 ### Both tabs
 

@@ -11,13 +11,13 @@
       "note": "Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded.",
       "calloutElementId": "eca-f5gQdC7hLi"
     },
-    "efiling-scrutiny-registration-handover.md": {
+    "efiling-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
-      "title": "E-Filing Scrutiny Registration Handover",
+      "title": "E-Filing Handover",
       "contentHash": "3846cdf93679",
       "pageUpdatedAt": 1792379465.029,
       "calloutElementId": "eca-DQo7VNEM8H",
-      "note": "Patched in place 2026-10-19 (block-level insert+delete; comments kept). sections = one entry per page block (paragraph, list item, heading, table), not per chunk. Coda leaves an id-less blank block after each live view that cannot be deleted. Final Relief template shows '(c)' as '©' (Coda autocorrect).",
+      "note": "Renamed 2026-10-19 from efiling-scrutiny-registration-handover.md when scrutiny and registration were split into scrutiny-registration-handover.md (not yet synced — no page). The page still carries the old title and the old §20; the next sync must rename it and remove the moved sections. Live-view filters changed to \"efiling-handover\"; master-table PRDs labels retagged 2026-10-19 (old label option left in place, unused — the live page's old views show empty until this sync). Patched in place 2026-10-19 (block-level insert+delete; comments kept). sections = one entry per page block (paragraph, list item, heading, table), not per chunk. Coda leaves an id-less blank block after each live view that cannot be deleted. Final Relief template shows '(c)' as '©' (Coda autocorrect).",
       "sections": [
         {
           "key": "# E-Filing, Scrutiny and Registration — Developer & Agent Handover",
@@ -1737,7 +1737,7 @@
       "contentHash": "fcef8c1f1367",
       "pageUpdatedAt": 1790147140.045,
       "pageDirty": true,
-      "note": "Page edited on Superhuman by Nishika Yadav (updatedAt 1792145445.478, 2026-10-16) after the last sync; local file unchanged. Owner chose to leave it untouched (2026-10-19). Do not overwrite until reconciled."
+      "note": "Page edited on Superhuman by Nishika Yadav (updatedAt 1792145445.478, 2026-10-16) after the last sync; local file unchanged. Owner chose to leave it untouched (2026-10-19). Do not overwrite until reconciled. Checked 2026-10-19: the page text matches the pre-rewrite local file; the page-side edit only converted the Number cells of the Kerala and Gujarat tables to canvas cells. No comments. Local file rewritten the same day (case numbers only, from the Case Numbering System sheet); pageDirty left for the owner to clear."
     },
     "order-template-catalogue.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",

@@ -1,6 +1,6 @@
 # Bulk Filing — Problem Statement
 
-**Status:** v1.3 — 2026-10-18. Appendix B: `DCM-7` proof of debt or liability is optional; natively digital now links to the handover's column config (on for Kerala). v1.2 — 2026-09-23. §3.6 adds backend-lookup fields (Bar registration, IFSC,
+**Status:** v1.4 — 2026-10-19; links point at the e-filing handover; Related documents lists both handovers, after the e-filing, scrutiny and registration handover was split in two. v1.3 — 2026-10-18. Appendix B: `DCM-7` proof of debt or liability is optional; natively digital now links to the handover's column config (on for Kerala). v1.2 — 2026-09-23. §3.6 adds backend-lookup fields (Bar registration, IFSC,
 pincode) alongside MDMS. §3.7 and Appendix B correct the Aadhaar note against the
 handover's actual §14 decision — masking is settled (none at launch), only storage design
 is open, and neither is bulk-specific. §4.3 now presents three signing methods (upload,
@@ -32,7 +32,7 @@ at the back. Read the front for the shape of the problem; go to the back when yo
 know exactly what a case contains.
 
 Where this document states a field, it carries the field ID from the
-[e-filing handover](efiling-scrutiny-registration-handover.md) — `LIT-3`,
+[e-filing handover](efiling-handover.md) — `LIT-3`,
 `CHQ-9`, `DCM-9` and so on. That handover owns the field-level truth. If the two disagree,
 the handover wins and this document is wrong; tell us.
 
@@ -310,7 +310,7 @@ name and get an account. *(open)*
 **How it works individually.** One case, one bill, one gateway transaction. The bill has
 several filing fee heads plus process fees charged per accused, per address, per round —
 fee detail is out of scope here; it belongs to the
-[e-filing handover](efiling-scrutiny-registration-handover.md) §19.
+[e-filing handover](efiling-handover.md) §19.
 
 **Our current thinking.** This is the least troubling of the three. The system should be
 able to **club the whole batch into a single amount and make one request to the payment
@@ -424,7 +424,7 @@ Things the answer must respect. These are not preferences.
 | 5 | **Aadhaar Act s.29** — minimise, never display, never print the number | §3.7 |
 | 6 | **DPDP** and the court's access rules apply to the whole batch, at rest and in transit | Thousands of people's identity documents in one upload |
 | 7 | Role and scope rules are unchanged: access is by **association with the case**, and clerks cannot e-sign, enforced server-side | `ROLE-01`…`ROLE-08` |
-| 8 | Court fee amounts come from the court's fee master, not from anything hard-coded | [E-filing handover](efiling-scrutiny-registration-handover.md) §19 |
+| 8 | Court fee amounts come from the court's fee master, not from anything hard-coded | [E-filing handover](efiling-handover.md) §19 |
 
 ---
 
@@ -473,7 +473,7 @@ We are not specifying these. They are the design.
 # Appendix A — Complete field specification
 
 Every field a case can contain. Field IDs are from the
-[e-filing handover](efiling-scrutiny-registration-handover.md), which owns this
+[e-filing handover](efiling-handover.md), which owns this
 detail; go there for migration notes, tooltips and source traces.
 
 **Reading the "Required" column:** *Yes* = always mandatory within the record it belongs to.
@@ -697,7 +697,7 @@ Every document a case can require. The required set is **derived from the case d
 | DCM-13 | Other documents | No | As many as the filer adds |
 
 **"Natively digital"** is a column config, on for Kerala — see the
-[e-filing handover §14](efiling-scrutiny-registration-handover.md). Where it is on, whether
+[e-filing handover §14](efiling-handover.md). Where it is on, whether
 a bulk filer states it or the system infers it is *(open)*.
 
 **ID card naming.** The handover deliberately calls `DCM-9`/`DCM-10` "ID Card," not "Aadhaar
@@ -726,7 +726,7 @@ preview.
 | Whether delay condonation applies | `JUR-11` existing — which in turn creates `JUR-12`, `DCM-8`, a ₹20 fee head and a notice round |
 | Synopsis | The whole case — parties, cheques, dishonour, notice, cause of action, jurisdiction, prayer |
 | Complaint PDF | The whole case plus its documents |
-| Fee bill | The court's fee master ([e-filing handover](efiling-scrutiny-registration-handover.md) §19) |
+| Fee bill | The court's fee master ([e-filing handover](efiling-handover.md) §19) |
 | Affidavit, interim relief, final relief | Pre-populated from templates, then editable |
 | Party-in-Person affidavit | Pre-populated from a template when `LIT-1` = Yes |
 
@@ -768,7 +768,8 @@ CHQ-1  date on cheque
 
 | Document | What it owns |
 |---|---|
-| [E-filing, scrutiny and registration handover](efiling-scrutiny-registration-handover.md) | Field-level truth, lifecycle, signing, payment, scrutiny, refiling |
+| [E-filing handover](efiling-handover.md) | Field-level truth, filing lifecycle, signing, payment |
+| [Scrutiny and registration handover](scrutiny-registration-handover.md) | Scrutiny, registration, refiling editability |
 | [Account creation handover](account-creation-handover.md) | Registration paths, OTP as the default authentication, implicit account creation at signing |
 | [dristi-solutions context](../docs/dristi-solutions-context.md) | The existing system — including the DSC bulk-signing that already ships (§8b) |
 | [Batch e-sign proposal](../signing/batch-esign-proposal.md) | The Aadhaar one-document-per-OTP constraint and the methods researched around it |

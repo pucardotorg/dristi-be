@@ -1,6 +1,6 @@
 # Application Lifecycle
 
-**Status:** v34 — 2026-10-18; **court-side permissions are named by role**
+**Status:** v35 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v34 — 2026-10-18; **court-side permissions are named by role**
 ([`court-roles.md`](court-roles.md)): onboarding and setting or moving the decision date
 need the **Application onboarder** role; orders are drafted by an **Order drafter** and
 signed by an **Order signer** (`ALC-22`). "Users and actions" lists roles, not staff titles.
@@ -625,7 +625,7 @@ details, it takes them from the case record.
 | Reason for editing | Filer | Text | |
 | Litigant type (`LIT-2` / `ACC-1`) | Filer | Radio: Individual, Institution | Prefilled with the litigant's current type; editable. Together with whether the litigant is a complainant or an accused, decides which of the tables below is shown. Changing it shows the other type's table; those fields start empty. |
 
-The fields below are the litigant fields from e-filing ([e-filing handover](efiling-scrutiny-registration-handover.md)
+The fields below are the litigant fields from e-filing ([e-filing handover](efiling-handover.md)
 §6 and §8; IDs in brackets), with the same field types and validations. Every field is
 prefilled with the selected litigant's current details, and the filer edits only what has
 changed. Addresses use the e-filing address composite (§5).
@@ -686,7 +686,7 @@ changed. Addresses use the e-filing address composite (§5).
 | Addresses (`ACC-8…12`) | Filer | Address | Add as many. |
 | Police station (`ACC-13`) | Filer | Dropdown, single select | One per address. Mandatory. |
 
-The institution's persons responsible (`ACC-14…23`) are not edited here. Each became a separate individual accused at e-filing ([e-filing handover](efiling-scrutiny-registration-handover.md) §8), and is edited as one, under **Accused — individual**.
+The institution's persons responsible (`ACC-14…23`) are not edited here. Each became a separate individual accused at e-filing ([e-filing handover](efiling-handover.md) §8), and is edited as one, under **Accused — individual**.
 
 ### Case Settlement
 
@@ -767,7 +767,7 @@ Template: `application-production-of-documents`
 ### Addition of Witness
 
 Template: `application-witness-deposition`. The witness fields from e-filing
-([e-filing handover](efiling-scrutiny-registration-handover.md) §13; IDs in brackets), with
+([e-filing handover](efiling-handover.md) §13; IDs in brackets), with
 the same field types and validations. One set per witness; add as many.
 
 | Field | Filled by | Field type | Associated logic |

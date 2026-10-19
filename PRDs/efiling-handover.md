@@ -1,6 +1,6 @@
-# E-Filing, Scrutiny and Registration — Developer & Agent Handover
+# E-Filing — Developer & Agent Handover
 
-**Status:** v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
+**Status:** v44 — 2026-10-19; **the oath is recorded, never uploaded** (§14a, `OTH-1`); **signing SMS** (§18.2, `SIG-11`, new) — e-sign and upload, each with and without the oath, held in the master Notifications table (the two oath rows are new); in upload mode each party confirms the OTP and records the oath **on their own device** (phone or computer with a camera), through the link (`SIG-05`). §14a, §18, §20.2. v43 — 2026-10-19; **the signature is affixed Simple or Multi-page** (`SIG-09`, §18.1) — how it appears on the document, not how signing is done; Simple affixes it once for the entire case file; upload of a physically signed copy is a fallback reached from e-sign and **must be justified** with a reason (`SIG-10`); every signatory's mobile number is verified — by the SMS link or login in e-sign, by a separate phone OTP in upload mode (`SIG-05`). Multi-page to follow. §18, §20.2. v42 — 2026-10-19; **the oath moves to signing** (§14a, rewritten): no longer a form section; each complainant records it at their e-sign or OTP confirmation (`OTH-3`, `SIG-08`), only where the state requires it (`oathRequired`, `OTH-2`, `Q-6`); shown to the scrutiny officer (`OTH-4`); not re-recorded on correction unless flagged as an error (`OTH-5`, `SIG-07`). Affidavit is now form section 10, with its own sidebar heading. §5, §14a, §14b, §16.8, §18, §20.2, §21. v41 — 2026-10-19; **payment calculation is per state and not finalised** (§19): the upfront mechanism stays; every fee head, amount, slab, cap, rate and remittance account in §19 is a Kerala illustration, to be built as per-state configuration (`Q-5`, new). §19, §10 (DCA fee), §20.2, §21, §23. v40 — 2026-10-19; **pending tasks follow actions** (§20.1): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v39 — 2026-10-19; **split into two documents** — scrutiny, registration and editability on send-back (old §20.1–§20.4, the court-side columns of the §3 matrix and rows of the §4 lifecycle, and their decisions-log and glossary entries) move to [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md); requirement IDs unchanged. §20 now holds this module's pending tasks, notifications, events and decisions log. The answered Q-2 to Q-4 rows are removed from §21. v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
 case can be registered at Scrutiny now follows from roles (`SCR-11`, §20.3a): a person who
 holds both the Scrutiny officer and Case registerer roles in the courtroom can register
 the case straight from Scrutiny, or forward it; anyone else forwards it to Registration.
@@ -109,7 +109,7 @@ paths corrected to `efiling-reference/`; owner decisions batch 8 logged. v11 —
 pending-task table in §20.2 replaced with live views of the master Pending Tasks tables
 (court and citizen side); §20.5 now carries live views of the master Notifications and
 Events tables
-**Date:** 2026-09-18
+**Date:** 2026-10-19
 **Audience:** developers and agents building the e-filing module (front end and backend)
 
 ## Sources and precedence
@@ -123,7 +123,7 @@ Events tables
 | 2 | `Templates.pdf` | Complaint PDF — an earlier filled sample |
 | — illustration | `complaint-pdf-worked-example.pdf` | The generated complaint PDF as it comes out, produced from §16; invented data, **not normative** (§16.9) |
 | 3 — interaction reference | Dristi app prototype: `Pucar-Dristi-2.0` @ `feature/e-filing-new`, `apps/dristi-app`, routes `/filings/**` | Screen behaviour: navigation, upload-first intake, OCR provenance, autosave, sign/pay |
-| — | Owner decisions, 2026-08-25/26 | Recorded inline as **[OWNER]**; log in §20 |
+| — | Owner decisions, 2026-08-25/26 | Recorded inline as **[OWNER]**; log in §20.2 |
 
 Conflicts: xlsx wins over the PDFs, both win over the prototype; owner decisions win
 over everything. Marks: `[DERIVED]` inferred, confirm before building · `[GAP]` not
@@ -131,17 +131,18 @@ specified, blocks the item · `[CURRENT]` today's behaviour, not automatically a
 requirement · `[PROTO]` prototype-only, an interaction reference · `[OWNER]` owner
 decision.
 
-Requirement IDs (`ROLE/LIFE/FIL/VAL/SIG/PAY/SCR/DOC/REF-*`) and field IDs
+Requirement IDs (`ROLE/LIFE/FIL/VAL/SIG/PAY/DOC-*`) and field IDs
 (`<sheet>-<Sl. No.>`: `LIT ADV ACC CHQ LDN JUR PRY WIT DCM SYN`) — use in tickets,
-commits, test names.
+commits, test names. `SCR-*` and `REF-*` are in [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md).
 
 ---
 
 # 1. Scope
 
-From first draft through registration: data entry (field-level), signing, payment,
-scrutiny, correction cycles, registration; the generated complaint PDF; interaction
-patterns. **[OWNER]** s.138 NI Act only — no other case types, no generalisation needed.
+From first draft until the case is paid and enters Scrutiny: data entry (field-level),
+signing, payment, the generated complaint PDF, interaction patterns; and the filer's side
+of a correction cycle — re-signing and paying any increase. Scrutiny, registration and
+what a send-back opens for editing are in [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md). **[OWNER]** s.138 NI Act only — no other case types, no generalisation needed.
 
 Out: post-registration stages; e-sign provider internals; payment-gateway integration
 itself. Bulk/batch signing is the separate `../signing/` workstream.
@@ -171,8 +172,8 @@ Role effects at entry:
 # 3. Roles and permissions
 
 Filing roles: Advocate · Clerk/Junior Advocate · Litigant · PoA-Holder ·
-Party-in-Person. Court roles: **Scrutiny officer** · **Case registerer** — what each allows
-is owned by [`court-roles.md`](court-roles.md); a staff account may hold both.
+Party-in-Person. The court roles that act on a filed case (Scrutiny officer, Case
+registerer) are in [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) §2.
 
 **Scope predicates** — a user can view/edit a draft when (regardless of who created it,
 `ROLE-06`):
@@ -186,23 +187,17 @@ is owned by [`court-roles.md`](court-roles.md); a staff account may hold both.
 
 Permission matrix (`ROLE-07` — additionally gated by the predicates and case state):
 
-| Action | Advocate | Clerk | Litigant | PoA | PiP | Scrutiny officer | Case registerer |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Create / view / edit drafts | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| Delete draft | ✓ ² | ✓ ² | ✓ ² | ✓ ² | ✓ ² | — | — |
-| Add advocates to case | ✓ | ✓ | ✓ | ✓ | ✓ ¹ | — | — |
-| Move to signing | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| Perform e-sign | ✓ | **✗** | ✓ | ✓ | ✓ | — | — |
-| Upload signed document | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| Make payment / correct errors | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| Mark errors + send back (Scrutiny) | — | — | — | — | — | ✓ | — |
-| Forward for registration ⁴ | — | — | — | — | — | ✓ | — |
-| Register / send back (Registration) | — | — | — | — | — | — | ✓ |
-| Register at Scrutiny ³ | — | — | — | — | — | ✓ | ✓ |
+| Action | Advocate | Clerk | Litigant | PoA | PiP |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| Create / view / edit drafts | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Delete draft | ✓ ² | ✓ ² | ✓ ² | ✓ ² | ✓ ² |
+| Add advocates to case | ✓ | ✓ | ✓ | ✓ | ✓ ¹ |
+| Move to signing | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Perform e-sign | ✓ | **✗** | ✓ | ✓ | ✓ |
+| Upload signed document | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Make payment / correct errors | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ¹ A PiP may add advocates **for other complainants only**.
-³ Needs **both** roles in the courtroom — see `SCR-11` (§20.3a).
-⁴ Only for someone who does **not** also hold the Case registerer role — see `SCR-11`.
 ² **Creator only (preferred)** — unlike other draft actions (which use the scope predicate), delete is ideally restricted to the user who created the draft. If that adds significant complexity, v1 may use the normal scope predicate instead and tighten later. See `LIFE-14`.
 
 **[OWNER]** The clerk↔advocate mapping **exists elsewhere in the system** — consume it,
@@ -223,19 +218,12 @@ don't build it. **When someone is removed from a case, they lose access to it.**
 | Pending Signature | Upload Signed Document | Pending Payment |
 | Pending Payment | Delete Draft | *(deleted)* |
 | Pending Payment | Pay | Scrutiny |
-| Scrutiny | Mark Defects and Send Back | Pending Correction |
-| Scrutiny | Forward for registration | Registration |
-| Scrutiny | Register (`SCR-11`) | Cognisance |
-| Registration | Register | Cognisance |
-| Registration | Send Back | Pending Correction |
 | Pending Correction | Save Draft | Pending Correction |
 | Pending Correction | Proceed to Sign | Pending Signature |
 | Pending Signature *(correction loop)* | e-Sign / Upload | Scrutiny — or Pending Payment per `LIFE-12` |
 
-- Scrutiny → Register → Cognisance is available only to a person who holds both the
-  Scrutiny officer and Case registerer roles in the courtroom, and replaces Forward for
-  them; a case registered that way never reaches the Registration stage. See `SCR-11` (§20.3a).
-- `LIFE-11` — send-backs may repeat without limit.
+- What happens at Scrutiny and Registration, and how a case is sent back to Pending
+  Correction, is in [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) §3.
 - `LIFE-12` **[OWNER]** — on resubmission the amount is recalculated: **increased →
   payment step, extra amount collected before Scrutiny; not increased → payment step
   skipped**. No automatic refund when lower; the system later auto-generates a **refund
@@ -271,18 +259,12 @@ Sections in order — each a screen; repeatable sections carry "N" records:
 7. ADR, Prayer, Other Details (§12)
 8. Witness Details — "Witness N" (§13)
 9. Documents (§14)
-10. **Oath — its own screen, mandatory** **[OWNER]** (§14a): a video per complainant,
-    repeating the oath wording once per record
-11. **Affidavit — its own screen** **[OWNER]** (§14b; content: `PRY-4`, §17 template 1;
+10. **Affidavit — its own screen** **[OWNER]** (§14b; content: `PRY-4`, §17 template 1;
     the PiP affidavit stays a field in Litigant, `LIT-27`)
-12. Synopsis — auto-generated, shown after the case moves to signing (§15)
+11. Synopsis — auto-generated, shown after the case moves to signing (§15)
 
-Oath (10) and Affidavit (11) are two separate sections — distinct acts in the case file,
-not one nested in the other (see the P&H case files: the oath is administered at witness
-deposition, the affidavit is a document tendered as evidence — different moments,
-different records). **[OWNER]** They share one heading in the sidebar, "Affidavit", with
-Oath listed first, because both are sworn statements filed back to back late in the
-form — a navigation grouping only, not a content one.
+**[OWNER]** The oath is not a form section: it is recorded during signing, in the states
+that require it (§14a).
 
 **Gating** **[OWNER]**: **Advocate Details is hard-gated** — locked until Complainant
 Details is complete (`FIL-01`, option A). `[DERIVED]` "complete" = every mandatory field
@@ -444,8 +426,8 @@ payment. The same condition is shown to everyone who reviews the case:
 | Who | Where | What they see |
 | --- | --- | --- |
 | Filer | Under `CHQ-8`, per cheque — the same treatment as the `CHQ-10` warning | *"Presented after the cheque's validity. It was valid for presentation until [last valid day], 3 months from its date. Check that S-138 still applies before filing."* |
-| Scrutiny officer | `SCR-05a` | A warning line under the cheque's presentation date |
-| Case registerer | `SCR-08a` | The presentation step of the case timeline, in warning ink |
+| Scrutiny officer | `SCR-05a` ([`scrutiny-registration-handover.md`](scrutiny-registration-handover.md)) | A warning line under the cheque's presentation date |
+| Case registerer | `SCR-08a` ([`scrutiny-registration-handover.md`](scrutiny-registration-handover.md)) | The presentation step of the case timeline, in warning ink |
 
 ---
 
@@ -489,7 +471,7 @@ Repeats per demand notice.
 
 Delay basis **[OWNER]**: one **calendar month** from the **date of cause of action**
 — not from the date of service. When the DCA attaches
-it carries the INR 20 fee (§19) and the `REF-04` refiling rule.
+it carries the Delay Condonation Application fee (§19) and the `REF-04` refiling rule ([`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) §8).
 
 **[OWNER]** The bank-details block (JUR-2…5 / JUR-6a) **repeats per cheque as needed**
 when cheques were deposited in different accounts or branches. Whether a cheque was
@@ -573,19 +555,18 @@ document is missing, with a visible count.
 
 # 14a. Oath — `OTH`
 
-**[OWNER]** Its own screen, mandatory: a video of each complainant reciting the oath.
-A separate act from the affidavit (§14b) — see the P&H case files: an oath is
-administered at witness deposition ("on S.A."), an affidavit is a document tendered as
-evidence; different moments, different records. It sits after Documents, sharing the
-"Affidavit" sidebar heading with §14b, listed first. Repeats per complainant record (same
-complainants as §6, same order); for an Institution complainant the authorised
-representative takes the oath in their place. `FIL-03` — like every other mandatory
-section, this blocks Preview / the complaint PDF until every complainant record has one
-(§5 Gating).
+**[OWNER]** The oath is **not a section of the filing form**. It is recorded during
+signing (§18), and only in states that require it.
 
-The screen shows the oath wording below the complainant's own card, for them to read
-aloud on camera, so nothing has to be remembered before recording — repeated once per
-complainant record so each one is prompted in turn, not shown a single shared block.
+| ID | Requirement |
+| --- | --- |
+| `OTH-2` | **Per state.** `oathRequired`, set per state, on or off. When off there is no oath anywhere: nothing is asked at signing and nothing is shown at scrutiny. Which states have it is `Q-6`. |
+| `OTH-3` | **Asked at signing.** When a complainant signs by e-sign, or confirms by phone OTP in upload mode (`SIG-05`), the flow asks them to record the oath as part of that step. One oath per complainant record (same complainants as §6); for an Institution complainant the authorised representative takes it. Advocates do not record an oath. `[DERIVED]` a complainant's signature or confirmation is not complete until their oath is recorded. |
+| `OTH-4` | **Shown at scrutiny.** The oath video is shown to the scrutiny officer in the document index (`SCR-01`, [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md)) and can be flagged as an error like any document (`SCR-03`). |
+| `OTH-5` | **Not re-recorded on correction unless flagged.** When the filer signs again after a send-back (`SIG-07`), the oath is asked for again only for the complainants whose oath video was flagged as an error at scrutiny. Otherwise the recorded oath carries over — including after a registration send-back, which opens everything for editing but flags nothing. |
+
+The step shows the oath wording for the complainant to read aloud on camera, so nothing
+has to be remembered before recording.
 
 > I solemnly affirm that the contents of this complaint, and everything I have stated
 > in support of it, are true to the best of my knowledge and belief, and that I have
@@ -602,14 +583,18 @@ recorded elsewhere. Both produce the same stored record and the same validation
 downstream — nothing else on this screen, or later in the flow, needs to know which one
 the complainant used.
 
+**[OWNER]** The oath is **recorded, never uploaded**: it is taken live through the
+device's camera in the signing step. There is no option to upload a video recorded
+elsewhere.
+
 | ID | Field | Type | Validation |
 | --- | --- | --- | --- |
-| OTH-1 | Oath video | File upload, video (`.mp4`, `.mov`, `.webm`) | **Mandatory.** Duration ≤ 2 minutes, checked from the file's own metadata; if duration cannot be read, fall back to a 200 MB file-size cap |
+| OTH-1 | Oath video | Recorded in the browser through the device's camera — no file upload | **Mandatory where `oathRequired` is on.** Recording stops at 2 minutes |
 
-Not part of the `DCM` document list and not appended to the complaint PDF (§16.7) — a
-video cannot be embedded in a printed document. It is stored with the case file like any
-other upload and appears in the scrutiny officer's document index (`SCR-01`) and the
-case's Documents view, the same as every other section's uploads.
+The oath is a separate act from the affidavit (§14b). It is not part of the `DCM`
+document list and not appended to the complaint PDF (§16.7) — a video cannot be embedded
+in a printed document. It is stored with the case file and appears in the case's
+Documents view.
 
 ---
 
@@ -618,8 +603,7 @@ case's Documents view, the same as every other section's uploads.
 **[OWNER]** Its own screen — a separate act from the oath (§14a): the affidavit is the
 sworn written document tendered with the complaint (compare the P&H case files, where
 "CW tendered into preliminary evidence his affidavit Ex.CA" is its own order-sheet entry,
-distinct from any deposition). It sits directly after Oath, sharing the "Affidavit"
-sidebar heading with it, listed second. `FIL-03` — like every other mandatory section,
+distinct from any deposition). It sits directly after Documents. `FIL-03` — like every other mandatory section,
 this blocks Preview / the complaint PDF until it's complete (§5 Gating).
 
 The field itself — pre-populated rich text, §17 template 1, editable — is owned by
@@ -849,7 +833,7 @@ follow it.
 | --- | --- |
 | Court name | The court the case is filed in, from the deployment's own court/jurisdiction configuration. **Never hardcoded** — no court name belongs in the generator |
 | Case title | `[first complainant's full name] v/s [first accused's full name]` — **full names**, not first names. **[OWNER]** `+N others` after either side when there is more than one party on it, `N` being the count of parties on that side beyond the first named one (two complainants → `+1 other`; four accused → `+3 others`) — corrects the earlier `& Ors.` wording, which is not what prints |
-| Case number | Whatever number the case has at the moment of printing: the system-generated **filing number** from draft creation onward, replaced by the case number assigned at registration (§20.1). Formats and generators per state are in the separate case-numbers document. A draft always has a filing number, so this line is never empty and needs no placeholder |
+| Case number | Whatever number the case has at the moment of printing: the system-generated **filing number** from draft creation onward, replaced by the case number assigned at registration (`SCR-08`, [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md)). Formats and generators per state are in the separate case-numbers document. A draft always has a filing number, so this line is never empty and needs no placeholder |
 | Title of proceeding | **[OWNER]** `Complaint under [the case type's long title]` — the case type is a variable, not a hardcoded string, so the platform can carry more case types than §138 later. Each case type carries two titles: a **short title** for screens (`Complaint under S-138, NI Act`) and a **long title**, the full statutory form, for PDFs (`Complaint under Section 138 of the Negotiable Instruments Act, 1881`) — this line always prints the long title |
 
 ## 16.6 Signature block — `DOC-02`
@@ -893,10 +877,10 @@ remain, plus the Party details exception below — none of them a field reorderi
 | --- | --- |
 | §14 Documents | **print §3.2** the list, **and** the appended files after print §4 — one screen feeds two places in the document. This one can't be merged: the files are physical attachments that must sit at the end, not inline in the body |
 | §15 Synopsis (auto-generated) | the **first page**, before print §1, drawing fields from most of the other screens. Synopsis isn't collected on any screen at all — it exists only as a generated summary — so "collection order" doesn't apply to it; it stays first by deliberate choice, as the reader's entry point |
-| §6 Litigant | **print §1.1**, including the party-in-person affidavit (`LIT-27`). The case's main affidavit (`PRY-4`) is its own screen (§5, screen 9) and prints as **print §4** — so the document carries two affidavits, sections apart. These are two different fields, not one field split in two, so there is nothing to merge here |
+| §6 Litigant | **print §1.1**, including the party-in-person affidavit (`LIT-27`). The case's main affidavit (`PRY-4`) is its own screen (§5, screen 10) and prints as **print §4** — so the document carries two affidavits, sections apart. These are two different fields, not one field split in two, so there is nothing to merge here |
 
-**[OWNER]** Also unchanged: Oath (§5, screen 10) is a recorded video, not a document
-field, and does not appear anywhere in the printed complaint.
+**[OWNER]** The oath (§14a) is a recorded video taken at signing, not a form field, and
+does not appear anywhere in the printed complaint.
 
 **Fields that do not print as their own row.**
 
@@ -917,7 +901,7 @@ will not find them:
 | --- | --- |
 | Court name | deployment court/jurisdiction configuration (§16.5) |
 | Case title | composed from the party names, with `+N others` (§16.5) |
-| Case number | filing number, later the registration number (§16.5, §20.1) |
+| Case number | filing number, later the registration number (§16.5) |
 | `Complaint under Section 138 of the Negotiable Instruments Act, 1881` | the case type's long title (§16.5) — not a fixed string; varies with the case type once more than §138 is live |
 | Synopsis jurisdiction line — "[branch] - complainant's bank branch" | composed: the branch, plus whose branch it is, derived from `JUR-1` |
 | `Duration of delay` | computed from the cause-of-action and filing dates (`JUR-11`) |
@@ -1072,16 +1056,30 @@ backend data, not added to the case file **[OWNER]**):
 
 # 18. Signing — `SIG`
 
-- `SIG-01/02` — mode choice: **e-sign** or **upload a signed copy**; more modes later —
-  don't hard-code a binary.
+- `SIG-09` **[OWNER]** — the signature is affixed to the document in one of two ways,
+  **Simple** or **Multi-page** (§18.1). This changes only **how the signature appears on
+  the document**, not how signing is done: modes, signatories, verification and every
+  other rule in this section are the same for both.
+- `SIG-01/02` — mode choice: **e-sign** or **upload a physically signed copy**; more modes
+  later — don't hard-code a binary. **[OWNER]** Upload is a fallback for when e-signing
+  has not worked, not an equal choice: it is reached from the e-sign step ("Unable to
+  e-sign?"), not offered beside it.
+- `SIG-10` **[OWNER]** — **upload must be justified.** Before the upload opens, the filer
+  picks why e-signing did not work: the OTP didn't arrive · the DSC isn't working ·
+  another party can't e-sign (offered only where there are other signatories) · the
+  e-sign service isn't responding · something else. The reason and its time are recorded
+  with the signing.
 - `SIG-03` — required signatories: **every complainant** (or their PoA-holder) **and one
   advocate for each complainant**.
 - `SIG-04` **[OWNER]** — all parties use the same mode. **Requirement**, not a
   limitation.
-- `SIG-05` — upload mode: the uploader collects all wet signatures beforehand;
-  **[OWNER]** additionally, **each required party confirms via a phone OTP** — the
-  upload counts as fully signed only when the document is uploaded **and every party
-  has confirmed**.
+- `SIG-05` **[OWNER]** — **every signatory's mobile number is verified.** In e-sign mode
+  this happens as part of signing: the party opens the signing link sent by SMS to that
+  number, or logs in with it, and either verifies the number — no separate OTP. In
+  upload mode nothing does that, so it is done separately: the uploader collects all
+  wet signatures beforehand, and **each required party confirms via a phone OTP on their
+  own device**, through a link sent to them by SMS (§18.2). The upload counts as fully
+  signed only when the document is uploaded **and every party has confirmed**.
 - `SIG-06` — e-sign is individual; the case advances when all have signed. **[OWNER]**
   **no mandated signing order.**
 - **[OWNER]** — **parties cannot change mid-signing**: changing them requires going back
@@ -1096,14 +1094,48 @@ backend data, not added to the case file **[OWNER]**):
   registration and proceeds to sign (`LIFE-13`), the case goes through this section
   exactly as it did at e-filing — same mode choice, same signatories, same rules
   (`SIG-01` to `SIG-06`, `ROLE-08`). Nothing carries over from the earlier round:
-  every edit invalidates all signatures, so every required party signs again.
+  every edit invalidates all signatures, so every required party signs again. The one
+  exception is the oath, which is not recorded again unless it was flagged (`OTH-5`).
+- `SIG-08` **[OWNER]** — where the state requires an oath (`OTH-2`), each complainant
+  records it as part of their e-sign or OTP confirmation (`OTH-3`, §14a).
 
 E-sign provider selection, failure modes, retry/timeout: left to engineering at
 integration time (with §19's gateway equivalents).
 
+## 18.1 How the signature is affixed
+
+| Way | Signature on the document |
+| --- | --- |
+| **Simple** | Affixed **once, for the entire case file** |
+| **Multi-page** | To follow |
+
+## 18.2 Signing SMS — `SIG-11`
+
+Which SMS a signatory gets follows from the signing mode (`SIG-01/02`) and whether the
+state requires an oath (`OTH-2`). The wording is in the master **Notifications** table
+(§20.1) — four rows: e-sign and upload, each with and without the oath.
+
+- Advocates never record an oath, so they always get the *without oath* row. In a state
+  with the oath, each complainant who has to record one gets the *with oath* row: at
+  filing, and after a send-back only if their oath was flagged (`OTH-3`, `OTH-5`). There
+  is no separate refiling SMS.
+- **[OWNER]** In upload mode each party confirms **on their own device** — a phone, or a
+  laptop or desktop with a webcam: the SMS carries the OTP and a link; they open the
+  link, enter the OTP there, and record their oath there where the state requires one.
+  The OTP is never entered on the uploader's screen. In e-sign mode the link or login
+  itself verifies the number (`SIG-05`), so the e-sign SMS carries no OTP.
+- Each template has to be registered on the DLT platform before it can be sent.
+
 ---
 
 # 19. Payment — `PAY`
+
+**The mechanism is settled; the calculation is not.** Payment is taken **upfront**, as
+described here: filing fees and upfront process payments are paid before the case goes to
+Scrutiny. **How the amount is calculated is not finalised and differs per state.** Every
+fee head, amount, slab, cap, rate and remittance account in §19.1 and §19.2 is an
+**illustration based on Kerala**, not a requirement — build the calculation as per-state
+configuration, and do not hard-code any figure in this section (`Q-5`).
 
 Global: **Parties in Person are never counted as advocates.**
 
@@ -1143,7 +1175,7 @@ A small court fee of **INR 12.50** applies to every round of every process.
 left at zero summons rounds; a case with three accused therefore carries at least three.
 
 `PAY-11` The notice default follows the Delay Condonation section: when the DCA applies
-the round is opted in, when it does not it is not. Like `REF-04`, this is evaluated
+the round is opted in, when it does not it is not. Like `REF-04` ([`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) §8), this is evaluated
 **against the clock at the time the bill is drawn**, not cached from an earlier draft —
 a filing that attracts the DCA during a correction cycle attracts the notice round with
 it. The filer may still decline it.
@@ -1186,196 +1218,22 @@ Payment failure, timeout, reconciliation: left to engineering at integration tim
 
 ---
 
-# 20. Scrutiny, registration, refiling; decisions log
+# 20. Pending tasks, notifications and events; decisions log
 
-## 20.1 Case routing — courtroom and roles
+## 20.1 Pending tasks, notifications and events
 
-A court establishment contains one or more courtrooms. Each courtroom has a magistrate,
-a scrutiny officer, a bench clerk, and dedicated support staff (steno / typist / judgment
-writer). Bench clerks and support staff are strictly 1:1 per courtroom. A single scrutiny
-officer may in practice handle multiple courtrooms (Gujarat today: one officer across 5
-courtrooms).
-
-Who does scrutiny and registration is not fixed by these seats: it is whoever holds the
-**Scrutiny officer** or **Case registerer** role in that courtroom
-([`court-roles.md`](court-roles.md) `RLE-02a`).
-
-After a case is filed, signed, and paid, it is **automatically assigned to a courtroom**,
-and its scrutiny task goes to those who hold the Scrutiny officer role there.
-
-**The allocation logic is configurable per court establishment.** The system carries all
-possible allocation methods; which one applies is a deployment configuration.
-
-| Method | Where used |
-|---|---|
-| Single courtroom — no allocation needed | Kerala, Punjab (Panchkula) |
-| Institution-to-courtroom mapping + default fallback | Gujarat (Phase 1) |
-
-Gujarat Phase 1: financial institutions are mapped to specific courtrooms (e.g. HDFC →
-Courtroom A). Filers who don't match any mapping go to a default fallback courtroom. The
-filer does not select a courtroom. The CJM retains authority to transfer cases between
-magistrates to balance workload.
-
-## 20.2 Scrutiny workflow
-
-A case enters Scrutiny after signing and payment complete (§4: Pending Payment → pay →
-Scrutiny). A holder of the courtroom's **Scrutiny officer** role reviews the submitted case
-for defects before forwarding it for registration.
-
-### How a case reaches the list — pending tasks
-
-`SCR-09` There is **no separate scrutiny queue or registration queue**. Both lists are
-the application-wide **pending tasks** mechanism, filtered to the logged-in user. A case
-is in the list of a Scrutiny officer or a Case registerer exactly as long as its pending
-task is open. The court-side tasks, as a live view of the master Pending Tasks list:
-
-```superhuman-view
-name: Pending tasks (Court Side) — E-Filing
-tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-KztrhvteSD
-filter: PRDs.Contains("efiling-scrutiny-registration-handover")
-```
-
-Both are assigned to the holders of the courtroom's **Scrutiny officer** and **Case
-registerer** roles respectively (§20.1), due **+0 days**, visible to **Only Users** (the
-assignees; any one of them can act, [`court-roles.md`](court-roles.md) `RLE-05`). Neither carries a
-Category — the Category values are citizen-side only. Task attributes and the status
-lifecycle are in `pending-tasks-handover.md`.
-
-`SCR-10` Creating and closing these tasks is a **side effect of the §4 lifecycle
-transitions**, not a separate step, and it is the only mechanism for list membership —
-do not build a second stage-query alongside it. The filer side works the same way:
+The filer's pending tasks for signing and payment, as a live view of the master Pending
+Tasks list. The action that changes a case — signing, paying — also creates and closes
+these tasks, in the same transaction; tasks never move the case. A sign task can close
+without the case changing stage, when that person's signature is no longer needed.
+Task attributes and the status lifecycle are in `pending-tasks-handover.md`; the
+court-side tasks and the correction task are in [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) §5.
 
 ```superhuman-view
 name: Pending tasks (Citizen-Side) — E-Filing
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-FICRZ0qIR4
-filter: PRDs.Contains("efiling-scrutiny-registration-handover")
+filter: PRDs.Contains("efiling-handover")
 ```
-
-Both tables are the single source of truth and the place to edit these tasks. A
-downloaded copy of this document is a snapshot.
-
-**PRD language.** The functional spec says a case "appears in the list" for scrutiny and
-for registration without saying how the system knows. That wording should be updated to
-name the pending-task mechanism; the requirement is as stated here.
-
-### Scrutiny interface (initial version)
-
-`SCR-01` Three-panel layout:
-- **Left**: case fields, grouped by section
-- **Centre**: the selected document
-- **Right**: document index (all uploaded documents)
-
-`SCR-02` A **Scrutiny officer** can **mark any individual field as an error** and type a
-comment against it. They can also **mark an entire section** as an error with a comment.
-
-`SCR-03` A **Scrutiny officer** can **flag any document as an error**, which permits the
-filer to re-upload it on send-back.
-
-### Interlinked date auto-marking
-
-`SCR-04` When a Scrutiny officer marks any interlinked date field (any node in the
-date chain, `VAL-01/02`), **all transitive downstream dates** in the chain are
-**auto-marked** as well — the filer can then edit them without failing the ordering
-validations. This implements `REF-03` at the scrutiny stage: the officer selects one
-date, and the system marks the rest.
-
-### Delay condonation alert
-
-`SCR-05` If delay has become applicable since the case was filed — evaluated against the
-clock at the time of scrutiny, the same rule as `REF-04` — the scrutiny interface must
-**flag this to the Scrutiny officer**. The Delay Condonation section may now be required
-where it was not at filing.
-
-### Presentation outside validity
-
-`SCR-05a` Where a cheque was presented after its validity (`CHQ-11`), the scrutiny
-interface shows a **warning line under that cheque's date of presentation** in the case
-fields — *"Presented after validity — valid until [last valid day]"* — the same
-treatment as the interface's other per-field warnings. It is information, not a flag:
-the Scrutiny officer decides whether to mark the field as an error (`SCR-02`).
-
-### Actions
-
-`SCR-06` Actions, each needing the role named:
-- **Send back** (Scrutiny officer) — only the fields, sections, and documents marked as
-  errors are flagged to the filer (`REF-01`). Send-backs repeat without limit (`LIFE-11`).
-- **Forward for registration** (Scrutiny officer, **not** also Case registerer) — moves the case to Registration (§20.3).
-- **Register** (Scrutiny officer **and** Case registerer) — assigns the case number and
-  moves the case directly to Cognisance, skipping Registration entirely (`SCR-11`,
-  `SCR-12`).
-
-## 20.3 Registration
-
-Applies only to a case forwarded from Scrutiny. A case registered at Scrutiny (§20.3a)
-never reaches this stage or the *Register case* task below.
-
-`SCR-07` Forwarding closes the *Scrutinise case* task and creates a ***Register case***
-pending task for the holders of the courtroom's **Case registerer** role (§20.1) — that
-task is their list of cases to register (`SCR-09`).
-
-`SCR-08` Two actions, both needing the **Case registerer** role:
-- **Register** — assigns a case number and moves the case to Cognisance.
-  Case number format and generation are covered in a separate document.
-- **Send back** — the Case registerer types **one single overall comment** (no individual
-  field marking, consistent with `REF-02`). This opens **everything** for editing.
-
-`SCR-08a` The *Register case* screen's case timeline states the statutory limit under
-each step it governs. Under the cheque's presentation it reads *within 3 months of the
-cheque date*, or — where the cheque was presented after its validity (`CHQ-11`) —
-*beyond 3 months of the cheque date* in **warning ink**. Only a step outside its window
-takes the warning ink. The warning does not stop either action. For a case registered at
-Scrutiny there is no Registration stage, and `SCR-05a` is the only court-side warning.
-
-**[OWNER]** There is **no outright rejection at this stage** — registration happens
-first; dismissal is possible only after registration (out of this module's scope).
-
-## 20.3a Registering at Scrutiny
-
-There is no setting for where a case is registered. It follows from the roles the person
-at Scrutiny holds in that courtroom ([`court-roles.md`](court-roles.md) `RLE-02a`).
-
-`SCR-11` A person who holds **both** the Scrutiny officer and the Case registerer roles in
-the courtroom gets **Register** and Send back at Scrutiny. They do **not** get Forward
-for registration: they would only be forwarding the case to themselves. A person who holds only the Scrutiny
-officer role gets Forward for registration and Send back, not Register. A court that wants
-every case checked by two people gives the two roles to different people.
-
-`SCR-12` Register at Scrutiny does exactly what Register at Registration does (`SCR-08`):
-assigns the case number and moves the case to Cognisance. The case never reaches the
-Registration stage or its *Register case* task (`SCR-07`), so there is no registration
-send-back for it — only the Send back at Scrutiny (`SCR-06`). Everything from Cognisance
-onward is identical either way; this module's scope ends there.
-
-## 20.4 Editability on send-back
-
-**Date chain** (`VAL-01/02`) — implement as an explicit dependency graph (`REF-03`
-walks it):
-
-```
-CHQ-1 date on cheque
-  └─ CHQ-8 presentation (≥)
-       └─ CHQ-9 return (≥)
-            └─ LDN-2 dispatch (≥ return of at least one cheque; warn > 30 days after return)
-                 ├─ LDN-6 delivery (≥)   [delivered = Yes]
-                 └─ LDN-7 return (≥)     [delivered = No]
-                      └─ JUR-9 cause of action = service + 15 days (auto)
-                           └─ JUR-10 filing date (auto, today)
-                                └─ JUR-11 delay = beyond 1 month of cause
-```
-
-**Editability rules** (`REF`) — override all defaults elsewhere:
-
-| Trigger | Opens for editing |
-| --- | --- |
-| Send back at Scrutiny, with errors marked (`REF-01`/`SCR-02/03`) | Only the marked fields/sections/documents |
-| …a marked field is an interlinked date (`REF-03`/`SCR-04`) | + all **transitive downstream** dates (auto-marked) |
-| …DCA became applicable since filing (`REF-04/05/06`) | + the Delay Condonation section, now required |
-| Send back at Registration (`REF-02`) | Everything |
-
-`REF-04` is evaluated **against the clock at refiling**, never cached — a correction
-cycle sitting for weeks silently attracts the DCA (and its fee → `LIFE-12`).
-
-## 20.5 Notifications and events
 
 The notifications this module triggers, as a live view of the master Notifications
 table. Do not invent notification copy — the master table is the source of truth and
@@ -1384,7 +1242,7 @@ the place to edit it.
 ```superhuman-view
 name: Notifications — E-Filing
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-xnftvTkudd/tables/grid-3FTjQhdfYv
-filter: PRDs.Contains("efiling-scrutiny-registration-handover")
+filter: PRDs.Contains("efiling-handover")
 ```
 
 The case-timeline events this module raises, from the master Events/Case Updates table:
@@ -1392,14 +1250,19 @@ The case-timeline events this module raises, from the master Events/Case Updates
 ```superhuman-view
 name: Events — E-Filing
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-2x28DoUtbn/tables/grid-GPg4dKS-s9
-filter: PRDs.Contains("efiling-scrutiny-registration-handover")
+filter: PRDs.Contains("efiling-handover")
 ```
 
-A downloaded copy of this document is a snapshot of both.
+All three tables are the single source of truth. A downloaded copy of this document is a
+snapshot of them.
 
-**Owner decisions log** — 2026-08-25/26 (batch 1): s.138 only · profile switcher
+## 20.2 Owner decisions log
+
+The scrutiny and registration entries are in [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) §9.
+
+2026-08-25/26 (batch 1): s.138 only · profile switcher
 precedes the flow, role predetermined; PoA-holder and PiP can file · clerks' advocates
-auto-added · logged-in litigant = Complainant 1 · single scrutiny officer · drafts
+auto-added · logged-in litigant = Complainant 1 · drafts
 deletable · refile payment: balance if increased, else skipped · FIL-01 = hard gate ·
 affidavit its own screen; PiP affidavit a Litigant field · OTP cross-user autofill
 removed · "Institution" terminology · one address composite · permanent first, current
@@ -1416,13 +1279,11 @@ slab on the sum of cheques · complaint PDF always current, preview gated on
 mandatory+validations, no version retention · templates editable, blanks user-filled ·
 upfront model: notice ×1, summons ≤4 rounds per address, warrants ≤4 rounds, court fee
 each, e-post channel fee later, defaults = 1 summons round (all addresses) + 1 warrant
-round · payment/e-sign failure handling left to engineering · magistrate send-back = one
-overall comment · no outright rejection before registration.
+round · payment/e-sign failure handling left to engineering.
 (batch 3): "one month" = one **calendar month** · account creation for new complainants
 happens at signing (e-sign login / upload OTP) · ACC-24 = information only, magistrate
 decides · synopsis dishonour rows repeat per cheque · jurisdiction bank details repeat
-per cheque as needed · synopsis prayer prints the Final Relief field · scrutiny
-mark-comments deferred to a separate defect-correction design · one summons round
+per cheque as needed · synopsis prayer prints the Final Relief field · one summons round
 mandatory, court **and** channel fee.
 (batch 5) — 2026-09-03, upfront process payment: process court fee = **12.50** for each
 of notice, summons and warrant · the whole upfront choice is **per accused,
@@ -1436,14 +1297,10 @@ no channel choice, INR 100/address/round placeholder · e-post is opted in/out
 round (batch 3 stands). Supersedes batch 2's "defaults = 1 summons round (all
 addresses) + 1 warrant round" only in that the choice is now per accused and per
 address. §19.3 rewritten.
-(batch 4): magistrate case-visibility irrelevant to this design · clerk↔advocate mapping
+(batch 4): clerk↔advocate mapping
 assumed to exist elsewhere in the system · removal from a case removes access ·
 affidavit variance handled by user editing, no automation · remaining references to be
 supplied later; file closed.
-(batch 7) — 2026-09-09: case number format and generation moved to a separate document
-(Q-2 removed) · case routing added (§20.1): auto-assignment to courtroom, configurable
-allocation logic per establishment, Gujarat Phase 1 = institution-to-courtroom mapping +
-fallback · Q-3/Q-4 answered inline.
 (batch 8) — 2026-09-18, complaint PDF: `ACC-5` renamed **Institution Name** (from the
 sheet's "Company Name") so the accused and complainant sides name it alike · optional
 personal fields (`LIT-5a/5b`,
@@ -1466,45 +1323,39 @@ officer can check it · the print rule is
 **literal**: form-steering fields (party-in-person, same-address, PoA given?, bank
 details same as previous cheque?, number of advocates) print like any other field — not
 worth an exception list, and nobody is to suppress them later.
-(batch 6) — 2026-09-07, scrutiny interface: three-panel scrutiny layout (fields /
-document / document index) · field-level and section-level error marking with per-error
-comments · document flagging for re-upload · interlinked-date auto-marking (marking one
-date auto-marks all transitive downstream dates) · delay-condonation alert to the
-scrutiny officer when delay becomes applicable since filing · registration assigns a case
-number (format in separate document) · supersedes batch 3's deferral of mark-comments to a
-separate design.
 (batch 12) — 2026-10-18: proof of debt / liability (`DCM-7`) is optional · natively
 digital is a column config only (`nativelyDigitalColumn`), on for Kerala; off removes the
 column and its text.
 (batch 11) — 2026-10-18: the 30-day dispatch warning is restored on `LDN-2`, counted from
 the date of return (`CHQ-9`), as on the cognizance cheat sheet. Supersedes batch 2's
 removal.
-(batch 10) — 2026-10-18: the `registrationPoint` config is removed; a person holding both
-the Scrutiny officer and Case registerer roles in the courtroom can register at Scrutiny
-(`SCR-11/12`). Supersedes batch 9.
-(batch 9) — 2026-09-23: registration point made configurable (`SCR-11/12`) — under
-`registrationPoint: scrutiny`, the scrutiny officer's second action is Register (assigns
-case number, → Cognisance) instead of Forward, and the magistrate's Registration
-stage/task is skipped entirely; default `registrationPoint: magistrate` is today's
-behaviour, unchanged.
+(batch 13) — 2026-10-19: upfront payment stays as the mechanism; the payment
+calculation is not finalised and differs per state. §19's figures are a Kerala
+illustration, to be built as per-state configuration (`Q-5`). Supersedes the figures
+settled in batches 3 and 5 as requirements.
+(batch 14) — 2026-10-19: the oath is no longer a form section. It is recorded during
+signing — at each complainant's e-sign or OTP confirmation — only in states that require
+it (`oathRequired`, `Q-6`). Shown to the scrutiny officer; not re-recorded on correction
+unless flagged as an error. Supersedes the v17/v18 Oath section. Later the same day: the oath
+is recorded, never uploaded; in upload mode each party confirms the OTP and records the
+oath on their own device (phone or computer with a camera), through a link sent by SMS.
+(batch 15) — 2026-10-19: two ways of affixing the signature, Simple and Multi-page —
+how the signature appears on the document, not how signing is done. Simple = affixed once
+for the entire case file. Upload of a physically signed copy is a fallback that
+must be justified with a reason. Mobile numbers are verified for every signatory: by the
+SMS link or login in e-sign, by a separate phone OTP in upload mode. Multi-page to follow.
 
 ---
 
 # 21. Open questions — `Q`
 
-One item pending delivery:
+Items pending delivery:
 
 | # | Item | Blocks |
 | --- | --- | --- |
-| Q-1 | Pending references (owner will supply later): **MDMS sheet**, notifications master file, Event List (Coda), "PUCAR Integrations", the e-post charge (§19.2 `PAY-14`; the process court fee is settled at 12.50) | MDMS dropdowns, §19, §20 |
-
-**Resolved:**
-- ~~Q-2~~ Case number format — moved to a separate document.
-- ~~Q-3~~ Multiple scrutiny officers — answered in §20.1. The case goes to whoever holds
-  the courtroom's Scrutiny officer role; any one of them can act.
-- ~~Q-4~~ Who registers — answered in §20.1. Whoever holds the courtroom's Case
-  registerer role. Case is auto-assigned to a courtroom after filing; allocation logic is configurable per
-  establishment.
+| Q-1 | Pending references (owner will supply later): **MDMS sheet**, notifications master file, Event List (Coda), "PUCAR Integrations", the e-post charge (§19.2 `PAY-14`) | MDMS dropdowns, §19, §20.1 |
+| Q-5 | **Payment calculation per state**: fee heads, amounts, slabs, caps, process rates and remittance accounts for each state. §19 carries Kerala's as an illustration only | The fee figures in §19; not the upfront payment mechanism |
+| Q-6 | **Which states require the oath** (`oathRequired`, `OTH-2`) | Turning the oath on for any state; not the oath step itself |
 
 **Left to engineering at integration time** (owner): payment failure/timeout/
 reconciliation; e-sign provider, failure modes, retry; gateway and e-sign integration
@@ -1512,7 +1363,7 @@ specs; complaint-PDF regeneration mechanics.
 
 **Not covered by any source**: data model; API contracts (incl. idempotency on
 payment/signing); MDMS schemas/ownership; NFRs (upload limits, audit logging — likely
-legally required, retention); test scenarios (especially §20 interactions); migration of
+legally required, retention); test scenarios; migration of
 in-flight cases; Aadhaar storage/masking (viewer restriction now decided, §14 — the
 enforcement mechanism is not); bulk filing; accused-side experience after registration
 (narrowed by the same §14 decision, otherwise still open).
@@ -1569,13 +1420,11 @@ on 2026-09-03 and now matches it.
 
 | Term | Meaning |
 | --- | --- |
-| DCA | Delay Condonation Application — attaches when filed beyond limitation; INR 20 fee. |
+| DCA | Delay Condonation Application — attaches when filed beyond limitation; carries a fee (§19). |
 | LDN | Legal Demand Notice — notice to the accused before filing. |
 | MDMS | Master Data Management System — reference data behind dropdowns/config. |
 | PoA-Holder | Power-of-Attorney holder; acts and signs on a complainant's behalf. |
 | Party-in-Person (PiP) | A complainant representing themselves; never counted as an advocate. |
-| Scrutiny | Court-staff defect review before registration. |
-| Registration | Case-number assignment that moves the case to Cognisance. Needs the Case registerer role; done at its own stage, or at Scrutiny by someone who also holds the Scrutiny officer role (§20.3a). |
-| Cognisance | Post-registration stage; end of this module. |
+| Scrutiny | Court-staff defect review before registration — the stage a case enters when payment completes; see [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md). |
 | Natively digital | Per-document attribute: born-digital vs scanned. Shown only under the `nativelyDigitalColumn` config (§14). |
 | Vakalatnama | The document appointing an advocate. |
