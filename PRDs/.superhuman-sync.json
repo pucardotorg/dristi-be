@@ -6,9 +6,9 @@
     "account-creation-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-Ebr9Pgtqan",
       "title": "Account Creation Handover",
-      "contentHash": "e6d81f373a56",
-      "pageUpdatedAt": 1792400455.976,
-      "note": "Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed.",
+      "contentHash": "16d0d0236d4d",
+      "pageUpdatedAt": 1792411496.552,
+      "note": "Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v19 (court establishment): REG-23a, REG-23b (re-inserted, cl-e4SVsr-xBQ), §6.1 intro and example bullets (re-inserted), REG-31/35/36/38 cells, 2026-10-19 decision.",
       "calloutElementId": "cl-023ZWT-x7f"
     },
     "efiling-handover.md": {
@@ -1445,8 +1445,8 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "59de8ffdac20",
-      "pageUpdatedAt": 1792400049.674,
+      "contentHash": "6ef9c982416f",
+      "pageUpdatedAt": 1792411373.055,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -1470,13 +1470,13 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed."
+      "note": "Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v9 (court establishment): RLE table rows rewritten in place to insert RLE-00 at the top (row IDs now hold different requirements), Scrutiny officer row, §3 intro. A table cell holding only one inline code span (an ID like `RLE-00`) is stored with literal backticks by table_rows_manage; write it as \"`RLE-00`*\\u200b*\" (code span + an italic zero-width space) to get monospace. `sections` stale."
     },
     "scrutiny-registration-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
       "title": "Scrutiny and Registration Handover",
-      "contentHash": "e14362a8afbf",
-      "pageUpdatedAt": 1792402494.994,
+      "contentHash": "17fdca8d8b86",
+      "pageUpdatedAt": 1792411614.958,
       "calloutElementId": "cl-x8-19XCI0n",
       "sections": [
         {
@@ -1500,7 +1500,7 @@
           "elementId": "cl-9t1Ux3TNnf"
         }
       ],
-      "note": "Created 2026-10-19. Live views: Court Side table-OvYXzrn9IN, Citizen-Side table-i0Uw4lusP4, Notifications table-eqtvnthi7I, Events table-H3lq7d-M7W. sections hold the first block of each chunk only (Coda explodes chunks into native blocks); no per-chunk hashes. Patched 2026-10-19 to v3.2 (SCR-14, SCR-15). Status block cl-bz00hn-JBr."
+      "note": "Created 2026-10-19. Live views: Court Side table-OvYXzrn9IN, Citizen-Side table-i0Uw4lusP4, Notifications table-eqtvnthi7I, Events table-H3lq7d-M7W. sections hold the first block of each chunk only (Coda explodes chunks into native blocks); no per-chunk hashes. Patched 2026-10-19 to v3.2 (SCR-14, SCR-15). Status block cl-bz00hn-JBr. Patched 2026-10-19 to v3.3 (court establishment): §4 rebuilt (new blocks, open-questions grid grid-YzV7LNGvSc; old allocation table deleted), §2/§3/§5/§6/§7 wording, batch 14 as its own block after the log, glossary row appended."
     }
   }
 }

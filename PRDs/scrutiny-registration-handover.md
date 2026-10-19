@@ -396,5 +396,5 @@ as a suggestion. Supersedes batch 7's auto-assignment to a courtroom.
 | Scrutiny | Court-staff defect review before registration. |
 | Registration | Case-number assignment that moves the case to Cognisance. Needs the Case registerer role; done at its own stage, or at Scrutiny by someone who also holds the Scrutiny officer role (§7). |
 | Cognisance | Post-registration stage; end of this module. |
-| Court establishment | The level above the courtroom; holds one or more courtrooms. Scrutiny and registration happen here (§4). |
 | Registration type | The type a case is registered as, configured per state, each with its own number series (`SCR-13`). |
+| Court establishment | The level above the courtroom; holds one or more courtrooms. Scrutiny and registration happen here (§4). |
