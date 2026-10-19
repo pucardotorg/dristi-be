@@ -1,6 +1,6 @@
 # Account Creation — Developer & Agent Handover
 
-**Status:** v18 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v17 — 2026-10-19; **the Account approver role is held for the whole state deployment** (`REG-23b`), replacing v16's court establishment: every Account approver receives every Approve registration task (`REG-23a`). `Q-3` resolved and removed from §11. v16 — 2026-10-19; **the Account approver role is held per court establishment** (`REG-23b`), and the Approve registration task goes to every approver at the registration's establishment (`REG-23a`). How a registration is placed at an establishment is `Q-3`. v15 — 2026-10-19; **the Account approver role is not held per courtroom** (`REG-23b`, §5.3): it is held above courtroom level or independent of courtroom, and the Approve registration task goes to every approver in that scope. Which level is `Q-3`, narrowed. v14 — 2026-10-19; **Approve registration** court-side pending task added (`REG-23a`, §5.3; row in the Court Side master table, shown in §9). Who receives it is open (`Q-3`). v13 — 2026-10-18; the clerk setting is renamed **`clerkApproval`**: **`required`** (default — clerk number, ID card photo, account approver approval) or **`notRequired`** (OTP, name, terms; usable at once) — was `clerkRegistration: advocate | litigant` (`REG-25`–`REG-27`, §2, §5). v12 — 2026-10-18; **a Bar ID conflict blocks registration only when the existing number is verified** (`REG-19`): a backend-created account no one has logged in to does not block a new registration, which goes through approval as usual; what happens to the old account is `Q-2` (new). v11 — 2026-10-18; role names checked against [`court-roles.md`](court-roles.md): §6.1's example now names the **Scrutiny officer** role; no staff title holds a permission. v10 — 2026-10-18; **how a clerk registers is set per state** (§5.4,
+**Status:** v19 — 2026-10-19; **the Account approver role is held per court establishment** (`REG-23b`), replacing v17's whole state deployment; each state deployment has one establishment in this version, so every Account approver still receives every Approve registration task (`REG-23a`). Employee accounts carry establishment-level roles — Account approver, Scrutiny officer, Case registerer — alongside their courtroom list (`REG-31`, `REG-35`, `REG-36`); §6.1's example no longer has a Scrutiny officer mapped to five courtrooms. v18 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v17 — 2026-10-19; **the Account approver role is held for the whole state deployment** (`REG-23b`), replacing v16's court establishment: every Account approver receives every Approve registration task (`REG-23a`). `Q-3` resolved and removed from §11. v16 — 2026-10-19; **the Account approver role is held per court establishment** (`REG-23b`), and the Approve registration task goes to every approver at the registration's establishment (`REG-23a`). How a registration is placed at an establishment is `Q-3`. v15 — 2026-10-19; **the Account approver role is not held per courtroom** (`REG-23b`, §5.3): it is held above courtroom level or independent of courtroom, and the Approve registration task goes to every approver in that scope. Which level is `Q-3`, narrowed. v14 — 2026-10-19; **Approve registration** court-side pending task added (`REG-23a`, §5.3; row in the Court Side master table, shown in §9). Who receives it is open (`Q-3`). v13 — 2026-10-18; the clerk setting is renamed **`clerkApproval`**: **`required`** (default — clerk number, ID card photo, account approver approval) or **`notRequired`** (OTP, name, terms; usable at once) — was `clerkRegistration: advocate | litigant` (`REG-25`–`REG-27`, §2, §5). v12 — 2026-10-18; **a Bar ID conflict blocks registration only when the existing number is verified** (`REG-19`): a backend-created account no one has logged in to does not block a new registration, which goes through approval as usual; what happens to the old account is `Q-2` (new). v11 — 2026-10-18; role names checked against [`court-roles.md`](court-roles.md): §6.1's example now names the **Scrutiny officer** role; no staff title holds a permission. v10 — 2026-10-18; **how a clerk registers is set per state** (§5.4,
 `REG-25`–`REG-28`, new): as an advocate does (registration number, ID card photo,
 account approver approval — the default), or as a litigant does (OTP, name, terms; no
 approval). Either way the result is a clerk account. **Court staff are described by
@@ -228,13 +228,15 @@ photo).
 `REG-23a` — each submission and resubmission raises an **Approve registration** pending
 task for the Account approver role, closed when the registration is approved or rejected.
 Its attributes are in the Court Side pending-tasks view (§9). It goes to **every** Account
-approver in the state deployment, and any of them can act on it
+approver at the court establishment, and any of them can act on it
 ([`court-roles.md`](court-roles.md) `RLE-05`).
 
-`REG-23b` — the **Account approver** role is held for the **whole state deployment**, not
-per courtroom ([`court-roles.md`](court-roles.md) `RLE-02c`). Working in, or switching
-to, a courtroom does not change whether a person can approve registrations. Splitting
-registrations among approvers is not part of this version.
+`REG-23b` — the **Account approver** role is held **per court establishment**, not per
+courtroom ([`court-roles.md`](court-roles.md) `RLE-02c`). Working in, or switching to, a
+courtroom does not change whether a person can approve registrations. Each state
+deployment has one court establishment in this version (`RLE-00`); placing a registration
+at one of several establishments, and splitting registrations among approvers, are not
+part of this version.
 
 `REG-24` **[OWNER]** — while **Pending Approval**, the user has **no access** from
 their advocate/clerk account. If they also have a litigant account (same phone number),
@@ -258,7 +260,7 @@ No self-registration. **[OWNER]** Backend-only is acceptable; no UI needed.
 | ID | Requirement | Notes |
 | --- | --- | --- |
 | `REG-30` | Account created via HRMS or backend | No user-facing registration flow |
-| `REG-31` | **Roles** assigned during creation, **per courtroom** | One or more roles from [`court-roles.md`](court-roles.md) for each courtroom on the account's list (`REG-35`); they may differ by courtroom (`RLE-02a`), and are changed afterwards the same way (`RLE-03`). The Account approver role is assigned for the whole state deployment, not per courtroom (`REG-23b`) |
+| `REG-31` | **Roles** assigned during creation, **per courtroom** | One or more roles from [`court-roles.md`](court-roles.md) for each courtroom on the account's list (`REG-35`); they may differ by courtroom (`RLE-02a`), and are changed afterwards the same way (`RLE-03`). The Account approver, Scrutiny officer and Case registerer roles are assigned for the court establishment, not per courtroom (`RLE-02c`, `REG-23b`) |
 | `REG-32` | System generates an initial password | |
 | `REG-33` | Credentials emailed to the user | User logs in with the emailed password |
 
@@ -267,7 +269,7 @@ requirement.
 
 ## 6.1 Courtroom mapping and login
 
-Every court employee is **mapped to one or more courtrooms**. Formally, each person
+Every court employee who works in a courtroom is **mapped to one or more courtrooms**; roles held at the court establishment need no courtroom (`RLE-02c`). Formally, each person
 works in one courtroom. In practice this doesn't always hold — one person may need to cover more than one courtroom
 — so the design accommodates it:
 
@@ -275,9 +277,11 @@ works in one courtroom. In practice this doesn't always hold — one person may 
 every employee has **one account** with a list of assigned courtrooms. After login, they
 select which courtroom they are working in. This means:
 
-- A person who scrutinises filings for 5 courtrooms has one account with 5 courtrooms
-  in their list, each carrying the **Scrutiny officer** role ([`court-roles.md`](court-roles.md)). They pick one after login and
+- A person who drafts orders for 2 courtrooms has one account with 2 courtrooms in
+  their list, each carrying the **Order drafter** role ([`court-roles.md`](court-roles.md)). They pick one after login and
   see that courtroom's cases. They can switch without logging out.
+- A person who scrutinises filings for every courtroom holds the **Scrutiny officer** role
+  once, at the court establishment (`RLE-02c`), not once per courtroom.
 - A person who is later asked to cover a second courtroom just gets that courtroom added
   to their list, with the roles they hold there — no new account, no architecture change.
 - A person in a single courtroom has a list of one — the selector is still there but
@@ -285,10 +289,10 @@ select which courtroom they are working in. This means:
 
 | ID | Requirement | Notes |
 | --- | --- | --- |
-| `REG-35` | Each employee account carries a list of **assigned courtrooms** | Set during backend creation |
-| `REG-36` | After login, the employee selects which courtroom to work in from their assigned list. The roles they hold in that courtroom are the ones that apply | If the employee is only mapped to one court room, this selection is not needed.  |
+| `REG-35` | Each employee account carries a list of **assigned courtrooms**, and any roles it holds at the **court establishment** (`RLE-02c`) | Set during backend creation. The list may be empty for someone who holds only establishment roles |
+| `REG-36` | After login, the employee selects which courtroom to work in from their assigned list. The roles they hold in that courtroom apply, together with their establishment roles, which apply whichever courtroom is selected | If the employee is mapped to one courtroom or none, this selection is not needed |
 | `REG-37` | The employee can **switch courtrooms** without logging out | |
-| `REG-38` | Adding or removing a courtroom from an employee's list, or changing the roles they hold in one, is a backend/admin operation | No self-service |
+| `REG-38` | Adding or removing a courtroom from an employee's list, or changing the roles they hold in one or at the establishment, is a backend/admin operation | No self-service |
 
 ---
 
@@ -364,6 +368,11 @@ filter: PRDs.Contains("account-creation-handover")
 ---
 
 # 10. Owner decisions log
+
+**2026-10-19** — A court establishment sits above the courtroom. The Account approver,
+Scrutiny officer and Case registerer roles are held per establishment (`REG-23b`,
+`REG-31`). Each state deployment has one establishment for now; placing registrations
+at one of several is for later.
 
 **2026-10-18** — A Bar ID already in the system with a different mobile number blocks a
 new registration only when that number has been verified by OTP; a backend-created

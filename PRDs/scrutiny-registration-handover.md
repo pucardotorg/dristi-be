@@ -1,6 +1,6 @@
 # Scrutiny and Registration — Developer & Agent Handover
 
-**Status:** v3.2 — 2026-10-19; **oath review** (`SCR-14`, new): each oath is listed with whose it is and when it was recorded, plays in the centre panel, is flagged on its own, and shows when it carried over from an earlier round; **paper upload reason** shown to the scrutiny officer (`SCR-15`, new). Oath now at [`efiling-handover.md`](efiling-handover.md) §18.2. v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling-handover.md`](efiling-handover.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
+**Status:** v3.3 — 2026-10-19; **cases go to the court establishment first** (§4): the Scrutiny officer and Case registerer roles are held per court establishment, not per courtroom, and the Scrutiny officer **chooses the courtroom** when forwarding or registering (`SCR-16`, new). Automatic courtroom allocation is removed; a later version will suggest a courtroom. Two questions open (`Q-1`, `Q-2`, §4). v3.2 — 2026-10-19; **oath review** (`SCR-14`, new): each oath is listed with whose it is and when it was recorded, plays in the centre panel, is flagged on its own, and shows when it carried over from an earlier round; **paper upload reason** shown to the scrutiny officer (`SCR-15`, new). Oath now at [`efiling-handover.md`](efiling-handover.md) §18.2. v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling-handover.md`](efiling-handover.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
 court-side rows of its role matrix and lifecycle, and the scrutiny and registration
 entries of its decisions log and glossary). Requirement IDs unchanged. Changes to these
 sections before this date are in the Status line of
@@ -57,7 +57,7 @@ predicates and filer permissions are in [`efiling-handover.md`](efiling-handover
 | Register at Scrutiny ² | ✓ | ✓ |
 
 ¹ Only for someone who does **not** also hold the Case registerer role — see `SCR-11`.
-² Needs **both** roles in the courtroom — see `SCR-11` (§7).
+² Needs **both** roles at the court establishment — see `SCR-11` (§7).
 
 ---
 
@@ -76,46 +76,50 @@ in [`efiling-handover.md`](efiling-handover.md) §4.
 | Registration | Send Back | Pending Correction |
 
 - Scrutiny → Register → Cognisance is available only to a person who holds both the
-  Scrutiny officer and Case registerer roles in the courtroom, and replaces Forward for
+  Scrutiny officer and Case registerer roles at the court establishment, and replaces Forward for
   them; a case registered that way never reaches the Registration stage. See `SCR-11` (§7).
 - `LIFE-11` — send-backs may repeat without limit.
 
 ---
 
-# 4. Case routing — courtroom and roles
+# 4. Case routing — court establishment and courtroom
 
-A court establishment contains one or more courtrooms. Each courtroom has a magistrate,
-a scrutiny officer, a bench clerk, and dedicated support staff (steno / typist / judgment
-writer). Bench clerks and support staff are strictly 1:1 per courtroom. A single scrutiny
-officer may in practice handle multiple courtrooms (Gujarat today: one officer across 5
-courtrooms).
+A court establishment contains one or more courtrooms ([`court-roles.md`](court-roles.md)
+`RLE-00`). Each state deployment has one court establishment in this version; which
+establishment a filed case goes to, when there is more than one, is not part of this
+version.
 
-Who does scrutiny and registration is not fixed by these seats: it is whoever holds the
-**Scrutiny officer** or **Case registerer** role in that courtroom
-([`court-roles.md`](court-roles.md) `RLE-02a`).
+The **Scrutiny officer** and **Case registerer** roles are held at the court
+establishment, not in a courtroom ([`court-roles.md`](court-roles.md) `RLE-02c`). Who
+holds them is not fixed by any seat: in Gujarat today one person scrutinises for five
+courtrooms.
 
-After a case is filed, signed, and paid, it is **automatically assigned to a courtroom**,
-and its scrutiny task goes to those who hold the Scrutiny officer role there.
+After a case is filed, signed and paid, it goes to the **court establishment**, with no
+courtroom. Its scrutiny task goes to those who hold the Scrutiny officer role there.
 
-**The allocation logic is configurable per court establishment.** The system carries all
-possible allocation methods; which one applies is a deployment configuration.
+`SCR-16` **The Scrutiny officer chooses the courtroom** the case goes to, from the
+establishment's courtrooms, as part of **Forward for registration** or **Register at
+Scrutiny** (§5, `SCR-06`). Where the establishment has **one** courtroom, no choice is
+shown and the case goes to it. Send back does not choose a courtroom. From Cognisance
+onward, the case's work goes to the holders of roles in that courtroom.
 
-| Method | Where used |
-|---|---|
-| Single courtroom — no allocation needed | Kerala, Punjab (Panchkula) |
-| Institution-to-courtroom mapping + default fallback | Gujarat (Phase 1) |
+There is no automatic allocation in this version; nothing is pre-selected. A later
+version will **suggest** a courtroom that the Scrutiny officer can change — for example
+from Gujarat's mapping of financial institutions to courtrooms (HDFC → Courtroom A, with
+a default for filers who match no mapping). The filer never selects a courtroom. Moving a
+registered case to another courtroom is outside this module.
 
-Gujarat Phase 1: financial institutions are mapped to specific courtrooms (e.g. HDFC →
-Courtroom A). Filers who don't match any mapping go to a default fallback courtroom. The
-filer does not select a courtroom. The CJM retains authority to transfer cases between
-magistrates to balance workload.
+| # | Open question | Blocks |
+| --- | --- | --- |
+| `Q-1` | After a send-back, the case returns to Scrutiny. Is the courtroom chosen earlier kept or pre-selected, or does the Scrutiny officer choose afresh? | `SCR-16` on resubmission |
+| `Q-2` | At Registration, can the Case registerer change the courtroom the Scrutiny officer chose? | `SCR-08`, `SCR-16` |
 
 ---
 
 # 5. Scrutiny
 
 A case enters Scrutiny after signing and payment complete (§3). A holder of the
-courtroom's **Scrutiny officer** role reviews the submitted case for defects before
+establishment's **Scrutiny officer** role reviews the submitted case for defects before
 forwarding it for registration.
 
 ## How a case reaches the list — pending tasks
@@ -131,8 +135,8 @@ tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-Kztr
 filter: PRDs.Contains("scrutiny-registration-handover")
 ```
 
-Both are assigned to the holders of the courtroom's **Scrutiny officer** and **Case
-registerer** roles respectively (§4), due **+0 days**, visible to **Only Users** (the
+Both are assigned to the holders of the court establishment's **Scrutiny officer** and
+**Case registerer** roles respectively (§4), due **+0 days**, visible to **Only Users** (the
 assignees; any one of them can act, [`court-roles.md`](court-roles.md) `RLE-05`). Neither carries a
 Category — the Category values are citizen-side only. Task attributes and the status
 lifecycle are in `pending-tasks-handover.md`.
@@ -212,9 +216,9 @@ decides whether to mark the field as an error (`SCR-02`).
 `SCR-06` Actions, each needing the role named:
 - **Send back** (Scrutiny officer) — only the fields, sections, and documents marked as
   errors are flagged to the filer (`REF-01`). Send-backs repeat without limit (`LIFE-11`).
-- **Forward for registration** (Scrutiny officer, **not** also Case registerer) — moves the case to Registration (§6). Where the state has more than one registration type, the officer chooses one first (`SCR-13`).
-- **Register** (Scrutiny officer **and** Case registerer) — finalises the registration
-  type (`SCR-13`), assigns the case number and moves the case directly to Cognisance,
+- **Forward for registration** (Scrutiny officer, **not** also Case registerer) — moves the case to Registration (§6). The officer first chooses the courtroom (`SCR-16`) and, where the state has more than one registration type, the type (`SCR-13`).
+- **Register** (Scrutiny officer **and** Case registerer) — chooses the courtroom
+  (`SCR-16`), finalises the registration type (`SCR-13`), assigns the case number and moves the case directly to Cognisance,
   skipping Registration entirely (`SCR-11`, `SCR-12`).
 
 ---
@@ -225,7 +229,7 @@ Applies only to a case forwarded from Scrutiny. A case registered at Scrutiny (�
 never reaches this stage or the *Register case* task below.
 
 `SCR-07` Forwarding closes the *Scrutinise case* task and creates a ***Register case***
-pending task for the holders of the courtroom's **Case registerer** role (§4) — that
+pending task for the holders of the court establishment's **Case registerer** role (§4) — that
 task is their list of cases to register (`SCR-09`).
 
 `SCR-08` Two actions, both needing the **Case registerer** role:
@@ -277,10 +281,10 @@ practice the case is registered at Scrutiny and the type is chosen once.
 # 7. Registering at Scrutiny
 
 There is no setting for where a case is registered. It follows from the roles the person
-at Scrutiny holds in that courtroom ([`court-roles.md`](court-roles.md) `RLE-02a`).
+at Scrutiny holds at the court establishment ([`court-roles.md`](court-roles.md) `RLE-02c`).
 
-`SCR-11` A person who holds **both** the Scrutiny officer and the Case registerer roles in
-the courtroom gets **Register** and Send back at Scrutiny. They do **not** get Forward
+`SCR-11` A person who holds **both** the Scrutiny officer and the Case registerer roles at
+the court establishment gets **Register** and Send back at Scrutiny. They do **not** get Forward
 for registration: they would only be forwarding the case to themselves. A person who holds only the Scrutiny
 officer role gets Forward for registration and Send back, not Register. A court that wants
 every case checked by two people gives the two roles to different people.
@@ -376,6 +380,11 @@ the Scrutiny officer and Case registerer roles in the courtroom can register at 
 (batch 13) — 2026-10-19: registration type per state (`SCR-13`) — Kerala one, Gujarat
 three (eCC, eCR EN, eCR MA), Punjab & Haryana one (NACT); chosen at Forward, editable and
 final at Register; in Gujarat the scrutiny officer and registrar are the same person.
+(batch 14) — 2026-10-19: a court establishment sits above the courtroom; the Scrutiny
+officer and Case registerer roles are held there. A filed case goes to the establishment,
+and the Scrutiny officer chooses its courtroom at Forward or Register (`SCR-16`). One
+establishment per state deployment for now. Automatic courtroom allocation comes later,
+as a suggestion. Supersedes batch 7's auto-assignment to a courtroom.
 
 ---
 
@@ -387,4 +396,5 @@ final at Register; in Gujarat the scrutiny officer and registrar are the same pe
 | Scrutiny | Court-staff defect review before registration. |
 | Registration | Case-number assignment that moves the case to Cognisance. Needs the Case registerer role; done at its own stage, or at Scrutiny by someone who also holds the Scrutiny officer role (§7). |
 | Cognisance | Post-registration stage; end of this module. |
+| Court establishment | The level above the courtroom; holds one or more courtrooms. Scrutiny and registration happen here (§4). |
 | Registration type | The type a case is registered as, configured per state, each with its own number series (`SCR-13`). |
