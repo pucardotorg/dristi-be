@@ -251,8 +251,8 @@
     "order-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
       "title": "Order Generation",
-      "contentHash": "593dba34f4e7",
-      "pageUpdatedAt": 1792500336.581,
+      "contentHash": "f002c0a22254",
+      "pageUpdatedAt": 1792501081.334,
       "calloutElementId": "eca-DluhcPwJvd",
       "sections": [
         {
@@ -356,7 +356,7 @@
           "hash": "9e1da0487ee1"
         }
       ],
-      "note": "Force-rebuilt 2026-10-20 at the owner's request from commit dccbc03 (v8.1); the page's three old comment threads to Abhiram were discarded. The title chunk was split at the 'v8 —' history line to stay under 9,500 chars (key '#1'). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. Callout is now a short 'Last synced · version' line, not the full Status text. sections hold the first block of each chunk only (Coda explodes chunks into native blocks and grids). The local file already has later v8.2 edits (PUB-04 / ADY-09) that were deliberately NOT synced, pending the owner's review of a-diary.md."
+      "note": "Force-rebuilt 2026-10-20 at the owner's request from commit dccbc03 (v8.1); the page's three old comment threads to Abhiram were discarded. The title chunk was split at the 'v8 —' history line to stay under 9,500 chars (key '#1'). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. Callout is now a short 'Last synced · version' line, not the full Status text. sections hold the first block of each chunk only (Coda explodes chunks into native blocks and grids). Patched in place 2026-10-20 to v8.2: status, callout, PUB-04 row (grid-g-AKZv512k)."
     },
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
@@ -1466,8 +1466,8 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "6ef9c982416f",
-      "pageUpdatedAt": 1792411373.055,
+      "contentHash": "6d383acb7ddb",
+      "pageUpdatedAt": 1792501026.616,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -1491,7 +1491,7 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v9 (court establishment): RLE table rows rewritten in place to insert RLE-00 at the top (row IDs now hold different requirements), Scrutiny officer row, §3 intro. A table cell holding only one inline code span (an ID like `RLE-00`) is stored with literal backticks by table_rows_manage; write it as \"`RLE-00`*\\u200b*\" (code span + an italic zero-width space) to get monospace. `sections` stale."
+      "note": "Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v9 (court establishment): RLE table rows rewritten in place to insert RLE-00 at the top (row IDs now hold different requirements), Scrutiny officer row, §3 intro. A table cell holding only one inline code span (an ID like `RLE-00`) is stored with literal backticks by table_rows_manage; write it as \"`RLE-00`*\\u200b*\" (code span + an italic zero-width space) to get monospace. `sections` stale. Patched in place 2026-10-20 to v9.2 (A-Diary editor/signer rows, Order data filler and Hearing controller rows, Magistrate rows in §3, status, callout); bold-only cells written with the italic zero-width-space trick. `sections` stale."
     },
     "scrutiny-registration-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
@@ -1522,6 +1522,46 @@
         }
       ],
       "note": "Created 2026-10-19. Live views: Court Side table-OvYXzrn9IN, Citizen-Side table-i0Uw4lusP4, Notifications table-eqtvnthi7I, Events table-H3lq7d-M7W. sections hold the first block of each chunk only (Coda explodes chunks into native blocks); no per-chunk hashes. Patched 2026-10-19 to v3.2 (SCR-14, SCR-15). Status block cl-bz00hn-JBr. Patched 2026-10-19 to v3.3 (court establishment): §4 rebuilt (new blocks, open-questions grid grid-YzV7LNGvSc; old allocation table deleted), §2/§3/§5/§6/§7 wording, batch 14 as its own block after the log, glossary row appended."
+    },
+    "a-diary.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-pKkyj_LFi4",
+      "title": "A-Diary",
+      "contentHash": "518b8f502149",
+      "pageUpdatedAt": 1792501114.179,
+      "calloutElementId": "cl-yNgT6gDmxc",
+      "sections": [
+        {
+          "key": "# A-Diary",
+          "elementId": "cl-PRWDB9507R",
+          "hash": "19eb7e60cb59"
+        },
+        {
+          "key": "## 1. Context",
+          "elementId": "cl-P84gJfd1wm",
+          "hash": "29d2ed8acbb2"
+        },
+        {
+          "key": "## 2. The register",
+          "elementId": "cl-W_V3qoGGU9",
+          "hash": "7fa200e7fb92"
+        },
+        {
+          "key": "## 3. Where entries come from",
+          "elementId": "cl-koz4fQvF7e",
+          "hash": "da7868208280"
+        },
+        {
+          "key": "## 4. Editing an entry",
+          "elementId": "cl-HbrGSuRcJD",
+          "hash": "99d3b6aebf30"
+        },
+        {
+          "key": "## 5. Signing",
+          "elementId": "cl-sZe5v8mx-8",
+          "hash": "d7dc83927f39"
+        }
+      ],
+      "note": "Created 2026-10-20. sections hold the first block of each chunk only."
     }
   }
 }
