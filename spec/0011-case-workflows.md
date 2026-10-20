@@ -256,54 +256,87 @@ All models inherit `apps.core.models.BaseModel`. Definition models also inherit
 
 #### 2.1 `WorkflowDefinition`
 
+A named, versioned workflow that belongs to a single `case_type`.
+
 | Field | Type | Notes |
 | --- | --- | --- |
 | `case_type` | `CharField(32, db_index=True)` | a `cases.CaseType` value, e.g. `CHEQUE_BOUNCE` |
-| `version` | `PositiveIntegerField` | monotonic per case type |
-| `name` / `description` | `CharField(255)` / `TextField(blank=True)` | |
-| `initial_state` | `CharField(64)` | a state of this definition |
+| `version` | `PositiveIntegerField` | monotonic per case type, e.g. `1`, `2` |
+| `name` | `CharField(255)` | human-readable name, e.g. "Cheque Bounce — v1" |
+| `description` | `TextField(blank=True)` | optional documentation, e.g. what changed from the previous version |
+| `initial_state` | `CharField(64)` | state key where new cases start, e.g. `draft` |
 | `is_active` | `BooleanField(default=False)` | the definition new cases start on |
-| `is_locked` | `BooleanField(default=False)` | set when the first instance is created; children become read-only |
+| `is_locked` | `BooleanField(default=False)` | set when the first instance is created; states, transitions, secondary stages and task templates become read-only |
 
-`UniqueConstraint(case_type, version)`;
-`UniqueConstraint(case_type, condition=Q(is_active=True))`.
+Constraints:
+
+- `UniqueConstraint(case_type, version)`.
+- `UniqueConstraint(case_type, condition=Q(is_active=True))` — at most one active definition per case type.
+
+Validation:
+
+- `initial_state` must match a `WorkflowState.state_key` of this definition.
+- `case_type` must be a registered plugin's `case_type` (#6).
 
 A locked definition is the snapshot a running case follows. A change is a new
 version: clone, edit, activate. Running cases stay on their version (question 3).
 
 #### 2.2 `WorkflowState`
 
+A state in a workflow.
+
 | Field | Type | Notes |
 | --- | --- | --- |
 | `workflow` | `FK(WorkflowDefinition, on_delete=CASCADE)` | |
-| `state_key` | `CharField(64)` | `^[a-z][a-z0-9_]*$` |
-| `label` | `CharField(255)` | |
-| `stage_key` | `CharField(64)` | the primary stage this state belongs to (#3.1) |
-| `case_status` | `CharField(32, blank=True)` | the `Case.status` this state projects to (#3.3) |
-| `is_terminal` | `BooleanField(default=False)` | |
-| `is_sticky` | `BooleanField(default=False)` | wildcard transitions never leave a sticky state (#4.3); Post-Judgement, Post-Disposal, Long Pending Register |
-| `sequence` | `PositiveSmallIntegerField` | display order |
+| `state_key` | `CharField(64)` | stable machine identifier, e.g. `draft`, `scrutiny`, `pending_correction`, `registration`, `cognizance` |
+| `label` | `CharField(255)` | human-readable label, e.g. "Pending correction" |
+| `stage_key` | `CharField(64)` | the primary stage this state belongs to (#3.1), e.g. `filing` for `draft`, `pending_signature` and `pending_payment` |
+| `case_status` | `CharField(32, blank=True)` | the `Case.status` this state projects to (#3.3), e.g. `UNDER_SCRUTINY` for `scrutiny`; empty leaves it unchanged |
+| `is_terminal` | `BooleanField(default=False)` | `True` for final states, e.g. `deleted` |
+| `is_sticky` | `BooleanField(default=False)` | wildcard transitions never leave a sticky state (#4.3), e.g. `post_judgement`, `post_disposal`, `long_pending_register` |
+| `sequence` | `PositiveSmallIntegerField(default=0)` | display order; not enforced by the engine |
 
-`UniqueConstraint(workflow, state_key)`.
+Constraints:
+
+- `UniqueConstraint(workflow, state_key)`.
+
+Validation:
+
+- `state_key` must be lowercase snake_case: `^[a-z][a-z0-9_]*$`.
+- `stage_key` must be lowercase snake_case.
+- `case_status`, when set, must be a `cases.CaseStatus` value.
+- A terminal state cannot be sticky.
 
 #### 2.3 `WorkflowTransition`
 
+A permissible move from one state to another.
+
 | Field | Type | Notes |
 | --- | --- | --- |
 | `workflow` | `FK(WorkflowDefinition, on_delete=CASCADE)` | |
-| `transition_key` | `CharField(64)` | unique per workflow, `^[a-z][a-z0-9_]*$` |
-| `label` | `CharField(255)` | the action label, e.g. "Send back" |
-| `from_state` | `CharField(64)` | a state key, or `*` (#4.3) |
-| `excluded_from_states` | `JSONField(default=list)` | with `*` only |
-| `to_state` | `CharField(64)` | |
-| `trigger` | `CharField(16, choices=TransitionTrigger)` | `MANUAL`, `EVENT`, `AUTOMATIC` |
-| `event_key` | `CharField(64, blank=True)` | required when `trigger = EVENT` |
-| `condition_config` | `JSONField(default=dict)` | #5 |
-| `required_permission` | `CharField(100, blank=True)` | `MANUAL` only; checked with the plugin's object check (#9.4) |
-| `priority` | `PositiveSmallIntegerField(default=100)` | among candidates for one event or key, the lowest priority whose condition passes fires |
+| `transition_key` | `CharField(64)` | stable identifier, unique per workflow, e.g. `send_back`, `forward`, `signed_pay` |
+| `label` | `CharField(255)` | the action label, e.g. "Send back", "Forward to magistrate" |
+| `from_state` | `CharField(64)` | a state key, e.g. `scrutiny`; or `*` for any non-terminal, non-sticky state (#4.3) |
+| `excluded_from_states` | `JSONField(default=list)` | with `*` only, e.g. `["draft", "scrutiny"]` |
+| `to_state` | `CharField(64)` | a state key, e.g. `pending_correction` |
+| `trigger` | `CharField(16, choices=TransitionTrigger)` | `MANUAL` (a user action), `EVENT` (dispatched by a module), `AUTOMATIC` (fires when its condition passes) |
+| `event_key` | `CharField(64, blank=True)` | required when `trigger = EVENT`, e.g. `PAYMENT_COMPLETED`, `ALL_SIGNED`, `HEARING_SCHEDULED` |
+| `condition_config` | `JSONField(default=dict, blank=True)` | data-driven conditions (#5), e.g. `{"field": "case.balance_due", "op": "gt", "value": 0}` |
+| `required_permission` | `CharField(100, blank=True)` | `MANUAL` only; a Django permission checked together with the plugin's object check (#9.4) |
+| `priority` | `PositiveSmallIntegerField(default=100)` | among candidates for one event or key, the lowest priority whose condition passes fires, e.g. `signed_pay` 10 before `signed_resubmit` 20 |
 
-Constraints: `UniqueConstraint(workflow, transition_key)`;
-`CheckConstraint`: `trigger != EVENT OR event_key != ''`.
+Constraints:
+
+- `UniqueConstraint(workflow, transition_key)`.
+- `CheckConstraint`: `trigger != EVENT OR event_key != ''`.
+
+Validation:
+
+- `from_state` (unless `*`), `to_state` and every entry of `excluded_from_states` must exist on the same workflow.
+- `excluded_from_states` must be empty unless `from_state = *`.
+- `from_state != to_state`.
+- `transition_key` must be lowercase snake_case; `event_key` must be upper snake case.
+- Every field in `condition_config` must resolve (#5).
 
 Several transitions may share `from_state` and `to_state`, and several may share
 an `event_key`; they differ by condition. Two transitions out of `scrutiny` to
@@ -312,16 +345,26 @@ by states.
 
 #### 2.4 `SecondaryStageDefinition`
 
+A secondary stage that runs alongside the primary stage, started and ended by
+events (case lifecycle §4).
+
 | Field | Type | Notes |
 | --- | --- | --- |
 | `workflow` | `FK(WorkflowDefinition, on_delete=CASCADE)` | |
-| `stage_key` | `CharField(64)` | e.g. `delay_condonation`, `summons` |
-| `label` | `CharField(255)` | |
+| `stage_key` | `CharField(64)` | e.g. `delay_condonation`, `summons`, `warrant` |
+| `label` | `CharField(255)` | human-readable label, e.g. "Summons" |
 | `start_event` | `CharField(64)` | e.g. `SUMMONS_TRIGGERED` |
-| `start_condition` | `JSONField(default=dict)` | #5; e.g. Delay Condonation starts on `CASE_REGISTERED` only when `case.delay_applicable` |
+| `start_condition` | `JSONField(default=dict, blank=True)` | #5; e.g. Delay Condonation starts on `CASE_REGISTERED` only when `case.delay_applicable` |
 | `end_event` | `CharField(64)` | e.g. `ALL_SUMMONS_TERMINAL` |
 
-`UniqueConstraint(workflow, stage_key)`.
+Constraints:
+
+- `UniqueConstraint(workflow, stage_key)`.
+
+Validation:
+
+- `stage_key` must be lowercase snake_case and must not equal any primary `stage_key` of the workflow.
+- `start_event` and `end_event` must differ.
 
 #### 2.5 `TaskDefinition`
 
@@ -329,19 +372,27 @@ The pending-tasks attributes that do not change per case.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `task_key` | `CharField(64, unique=True)` | e.g. `scrutinise_case`, `register_case`, `take_cognizance`, `review_application`, `pay_fee` |
-| `name` | `CharField(255)` | template with `{variables}`, e.g. `Pay ₹{amount} — {fee_head}` (pending tasks attribute 1) |
-| `action_label` | `CharField(64)` | button text, e.g. "Make Payment" (attribute 12) |
-| `task_type` | `CharField(16, choices=TaskType)` | `HUMAN`, `AUTOMATIC` |
-| `handler_path` | `CharField(255, blank=True)` | required for `AUTOMATIC` |
+| `task_key` | `CharField(64, unique=True)` | stable identifier, e.g. `scrutinise_case`, `register_case`, `take_cognizance`, `review_application`, `pay_fee` |
+| `name` | `CharField(255)` | template with `{variables}`, e.g. `Pay ₹{amount} — {fee_head}`, `Scrutinise {case_title}` (pending tasks attribute 1) |
+| `description` | `TextField(blank=True)` | what the task is for |
+| `action_label` | `CharField(64)` | button text, e.g. "Make Payment", "Scrutinise" (attribute 12) |
+| `task_type` | `CharField(16, choices=TaskType)` | `HUMAN` (a person acts), `AUTOMATIC` (a handler runs) |
+| `handler_path` | `CharField(255, blank=True)` | dotted path to a `BaseTaskHandler` (#7.7), e.g. `apps.scrutiny.handlers.AllocateCourtroomHandler`; required for `AUTOMATIC` |
 | `side` | `CharField(16, choices=TaskSide)` | `COURT`, `CITIZEN`, `SYSTEM` |
 | `category` | `CharField(16, choices=TaskCategory, blank=True)` | citizen side only: `PAY`, `SIGN`, `FILE_SUBMIT`, `OTHERS` (attribute 6) |
 | `visibility` | `CharField(16, choices=TaskVisibility)` | `USERS_ONLY`, `SAME_SIDE`, `COURTROOM` (attribute 10) |
 | `link` | `CharField(255)` | client route template, e.g. `/employee/scrutiny/{filing_number}` (attribute 7) |
-| `config_schema` | `JSONField(default=dict)` | for template and open-time config |
+| `config_schema` | `JSONField(default=dict, blank=True)` | JSON Schema for `WorkflowTaskTemplate.config` and the `context` a module passes at open |
 
 Creation and closure triggers (attributes 3 and 4) are documentation; they
 live in the PRD's master table and in the code that opens and closes the task.
+
+Validation:
+
+- `task_key` must be lowercase snake_case.
+- `handler_path` is required when `task_type = AUTOMATIC` and must import a `BaseTaskHandler` subclass; it must be empty for `HUMAN`.
+- `category` is required when `side = CITIZEN` and must be empty otherwise.
+- Every `{variable}` in `name` and `link` must be declared in `config_schema`.
 
 #### 2.6 `WorkflowTaskTemplate`
 
@@ -349,29 +400,47 @@ A task the engine opens **when the case enters a state**.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `state` | `FK(WorkflowState, on_delete=CASCADE)` | |
-| `task` | `FK(TaskDefinition, on_delete=PROTECT)` | |
-| `close_on` | `CharField(16, choices=CloseOn)` | `STATE_EXIT` — closes when the case leaves the state; `EXPLICIT` — stays open across stage changes until a module completes it (#7.2) |
-| `blocks_transitions` | `JSONField(default=list)` | transition keys that cannot fire while it is open |
-| `assignee_rule` | `JSONField` | #7.3 |
-| `due_in_days` | `PositiveSmallIntegerField(default=0)` | due date = entry date + days |
-| `first_visit_only` | `BooleanField(default=False)` | e.g. courtroom allocation |
-| `execution_order` | `PositiveSmallIntegerField(default=0)` | automatic tasks |
-| `config` | `JSONField(default=dict)` | |
+| `state` | `FK(WorkflowState, on_delete=CASCADE)` | the state whose entry opens the task, e.g. `scrutiny` |
+| `task` | `FK(TaskDefinition, on_delete=PROTECT)` | e.g. `scrutinise_case` |
+| `close_on` | `CharField(16, choices=CloseOn)` | `STATE_EXIT` — closes when the case leaves the state; `EXPLICIT` — stays open across stage changes until a module completes it (#7.2), e.g. `take_cognizance` |
+| `blocks_transitions` | `JSONField(default=list)` | transition keys that cannot fire while it is open, e.g. `["forward"]` |
+| `assignee_rule` | `JSONField` | who the task is for (#7.3), e.g. `{"type": "court_designation", "designations": ["MAGISTRATE"]}` |
+| `due_in_days` | `PositiveSmallIntegerField(default=0)` | due date = entry date + days; `0` is due the same day (`SCR-09`) |
+| `first_visit_only` | `BooleanField(default=False)` | open only on the first entry, e.g. `allocate_courtroom` |
+| `execution_order` | `PositiveSmallIntegerField(default=0)` | order in which automatic tasks run |
+| `config` | `JSONField(default=dict, blank=True)` | template-specific configuration, e.g. `{"max_retries": 3}` |
 
-`UniqueConstraint(state, task)`.
+Constraints:
+
+- `UniqueConstraint(state, task)`.
+
+Validation:
+
+- `config` must validate against `task.config_schema`.
+- Every key in `blocks_transitions` must be a transition of the same workflow whose `from_state` is this state (or `*`).
+- `assignee_rule` must be a known rule type (#7.3); `{"type": "none"}` only for `AUTOMATIC` tasks.
+- `close_on = EXPLICIT` only for `HUMAN` tasks.
 
 #### 2.7 `CaseWorkflowInstance`
 
+Runtime snapshot of a workflow for a specific case.
+
 | Field | Type | Notes |
 | --- | --- | --- |
-| `case` | `OneToOneField("cases.Case", on_delete=PROTECT, related_name="workflow")` | |
+| `case` | `OneToOneField("cases.Case", on_delete=PROTECT, related_name="workflow")` | the case whose workflow is tracked |
 | `workflow` | `FK(WorkflowDefinition, on_delete=PROTECT)` | the locked version followed |
-| `current_state` | `CharField(64)` | |
-| `current_visit` | `FK("CaseWorkflowStateVisit", null=True, on_delete=PROTECT)` | |
-| `status` | `CharField(16, choices=InstanceStatus)` | `ACTIVE`, `PAUSED`, `COMPLETED` |
-| `version` | `PositiveIntegerField(default=0)` | +1 on every transition; the concurrency token (#9.3) |
-| `completed_at` | `DateTimeField(null=True)` | |
+| `current_state` | `CharField(64)` | current `WorkflowState.state_key`, e.g. `scrutiny` |
+| `current_visit` | `FK("CaseWorkflowStateVisit", null=True, on_delete=PROTECT)` | the open visit of `current_state` |
+| `status` | `CharField(16, choices=InstanceStatus)` | `ACTIVE`, `PAUSED` (no transition fires except an admin force), `COMPLETED` (terminal state reached) |
+| `version` | `PositiveIntegerField(default=0)` | +1 on every transition; the concurrency token (#9.4) |
+| `completed_at` | `DateTimeField(null=True, blank=True)` | set when entering a terminal state |
+
+Properties / behaviour:
+
+- On creation, `current_state` is copied from `workflow.initial_state` and the first visit is opened.
+- `is_terminal`: `True` if the current state is terminal.
+- `is_active`: `True` if `status == ACTIVE` and not terminal.
+- `current_state`, `current_visit`, `status` and `version` are written only by the engine (#4.2).
 
 #### 2.8 `CaseWorkflowStateVisit`
 
@@ -380,23 +449,32 @@ One row each time the case enters a state. Append-only.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `instance` | `FK(CaseWorkflowInstance, on_delete=CASCADE, related_name="visits")` | |
-| `state_key` / `stage_key` | `CharField(64)` | copied at entry |
-| `sequence` | `PositiveIntegerField` | 1, 2, 3 … per instance |
-| `visit_number` | `PositiveIntegerField` | how many times this state has been entered, including this one — the scrutiny round number |
-| `entered_at` / `exited_at` | `DateTimeField` / `DateTimeField(null=True)` | |
-| `entered_by_log` | `FK(CaseWorkflowTransitionLog, null=True)` | `NULL` only for the initial state |
+| `state_key` / `stage_key` | `CharField(64)` | copied at entry, e.g. `scrutiny` / `scrutiny` |
+| `sequence` | `PositiveIntegerField` | 1, 2, 3 … per instance, in the order the states were entered |
+| `visit_number` | `PositiveIntegerField` | how many times this state has been entered, including this one, e.g. `3` on the third entry into `scrutiny` — the scrutiny round number |
+| `entered_at` | `DateTimeField` | |
+| `exited_at` | `DateTimeField(null=True, blank=True)` | empty while the case is in this state |
+| `entered_by_log` | `FK(CaseWorkflowTransitionLog, null=True, on_delete=PROTECT)` | the transition that entered it; `NULL` only for the initial state |
 
-`UniqueConstraint(instance, sequence)`;
-`UniqueConstraint(instance, condition=Q(exited_at__isnull=True))`.
+Constraints:
+
+- `UniqueConstraint(instance, sequence)`.
+- `UniqueConstraint(instance, condition=Q(exited_at__isnull=True))` — one open visit per case.
+- `CheckConstraint`: `exited_at IS NULL OR exited_at >= entered_at`.
 
 #### 2.9 `CaseSecondaryStage`
+
+One row each time a secondary stage starts on a case. Append-only except for
+`ended_at` and `end_event`.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `instance` | `FK(CaseWorkflowInstance, on_delete=CASCADE, related_name="secondary_stages")` | |
-| `stage_key` | `CharField(64)` | |
-| `started_at` / `ended_at` | `DateTimeField` / `DateTimeField(null=True)` | |
-| `start_event` / `end_event` | `CharField(64)` / `CharField(64, blank=True)` | |
+| `stage_key` | `CharField(64)` | a `SecondaryStageDefinition.stage_key`, e.g. `summons` |
+| `started_at` | `DateTimeField` | |
+| `ended_at` | `DateTimeField(null=True, blank=True)` | empty while the stage is active |
+| `start_event` | `CharField(64)` | the event that started it, e.g. `SUMMONS_TRIGGERED` |
+| `end_event` | `CharField(64, blank=True)` | the event that ended it, e.g. `ALL_SUMMONS_TERMINAL` |
 
 `UniqueConstraint(instance, stage_key, condition=Q(ended_at__isnull=True))` —
 a secondary stage is either active or not; a second start while active is a
@@ -409,24 +487,29 @@ Every pending task of a case. One table, one list query.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `case` | `FK("cases.Case", on_delete=CASCADE, related_name="tasks")` | every task links to exactly one case (pending tasks §1) |
-| `task` | `FK(TaskDefinition, on_delete=PROTECT)` | |
-| `visit` | `FK(CaseWorkflowStateVisit, null=True, on_delete=CASCADE)` | set for state-bound tasks |
-| `template` | `FK(WorkflowTaskTemplate, null=True, on_delete=PROTECT)` | |
-| `reference_type` / `reference_id` | `CharField(32, blank=True)` / `UUIDField(null=True)` | what the task is about when not the case itself: `APPLICATION`, `PROCESS`, `ORDER`, `DEMAND`, `HEARING` |
+| `task` | `FK(TaskDefinition, on_delete=PROTECT)` | the kind of task, e.g. `scrutinise_case`, `pay_fee` |
+| `visit` | `FK(CaseWorkflowStateVisit, null=True, on_delete=CASCADE)` | set for state-bound tasks; empty for module-opened tasks |
+| `template` | `FK(WorkflowTaskTemplate, null=True, on_delete=PROTECT)` | the template that opened it; empty for module-opened tasks |
+| `reference_type` | `CharField(32, blank=True)` | what the task is about when not the case itself: `APPLICATION`, `PROCESS`, `ORDER`, `DEMAND`, `HEARING` |
+| `reference_id` | `UUIDField(null=True, blank=True)` | id of that thing, e.g. the application id for *Decide application* |
 | `name` | `CharField(255)` | rendered from the definition's template at open, e.g. "Pay ₹707.50 — Case filing fee" |
-| `link` | `CharField(255)` | rendered from the definition's template |
-| `status` | `CharField(16, choices=TaskStatus)` | `OPEN`, `COMPLETED`, `EXPIRED`, `ARCHIVED`, `FAILED` |
-| `court_id` | `UUIDField(null=True, db_index=True)` | court-side tasks |
+| `link` | `CharField(255)` | rendered from the definition's template, e.g. `/employee/scrutiny/F%2FAHM%2F2026%2F00341` |
+| `status` | `CharField(16, choices=TaskStatus)` | `OPEN`, `COMPLETED`, `EXPIRED`, `ARCHIVED`, `FAILED` (automatic tasks only) |
+| `court_id` | `UUIDField(null=True, db_index=True)` | court-side tasks: the courtroom whose staff may act |
 | `side` | `CharField(16, blank=True)` | citizen-side tasks: `COMPLAINANT`, `ACCUSED` |
-| `users` | `ArrayField(UUIDField)` | users who can act (attribute 5), resolved at open |
-| `claimed_by` / `claimed_at` | `FK(User, null=True)` / `DateTimeField(null=True)` | court-side only (#7.4) |
-| `due_date` | `DateField(null=True)` | attribute 2 |
-| `completed_by` / `completed_at` | | |
-| `closed_reason` | `CharField(32, blank=True)` | `STATE_EXITED`, `WINDOW_CLOSED`, `NO_LONGER_RELEVANT`, `SUPERSEDED` |
-| `archived_by` / `archived_at` | | |
-| `context` | `JSONField(default=dict)` | values used to render `name` and `link`, e.g. `amount` |
-| `result_payload` | `JSONField(default=dict)` | |
-| `attempt_count` / `error_message` | | automatic tasks |
+| `users` | `ArrayField(UUIDField, default=list)` | users who can act (attribute 5), resolved at open (#7.3) |
+| `claimed_by` | `FK(User, null=True, on_delete=SET_NULL)` | court-side only (#7.4), e.g. the scrutiny officer working the file |
+| `claimed_at` | `DateTimeField(null=True, blank=True)` | |
+| `due_date` | `DateField(null=True, blank=True)` | attribute 2, e.g. entry date + `due_in_days`, or the decision date for *Decide application* |
+| `completed_by` | `FK(User, null=True, on_delete=SET_NULL)` | `NULL` when completed by the system |
+| `completed_at` | `DateTimeField(null=True, blank=True)` | |
+| `closed_reason` | `CharField(32, blank=True)` | why an `EXPIRED` task closed: `STATE_EXITED`, `WINDOW_CLOSED`, `NO_LONGER_RELEVANT`, `SUPERSEDED` |
+| `archived_by` | `FK(User, null=True, on_delete=SET_NULL)` | |
+| `archived_at` | `DateTimeField(null=True, blank=True)` | |
+| `context` | `JSONField(default=dict, blank=True)` | values used to render `name` and `link`, e.g. `{"amount": "707.50", "fee_head": "Case filing fee"}` |
+| `result_payload` | `JSONField(default=dict, blank=True)` | output of an automatic task, or what the module recorded on completion |
+| `attempt_count` | `PositiveSmallIntegerField(default=0)` | automatic tasks |
+| `error_message` | `TextField(blank=True)` | last error of a failed automatic task |
 
 Constraints: `UniqueConstraint(visit, template, condition=Q(visit__isnull=False))`;
 `UniqueConstraint(task, reference_type, reference_id, condition=Q(status=OPEN) & Q(reference_id__isnull=False))`
@@ -437,18 +520,29 @@ Constraints: `UniqueConstraint(visit, template, condition=Q(visit__isnull=False)
 computed at read (pending tasks §3). Moving a due date is an update, never a
 transition.
 
+Validation:
+
+- `visit` and `template` are set together or not at all.
+- `reference_type` and `reference_id` are set together or not at all.
+- `court_id` is required when the definition's `side = COURT`; `side` is required when it is `CITIZEN`.
+- `claimed_by` must be in `users`.
+- `context` must validate against `task.config_schema`.
+
 #### 2.11 `CaseWorkflowTransitionLog`
+
+Audit trail of every state change.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `instance` | `FK(CaseWorkflowInstance, on_delete=CASCADE, related_name="logs")` | |
 | `transition` | `FK(WorkflowTransition, null=True, on_delete=PROTECT)` | `NULL` for an admin force |
-| `from_state` / `to_state` | `CharField(64)` | |
-| `trigger_type` | `CharField(16)` | `MANUAL`, `EVENT`, `AUTOMATIC`, `ADMIN` |
-| `event_key` | `CharField(64, blank=True)` | |
-| `triggered_by` | `FK(User, null=True)` | `NULL` for system |
-| `reason` | `TextField(blank=True)` | |
-| `metadata` | `JSONField(default=dict)` | caller context, e.g. `{"round_id": "…"}` |
+| `from_state` | `CharField(64)` | e.g. `scrutiny` |
+| `to_state` | `CharField(64)` | e.g. `pending_correction` |
+| `trigger_type` | `CharField(16, choices=TriggerType)` | `MANUAL`, `EVENT`, `AUTOMATIC`, `ADMIN` |
+| `event_key` | `CharField(64, blank=True)` | for `EVENT`, e.g. `PAYMENT_COMPLETED` |
+| `triggered_by` | `FK(User, null=True, on_delete=PROTECT)` | `NULL` for system and automatic transitions |
+| `reason` | `TextField(blank=True)` | optional comment; required for `ADMIN` |
+| `metadata` | `JSONField(default=dict, blank=True)` | caller context and condition snapshot, e.g. `{"round_id": "…", "item_count": 3}` |
 
 Append-only: `save()` refuses an existing row; admin is read-only.
 
