@@ -251,91 +251,112 @@
     "order-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
       "title": "Order Generation",
-      "contentHash": "e6258fcf4edb",
-      "pageUpdatedAt": 1792379639.704,
-      "calloutElementId": "eca-oTlEKfSkdl",
+      "contentHash": "593dba34f4e7",
+      "pageUpdatedAt": 1792500336.581,
+      "calloutElementId": "eca-DluhcPwJvd",
       "sections": [
         {
           "key": "# Order generation",
-          "elementId": "cl--j6wpchL-X",
-          "hash": "01ba4224dd61"
+          "elementId": "cl-KrRUqMchAG",
+          "hash": "461405cf65c7"
+        },
+        {
+          "key": "#1",
+          "elementId": "cl-6v-wGMVquO",
+          "hash": "4c188ec240a9"
         },
         {
           "key": "## 1. Context",
-          "elementId": "cl-By95iWrrU0",
-          "hash": "40c0fb856477"
+          "elementId": "cl-9mJZ5C9mLZ",
+          "hash": "f81e8f4ec267"
         },
         {
           "key": "## 2. Where the screen is used",
-          "elementId": "cl-uyceG1SEj8",
-          "hash": "e01500f0d2e4"
+          "elementId": "cl-gRXPfwdrGj",
+          "hash": "69d1f1450fdd"
         },
         {
           "key": "## 3. Roles",
-          "elementId": "cl-t1RmPK9tNi",
-          "hash": "151ae09e3e90"
+          "elementId": "cl-Jw2rX0qhuC",
+          "hash": "ca2a49a8c236"
         },
         {
           "key": "## 4. The screen",
-          "elementId": "cl-gxMOlUf2XO",
-          "hash": "7166b3084dcd"
+          "elementId": "cl-CCbQtJvC2L",
+          "hash": "a9d0e29bb09a"
         },
         {
           "key": "## 5. The order text",
-          "elementId": "cl-ISts_heZbV",
-          "hash": "7b1a81994ae6"
+          "elementId": "cl-FIghXs3Cye",
+          "hash": "d06364c01404"
         },
         {
           "key": "## 6. The order data",
-          "elementId": "cl-TtEDkVVSNd",
-          "hash": "a3b77eaeb8a0"
+          "elementId": "cl-VQCzs2WhAI",
+          "hash": "f4b77afb6f95"
         },
         {
           "key": "## 7. The draft",
-          "elementId": "cl-QIxous-XCE",
-          "hash": "9b54a947132e"
+          "elementId": "cl-Ie7F_aKRrm",
+          "hash": "9e7323c46ad4"
         },
         {
           "key": "## 8. Sending for signing",
-          "elementId": "cl-KSWnPUN8Eo",
-          "hash": "efe669f5d2d4"
+          "elementId": "cl-mlU7ZaLnCv",
+          "hash": "5f90dda8f43c"
         },
         {
           "key": "## 9. Attendance and the next hearing",
-          "elementId": "cl-qf1tzuwDlk",
-          "hash": "213363ef0fc8"
+          "elementId": "cl-4bBQD2T1qZ",
+          "hash": "e71eee62e118"
         },
         {
-          "key": "## 10. The hearing control — in a hearing only",
-          "elementId": "cl-Ecl_zTHXGC",
-          "hash": "308e482fe28f"
+          "key": "## 10. Hearings — in a hearing only",
+          "elementId": "cl-Bx9cn6i-Vj",
+          "hash": "c801f8eed7f0"
         },
         {
           "key": "## 11. Pending orders",
-          "elementId": "cl-8Qwm9ZNRUc",
-          "hash": "7c375f14c3f9"
+          "elementId": "cl-9-RD040EYR",
+          "hash": "d7f1ee74b156"
         },
         {
           "key": "## 12. Signing",
-          "elementId": "cl-hz-Uq13lhL",
-          "hash": "533ae235653f"
+          "elementId": "cl-zOlOhXEMCg",
+          "hash": "ea3594696246"
         },
         {
           "key": "## 13. Completing the order data and triggering",
-          "elementId": "cl-q8KT7wCKUn",
-          "hash": "fb1978f64123"
+          "elementId": "cl-tV4Oo6e4fa",
+          "hash": "8b35af40baba"
         },
         {
           "key": "## 14. Once triggered — what the order becomes",
-          "elementId": "cl-XZx7K3Xpgs",
-          "hash": "d37d105f8fe8"
+          "elementId": "cl-YFMg5vBUqW",
+          "hash": "e96998f7b44f"
         },
         {
-          "key": "## 15. Open questions",
-          "elementId": "cl-mbR336r3XX",
-          "hash": "39f5b39a38ce"
+          "key": "## 15. Pending tasks",
+          "elementId": "cl-4mzkGP3SFv",
+          "hash": "d0fde634a8a2"
+        },
+        {
+          "key": "view",
+          "elementId": "table-PXd-K2TdnW",
+          "hash": "9af9a8c6cfbb"
+        },
+        {
+          "key": "#18",
+          "elementId": "cl-m9zjNSffub",
+          "hash": "99612556a305"
+        },
+        {
+          "key": "## 16. Open questions",
+          "elementId": "cl-a0rFZ5JpxW",
+          "hash": "9e1da0487ee1"
         }
-      ]
+      ],
+      "note": "Force-rebuilt 2026-10-20 at the owner's request from commit dccbc03 (v8.1); the page's three old comment threads to Abhiram were discarded. The title chunk was split at the 'v8 —' history line to stay under 9,500 chars (key '#1'). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. Callout is now a short 'Last synced · version' line, not the full Status text. sections hold the first block of each chunk only (Coda explodes chunks into native blocks and grids). The local file already has later v8.2 edits (PUB-04 / ADY-09) that were deliberately NOT synced, pending the owner's review of a-diary.md."
     },
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
