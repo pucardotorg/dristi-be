@@ -924,7 +924,9 @@ class GateTests(OTPTestCase):
 
         response = self.client.get(reverse("gated-probe"))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(response.json()["detail"], "The current terms have not been accepted.")
+        [error] = response.json()["errors"]
+        self.assertEqual(error["code"], "E01007")
+        self.assertEqual(error["message"], "The current terms have not been accepted.")
 
         self.client.post(reverse("user-terms"), {"terms_accepted": True}, format="json")
         response = self.client.get(reverse("gated-probe"))
@@ -934,7 +936,9 @@ class GateTests(OTPTestCase):
         """With both missing, the refusal names the wizard, which takes the terms itself."""
         self.create_account()
         response = self.client.get(reverse("gated-probe"))
-        self.assertEqual(response.json()["detail"], "Registration is not complete.")
+        [error] = response.json()["errors"]
+        self.assertEqual(error["code"], "E01006")
+        self.assertEqual(error["message"], "Registration is not complete.")
 
 
 class ResponseEnvelopeTests(OTPTestCase):

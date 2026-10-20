@@ -58,10 +58,17 @@ class TermsAcceptanceTests(OTPTestCase):
 
     def test_acceptance_must_be_affirmative(self):
         """A missing or false acceptance is refused and nothing is recorded."""
-        for body in ({}, {"terms_accepted": False}):
+        for body, code in (({}, "E00002"), ({"terms_accepted": False}, "E01010")):
             with self.subTest(body=body):
                 response = self.client.post(reverse("user-terms"), body, format="json")
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(
+                    [
+                        {"code": e["code"], "field": e.get("field")}
+                        for e in response.json()["errors"]
+                    ],
+                    [{"code": code, "field": "terms_accepted"}],
+                )
 
         self.user.refresh_from_db()
         self.assertIsNone(self.user.terms_version_accepted)

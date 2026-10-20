@@ -53,6 +53,12 @@ class PasswordResetTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         return response
 
+    def assert_not_verified(self, response):
+        """Assert the reset step was refused for want of a live verification."""
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        [error] = response.json()["errors"]
+        self.assertEqual(error["code"], "E01014")
+
     def login(self, password, client=None):
         """Attempt a password login."""
         return (client or self.client).post(
@@ -78,20 +84,20 @@ class PasswordResetTests(OTPTestCase):
 
     def test_reset_without_verification_is_refused(self):
         """The reset step needs the verify step first."""
-        self.assertEqual(self.reset().status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assert_not_verified(self.reset())
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password(PASSWORD))
 
     def test_verification_is_bound_to_the_session(self):
         """Another client cannot use a session it did not verify in."""
         self.verified()
-        self.assertEqual(self.reset(client=APIClient()).status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assert_not_verified(self.reset(client=APIClient()))
 
     def test_reset_works_only_once(self):
         """A verified session sets one password, not several."""
         self.verified()
         self.reset()
-        self.assertEqual(self.reset().status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assert_not_verified(self.reset())
 
     def test_reset_after_the_window_is_refused(self):
         """The verification expires."""
@@ -100,14 +106,17 @@ class PasswordResetTests(OTPTestCase):
         session[SESSION_KEY]["verified_at"] = time.time() - 601
         session.save()
 
-        self.assertEqual(self.reset().status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assert_not_verified(self.reset())
 
     def test_weak_password_is_rejected_and_can_be_retried(self):
         """A rejected password does not spend the verification."""
         self.verified()
         response = self.reset("short")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("new_password", response.json())
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": "E01011", "field": "new_password"}],
+        )
 
         self.assertEqual(self.reset().status_code, status.HTTP_204_NO_CONTENT)
 
@@ -137,4 +146,6 @@ class PasswordResetTests(OTPTestCase):
 
         for response in (unknown_response, incomplete_response):
             self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-            self.assertEqual(response.json()["detail"], "Invalid or expired code.")
+            [error] = response.json()["errors"]
+            self.assertEqual(error["code"], "E01001")
+            self.assertEqual(error["message"], "Invalid or expired code.")

@@ -32,7 +32,7 @@ def run_password_validators(field, password, user):
     try:
         validate_password(password, user=user)
     except DjangoValidationError as exc:
-        raise serializers.ValidationError({field: list(exc.messages)}) from exc
+        raise errors.PASSWORD_REJECTED.validation_error({field: list(exc.messages)}) from exc
 
 
 class OTPRequestSerializer(serializers.Serializer):
@@ -141,7 +141,7 @@ class TermsAcceptanceSerializer(serializers.Serializer):
     def validate_terms_accepted(self, value):
         """A missing or false acceptance is refused rather than recorded."""
         if not value:
-            raise serializers.ValidationError("The terms must be accepted to continue.")
+            raise errors.TERMS_NOT_ACCEPTED.validation_error()
         return value
 
 

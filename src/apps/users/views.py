@@ -141,8 +141,6 @@ PASSWORD_RESET_VERIFIED_RESPONSE = inline_serializer(
     },
 )
 
-INVALID_CODE_DETAIL = "Invalid or expired code."
-
 
 # Shared by the hand-written multipart forms below.
 NAME_PROPERTY = {"type": "string", "maxLength": 256}
@@ -394,7 +392,10 @@ class PasswordResetVerifyView(APIView):
 
     @extend_schema(
         tags=["auth"],
-        responses={200: PASSWORD_RESET_VERIFIED_RESPONSE, 401: DETAIL_RESPONSE},
+        responses={
+            200: PASSWORD_RESET_VERIFIED_RESPONSE,
+            **error_responses(errors.OTP_INVALID),
+        },
     )
     def post(self, request):
         """Consume a password_reset code and allow this session to set a password."""
@@ -406,10 +407,7 @@ class PasswordResetVerifyView(APIView):
             serializer.validated_data["mobile_number"],
             serializer.validated_data["otp"],
         ):
-            return Response(
-                {"detail": INVALID_CODE_DETAIL},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            raise BusinessError(errors.OTP_INVALID)
 
         return Response(
             {
@@ -427,15 +425,24 @@ class PasswordResetView(APIView):
     permission_classes = [AllowAny]
     serializer_class = PasswordResetSerializer
 
-    @extend_schema(tags=["auth"], responses={204: None, 401: DETAIL_RESPONSE})
+    @extend_schema(
+        tags=["auth"],
+        responses={
+            204: None,
+            **error_responses(
+                errors.PASSWORD_REJECTED.example(
+                    "This password is too short. It must contain at least 8 characters.",
+                    field="new_password",
+                ),
+                errors.PASSWORD_RESET_NOT_VERIFIED,
+            ),
+        },
+    )
     def post(self, request):
         """Set the password once, then require a fresh login with it."""
         user = get_password_reset_user(request.session)
         if user is None:
-            return Response(
-                {"detail": "Verify a password reset code first, or request a new one."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            raise BusinessError(errors.PASSWORD_RESET_NOT_VERIFIED)
 
         serializer = PasswordResetSerializer(data=request.data, context={"user": user})
         serializer.is_valid(raise_exception=True)
@@ -472,7 +479,13 @@ class TermsView(APIView):
     permission_classes = [IsAuthenticated]
     serializer_class = TermsAcceptanceSerializer
 
-    @extend_schema(tags=["users"], responses={200: TermsStatusSerializer})
+    @extend_schema(
+        tags=["users"],
+        responses={
+            200: TermsStatusSerializer,
+            **error_responses(errors.TERMS_NOT_ACCEPTED.example(field="terms_accepted")),
+        },
+    )
     def post(self, request):
         """Record acceptance of the version in force. Repeating it changes nothing."""
         serializer = TermsAcceptanceSerializer(data=request.data)

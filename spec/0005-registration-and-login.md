@@ -440,7 +440,8 @@ POST   /users/me/terms/       cookie auth     { "terms_accepted": true }
 For accounts that hold no terms or out-of-date terms (section 6.5).
 `HasAcceptedCurrentTerms` is a default permission class, last, after
 `IsAuthenticatedAndRegistered` and `IsNotAwaitingApproval`, so this endpoint is gated on `IsAuthenticated`
-alone. A missing or `false` `terms_accepted` is a `400`. The response:
+alone. A missing `terms_accepted` is a `400` with `E00002`; a `false` one is a
+`400` with `E01010`, reported on `terms_accepted`. The response:
 
 ```json
 {
@@ -478,7 +479,8 @@ session cookie with the reset call.
 ```
 
 A wrong code, an unknown number, an inactive account and an incomplete
-registration all return the same `401 { "detail": "Invalid or expired code." }`.
+registration all return the same `401` with code `E01001` ("Invalid or expired
+code.").
 An incomplete registration has no password; it resumes through `POST /users/`.
 
 **Reset** sets the password for the verified account:
@@ -486,8 +488,8 @@ An incomplete registration has no password; it resumes through `POST /users/`.
 | Code | Condition |
 |---|---|
 | `204` | Password set; the user must log in again |
-| `400` | `new_password` fails `AUTH_PASSWORD_VALIDATORS` (can be retried) |
-| `401` | Session not verified, `PASSWORD_RESET_WINDOW_SECONDS` (default `600`) has passed, or the reset was already used |
+| `400` | `new_password` fails `AUTH_PASSWORD_VALIDATORS` (`E01011`, can be retried) |
+| `401` | Session not verified, `PASSWORD_RESET_WINDOW_SECONDS` (default `600`) has passed, or the reset was already used (`E01014`) |
 
 The permission is single-use, and the new password invalidates every existing
 session for the account. Section 4.2.1's rules apply to `otp` and
