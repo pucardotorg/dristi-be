@@ -1526,8 +1526,8 @@
     "a-diary.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-pKkyj_LFi4",
       "title": "A-Diary",
-      "contentHash": "518b8f502149",
-      "pageUpdatedAt": 1792501114.179,
+      "contentHash": "9b49a5bda2cf",
+      "pageUpdatedAt": 1792502108.621,
       "calloutElementId": "cl-yNgT6gDmxc",
       "sections": [
         {
@@ -1561,7 +1561,7 @@
           "hash": "d7dc83927f39"
         }
       ],
-      "note": "Created 2026-10-20. sections hold the first block of each chunk only."
+      "note": "Created 2026-10-20. sections hold the first block of each chunk only. Patched in place to v1.6: ADY-02/03 rows, ADY-03a written into the old ADY-04 row and ADY-04 re-added as a new row (rows reordered by reuse), ADY-12a row, status, callout. `sections` hashes stale."
     }
   }
 }
