@@ -182,7 +182,7 @@ court membership:
 
 ```text
 apps.organizations.CourtMember(user, organization, designation, is_active)
-designation ∈ {MAGISTRATE, BENCH_CLERK, TYPIST}
+designation ∈ {MAGISTRATE, BENCH_CLERK, TYPIST, SCRUTINY_OFFICER}
 ```
 
 Hearings read it through `apps.organizations.selectors.court_designation(user, court_id)`.
