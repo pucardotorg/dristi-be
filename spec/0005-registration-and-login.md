@@ -216,8 +216,9 @@ The rows are checked in that order and the first match wins. The wizard
 collects terms itself, so `"profile"` beats `"terms"`; a rejected registration
 opens nothing until it is resubmitted, so `"resubmit"` beats `"terms"`.
 
-The `403` body carries the same fields plus `detail`, so the client reads the
-account state the same way on either outcome.
+The `403` is a standard error (spec 0000 section 9) with code `E01013`
+(approval pending); the client branches on that code rather than on the
+account-state fields, which the error body does not carry.
 
 #### 4.1.3 Rate limit on OTP requests
 
@@ -755,7 +756,7 @@ The user is logged out, since the account is pending again.
 | `200` | Resubmitted; session ended |
 | `400` | Validation failure, or `bar_id_document` refused |
 | `403` | Caller is not a rejected advocate or clerk |
-| `409` | Nothing to resubmit |
+| `409` | Nothing to resubmit (`E01012`) |
 
 #### 7.4.1 Why resubmit the same request rather than raise a new one
 

@@ -6,9 +6,8 @@ from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 
+from apps.esign import errors
 from apps.esign.constants import (
-    ESIGN_ALREADY_IN_PROGRESS,
-    ESIGN_MAX_ATTEMPTS_EXCEEDED,
     ESIGN_NOT_RETRYABLE,
     ESignStatus,
 )
@@ -179,7 +178,7 @@ class PlaceholderRecoveryTests(ESignTestCase):
         response = self.client.post(reverse("esign-retry", args=[transaction.pk]))
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.json()["code"], ESIGN_PLACEHOLDER_MISSING)
+        self.assert_error(response, errors.PLACEHOLDER_MISSING)
 
         claimed = ESignTransaction.objects.get(retry_of=transaction)
         self.assertEqual(claimed.status, ESignStatus.FAILURE.value)
@@ -202,7 +201,7 @@ class RetryBudgetTests(ESignTestCase):
 
         second = self.client.post(url)
         self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(second.json()["code"], ESIGN_NOT_RETRYABLE)
+        self.assert_error(second, errors.NOT_RETRYABLE)
         self.assertEqual(parent.retries.count(), 1)
 
     @override_settings(ESIGN_MAX_ATTEMPTS=2)
@@ -266,7 +265,7 @@ class RetryBudgetTests(ESignTestCase):
         transaction.mark_failed("ESIGN_PROVIDER_REJECTED", "refused")
         exhausted = self.client.post(reverse("esign-retry", args=[transaction.pk]))
         self.assertEqual(exhausted.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(exhausted.json()["code"], ESIGN_MAX_ATTEMPTS_EXCEEDED)
+        self.assert_error(exhausted, errors.MAX_ATTEMPTS_EXCEEDED)
         self.assertEqual(
             [row.retry_of for row in chain[1:]],
             chain[:-1],
@@ -288,7 +287,7 @@ class RetryInProgressGuardTests(ESignTestCase):
         response = self.client.post(reverse("esign-retry", args=[attempt_a.pk]))
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(response.json()["code"], ESIGN_ALREADY_IN_PROGRESS)
+        self.assert_error(response, errors.ALREADY_IN_PROGRESS)
         self.assertFalse(attempt_a.retries.exists())
         self.assertEqual(
             ESignTransaction.objects.filter(status__in=["PENDING", "SIGNING"]).count(), 1

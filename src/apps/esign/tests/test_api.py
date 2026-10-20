@@ -1,21 +1,19 @@
 """Endpoint contract tests (spec 0015 #6, spec 0000 #8)."""
 
 import uuid
+from unittest.mock import patch
 
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 
-from apps.esign import permissions
+from apps.api import errors as api_errors
+from apps.esign import errors, permissions
 from apps.esign.constants import (
-    ESIGN_ALREADY_IN_PROGRESS,
-    ESIGN_DISABLED,
-    ESIGN_MAX_ATTEMPTS_EXCEEDED,
-    ESIGN_NOT_PERMITTED,
-    ESIGN_NOT_RETRYABLE,
     ESignStatus,
 )
+from apps.esign.exceptions import ESignFileStorageError
 from apps.esign.models import ESignTransaction
 
 from .base import PKCS7_BASE64, ESignTestCase, registered_user
@@ -57,26 +55,30 @@ class InitiateEndpointTests(ESignTestCase):
     def test_unknown_file_is_a_validation_error(self):
         """The source document is resolved during validation."""
         response = self.initiate(file_id="missing")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("file_id", response.json())
+        self.assert_error(response, api_errors.DOES_NOT_EXIST, field="file_id")
 
     def test_non_pdf_source_is_a_validation_error(self):
         """Only PDFs can be signed, and the client is told which field is wrong."""
         image = self.files.add(b"\x89PNG", content_type="image/png")
         response = self.initiate(file_id=image)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("file_id", response.json())
+        self.assert_error(response, errors.NOT_A_PDF, field="file_id")
+
+    def test_storage_outage_while_validating_is_a_service_failure(self):
+        """An unavailable store is not the client's fault, so not a 400 on file_id."""
+        with patch.object(self.files, "get_metadata", side_effect=ESignFileStorageError()):
+            response = self.initiate()
+        self.assert_error(response, errors.FILE_STORAGE_UNAVAILABLE)
+        self.assertFalse(ESignTransaction.objects.exists())
 
     def test_invalid_entity_type_is_rejected(self):
         """entity_type is a bounded enum."""
         response = self.initiate(entity_type="INVOICE")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("entity_type", response.json())
+        self.assert_error(response, api_errors.INVALID_CHOICE, field="entity_type")
 
     def test_unknown_placement_keys_are_rejected(self):
         """A placement key the PDF Service would refuse fails fast."""
         response = self.initiate(sign_placeholder={"page": 1, "x": 1, "y": 1, "rotate": 90})
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_error(response, api_errors.INVALID, field="sign_placeholder")
 
     def test_incomplete_placement_is_rejected(self):
         """Coordinates and size are required."""
@@ -101,7 +103,7 @@ class InitiateEndpointTests(ESignTestCase):
         """The kill switch is reported as 503, not as a validation error."""
         response = self.initiate()
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
-        self.assertEqual(response.json()["code"], ESIGN_DISABLED)
+        self.assert_error(response, errors.DISABLED)
 
     def test_permission_denial_returns_forbidden(self):
         """An owning module's refusal is a 403 with the domain code."""
@@ -110,7 +112,7 @@ class InitiateEndpointTests(ESignTestCase):
 
         response = self.initiate()
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(response.json()["code"], ESIGN_NOT_PERMITTED)
+        self.assert_error(response, errors.NOT_PERMITTED)
 
     def test_second_initiation_for_the_same_document_conflicts(self):
         """A duplicate _esign while one is live returns 409, not a new attempt."""
@@ -119,7 +121,7 @@ class InitiateEndpointTests(ESignTestCase):
 
         second = self.initiate()
         self.assertEqual(second.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(second.json()["code"], ESIGN_ALREADY_IN_PROGRESS)
+        self.assert_error(second, errors.ALREADY_IN_PROGRESS)
         self.assertEqual(ESignTransaction.objects.count(), 1)
 
 
@@ -203,7 +205,7 @@ class RetryEndpointTests(ESignTestCase):
         response = self.client.post(reverse("esign-retry", args=[pending.pk]))
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.json()["code"], ESIGN_NOT_RETRYABLE)
+        self.assert_error(response, errors.NOT_RETRYABLE)
 
     def test_successful_transactions_are_not_retryable(self):
         """A signed document is never signed twice."""
@@ -218,7 +220,16 @@ class RetryEndpointTests(ESignTestCase):
         """ESIGN_MAX_ATTEMPTS bounds the attempts per document."""
         response = self.client.post(self.url)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.json()["code"], ESIGN_MAX_ATTEMPTS_EXCEEDED)
+        self.assert_error(response, errors.MAX_ATTEMPTS_EXCEEDED)
+
+    def test_permission_is_checked_again_on_retry(self):
+        """Losing the right to sign since the first attempt refuses the retry."""
+        permissions.register_entity_authorizer("ORDER", lambda **kwargs: False)
+        self.addCleanup(permissions.unregister_entity_authorizer, "ORDER")
+
+        response = self.client.post(self.url)
+        self.assert_error(response, errors.NOT_PERMITTED)
+        self.assertFalse(self.transaction.retries.exists())
 
     def test_another_users_transaction_cannot_be_retried(self):
         """Retry is scoped to the signer."""

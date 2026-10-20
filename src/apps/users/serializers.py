@@ -7,6 +7,9 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema_field
 from rest_framework import serializers
 
+from apps.api import errors as api_errors
+
+from . import errors
 from .documents import validate_registration_document
 from .models import (
     AdvocateProfile,
@@ -60,7 +63,7 @@ class SessionCreateSerializer(serializers.Serializer):
     def validate(self, attrs):
         """Require one credential, not zero and not both."""
         if bool(attrs.get("otp")) == bool(attrs.get("password")):
-            raise serializers.ValidationError("Provide exactly one of otp or password.")
+            raise errors.CREDENTIAL_CHOICE.validation_error()
         return attrs
 
 
@@ -70,7 +73,7 @@ def _unclaimed_email(value, current):
         return None
     taken = get_user_model().objects.filter(email__iexact=value).exclude(pk=current.pk).exists()
     if taken:
-        raise serializers.ValidationError("An account with this email already exists.")
+        raise errors.EMAIL_TAKEN.validation_error()
     return value
 
 
@@ -109,7 +112,10 @@ class RegistrationCompletionSerializer(serializers.Serializer):
             name=attrs.get("name", ""),
             email=attrs.get("email") or "",
         )
-        run_password_validators("password", attrs["password"], candidate)
+        try:
+            validate_password(attrs["password"], user=candidate)
+        except DjangoValidationError as exc:
+            raise errors.PASSWORD_REJECTED.validation_error({"password": exc.messages}) from exc
         return attrs
 
     def validate_email(self, value):
@@ -119,7 +125,7 @@ class RegistrationCompletionSerializer(serializers.Serializer):
     def validate_terms_accepted(self, value):
         """A missing or false acceptance rejects the registration."""
         if not value:
-            raise serializers.ValidationError("The terms must be accepted to register.")
+            raise errors.TERMS_NOT_ACCEPTED.validation_error()
         return value
 
 
@@ -256,14 +262,18 @@ class RegistrationResubmissionSerializer(serializers.Serializer):
             .exists()
         )
         if taken:
-            raise serializers.ValidationError("This registration number is already registered.")
+            raise api_errors.UNIQUE.validation_error(
+                "This registration number is already registered."
+            )
         return value
 
     def validate(self, attrs):
         """Require the bar ID document of the roles that must send one."""
         verification = VERIFICATIONS[self.context["request"].user.role]
         if verification.document_required and not attrs.get("bar_id_document"):
-            raise serializers.ValidationError({"bar_id_document": "This field is required."})
+            raise api_errors.REQUIRED.validation_error(
+                {"bar_id_document": api_errors.REQUIRED.message}
+            )
         return attrs
 
 
