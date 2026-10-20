@@ -291,7 +291,7 @@ As they stood in §9 of order-generation.md:
 
 ## The one-press hearing control
 
-**Dropped 2026-10-20.** A hearing is now started, ended or passed over, each on its own (`HRG-01` of [`order-generation.md`](order-generation.md)). *Next case* is no longer a hearing control: it only takes a person to the next hearing that has started (`HRG-03`). Which person sees which control is open (`Q-7`).
+**Dropped 2026-10-20.** A hearing is now started, ended or passed over, each on its own (`HRG-01` of [`order-generation.md`](order-generation.md)). *Next case* is no longer a hearing control: it only takes a person to the next hearing that has started (`HRG-10`). Only the hearing controller sees the hearing controls (`HRG-00`).
 
 §10 as it stood:
 
@@ -318,7 +318,7 @@ As it stood in §13 of [`order-generation.md`](order-generation.md):
 
 ## Personal shortcuts seeded from the catalogue
 
-**Dropped 2026-10-20.** Shortcuts are now saved per courtroom (`SHC-06` of [`order-generation.md`](order-generation.md)). The catalogue no longer carries template text, so it can't seed them. Whether people also keep their own shortcuts is `Q-5`.
+**Dropped 2026-10-20.** Shortcuts are now saved per courtroom (`SHC-06` of [`order-generation.md`](order-generation.md)). The catalogue no longer carries template text, so it can't seed them. There are no personal shortcuts in this version (`SHC-07`).
 
 As they stood in §5.1:
 

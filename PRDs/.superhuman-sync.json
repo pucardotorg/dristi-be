@@ -29,11 +29,11 @@
     },
     "order-template-catalogue.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
-      "title": "Order Template Catalogue",
-      "contentHash": "f685b6299663",
-      "pageUpdatedAt": 1791923403.645,
-      "calloutElementId": "eca-7dZ09Si6QT",
-      "note": "Patched in place 2026-10-14 (Not in V1 intro, removed app-drift paragraph, generic accept/reject sentence, callout date). '#### General variables' renders as a plain paragraph. `sections` not recorded."
+      "title": "Order Item Catalogue",
+      "contentHash": "d41cd9a86dd0",
+      "pageUpdatedAt": 1792503697.259,
+      "note": "Force-rebuilt 2026-10-20 (no comments on the page) after templates and locked/optional were dropped; page renamed \"Order Item Catalogue\". Callout is a short Last synced line. `sections` not recorded. Patched in place 2026-10-14 (Not in V1 intro, removed app-drift paragraph, generic accept/reject sentence, callout date). '#### General variables' renders as a plain paragraph. `sections` not recorded.",
+      "sections": []
     },
     "join-a-case-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WxtSmHU5wu",
@@ -147,18 +147,18 @@
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
       "title": "Cognizance Cheat Sheet",
-      "contentHash": "ec189b3e0b68",
-      "pageUpdatedAt": 1792399975.085,
+      "contentHash": "17f7ad2abe59",
+      "pageUpdatedAt": 1792503286.579,
       "calloutElementId": "cl-i7saWBgj1-",
-      "note": "Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed."
+      "note": "Patched in place 2026-10-20 (status, callout, \"order template\" -> \"order item\"). `sections` not refreshed. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed."
     },
     "process-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
       "title": "Process Handover",
-      "contentHash": "1668c664b88d",
-      "pageUpdatedAt": 1792400158.726,
+      "contentHash": "eea079fcc067",
+      "pageUpdatedAt": 1792503291.312,
       "calloutElementId": "cl-uH3Q8ik_zE",
-      "note": "Patched in place 2026-10-15 (By hand channel: status, callout, A2/A4/A5/§2/§6.3 prose, new A5 bullet; PRC-05, AUT-08, DSP-02, DSP-03, Delivered, Q-2 cells; By hand row in §6.2 grid; By hand column in §6.3 grid; DSP-10 row). Cells with a single inline-code span carry a trailing zero-width code span so Superhuman renders the code. Live view 'Pending tasks (Citizen-Side) — Process' = .../section-7id_OHaaSJ/tables/table-SK008Zu8WP/views/v-qfT2ThtVYQ. `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed.",
+      "note": "Patched in place 2026-10-20 (status, callout, \"Order templates, their locked variables\" -> \"Order items, their variables\"). `sections` not refreshed. Patched in place 2026-10-15 (By hand channel: status, callout, A2/A4/A5/§2/§6.3 prose, new A5 bullet; PRC-05, AUT-08, DSP-02, DSP-03, Delivered, Q-2 cells; By hand row in §6.2 grid; By hand column in §6.3 grid; DSP-10 row). Cells with a single inline-code span carry a trailing zero-width code span so Superhuman renders the code. Live view 'Pending tasks (Citizen-Side) — Process' = .../section-7id_OHaaSJ/tables/table-SK008Zu8WP/views/v-qfT2ThtVYQ. `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed.",
       "sections": [
         {
           "key": "# Process — Notice, Summons, Warrant, Proclamation, Attachment",
@@ -361,8 +361,8 @@
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
       "title": "Application Lifecycle",
-      "contentHash": "aff41c27cf38",
-      "pageUpdatedAt": 1792400955.755,
+      "contentHash": "376bc5b49fc6",
+      "pageUpdatedAt": 1792503392.931,
       "calloutElementId": "cl-cvBOSX08p4",
       "sections": [
         {
@@ -1461,13 +1461,13 @@
           "hash": "f2112e0e8d91"
         }
       ],
-      "note": "Patched in place 2026-10-19 (block-level insert+delete; comments kept). sections = one entry per page block. The Status paragraph is split across two page blocks (cl-kwvO8-2qLg, cl-LeLHZMzzQ9); the diagram image block is not tracked. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Status block cl-kwvO8-2qLg was already damaged on the page before this sync (\"v33 — 2026-10v33…**Eion**\", truncated at v14); left as is."
+      "note": "Patched in place 2026-10-20: status, callout, and grid cells ALC-02, ALC-14, ALC-16, ALC-19 and Q-5 updated with table_rows_manage (APL references removed). `sections` not refreshed. Patched in place 2026-10-19 (block-level insert+delete; comments kept). sections = one entry per page block. The Status paragraph is split across two page blocks (cl-kwvO8-2qLg, cl-LeLHZMzzQ9); the diagram image block is not tracked. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Status block cl-kwvO8-2qLg was already damaged on the page before this sync (\"v33 — 2026-10v33…**Eion**\", truncated at v14); left as is."
     },
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "6d383acb7ddb",
-      "pageUpdatedAt": 1792501026.616,
+      "contentHash": "ca792af0c2dc",
+      "pageUpdatedAt": 1792503444.699,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -1491,7 +1491,7 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v9 (court establishment): RLE table rows rewritten in place to insert RLE-00 at the top (row IDs now hold different requirements), Scrutiny officer row, §3 intro. A table cell holding only one inline code span (an ID like `RLE-00`) is stored with literal backticks by table_rows_manage; write it as \"`RLE-00`*\\u200b*\" (code span + an italic zero-width space) to get monospace. `sections` stale. Patched in place 2026-10-20 to v9.2 (A-Diary editor/signer rows, Order data filler and Hearing controller rows, Magistrate rows in §3, status, callout); bold-only cells written with the italic zero-width-space trick. `sections` stale."
+      "note": "Patched in place 2026-10-20 to v9.3: status, callout, and grid cells in Table 147 (Gujarat: Bench clerk/Reader, Scrutiny officer) and Table 150 (P&H: Bench clerk/Reader, Ahlmad). `sections` not refreshed. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v9 (court establishment): RLE table rows rewritten in place to insert RLE-00 at the top (row IDs now hold different requirements), Scrutiny officer row, §3 intro. A table cell holding only one inline code span (an ID like `RLE-00`) is stored with literal backticks by table_rows_manage; write it as \"`RLE-00`*\\u200b*\" (code span + an italic zero-width space) to get monospace. `sections` stale. Patched in place 2026-10-20 to v9.2 (A-Diary editor/signer rows, Order data filler and Hearing controller rows, Magistrate rows in §3, status, callout); bold-only cells written with the italic zero-width-space trick. `sections` stale."
     },
     "scrutiny-registration-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
@@ -1562,6 +1562,13 @@
         }
       ],
       "note": "Created 2026-10-20. sections hold the first block of each chunk only. Patched in place to v1.6: ADY-02/03 rows, ADY-03a written into the old ADY-04 row and ADY-04 re-added as a new row (rows reordered by reuse), ADY-12a row, status, callout. `sections` hashes stale."
+    },
+    "dropped-ideas.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
+      "title": "Dropped Ideas",
+      "contentHash": "556584e407af",
+      "pageUpdatedAt": 1792503826.93,
+      "note": "Created 2026-10-20. Callout is a short Last synced line. `sections` not recorded."
     }
   }
 }

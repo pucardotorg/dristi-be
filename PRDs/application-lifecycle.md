@@ -336,7 +336,7 @@ onboarded (3b).
 
 | ID | Requirement |
 |---|---|
-| `ALC-19` | **Dismissing an application** is an order item, effective on signature, *Dismiss application*, #26 of [`order-template-catalogue.md`](order-template-catalogue.md). An Order drafter drafts it; an Order signer signs (an order, `ALC-22`). It's available on the **Review application** task the whole time it's open, alongside onboarding. |
+| `ALC-19` | **Dismissing an application** is an order item, effective on signature: *Dismiss application*, #26 of [`order-template-catalogue.md`](order-template-catalogue.md). An Order drafter drafts it; an Order signer signs (an order, `ALC-22`). It's available on the **Review application** task the whole time it's open, alongside onboarding. |
 
 ---
 
