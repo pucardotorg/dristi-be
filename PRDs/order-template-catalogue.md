@@ -1,6 +1,6 @@
-# Order template catalogue
+# Order item catalogue
 
-**Status:** 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
+**Status:** 2026-10-20 (20) — dismissal no longer points at `APL-04`–`APL-06` of order-generation.md. 2026-10-19 (19) — templates dropped: retitled *Order item catalogue*; the Template column, the template notes and *How the template system works* moved to [`dropped-ideas.md`](dropped-ideas.md). The catalogue now holds the order items, their variables, workflows, availability, combination restrictions and hearing purposes. 2026-10-19 (18) — contextual order items can now be chosen on the order screen, and ask what they apply to (`ITM-04`). Channels, addresses and police station are fields of the order item like any other (`ITM-11` of order-generation.md removed). Locked / Optional column and the *Locked vs optional variables* section removed: a variable is mandatory to enter or not; the old text is in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
 application is onboarded; before that it can only be dismissed. New contextual order item
 **26. Dismiss application**, which cites no application number and names the application
 by its type, the party that filed it and its filing date. 2026-10-06 (16) — added a stop-reading marker before "Not in V1":
@@ -56,7 +56,7 @@ How an order is drafted from this configuration is owned by
 
 - **Order** — the document the judge signs. It is numbered, signed and published.
 - **Order item** — one entry in this catalogue. An order carries one or more order items;
-  each has its own template, variables and, optionally, a workflow
+  each has its own variables and, optionally, a workflow
   (`ORD-01`–`ORD-03` of [`order-generation.md`](order-generation.md)).
 - **Workflow** — what the system does once the order is signed, because an order item is
   in it. A workflow is a property of the order item, not an order item itself.
@@ -65,40 +65,40 @@ How an order is drafted from this configuration is owned by
 
 ## Order items
 
-| # | Order item | Availability | Category | Template | Workflow |
-|---|---|---|---|---|---|
-| 1 | Mandatory submissions and responses | Dropdown | Filings | It is directed that the [Party Type] files a [Document Type] for [Document Details] before the court by [Deadline for Submission]. | Creates submission task |
-| 2 | Referral of case to ADR | Dropdown | Disposal | Both the Parties have voluntarily agreed to seek resolution through [Mode of ADR]. The parties are hereby referred to [Mode of ADR] to resolve their dispute by [Date of End of ADR]. | |
-| 3 | Scheduling of hearing date | Dropdown | Case management | Next hearing is scheduled on [Hearing Date] for [Hearing Purpose]. | Schedules next hearing |
-| 4 | Rescheduling of hearing date | Contextual | | Next hearing scheduled on [Original Hearing Date] for [Hearing Purpose] has been rescheduled to [New Hearing Date]. | Reschedules hearing |
-| 5 | Accept application | Contextual | | Application [Application Number] for [Application Type] is accepted. | *(see note below)* |
-| 6 | Reject application | Contextual | | Application [Application Number] for [Application Type] is rejected. | |
-| 7 | Case transfer | Dropdown | Case management | The case is transferred to another court for further proceedings. | |
-| 8 | Case settlement | Dropdown | Disposal | The settlement records have been accepted by the court. Case closed. | |
-| 9 | Issue of summons | Dropdown | Process | Issue summons to the [Party Type] [Party Name]. The [Party Type] is directed to make the appropriate payments and take steps to issue summons. | Triggers the summons workflow |
-| 10 | Issue of warrants | Dropdown | Process | Issue warrant to the [Party Type] [Party Name]. The [Party Type] is directed to take steps to issue warrant. | Triggers the warrant workflow |
-| 11 | Withdrawal of case | Dropdown or contextual | Disposal | As per application [Application Number] complainant has sought to withdraw the complaint. Permission under Section 280 of the BNSS is granted and the Accused is acquitted. | |
-| 12 | Issue of notice | Dropdown | Process | Issue [Notice Type] notice to the [Party Type] [Party Name]. The [Party Type] is directed to make the appropriate payments and take steps. | Triggers the notice workflow |
-| 13 | Acceptance of bail | Contextual | | Application [Application Number] is accepted. | Optionally triggers bail bond submission workflow (magistrate specifies terms of bail) |
-| 14 | Cognizance | Dropdown | Case management | Considering the materials produced before the Court, I am prima facie satisfied that the offence punishable under S. 138 of NI Act is made out. Accordingly cognizance of the offence is taken and the case is taken on file. | |
-| 15 | Judgement | Dropdown | Disposal | *(dedicated judgement screen — template to be finalised)* | |
-| 16 | Dismiss case | Dropdown | Case management | The case is dismissed. | |
-| 17 | Bail | Dropdown | Filings | Accused is released on bail. Particulars of offences u/s.138 of NI Act were read over and explained to the Accused to which he pleaded [Plea] and claimed to be tried. | Triggers the bail workflow |
-| 18 | Cost | Dropdown | Miscellaneous | The [Party Type] is directed to pay [Amount] to the [Party Type] as costs by [Date]. | Creates payment task |
-| 19 | Witness batta | Dropdown | Miscellaneous | The [Party Type] is directed to pay [Amount] to the [Party Type] [Party Name] as witness batta by [Date]. | Creates a task for the paying party, closed by confirming they have paid — the payment is not made through the system |
-| 20 | Issue of proclamation | Dropdown | Process | Issue proclamation to the [Party Type] [Party Name]. The [Party Type] is directed to make the appropriate payments and take steps. | Triggers the proclamation workflow |
-| 21 | Issue of attachment | Dropdown | Process | Issue attachment against the [Party Type] [Party Name]. The [Party Type] is directed to make the appropriate payments and take steps. | Triggers the attachment workflow |
-| 22 | Moving case to long pending register | Dropdown | Case management | As per sanction given by Honourable CJM the case is moved to the Long Pending Register and is marked as LP. | |
-| 23 | Moving case out of long pending register | Dropdown | Case management | The case is moved out of the Long Pending Register and is to be considered and renumbered as a ST case. | |
-| 24 | Abate case | Dropdown | Disposal | The case is abated following the death of the Accused party. | |
-| 25 | Issue of miscellaneous process | Dropdown | Process | Issue [Process Type] to the [Party Type] [Party Name]. The [Party Type] is directed to make the appropriate payments and take steps. | Triggers the miscellaneous process workflow |
-| 26 | Dismiss application | Contextual | | Application for [Application Type] filed by the [Party Type] [Party Name] on [Filing Date] is dismissed. | |
+| # | Order item | Availability | Category | Workflow |
+|---|---|---|---|---|
+| 1 | Mandatory submissions and responses | Dropdown | Filings | Creates submission task |
+| 2 | Referral of case to ADR | Dropdown | Disposal | |
+| 3 | Scheduling of hearing date | Dropdown | Case management | Schedules next hearing |
+| 4 | Rescheduling of hearing date | Contextual | | Reschedules hearing |
+| 5 | Accept application | Contextual | | *(see note below)* |
+| 6 | Reject application | Contextual | | |
+| 7 | Case transfer | Dropdown | Case management | |
+| 8 | Case settlement | Dropdown | Disposal | |
+| 9 | Issue of summons | Dropdown | Process | Triggers the summons workflow |
+| 10 | Issue of warrants | Dropdown | Process | Triggers the warrant workflow |
+| 11 | Withdrawal of case | Dropdown or contextual | Disposal | |
+| 12 | Issue of notice | Dropdown | Process | Triggers the notice workflow |
+| 13 | Acceptance of bail | Contextual | | Optionally triggers bail bond submission workflow (magistrate specifies terms of bail) |
+| 14 | Cognizance | Dropdown | Case management | |
+| 15 | Judgement | Dropdown | Disposal | |
+| 16 | Dismiss case | Dropdown | Case management | |
+| 17 | Bail | Dropdown | Filings | Triggers the bail workflow |
+| 18 | Cost | Dropdown | Miscellaneous | Creates payment task |
+| 19 | Witness batta | Dropdown | Miscellaneous | Creates a task for the paying party, closed by confirming they have paid — the payment is not made through the system |
+| 20 | Issue of proclamation | Dropdown | Process | Triggers the proclamation workflow |
+| 21 | Issue of attachment | Dropdown | Process | Triggers the attachment workflow |
+| 22 | Moving case to long pending register | Dropdown | Case management | |
+| 23 | Moving case out of long pending register | Dropdown | Case management | |
+| 24 | Abate case | Dropdown | Disposal | |
+| 25 | Issue of miscellaneous process | Dropdown | Process | Triggers the miscellaneous process workflow |
+| 26 | Dismiss application | Contextual | | |
 
 **Availability.** *Dropdown* order items can be picked by the judge on the order-issuance
-screen. *Contextual* order items are not in the dropdown — they arrive from the thing that
+screen. *Contextual* order items act on something in the case, such as an application: they can be
+chosen on the order screen, and then ask what they apply to, or arrive from the thing that
 produces them, such as an application being decided (`ITM-04` of
-[`order-generation.md`](order-generation.md)). This split reflects the current order
-screen; a different design of the order screen may set it aside.
+[`order-generation.md`](order-generation.md)).
 
 **Onboarded applications only, except dismissal.** Accept application (#5), Reject
 application (#6) and Acceptance of bail (#13) — the specific acceptance of a bail
@@ -106,8 +106,7 @@ application — apply only once the application has been onboarded. Before onboa
 only order item for an application is **Dismiss application** (#26). An application that
 is not onboarded has no application number, so #26 names it by its type, the party that
 filed it and its filing date. Onboarding and dismissal are owned by `ALC-04` and
-`ALC-19` of [`application-lifecycle.md`](application-lifecycle.md) and `APL-04`–`APL-06` of
-[`order-generation.md`](order-generation.md).
+`ALC-19` of [`application-lifecycle.md`](application-lifecycle.md).
 
 **Category.** Groups dropdown order items on the order-issuance screen. Contextual order
 items have none.
@@ -122,20 +121,13 @@ case stage when it sees specific order items (case transfer, settlement, dismiss
 abatement, moving to/from LP register, etc.). The Workflow column lists only workflows the
 order item itself triggers.
 
-**Template text and order text.** The template seeds the order text; there is no second,
-shorter wording. The order's own text is the record and goes into the A-Diary (`TXT-04`
-of [`order-generation.md`](order-generation.md)).
-
 ---
 
 ## Variables by order item
 
-**Locked** variables are needed by the workflow and cannot be removed. **Optional**
-variables can be added or removed freely. A blank cell is not yet specified.
+A blank cell is not yet specified.
 
-Listed are the variables that may be an input, and any other variable an order item's
-template needs — that one is shown with input type *None*. Much else in the case may be
-relevant and pulled into the text, but it is not listed here unless the template uses it.
+A variable with input type *None* is taken from the record, not entered.
 **Default value** is what is preselected for the drafter to keep or change — not a value
 filled in silently.
 
@@ -150,41 +142,41 @@ rules give for each variable.
 
 ### 1. Mandatory submissions and responses
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Party Type]` | Party directed to file | Dropdown — Complainant, Accused | Locked | Yes | | |
-| `[Document Type]` | Type of document to be filed | Dropdown — master data | Locked | Yes | | |
-| `[Document Details]` | Details of the document to be filed | Text | Locked | Yes | | |
-| `[Deadline for Submission]` | Date by which it must be filed | Date picker *(proposed)* | Locked | Yes | | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Party Type]` | Party directed to file | Dropdown — Complainant, Accused | Yes | | |
+| `[Document Type]` | Type of document to be filed | Dropdown — master data | Yes | | |
+| `[Document Details]` | Details of the document to be filed | Text | Yes | | |
+| `[Deadline for Submission]` | Date by which it must be filed | Date picker *(proposed)* | Yes | | |
 
 ### 2. Referral of case to ADR
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Mode of ADR]` | Mediation, arbitration, etc. | Dropdown — master data *(proposed)* | Optional | Yes | | |
-| `[Date of End of ADR]` | Deadline for the ADR to conclude | Date picker *(proposed)* | Optional | Yes | | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Mode of ADR]` | Mediation, arbitration, etc. | Dropdown — master data *(proposed)* | Yes | | |
+| `[Date of End of ADR]` | Deadline for the ADR to conclude | Date picker *(proposed)* | Yes | | |
 
 ### 3. Scheduling of hearing date
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Hearing Date]` | Date of the next hearing | Date picker *(proposed)* | Locked | Yes | None | |
-| `[Hearing Purpose]` | Purpose of the next hearing | Dropdown — MDMS hearing purposes | Locked | Yes | None — entered by the drafter | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Hearing Date]` | Date of the next hearing | Date picker *(proposed)* | Yes | None | |
+| `[Hearing Purpose]` | Purpose of the next hearing | Dropdown — MDMS hearing purposes | Yes | None — entered by the drafter | |
 
 ### 4. Rescheduling of hearing date
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Original Hearing Date]` | Date of the hearing being moved | None — from the hearing being moved | Locked | No | | |
-| `[Hearing Purpose]` | Purpose of the rescheduled hearing | Dropdown — MDMS hearing purposes | Locked | Yes | The purpose the hearing already has | |
-| `[New Hearing Date]` | Date it moves to | Date picker *(proposed)* | Locked | Yes | | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Original Hearing Date]` | Date of the hearing being moved | None — from the hearing being moved | No | | |
+| `[Hearing Purpose]` | Purpose of the rescheduled hearing | Dropdown — MDMS hearing purposes | Yes | The purpose the hearing already has | |
+| `[New Hearing Date]` | Date it moves to | Date picker *(proposed)* | Yes | | |
 
 ### 5. Accept application · 6. Reject application
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Application Number]` | Application being decided | Read-only — from the application | Locked | Yes | From the application the order item was reached from | |
-| `[Application Type]` | Its type | Read-only — from the application | Locked | Yes | From the application the order item was reached from | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Application Number]` | Application being decided | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Application Type]` | Its type | Read-only — from the application | Yes | From the application the order item was reached from | |
 
 ### 7. Case transfer · 8. Case settlement · 14. Cognizance · 15. Judgement · 16. Dismiss case · 22–23. Moving case to / out of long pending register · 24. Abate case
 
@@ -192,98 +184,94 @@ No variables.
 
 ### 9. Issue of summons · 10. Issue of warrants · 20. Issue of proclamation · 21. Issue of attachment
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Locked | Yes | Every accused until the accused has joined the case; after that, the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`) | |
-| `[Party Type]` | That person's party type | None — from the person chosen | Locked | No | | |
-| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Locked | Yes | Worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`) | |
-| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Locked | Yes — at least one | Pre-selected by process type (`AUT-08`) | |
-| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Locked | Yes | Every address on the person's record (`AUT-07`) | |
-| Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | Locked | On a police channel | From the person's address (`AUT-04`) | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Yes | Every accused until the accused has joined the case; after that, the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`) | |
+| `[Party Type]` | That person's party type | None — from the person chosen | No | | |
+| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Yes | Worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`) | |
+| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Yes — at least one | Pre-selected by process type (`AUT-08`) | |
+| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Yes | Every address on the person's record (`AUT-07`) | |
+| Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | On a police channel | From the person's address (`AUT-04`) | |
 
-Channels, addresses and police station are not in the template. They are inputs the
-process workflow needs, asked for as part of the order item (`ITM-11` of
-[`order-generation.md`](order-generation.md)); their rules are owned by
+The rules for channels, addresses and police station are owned by
 [`process-handover.md`](process-handover.md).
 
 ### 11. Withdrawal of case
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Application Number]` | The withdrawal application, where there is one | Read-only — from the application | Optional | Only when reached from an application | From the application the order item was reached from | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Application Number]` | The withdrawal application, where there is one | Read-only — from the application | Only when reached from an application | From the application the order item was reached from | |
 
 Withdrawal may be ordered on an application or directly. When it is chosen from the
-dropdown there is no application, and the clause "As per application [Application
-Number]" is left out of the text. The configuration has to record that this clause is the
-one `[Application Number]` governs.
+dropdown there is no application.
 
 ### 12. Issue of notice
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Notice Type]` | Type of notice | Dropdown — master data *(proposed)* | Locked | Yes | | |
-| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Locked | Yes | Every accused until the accused has joined the case; after that, the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`) | |
-| `[Party Type]` | That person's party type | None — from the person chosen | Locked | No | | |
-| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Locked | Yes | Worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`) | |
-| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Locked | Yes — at least one | Pre-selected by process type (`AUT-08`) | |
-| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Locked | Yes | Every address on the person's record (`AUT-07`) | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Notice Type]` | Type of notice | Dropdown — master data *(proposed)* | Yes | | |
+| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Yes | Every accused until the accused has joined the case; after that, the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`) | |
+| `[Party Type]` | That person's party type | None — from the person chosen | No | | |
+| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Yes | Worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`) | |
+| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Yes — at least one | Pre-selected by process type (`AUT-08`) | |
+| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Yes | Every address on the person's record (`AUT-07`) | |
 
 A notice takes no police channel, so there is no police station. Otherwise as for the
 four above.
 
 ### 13. Acceptance of bail
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Application Number]` | The bail application | Read-only — from the application *(proposed)* | Locked | Yes | From the application the order item was reached from | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Application Number]` | The bail application | Read-only — from the application *(proposed)* | Yes | From the application the order item was reached from | |
 
 ### 17. Bail
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Plea]` | Guilty / not guilty | Dropdown — Guilty, Not guilty *(proposed)* | Optional | |  | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Plea]` | Guilty / not guilty | Dropdown — Guilty, Not guilty *(proposed)* | |  | |
 
 ### 18. Cost
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Party Type]` | Paying party | Dropdown — Complainant, Accused *(proposed)* | Locked | Yes | | |
-| `[Amount]` | Amount, in ₹ | Number, ₹ *(proposed)* | Locked | Yes | | |
-| `[Party Type]` | Receiving party | Dropdown — Complainant, Accused, Court | Locked | Yes | | |
-| `[Date]` | Date by which it must be paid | Date picker *(proposed)* | Locked | Yes | | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Party Type]` | Paying party | Dropdown — Complainant, Accused *(proposed)* | Yes | | |
+| `[Amount]` | Amount, in ₹ | Number, ₹ *(proposed)* | Yes | | |
+| `[Party Type]` | Receiving party | Dropdown — Complainant, Accused, Court | Yes | | |
+| `[Date]` | Date by which it must be paid | Date picker *(proposed)* | Yes | | |
 
 ### 19. Witness batta
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Party Type]` | Paying party | Dropdown — Complainant, Accused *(proposed)* | Locked | Yes | | |
-| `[Amount]` | Amount, in ₹ | Number, ₹ *(proposed)* | Locked | Yes | | |
-| `[Party Type]` | Receiving party — always a witness | None — always Witness | Locked | No | | |
-| `[Party Name]` | The witness receiving it | Dropdown — witnesses in the case | Locked | Yes | The witness, where the case has exactly one | |
-| `[Date]` | Date by which it must be paid | Date picker *(proposed)* | Locked | Yes | | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Party Type]` | Paying party | Dropdown — Complainant, Accused *(proposed)* | Yes | | |
+| `[Amount]` | Amount, in ₹ | Number, ₹ *(proposed)* | Yes | | |
+| `[Party Type]` | Receiving party — always a witness | None — always Witness | No | | |
+| `[Party Name]` | The witness receiving it | Dropdown — witnesses in the case | Yes | The witness, where the case has exactly one | |
+| `[Date]` | Date by which it must be paid | Date picker *(proposed)* | Yes | | |
 
 ### 25. Issue of miscellaneous process
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Process Type]` | Type of process | Dropdown — master data *(proposed)* | Locked | Yes | | |
-| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Locked | Yes | Every accused until the accused has joined the case; after that, the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`) | |
-| `[Party Type]` | That person's party type | None — from the person chosen | Locked | No | | |
-| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Locked | Yes | Worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`) | |
-| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Locked | Yes — at least one | Pre-selected by process type (`AUT-08`) | |
-| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Locked | Yes | Every address on the person's record (`AUT-07`) | |
-| Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | Locked | On a police channel | From the person's address (`AUT-04`) | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Process Type]` | Type of process | Dropdown — master data *(proposed)* | Yes | | |
+| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Yes | Every accused until the accused has joined the case; after that, the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`) | |
+| `[Party Type]` | That person's party type | None — from the person chosen | No | | |
+| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Yes | Worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`) | |
+| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Yes — at least one | Pre-selected by process type (`AUT-08`) | |
+| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Yes | Every address on the person's record (`AUT-07`) | |
+| Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | On a police channel | From the person's address (`AUT-04`) | |
 
 As for the four above, with the type of process added.
 
 ### 26. Dismiss application
 
-| Variable | Meaning | Input type | Locked / Optional | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|---|
-| `[Application Type]` | Type of the application being dismissed | Read-only — from the application | Locked | Yes | From the application the order item was reached from | |
-| `[Party Type]` | Party type of the person who filed it | Read-only — from the application | Locked | Yes | From the application the order item was reached from | |
-| `[Party Name]` | Person who filed it | Read-only — from the application | Locked | Yes | From the application the order item was reached from | |
-| `[Filing Date]` | Date the application was filed | Read-only — from the application | Locked | Yes | From the application the order item was reached from | |
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Application Type]` | Type of the application being dismissed | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Party Type]` | Party type of the person who filed it | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Party Name]` | Person who filed it | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Filing Date]` | Date the application was filed | Read-only — from the application | Yes | From the application the order item was reached from | |
 
 There is no `[Application Number]`: the application is not onboarded, so it has none.
 
@@ -371,17 +359,17 @@ others.
 
 Order types outside V1 scope. Kept here for future reference; they are not offered in V1.
 
-| Order type | Was | Template | Locked variables | Workflow |
-|---|---|---|---|---|
-| Order under section 202 CrPC | Yes (Cognizance) | *(no template)* | *(none)* | *(none)* |
-| Accept extension for submission deadline | No (application) | Application [Application Number] for extension of deadline of submission of [Document Type] for [Document Name] is accepted. The [Party Type] is required to submit the same by [New Submission Date]. | `[Application Number]` · `[Document Type]` · `[Document Name]` · `[Party Type]` · `[New Submission Date]` | Updates submission deadline |
-| Reject extension for submission deadline | No (application) | Application [Application Number] for extension of deadline of submission of [Document Type] for [Document Name] is rejected. | `[Application Number]` · `[Document Type]` · `[Document Name]` | |
+| Order type | Was | Variables | Workflow |
+|---|---|---|---|
+| Order under section 202 CrPC | Yes (Cognizance) | *(none)* | *(none)* |
+| Accept extension for submission deadline | No (application) | `[Application Number]` · `[Document Type]` · `[Document Name]` · `[Party Type]` · `[New Submission Date]` | Updates submission deadline |
+| Reject extension for submission deadline | No (application) | `[Application Number]` · `[Document Type]` · `[Document Name]` | |
 
 ---
 
 ## Application types covered by generic accept/reject
 
-The generic "Accept application" (#5) and "Reject application" (#6) rows above cover every application type below. They all use the same template and have no order-level workflow — any workflow triggered belongs to the application type itself.
+The generic "Accept application" (#5) and "Reject application" (#6) rows above cover every application type below. They have no order-level workflow — any workflow triggered belongs to the application type itself.
 
 | Application type | Notes |
 |---|---|
@@ -440,81 +428,6 @@ The table below has two kinds of actions: **order types** (from the order type c
 - "Delay condonation and admission" (#3) is a combined hearing that covers two purposes in one sitting.
 - "People required" is blank where attendance rules are not yet defined.
 - The "Likely order types" column lists order types *specific* to this hearing — the generic types listed above (scheduling, cost, submissions, etc.) are always available and not repeated.
-- Section workflows (⚙) are surfaced as buttons alongside the order type dropdown. They open dedicated screens, not templates.
+- Section workflows (⚙) are surfaced as buttons alongside the order type dropdown. They open dedicated screens.
 - #18 and #20 both cover application review — they exist as separate entries in the two codebases but are the same hearing purpose.
 
----
-
-## How the template system works
-
-### The concept
-
-Every order is generated from a **template** — a piece of text with **variables** in square brackets. When the judge issues an order, the system fills in the variables and produces the final order text.
-
-Some variables can be filled automatically from the case record (the general variables below). Others require the judge to make a choice — picking a party, entering a date, selecting a hearing purpose. The system pre-fills what it can and presents the rest as fields for the judge to complete.
-
-### What the system fills automatically
-
-**General variables** (Court Name, Case Name, Case Number, Current Date, Judge Name, Judge Designation, Complainant Name, Accused Name) are always resolved from case and court data. The judge never types these.
-
-#### General variables
-
-Available to every order template, filled automatically — the judge does not type them.
-
-| Variable | Source | Meaning |
-|---|---|---|
-| `[Court Name]` | Court data | Name of the court |
-| `[Case Name]` | Case data | e.g. "X vs Y" |
-| `[Case Number]` | Case data | Case number |
-| `[Current Date]` | System | Today's date |
-| `[Judge Name]` | Court data | Presiding judge |
-| `[Judge Designation]` | Court data | e.g. JMFC |
-| `[Complainant Name]` | Case data | Name of the complainant |
-| `[Accused Name]` | Case data | Name of the accused |
-| `[Party Type]` | Case data | Complainant, Accused, or Witness |
-| `[Party Name]` | Case data | Any person in the case — complainant, accused, witness, or PoA holder |
-| `[Document Type]` | Master data | Type of document (e.g. complaint, affidavit, vakalat) |
-| `[Hearing Purpose]` | Master data | Purpose of hearing (e.g. Appearance, Evidence, Arguments) |
-| `[Current Hearing Date]` | Case data | Date of the current/most recent hearing |
-
-**Application context.** When the judge is acting on an application (accept/reject), the Application Number and Application Type are already known — the judge arrived at this order from the application itself. These are filled automatically.
-
-**Workflow context.** When an order is the output of a workflow (e.g. a rescheduling order follows from a rescheduling request), variables that the workflow already collected are pre-filled.
-
-### What the judge must specify
-
-The system cannot fill a variable when it requires a **choice among multiple options**. The judge must specify:
-
-- **Which party**, when the case has more than one person of a given type. A §138 case typically has one complainant and one accused, but there can be multiple accused (e.g. the drawer and the company director). When the system encounters `[Party Name]` and there are multiple candidates, it presents a selector. If there is only one person of that type, it fills automatically.
-- **Dates** that are set by the judge's discretion — a submission deadline, a new hearing date, the end date for ADR. The system cannot guess these.
-- **Amounts** — cost and witness batta amounts are the judge's decision.
-- **Selections from master data** — hearing purpose, document type, mode of ADR, notice type. These are dropdowns drawn from master data, not free text.
-
-### Locked vs optional variables
-
-**Locked variables** are required by the workflow that this order triggers. They cannot be removed from the template because the workflow depends on them to function. For example, the summons workflow needs to know which party is being summoned (`[Party Type]`, `[Party Name]`) and which party must take steps — without these, the system cannot create the correct task.
-
-**Optional variables** can be added to or removed from a template by a system administrator. They enrich the order text but no workflow depends on them. For example, `[Plea]` in the bail order is optional — the bail workflow does not need it to release the accused, but the court record is better for having it.
-
-**General variables** are always available to any template. A template author can reference any general variable in any template. They do not appear in the locked or optional columns because they are universally available, not specific to a particular order type.
-
-### What the judge can customise
-
-The judge works with the **generated text**, not the template. After the system fills in all the variables, the judge sees the complete order text and can:
-
-- **Edit the text** freely — add sentences, remove paragraphs, correct wording. The template is a starting point, not a constraint.
-- **Add additional comments** — a free-text area for anything the template does not cover.
-
-The judge **cannot** change the template itself. Templates are system configuration managed by an administrator. What the judge produces is an order — a document — not a new template.
-
-### How variables resolve at generation time
-
-1. The judge selects an order type (from the dropdown, or by acting on an application).
-2. The system loads the template for that order type.
-3. **Auto-fill pass:** general variables and context variables (application number, workflow data) are filled in.
-4. **Judge input pass:** the system presents any remaining unfilled variables as form fields — dropdowns for master data selections, date pickers for dates, party selectors for party references, text inputs for free values.
-5. The judge fills the remaining fields and confirms.
-6. The system generates the complete order text.
-7. The judge reviews, optionally edits, and signs.
-
-If an order type has **no template** (e.g. Order under section 202 CrPC), the judge writes the order text from scratch — or a dedicated screen handles it (e.g. Judgement).

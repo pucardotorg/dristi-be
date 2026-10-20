@@ -1,6 +1,6 @@
 # Cognizance Cheat Sheet
 
-**Status:** v7 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-09-17; the §3 pending-task view now filters on the PRD label
+**Status:** v7 — 2026-10-19; *Accept application* is an order item, not an order template; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-09-17; the §3 pending-task view now filters on the PRD label
 rather than the task name, so newly tagged tasks appear; §7 Linked records added with
 views of the remaining master tables. v5 — one positive action per tab, swappable per state on either
 tab; both positive actions now schedule a hearing and ask for the date; cognizance
@@ -142,7 +142,7 @@ on the order screen. Dismiss Case carries no scheduling item.
 **Taking cognizance on a case with a delay auto-adds the acceptance of the delay
 condonation application**, ahead of the cognizance item, so the delay application is
 disposed of in the same order that takes cognizance. Acceptance uses the generic
-*Accept application* order template.
+*Accept application* order item.
 
 Issuing a notice leaves the case on its tab — the Take Cognizance task stays open until
 cognizance is taken or the case is dismissed.

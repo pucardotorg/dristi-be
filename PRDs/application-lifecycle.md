@@ -1,6 +1,6 @@
 # Application Lifecycle
 
-**Status:** v35 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v34 — 2026-10-18; **court-side permissions are named by role**
+**Status:** v35 — 2026-10-19; references to `APL-02`–`APL-11` of order-generation.md removed, including from `ALC-02` and `Q-5` (that section now only lists pending applications and points here); links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v34 — 2026-10-18; **court-side permissions are named by role**
 ([`court-roles.md`](court-roles.md)): onboarding and setting or moving the decision date
 need the **Application onboarder** role; orders are drafted by an **Order drafter** and
 signed by an **Order signer** (`ALC-22`). "Users and actions" lists roles, not staff titles.
@@ -315,7 +315,7 @@ step is not yet decided (`Q-11`).
 | `ALC-28` | An application is signed only by the person selected in **Raised by** (for PoA Change, the incoming PoA holder) — not by any other advocate or PiP on the case. A clerk or junior advocate may draft and send for signature, but cannot sign. The signer may use any signing mode enabled for the deployment. |
 | `ALC-29` | Anyone on the same side of the case as the application may pay for it — any advocate/PiP, clerk, junior advocate, litigant or PoA-holder on that side. When payment is left for later, a pay task is raised that links back to the application. |
 | `ALC-31` | An application in Pending Signature can be moved back to Draft, and edited there, by anyone who could have created and edited that draft. It is edited only in Draft; once edited, it goes through Proceed to sign again. |
-| `ALC-02` | On submission the application is allotted a **temporary identifier**. It can be shown to the user, but it is never cited in an order or any other document. The court-facing **application number** is allotted only on being onboarded (`ALC-04`). *(This reverses which of the two numbers `order-generation.md`'s `APL-02`/`APL-03` and `case-numbers.md`'s rows 6–7 currently name — see `Q-5`.)* |
+| `ALC-02` | On submission the application is allotted a **temporary identifier**. It can be shown to the user, but it is never cited in an order or any other document. The court-facing **application number** is allotted only on being onboarded (`ALC-04`). *(This reverses which of the two numbers `case-numbers.md`'s rows 6–7 currently name — see `Q-5`.)* |
 | `ALC-03` | On submission the system raises a **Review application** task for the courtroom's **Application onboarder** role, due the next working day. Filing time is not a factor in this version; a later version may bring the due date forward to the same day when the application is filed during working hours on a working day. |
 
 ---
@@ -336,7 +336,7 @@ onboarded (3b).
 
 | ID | Requirement |
 |---|---|
-| `ALC-19` | **Dismissing an application** is an order item, effective on signature, worded per [`order-generation.md`](order-generation.md) `APL-04`–`APL-06`. An Order drafter drafts it; an Order signer signs (an order, `ALC-22`). It's available on the **Review application** task the whole time it's open, alongside onboarding. |
+| `ALC-19` | **Dismissing an application** is an order item, effective on signature, *Dismiss application*, #26 of [`order-template-catalogue.md`](order-template-catalogue.md). An Order drafter drafts it; an Order signer signs (an order, `ALC-22`). It's available on the **Review application** task the whole time it's open, alongside onboarding. |
 
 ---
 
@@ -429,7 +429,7 @@ onboarding, with no application number. Rejection happens here, after onboarding
 
 | ID | Requirement |
 |---|---|
-| `ALC-14` | On the date, the court allows or rejects the application, reading the application, its documents and any objection filed against it from the same screen (`APL-07`, `APL-11`). |
+| `ALC-14` | On the date, the court allows or rejects the application, reading the application, its documents and any objection filed against it from the same screen. |
 | `ALC-15` | An **Application onboarder** may instead **move the decision to another date**. The new date replaces the old one; both the court's task and the objection task (if raised) are re-dated to it, the objection task staying due before the new date (`ALC-13`). |
 | `ALC-23` | **Whenever court staff open the application**, key metadata is shown alongside it: when it was filed, and whether an objection has been filed. If one has been filed, the objection itself is shown too — not just the fact that one exists. |
 
@@ -444,7 +444,7 @@ workflow; for them, acceptance is the end. Rejection starts nothing.
 
 | ID | Requirement |
 |---|---|
-| `ALC-16` | On signature of an order **allowing** the application, the workflow that belongs to that **application type** is triggered (`APL-08`). **Rejecting** it does not trigger that workflow. |
+| `ALC-16` | On signature of an order **allowing** the application, the workflow that belongs to that **application type** is triggered. **Rejecting** it does not trigger that workflow. |
 
 ---
 
@@ -878,7 +878,7 @@ filter: PRDs.Contains("application-lifecycle")
 
 | # | Question | Blocking? |
 |---|---|---|
-| `Q-5` | This file calls the number assigned **at filing** the "temporary identifier," and the number assigned **at onboarding** the "application number." Two other files that also talk about these numbers use the **opposite** pairing: `order-generation.md` (`APL-02`, `APL-03`) calls the at-filing one the "application number," and `case-numbers.md` (rows 6–7) calls the at-onboarding one the "CMP number." Should those two files be updated to match the naming here, or does this file just stay different from them on purpose? | Yes |
+| `Q-5` | This file calls the number assigned **at filing** the "temporary identifier," and the number assigned **at onboarding** the "application number." `case-numbers.md` (rows 6–7) uses the **opposite** pairing: it calls the at-onboarding one the "CMP number." Should it be updated to match the naming here, or does this file just stay different from it on purpose? | Yes |
 | `Q-8` | Expiry of Advance / Prepone and Postpone (`ALC-30`): (a) does it apply at every status before a decision — Draft, Pending Signature and Pending Payment as well as Pending Review and Pending Decision? (b) Does a hearing that is **moved**, not just one that passes, also expire the application? (c) On expiry, are its open tasks (Review application, Decide application, File objection) closed? | No |
 | `Q-11` | `ALC-01` requires payment only "where the type carries a fee". Does a type with no fee skip Pending Payment and go straight from signing to Pending Review? | No |
 | `Q-12` | The filer-side tasks (Sign application, Complete payment) and this lifecycle's notifications were added to the master tables from the original application spec, along with the notification to the opposing side moved to onboarding. Confirm them. | No |
