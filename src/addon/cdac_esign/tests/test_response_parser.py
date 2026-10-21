@@ -97,6 +97,37 @@ class ParsingTests(SimpleTestCase):
         self.assertFalse(parsed.success)
         self.assertEqual(parsed.signature_error, SIGNATURE_MISSING)
 
+    def test_na_error_attribute_on_success_is_not_an_error(self):
+        """eSign API 2.1 fills error fields with NA on success (C-DAC staging)."""
+        parsed = parse_response_xml(
+            build_response(error_code="NA", error_message="NA", signatures=[(PKCS7_BASE64, "NA")])
+        )
+
+        self.assertTrue(parsed.success)
+        self.assertEqual(parsed.signature_error, SIGNATURE_OK)
+        self.assertEqual(parsed.signature, PKCS7_BASE64)
+
+    def test_na_is_matched_case_insensitively(self):
+        parsed = parse_response_xml(build_response(signatures=[(PKCS7_BASE64, " na ")]))
+        self.assertTrue(parsed.success)
+
+    def test_line_wrapped_base64_is_accepted(self):
+        """C-DAC wraps base64 in CRLF lines; the values come back compacted."""
+        certificate = signer_certificate_base64()
+        wrapped_certificate = "\r\n".join(
+            certificate[index : index + 76] for index in range(0, len(certificate), 76)
+        )
+        wrapped_signature = f"\r\n  {PKCS7_BASE64[:8]}\r\n{PKCS7_BASE64[8:]}\n"
+
+        parsed = parse_response_xml(
+            build_response(certificate=wrapped_certificate, signatures=[(wrapped_signature, "NA")])
+        )
+
+        self.assertTrue(parsed.success)
+        self.assertEqual(parsed.signature, PKCS7_BASE64)
+        self.assertEqual(parsed.signer_certificate, certificate)
+        self.assertTrue(parsed.certificate_audit["signer_certificate_parsed"])
+
     def test_non_base64_signature_is_invalid(self):
         """A signature that cannot be decoded is refused."""
         parsed = parse_response_xml(build_response(signatures=[("not base64 !!", "")]))

@@ -35,7 +35,7 @@ from apps.esign.services import (
     retry_transaction,
 )
 
-from .base import PKCS7_BLOB, ESignTestCase
+from .base import PKCS7_BASE64, PKCS7_BLOB, ESignTestCase
 from .fakes import SIGNED_MARKER
 
 
@@ -169,6 +169,14 @@ class CallbackTests(ESignTestCase):
         self.transaction.refresh_from_db()
         self.assertEqual(self.transaction.status, ESignStatus.FAILURE.value)
         self.assertEqual(self.transaction.failure_code, ESIGN_PDF_EMBED_FAILED)
+
+    def test_line_wrapped_signature_is_decoded(self):
+        """Whitespace in the provider's base64 is not data."""
+        wrapped = "\r\n".join(PKCS7_BASE64[i : i + 8] for i in range(0, len(PKCS7_BASE64), 8))
+
+        outcome = process_callback(self.callback_payload(self.transaction, signature=wrapped))
+
+        self.assertEqual(outcome.status, ESignStatus.SUCCESS.value)
 
     def test_signed_upload_failure_is_recorded(self):
         """A storage failure after embedding is its own failure code."""

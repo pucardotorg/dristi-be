@@ -226,6 +226,24 @@ class CallbackThroughTheDomainTests(CDACSettingsMixin, TestCase):
         self.assertEqual(len(self.pdf.embed_calls), 1)
         self.assertNotIn("signature", self.transaction.response_audit)
 
+    def test_cdac_style_success_with_na_and_wrapped_base64_completes(self):
+        """Regression: status=1 with NA error fields was recorded as SIGNATURE_MISSING."""
+        wrapped = "\r\n".join(PKCS7_BASE64[i : i + 8] for i in range(0, len(PKCS7_BASE64), 8))
+        document = build_response(
+            txn="orders-cdac-1",
+            error_code="NA",
+            error_message="NA",
+            signatures=[(wrapped, "NA")],
+        )
+
+        outcome = process_callback({"eSignResponse": sign_document(document)})
+
+        self.transaction.refresh_from_db()
+        self.assertEqual(outcome.status, ESignStatus.SUCCESS.value)
+        self.assertEqual(self.transaction.failure_code, "")
+        self.assertEqual(self.transaction.response_audit["signature_error"], "")
+        self.assertEqual(len(self.pdf.embed_calls), 1)
+
     def test_response_signed_by_another_key_cannot_complete_it(self):
         """Anyone who learns a txn still cannot inject a signature."""
         payload = {"msg": sign_document(build_response(txn="orders-cdac-1"), asp_key_pair())}

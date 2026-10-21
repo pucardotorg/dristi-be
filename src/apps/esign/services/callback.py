@@ -223,7 +223,8 @@ def _decode_signature(transaction: ESignTransaction, parsed: ESignProviderRespon
     if not parsed.signature:
         raise _fail(transaction, ESignSignatureMissing(), parsed)
     try:
-        pkcs7 = base64.b64decode(parsed.signature, validate=True)
+        # Providers may hand over line-wrapped base64; whitespace is never data.
+        pkcs7 = base64.b64decode("".join(parsed.signature.split()), validate=True)
     except (binascii.Error, ValueError) as exc:
         raise _fail(transaction, ESignSignatureInvalid(), parsed) from exc
     if not pkcs7:
