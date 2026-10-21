@@ -264,8 +264,8 @@ class RegistrationCompletionTests(OTPTestCase):
             **extra,
         }
 
-    def post_advocate(self, profile=None, document=MISSING, **extra):
-        """POST /advocates as multipart, with a valid bar ID unless overridden.
+    def post_registration(self, url_name, profile=None, document=MISSING, **extra):
+        """POST a registration as multipart, with a valid bar ID unless overridden.
 
         A multipart body cannot nest, so the profile goes as `profile.<field>`
         keys, which is what a client sends too.
@@ -277,7 +277,15 @@ class RegistrationCompletionTests(OTPTestCase):
             document = pdf_upload()
         if document is not None:
             data["bar_id_document"] = document
-        return self.client.post(reverse("advocate-create"), data, format="multipart")
+        return self.client.post(reverse(url_name), data, format="multipart")
+
+    def post_advocate(self, profile=None, document=MISSING, **extra):
+        """POST /advocates as multipart, with a valid bar ID unless overridden."""
+        return self.post_registration("advocate-create", profile, document, **extra)
+
+    def post_clerk(self, profile=None, document=MISSING, **extra):
+        """POST /clerks as multipart, with a valid bar ID unless overridden."""
+        return self.post_registration("clerk-create", profile, document, **extra)
 
     def test_litigant_completes(self):
         """A litigant gets a profile, a role and COMPLETE status."""
@@ -438,20 +446,12 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_duplicate_clerk_registration_number_is_rejected(self):
         """A clerk number already claimed answers 400, not 500."""
-        self.client.post(
-            reverse("clerk-create"),
-            self.body(profile={"clerk_registration_number": "CLK/99/2020"}),
-            format="json",
-        )
+        self.post_clerk(profile={"clerk_registration_number": "CLK/99/2020"})
         self.register_second_account()
 
-        response = self.client.post(
-            reverse("clerk-create"),
-            self.body(
-                email="other@example.com",
-                profile={"clerk_registration_number": "CLK/99/2020"},
-            ),
-            format="json",
+        response = self.post_clerk(
+            email="other@example.com",
+            profile={"clerk_registration_number": "CLK/99/2020"},
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
@@ -462,16 +462,27 @@ class RegistrationCompletionTests(OTPTestCase):
 
     def test_clerk_completes_with_profile(self):
         """The nested profile is written to the clerk table."""
-        response = self.client.post(
-            reverse("clerk-create"),
-            self.body(profile={"clerk_registration_number": "CLK/99/2020"}),
-            format="json",
-        )
+        response = self.post_clerk(profile={"clerk_registration_number": "CLK/99/2020"})
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(
             ClerkProfile.objects.get(user=self.user).clerk_registration_number,
             "CLK/99/2020",
         )
+
+    def test_clerk_requires_bar_id_document(self):
+        """A clerk without the bar ID is refused, and nothing is written."""
+        response = self.post_clerk(
+            profile={"clerk_registration_number": "CLK/99/2020"}, document=None
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.data["errors"]],
+            [{"code": "E00002", "field": "bar_id_document"}],
+        )
+        self.assertFalse(ClerkProfile.objects.exists())
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.registration_status, RegistrationStatus.PENDING_PROFILE)
 
     def test_advocate_requires_profile(self):
         """A missing profile block is a 400, and nothing is written."""

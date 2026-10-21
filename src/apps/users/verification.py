@@ -34,8 +34,6 @@ class Verification:
     profile_attr: str
     # Profile field holding the registration number the request verifies.
     number_field: str
-    # Whether the bar ID document must accompany the claim.
-    document_required: bool = False
 
     @property
     def profile_model(self):
@@ -55,9 +53,7 @@ class Verification:
 
 
 VERIFICATIONS = {
-    Role.ADVOCATE: Verification(
-        ADVOCATE_REGISTRATION, "advocate_profile", "bar_registration_id", document_required=True
-    ),
+    Role.ADVOCATE: Verification(ADVOCATE_REGISTRATION, "advocate_profile", "bar_registration_id"),
     Role.CLERK: Verification(CLERK_REGISTRATION, "clerk_profile", "clerk_registration_number"),
 }
 

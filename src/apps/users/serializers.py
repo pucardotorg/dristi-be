@@ -225,13 +225,10 @@ class AdvocateRegistrationSerializer(RegistrationCompletionSerializer):
 
 
 class ClerkRegistrationSerializer(RegistrationCompletionSerializer):
-    """Body of POST /clerks.
-
-    The bar ID is optional: only some clerks are asked for one.
-    """
+    """Body of POST /clerks, sent as multipart so it can carry the bar ID."""
 
     profile = ClerkProfileSerializer()
-    bar_id_document = RegistrationDocumentField(required=False)
+    bar_id_document = RegistrationDocumentField()
 
 
 class RegistrationResubmissionSerializer(serializers.Serializer):
@@ -246,7 +243,7 @@ class RegistrationResubmissionSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=256)
     email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
     registration_number = serializers.CharField(max_length=64)
-    bar_id_document = RegistrationDocumentField(required=False)
+    bar_id_document = RegistrationDocumentField()
 
     def validate_email(self, value):
         """Reject an email already claimed by another account."""
@@ -266,15 +263,6 @@ class RegistrationResubmissionSerializer(serializers.Serializer):
                 "This registration number is already registered."
             )
         return value
-
-    def validate(self, attrs):
-        """Require the bar ID document of the roles that must send one."""
-        verification = VERIFICATIONS[self.context["request"].user.role]
-        if verification.document_required and not attrs.get("bar_id_document"):
-            raise api_errors.REQUIRED.validation_error(
-                {"bar_id_document": api_errors.REQUIRED.message}
-            )
-        return attrs
 
 
 class RegistrationDocumentSerializer(serializers.Serializer):

@@ -153,8 +153,8 @@ BAR_ID_DOCUMENT_PROPERTY = {
 }
 
 
-def _registration_form(profile_properties, *, document_required):
-    """Return the multipart body of a registration that can carry the bar ID.
+def _registration_form(profile_properties):
+    """Return the multipart body of a registration carrying the bar ID.
 
     Described by hand because the serializer nests ``profile``, and a
     multipart body cannot nest: clients send ``profile.<field>`` keys, which
@@ -171,9 +171,8 @@ def _registration_form(profile_properties, *, document_required):
             for name, (_, is_required) in profile_properties.items()
             if is_required
         ),
+        "bar_id_document",
     ]
-    if document_required:
-        required.append("bar_id_document")
     return {
         "type": "object",
         "required": required,
@@ -193,30 +192,22 @@ ADVOCATE_REGISTRATION_FORM = _registration_form(
         "bar_registration_id": (REGISTRATION_NUMBER_PROPERTY, True),
         "advocate_type": ({"type": "string", "enum": AdvocateType.values}, False),
     },
-    document_required=True,
 )
 
 CLERK_REGISTRATION_FORM = _registration_form(
     {"clerk_registration_number": (REGISTRATION_NUMBER_PROPERTY, True)},
-    document_required=False,
 )
 
 # Described by hand for the same reason as the registration forms: inferred
 # from the serializer, the document is a URI string with no file picker.
 RESUBMISSION_FORM = {
     "type": "object",
-    "required": ["name", "registration_number"],
+    "required": ["name", "registration_number", "bar_id_document"],
     "properties": {
         "name": NAME_PROPERTY,
         "email": EMAIL_PROPERTY,
         "registration_number": REGISTRATION_NUMBER_PROPERTY,
-        "bar_id_document": {
-            **BAR_ID_DOCUMENT_PROPERTY,
-            "description": (
-                "Bar council ID as a PDF, JPEG or PNG. Required for an advocate; "
-                "a clerk who omits it keeps the document already on file."
-            ),
-        },
+        "bar_id_document": BAR_ID_DOCUMENT_PROPERTY,
     },
 }
 
@@ -589,21 +580,17 @@ class AdvocateRegistrationView(BaseRegistrationCompletionView):
 
 
 @extend_schema_view(
-    post=extend_schema(
-        request={
-            "application/json": ClerkRegistrationSerializer,
-            "multipart/form-data": CLERK_REGISTRATION_FORM,
-        }
-    ),
+    post=extend_schema(request={"multipart/form-data": CLERK_REGISTRATION_FORM}),
 )
 class ClerkRegistrationView(BaseRegistrationCompletionView):
     """POST /clerks.
 
-    Accepts JSON, or multipart when the optional bar ID document is sent.
+    Multipart only, like POST /advocates: the bar ID document is required.
     """
 
     role = Role.CLERK
     serializer_class = ClerkRegistrationSerializer
+    parser_classes = [MultiPartParser, FormParser]
 
 
 class CurrentRegistrationView(APIView):
