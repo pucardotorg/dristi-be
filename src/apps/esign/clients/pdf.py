@@ -19,6 +19,18 @@ SIGNING_SERVICE_MODULE = "apps.pdf.services.signing"
 # "the document cannot be prepared".
 PLACEMENT_ERROR_NAMES = frozenset({"PDFPageOutOfRange", "PDFInvalidPlaceholder"})
 
+# 0016 #14.3 errors ``embed_signature`` raises on purpose. Their messages are
+# fixed texts or sizes, never document content, so they are safe to record.
+EMBED_ERROR_NAMES = frozenset(
+    {
+        "PDFInvalidPKCS7",
+        "PDFSignatureContainerTooSmall",
+        "PDFSignatureFieldMissing",
+        "PDFNotParsable",
+        "PDFTooLarge",
+    }
+)
+
 # Allowance for the rest of the incremental update the PDF Service appends when
 # it reserves the container: the signature dictionary, widget annotation,
 # appearance stream and cross-reference section.
@@ -142,6 +154,15 @@ class PDFClient:
             return exc
         if type(exc).__name__ in PLACEMENT_ERROR_NAMES:
             return ESignInvalidPlaceholder()
-        # Messages from the PDF module may name internals, so only this
-        # module's own safe default text reaches the caller.
+        if default is ESignPDFEmbedError and type(exc).__name__ in EMBED_ERROR_NAMES:
+            # 0016 #14.3 embed errors carry fixed, content-free messages, and
+            # after the signer finished OTP the exact reason is what support
+            # needs (container too small vs. unusable PKCS#7 vs. wrong field).
+            code = getattr(exc, "code", type(exc).__name__)
+            return ESignPDFEmbedError(
+                f"{ESignPDFEmbedError.default_message} {code}: {exc}",
+                audit={"pdf_error": code},
+            )
+        # Any other message from the PDF module may name internals, so only
+        # this module's own safe default text reaches the caller.
         return default()

@@ -276,6 +276,23 @@ class TestEmbed:
         with pytest.raises(PDFSignatureFieldMissing):
             embed_signature(tampered, esp_sign(esp, prepared.document_hash), prepared.field_name)
 
+    def test_zero_padded_pkcs7_is_trimmed_and_verifies(self, esp):
+        """iText/BouncyCastle ESPs (C-DAC) return the CMS padded with zeros."""
+        prepared = prepare_for_signing(simple_pdf(), PLACEHOLDER)
+        pkcs7 = esp_sign(esp, prepared.document_hash)
+        padded = pkcs7 + b"\x00" * 4096
+
+        signed = embed_signature(prepared.prepared_document, padded, prepared.field_name)
+
+        assert signed == embed_signature(prepared.prepared_document, pkcs7, prepared.field_name)
+        assert_valid(signed, esp)
+
+    def test_non_zero_data_after_the_pkcs7_is_rejected(self, esp):
+        prepared = prepare_for_signing(simple_pdf(), PLACEHOLDER)
+        pkcs7 = esp_sign(esp, prepared.document_hash) + b"\x00\x01"
+        with pytest.raises(PDFInvalidPKCS7):
+            embed_signature(prepared.prepared_document, pkcs7, prepared.field_name)
+
     @pytest.mark.parametrize("pkcs7", [b"", b"not der", b"\x30\x03\x02\x01\x01"])
     def test_invalid_pkcs7_is_rejected(self, pkcs7):
         prepared = prepare_for_signing(simple_pdf(), PLACEHOLDER)

@@ -170,10 +170,18 @@ def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> C
     try:
         signed = get_pdf_client().embed_signature(prepared, pkcs7, transaction.signature_field_name)
     except ESignError as exc:
+        log_event(
+            EVENT_ESIGN_FAILED,
+            transaction,
+            level=logging.WARNING,
+            failure_code=exc.code,
+            pkcs7_size=len(pkcs7),
+            **exc.audit,
+        )
         raise _fail(transaction, exc, parsed) from exc
     except Exception as exc:
         raise _fail(transaction, ESignPDFEmbedError(), parsed) from exc
-    log_event(EVENT_SIGNATURE_EMBEDDED, transaction, signed_size=len(signed))
+    log_event(EVENT_SIGNATURE_EMBEDDED, transaction, signed_size=len(signed), pkcs7_size=len(pkcs7))
 
     try:
         signed_file_id = files.upload(

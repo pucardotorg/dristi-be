@@ -127,6 +127,28 @@ class PDFClientTests(SimpleTestCase):
         with self.assertRaises(ESignPDFEmbedError):
             self.client.embed_signature(b"%PDF", b"pkcs7", "Signature1")
 
+    def test_embed_errors_from_the_pdf_service_keep_their_reason(self):
+        """A failure after OTP must say why: container size, PKCS#7 or field."""
+
+        class PDFSignatureContainerTooSmall(Exception):  # noqa: N818
+            code = "PDF_SIGNATURE_CONTAINER_TOO_SMALL"
+
+        error = PDFSignatureContainerTooSmall("The signature needs 20000 bytes but holds 16384.")
+        self.use(signing_module(embed_signature=raising(error)))
+        with self.assertRaises(ESignPDFEmbedError) as caught:
+            self.client.embed_signature(b"%PDF", b"pkcs7", "Signature1")
+
+        self.assertIn("PDF_SIGNATURE_CONTAINER_TOO_SMALL", caught.exception.message)
+        self.assertIn("20000", caught.exception.message)
+        self.assertEqual(caught.exception.audit, {"pdf_error": "PDF_SIGNATURE_CONTAINER_TOO_SMALL"})
+
+    def test_unexpected_embed_errors_stay_generic(self):
+        """Only the known, content-free PDF errors pass their text through."""
+        self.use(signing_module(embed_signature=raising(RuntimeError("/tmp/secret.pdf"))))
+        with self.assertRaises(ESignPDFEmbedError) as caught:
+            self.client.embed_signature(b"%PDF", b"pkcs7", "Signature1")
+        self.assertNotIn("/tmp/secret.pdf", caught.exception.message)
+
     def test_embedded_document_is_returned(self):
         """The signed bytes come straight back from the service."""
         self.use(signing_module())
