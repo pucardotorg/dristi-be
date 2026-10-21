@@ -355,12 +355,35 @@ def _validated_pkcs7(pkcs7) -> bytes:
         content_info = cms.ContentInfo.load(der, strict=True)
         if content_info["content_type"].native != "signed_data":
             raise PDFInvalidPKCS7("The PKCS#7 structure is not SignedData.")
-        content_info["content"].native  # noqa: B018 -- forces a full parse
+        _check_signed_data(content_info["content"])
     except PDFInvalidPKCS7:
         raise
     except Exception as exc:
-        raise PDFInvalidPKCS7() from exc
+        # The class and first line say which part failed to parse; they hold
+        # ASN.1 type names, never document content.
+        reason = f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"
+        raise PDFInvalidPKCS7(f"{PDFInvalidPKCS7.default_message} ({reason[:160]})") from exc
     return der
+
+
+def _check_signed_data(signed_data) -> None:
+    """Check the parts of ``SignedData`` a PDF signature needs, and only those.
+
+    Converting the whole structure with ``.native`` also converts every field
+    of every embedded certificate, so one attribute asn1crypto cannot map to a
+    Python value (eSign certificates carry several unusual ones, and the CA
+    chain travels inside the PKCS#7 as well) rejected a valid signature.
+    Trust in the signer and its chain is a validation concern, not an
+    embedding one; here the blob only has to be a CMS with a usable signer.
+    """
+    signer_infos = signed_data["signer_infos"]
+    if len(signer_infos) == 0:
+        raise PDFInvalidPKCS7("The PKCS#7 structure has no signer.")
+    for signer_info in signer_infos:
+        if not signer_info["signature"].native:
+            raise PDFInvalidPKCS7("The PKCS#7 signer carries no signature value.")
+        signer_info["digest_algorithm"]["algorithm"].native  # noqa: B018 -- parses it
+        signer_info["signature_algorithm"]["algorithm"].native  # noqa: B018 -- parses it
 
 
 def _trim_zero_padding(blob: bytes) -> bytes:
