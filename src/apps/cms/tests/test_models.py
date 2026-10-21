@@ -35,6 +35,18 @@ class TestPageModel:
         with pytest.raises(ValidationError):
             page.full_clean()
 
+    def test_slug_is_lowercased_on_save(self):
+        page = Page.objects.create(slug="Terms-X", title="T", content="c")
+        page.refresh_from_db()
+        assert page.slug == "terms-x"
+
+    def test_case_variant_slug_conflicts(self):
+        Page.objects.create(slug="dup", title="A", content="x")
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                # "DUP" is lowercased to "dup" on save, so it collides.
+                Page.objects.create(slug="DUP", title="B", content="y")
+
 
 @pytest.mark.django_db
 class TestSeedData:

@@ -9,12 +9,16 @@ from apps.core.models import BaseModel
 
 # Page slugs are intentionally stricter than Django's default slug: no
 # underscores, spaces or other punctuation — only letters, digits and hyphens.
-SLUG_RE = re.compile(r"^[A-Za-z0-9-]+$")
+# Used with fullmatch(): "$" would also accept a trailing newline.
+SLUG_RE = re.compile(r"[A-Za-z0-9-]+")
 
 
 def validate_page_slug(value):
     """Reject a slug containing anything but letters, digits and hyphens."""
-    if not SLUG_RE.match(value or ""):
+    # fullmatch, not match: with "$" anchoring, match() accepts a trailing
+    # newline ("terms\n"), which would never match the slug URL route and so
+    # could never be fetched again.
+    if not SLUG_RE.fullmatch(value or ""):
         raise ValidationError(
             "Slug may contain only letters, digits and hyphens "
             "(no '_', spaces or special characters)."
@@ -78,3 +82,20 @@ class Page(BaseModel):
     def __str__(self):
         """Return a readable label for admin and logs."""
         return f"{self.title} ({self.slug})"
+
+    def clean(self):
+        """Normalise the slug to lowercase before validation.
+
+        Slugs are case-insensitive identifiers. Postgres uniqueness is
+        case-sensitive, so without this "Terms" and "terms" could coexist as
+        two different pages.
+        """
+        super().clean()
+        if self.slug:
+            self.slug = self.slug.lower()
+
+    def save(self, *args, **kwargs):
+        """Persist a canonical lowercase slug on every write path."""
+        if self.slug:
+            self.slug = self.slug.lower()
+        super().save(*args, **kwargs)
