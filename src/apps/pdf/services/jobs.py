@@ -17,7 +17,7 @@ from django.conf import settings
 from django.db import close_old_connections, transaction
 from django.utils import timezone
 
-from ..exceptions import PDFError, PDFJobStateError, PDFRenderError
+from ..exceptions import PDFError, PDFJobStateError, PDFRenderError, PDFStorageError
 from ..models import (
     CANCELLABLE_JOB_STATUSES,
     PDFJob,
@@ -193,7 +193,7 @@ def delete_job_documents(job: PDFJob, *, user=None) -> PDFJob:
             locked.files_deleted_at = timezone.now()
         locked.save(update_fields=["file_ids", "files_deleted_at", "updated_at"])
     if remaining:
-        raise PDFJobStateError("Some documents could not be deleted; retry the request.")
+        raise PDFStorageError("Some documents could not be deleted; retry the request.")
     log_event("PDF_JOB_DOCUMENTS_DELETED", locked, count=len(file_ids))
     return locked
 
