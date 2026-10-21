@@ -1,6 +1,6 @@
 # Office Management — Developer & Agent Handover
 
-**Status:** v4 — 2026-10-21; open questions answered: the person is notified **by SMS and in-app** (`OFC-08`, drafted in §6); a clerk or advocate in an office sees **only the cases shared with them** (`OFC-03`); **All cases includes drafts** (`OFC-25`, `OFC-25a`). §7 has no open questions left. v3 — 2026-10-21; **access is one choice per person: All cases or Specific cases** (`OFC-24`, `OFC-25`, `OFC-25a`): All cases is every current and future case, with no per-case removal; Specific cases is only the cases picked, with no future cases. The separate future-cases switch is gone; §3.2, §4, §5 rewritten to match. v2 — 2026-10-21; **a person accepts joining an advocate's office once** (`OFC-07`, `OFC-07a`, `OFC-07b`): until they accept, the cases shared with them wait; after that, further shares from that advocate are immediate. v1 — 2026-10-21; first version: People tab, adding a person (specific cases, all current cases, future cases), removing access, and the two other entry points (end of joining a case, sharing from a case or the cases list)
+**Status:** v5 — 2026-10-21; **access is immediate again** (`OFC-07`): no acceptance step in this version; `OFC-07a`/`OFC-07b` and the accept/decline notifications removed. **Future enhancements** (§7, new) records one-time acceptance and adding people not yet registered. Open questions are now §8. v4 — 2026-10-21; open questions answered: the person is notified **by SMS and in-app** (`OFC-08`, drafted in §6); a clerk or advocate in an office sees **only the cases shared with them** (`OFC-03`); **All cases includes drafts** (`OFC-25`, `OFC-25a`). §7 has no open questions left. v3 — 2026-10-21; **access is one choice per person: All cases or Specific cases** (`OFC-24`, `OFC-25`, `OFC-25a`): All cases is every current and future case, with no per-case removal; Specific cases is only the cases picked, with no future cases. The separate future-cases switch is gone; §3.2, §4, §5 rewritten to match. v2 — 2026-10-21; **a person accepts joining an advocate's office once** (`OFC-07`, `OFC-07a`, `OFC-07b`): until they accept, the cases shared with them wait; after that, further shares from that advocate are immediate. v1 — 2026-10-21; first version: People tab, adding a person (specific cases, all current cases, future cases), removing access, and the two other entry points (end of joining a case, sharing from a case or the cases list)
 **Date:** 2026-10-21
 **Audience:** developers and agents building office management (front end and backend)
 
@@ -18,15 +18,13 @@ this way is **office access**.
 | ID | Requirement |
 | --- | --- |
 | `OFC-01` | Only an **advocate** can add people to their office. |
-| `OFC-02` | **[OWNER]** The person added must be a **registered DRISTI user** whose account is an **advocate** or a **clerk**. Litigants, PoA holders and court staff cannot be added. A person who is not registered cannot be added or invited. |
+| `OFC-02` | **[OWNER]** The person added must be a **registered DRISTI user** whose account is an **advocate** or a **clerk**. Litigants, PoA holders and court staff cannot be added. A person who is not registered cannot be added or invited in this version (future enhancement, §7). |
 | `OFC-03` | **[OWNER]** Office access is given **per case**. A person in the office — clerk or advocate — sees **only the cases shared with them**, and no other case of the advocate. Working for an advocate does not by itself give access to that advocate's cases. |
 | `OFC-04` | An advocate can share only **their own cases**: cases where they are on the vakalatnama, and **drafts** where they are an advocate (e-filing `FIL-05`). A case the advocate holds through someone else's office access cannot be shared onward. |
 | `OFC-05` | Office access does not put the person on the vakalatnama or on the case record. An advocate who must act on the record is added to the case through a vakalatnama ([Join a Case](join-a-case-handover.md)), not through office management. |
 | `OFC-06` | A person with office access has the rights on the case set out in [`people-and-case-access.md`](../../docs/people-and-case-access.md) (rows 12–13): the same as the advocate, except they **cannot e-sign**. They cannot add or remove anyone's access to the case. |
-| `OFC-07` | **[OWNER]** The first time an advocate adds a person to their office, the person must **accept** before they get access. They are shown the advocate's name and the cases shared, and can **Accept** or **Decline**. Until they accept, the shared cases do not appear in their Your cases list. |
-| `OFC-07a` | **[OWNER]** Acceptance is **once per advocate**. After a person has accepted an advocate's office, every further case that advocate shares with them, including new cases under All cases (`OFC-25`), is given **immediately**, without asking again. |
-| `OFC-07b` | If the person declines, they get no access and leave the advocate's People list. The advocate can add them again, which asks them again. |
-| `OFC-08` | **[OWNER]** The person added is notified **by SMS and in-app**: on first adding, with the request to accept (`OFC-07`); afterwards, when they are given more cases. The advocate is told in-app when the person accepts or declines. Wording in §6. |
+| `OFC-07` | **[OWNER]** Access is given **immediately**. The person does not accept an invitation; the shared cases appear in their Your cases list at once. (Acceptance is a future enhancement, §7.) |
+| `OFC-08` | **[OWNER]** The person is notified **by SMS and in-app** when they are added to an office and when they are given more cases. Wording in §6. |
 | `OFC-09` | A person can be in the office of several advocates. Each advocate sees and manages only the access they gave. |
 
 ---
@@ -39,7 +37,7 @@ The People tab is the advocate's office: everyone they have given office access 
 | --- | --- |
 | `OFC-10` | **People** is a top-level item in the advocate's navigation. |
 | `OFC-11` | The list shows **only people the advocate has given office access to**. Co-advocates on the same vakalatnama are not listed here; they appear on the case's Parties tab and in its access list (§5.2). |
-| `OFC-12` | Each row shows: name, mobile number, designation (**Advocate** or **Clerk**, from their account), and the number of the advocate's cases they can access. A person on **All cases** (`OFC-24`) is marked as such. A person who has not yet accepted (`OFC-07`) is marked **Awaiting acceptance**; the advocate can manage their cases and remove them as for anyone else. |
+| `OFC-12` | Each row shows: name, mobile number, designation (**Advocate** or **Clerk**, from their account), and the number of the advocate's cases they can access. A person on **All cases** (`OFC-24`) is marked as such. |
 | `OFC-13` | The list can be searched by name or mobile number, and sorted by name or by number of cases. |
 | `OFC-14` | **Add person** opens the add flow (§3). |
 | `OFC-15` | Opening a person shows their detail (§4) beside the list, without leaving the page. |
@@ -67,7 +65,7 @@ The People tab is the advocate's office: everyone they have given office access 
 | `OFC-25a` | **Specific cases** — office access only to the cases the advocate picks from their own cases (`OFC-04`), drafts included, searchable by case title or number. Later cases are not given automatically. |
 | `OFC-26` | **Add** gives the access and closes the flow. It needs at least one person, and, for Specific cases, at least one case. |
 | `OFC-27` | Adding a person who is already in the office on Specific cases adds the newly picked cases to theirs; choosing All cases for them moves them to All cases. A person already on All cases holds every case, so the add flow does not offer them again. |
-| `OFC-28` | The confirmation names who was added and to how many cases, and says when a person must first accept (`OFC-07`). |
+| `OFC-28` | The confirmation names who was added and to how many cases. |
 
 ---
 
@@ -119,22 +117,35 @@ Every message names the advocate, so the person knows whose office it is.
 
 | ID | Trigger | Recipient | Channels | Message |
 | --- | --- | --- | --- | --- |
-| `OFC-N1` | An advocate adds a person to their office for the first time (`OFC-07`), on Specific cases | The person added | SMS | {#advocatename} has added you to their office and shared {#count} case(s) with you. Log in to accept or decline: {#link} - On Courts |
-| | | | In-app | **{#advocatename} wants to add you to their office.** They have shared {#count} case(s) with you. Accept to see them in Your cases. Actions: **Accept** · **Decline** |
-| `OFC-N2` | As `OFC-N1`, on All cases | The person added | SMS | {#advocatename} has added you to their office with access to all their cases. Log in to accept or decline: {#link} - On Courts |
-| | | | In-app | **{#advocatename} wants to add you to their office.** You will have access to all their cases, now and in future. Actions: **Accept** · **Decline** |
-| `OFC-N3` | An advocate shares more cases with a person who has already accepted (`OFC-07a`), on Specific cases | The person | SMS | {#advocatename} has shared {#casetitle} with you. View it: {#link} - On Courts (for several cases: "{#count} cases") |
+| `OFC-N1` | An advocate adds a person to their office on Specific cases | The person added | SMS | {#advocatename} has added you to their office and shared {#count} case(s) with you. View them: {#link} - On Courts |
+| | | | In-app | **{#advocatename} added you to their office.** You can now work on {#count} of their cases. Action: **Open Your cases** |
+| `OFC-N2` | An advocate adds a person to their office on All cases | The person added | SMS | {#advocatename} has added you to their office with access to all their cases. View them: {#link} - On Courts |
+| | | | In-app | **{#advocatename} added you to their office.** You can now work on all their cases, now and in future. Action: **Open Your cases** |
+| `OFC-N3` | An advocate shares more cases with a person already in their office, on Specific cases | The person | SMS | {#advocatename} has shared {#casetitle} with you. View it: {#link} - On Courts (for several cases: "{#count} cases") |
 | | | | In-app | **{#advocatename} shared {#casetitle} with you.** Action: **Open case** (for several cases: "{#count} cases", action **Open Your cases**) |
-| `OFC-N4` | The person accepts | The advocate | In-app | **{#personname} accepted your office invitation.** They can now work on the cases you shared. |
-| `OFC-N5` | The person declines (`OFC-07b`) | The advocate | In-app | **{#personname} declined your office invitation.** They have no access to your cases. |
 
 A person on All cases is **not** notified of each new case (`OFC-25`): at Gujarat's
 volumes that would be one message per filing.
 
-The SMS link opens the same request as the in-app notification.
+---
+
+# 7. Future enhancements
+
+Not in this version. Recorded so they are designed for, not built.
+
+- **Accept once per advocate.** The first time an advocate adds a person to their office,
+  the person accepts or declines before they get access; after accepting, every further
+  case that advocate shares is immediate. Until they accept, the advocate sees them as
+  **Awaiting acceptance**. Declining gives no access and removes them from the
+  advocate's People list. Notifications change to match: the first message asks the
+  person to accept, and the advocate is told in-app when they accept or decline.
+- **Adding people who are not yet registered.** The advocate enters a mobile number that
+  has no DRISTI account; the person is sent a link by SMS, registers as an advocate or
+  clerk ([account creation](account-creation-handover.md)), and receives the shared
+  access when their account is ready.
 
 ---
 
-# 7. Open questions
+# 8. Open questions
 
 None currently.
