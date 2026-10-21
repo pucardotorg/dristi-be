@@ -1,6 +1,6 @@
 # Office Management — Developer & Agent Handover
 
-**Status:** v1 — 2026-10-21; first version: People tab, adding a person (specific cases, all current cases, future cases), removing access, and the two other entry points (end of joining a case, sharing from a case or the cases list)
+**Status:** v2 — 2026-10-21; **a person accepts joining an advocate's office once** (`OFC-07`, `OFC-07a`, `OFC-07b`): until they accept, the cases shared with them wait; after that, further shares from that advocate are immediate. v1 — 2026-10-21; first version: People tab, adding a person (specific cases, all current cases, future cases), removing access, and the two other entry points (end of joining a case, sharing from a case or the cases list)
 **Date:** 2026-10-21
 **Audience:** developers and agents building office management (front end and backend)
 
@@ -23,8 +23,10 @@ this way is **office access**.
 | `OFC-04` | An advocate can share only cases where they are **on the vakalatnama**. A case the advocate holds through someone else's office access cannot be shared onward. |
 | `OFC-05` | Office access does not put the person on the vakalatnama or on the case record. An advocate who must act on the record is added to the case through a vakalatnama ([Join a Case](join-a-case-handover.md)), not through office management. |
 | `OFC-06` | A person with office access has the rights on the case set out in [`people-and-case-access.md`](../../docs/people-and-case-access.md) (rows 12–13): the same as the advocate, except they **cannot e-sign**. They cannot add or remove anyone's access to the case. |
-| `OFC-07` | Access is given **immediately**. The person does not accept an invitation; the case appears in their Your cases list at once. |
-| `OFC-08` | The person added is **notified** that they have been given access, naming the advocate and the cases. The channel is `Q-1`. |
+| `OFC-07` | **[OWNER]** The first time an advocate adds a person to their office, the person must **accept** before they get access. They are shown the advocate's name and the cases shared, and can **Accept** or **Decline**. Until they accept, the shared cases do not appear in their Your cases list. |
+| `OFC-07a` | **[OWNER]** Acceptance is **once per advocate**. After a person has accepted an advocate's office, every further case that advocate shares with them, including future cases (`OFC-25`), is given **immediately**, without asking again. |
+| `OFC-07b` | If the person declines, they get no access and leave the advocate's People list. The advocate can add them again, which asks them again. |
+| `OFC-08` | The person added is **notified**: on first adding, with the request to accept (`OFC-07`); afterwards, that they have been given access, naming the advocate and the cases. The channel, and where the request is accepted, is `Q-1`. |
 | `OFC-09` | A person can be in the office of several advocates. Each advocate sees and manages only the access they gave. |
 
 ---
@@ -37,7 +39,7 @@ The People tab is the advocate's office: everyone they have given office access 
 | --- | --- |
 | `OFC-10` | **People** is a top-level item in the advocate's navigation. |
 | `OFC-11` | The list shows **only people the advocate has given office access to**. Co-advocates on the same vakalatnama are not listed here; they appear on the case's Parties tab and in its access list (§5.2). |
-| `OFC-12` | Each row shows: name, mobile number, designation (**Advocate** or **Clerk**, from their account), and the number of the advocate's cases they can access. A person with **all future cases** on (`OFC-24`) is marked as such. |
+| `OFC-12` | Each row shows: name, mobile number, designation (**Advocate** or **Clerk**, from their account), and the number of the advocate's cases they can access. A person with **all future cases** on (`OFC-25`) is marked as such. A person who has not yet accepted (`OFC-07`) is marked **Awaiting acceptance**; the advocate can manage their cases and remove them as for anyone else. |
 | `OFC-13` | The list can be searched by name or mobile number, and sorted by name or by number of cases. |
 | `OFC-14` | **Add person** opens the add flow (§3). |
 | `OFC-15` | Opening a person shows their detail (§4) beside the list, without leaving the page. |
@@ -64,7 +66,7 @@ The People tab is the advocate's office: everyone they have given office access 
 | `OFC-25` | Separately, the advocate can turn on **All future cases**. When on, the person gets office access to every case the advocate is later added to on a vakalatnama, by filing or by joining, at the moment the advocate is added. It can be turned on together with either choice in `OFC-24`. |
 | `OFC-26` | **Add** gives the access and closes the flow. It needs at least one person, and at least one case or All future cases. |
 | `OFC-27` | Adding a person who is already in the office adds the newly chosen cases to their existing access; cases they already hold are left as they are. Turning on All future cases for them leaves their existing cases unchanged. |
-| `OFC-28` | The confirmation names who was added and to how many cases. |
+| `OFC-28` | The confirmation names who was added and to how many cases, and says when a person must first accept (`OFC-07`). |
 
 ---
 
@@ -113,6 +115,6 @@ added there appears on the People tab with that case.
 
 | ID | Question | Blocks |
 | --- | --- | --- |
-| `Q-1` | How is the person told they have been given access — SMS, in-app notification, or both? | `OFC-08` |
+| `Q-1` | How is the person told they have been given access, or asked to accept — SMS, in-app notification, a pending task, or a combination — and where do they accept? | `OFC-07`, `OFC-08` |
 | `Q-2` | Is the office the same as the advocate↔clerk and advocate↔junior mapping that e-filing consumes to auto-add a filer's juniors and a clerk's advocates (`FIL-05`, `ADV-1`, `ROLE-02` in the [e-filing handover](efiling-handover.md))? If so, `ROLE-02` (a clerk sees every case of an advocate they work for) conflicts with per-case access (`OFC-03`). | `OFC-03`, `OFC-25` |
 | `Q-3` | Do "all current cases" and future cases include the advocate's **drafts** not yet filed? | `OFC-24`, `OFC-25` |
