@@ -590,7 +590,6 @@ class SessionTests(OTPTestCase):
             name="Asha Menon",
             role=Role.LITIGANT,
             registration_status=RegistrationStatus.COMPLETE,
-            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.client.logout()
 
@@ -903,12 +902,11 @@ class GateTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_complete_account_passes(self):
-        """A finished account holding the current terms reaches the same endpoint."""
+        """A finished account reaches the same endpoint."""
         user = User.objects.create_user(
             mobile_number=MOBILE,
             password=PASSWORD,
             registration_status=RegistrationStatus.COMPLETE,
-            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.client.force_authenticate(user=user)
         response = self.client.get(reverse("gated-probe"))
