@@ -42,6 +42,40 @@ This document helps AI coding assistants work effectively inside the **Dristi** 
 3. Add the app to `src/config/settings/base.py` in `INSTALLED_APPS`.
 4. Create tests in `<app>/tests.py` or a `tests/` package.
 5. Register models in `<app>/admin.py` if they need admin access.
+6. Put the app's API error codes in `<app>/errors.py` (see "Adding error codes").
+
+## Adding error codes
+
+API errors are always `{"errors": [{"code", "message", "field"?}], "meta": ...}`
+(spec 0000 section 9). Do not build error `Response`s by hand.
+
+1. If the app has no domain prefix yet, allocate one in
+   `apps.api.errors.DOMAINS` and in the table in spec 0000 section 9.2.
+2. Define codes in `src/apps/<app>/errors.py` with
+   `apps.api.errors.define("E<domain><seq>", "Default message.", status=...)`.
+   Never renumber or reuse a released code.
+3. Raise them: `BusinessError(errors.X)` from views and services,
+   `errors.X.validation_error(...)` inside serializer validation, or set
+   `default_code` / `status_code` on a DRF exception subclass.
+4. Declare them on the endpoint, with the field / exact message where it helps:
+   `@extend_schema(responses=error_responses(errors.X.example(field="f")))`.
+   The success response is still inferred; write `{200: Out, **error_responses(...)}`
+   only when the body differs from the view's serializer. Validation, auth,
+   not-found and throttling examples are generated from the view; the Swagger
+   code catalogue updates itself.
+5. In tests, assert the error `code` (and `field`), not the message text.
+
+## Documenting endpoints in Swagger
+
+`apps.api.schema.ApiAutoSchema` infers most of the schema (spec 0000 section 10.2).
+Do not repeat what it infers:
+
+- Tags come from the owning app; pass `tags=` only for a different grouping.
+- Custom actions returning a list go in the viewset's `list_actions`
+  (paginated) or `unpaginated_actions` (returned whole), not
+  `responses=Serializer(many=True)` per action.
+- An action returning another model's objects picks that serializer in
+  `get_serializer_class()` and uses `self.get_serializer(...)`.
 
 ## Addon modules
 

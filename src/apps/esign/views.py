@@ -20,25 +20,27 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
+from apps.api import errors as api_errors
+from apps.api.schema import error_responses
 from apps.users.services.permissions import IsAuthenticatedAndRegistered
 
-from . import conf, constants
+from . import conf, constants, errors
 from .exceptions import ESignError
 from .log import log_event
 from .models import ESignTransaction
 from .parsers import ESignResponseTextXMLParser, ESignResponseXMLParser
 from .serializers import (
-    ESignErrorSerializer,
     ESignInitiateSerializer,
     ESignInitiationResponseSerializer,
     ESignTransactionSerializer,
 )
 from .services import initiate_esign, process_callback, retry_transaction
 
-TAGS = ["esign"]
 FORM_METHOD = "POST"
 
-# Failure code to HTTP status. Anything unmapped is a server-side problem.
+# Failure code to HTTP status. Anything unmapped is a server-side problem. The
+# JSON endpoints report failures through the codes in ``errors``, registered
+# with these same statuses; the plain-text callback uses this table directly.
 ERROR_STATUS = {
     constants.ESIGN_DISABLED: status.HTTP_503_SERVICE_UNAVAILABLE,
     constants.ESIGN_PROVIDER_NOT_CONFIGURED: status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -65,15 +67,6 @@ ERROR_STATUS = {
 }
 
 
-def error_response(error: ESignError) -> Response:
-    """Return the standard error body for a domain failure."""
-
-    return Response(
-        {"code": error.code, "detail": error.message},
-        status=ERROR_STATUS.get(error.code, status.HTTP_500_INTERNAL_SERVER_ERROR),
-    )
-
-
 def initiation_payload(result) -> dict:
     """Shape an :class:`InitiationResult` as the documented response body."""
 
@@ -93,15 +86,23 @@ class ESignInitiateView(APIView):
     permission_classes = [IsAuthenticated, IsAuthenticatedAndRegistered]
 
     @extend_schema(
-        tags=TAGS,
         operation_id="esign_initiate",
         request=ESignInitiateSerializer,
         responses={
             201: ESignInitiationResponseSerializer,
-            400: OpenApiResponse(ESignErrorSerializer, "Invalid request or placement."),
-            403: OpenApiResponse(ESignErrorSerializer, "Not permitted to sign this entity."),
-            409: OpenApiResponse(ESignErrorSerializer, "The document is already being signed."),
-            503: OpenApiResponse(ESignErrorSerializer, "eSign is disabled or unconfigured."),
+            **error_responses(
+                api_errors.DOES_NOT_EXIST.example(errors.SOURCE_NOT_FOUND.message, field="file_id"),
+                errors.NOT_A_PDF.example(field="file_id"),
+                errors.INVALID_PLACEHOLDER,
+                errors.NOT_PERMITTED,
+                errors.ALREADY_IN_PROGRESS,
+                errors.PDF_PREPARATION_FAILED,
+                errors.FILE_STORAGE_UNAVAILABLE,
+                errors.REQUEST_BUILD_FAILED,
+                errors.REQUEST_SIGNING_FAILED,
+                errors.DISABLED,
+                errors.PROVIDER_NOT_CONFIGURED,
+            ),
         },
     )
     def post(self, request):
@@ -122,7 +123,7 @@ class ESignInitiateView(APIView):
                 sign_placeholder=data["sign_placeholder"],
             )
         except ESignError as exc:
-            return error_response(exc)
+            raise errors.api_error(exc) from exc
 
         return Response(initiation_payload(result), status=status.HTTP_201_CREATED)
 
@@ -133,7 +134,6 @@ class ESignTransactionStatusView(APIView):
     permission_classes = [IsAuthenticated, IsAuthenticatedAndRegistered]
 
     @extend_schema(
-        tags=TAGS,
         operation_id="esign_transaction_status",
         parameters=[
             OpenApiParameter(
@@ -143,10 +143,7 @@ class ESignTransactionStatusView(APIView):
                 description="eSign transaction id.",
             )
         ],
-        responses={
-            200: ESignTransactionSerializer,
-            404: OpenApiResponse(ESignErrorSerializer, "Unknown transaction."),
-        },
+        responses=ESignTransactionSerializer,
     )
     def get(self, request, transaction_id):
         """Return the status of one of the caller's own transactions."""
@@ -164,7 +161,6 @@ class ESignRetryView(APIView):
     permission_classes = [IsAuthenticated, IsAuthenticatedAndRegistered]
 
     @extend_schema(
-        tags=TAGS,
         operation_id="esign_retry",
         request=None,
         parameters=[
@@ -177,9 +173,19 @@ class ESignRetryView(APIView):
         ],
         responses={
             201: ESignInitiationResponseSerializer,
-            400: OpenApiResponse(ESignErrorSerializer, "Not retryable or attempts exhausted."),
-            404: OpenApiResponse(ESignErrorSerializer, "Unknown transaction."),
-            409: OpenApiResponse(ESignErrorSerializer, "The document is already being signed."),
+            **error_responses(
+                errors.NOT_RETRYABLE,
+                errors.MAX_ATTEMPTS_EXCEEDED,
+                errors.PLACEHOLDER_MISSING,
+                errors.NOT_PERMITTED,
+                errors.ALREADY_IN_PROGRESS,
+                errors.PDF_PREPARATION_FAILED,
+                errors.FILE_STORAGE_UNAVAILABLE,
+                errors.REQUEST_BUILD_FAILED,
+                errors.REQUEST_SIGNING_FAILED,
+                errors.DISABLED,
+                errors.PROVIDER_NOT_CONFIGURED,
+            ),
         },
     )
     def post(self, request, transaction_id):
@@ -192,7 +198,7 @@ class ESignRetryView(APIView):
         try:
             result = retry_transaction(parent, user=request.user)
         except ESignError as exc:
-            return error_response(exc)
+            raise errors.api_error(exc) from exc
 
         return Response(initiation_payload(result), status=status.HTTP_201_CREATED)
 
@@ -231,7 +237,6 @@ class ESignCallbackView(APIView):
     throttle_classes = [ESignCallbackThrottle]
 
     @extend_schema(
-        tags=TAGS,
         operation_id="esign_callback",
         request={"application/x-www-form-urlencoded": {"type": "object"}},
         responses={

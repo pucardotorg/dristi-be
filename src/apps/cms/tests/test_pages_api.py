@@ -48,11 +48,12 @@ class TestPageBySlugAPI:
         assert body["categories"][0]["slug"] == "main"
         assert "meta" in body
 
-    def test_unknown_slug_returns_404_with_detail(self, client):
+    def test_unknown_slug_returns_404_with_error_body(self, client):
         response = client.get(slug_url("does-not-exist"))
         assert response.status_code == 404
-        # A DRF-shaped error body, not an empty/HTML 404.
-        assert "detail" in response.json()
+        # Project-standard error envelope: {"errors": [{"code", "message"}], ...}.
+        body = response.json()
+        assert body["errors"][0]["message"]
 
     def test_invalid_slug_in_url_returns_404(self, client):
         # "about_us" has an underscore, so it fails the slug route regex and

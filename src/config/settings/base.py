@@ -56,6 +56,9 @@ INSTALLED_APPS = [
     "apps.locations",
     "apps.files",
     "apps.cms",
+    "apps.pdf",
+    "apps.address",
+    "apps.parties",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
@@ -207,6 +210,44 @@ STORAGES["files"] = STORAGES["default"]
 FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=10 * 1024 * 1024)
 FILE_MAX_COUNT_PER_UPLOAD = env.int("FILE_MAX_COUNT_PER_UPLOAD", default=10)
 FILE_MAX_READ_BYTES = env.int("FILE_MAX_READ_BYTES", default=FILE_MAX_SIZE_BYTES)
+# User that background/system uploads are attributed to (spec 0014 #10): the
+# system account's email, mobile number, or primary key.
+FILE_SYSTEM_USER_ID = env("FILE_SYSTEM_USER_ID", default="")
+
+
+# ---------------------------------------------------------------------------
+# PDF service (apps.pdf, spec 0016)
+# ---------------------------------------------------------------------------
+PDF_EXTERNAL_API_TIMEOUT_SECONDS = env.int("PDF_EXTERNAL_API_TIMEOUT_SECONDS", default=10)
+PDF_EXTERNAL_API_MAX_RETRIES = env.int("PDF_EXTERNAL_API_MAX_RETRIES", default=2)
+# Upper bound on distinct external API calls one document may make.
+PDF_EXTERNAL_API_MAX_CALLS_PER_JOB = env.int("PDF_EXTERNAL_API_MAX_CALLS_PER_JOB", default=20)
+PDF_IMAGE_DOWNLOAD_TIMEOUT_SECONDS = env.int("PDF_IMAGE_DOWNLOAD_TIMEOUT_SECONDS", default=10)
+PDF_IMAGE_MAX_BYTES = env.int("PDF_IMAGE_MAX_BYTES", default=5 * 1024 * 1024)
+# Hosts external API and image URLs may point at; empty allows any host.
+PDF_FETCH_ALLOWED_HOSTS = env.list("PDF_FETCH_ALLOWED_HOSTS", default=[])
+PDF_MAX_RECORDS_PER_DOCUMENT = env.int("PDF_MAX_RECORDS_PER_DOCUMENT", default=100)
+PDF_BULK_MAX_PARALLEL_CHUNKS = env.int("PDF_BULK_MAX_PARALLEL_CHUNKS", default=4)
+PDF_SYNC_RENDER_TIMEOUT_SECONDS = env.int("PDF_SYNC_RENDER_TIMEOUT_SECONDS", default=10)
+PDF_MAX_REQUEST_DATA_BYTES = env.int("PDF_MAX_REQUEST_DATA_BYTES", default=2 * 1024 * 1024)
+PDF_CONFIG_CACHE_TIMEOUT_SECONDS = env.int("PDF_CONFIG_CACHE_TIMEOUT_SECONDS", default=3600)
+PDF_LOCALIZATION_BASE_URL = env("PDF_LOCALIZATION_BASE_URL", default="")
+PDF_LOCALIZATION_CACHE_TIMEOUT_SECONDS = env.int(
+    "PDF_LOCALIZATION_CACHE_TIMEOUT_SECONDS", default=3600
+)
+# Job-level retries for transient failures, with exponential backoff.
+PDF_JOB_MAX_RETRIES = env.int("PDF_JOB_MAX_RETRIES", default=3)
+PDF_RETRY_DELAY_BASE_SECONDS = env.int("PDF_RETRY_DELAY_BASE_SECONDS", default=30)
+PDF_RETRY_DELAY_MAX_SECONDS = env.int("PDF_RETRY_DELAY_MAX_SECONDS", default=900)
+PDF_TASK_TIME_LIMIT_MS = env.int("PDF_TASK_TIME_LIMIT_MS", default=600000)
+# Signing primitives consumed by eSign (spec 0016 #14).
+PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
+PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
+PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=FILE_MAX_SIZE_BYTES)
+# Service credentials external API mappings may reference by name, e.g.
+# {"hrms": {"Authorization": "Bearer ..."}}. Configure in code or via the
+# environment-specific settings module; never stored on jobs.
+PDF_SERVICE_CREDENTIALS = {}
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +284,10 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
         "apps.api.renderers.MetaJSONRenderer",
     ],
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Documents `meta` on every response and per-operation error examples — spec 0000 section 10.
+    "DEFAULT_SCHEMA_CLASS": "apps.api.schema.ApiAutoSchema",
+    # Renders every error as {"errors": [{"code", "message", "field"?}]} — spec 0000 section 9.
+    "EXCEPTION_HANDLER": "apps.api.errors.api_exception_handler",
 }
 
 SPECTACULAR_SETTINGS = {
@@ -257,6 +301,11 @@ SPECTACULAR_SETTINGS = {
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
     },
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        # Error response schema and the error code catalogue — spec 0000 section 10.
+        "apps.api.schema.error_schema_hook",
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -403,6 +452,16 @@ MESSAGING_TASK_TIME_LIMIT = env.int("MESSAGING_TASK_TIME_LIMIT", default=600000)
 
 
 # ---------------------------------------------------------------------------
+# India Post Pincode API (apps.address.services, spec 0020 §7.3)
+# ---------------------------------------------------------------------------
+# Used only to pre-fill district and state; a failure is reported to the
+# client as 503 and never blocks saving an address.
+PINCODE_API_URL = env("PINCODE_API_URL", default="https://api.postalpincode.in/pincode/{pincode}")
+PINCODE_API_TIMEOUT = env.int("PINCODE_API_TIMEOUT", default=5)
+PINCODE_API_CACHE_SECONDS = env.int("PINCODE_API_CACHE_SECONDS", default=60 * 60 * 24 * 7)
+
+
+# ---------------------------------------------------------------------------
 # CDAC SMS gateway addon (addon.cdac_sms_gateway)
 # ---------------------------------------------------------------------------
 # Remove this block, the INSTALLED_APPS entry, and the MESSAGING_BACKENDS["sms"]
@@ -533,6 +592,11 @@ LOGGING = {
             "propagate": False,
         },
         "apps.messaging": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.pdf": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
