@@ -352,10 +352,9 @@ Advocate and clerk add a nested object whose contents are written only to the pr
 leaves the column null (section 3.3). `ClerkProfile` has no equivalent.
 
 The bar council ID document is sent as a `bar_id_document` file field (PDF, JPEG or
-PNG): required on `POST /advocates/`, which therefore accepts
-`multipart/form-data` only, and optional on `POST /clerks/`, which accepts JSON
-or multipart. A multipart body cannot nest, so the profile block is sent as
-`profile.<field>` keys.
+PNG). It is required on both `POST /advocates/` and `POST /clerks/`, which
+therefore accept `multipart/form-data` only. A multipart body cannot nest, so
+the profile block is sent as `profile.<field>` keys.
 
 ```http
 201 Created
@@ -650,7 +649,7 @@ are not.
 | Role | Request type | Number verified | Bar ID document |
 |---|---|---|---|
 | `ADVOCATE` | `ADVOCATE_REGISTRATION` | `bar_registration_id` | required |
-| `CLERK` | `CLERK_REGISTRATION` | `clerk_registration_number` | optional |
+| `CLERK` | `CLERK_REGISTRATION` | `clerk_registration_number` | required |
 
 Both request types are seeded by a users migration with one approval step,
 routed to the `BAR_ID_APPROVER` group. The request's `data` is the profile
@@ -729,16 +728,21 @@ submitted, to pre-fill the correction screens:
 `application_id` is the 0010 request's id. `officer_message` and `rejected_at`
 come from the rejection in the request's current round, not earlier ones.
 
-`POST /registrations/current/resubmit/` takes the corrected claim, as JSON or
-multipart:
+`POST /registrations/current/resubmit/` takes the corrected claim as multipart,
+since it carries the document:
 
-```json
-{ "name": "...", "email": "...", "registration_number": "KER/1234/2019" }
+```
+Content-Type: multipart/form-data
+
+name:                ...
+email:               ...
+registration_number: KER/1234/2019
+bar_id_document:     <file>
 ```
 
 `registration_number` is the bar registration ID for an advocate and the clerk
-registration number for a clerk. `bar_id_document` is required for an
-advocate; a clerk who omits it keeps the document on file. The mobile number,
+registration number for a clerk. `bar_id_document` is required for both
+roles. The mobile number,
 role, password and terms cannot change here.
 
 In one transaction, with the profile row locked:
