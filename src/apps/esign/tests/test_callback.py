@@ -19,6 +19,7 @@ from apps.esign.constants import (
 from apps.esign.exceptions import (
     ESignCallbackMalformed,
     ESignFileStorageError,
+    ESignFileStorageRejected,
     ESignNotProcessable,
     ESignPDFEmbedError,
     ESignResponseStale,
@@ -59,7 +60,7 @@ class CallbackTests(ESignTestCase):
 
         signed = self.files.content_of(self.transaction.signed_file_id)
         self.assertIn(SIGNED_MARKER + PKCS7_BLOB, signed)
-        self.assertEqual(self.files.uploads[-1]["file_type"], "DIGITALLY_SIGNED")
+        self.assertEqual(self.files.uploads[-1]["file_type"], "digitally_signed")
 
     def test_signed_upload_is_attributed_to_the_signer(self):
         """The callback leg has no request user, so the stored signer is the actor."""
@@ -179,6 +180,18 @@ class CallbackTests(ESignTestCase):
         self.assertEqual(self.transaction.status, ESignStatus.FAILURE.value)
         self.assertEqual(self.transaction.failure_code, ESIGN_SIGNED_UPLOAD_FAILED)
         self.assertEqual(self.transaction.signed_file_id, "")
+
+    def test_signed_upload_rejection_keeps_the_storage_reason(self):
+        """The failure message on the row says which field storage refused."""
+        self.files.fail_upload = ESignFileStorageRejected(
+            "Document storage rejected the request. files[0].file_type: bad value."
+        )
+        with self.assertRaises(ESignSignedUploadError):
+            process_callback(self.callback_payload(self.transaction))
+
+        self.transaction.refresh_from_db()
+        self.assertEqual(self.transaction.failure_code, ESIGN_SIGNED_UPLOAD_FAILED)
+        self.assertIn("files[0].file_type", self.transaction.failure_message)
 
     def test_duplicate_callback_does_not_sign_twice(self):
         """A replayed delivery is a no-op that reports the same outcome."""

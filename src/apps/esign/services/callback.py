@@ -33,6 +33,7 @@ from ..constants import (
 from ..exceptions import (
     ESignError,
     ESignFileStorageError,
+    ESignFileStorageRejected,
     ESignNotProcessable,
     ESignPDFEmbedError,
     ESignProviderRejected,
@@ -183,6 +184,10 @@ def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> C
             organization_id=transaction.organization_id,
             tags=artefact_tags(module=transaction.module, entity_id=transaction.entity_id),
         )
+    except ESignFileStorageRejected as exc:
+        # Keep the storage module's reason: it names the wrong field.
+        error = ESignSignedUploadError(f"{ESignSignedUploadError.default_message} {exc.message}")
+        raise _fail(transaction, error, parsed) from exc
     except ESignError as exc:
         raise _fail(transaction, ESignSignedUploadError(), parsed) from exc
     except Exception as exc:

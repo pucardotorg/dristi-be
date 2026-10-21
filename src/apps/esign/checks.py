@@ -8,7 +8,7 @@ instead of failing on a user's first signature.
 from django.conf import settings
 from django.core.checks import Error, register
 
-from . import conf
+from . import conf, constants
 from .exceptions import ESignProviderNotConfigured
 from .providers import get_provider
 from .providers.mock import MockESignProvider
@@ -20,6 +20,34 @@ POSITIVE_INT_SETTINGS = (
     "ESIGN_MAX_ATTEMPTS",
     "ESIGN_PLACEHOLDER_RETENTION",
 )
+
+
+def _check_file_types():
+    """The ``file_type`` values this module uploads must exist in ``apps.files``.
+
+    They are plain strings so the domain does not import the storage schema,
+    which also means nothing else notices when that schema changes. Without
+    this check every upload fails at runtime instead.
+    """
+
+    try:
+        from apps.files.models import FileType
+    except ImportError:
+        return []
+
+    allowed = set(FileType.values)
+    return [
+        Error(
+            f"{name} is {value!r}, which apps.files does not accept.",
+            hint=f"Use one of the FileType values: {sorted(allowed)}.",
+            id="esign.E007",
+        )
+        for name, value in (
+            ("FILE_TYPE_PDF", constants.FILE_TYPE_PDF),
+            ("FILE_TYPE_SIGNED_PDF", constants.FILE_TYPE_SIGNED_PDF),
+        )
+        if value not in allowed
+    ]
 
 
 def is_production_settings() -> bool:
@@ -51,6 +79,8 @@ def check_esign_settings(app_configs, **kwargs):
     if not conf.is_enabled():
         # The kill switch is on: nothing below can be exercised.
         return messages
+
+    messages.extend(_check_file_types())
 
     provider = None
     try:

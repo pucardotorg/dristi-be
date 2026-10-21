@@ -51,9 +51,13 @@ class BuildInitiationTests(CDACSettingsMixin, TestCase):
     def decode(self, initiation):
         """Return the signed request XML carried by the form."""
 
-        return etree.fromstring(
-            base64.b64decode(initiation.form_fields[constants.FORM_FIELD_REQUEST])
-        )
+        return etree.fromstring(initiation.form_fields[constants.FORM_FIELD_REQUEST].encode())
+
+    def test_request_field_is_raw_signed_xml(self):
+        """The 2.1 form endpoint reads the XML itself, not a base64 wrapper."""
+        initiation = self.provider.build_initiation(self.transaction, "a1b2c3")
+
+        self.assertTrue(initiation.form_fields[constants.FORM_FIELD_REQUEST].startswith("<Esign "))
 
     def test_form_fields_carry_the_signed_request(self):
         """The UI posts these fields verbatim to the ESP."""

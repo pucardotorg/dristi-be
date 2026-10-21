@@ -4,6 +4,7 @@ import io
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.core.exceptions import ValidationError
 from django.test import SimpleTestCase, override_settings
 
 from apps.esign.clients.files import FileClient
@@ -14,6 +15,7 @@ from apps.esign.clients.pdf import (
 )
 from apps.esign.exceptions import (
     ESignFileStorageError,
+    ESignFileStorageRejected,
     ESignInvalidPlaceholder,
     ESignPDFEmbedError,
     ESignPDFError,
@@ -252,7 +254,7 @@ class FileClientTests(SimpleTestCase):
         file_id = self.client.upload(
             b"%PDF",
             filename="a-prepared.pdf",
-            file_type="PDF",
+            file_type="pdf",
             user_id="user-1",
             organization_id=None,
             tags=["esign", "orders"],
@@ -262,7 +264,7 @@ class FileClientTests(SimpleTestCase):
         self.assertEqual(self.uploaded["user_id"], "user-1")
         self.assertIsNone(self.uploaded["organization_id"])
         entry = self.uploaded["files"][0]
-        self.assertEqual(entry["file_type"], "PDF")
+        self.assertEqual(entry["file_type"], "pdf")
         self.assertEqual(entry["tags"], ["esign", "orders"])
         self.assertEqual(entry["file"].content_type, "application/pdf")
 
@@ -270,7 +272,7 @@ class FileClientTests(SimpleTestCase):
         """A storage response with no id cannot be persisted against."""
         self.use(self.service_module(upload_file=lambda payload: {"files": []}))
         with self.assertRaises(ESignFileStorageError):
-            self.client.upload(b"%PDF", filename="a.pdf", file_type="PDF", user_id="user-1")
+            self.client.upload(b"%PDF", filename="a.pdf", file_type="pdf", user_id="user-1")
 
     def test_delete_is_delegated(self):
         """Cleanup calls the storage module's delete."""
@@ -289,7 +291,31 @@ class FileClientTests(SimpleTestCase):
         """A failed store surfaces as a storage error, not the backend's own."""
         self.use(self.service_module(upload_file=raising(ConnectionError("s3 down"))))
         with self.assertRaises(ESignFileStorageError):
-            self.client.upload(b"%PDF", filename="a.pdf", file_type="PDF", user_id="user-1")
+            self.client.upload(b"%PDF", filename="a.pdf", file_type="pdf", user_id="user-1")
+
+    def test_storage_validation_error_on_upload_names_the_field(self):
+        """A rejected payload is a defect, reported with storage's reason."""
+        rejection = ValidationError(
+            {"files[0].file_type": "file_type must be one of ['pdf', 'digitally_signed']."}
+        )
+        self.use(self.service_module(upload_file=raising(rejection)))
+        with self.assertLogs("apps.esign", level="ERROR") as logs:
+            with self.assertRaises(ESignFileStorageRejected) as caught:
+                self.client.upload(b"%PDF", filename="a.pdf", file_type="PDF", user_id="user-1")
+
+        self.assertEqual(caught.exception.code, "ESIGN_FILE_STORAGE_REJECTED")
+        self.assertIn("files[0].file_type", caught.exception.message)
+        self.assertIn("FILE_STORAGE_REJECTED", logs.output[0])
+
+    def test_plain_validation_error_is_flattened(self):
+        """A message-only ValidationError still surfaces its text."""
+        self.use(
+            self.service_module(upload_file=raising(ValidationError("payload must be a dict.")))
+        )
+        with self.assertLogs("apps.esign", level="ERROR"):
+            with self.assertRaises(ESignFileStorageRejected) as caught:
+                self.client.upload(b"%PDF", filename="a.pdf", file_type="pdf", user_id="user-1")
+        self.assertIn("payload must be a dict.", caught.exception.message)
 
     def test_storage_backend_failure_on_delete_is_reported_safely(self):
         """Cleanup failures are mapped like any other storage failure."""

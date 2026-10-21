@@ -5,11 +5,15 @@ exceptions: it asks for bytes by ``file_id`` and gets a ``file_id`` back when it
 stores something new. Document bytes are never logged here.
 """
 
+import logging
+
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-from ..constants import PDF_CONTENT_TYPE
-from ..exceptions import ESignFileStorageError, ESignSourceNotFound
+from ..constants import EVENT_FILE_STORAGE_REJECTED, PDF_CONTENT_TYPE
+from ..exceptions import ESignFileStorageError, ESignFileStorageRejected, ESignSourceNotFound
+from ..log import log_event
 
 FILE_SERVICE_MODULE = "apps.files.services"
 
@@ -154,4 +158,26 @@ class FileClient:
             return exc
         if type(exc).__name__ in NOT_FOUND_ERROR_NAMES:
             return ESignSourceNotFound()
+        if isinstance(exc, ValidationError):
+            # Storage answered, and said our payload is wrong. Reporting that as
+            # "temporarily unavailable" hides a defect behind an outage.
+            detail = _validation_detail(exc)
+            log_event(EVENT_FILE_STORAGE_REJECTED, None, level=logging.ERROR, detail=detail)
+            return ESignFileStorageRejected(
+                f"{ESignFileStorageRejected.default_message} {detail}".strip()
+            )
         return (default or ESignFileStorageError)()
+
+
+def _validation_detail(exc: ValidationError) -> str:
+    """Flatten a storage ``ValidationError`` to ``field: message`` text.
+
+    The storage module's messages describe the payload this module built (field
+    names and allowed values), never document bytes or infrastructure.
+    """
+
+    if hasattr(exc, "error_dict"):
+        return "; ".join(
+            f"{field}: {' '.join(messages)}" for field, messages in exc.message_dict.items()
+        )
+    return " ".join(exc.messages)
