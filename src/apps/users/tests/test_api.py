@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+import dramatiq
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -12,7 +13,9 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.dristi_requests.models import Request
 from apps.files.models import File, FileType
+from apps.users import errors
 from apps.users.documents import BAR_COUNCIL_ID_TAG
 from apps.users.models import (
     PROFILE_MODELS,
@@ -21,12 +24,14 @@ from apps.users.models import (
     ApprovalStatus,
     ClerkProfile,
     LitigantProfile,
+    PowerOfAttorneyProfile,
     RegistrationStatus,
     Role,
     User,
 )
 from apps.users.serializers import MAX_PASSWORD_LENGTH, PROFILE_SERIALIZERS
 from apps.users.services.otp import Purpose
+from apps.users.tasks import request_registration_verification
 from config.urls import urlpatterns as project_urlpatterns
 
 from .base import MOBILE, PASSWORD, OTPTestCase
@@ -589,6 +594,217 @@ class RegistrationCompletionTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
+class PowerOfAttorneyRegistrationTests(OTPTestCase):
+    """POST /power-of-attorneys: registers like a litigant, with its own role."""
+
+    def setUp(self):
+        """Create an account sitting at PENDING_PROFILE, already logged in."""
+        super().setUp()
+        self.create_account()
+        self.user = User.objects.get(mobile_number=MOBILE)
+        self.broker = dramatiq.get_broker()
+        self.broker.flush_all()
+
+    def body(self, **extra):
+        """Return a valid completion body."""
+        return {
+            "name": "Ravi Kumar",
+            "email": "ravi@example.com",
+            "password": PASSWORD,
+            "terms_accepted": True,
+            **extra,
+        }
+
+    def register(self, **extra):
+        """POST /power-of-attorneys as JSON, running on-commit callbacks."""
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.post(
+                reverse("power-of-attorney-create"), self.body(**extra), format="json"
+            )
+
+    def test_route(self):
+        """The endpoint lives at /power-of-attorneys/."""
+        self.assertEqual(reverse("power-of-attorney-create"), "/api/v1/power-of-attorneys/")
+
+    def test_power_of_attorney_completes(self):
+        """The account gets the POA role, COMPLETE status and its password."""
+        response = self.register()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.role, Role.POWER_OF_ATTORNEY)
+        self.assertEqual(self.user.registration_status, RegistrationStatus.COMPLETE)
+        self.assertEqual(self.user.name, "Ravi Kumar")
+        self.assertEqual(self.user.email, "ravi@example.com")
+        self.assertTrue(self.user.check_password(PASSWORD))
+
+    def test_response_body(self):
+        """The response names the account, its role, and no next step."""
+        body = self.register().json()
+        self.assertEqual(body["user_id"], str(self.user.pk))
+        self.assertEqual(body["role"], Role.POWER_OF_ATTORNEY)
+        self.assertEqual(body["registration_status"], RegistrationStatus.COMPLETE)
+        self.assertIsNone(body["next"])
+        self.assertNotIn("password", body)
+
+    def test_profile_is_created_and_attributed_to_the_registrant(self):
+        """A POA profile row is written, carrying the name, by the registrant."""
+        self.register()
+
+        profile = PowerOfAttorneyProfile.objects.get(user=self.user)
+        self.assertEqual(profile.name, "Ravi Kumar")
+        self.assertEqual(profile.created_by, self.user)
+        self.assertEqual(profile.updated_by, self.user)
+        self.assertFalse(LitigantProfile.objects.filter(user=self.user).exists())
+
+    def test_email_is_optional(self):
+        """Without an email the account stores NULL, not an empty string."""
+        body = self.body()
+        del body["email"]
+        response = self.client.post(reverse("power-of-attorney-create"), body, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.email)
+
+    def test_session_is_kept(self):
+        """Nothing awaits approval, so the registrant stays logged in."""
+        self.register()
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.pk))
+        response = self.client.get(reverse("user-me"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_no_verification_is_raised(self):
+        """A POA makes no claim to verify, so no request is queued or raised."""
+        self.register()
+
+        queue = self.broker.queues.get(request_registration_verification.queue_name)
+        self.assertFalse(queue is not None and list(queue.queue))
+        self.assertFalse(Request.objects.exists())
+
+    def test_users_me_returns_the_profile(self):
+        """GET /users/me shows the POA role and its profile."""
+        self.register()
+
+        body = self.client.get(reverse("user-me")).json()
+        profile = PowerOfAttorneyProfile.objects.get(user=self.user)
+        self.assertEqual(body["role"], Role.POWER_OF_ATTORNEY)
+        self.assertEqual(body["profile"]["id"], str(profile.pk))
+        self.assertEqual(set(body["profile"]), {"id", "created_at", "updated_at"})
+
+    def test_can_log_in_with_the_password(self):
+        """The password set at registration opens a new session."""
+        self.register()
+        self.client.logout()
+
+        response = self.client.post(
+            reverse("session"),
+            {"mobile_number": MOBILE, "password": PASSWORD},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("_auth_user_id", self.client.session)
+
+    def test_completing_twice_is_refused(self):
+        """A finished registration cannot be overwritten, by any role's endpoint."""
+        self.register()
+        for url_name in ("power-of-attorney-create", "litigant-create"):
+            with self.subTest(url_name):
+                response = self.client.post(reverse(url_name), self.body(), format="json")
+                self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+                self.assertEqual(
+                    response.json()["errors"][0]["code"],
+                    errors.REGISTRATION_ALREADY_COMPLETE.code,
+                )
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.role, Role.POWER_OF_ATTORNEY)
+        self.assertEqual(PowerOfAttorneyProfile.objects.filter(user=self.user).count(), 1)
+        self.assertFalse(LitigantProfile.objects.exists())
+
+    def test_registered_litigant_cannot_become_a_power_of_attorney(self):
+        """The role is fixed once registration completes."""
+        self.client.post(reverse("litigant-create"), self.body(), format="json")
+        response = self.register()
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertFalse(PowerOfAttorneyProfile.objects.exists())
+
+    def assert_rejected(self, response, field, code=None):
+        """The request is a 400 on `field`, and nothing was written."""
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        found = {error.get("field"): error["code"] for error in response.json()["errors"]}
+        self.assertIn(field, found)
+        if code is not None:
+            self.assertEqual(found[field], code.code)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.registration_status, RegistrationStatus.PENDING_PROFILE)
+        self.assertIsNone(self.user.role)
+        self.assertFalse(PowerOfAttorneyProfile.objects.exists())
+
+    def test_terms_must_be_accepted(self):
+        """A false acceptance rejects the registration."""
+        response = self.register(terms_accepted=False)
+        self.assert_rejected(response, "terms_accepted", errors.TERMS_NOT_ACCEPTED)
+
+    def test_required_fields(self):
+        """name, password and terms_accepted are each required."""
+        for field in ("name", "password", "terms_accepted"):
+            with self.subTest(field):
+                body = self.body()
+                del body[field]
+                response = self.client.post(
+                    reverse("power-of-attorney-create"), body, format="json"
+                )
+                self.assert_rejected(response, field)
+
+    def test_weak_password_is_rejected(self):
+        """The password runs through AUTH_PASSWORD_VALIDATORS."""
+        self.assert_rejected(self.register(password="123"), "password", errors.PASSWORD_REJECTED)
+
+    def test_password_similar_to_the_name_is_rejected(self):
+        """The password is compared against the submitted name."""
+        self.assert_rejected(
+            self.register(password="RaviKumar1"), "password", errors.PASSWORD_REJECTED
+        )
+
+    def test_email_taken_by_another_account_is_rejected(self):
+        """An email held by another account cannot be claimed."""
+        User.objects.create_user(mobile_number="+919800000009", email="ravi@example.com")
+        self.assert_rejected(self.register(), "email", errors.EMAIL_TAKEN)
+
+    def test_invalid_email_is_rejected(self):
+        """A malformed email is refused."""
+        self.assert_rejected(self.register(email="not-an-email"), "email")
+
+    @override_settings(CURRENT_TERMS_VERSION=7)
+    def test_terms_version_comes_from_the_server(self):
+        """A client-supplied version is ignored in favour of server config."""
+        self.register(terms_version=999)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.terms_version_accepted, 7)
+        self.assertIsNotNone(self.user.terms_accepted_at)
+
+    def test_role_in_body_is_ignored(self):
+        """The role comes from the path, never from the body."""
+        self.register(role=Role.ADVOCATE)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.role, Role.POWER_OF_ATTORNEY)
+
+    def test_anonymous_caller_is_refused(self):
+        """Completion requires the session issued by POST /users."""
+        self.client.logout()
+        response = self.register()
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(PowerOfAttorneyProfile.objects.exists())
+
+    def test_get_is_not_allowed(self):
+        """The endpoint only creates."""
+        response = self.client.get(reverse("power-of-attorney-create"))
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
 class SessionTests(OTPTestCase):
     """POST /sessions."""
 
@@ -863,8 +1079,18 @@ class CurrentUserTests(OTPTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.json()["profile"])
 
-    def test_role_without_a_profile_table_has_null_profile(self):
-        """Power of attorney has no profile model, so profile is null."""
+    def test_power_of_attorney_sees_account_and_profile(self):
+        """The POA profile carries only its id and timestamps, like a litigant's."""
+        user = self.make_user(role=Role.POWER_OF_ATTORNEY)
+        PowerOfAttorneyProfile.objects.create(user=user, name="Asha Menon")
+
+        body = self.client.get(reverse("user-me")).json()
+
+        self.assertEqual(body["role"], Role.POWER_OF_ATTORNEY)
+        self.assertEqual(set(body["profile"]), {"id", "created_at", "updated_at"})
+
+    def test_power_of_attorney_with_no_profile_row_has_null_profile(self):
+        """A POA account with no profile row yet reads as null, not an error."""
         self.make_user(role=Role.POWER_OF_ATTORNEY)
         response = self.client.get(reverse("user-me"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)

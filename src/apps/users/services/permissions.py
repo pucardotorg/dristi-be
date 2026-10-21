@@ -34,8 +34,8 @@ class IsNotAwaitingApproval(BasePermission):
 
     PENDING is waiting on the approver; REJECTED was refused and may only
     correct and resubmit. Accounts whose role is not verified (litigants,
-    staff, approvers) and accounts without a profile yet pass: the latter are
-    IsAuthenticatedAndRegistered's to gate.
+    power of attorney holders, staff, approvers) and accounts without a
+    profile yet pass: the latter are IsAuthenticatedAndRegistered's to gate.
     """
 
     message = "Account approval is pending or was not approved."

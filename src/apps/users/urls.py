@@ -21,6 +21,11 @@ urlpatterns = [
     path("users/me/terms/", views.TermsView.as_view(), name="user-terms"),
     path("sessions/", views.SessionView.as_view(), name="session"),
     path("litigants/", views.LitigantRegistrationView.as_view(), name="litigant-create"),
+    path(
+        "power-of-attorneys/",
+        views.PowerOfAttorneyRegistrationView.as_view(),
+        name="power-of-attorney-create",
+    ),
     path("advocates/", views.AdvocateRegistrationView.as_view(), name="advocate-create"),
     path("clerks/", views.ClerkRegistrationView.as_view(), name="clerk-create"),
     path(

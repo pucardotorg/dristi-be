@@ -106,7 +106,8 @@ class AdvocateProfile(BaseModel):
 `ClerkProfile` is identical with `clerk_registration_number` in place of
 `bar_registration_id`, and without `advocate_type`. `LitigantProfile` carries
 `name` and nothing else — there is no claim to approve, so it has no
-`approval_status`.
+`approval_status`. `PowerOfAttorneyProfile` is identical to `LitigantProfile`,
+for the same reason.
 
 `bar_registration_id` is the user's own claim and is stored unverified.
 Verification happens through a 0010 request, not through fields on the profile.
@@ -121,8 +122,8 @@ field happens to be set. Registration always writes `PENDING`; the endpoint
 does not accept the field, and only a 0010 request moves it. That keeps the
 claim and its verdict in one row without letting the claimant set the verdict.
 
-`LitigantProfile` has no such field because a litigant makes no claim that
-anyone approves.
+`LitigantProfile` and `PowerOfAttorneyProfile` have no such field because a
+litigant or power of attorney holder makes no claim that anyone approves.
 
 ### 3.2 Why `name` is on the profile as well as the account
 
@@ -197,7 +198,8 @@ The call creates a row. An endpoint named `verify` reads as a side-effect-free c
 An incomplete account can log in. Without the status in the response, the client receives a `200` and a cookie and then fails against every gated endpoint with no explanation. Returning it gives the client a single rule regardless of which endpoint issued the session: if `registration_status != COMPLETE`, route to the wizard.
 
 The same holds for approval and for terms. The response also carries
-`approval_status` (null for litigants and for an account with no profile yet)
+`approval_status` (null for litigants, power of attorney holders, and an
+account with no profile yet)
 and `next`:
 
 ```json
@@ -210,7 +212,7 @@ and `next`:
 | Advocate or clerk, `PENDING` | `403` | not issued | `null` |
 | Advocate or clerk, `REJECTED` | `200` | issued, gated (section 7.5) | `"resubmit"` |
 | Current terms not held (section 4.4) | `200` | issued, gated | `"terms"` |
-| Advocate or clerk `ACCEPTED`, or litigant | `200` | issued | `null` |
+| Advocate or clerk `ACCEPTED`, litigant or power of attorney | `200` | issued | `null` |
 
 The rows are checked in that order and the first match wins. The wizard
 collects terms itself, so `"profile"` beats `"terms"`; a rejected registration
@@ -318,6 +320,7 @@ cooldown needs the explicit key.
 
 ```http
 POST   /litigants/            cookie auth
+POST   /power-of-attorneys/   cookie auth
 POST   /advocates/            cookie auth
 POST   /clerks/               cookie auth
 ```
@@ -362,7 +365,7 @@ or multipart. A multipart body cannot nest, so the profile block is sent as
 
 An advocate or clerk is logged out in the same response, since the profile is
 now `PENDING` and a pending account holds no session (section 4.1.2). A
-litigant keeps the session.
+litigant or power of attorney holder keeps the session.
 
 #### 4.2.1 Why the password is sent in the request body
 
@@ -424,8 +427,8 @@ Returns the account and the profile for its role:
 ```
 
 `profile` holds the role's fields from section 3 plus `id`, `created_at` and
-`updated_at` (a litigant's has only those three). It is `null` before
-registration completes and for power of attorney. The profile's `name` is not
+`updated_at` (a litigant's or power of attorney holder's has only those
+three). It is `null` before registration completes. The profile's `name` is not
 returned; `name` comes from the account.
 
 Gated on `IsAuthenticated` alone: a client mid-registration, or one sent to the
@@ -641,7 +644,8 @@ accept through `POST /users/me/terms/` (section 4.4).
 
 ## 7. Approval and Rejection
 
-Advocates and clerks are verified; litigants are not.
+Advocates and clerks are verified; litigants and power of attorney holders
+are not.
 
 | Role | Request type | Number verified | Bar ID document |
 |---|---|---|---|

@@ -578,6 +578,12 @@ class ErrorExampleTests(APITestCase):
         )
         self.assertIn("E01004", examples["409"])
 
+    def test_power_of_attorney_registration_declares_its_errors(self):
+        examples = operation_examples(self.schema, "/api/v1/power-of-attorneys/", "post")
+        self.assertIn("E01009 (email)", examples["400"])
+        self.assertIn("E01004", examples["409"])
+        self.assertIn("E00102", examples["403"])
+
     def test_validation_example_names_a_real_required_field(self):
         examples = operation_examples(self.schema, "/api/v1/users/", "post")
         self.assertIn("E00002 (mobile_number)", examples["400"])

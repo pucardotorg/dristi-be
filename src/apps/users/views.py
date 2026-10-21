@@ -103,7 +103,8 @@ SESSION_RESPONSE = inline_serializer(
         "approval_status": serializers.ChoiceField(
             choices=ApprovalStatus.choices,
             allow_null=True,
-            help_text="Null for roles whose registration is not approved (litigants).",
+            help_text="Null for roles whose registration is not approved "
+            "(litigants and power of attorney holders).",
         ),
         "next": serializers.CharField(
             allow_null=True,
@@ -488,7 +489,7 @@ class TermsView(APIView):
 
 @method_decorator(sensitive_post_parameters("password"), name="dispatch")
 class BaseRegistrationCompletionView(APIView):
-    """Shared body of POST /litigants, /advocates and /clerks.
+    """Shared body of POST /litigants, /power-of-attorneys, /advocates and /clerks.
 
     Deliberately gated on IsAuthenticated alone: these are the endpoints that
     grant a complete registration, so they cannot require one.
@@ -562,6 +563,16 @@ class LitigantRegistrationView(BaseRegistrationCompletionView):
     """POST /litigants."""
 
     role = Role.LITIGANT
+
+
+class PowerOfAttorneyRegistrationView(BaseRegistrationCompletionView):
+    """POST /power-of-attorneys.
+
+    Registers like a litigant: JSON body, no document, no verification, and
+    the session is kept.
+    """
+
+    role = Role.POWER_OF_ATTORNEY
 
 
 @extend_schema_view(

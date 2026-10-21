@@ -4,7 +4,13 @@ from django.contrib import admin
 
 from apps.core.mixins import AuditUserAdminMixin
 
-from .models import AdvocateProfile, ClerkProfile, LitigantProfile, User
+from .models import (
+    AdvocateProfile,
+    ClerkProfile,
+    LitigantProfile,
+    PowerOfAttorneyProfile,
+    User,
+)
 
 
 @admin.register(User)
@@ -49,6 +55,15 @@ class UserAdmin(AuditUserAdminMixin, admin.ModelAdmin):
 @admin.register(LitigantProfile)
 class LitigantProfileAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Litigant profiles."""
+
+    list_display = ("name", "user", "created_at")
+    search_fields = ("name", "user__mobile_number", "user__name")
+    list_select_related = ("user",)
+
+
+@admin.register(PowerOfAttorneyProfile)
+class PowerOfAttorneyProfileAdmin(AuditUserAdminMixin, admin.ModelAdmin):
+    """Power of attorney holder profiles."""
 
     list_display = ("name", "user", "created_at")
     search_fields = ("name", "user__mobile_number", "user__name")

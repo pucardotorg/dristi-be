@@ -150,6 +150,24 @@ class LitigantProfile(BaseModel):
         return self.name or f"Litigant profile for {self.user_id}"
 
 
+class PowerOfAttorneyProfile(BaseModel):
+    """A power of attorney holder's profile.
+
+    Like a litigant's: no claim to approve, so no approval status.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="power_of_attorney_profile",
+    )
+    name = models.CharField(max_length=256, blank=True)
+
+    def __str__(self):
+        """Return a readable label."""
+        return self.name or f"Power of attorney profile for {self.user_id}"
+
+
 class AdvocateProfile(BaseModel):
     """An advocate's profile.
 
@@ -236,6 +254,7 @@ class ClerkProfile(BaseModel):
 # The profile table each role registers into. A role absent from here has none.
 PROFILE_MODELS = {
     Role.LITIGANT: LitigantProfile,
+    Role.POWER_OF_ATTORNEY: PowerOfAttorneyProfile,
     Role.ADVOCATE: AdvocateProfile,
     Role.CLERK: ClerkProfile,
 }

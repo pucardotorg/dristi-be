@@ -17,6 +17,7 @@ from .models import (
     ApprovalStatus,
     ClerkProfile,
     LitigantProfile,
+    PowerOfAttorneyProfile,
     Role,
     mobile_number_validator,
 )
@@ -85,7 +86,7 @@ class RegistrationDocumentField(serializers.FileField):
 
 
 class RegistrationCompletionSerializer(serializers.Serializer):
-    """Common body of POST /litigants, /advocates and /clerks.
+    """Common body of POST /litigants, /power-of-attorneys, /advocates and /clerks.
 
     `terms_version` is deliberately not declared. A client-supplied version or
     timestamp is unverifiable and therefore worthless as evidence, so both are
@@ -309,6 +310,17 @@ class LitigantProfileReadSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class PowerOfAttorneyProfileReadSerializer(serializers.ModelSerializer):
+    """A power of attorney holder's profile as returned by GET /users/me."""
+
+    class Meta:
+        """Meta options."""
+
+        model = PowerOfAttorneyProfile
+        fields = ["id", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
 class AdvocateProfileReadSerializer(serializers.ModelSerializer):
     """An advocate's profile as returned by GET /users/me."""
 
@@ -346,6 +358,7 @@ class ClerkProfileReadSerializer(serializers.ModelSerializer):
 
 PROFILE_SERIALIZERS = {
     LitigantProfile: LitigantProfileReadSerializer,
+    PowerOfAttorneyProfile: PowerOfAttorneyProfileReadSerializer,
     AdvocateProfile: AdvocateProfileReadSerializer,
     ClerkProfile: ClerkProfileReadSerializer,
 }
