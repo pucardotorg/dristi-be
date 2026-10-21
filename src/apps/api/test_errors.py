@@ -4,6 +4,7 @@ import importlib
 import json
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, RequestDataTooBig, SuspiciousOperation
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -278,6 +279,7 @@ class ErrorResponseAPITests(APITestCase):
             mobile_number="+919000000011",
             password="test",
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
 
     def assert_error_body(self, response, code):

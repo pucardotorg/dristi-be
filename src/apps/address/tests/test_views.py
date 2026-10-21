@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
 from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
@@ -37,6 +38,7 @@ def client(db):
         name="Priya",
         role=Role.LITIGANT,
         registration_status=RegistrationStatus.COMPLETE,
+        terms_version_accepted=settings.CURRENT_TERMS_VERSION,
     )
     api_client = APIClient()
     api_client.force_authenticate(user)

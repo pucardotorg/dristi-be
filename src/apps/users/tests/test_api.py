@@ -817,6 +817,7 @@ class SessionTests(OTPTestCase):
             name="Asha Menon",
             role=Role.LITIGANT,
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.client.logout()
 
@@ -1144,6 +1145,7 @@ class GateTests(OTPTestCase):
             mobile_number=MOBILE,
             password=PASSWORD,
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.client.force_authenticate(user=user)
         response = self.client.get(reverse("gated-probe"))
