@@ -304,6 +304,36 @@ Download and delete do not re-implement storage. They delegate to `apps.files`:
 
 Because [`0014`](0014-file-storage-service.md) currently lists deletion and content access as open items, this module depends on those being added there. Until they exist, `apps.pdf` must not delete objects directly from object storage — see #6.
 
+#### 4.5 Error codes
+
+Errors use the standard shape of [`0000`](0000-api-coding-spec.md) #9.1.
+Validation, authentication, not-found and throttling use the common `E00…`
+codes; this module's codes (domain `04`) are defined in `apps/pdf/errors.py`.
+A `PDFError.code` (#13, `PDF_TEMPLATE_NOT_FOUND` …) is the reason recorded on
+`PDFJob.error_code` and in logs; `errors.api_error()` maps it to the API code
+below and keeps its `safe_message`.
+
+| Code | Failure code | Status | Raised when |
+| --- | --- | --- | --- |
+| `E04001` | `PDF_TEMPLATE_NOT_FOUND` | 404 | no active template version for `key` |
+| `E04002` | `PDF_INVALID_REQUEST_DATA` | 400 | `data` fails the template's `request_schema`; `field` = `data` |
+| `E04003` | `PDF_SYNC_RENDER_NOT_ALLOWED` | 400 | template is bulk, uses `external_api` mappings or sets `sync_render: false` (#4.3) |
+| `E04004` | `PDF_SYNC_RENDER_TIMEOUT` | 504 | synchronous render exceeded `PDF_SYNC_RENDER_TIMEOUT_SECONDS` |
+| `E04005` | `PDF_INVALID_TRANSITION` | 409 | cancelling a terminal job |
+| `E04006` | — | 409 | deleting the documents of a job that is not terminal |
+| `E04007` | — | 404 | download: no document at that `index`/`sequence`, or it no longer exists |
+| `E04008` | `PDF_DEPENDENCY_UNAVAILABLE` | 503 | a mapping dependency failed during a synchronous render |
+| `E04009` | `PDF_STORAGE_UNAVAILABLE` | 502 | the File Storage Service failed, e.g. some documents could not be deleted (retry the request) |
+| `E04010` | `PDF_INVALID_CONFIG` | 500 | the stored template configuration is invalid |
+| `E04011` | `PDF_RENDER_FAILED` | 500 | the renderer failed on a validated configuration |
+
+* An unknown job id, and another user's job id, are the common not-found
+  (`E00105`), so ids cannot be probed (#13). `PDF_JOB_NOT_FOUND` maps there too.
+* Serializer checks on `data` use the common codes: not a JSON object is
+  `E00012`, over `PDF_MAX_REQUEST_DATA_BYTES` is `E00006`, both on `data`.
+* Any other `PDFError` reaching a view is `500 E00100`. The signing errors of
+  #14.3 never reach a PDF endpoint.
+
 ### 5. Generation pipeline
 
 The worker performs:
