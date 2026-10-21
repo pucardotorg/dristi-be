@@ -1569,6 +1569,61 @@
       "contentHash": "556584e407af",
       "pageUpdatedAt": 1792503826.93,
       "note": "Created 2026-10-20. Callout is a short Last synced line. `sections` not recorded."
+    },
+    "office-management-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-lxUEhfnjuv",
+      "title": "Office Management Handover",
+      "contentHash": "99685d969371",
+      "pageUpdatedAt": 1792550169.657,
+      "calloutElementId": "eca-zJsZcK9_hd",
+      "sections": [
+        {
+          "key": "# Office Management — Developer & Agent Handover",
+          "elementId": "cl-RBE1ifaoKu",
+          "hash": "a990d895b950"
+        },
+        {
+          "key": "# 1. What office management is",
+          "elementId": "cl-5c7NgeMYqE",
+          "hash": "0c3b72a97d40"
+        },
+        {
+          "key": "# 2. People tab",
+          "elementId": "cl-5VIG8fzi8t",
+          "hash": "4516c741b397"
+        },
+        {
+          "key": "# 3. Adding a person",
+          "elementId": "cl-l0h-R7yoxK",
+          "hash": "571f08c5f90d"
+        },
+        {
+          "key": "# 4. Person detail",
+          "elementId": "cl-NVoU5xyNGz",
+          "hash": "909312b132c0"
+        },
+        {
+          "key": "# 5. Other entry points",
+          "elementId": "cl-LpYQyZ3DVX",
+          "hash": "e13f24605ce2"
+        },
+        {
+          "key": "# 6. Notifications",
+          "elementId": "cl-K5B9Otamqt",
+          "hash": "257efed51590"
+        },
+        {
+          "key": "# 7. Future enhancements",
+          "elementId": "cl-103ozYdoay",
+          "hash": "b89186ed84bf"
+        },
+        {
+          "key": "# 8. Open questions",
+          "elementId": "cl-2gzLEBeqTh",
+          "hash": "1bf07ef2f477"
+        }
+      ],
+      "note": "Created 2026-10-21. Each markdown chunk was split by Superhuman into several blocks; elementId is the chunk's heading block."
     }
   }
 }
