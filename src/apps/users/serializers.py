@@ -113,10 +113,7 @@ class RegistrationCompletionSerializer(serializers.Serializer):
             name=attrs.get("name", ""),
             email=attrs.get("email") or "",
         )
-        try:
-            validate_password(attrs["password"], user=candidate)
-        except DjangoValidationError as exc:
-            raise errors.PASSWORD_REJECTED.validation_error({"password": exc.messages}) from exc
+        run_password_validators("password", attrs["password"], candidate)
         return attrs
 
     def validate_email(self, value):
