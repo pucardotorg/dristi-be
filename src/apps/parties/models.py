@@ -7,6 +7,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.api.meta import IST_TIMEZONE
 from apps.core.models import BaseAuditableModel, BaseModel
 
 # Any phone number, in E.164 form: "+", a country code and the number, digits
@@ -42,9 +43,18 @@ CIN_REGEX = r"^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$"
 cin_validator = RegexValidator(CIN_REGEX, "Enter a valid CIN, e.g. U72200KA2010PTC052651.")
 
 
+def today_in_india():
+    """Return today's date in India.
+
+    ``TIME_ZONE`` is UTC, so ``timezone.localdate()`` alone would still give
+    yesterday for the first five and a half hours of every Indian day.
+    """
+    return timezone.localdate(timezone=IST_TIMEZONE)
+
+
 def validate_not_in_future(value):
-    """Reject a date after today."""
-    if value > timezone.localdate():
+    """Reject a date after today, in India."""
+    if value > today_in_india():
         raise ValidationError("This date cannot be in the future.")
 
 
@@ -228,9 +238,11 @@ class Person(BaseModel, BaseAuditableModel):
     relation = models.CharField(max_length=16, choices=Relation.choices, null=True, blank=True)
     relative_name = models.CharField(max_length=256, null=True, blank=True)
     date_of_birth = models.DateField(null=True, blank=True, validators=[validate_not_in_future])
-    # For when only an approximate age is known ("aged about 45"), as is often
-    # the case for an accused. Cleared once the date of birth is known, so it
-    # cannot go stale; read ``current_age`` instead.
+    # Only for when the date of birth is unknown and an approximate age is
+    # stated ("aged about 45"), as is often the case for an accused. It is
+    # cleared whenever a date of birth is given: the date of birth is the source
+    # of truth, and a stored age alongside it would go stale. ``current_age``
+    # gives the age either way.
     age = models.PositiveSmallIntegerField(
         null=True, blank=True, validators=[MaxValueValidator(MAX_AGE)]
     )
@@ -314,7 +326,8 @@ class Person(BaseModel, BaseAuditableModel):
             self.disability_status = DisabilityStatus.NONE
         self.phone_number = _blank_to_none(self.phone_number)
         self.relative_name = _blank_to_none(self.relative_name)
-        if self.date_of_birth:
+        # A known date of birth replaces an approximate age.
+        if self.date_of_birth not in (None, ""):
             self.age = None
         super().clean_fields(exclude=exclude)
 
@@ -322,7 +335,7 @@ class Person(BaseModel, BaseAuditableModel):
     def current_age(self):
         """Return today's age: from the date of birth when known, else the stated age."""
         if self.date_of_birth:
-            return age_on(self.date_of_birth, timezone.localdate())
+            return age_on(self.date_of_birth, today_in_india())
         return self.age
 
     def save(self, *args, **kwargs):
@@ -338,7 +351,7 @@ class Person(BaseModel, BaseAuditableModel):
     def clean(self):
         """Check the fields that only make sense together.
 
-        A designation describes a role at an institution, so needs one; and a
+        A designation describes a role at an institution, so needs one; a
         relation ("S/O", "W/O" …) names a relative, so needs their name.
         """
         super().clean()

@@ -1,7 +1,11 @@
 """Tests for the read-only Person and Institution serializers."""
 
-import pytest
+import datetime
 
+import pytest
+from django.utils import timezone
+
+from apps.parties.models import age_on
 from apps.parties.serializers import InstitutionSerializer, PersonSerializer
 from apps.parties.tests.factories import make_address, make_institution, make_person
 from apps.users.models import User
@@ -55,3 +59,15 @@ def test_input_is_ignored():
 
     assert serializer.is_valid(), serializer.errors
     assert serializer.validated_data == {}
+
+
+def test_age_is_todays_age_from_the_date_of_birth():
+    born = datetime.date(1980, 5, 17)
+
+    data = PersonSerializer(make_person(date_of_birth=born)).data
+
+    assert data["age"] == age_on(born, timezone.localdate())
+
+
+def test_age_is_the_stated_age_without_a_date_of_birth():
+    assert PersonSerializer(make_person(age=45)).data["age"] == 45

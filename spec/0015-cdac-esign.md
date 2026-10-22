@@ -655,6 +655,17 @@ C-DAC `errCode` values are mapped to these in `addon/cdac_esign/constants.py`;
 the raw code is kept in `response_audit` for support. API responses never expose
 key material, stack traces, raw ESP payloads, or infrastructure details.
 
+These failure codes are what a transaction records in `failure_code` (returned
+by the status endpoint, #6.2) and what the audit log carries. The JSON endpoints
+report a failure in the standard error body of spec 0000 section 9, under the
+registered code `apps.esign.errors` maps it to (`E03001`–`E03026`, one per
+failure code, with the HTTP status listed in `views.ERROR_STATUS`). Validation
+errors on the initiation request use the common field codes; `file_id` that
+resolves to nothing is `E00011`, a non-PDF source `E03003`; file storage
+being unavailable while it is checked is the service failure `E03007` (502),
+not a validation error. The callback (#6.3)
+is not a JSON API and answers a rejection in plain text with the failure code.
+
 ---
 
 ## 11. Configuration

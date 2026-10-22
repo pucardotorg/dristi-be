@@ -42,8 +42,8 @@ class PersonSerializer(serializers.ModelSerializer):
     """Read-only representation of a person, with addresses and institution nested."""
 
     institution = InstitutionSerializer(read_only=True)
-    # Computed from the date of birth when known (spec 0020 §2.4).
-    age = serializers.IntegerField(source="current_age", read_only=True)
+    # Today's age: from the date of birth when known, else the stated age.
+    age = serializers.IntegerField(source="current_age", read_only=True, allow_null=True)
     permanent_address = AddressSerializer(read_only=True)
     correspondence_address = AddressSerializer(read_only=True)
 

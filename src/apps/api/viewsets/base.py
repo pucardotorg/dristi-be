@@ -4,30 +4,21 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.http import Http404
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException, NotFound
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
-from rest_framework.views import exception_handler as drf_exception_handler
 from rest_framework.viewsets import GenericViewSet
 
+from apps.api import errors
 from apps.api.serializers import AuditedModelSerializer
 from apps.core.mixins import AuditUserMixin
-
-
-def api_exception_handler(exc, context):
-    """Default API exception handler wrapper.
-
-    This currently delegates to DRF's default handler, while providing
-    a project-level extension point for future normalization.
-    """
-
-    if isinstance(exc, Http404):
-        # Keep DRF default 404 behavior.
-        return drf_exception_handler(exc, context)
-    return drf_exception_handler(exc, context)
 
 
 class APIBaseViewSet(AuditUserMixin, GenericViewSet):
@@ -47,11 +38,6 @@ class APIBaseViewSet(AuditUserMixin, GenericViewSet):
     retrieve_serializer_class = None
     create_serializer_class = None
     update_serializer_class = None
-
-    def get_exception_handler(self):
-        """Return the exception handler used by this viewset."""
-
-        return api_exception_handler
 
     def get_queryset(self):
         """Return queryset derived from database_model when queryset is unset."""
@@ -262,8 +248,39 @@ class APIDestroyMixin:
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def batch_error_status(statuses: list[int]) -> int:
+    """Return the HTTP status for a batch whose items failed with ``statuses``.
+
+    Every item's own error code is in the body; the status summarises them. If
+    all failures agree, that status is kept, so a batch refused only for
+    permissions is a 403, not a 400. When they differ, the failure the client
+    cannot fix by correcting its data wins: a server error (500), then
+    authentication (401), then permission (403). Otherwise it is a 400.
+    """
+    distinct = set(statuses)
+    if len(distinct) == 1:
+        return distinct.pop()
+    if any(code >= 500 for code in distinct):
+        return status.HTTP_500_INTERNAL_SERVER_ERROR
+    for code in (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN):
+        if code in distinct:
+            return code
+    return status.HTTP_400_BAD_REQUEST
+
+
 class APIUpsertMixin:
     """Optional bulk upsert action using the shared create/update pipelines."""
+
+    def _get_upsert_target(self, lookup_value):
+        """Return the instance a datapoint updates, or raise ``NotFound``.
+
+        A malformed lookup value (for example a non-UUID id) raises Django's
+        ``ValidationError``, reported against the datapoint like any other.
+        """
+        try:
+            return self.get_queryset().get(**{self.lookup_field: lookup_value})
+        except ObjectDoesNotExist:
+            raise NotFound(f"No object with {self.lookup_field} {lookup_value!r}.") from None
 
     @action(detail=False, methods=["POST"])
     def upsert(self, request, *args, **kwargs):
@@ -275,13 +292,23 @@ class APIUpsertMixin:
             raise DRFValidationError("No datapoints provided")
 
         results: list[dict[str, Any]] = []
-        had_error = False
+        error_items: list[dict[str, Any]] = []
+        error_statuses: list[int] = []
 
         with transaction.atomic():
-            for item in datapoints:
+            for index, item in enumerate(datapoints):
+                # Errors are attributed to the datapoint they came from, so a
+                # client can match them back to its own payload.
+                field = f"datapoints[{index}]"
                 if not isinstance(item, dict):
-                    had_error = True
-                    results.append({"error": "Each datapoint must be an object"})
+                    error_statuses.append(status.HTTP_400_BAD_REQUEST)
+                    error_items.append(
+                        {
+                            "code": errors.INCORRECT_TYPE.code,
+                            "message": "Each datapoint must be an object.",
+                            "field": field,
+                        }
+                    )
                     continue
 
                 lookup_value = item.get(self.lookup_field)
@@ -292,7 +319,7 @@ class APIUpsertMixin:
                     if lookup_value is None:
                         instance = self._handle_create(item)
                     else:
-                        instance = self.get_queryset().get(**{self.lookup_field: lookup_value})
+                        instance = self._get_upsert_target(lookup_value)
                         instance = self._handle_update(instance, item, partial=False)
 
                     serializer = self.get_retrieve_serializer_class()(
@@ -300,17 +327,21 @@ class APIUpsertMixin:
                         context=self.get_serializer_context(),
                     )
                     results.append(serializer.data)
-                except Exception as exc:  # noqa: BLE001
-                    had_error = True
-                    handled = self.get_exception_handler()(exc, {"view": self, "request": request})
-                    if handled is not None and hasattr(handled, "data"):
-                        results.append(handled.data)
-                    else:
-                        raise
+                except (
+                    APIException,
+                    Http404,
+                    DjangoPermissionDenied,
+                    DjangoValidationError,
+                ) as exc:
+                    api_exc = errors.as_api_exception(exc)
+                    error_statuses.append(api_exc.status_code)
+                    error_items.extend(errors.error_items(api_exc, field=field))
 
-            if had_error:
+            # All-or-nothing: one bad datapoint rolls back the whole batch,
+            # so only the errors are reported.
+            if error_items:
                 transaction.set_rollback(True)
-                return Response(results, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"errors": error_items}, status=batch_error_status(error_statuses))
 
         return Response(results, status=status.HTTP_200_OK)
 

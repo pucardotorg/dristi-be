@@ -3,6 +3,7 @@
 import itertools
 
 import pytest
+from django.conf import settings
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
@@ -39,6 +40,7 @@ def make_user(db):
             name="Filer",
             role=Role.LITIGANT,
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
 
     return factory

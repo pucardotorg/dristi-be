@@ -21,7 +21,6 @@ def index(request):
 
 
 @extend_schema(
-    tags=["core"],
     responses={
         200: inline_serializer(
             name="HealthCheckResponse",
@@ -41,12 +40,10 @@ def health_check(request):
     list=extend_schema(
         summary="List API version change logs",
         description="Return paginated API version changelog entries ordered by most recent.",
-        tags=["core"],
     ),
     retrieve=extend_schema(
         summary="Retrieve an API version change log",
         description="Return a single API version changelog entry by UUID.",
-        tags=["core"],
     ),
 )
 class ApiVersionChangeLogViewSet(APIModelReadOnlyViewSet):

@@ -55,6 +55,8 @@ INSTALLED_APPS = [
     "apps.organizations",
     "apps.locations",
     "apps.files",
+    "apps.cms",
+    "apps.pdf",
     "apps.address",
     "apps.parties",
     "apps.cases",
@@ -209,6 +211,44 @@ STORAGES["files"] = STORAGES["default"]
 FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=10 * 1024 * 1024)
 FILE_MAX_COUNT_PER_UPLOAD = env.int("FILE_MAX_COUNT_PER_UPLOAD", default=10)
 FILE_MAX_READ_BYTES = env.int("FILE_MAX_READ_BYTES", default=FILE_MAX_SIZE_BYTES)
+# User that background/system uploads are attributed to (spec 0014 #10): the
+# system account's email, mobile number, or primary key.
+FILE_SYSTEM_USER_ID = env("FILE_SYSTEM_USER_ID", default="")
+
+
+# ---------------------------------------------------------------------------
+# PDF service (apps.pdf, spec 0016)
+# ---------------------------------------------------------------------------
+PDF_EXTERNAL_API_TIMEOUT_SECONDS = env.int("PDF_EXTERNAL_API_TIMEOUT_SECONDS", default=10)
+PDF_EXTERNAL_API_MAX_RETRIES = env.int("PDF_EXTERNAL_API_MAX_RETRIES", default=2)
+# Upper bound on distinct external API calls one document may make.
+PDF_EXTERNAL_API_MAX_CALLS_PER_JOB = env.int("PDF_EXTERNAL_API_MAX_CALLS_PER_JOB", default=20)
+PDF_IMAGE_DOWNLOAD_TIMEOUT_SECONDS = env.int("PDF_IMAGE_DOWNLOAD_TIMEOUT_SECONDS", default=10)
+PDF_IMAGE_MAX_BYTES = env.int("PDF_IMAGE_MAX_BYTES", default=5 * 1024 * 1024)
+# Hosts external API and image URLs may point at; empty allows any host.
+PDF_FETCH_ALLOWED_HOSTS = env.list("PDF_FETCH_ALLOWED_HOSTS", default=[])
+PDF_MAX_RECORDS_PER_DOCUMENT = env.int("PDF_MAX_RECORDS_PER_DOCUMENT", default=100)
+PDF_BULK_MAX_PARALLEL_CHUNKS = env.int("PDF_BULK_MAX_PARALLEL_CHUNKS", default=4)
+PDF_SYNC_RENDER_TIMEOUT_SECONDS = env.int("PDF_SYNC_RENDER_TIMEOUT_SECONDS", default=10)
+PDF_MAX_REQUEST_DATA_BYTES = env.int("PDF_MAX_REQUEST_DATA_BYTES", default=2 * 1024 * 1024)
+PDF_CONFIG_CACHE_TIMEOUT_SECONDS = env.int("PDF_CONFIG_CACHE_TIMEOUT_SECONDS", default=3600)
+PDF_LOCALIZATION_BASE_URL = env("PDF_LOCALIZATION_BASE_URL", default="")
+PDF_LOCALIZATION_CACHE_TIMEOUT_SECONDS = env.int(
+    "PDF_LOCALIZATION_CACHE_TIMEOUT_SECONDS", default=3600
+)
+# Job-level retries for transient failures, with exponential backoff.
+PDF_JOB_MAX_RETRIES = env.int("PDF_JOB_MAX_RETRIES", default=3)
+PDF_RETRY_DELAY_BASE_SECONDS = env.int("PDF_RETRY_DELAY_BASE_SECONDS", default=30)
+PDF_RETRY_DELAY_MAX_SECONDS = env.int("PDF_RETRY_DELAY_MAX_SECONDS", default=900)
+PDF_TASK_TIME_LIMIT_MS = env.int("PDF_TASK_TIME_LIMIT_MS", default=600000)
+# Signing primitives consumed by eSign (spec 0016 #14).
+PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
+PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
+PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=FILE_MAX_SIZE_BYTES)
+# Service credentials external API mappings may reference by name, e.g.
+# {"hrms": {"Authorization": "Bearer ..."}}. Configure in code or via the
+# environment-specific settings module; never stored on jobs.
+PDF_SERVICE_CREDENTIALS = {}
 
 
 # ---------------------------------------------------------------------------
@@ -230,22 +270,30 @@ REST_FRAMEWORK = {
     # their registration is incomplete, which is wrong and sends the client to
     # the wrong screen. Keep both, in this order.
     #
-    # IsNotAwaitingApproval comes last, for the same reason: it is only
+    # IsNotAwaitingApproval comes after it, for the same reason: it is only
     # meaningful for a signed-in, registered account. It keeps an advocate or
     # clerk whose registration is awaiting approval, or was not approved, out
     # of everything except the endpoints that serve that state (login, and the
     # resubmission of a rejected registration).
+    #
+    # HasAcceptedCurrentTerms comes last: an unfinished account accepts the
+    # terms inside the wizard, so it must be told to finish registering, and a
+    # rejected one must resubmit before re-accepting would get it anywhere.
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
         "apps.users.services.permissions.IsAuthenticatedAndRegistered",
         "apps.users.services.permissions.IsNotAwaitingApproval",
+        "apps.users.services.permissions.HasAcceptedCurrentTerms",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": [
         "apps.api.renderers.MetaJSONRenderer",
     ],
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Documents `meta` on every response and per-operation error examples — spec 0000 section 10.
+    "DEFAULT_SCHEMA_CLASS": "apps.api.schema.ApiAutoSchema",
+    # Renders every error as {"errors": [{"code", "message", "field"?}]} — spec 0000 section 9.
+    "EXCEPTION_HANDLER": "apps.api.errors.api_exception_handler",
 }
 
 SPECTACULAR_SETTINGS = {
@@ -265,6 +313,11 @@ SPECTACULAR_SETTINGS = {
         "ESignEntityTypeEnum": "apps.esign.constants.EntityType",
         "GenderEnum": "apps.parties.models.Gender",
     },
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        # Error response schema and the error code catalogue — spec 0000 section 10.
+        "apps.api.schema.error_schema_hook",
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -282,6 +335,13 @@ OTP_TTL_SECONDS = env.int("OTP_TTL_SECONDS", default=300)
 # message never arrived has to wait. Validated at startup by
 # apps.users.services.checks.
 OTP_RESEND_COOLDOWN_SECONDS = env.int("OTP_RESEND_COOLDOWN_SECONDS", default=30)
+
+# Wrong guesses allowed against one code before it is destroyed and a new one
+# must be requested.
+OTP_MAX_ATTEMPTS = env.int("OTP_MAX_ATTEMPTS", default=5)
+
+# How long a verified password-reset code lets the session set a new password.
+PASSWORD_RESET_WINDOW_SECONDS = env.int("PASSWORD_RESET_WINDOW_SECONDS", default=600)
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +369,7 @@ CACHALOT_CACHE = "default"
 CACHALOT_TIMEOUT = env.int("CACHALOT_TIMEOUT", default=120)
 
 # Phase 1: allow-list only low-churn, non-user-scoped reference data.
-CACHALOT_ONLY_CACHABLE_APPS = ("locations",)
+CACHALOT_ONLY_CACHABLE_APPS = ("locations", "cms")
 # Cachalot unions these with the app allow-list. List the table rather than the
 # core app so AdditionalAttribute and the history tables stay uncached.
 CACHALOT_ONLY_CACHABLE_TABLES = (
@@ -551,6 +611,11 @@ LOGGING = {
             "propagate": False,
         },
         "apps.messaging": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.pdf": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
