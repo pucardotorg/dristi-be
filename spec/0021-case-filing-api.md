@@ -219,7 +219,7 @@ If document upload is the first action, the case must exist before we can link t
 
 **Error Responses:**
 - `400 Bad Request`: Unknown `document_type`, or the file fails the shared `apps.files` check: it must be a PDF, JPEG or PNG whose content matches its type (leading bytes), with a matching extension, within the size limit. The declared content type and the file name are only hints, so a renamed or mislabelled file is refused.
-- `409 Conflict` (`case_not_editable`): the case has been submitted (§7)
+- `409 Conflict` (`E07001`): the case has been submitted (§7)
 - `404 Not Found`: Neither case nor draft session exists for the provided ID
 - `413 Payload Too Large`: File exceeds size limit
 
@@ -1088,7 +1088,17 @@ Client calls this before attempting to submit for signing. Invalid cases cannot 
 
 Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle requires additional endpoints.
 
-**Only drafts can be changed.** Every write (uploading or removing a document, adding, changing or removing evidence, saving a details section) is refused with `409 Conflict` and code `case_not_editable` once the case has left `DRAFT_IN_PROGRESS`, so what the court reviews cannot change underneath it. Reads are unaffected. Every successful write also sets the case's `updated_at` (and `updated_by`), which listings show and the concurrent-modification check (§10.4) relies on.
+**Only drafts can be changed.** Every write (uploading or removing a document, adding, changing or removing evidence, saving a details section) is refused with `409 Conflict` and code `E07001` once the case has left `DRAFT_IN_PROGRESS`, so what the court reviews cannot change underneath it. Reads are unaffected. Every successful write also sets the case's `updated_at` (and `updated_by`), which listings show and the concurrent-modification check (§10.4) relies on.
+
+**Error codes** (domain `07`, spec 0000 §9). Errors use the standard body; besides the common codes, the case filing endpoints return:
+
+| Code | Status | When |
+| --- | --- | --- |
+| `E07001` | 409 | The case has been submitted, so it can no longer be changed. |
+| `E07002` | 400 | A document type, evidence type or details section this case's type does not accept (`field` names which). |
+| `E07003` | 400 | `case_document_id` is not an active document of the same case. |
+
+A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
 
 ```
 POST /cases/{case_id}/submit-for-signing

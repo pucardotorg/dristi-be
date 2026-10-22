@@ -237,14 +237,47 @@ def get_config(case_type):
     return CASE_TYPES[case_type]
 
 
-def schema_errors(schema, data):
-    """Return every way ``data`` breaks ``schema``, as messages; empty when it fits.
+@dataclass(frozen=True)
+class SchemaError:
+    """One way data breaks a schema.
 
-    Shared by the API (which reports them as a 400) and the models' ``clean()``
-    (so the admin, and any other write that validates, enforces the same rules).
+    ``path`` locates the offending value (``cheque_number``, ``items[0].name``),
+    empty for the object as a whole; jsonschema's ``message`` names the value
+    but not where it was sent. ``keyword`` is the schema keyword that failed
+    (``required``, ``pattern`` …).
+    """
+
+    path: str
+    message: str
+    keyword: str
+
+    def __str__(self):
+        return f"{self.path}: {self.message}" if self.path else self.message
+
+
+def schema_errors(schema, data):
+    """Return every way ``data`` breaks ``schema``; empty when it fits.
+
+    Shared by the API (which reports them as a 400, each on its field path) and
+    the models' ``clean()`` (so the admin, and any other write that validates,
+    enforces the same rules).
     """
     validator = jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
-    return [error.message for error in validator.iter_errors(data)]
+    return [
+        SchemaError(_path(error.absolute_path), error.message, error.validator)
+        for error in validator.iter_errors(data)
+    ]
+
+
+def _path(parts):
+    """Build a spec 0000 §9.1 field path: dotted keys, indexed list elements."""
+    path = ""
+    for part in parts:
+        if isinstance(part, int):
+            path += f"[{part}]"
+        else:
+            path += f".{part}" if path else str(part)
+    return path
 
 
 def get_description(case_type):

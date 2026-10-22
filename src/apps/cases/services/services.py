@@ -17,11 +17,14 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
-from rest_framework import serializers, status
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework import serializers
+from rest_framework.exceptions import ErrorDetail, NotFound
 
+from apps.api import errors as api_errors
+from apps.api.errors import BusinessError
 from apps.files import documents
 
+from .. import errors
 from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
 from .case_types import get_config, schema_errors
 
@@ -36,13 +39,14 @@ DOCUMENT_TAG = "cases"
 # Distinguishes "not sent" from an explicit ``None`` in partial updates.
 _UNSET = object()
 
-
-class CaseNotEditable(APIException):  # noqa: N818 - named after its code
-    """The case has been submitted, so its filing can no longer change."""
-
-    status_code = status.HTTP_409_CONFLICT
-    default_detail = "This case has been submitted and can no longer be changed."
-    default_code = "case_not_editable"
+# The common code each JSON Schema keyword's failure is reported with; any
+# other keyword (pattern, format, minimum …) is a plain invalid value.
+SCHEMA_KEYWORD_ERRORS = {
+    "required": api_errors.REQUIRED,
+    "type": api_errors.INCORRECT_TYPE,
+    "enum": api_errors.INVALID_CHOICE,
+    "const": api_errors.INVALID_CHOICE,
+}
 
 
 # Draft sessions and case resolution
@@ -75,7 +79,7 @@ def get_case(case_id, user):
 def get_case_type(case_or_draft_id, user):
     """Return the case type of ``user``'s editable case or live draft session.
 
-    For writes: raises ``NotFound`` for anything else, and ``CaseNotEditable``
+    For writes: raises ``NotFound`` for anything else, and ``CASE_NOT_EDITABLE``
     for a submitted case. Lets a write be validated against its case type
     before a case is created or a file is stored.
     """
@@ -131,9 +135,9 @@ def get_or_create_case(case_or_draft_id, user):
 
 
 def _ensure_editable(case):
-    """Raise ``CaseNotEditable`` unless the case is still a draft."""
+    """Raise ``CASE_NOT_EDITABLE`` unless the case is still a draft."""
     if case.status != CaseStatus.DRAFT_IN_PROGRESS:
-        raise CaseNotEditable
+        raise BusinessError(errors.CASE_NOT_EDITABLE)
 
 
 def _touch(case, user):
@@ -161,15 +165,12 @@ def _get_draft_key(draft_session_id):
 
 
 def _require_allowed(value, allowed, field, case_type):
-    """Raise a 400 on ``field`` unless ``value`` is allowed for ``case_type``."""
+    """Raise ``NOT_ACCEPTED_FOR_CASE_TYPE`` on ``field`` unless ``value`` is in ``allowed``."""
     if value not in allowed:
-        raise serializers.ValidationError(
-            {
-                field: [
-                    f"'{value}' is not accepted for {case_type} cases. "
-                    f"Must be one of: {', '.join(allowed)}."
-                ]
-            }
+        raise BusinessError(
+            errors.NOT_ACCEPTED_FOR_CASE_TYPE,
+            f"'{value}' is not accepted for {case_type} cases. Must be one of: {', '.join(allowed)}.",
+            field=field,
         )
 
 
@@ -246,18 +247,25 @@ def validate_evidence(case_type, evidence_type, evidence_info):
 
 
 def _validate_schema(schema, data, field):
-    """Raise a 400 on ``field`` listing every way ``data`` breaks ``schema``."""
-    messages = schema_errors(schema, data)
-    if messages:
-        raise serializers.ValidationError({field: messages})
+    """Raise a 400 listing every way ``data``, sent as ``field``, breaks ``schema``.
+
+    Each error is reported on the path to the offending value, such as
+    ``evidence_info.cheque_number``; one about the object as a whole (a
+    missing or unknown key) on ``field`` itself.
+    """
+    detail = {}
+    for problem in schema_errors(schema, data):
+        code = SCHEMA_KEYWORD_ERRORS.get(problem.keyword, api_errors.INVALID).code
+        path = f"{field}.{problem.path}" if problem.path else field
+        detail.setdefault(path, []).append(ErrorDetail(problem.message, code=code))
+    if detail:
+        raise serializers.ValidationError(detail)
 
 
 def _require_case_document(case, case_document_id):
-    """Raise a 400 unless ``case_document_id`` is an active document of ``case``."""
+    """Raise ``DOCUMENT_NOT_ON_CASE`` unless ``case_document_id`` is an active document of ``case``."""
     if not CaseDocument.objects.active().filter(pk=case_document_id, case=case).exists():
-        raise serializers.ValidationError(
-            {"case_document_id": ["No active document with this id on this case."]}
-        )
+        raise BusinessError(errors.DOCUMENT_NOT_ON_CASE, field="case_document_id")
 
 
 def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_document_id=None):
@@ -348,8 +356,10 @@ def _get_active_case_item(model, object_id, user):
 def get_details(case_id, user):
     """Return every details section of ``user``'s case."""
     case = get_case(case_id, user)
-    detail = _get_detail_row(case)
-    return {section: getattr(detail, section) for section in get_config(case.case_type).sections}
+    config = get_config(case.case_type)
+    detail = config.get_detail_model().objects.filter(case=case).first()
+    # A missing row reads as one not yet filled in, rather than a 500.
+    return {section: getattr(detail, section) if detail else {} for section in config.sections}
 
 
 def save_details_section(case_or_draft_id, user, section, data):
@@ -360,7 +370,7 @@ def save_details_section(case_or_draft_id, user, section, data):
     _validate_schema(schemas[section], data, "data")
     with transaction.atomic():
         case = get_or_create_case(case_or_draft_id, user)
-        detail = _get_detail_row(case)
+        detail = _get_or_create_detail_row(case, user)
         setattr(detail, section, data)
         detail.updated_by = user
         detail.save(update_fields=[section, "updated_by", "updated_at"])
@@ -368,5 +378,16 @@ def save_details_section(case_or_draft_id, user, section, data):
         return case
 
 
-def _get_detail_row(case):
-    return get_config(case.case_type).get_detail_model().objects.get(case=case)
+def _get_or_create_detail_row(case, user):
+    """Return the case's detail row, creating it if missing.
+
+    It is normally created with the case, but a case made another way (the
+    admin, a shell) may have none; saving a section then creates it instead
+    of failing with a 500.
+    """
+    detail, _ = (
+        get_config(case.case_type)
+        .get_detail_model()
+        .objects.get_or_create(case=case, defaults={"created_by": user, "updated_by": user})
+    )
+    return detail

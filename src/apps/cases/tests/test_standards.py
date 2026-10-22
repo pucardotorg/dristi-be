@@ -9,6 +9,8 @@ from rest_framework.test import APIClient
 from apps.cases.models import Case, CaseType
 from apps.users.models import RegistrationStatus, Role, User
 
+from .conftest import error_codes
+
 pytestmark = pytest.mark.django_db
 
 ANY_ID = uuid.uuid4()
@@ -97,16 +99,16 @@ class TestPagination:
 
 
 class TestErrorShape:
-    """Every 400 reports a list of messages per field, as DRF serializers do."""
+    """Every error uses the standard body: a registered code, on its field (spec 0000 §9)."""
 
     @pytest.mark.parametrize(
         "params", [{"created_by": "someone"}, {"status": "NOPE"}], ids=["created_by", "status"]
     )
-    def test_list_filter_errors_are_lists(self, client, params):
-        body = client.get(reverse("case-list"), params).json()
+    def test_list_filter_errors_name_their_field(self, client, params):
+        response = client.get(reverse("case-list"), params)
 
         (field,) = params
-        assert isinstance(body[field], list)
+        assert error_codes(response) == {field: ["E00005"]}
 
     def test_details_body_must_be_an_object(self, client, draft):
         response = client.put(
@@ -116,5 +118,7 @@ class TestErrorShape:
         )
 
         assert response.status_code == 400
-        assert response.json()["data"] == ["Expected a JSON object."]
+        assert response.json()["errors"] == [
+            {"code": "E00012", "message": "Expected a JSON object.", "field": "data"}
+        ]
         assert Case.objects.count() == 0

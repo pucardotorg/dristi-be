@@ -10,11 +10,15 @@ their own cases.
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import generics, status
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.api import errors as api_errors
+from apps.api.schema import error_responses
+
+from . import errors
 from .models import NOT_JOINABLE_STATUSES, Case, CaseDocument, CaseEvidence, CaseStatus
 from .serializers import (
     CaseDocumentSerializer,
@@ -80,14 +84,18 @@ class CaseListView(generics.ListAPIView):
         """Return the caller's cases, optionally filtered by status."""
         params = self.request.query_params
         if params.get("created_by") not in (None, "me"):
-            raise ValidationError({"created_by": ["Only 'me' is supported."]})
+            raise api_errors.INVALID_CHOICE.validation_error(
+                {"created_by": ["Only 'me' is supported."]}
+            )
 
         queryset = Case.objects.filter(created_by=self.request.user)
         if params.get("status"):
             statuses = params["status"].split(",")
             unknown = sorted(set(statuses) - set(CaseStatus.values))
             if unknown:
-                raise ValidationError({"status": [f"Unknown status: {', '.join(unknown)}."]})
+                raise api_errors.INVALID_CHOICE.validation_error(
+                    {"status": [f"Unknown status: {', '.join(unknown)}."]}
+                )
             queryset = queryset.filter(status__in=statuses)
         return queryset
 
@@ -133,7 +141,15 @@ class CaseDocumentListView(generics.ListAPIView):
         return queryset
 
     @extend_schema(
-        tags=TAGS, request=CaseDocumentUploadSerializer, responses={201: CaseDocumentSerializer}
+        tags=TAGS,
+        request=CaseDocumentUploadSerializer,
+        responses={
+            201: CaseDocumentSerializer,
+            **error_responses(
+                errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="document_type"),
+                errors.CASE_NOT_EDITABLE,
+            ),
+        },
     )
     def post(self, request, case_id):
         """Upload a case document; the first save on a draft creates the case."""
@@ -148,7 +164,7 @@ class CaseDocumentListView(generics.ListAPIView):
 class CaseDocumentDetailView(APIView):
     """DELETE /case-documents/{case_document_id} — soft delete."""
 
-    @extend_schema(tags=TAGS, responses={204: None})
+    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
     def delete(self, request, case_document_id):
         """Remove a document from its case."""
         services.remove_document(case_document_id, request.user)
@@ -176,12 +192,18 @@ class CaseDetailsSectionView(APIView):
         # The body is the section object; its schema depends on the case type and
         # section, and is served by GET /case-types/{case_type}.
         request=OpenApiTypes.OBJECT,
-        responses={200: DetailsSectionSerializer},
+        responses={
+            200: DetailsSectionSerializer,
+            **error_responses(
+                errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="section"),
+                errors.CASE_NOT_EDITABLE,
+            ),
+        },
     )
     def put(self, request, case_id, section):
         """Replace a section; the first save on a draft creates the case."""
         if not isinstance(request.data, dict):
-            raise ValidationError({"data": ["Expected a JSON object."]})
+            raise api_errors.INCORRECT_TYPE.validation_error({"data": ["Expected a JSON object."]})
         case = services.save_details_section(case_id, request.user, section, request.data)
         return Response({"case_id": case.id, "section": section, "data": request.data})
 
@@ -205,7 +227,16 @@ class CaseEvidenceListView(generics.ListAPIView):
         return queryset
 
     @extend_schema(
-        tags=TAGS, request=EvidenceCreateSerializer, responses={201: CaseEvidenceSerializer}
+        tags=TAGS,
+        request=EvidenceCreateSerializer,
+        responses={
+            201: CaseEvidenceSerializer,
+            **error_responses(
+                errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="evidence_type"),
+                errors.DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
+                errors.CASE_NOT_EDITABLE,
+            ),
+        },
     )
     def post(self, request, case_id):
         """Add evidence; the first save on a draft creates the case."""
@@ -220,7 +251,15 @@ class CaseEvidenceDetailView(APIView):
     """PATCH or DELETE /case-evidence/{case_evidence_id}."""
 
     @extend_schema(
-        tags=TAGS, request=EvidenceUpdateSerializer, responses={200: CaseEvidenceSerializer}
+        tags=TAGS,
+        request=EvidenceUpdateSerializer,
+        responses={
+            200: CaseEvidenceSerializer,
+            **error_responses(
+                errors.DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
+                errors.CASE_NOT_EDITABLE,
+            ),
+        },
     )
     def patch(self, request, case_evidence_id):
         """Replace ``evidence_info`` and/or link or unlink a document."""
@@ -230,7 +269,7 @@ class CaseEvidenceDetailView(APIView):
         evidence = services.update_evidence(evidence, request.user, **serializer.validated_data)
         return Response(CaseEvidenceSerializer(evidence).data)
 
-    @extend_schema(tags=TAGS, responses={204: None})
+    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
     def delete(self, request, case_evidence_id):
         """Remove evidence from its case."""
         evidence = services.get_evidence(case_evidence_id, request.user)

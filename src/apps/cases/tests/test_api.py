@@ -13,7 +13,13 @@ from apps.files.models import File
 from apps.organizations.models import OrganizationType
 from apps.organizations.tests.factories import make_organization
 
-from .conftest import CHEQUE_INFO, DEMAND_NOTICE_INFO, RETURN_MEMO_INFO
+from .conftest import (
+    CHEQUE_INFO,
+    DEMAND_NOTICE_INFO,
+    RETURN_MEMO_INFO,
+    error_codes,
+    error_roots,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -71,7 +77,7 @@ class TestDraftsAndListing:
         response = client.post(reverse("case-list"), {"case_type": "CIVIL"}, format="json")
 
         assert response.status_code == 400
-        assert "case_type" in response.json()
+        assert error_codes(response) == {"case_type": ["E00005"]}
 
     def test_court_given_on_the_draft_is_set_on_the_case(self, client):
         court = make_organization(organization_type=OrganizationType.MAGISTRATE_COURT)
@@ -107,7 +113,7 @@ class TestDraftsAndListing:
         )
 
         assert response.status_code == 400
-        assert "court_id" in response.json()
+        assert error_roots(response) == {"court_id"}
 
     def test_list_shows_only_the_callers_cases(self, client, user, other_user, draft):
         add_cheque(client, draft)
@@ -207,7 +213,7 @@ class TestDocuments:
         response = upload(client, draft, pdf, document_type="UNKNOWN_TYPE")
 
         assert response.status_code == 400
-        assert "document_type" in response.json()
+        assert error_codes(response) == {"document_type": ["E00005"]}
         assert Case.objects.count() == File.objects.count() == 0
 
     def test_type_the_case_type_does_not_accept_is_400_and_creates_nothing(
@@ -222,7 +228,9 @@ class TestDocuments:
         response = upload(client, draft, pdf, document_type="AFFIDAVIT")
 
         assert response.status_code == 400
-        assert "not accepted for CHEQUE_BOUNCE" in response.json()["document_type"][0]
+        (error,) = response.json()["errors"]
+        assert (error["code"], error["field"]) == ("E07002", "document_type")
+        assert "not accepted for CHEQUE_BOUNCE" in error["message"]
         assert Case.objects.count() == File.objects.count() == 0
 
     def test_unsupported_file_type_is_400(self, client, draft, pdf):
@@ -233,7 +241,7 @@ class TestDocuments:
         )
 
         assert response.status_code == 400
-        assert "file" in response.json()
+        assert error_roots(response) == {"file"}
 
     def test_unknown_id_is_404_and_stores_no_file(self, client, pdf):
         assert upload(client, uuid.uuid4(), pdf).status_code == 404
@@ -320,7 +328,7 @@ class TestDetails:
         response = put_section(client, draft, section, data)
 
         assert response.status_code == 400
-        assert "data" in response.json()
+        assert error_roots(response) == {"data"}
         assert Case.objects.count() == 0
 
     def test_payee_bank_details_not_needed_when_not_deposited_by_payee(self, client, draft):
@@ -342,6 +350,20 @@ class TestDetails:
 
     def test_details_of_a_draft_with_no_case_yet_are_not_found(self, client, draft):
         assert client.get(reverse("case-details", args=[draft])).status_code == 404
+
+    def test_case_without_a_detail_row_reads_empty_and_saves(self, client, user):
+        # Created outside the API (admin, shell), so no detail row exists.
+        case = Case.objects.create(case_type=CaseType.CHEQUE_BOUNCE, created_by=user)
+
+        details = client.get(reverse("case-details", args=[case.pk])).json()
+        details.pop("meta")
+        assert details == {"jurisdiction_limitation": {}, "adr_other_prayer": {}}
+
+        assert (
+            put_section(client, case.pk, "jurisdiction_limitation", JURISDICTION).status_code == 200
+        )
+        details = client.get(reverse("case-details", args=[case.pk])).json()
+        assert details["jurisdiction_limitation"] == JURISDICTION
 
 
 class TestEvidence:
@@ -384,8 +406,24 @@ class TestEvidence:
         )
 
         assert response.status_code == 400
-        assert "evidence_info" in response.json()
+        assert error_roots(response) == {"evidence_info"}
         assert Case.objects.count() == 0
+
+    def test_invalid_value_error_names_its_field(self, client, draft):
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "CHEQUE", "evidence_info": {**CHEQUE_INFO, "cheque_number": "12"}},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["errors"] == [
+            {
+                "code": "E00001",
+                "message": "'12' does not match '^[0-9]{6}$'",
+                "field": "evidence_info.cheque_number",
+            }
+        ]
 
     @pytest.mark.parametrize(
         ("evidence_type", "evidence_info"),
@@ -420,7 +458,7 @@ class TestEvidence:
         )
 
         assert response.status_code == 400
-        assert "evidence_info" in response.json()
+        assert error_roots(response) == {"evidence_info"}
 
     def test_undelivered_demand_notice_needs_no_delivery_date(self, client, draft):
         info = {k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"}
@@ -462,7 +500,7 @@ class TestEvidence:
         response = add_cheque(client, draft, case_document_id=document_id)
 
         assert response.status_code == 400
-        assert "case_document_id" in response.json()
+        assert error_codes(response) == {"case_document_id": ["E07003"]}
 
     def test_other_users_cannot_reach_evidence(self, client, client_for, other_user, draft):
         evidence_id = add_cheque(client, draft).json()["case_evidence_id"]

@@ -4,6 +4,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from apps.api import errors as api_errors
 from apps.files import documents
 from apps.organizations.models import Organization
 
@@ -35,7 +36,7 @@ class DraftSessionSerializer(serializers.Serializer):
     def validate_court_id(self, court_id):
         """Accept only an existing, active organization."""
         if court_id is not None and not Organization.objects.active().filter(pk=court_id).exists():
-            raise serializers.ValidationError("No active court with this id.")
+            raise api_errors.DOES_NOT_EXIST.validation_error("No active court with this id.")
         return court_id
 
 

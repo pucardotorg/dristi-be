@@ -3,6 +3,7 @@
 import itertools
 
 import pytest
+from django.conf import settings
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
@@ -12,6 +13,25 @@ from apps.cases.services import services
 from apps.users.models import RegistrationStatus, Role, User
 
 _numbers = itertools.count(1)
+
+
+def error_codes(response):
+    """Return a standard error body as ``{field: [code, ...]}`` (spec 0000 §9.1).
+
+    An error on the request as a whole is keyed ``None``.
+    """
+    codes = {}
+    for error in response.json()["errors"]:
+        codes.setdefault(error.get("field"), []).append(error["code"])
+    return codes
+
+
+def error_roots(response):
+    """Return the top-level request fields a standard error body points into.
+
+    ``evidence_info.cheque_number`` and ``evidence_info`` both give ``evidence_info``.
+    """
+    return {field.split(".")[0].split("[")[0] for field in error_codes(response) if field}
 
 
 @pytest.fixture(autouse=True)
@@ -39,6 +59,7 @@ def make_user(db):
             name="Filer",
             role=Role.LITIGANT,
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
 
     return factory
