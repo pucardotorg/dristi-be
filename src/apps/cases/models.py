@@ -1,9 +1,9 @@
-"""Case records, participants, documents, cheque bounce details and evidence (spec 0020 §4, §8-11)."""
+"""Cases, participants, POA mandates, documents, cheque bounce details, evidence (spec 0020)."""
 
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
 from django.db import models
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.core.models import BaseActivatableModel, BaseAuditableModel, BaseModel
@@ -206,6 +206,100 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 )
             elif OPPOSING_ROLES.get(self.role) in held:
                 errors["person"] = "A person cannot be both a complainant and an accused on a case."
+        if errors:
+            raise ValidationError(errors)
+
+
+class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):
+    """The authority one participant holds to act for another (spec 0020 §5).
+
+    One row per holder and represented party: a holder acting for two of three
+    complainants has two rows. ``case`` repeats the participants' case so
+    "every mandate on this case" needs no join. Revoking is a soft delete
+    (``is_active = False``, ``revoked_at`` set): who had authority when is part
+    of the case record.
+    """
+
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="poa_mandates")
+    poa_participant = models.ForeignKey(
+        CaseParticipant, on_delete=models.CASCADE, related_name="poa_mandates_held"
+    )
+    represented_participant = models.ForeignKey(
+        CaseParticipant, on_delete=models.CASCADE, related_name="poa_mandates_granted"
+    )
+    # Scope or category of the authority, e.g. "Limited to this case only".
+    poa_type = models.CharField(max_length=64, null=True, blank=True)
+    granted_at = models.DateTimeField(default=timezone.now)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        verbose_name = "POA mandate"
+        constraints = [
+            models.CheckConstraint(
+                check=~Q(poa_participant=F("represented_participant")),
+                name="cases_poa_mandate_not_self",
+                violation_error_message="A participant cannot hold a mandate for themselves.",
+            ),
+            models.UniqueConstraint(
+                fields=["poa_participant", "represented_participant"],
+                condition=Q(is_active=True),
+                name="cases_poa_mandate_unique_active",
+                violation_error_message="This holder already has an active mandate for this party.",
+            ),
+        ]
+        indexes = [models.Index(fields=["case", "is_active"])]
+
+    def __str__(self):
+        return f"POA {self.poa_participant_id} for {self.represented_participant_id}"
+
+    def clean(self):
+        """Apply the rules the database cannot express (spec 0020 §5.2, §14.1).
+
+        The holder must be a POA holder and the represented party a complainant
+        or an accused, both on this mandate's case, and not the same person.
+        Whether the represented party is still active matters only while the
+        mandate is, so a revoked mandate can still be edited. Every broken rule
+        is reported, not just the first one per field.
+        """
+        super().clean()
+        if not (self.case_id and self.poa_participant_id and self.represented_participant_id):
+            return
+        holder, represented = self.poa_participant, self.represented_participant
+        # (field, rule holds, message when it does not)
+        rules = [
+            ("poa_participant", holder.role == ParticipantRole.POA_HOLDER, "Must be a POA holder."),
+            (
+                "poa_participant",
+                holder.case_id == self.case_id,
+                "Must be a participant of the same case.",
+            ),
+            (
+                "represented_participant",
+                represented.role in INSTITUTION_ROLES,
+                "Must be a complainant or an accused.",
+            ),
+            (
+                "represented_participant",
+                represented.case_id == self.case_id,
+                "Must be a participant of the same case.",
+            ),
+            (
+                "represented_participant",
+                not self.is_active or represented.is_active,
+                "Must be an active participant.",
+            ),
+            (
+                "represented_participant",
+                not holder.person_id or holder.person_id != represented.person_id,
+                "A person cannot hold a mandate for themselves.",
+            ),
+        ]
+        errors = {}
+        for field, holds, message in rules:
+            if not holds:
+                errors.setdefault(field, []).append(message)
         if errors:
             raise ValidationError(errors)
 

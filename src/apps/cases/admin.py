@@ -5,7 +5,14 @@ from simple_history.admin import SimpleHistoryAdmin
 
 from apps.core.mixins import AuditUserAdminMixin
 
-from .models import Case, CaseDocument, CaseEvidence, CaseParticipant, ChequeBounceCase
+from .models import (
+    Case,
+    CaseDocument,
+    CaseEvidence,
+    CaseParticipant,
+    ChequeBounceCase,
+    PoaMandate,
+)
 
 
 @admin.register(Case)
@@ -27,6 +34,30 @@ class CaseParticipantAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     list_filter = ("role", "is_active", "is_party_in_person", "has_signed")
     search_fields = ("case__id", "case__filing_number", "name_at_filing", "phone_number_at_filing")
     raw_id_fields = ("case", "person", "institution", "address")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(PoaMandate)
+class PoaMandateAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
+    """Admin configuration for POA mandates."""
+
+    list_display = (
+        "case",
+        "poa_participant",
+        "represented_participant",
+        "poa_type",
+        "is_active",
+        "granted_at",
+        "revoked_at",
+    )
+    list_filter = ("is_active",)
+    search_fields = (
+        "case__id",
+        "case__filing_number",
+        "poa_participant__name_at_filing",
+        "represented_participant__name_at_filing",
+    )
+    raw_id_fields = ("case", "poa_participant", "represented_participant")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
