@@ -638,7 +638,7 @@ A piece of evidence may have no uploaded file yet (entered as metadata before sc
 This spec assumes spec 0005's `User` model is already in place:
 - `mobile_number` as `USERNAME_FIELD`
 - Role field: `LITIGANT`, `POWER_OF_ATTORNEY`, `ADVOCATE`, `CLERK`
-- Profile tables: `AdvocateProfile`, `ClerkProfile`, `LitigantProfile`
+- Profile tables: `AdvocateProfile`, `ClerkProfile`, `LitigantProfile`, `PowerOfAttorneyProfile`
 
 The `person.user_id` FK points to this existing model.
 

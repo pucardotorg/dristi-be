@@ -6,6 +6,7 @@ import io
 from random import randint
 from uuid import uuid4
 
+from django.conf import settings
 from PIL import Image
 
 from apps.pdf.models import PDFTemplate, PDFTemplateVersion
@@ -75,6 +76,7 @@ def make_user(**overrides):
         "email": f"{handle}@example.com",
         "password": "test-password",
         "registration_status": RegistrationStatus.COMPLETE,
+        "terms_version_accepted": settings.CURRENT_TERMS_VERSION,
     }
     defaults.update(overrides)
     return User.objects.create_user(**defaults)

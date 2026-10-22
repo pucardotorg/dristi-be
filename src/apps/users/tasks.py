@@ -19,10 +19,11 @@ logger = logging.getLogger(__name__)
 def schedule_registration_verification(user, file_id=None):
     """Queue the verification request for a just-registered user.
 
-    A no-op for roles that are not verified (litigants). Published only once
-    the registration has committed: inside a transaction an immediate send
-    would let the worker look for a profile that is not visible yet. Outside
-    a transaction ``on_commit`` runs the callback immediately.
+    A no-op for roles that are not verified (litigants, power of attorney
+    holders). Published only once the registration has committed: inside a
+    transaction an immediate send would let the worker look for a profile
+    that is not visible yet. Outside a transaction ``on_commit`` runs the
+    callback immediately.
     """
     if user.role not in VERIFICATIONS:
         return

@@ -2,6 +2,9 @@
 
 from unittest.mock import patch
 
+from django.core.cache import cache
+from django.test import override_settings
+
 from apps.messaging.models import MessageLog, MessageTemplate
 from apps.users.services.otp import (
     MESSAGE_KEYS,
@@ -33,6 +36,38 @@ class OTPConsumptionTests(OTPTestCase):
         code = send.call_args[0][1]
 
         self.assertFalse(verify_and_consume_otp(MOBILE, code, Purpose.LOGIN))
+
+
+@override_settings(OTP_MAX_ATTEMPTS=3)
+class OTPAttemptLimitTests(OTPTestCase):
+    """Wrong guesses destroy the code before it can be brute-forced."""
+
+    def issue(self):
+        """Issue a login code and return it."""
+        with patch("apps.users.services.otp._send_sms") as send:
+            issue_otp(MOBILE, Purpose.LOGIN)
+        return send.call_args[0][1]
+
+    def guess_wrong(self, times):
+        """Submit a code that can never match."""
+        for _ in range(times):
+            self.assertFalse(verify_and_consume_otp(MOBILE, "wrong", Purpose.LOGIN))
+
+    def test_code_is_destroyed_at_the_limit(self):
+        """At the limit, even the right code is refused."""
+        code = self.issue()
+        self.guess_wrong(3)
+        self.assertFalse(verify_and_consume_otp(MOBILE, code, Purpose.LOGIN))
+
+    def test_a_new_code_gets_a_fresh_allowance(self):
+        """Issuing again resets the count, so guesses below the limit leave the code usable."""
+        self.issue()
+        self.guess_wrong(2)
+        cache.delete(f"otp:cooldown:{MOBILE}")
+
+        code = self.issue()
+        self.guess_wrong(2)
+        self.assertTrue(verify_and_consume_otp(MOBILE, code, Purpose.LOGIN))
 
 
 class OTPCooldownTests(OTPTestCase):

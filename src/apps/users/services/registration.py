@@ -7,10 +7,8 @@ testable without an HTTP request.
 
 from contextlib import contextmanager
 
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.utils import timezone
 
 from apps.dristi_requests import services as request_services
 from apps.files.documents import discard_documents, store_documents
@@ -18,6 +16,7 @@ from apps.files.documents import discard_documents, store_documents
 from ..documents import BAR_COUNCIL_ID_TAG
 from ..models import ApprovalStatus, RegistrationStatus
 from ..verification import VERIFICATIONS, rejection_of, verification_request_of
+from .terms import stamp_current_terms
 
 
 class DocumentRejected(Exception):  # noqa: N818
@@ -63,8 +62,7 @@ def complete_registration(
     user.email = email or None
     user.role = role
     user.set_password(password)
-    user.terms_accepted_at = timezone.now()
-    user.terms_version_accepted = settings.CURRENT_TERMS_VERSION
+    stamp_current_terms(user)
     user.registration_status = RegistrationStatus.COMPLETE
     user.updated_by = user
     if user.created_by_id is None:
