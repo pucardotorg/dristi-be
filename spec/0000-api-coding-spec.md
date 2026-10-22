@@ -239,6 +239,9 @@ example `E01001`.
 | `01` | `apps.users` | registration and login |
 | `02` | `apps.dristi_requests` | request and approval workflow |
 | `03` | `apps.esign` | electronic signing (one code per spec 0015 failure code) |
+| `04` | `apps.pdf` | PDF generation and jobs (spec 0016) |
+| `05` | `apps.address` | pincode lookup (spec 0020) |
+| `06` | `apps.payments` | demands and payments (spec 0017); reserved, not yet implemented |
 
 Rules:
 

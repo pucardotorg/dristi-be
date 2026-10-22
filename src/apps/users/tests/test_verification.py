@@ -104,19 +104,26 @@ class RegistrationVerificationTests(OTPTestCase):
         self.run_queued_verification()
         self.assertEqual(Request.objects.count(), 1)
 
-    def test_clerk_request_has_no_document(self):
-        """A clerk who sent no bar ID is verified on the number alone."""
+    def test_clerk_request_carries_the_bar_id(self):
+        """A clerk's request links the bar ID stored at registration."""
         with self.captureOnCommitCallbacks(execute=True):
-            self.client.post(
+            response = self.client.post(
                 reverse("clerk-create"),
-                self.body(profile={"clerk_registration_number": "CLK/99/2020"}),
-                format="json",
+                self.body(
+                    **{"profile.clerk_registration_number": "CLK/99/2020"},
+                    bar_id_document=pdf_upload(),
+                ),
+                format="multipart",
             )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.run_queued_verification()
 
         request = Request.objects.get()
         self.assertEqual(request.request_type.code, CLERK_REGISTRATION)
-        self.assertFalse(request.documents.exists())
+        self.assertEqual(
+            list(request.documents.values_list("file_id", flat=True)),
+            [File.objects.get().pk],
+        )
 
     def test_actor_failure_leaves_nothing_half_raised(self):
         """With no approver to route to, the attempt rolls back for a retry.

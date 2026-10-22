@@ -34,8 +34,8 @@ class IsNotAwaitingApproval(BasePermission):
 
     PENDING is waiting on the approver; REJECTED was refused and may only
     correct and resubmit. Accounts whose role is not verified (litigants,
-    staff, approvers) and accounts without a profile yet pass: the latter are
-    IsAuthenticatedAndRegistered's to gate.
+    power of attorney holders, staff, approvers) and accounts without a
+    profile yet pass: the latter are IsAuthenticatedAndRegistered's to gate.
     """
 
     message = "Account approval is pending or was not approved."
@@ -79,3 +79,19 @@ class HasAcceptedCurrentTerms(BasePermission):
         """Return whether the caller's accepted terms are current."""
         user = request.user
         return bool(user and user.is_authenticated and user.has_current_terms)
+
+
+def next_step(user):
+    """The screen that clears the first gate refusing `user`, or None if none does.
+
+    Follows the order of the default permission classes: the wizard takes terms
+    acceptance itself, so it comes before the standalone terms screen, and a
+    rejected registration must be corrected before anything else opens up.
+    """
+    if not user.is_registration_complete:
+        return "profile"
+    if approval_status_of(user) == ApprovalStatus.REJECTED:
+        return "resubmit"
+    if not user.has_current_terms:
+        return "terms"
+    return None
