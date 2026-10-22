@@ -55,6 +55,16 @@ urlpatterns = [
         name="case-participant-list",
     ),
     path(
+        "cases/<uuid:case_id>/advocates/",
+        views.AdvocateCreateView.as_view(),
+        name="case-advocate-list",
+    ),
+    path(
+        "cases/<uuid:case_id>/representations/",
+        views.RepresentationListView.as_view(),
+        name="case-representation-list",
+    ),
+    path(
         "cases/<uuid:case_id>/poa-holders/",
         views.PoaHolderCreateView.as_view(),
         name="case-poa-holder-list",
@@ -85,5 +95,10 @@ urlpatterns = [
         "poa-mandates/<uuid:poa_mandate_id>/",
         views.PoaMandateDetailView.as_view(),
         name="poa-mandate-detail",
+    ),
+    path(
+        "representations/<uuid:representation_id>/",
+        views.RepresentationDetailView.as_view(),
+        name="representation-detail",
     ),
 ]

@@ -16,6 +16,7 @@ from .models import (
     CaseParticipant,
     ParticipantRole,
     PoaMandate,
+    Representation,
     Witness,
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
@@ -435,6 +436,57 @@ class PoaMandateUpdateSerializer(serializers.Serializer):
                 {field: ["This field cannot be changed."] for field in unknown}
             )
         return attrs
+
+
+class AdvocateCreateSerializer(serializers.Serializer):
+    """Body of POST /cases/{id}/advocates (spec 0021 §4.4).
+
+    One representation is created per client; whether the advocate is
+    approved and each client an active complainant or accused of the case is
+    checked when saving.
+    """
+
+    advocate_id = serializers.UUIDField()
+    client_participant_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+
+    def validate_client_participant_ids(self, value):
+        """Require each client once."""
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError("Each party may be listed only once.")
+        return value
+
+
+class AdvocateCreatedSerializer(serializers.Serializer):
+    """Response of POST /cases/{id}/advocates: the new representations."""
+
+    representation_ids = serializers.ListField(child=serializers.UUIDField())
+    advocate_id = serializers.UUIDField()
+
+
+class RepresentationSerializer(serializers.ModelSerializer):
+    """A representation, with the advocate's name."""
+
+    representation_id = serializers.UUIDField(source="id", read_only=True)
+    advocate_name = serializers.CharField(source="advocate.name", read_only=True)
+    client_participant_id = serializers.UUIDField(source="case_participant_id", read_only=True)
+
+    class Meta:
+        """Meta options."""
+
+        model = Representation
+        fields = [
+            "representation_id",
+            "case_id",
+            "advocate_id",
+            "advocate_name",
+            "client_participant_id",
+            "is_active",
+            "from_date",
+            "to_date",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
 
 
 class ParticipantUpdateSerializer(serializers.Serializer):

@@ -1,4 +1,4 @@
-"""Tests for the party, participant and POA mandate endpoints (spec 0021 §4.1–§4.3, §4.5)."""
+"""Tests for the party, participant, representation and POA mandate endpoints (spec 0021 §4)."""
 
 import uuid
 
@@ -942,5 +942,228 @@ class TestPoaAccess:
         after_add = Case.objects.get(pk=draft).updated_at
 
         revoke(client, created["poa_mandate_ids"][0])
+
+        assert before < after_add < Case.objects.get(pk=draft).updated_at
+
+
+def make_advocate(make_user, status=ApprovalStatus.ACCEPTED, user=None):
+    return AdvocateProfile.objects.create(
+        user=user or make_user(),
+        name="Adv. Sharma",
+        bar_registration_id=f"KA/{uuid.uuid4().hex[:8]}/2020",
+        approval_status=status,
+    )
+
+
+def add_advocate(client, case_id, advocate_id, client_ids):
+    body = {"advocate_id": str(advocate_id), "client_participant_ids": client_ids}
+    return client.post(reverse("case-advocate-list", args=[case_id]), body, format="json")
+
+
+def representations(client, case_id):
+    return client.get(reverse("case-representation-list", args=[case_id]))
+
+
+def end(client, representation_id):
+    return client.delete(reverse("representation-detail", args=[representation_id]))
+
+
+class TestAddAdvocate:
+    def test_one_representation_per_client(self, client, make_user, draft):
+        clients = [add_complainant(client, draft, name=n)["case_participant_id"] for n in "ABC"]
+        advocate = make_advocate(make_user)
+
+        response = add_advocate(client, draft, advocate.pk, clients)
+
+        assert response.status_code == 201, response.json()
+        body = response.json()
+        assert body["advocate_id"] == str(advocate.pk)
+        rows = Representation.objects.filter(pk__in=body["representation_ids"])
+        assert sorted(str(r.case_participant_id) for r in rows) == sorted(clients)
+        assert all(r.is_active and r.to_date is None for r in rows)
+        assert all(str(r.case_id) == draft and r.advocate == advocate for r in rows)
+
+    def test_an_accused_may_be_represented(self, client, make_user, draft):
+        accused = add(client, draft, "accused", person=PERSON).json()["case_participant_id"]
+
+        response = add_advocate(client, draft, make_advocate(make_user).pk, [accused])
+
+        assert response.status_code == 201, response.json()
+
+    def test_a_client_may_have_several_advocates(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+
+        for _ in range(2):
+            response = add_advocate(client, draft, make_advocate(make_user).pk, [complainant])
+            assert response.status_code == 201, response.json()
+
+    def test_the_same_advocate_twice_is_refused(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        advocate = make_advocate(make_user)
+        add_advocate(client, draft, advocate.pk, [complainant])
+
+        response = add_advocate(client, draft, advocate.pk, [complainant])
+
+        assert response.status_code == 400
+        assert Representation.objects.filter(case_participant_id=complainant).count() == 1
+
+    @pytest.mark.parametrize("status", [ApprovalStatus.PENDING, ApprovalStatus.REJECTED])
+    def test_an_unapproved_advocate_is_refused(self, client, make_user, draft, status):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+
+        response = add_advocate(client, draft, make_advocate(make_user, status).pk, [complainant])
+
+        assert response.status_code == 400
+        assert response.json()["advocate"] == ["Must be an approved advocate."]
+
+    def test_an_unknown_advocate_is_refused(self, client, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+
+        response = add_advocate(client, draft, uuid.uuid4(), [complainant])
+
+        assert response.status_code == 400
+        assert response.json()["advocate_id"] == ["Advocate not found."]
+
+    def test_clients_are_required_once_each(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        advocate = make_advocate(make_user)
+
+        for client_ids in ([], [complainant, complainant]):
+            response = add_advocate(client, draft, advocate.pk, client_ids)
+            assert response.status_code == 400
+            assert "client_participant_ids" in response.json()
+
+    def test_a_poa_holder_cannot_be_a_client(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        holder = add_poa_holder(client, draft, [complainant]).json()["case_participant_id"]
+
+        response = add_advocate(client, draft, make_advocate(make_user).pk, [holder])
+
+        assert response.status_code == 400
+        assert response.json()["client_participant_ids"] == ["Must be a complainant or an accused."]
+
+    def test_a_party_in_person_cannot_be_a_client(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        patch(client, complainant, {"is_party_in_person": True})
+
+        response = add_advocate(client, draft, make_advocate(make_user).pk, [complainant])
+
+        assert response.status_code == 400
+        assert "client_participant_ids" in response.json()
+
+    def test_clients_must_be_active_and_on_the_case(self, client, make_user, user, draft):
+        removed = add_complainant(client, draft, name="A")["case_participant_id"]
+        add_complainant(client, draft, name="B")
+        remove(client, removed)
+        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+        elsewhere = add_complainant(client, other_draft)["case_participant_id"]
+        advocate = make_advocate(make_user)
+
+        for client_id in (removed, elsewhere, str(uuid.uuid4())):
+            response = add_advocate(client, draft, advocate.pk, [client_id])
+            assert response.status_code == 400
+            assert response.json()["client_participant_ids"] == [
+                "Must be active participants of the same case."
+            ]
+
+    def test_an_advocate_cannot_represent_themselves(self, client, make_user, user, draft):
+        own = add(client, draft, **{"self": True})
+        assert own.status_code == 201, own.json()
+
+        response = add_advocate(
+            client,
+            draft,
+            make_advocate(make_user, user=user).pk,
+            [own.json()["case_participant_id"]],
+        )
+
+        assert response.status_code == 400
+        assert response.json()["client_participant_ids"] == [
+            "An advocate cannot represent themselves."
+        ]
+
+    def test_nothing_is_written_when_one_client_fails(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        holder = add_poa_holder(client, draft, [complainant]).json()["case_participant_id"]
+
+        response = add_advocate(client, draft, make_advocate(make_user).pk, [complainant, holder])
+
+        assert response.status_code == 400
+        assert not Representation.objects.filter(case_id=draft).exists()
+
+
+class TestRepresentations:
+    def test_lists_active_representations_by_client(self, client, make_user, draft):
+        accused = add(client, draft, "accused", person=PERSON).json()["case_participant_id"]
+        first = add_complainant(client, draft, name="A")["case_participant_id"]
+        second = add_complainant(client, draft, name="B")["case_participant_id"]
+        advocate = make_advocate(make_user)
+        created = add_advocate(client, draft, advocate.pk, [second, accused, first]).json()
+        ended = add_advocate(client, draft, make_advocate(make_user).pk, [first]).json()
+        end(client, ended["representation_ids"][0])
+
+        response = representations(client, draft)
+
+        assert response.status_code == 200
+        results = response.json()["results"]
+        assert [r["client_participant_id"] for r in results] == [accused, first, second]
+        assert {r["representation_id"] for r in results} == set(created["representation_ids"])
+        assert results[0]["advocate_name"] == "Adv. Sharma"
+        assert results[0]["advocate_id"] == str(advocate.pk)
+        assert "created_by" not in results[0]
+
+
+class TestEndRepresentation:
+    def test_end_is_soft(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        created = add_advocate(client, draft, make_advocate(make_user).pk, [complainant]).json()
+        representation_id = created["representation_ids"][0]
+
+        assert end(client, representation_id).status_code == 204
+
+        row = Representation.objects.get(pk=representation_id)
+        assert (row.is_active, row.to_date is not None) == (False, True)
+        assert end(client, representation_id).status_code == 404
+
+    def test_the_advocate_can_be_added_again_after_ending(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        advocate = make_advocate(make_user)
+        created = add_advocate(client, draft, advocate.pk, [complainant]).json()
+        end(client, created["representation_ids"][0])
+
+        assert add_advocate(client, draft, advocate.pk, [complainant]).status_code == 201
+        assert Representation.objects.filter(case_participant_id=complainant).count() == 2
+
+
+class TestRepresentationAccess:
+    def test_other_users_cannot_reach_representations(
+        self, client, client_for, make_user, other_user, draft
+    ):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        advocate = make_advocate(make_user)
+        created = add_advocate(client, draft, advocate.pk, [complainant]).json()
+        outsider = client_for(other_user)
+
+        assert add_advocate(outsider, draft, advocate.pk, [complainant]).status_code == 404
+        assert representations(outsider, draft).status_code == 404
+        assert end(outsider, created["representation_ids"][0]).status_code == 404
+
+    def test_submitted_case_cannot_change(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        created = add_advocate(client, draft, make_advocate(make_user).pk, [complainant]).json()
+        Case.objects.filter(pk=draft).update(status=CaseStatus.PENDING_SIGN)
+
+        other = make_advocate(make_user)
+        assert add_advocate(client, draft, other.pk, [complainant]).status_code == 409
+        assert end(client, created["representation_ids"][0]).status_code == 409
+        assert representations(client, draft).json()["count"] == 1
+
+    def test_writes_touch_the_case(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        before = Case.objects.get(pk=draft).updated_at
+        created = add_advocate(client, draft, make_advocate(make_user).pk, [complainant]).json()
+        after_add = Case.objects.get(pk=draft).updated_at
+
+        end(client, created["representation_ids"][0])
 
         assert before < after_add < Case.objects.get(pk=draft).updated_at

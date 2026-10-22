@@ -2,10 +2,10 @@
 
 Ids in POST/PUT paths may be a case id or a draft session id; the first save
 on a draft creates the case (see ``services.get_or_create_case``). Other case
-routes take a case id; a document, evidence item, participant or mandate is
-changed by its own id (``/case-documents/{id}``, ``/case-evidence/{id}``,
-``/case-participants/{id}``, ``/poa-mandates/{id}``). Callers only ever reach
-their own cases.
+routes take a case id; a document, evidence item, participant, mandate or
+representation is changed by its own id (``/case-documents/{id}``,
+``/case-evidence/{id}``, ``/case-participants/{id}``, ``/poa-mandates/{id}``,
+``/representations/{id}``). Callers only ever reach their own cases.
 """
 
 from drf_spectacular.types import OpenApiTypes
@@ -32,8 +32,11 @@ from .models import (
     CaseStatus,
     ParticipantRole,
     PoaMandate,
+    Representation,
 )
 from .serializers import (
+    AdvocateCreatedSerializer,
+    AdvocateCreateSerializer,
     CaseDocumentSerializer,
     CaseDocumentUploadSerializer,
     CaseEvidenceSerializer,
@@ -50,6 +53,7 @@ from .serializers import (
     PoaHolderCreateSerializer,
     PoaMandateSerializer,
     PoaMandateUpdateSerializer,
+    RepresentationSerializer,
     WitnessCreateSerializer,
 )
 from .services import case_types, participants, services
@@ -489,4 +493,69 @@ class PoaMandateDetailView(APIView):
         """Revoke the mandate; a holder left acting for no one is removed too."""
         mandate = participants.get_mandate(poa_mandate_id, request.user)
         participants.revoke_mandate(mandate, request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(tags=TAGS)
+class AdvocateCreateView(APIView):
+    """POST /cases/{case_id}/advocates — add an advocate for one or more clients."""
+
+    @extend_schema(
+        tags=TAGS,
+        request=AdvocateCreateSerializer,
+        responses={
+            201: AdvocateCreatedSerializer,
+            400: VALIDATION_ERROR,
+            404: NOT_FOUND,
+            409: NOT_EDITABLE,
+        },
+    )
+    def post(self, request, case_id):
+        """Create one representation per client, all for the same advocate."""
+        serializer = AdvocateCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        representations = participants.add_advocate(
+            case_id, request.user, serializer.validated_data
+        )
+        body = {
+            "representation_ids": [representation.id for representation in representations],
+            "advocate_id": serializer.validated_data["advocate_id"],
+        }
+        return Response(AdvocateCreatedSerializer(body).data, status=status.HTTP_201_CREATED)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=TAGS,
+        responses={200: RepresentationSerializer(many=True), 404: NOT_FOUND},
+    )
+)
+class RepresentationListView(generics.ListAPIView):
+    """GET /cases/{case_id}/representations — active representations, by client."""
+
+    serializer_class = RepresentationSerializer
+
+    def get_queryset(self):
+        """Return the case's active representations."""
+        case = services.get_case(self.kwargs["case_id"], self.request.user)
+        return (
+            Representation.objects.active()
+            .filter(case=case)
+            .select_related("advocate")
+            .order_by("case_participant__role", "case_participant__ordinal", "from_date")
+        )
+
+
+@extend_schema(tags=TAGS)
+class RepresentationDetailView(APIView):
+    """DELETE /representations/{representation_id}."""
+
+    @extend_schema(
+        tags=TAGS,
+        responses={204: None, 404: NOT_FOUND, 409: NOT_EDITABLE},
+    )
+    def delete(self, request, representation_id):
+        """End the representation; the row is kept."""
+        representation = participants.get_representation(representation_id, request.user)
+        participants.end_representation(representation, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)

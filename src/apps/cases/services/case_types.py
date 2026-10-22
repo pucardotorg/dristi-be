@@ -58,9 +58,9 @@ class CaseTypeConfig:
     """What one case type accepts.
 
     ``document_types`` are the types uploadable through the case documents
-    endpoint. VAKALATNAMA and POA_DOCUMENT are accepted there until the
-    advocate and POA holder endpoints exist (spec 0021 §3.4); they are then
-    linked to the case only, not to the advocate or POA holder they belong to.
+    endpoint. VAKALATNAMA and POA_DOCUMENT are uploaded there too (spec 0021
+    §3.4): they are linked to the case only, not to the representation or
+    mandate they belong to.
     """
 
     detail_model: str

@@ -1,4 +1,4 @@
-"""Case parties: complainants, accused, witnesses and POA holders (spec 0021 §4.1–§4.5).
+"""Case parties: complainants, accused, witnesses, advocates and POA holders (spec 0021 §4).
 
 A party write resolves the person and institution (``apps.parties.services``),
 stores the address for service of notice, and records the case's own copy of
@@ -24,6 +24,7 @@ from apps.parties.services import (
     get_or_create_institution,
     get_or_create_self_person,
 )
+from apps.users.models import AdvocateProfile
 
 from ..models import (
     INSTITUTION_ROLES,
@@ -31,6 +32,7 @@ from ..models import (
     CaseParticipant,
     ParticipantRole,
     PoaMandate,
+    Representation,
     Witness,
 )
 from .services import (
@@ -46,6 +48,8 @@ from .services import (
 WITNESS_FIELD_NAMES = {"called_by_participant": "called_by_participant_id"}
 # Likewise for a mandate created with its POA holder.
 MANDATE_FIELD_NAMES = {"represented_participant": "represented_participant_ids"}
+# Likewise for a representation created for its advocate.
+REPRESENTATION_FIELD_NAMES = {"case_participant": "client_participant_ids"}
 
 
 @contextmanager
@@ -143,7 +147,9 @@ def add_poa_holder(case_or_draft_id, user, data):
     with transaction.atomic():
         case = get_or_create_case(case_or_draft_id, user)
         _lock(case)
-        represented = _get_represented(case, data["represented_participant_ids"])
+        represented = _get_represented(
+            case, data["represented_participant_ids"], "represented_participant_ids"
+        )
         holder = _create_participant(
             case, user, ParticipantRole.POA_HOLDER, {**data, "is_party_in_person": False}
         )
@@ -165,15 +171,16 @@ def add_poa_holder(case_or_draft_id, user, data):
     return holder, mandates
 
 
-def _get_represented(case, case_participant_ids):
+def _get_represented(case, case_participant_ids, field):
     """Return the active participants of ``case`` with these ids, in the order given.
 
-    ``PoaMandate.clean`` checks their roles and that the holder is not one of them.
+    ``field`` names the ids in the request, for the error. ``PoaMandate.clean``
+    and ``Representation.clean`` check their roles and the rest.
     """
     found = CaseParticipant.objects.active().filter(case=case).in_bulk(case_participant_ids)
     if len(found) != len(case_participant_ids):
         raise serializers.ValidationError(
-            {"represented_participant_ids": ["Must be active participants of the same case."]}
+            {field: ["Must be active participants of the same case."]}
         )
     return [found[pk] for pk in case_participant_ids]
 
@@ -208,6 +215,51 @@ def revoke_mandate(mandate, user):
         if not holder.poa_mandates_held.active().exists():
             _remove(holder, user, now)
         touch(mandate.case, user)
+
+
+def add_advocate(case_or_draft_id, user, data):
+    """Add an advocate for one or more clients, one representation each (spec 0021 §4.4).
+
+    ``data`` is a validated ``AdvocateCreateSerializer`` body. Returns the new
+    representations.
+    """
+    get_case_type(case_or_draft_id, user)
+    advocate = AdvocateProfile.objects.filter(pk=data["advocate_id"]).first()
+    if advocate is None:
+        raise serializers.ValidationError({"advocate_id": ["Advocate not found."]})
+    with transaction.atomic():
+        case = get_or_create_case(case_or_draft_id, user)
+        _lock(case)
+        clients = _get_represented(case, data["client_participant_ids"], "client_participant_ids")
+        representations = []
+        for client in clients:
+            representation = Representation(
+                case=case,
+                advocate=advocate,
+                case_participant=client,
+                created_by=user,
+                updated_by=user,
+            )
+            with _errors_under(renamed=REPRESENTATION_FIELD_NAMES):
+                representation.full_clean()
+            representation.save()
+            representations.append(representation)
+        touch(case, user)
+    return representations
+
+
+def get_representation(representation_id, user):
+    """Return an active representation on one of ``user``'s cases, or raise ``NotFound``."""
+    return get_active_case_item(Representation, representation_id, user)
+
+
+def end_representation(representation, user):
+    """End a representation (soft delete); the row is kept as the record of who acted when."""
+    ensure_editable(representation.case)
+    with transaction.atomic():
+        _lock(representation.case)
+        deactivate(representation, user, to_date=timezone.now())
+        touch(representation.case, user)
 
 
 def _get_caller(case, case_participant_id):
