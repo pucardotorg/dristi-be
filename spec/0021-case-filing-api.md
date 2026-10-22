@@ -171,7 +171,7 @@ Once a case is created (after the first data entry), all subsequent endpoints us
 
 ## 3. Step 1: Document Upload
 
-Every upload requires a case ID and a `document_type`. Only **case-level documents** use these endpoints. Vakalatnamas and POA documents are also accepted here for now (§3.4); they are meant to move to the representation/mandate endpoints (§4.4, §4.5) once those exist.
+Every upload requires a case ID and a `document_type`. Only **case-level documents** use these endpoints. Vakalatnamas and POA documents are uploaded here too, as case documents (§3.4).
 
 ### 3.1 Upload Document
 
@@ -282,11 +282,13 @@ The `document_type` must be one of:
 - `POA_DOCUMENT`
 - `OTHER_SUPPORTING_DOCUMENT`
 
-**`VAKALATNAMA` and `POA_DOCUMENT`:** accepted here until the advocate
-representation (§4.4) and POA holder (§4.5) endpoints exist. Uploaded this way
-they are linked to the case only, not to the advocate or POA holder they
-belong to; when those endpoints are built, decide whether these uploads move to
-them and how existing ones are re-linked.
+**`VAKALATNAMA` and `POA_DOCUMENT`:** uploaded here, as case documents. The
+advocate (§4.4) and POA holder (§4.5) endpoints do not take a document: the
+filing UI collects signed documents only when the full set of case documents is
+downloaded and uploaded back, so there is no step at which a vakalatnama or POA
+document can be tied to one representation or mandate. They stay linked to the
+case only until documents can be matched to them (for example by OCR); spec 0020
+§5.3 and §6.3.
 
 Each case type lists the document types it accepts, in the case type registry,
 and `GET /case-types/{case_type}` serves that list. A known type the case type
@@ -295,173 +297,218 @@ endpoint.
 
 ## 4. Step 2: Party Management
 
-All parties write to `case_participant` and differ only by `role`. This section uses **per-role endpoints** for frontend clarity; see §9.2 for the alternative single-endpoint design.
+Complainants, accused, witnesses and POA holders are all rows in `case_participant` (spec 0020 §4), differing by `role`; witnesses also have a `witness` row (spec 0020 §4.5). Advocates are `representation` rows (spec 0020 §6) and POA authority is `poa_mandate` rows (spec 0020 §5).
+
+Adding a party uses a **per-role endpoint** under the case, for frontend clarity (see §9.2). Like documents and evidence, the case id in the path may be a draft session id: adding the first party creates the case (§9.1). Once something exists it is changed by its own id, which is unique across cases, so item endpoints are flat:
+
+```
+POST   /cases/{case_id_or_draft_session_id}/complainants
+POST   /cases/{case_id_or_draft_session_id}/accused
+POST   /cases/{case_id_or_draft_session_id}/witnesses
+POST   /cases/{case_id_or_draft_session_id}/advocates
+POST   /cases/{case_id_or_draft_session_id}/poa-holders
+
+GET    /cases/{case_id}/participants?role={role}
+GET    /cases/{case_id}/representations
+GET    /cases/{case_id}/poa-mandates
+
+PATCH  /case-participants/{case_participant_id}
+DELETE /case-participants/{case_participant_id}
+DELETE /representations/{representation_id}
+PATCH  /poa-mandates/{poa_mandate_id}
+DELETE /poa-mandates/{poa_mandate_id}
+```
+
+**Rules for every party write:**
+- Only the filer (the case's `created_by`) can add, change or remove parties; other users' cases and items return 404.
+- Writes are refused with `409 Conflict` (`case_not_editable`) once the case has left `DRAFT_IN_PROGRESS` (§7).
+- All rows a write creates or changes (person, institution, address, participant, witness, mandate, representation) are saved in one transaction: all of them, or none.
+- Every successful write sets the case's `updated_at` and `updated_by`.
+- Responses never include `created_by` / `updated_by`, nor the stored details of a reused institution (spec 0020 §3.4).
+- List endpoints use the project's default page-number pagination (spec 0000 §11).
 
 ### 4.1 Complainants
 
 ```
-POST   /cases/{case_id_or_draft_session_id}/complainants
-PATCH  /cases/{case_id}/complainants/{case_participant_id}
-DELETE /cases/{case_id}/complainants/{case_participant_id}
+POST /cases/{case_id_or_draft_session_id}/complainants
 ```
 
-**POST Request Body:**
+**POST Request Body (an individual):**
 ```json
 {
   "person": {
-    "person_id": "uuid-if-existing",
     "name": "Rajesh Kumar",
     "phone_number": "+919876543210",
     "email_address": "rajesh@example.com",
     "date_of_birth": "1985-06-15",
+    "age": null,
     "gender": "MALE",
-    "relation": "S/O",
+    "relation": "SON_OF",
     "relative_name": "Ram Kumar"
   },
   "address": {
     "line1": "123 MG Road",
-    "city": "Bangalore",
+    "city": "Bengaluru",
     "pincode": "560001",
-    "district": "Bangalore Urban",
-    "state": "Karnataka"
+    "district": "Bengaluru Urban",
+    "state": "Karnataka",
+    "police_station": "Cubbon Park"
   },
-  "organization_id": null,
-  "is_party_in_person": false
+  "is_party_in_person": false,
+  "additional_details": {}
 }
 ```
+
+**POST Request Body (the filer, adding themselves):**
+```json
+{
+  "self": true,
+  "address": { ... }
+}
+```
+
+**POST Request Body (an institution, acting through a person):**
+```json
+{
+  "institution": {
+    "entity_type": "PRIVATE_LIMITED_COMPANY",
+    "entity_name": "ABC Pvt Ltd",
+    "pan": "AAACA1234A",
+    "cin": "U72200KA2010PTC052651",
+    "contact_number": "080-22334455",
+    "email_address": "legal@abc.example"
+  },
+  "person": { "name": "Priya Sharma", ... },
+  "designation": "Director",
+  "address": { ... }
+}
+```
+
+Exactly one of `person` or `self` describes the individual, and either may be left out when `institution` is given. `designation` is required whenever both an individual and an institution are given. `date_of_birth` and `age` are both optional.
 
 **Response (201 Created):**
 ```json
 {
   "case_participant_id": "uuid",
+  "case_id": "uuid",
   "person_id": "uuid",
+  "institution_id": null,
   "role": "COMPLAINANT",
   "ordinal": 1,
   "name_at_filing": "Rajesh Kumar",
   "phone_number_at_filing": "+919876543210",
   "gender_at_filing": "MALE",
+  "age_at_filing": 39,
+  "designation_at_filing": null,
   "address_id": "uuid",
   "is_party_in_person": false,
+  "additional_details": {},
   "is_active": true,
   "created_at": "2024-03-15T12:00:00Z"
 }
 ```
 
-**Transaction Steps (spec 0017 §3):**
+**Transaction Steps:**
 
-1. **Check if case exists and create if needed:**
-   - If path parameter is a valid `case_id` (exists in `cases` table), proceed with existing case
-   - If path parameter is a `draft_session_id` (exists in cache/Redis), create the case first:
-     a. Retrieve draft session metadata from cache
-     b. **Atomically create case and type-specific table:**
-        - Insert into `cases`:
-          - `case_type` from draft session
-          - `status = 'DRAFT_IN_PROGRESS'`
-          - `created_by` from draft session
-          - `filed_at = NULL`, `filing_number = NULL`
-        - Insert into type-detail table (e.g., `cheque_bounce_case` with `case_id` matching the cases row, all JSONB columns defaulting to `{}`)
-     c. Delete draft session from cache (case ID replaces it)
+1. **Resolve the case type and check the case is editable** (404 if the id is neither the filer's case nor their live draft; 409 if submitted), and validate the whole body, before anything is written.
 
-2. **Resolve the person:**
-   - If `person_id` provided and identity is proven (logged-in filer or OTP-verified), reuse that `person` row.
-   - Otherwise, create new `person` with `verification_level = ASSERTED` and no attempt to match.
-   - For complainants filing their own case: reuse the filer's person record at `verification_level = VERIFIED`.
+2. **Get or create the case** (same as §3.1, step 1): an existing case is used as is; a draft session creates the case and its type-specific detail row.
 
-3. **Write the address:**
-   - Insert new `address` row with provided fields (immutable, spec 0017 §6).
-   - Auto-fill `district` and `state` from pincode via India Post API.
+3. **Resolve the person** (spec 0020 §2.5):
+   - `"self": true`: the filer's own `person`, fetched by `user_id`, or created from their account (name, mobile number) at `VERIFIED` the first time. Its stored values are not changed by this request.
+   - `person`: a new `person` at `ASSERTED`, with no attempt to match. When given together with an institution, it is created with `institution_id` and `designation` set.
+   - The same person cannot be both complainant and accused, nor complainant twice, on one case.
 
-4. **Create the participant:**
-   - Insert `case_participant` with:
-     - `person_id` or `organization_id`
-     - `role = 'COMPLAINANT'`
-     - Next free `ordinal` for this role on this case
-     - Frozen snapshots: `name_at_filing`, `phone_number_at_filing`, `gender_at_filing`
-     - `address_id` from step 3
-     - `start_date = now()`
+4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created. A reused institution's stored details are not returned or changed.
 
-5. **Clear preview cache.**
+5. **Write the address** through the address service (spec 0020 §7): an identical address reuses its row. District and state are not looked up here; the client pre-fills them from `GET /pincodes/{pincode}`. A newly created person also gets this address as their `correspondence_address`; an existing person's addresses are unchanged. The address is required for complainants. When the filer adds themselves without an address, it will come from their profile once profiles carry one; until then it must be sent.
 
-**PATCH Request:**
-Updates only the `case_participant` row. Never updates the `person` row.
+6. **Create the participant:**
+   - `role = 'COMPLAINANT'`, the next free `ordinal` for this role on this case
+   - snapshot: `name_at_filing` (the person's name, or the institution's when there is no person), `phone_number_at_filing`, `gender_at_filing`, `age_at_filing` (from the date of birth when known, else the stated age), `designation_at_filing`
+   - `address_id` from step 5, `start_date = now()`
 
-**Request Body (partial):**
+7. **Touch the case** (`updated_at`), and clear the preview cache.
+
+**PATCH `/case-participants/{case_participant_id}`:**
+Updates only the participant's own data. The `person` and `institution` rows are **never** changed by it (spec 0020 §2.5). Any of these may be sent:
+
 ```json
 {
   "name_at_filing": "Rajesh S. Kumar",
-  "address": {
-    "line1": "456 New Street",
-    "city": "Bangalore",
-    "pincode": "560002"
-  }
+  "phone_number_at_filing": "+919876543210",
+  "gender_at_filing": "MALE",
+  "age_at_filing": 40,
+  "designation_at_filing": "Managing Director",
+  "address": { "line1": "456 New Street", "city": "Bengaluru", "pincode": "560002", "district": "...", "state": "...", "police_station": "..." },
+  "is_party_in_person": true,
+  "additional_details": {},
+  "called_by_participant_id": "uuid",
+  "what_will_witness_prove": "..."
 }
 ```
 
-**Implementation:**
-- Changed name/phone/gender: update `*_at_filing` columns.
-- Changed address: insert new `address` row, repoint `address_id`.
-- `person` row is **never** updated to correct a case record (spec 0017 §3.4).
+- A changed address is written through the address service and `address_id` is repointed; the old address row is kept.
+- `called_by_participant_id` and `what_will_witness_prove` apply only to witnesses (§4.3) and update the `witness` row.
+- `role`, `person` and `institution` cannot be changed; remove the participant and add it again instead.
+- Setting `is_party_in_person` to true is refused while the participant has an active advocate.
 
-**DELETE:**
-Soft delete: sets `is_active = false`, `end_date = now()`. Optionally renumber remaining participants to keep ordinals consecutive.
+**DELETE `/case-participants/{case_participant_id}`:**
+Soft delete: sets `is_active = false`, `end_date = now()`. Then, in the same transaction:
+- the remaining active participants of that role are **renumbered** 1…n, so ordinals stay gap-free (spec 0020 §4.4);
+- the participant's active representations end (`is_active = false`, `to_date = now()`), and so do the mandates in which they are the represented party; removing a POA holder revokes all their mandates.
+
+Refused (400) while an active witness names the participant as its caller: remove or re-point the witness first.
 
 ### 4.2 Accused
 
 ```
-POST   /cases/{case_id_or_draft_session_id}/accused
-PATCH  /cases/{case_id}/accused/{case_participant_id}
-DELETE /cases/{case_id}/accused/{case_participant_id}
+POST /cases/{case_id_or_draft_session_id}/accused
 ```
 
 Same contract as complainants (§4.1), but `role = 'ACCUSED'`.
 
 **Key Differences:**
-1. For accused, always create a **new person** with `verification_level = ASSERTED`. Never attempt to match an existing person, because the accused is being named by the complainant, not self-identifying.
-2. POST endpoint accepts `case_id_or_draft_session_id` and creates the case atomically if this is the first action (same transaction steps as §4.1, step 1).
+1. `"self": true` is not accepted: a filer cannot name themselves as accused.
+2. The accused is always a **new** `person` at `ASSERTED`; they are named by the complainant, not self-identifying.
+3. An institution may be accused, with or without a person acting for it, exactly as for a complainant.
 
 ### 4.3 Witnesses
 
 ```
-POST   /cases/{case_id_or_draft_session_id}/witnesses
-PATCH  /cases/{case_id}/witnesses/{case_participant_id}
-DELETE /cases/{case_id}/witnesses/{case_participant_id}
+POST /cases/{case_id_or_draft_session_id}/witnesses
 ```
 
-**POST Request Body (extends complainant body):**
+**POST Request Body:**
 ```json
 {
   "person": { ... },
   "address": { ... },
   "called_by_participant_id": "uuid-of-complainant-or-accused",
-  "what_will_prove": "Eyewitness to the transaction on 2024-01-15"
+  "what_will_witness_prove": "Eyewitness to the transaction on 2024-01-15",
+  "additional_details": {}
 }
 ```
 
 **Implementation:**
-- POST endpoint accepts `case_id_or_draft_session_id` and creates the case atomically if this is the first action (same transaction steps as §4.1, step 1)
-- `role = 'WITNESS'`
-- `called_by_participant_id` stored directly on `case_participant`
-- `what_will_prove` stored in `additional_details` JSONB as:
-  ```json
-  {
-    "what_will_witness_prove": "Eyewitness to the transaction on 2024-01-15"
-  }
-  ```
+- Same steps as §4.1, with `role = 'WITNESS'`, plus a `witness` row (spec 0020 §4.5) holding `called_by_participant_id`, `what_will_witness_prove` and `additional_details`.
+- `called_by_participant_id` is required and must be an active COMPLAINANT or ACCUSED on the same case.
+- `what_will_witness_prove` is required.
+- A witness is always an individual: `institution` is not accepted. `"self": true` is.
+- The address is optional for witnesses.
 
 ### 4.4 Representation (Advocates)
 
 ```
 POST   /cases/{case_id_or_draft_session_id}/advocates
-PATCH  /cases/{case_id}/advocates/{representation_id}
-DELETE /cases/{case_id}/advocates/{representation_id}
+DELETE /representations/{representation_id}
 ```
 
 **POST Request Body:**
 ```json
 {
   "advocate_id": "uuid",
-  "client_participant_ids": ["uuid1", "uuid2", "uuid3"],
-  "vakalatnama_file": "<multipart file>"
+  "client_participant_ids": ["uuid1", "uuid2", "uuid3"]
 }
 ```
 
@@ -469,51 +516,40 @@ DELETE /cases/{case_id}/advocates/{representation_id}
 ```json
 {
   "representation_ids": ["uuid1", "uuid2", "uuid3"],
-  "advocate_id": "uuid",
-  "vakalatnama_document_id": "uuid"
+  "advocate_id": "uuid"
 }
 ```
 
+**Validation** (spec 0020 §6), before anything is written:
+- `advocate_id` is an `AdvocateProfile` with `approval_status = ACCEPTED`; PENDING and REJECTED advocates are refused.
+- Each client is an active COMPLAINANT or ACCUSED on this case, is not marked `is_party_in_person`, and is not the advocate themselves (the advocate's user is not the client person's user).
+- The advocate does not already actively represent that client. A client may have several advocates.
+
 **Transaction Steps:**
-1. **Check if case exists and create if needed:**
-   - If path parameter is a valid `case_id`, proceed with existing case
-   - If path parameter is a `draft_session_id`, atomically create case and type-specific table (same as §4.1, step 1)
-
-2. Upload `vakalatnama_file` to storage, get `vakalatnama_document_id`.
-
-3. For each `client_participant_id`:
-   - Insert `representation` row with:
-     - `case_id` (denormalized from participant)
-     - `advocate_id`
-     - `case_participant_id`
-     - `vakalatnama_document_id`
-     - `is_active = true`
-     - `from_date = now()`
-
-4. Return array of created `representation_ids`.
+1. Get or create the case (same as §3.1, step 1).
+2. For each client, insert a `representation` row with `case_id`, `advocate_id`, `case_participant_id`, `is_active = true`, `from_date = now()`.
+3. Return the created `representation_ids`.
 
 **Why multiple rows:**
-Three clients = three rows with the same `advocate_id`. Spec 0017 §5 explains the design.
+Three clients = three rows with the same `advocate_id` (spec 0020 §6.3).
 
-**PATCH:**
-Updates `vakalatnama_document_id` only. Changing the advocate or client requires DELETE + POST.
+**The vakalatnama:** uploaded as a case document of type `VAKALATNAMA` (§3), not with this request. The filing UI collects signed documents only when the full set of case documents is downloaded and uploaded back, so a vakalatnama cannot yet be tied to one representation (spec 0020 §6.3). With no document to change, a representation has no PATCH; changing the advocate or a client is DELETE then POST.
 
 **DELETE:**
-Sets `is_active = false`, `to_date = now()`. Rows are never hard-deleted (spec 0017 §5.3).
+Sets `is_active = false`, `to_date = now()`. Rows are never hard-deleted.
 
 ### 4.5 Power of Attorney Holders
 
 ```
 POST   /cases/{case_id_or_draft_session_id}/poa-holders
-PATCH  /cases/{case_id}/poa-holders/{poa_mandate_id}
-DELETE /cases/{case_id}/poa-holders/{poa_mandate_id}
+PATCH  /poa-mandates/{poa_mandate_id}
+DELETE /poa-mandates/{poa_mandate_id}
 ```
 
 **POST Request Body:**
 ```json
 {
   "person": {
-    "person_id": "uuid-if-existing",
     "name": "Suresh Patel",
     "phone_number": "+919123456789",
     ...
@@ -521,9 +557,10 @@ DELETE /cases/{case_id}/poa-holders/{poa_mandate_id}
   "address": { ... },
   "represented_participant_ids": ["uuid1", "uuid2"],
   "poa_type": "Limited to this case only",
-  "poa_document_file": "<multipart file>"
+  "additional_details": {}
 }
 ```
+`"self": true` may replace `person` when the filer is the POA holder, including a filer who is already a complainant acting for a co-complainant: they get a separate POA_HOLDER participant.
 
 **Response (201 Created):**
 ```json
@@ -535,32 +572,26 @@ DELETE /cases/{case_id}/poa-holders/{poa_mandate_id}
 }
 ```
 
+**Validation** (spec 0020 §5), before anything is written:
+- Each represented participant is an active COMPLAINANT or ACCUSED on this case, and is not the holder's own person.
+- A POA holder is always an individual: `institution` is not accepted. The address is required.
+
 **Transaction Steps:**
-1. **Check if case exists and create if needed:**
-   - If path parameter is a valid `case_id`, proceed with existing case
-   - If path parameter is a `draft_session_id`, atomically create case and type-specific table (same as §4.1, step 1)
-
-2. Resolve person (POAs are OTP-verified at filing, so existing person can be matched).
-
-3. Create `case_participant` with `role = 'POA_HOLDER'`.
-
-4. Upload `poa_document_file` to storage.
-
-5. For each `represented_participant_id`:
-   - Insert `poa_mandate` row with:
-     - `case_id` (denormalized)
-     - `poa_participant_id` (the participant created in step 3)
-     - `represented_participant_id`
-     - `poa_type`
-     - `document_id` (from step 4)
-     - `is_active = true`
-     - `granted_at = now()`
+1. Get or create the case (same as §3.1, step 1).
+2. Resolve the person (§4.1, step 3): the filer's own with `self`, otherwise a new `person` at `ASSERTED`.
+3. Write the address and create the `case_participant` with `role = 'POA_HOLDER'` (§4.1, steps 5–6).
+4. For each represented participant, insert a `poa_mandate` row with `case_id`, `poa_participant_id`, `represented_participant_id`, `poa_type`, `is_active = true`, `granted_at = now()`.
 
 **Why multiple mandate rows:**
-One POA acting for 2 of 3 complainants = 2 `poa_mandate` rows pointing to the same `poa_participant_id` (spec 0017 §4).
+One POA acting for 2 of 3 complainants = 2 `poa_mandate` rows pointing to the same `poa_participant_id`.
+
+**The POA document:** uploaded as a case document of type `POA_DOCUMENT` (§3), not with this request, for the same reason as the vakalatnama (§4.4).
+
+**PATCH:**
+Updates `poa_type`.
 
 **DELETE:**
-Sets `is_active = false`, `revoked_at = now()`.
+Revokes the mandate: `is_active = false`, `revoked_at = now()`. Revoking a holder's last active mandate also removes the holder's participant row (§4.1 DELETE), since a POA holder with no one to act for is no longer a party.
 
 ## 5. Step 3: Case Details and Evidence
 
@@ -944,7 +975,6 @@ GET /cases/{case_id}
       "advocate_id": "uuid",
       "advocate_name": "Adv. Sharma",
       "client_participant_id": "uuid",
-      "vakalatnama_document_id": "uuid",
       "is_active": true
     }
   ],
@@ -1061,10 +1091,10 @@ POST /cases/{case_id}/validate
    - Each complainant either:
      - Has an active `representation` row, OR
      - `is_party_in_person = true`
-   - Each active `representation` has a `vakalatnama_document_id`
+   - When the case has any active `representation`, it has at least one active `VAKALATNAMA` case document. Vakalatnamas are case documents, not linked to a representation (§3.4), so this is checked per case, not per advocate.
 
 3. **POA Mandates:**
-   - Each active `poa_mandate` has a `document_id`
+   - When the case has any active `poa_mandate`, it has at least one active `POA_DOCUMENT` case document (checked per case, for the same reason).
 
 4. **Evidence (cheque bounce specific):**
    - At least one `CHEQUE` evidence row
@@ -1294,7 +1324,7 @@ def validate_evidence_info(evidence_type, evidence_info):
 Use optimistic locking on `cases.updated_at`:
 
 ```
-PATCH /cases/{id}/complainants/{participant_id}
+PATCH /case-participants/{participant_id}
 If-Unmodified-Since: Wed, 15 Mar 2024 12:00:00 GMT
 ```
 
@@ -1385,9 +1415,10 @@ CREATE INDEX ON representation (advocate_id, is_active);
 
 ### 12.4 Person Matching
 
-- Filer creates case (person created with `verification_level=VERIFIED`, linked to `user_id`)
-- Filer adds themselves as complainant → existing `person` row is reused
-- Filer adds accused "John Doe" → new `person` row created with `verification_level=ASSERTED`
+- Filer adds themselves as complainant (`"self": true`) for the first time → their `person` is created from their account at `verification_level=VERIFIED`, linked to `user_id`
+- Filer adds themselves again, on this or another case → the same `person` row is reused, unchanged
+- Filer adds accused "John Doe" → new `person` row created with `verification_level=ASSERTED`, never matched
+- Filer adds a company with a PAN that an existing institution has → that institution is linked; its stored details are not returned
 
 ## 13. API Summary
 
@@ -1404,20 +1435,18 @@ CREATE INDEX ON representation (advocate_id, is_active);
 | GET | `/cases/{id}/documents?document_type=` | List documents |
 | DELETE | `/case-documents/{case_document_id}` | Remove document |
 | POST | `/cases/{id_or_draft}/complainants` | Add complainant (creates case if first action) |
-| PATCH | `/cases/{id}/complainants/{participant_id}` | Update complainant |
-| DELETE | `/cases/{id}/complainants/{participant_id}` | Remove complainant |
 | POST | `/cases/{id_or_draft}/accused` | Add accused (creates case if first action) |
-| PATCH | `/cases/{id}/accused/{participant_id}` | Update accused |
-| DELETE | `/cases/{id}/accused/{participant_id}` | Remove accused |
 | POST | `/cases/{id_or_draft}/witnesses` | Add witness (creates case if first action) |
-| PATCH | `/cases/{id}/witnesses/{participant_id}` | Update witness |
-| DELETE | `/cases/{id}/witnesses/{participant_id}` | Remove witness |
-| POST | `/cases/{id_or_draft}/advocates` | Add advocate (creates case if first action) |
-| PATCH | `/cases/{id}/advocates/{representation_id}` | Update representation |
-| DELETE | `/cases/{id}/advocates/{representation_id}` | End representation |
-| POST | `/cases/{id_or_draft}/poa-holders` | Add POA holder (creates case if first action) |
-| PATCH | `/cases/{id}/poa-holders/{mandate_id}` | Update POA mandate |
-| DELETE | `/cases/{id}/poa-holders/{mandate_id}` | Revoke mandate |
+| POST | `/cases/{id_or_draft}/poa-holders` | Add POA holder and their mandates (creates case if first action) |
+| GET | `/cases/{id}/participants?role=` | List participants, optionally of one role |
+| PATCH | `/case-participants/{participant_id}` | Update a participant's case data (never the person) |
+| DELETE | `/case-participants/{participant_id}` | Remove a participant (soft); renumbers that role |
+| POST | `/cases/{id_or_draft}/advocates` | Add an advocate for one or more clients (creates case if first action) |
+| GET | `/cases/{id}/representations` | List advocates and their clients |
+| DELETE | `/representations/{representation_id}` | End a representation |
+| GET | `/cases/{id}/poa-mandates` | List POA mandates |
+| PATCH | `/poa-mandates/{mandate_id}` | Update a mandate's `poa_type` |
+| DELETE | `/poa-mandates/{mandate_id}` | Revoke a mandate |
 | POST | `/cases/{id_or_draft}/evidence` | Add evidence (creates case if first action) |
 | PATCH | `/case-evidence/{case_evidence_id}` | Update evidence |
 | DELETE | `/case-evidence/{case_evidence_id}` | Remove evidence |
