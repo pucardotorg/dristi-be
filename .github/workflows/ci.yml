@@ -14,6 +14,10 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      pull-requests: write # post the coverage comment
+
     defaults:
       run:
         working-directory: ./src
@@ -25,6 +29,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # diff-cover compares against the base branch, so it needs the history.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -66,15 +73,40 @@ jobs:
       - name: Run pytest
         # Coverage only reads config from the current directory, so point it at
         # the root pyproject.toml (omit, fail_under); --cov=. measures src/.
-        run: pytest --cov=. --cov-config=../pyproject.toml --cov-report=xml
+        run: pytest --cov=. --cov-config=../pyproject.toml --cov-report=term --cov-report=xml
 
-      - name: Upload coverage to Codecov
-        # Upload even when tests fail, so the report shows what was covered.
-        if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+      - name: Build coverage comment
+        # Built even when tests fail, so the comment shows what was covered.
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        run: |
+          diff-cover coverage.xml --compare-branch=origin/${{ github.base_ref }} \
+            --format markdown:diff-coverage.md
+          {
+            cat diff-coverage.md
+            echo
+            echo "<details><summary>Whole project: files not fully covered</summary>"
+            echo
+            # The threshold is enforced by pytest above; here only the table is wanted.
+            coverage report --rcfile=../pyproject.toml --fail-under=0 \
+              --format=markdown --skip-covered --skip-empty
+            echo
+            echo "</details>"
+          } > coverage-comment.md
+
+      - name: Post coverage comment
+        # Fork PRs get a read-only token and cannot comment.
+        if: >
+          !cancelled() &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: marocchino/sticky-pull-request-comment@v2
         with:
+          header: coverage
           # `uses:` steps ignore the job's working-directory, so the path is from the repo root.
-          files: src/coverage.xml
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: true
+          path: src/coverage-comment.md
+
+      - name: Check coverage of changed lines
+        # After the comment is posted, so a failure here still leaves the report on the PR.
+        if: github.event_name == 'pull_request'
+        run: diff-cover coverage.xml --compare-branch=origin/${{ github.base_ref }} --fail-under=80
 
