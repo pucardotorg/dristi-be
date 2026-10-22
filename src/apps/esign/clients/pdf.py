@@ -158,10 +158,13 @@ class PDFClient:
             # 0016 #14.3 embed errors carry fixed, content-free messages, and
             # after the signer finished OTP the exact reason is what support
             # needs (container too small vs. unusable PKCS#7 vs. wrong field).
-            code = getattr(exc, "code", type(exc).__name__)
+            # It goes to the audit and the log only: the message reaches the
+            # UI through the status endpoint and stays the safe default.
             return ESignPDFEmbedError(
-                f"{ESignPDFEmbedError.default_message} {code}: {exc}",
-                audit={"pdf_error": code},
+                audit={
+                    "pdf_error": getattr(exc, "code", type(exc).__name__),
+                    "pdf_error_detail": str(exc)[:200],
+                },
             )
         # Any other message from the PDF module may name internals, so only
         # this module's own safe default text reaches the caller.

@@ -99,7 +99,7 @@ class FileClient:
         try:
             result = services.upload_file(payload)
         except Exception as exc:
-            raise self._translate(exc, default=ESignFileStorageError) from exc
+            raise self._translate(exc, default=ESignFileStorageError, upload=True) from exc
 
         return self._single_file_id(result)
 
@@ -149,8 +149,14 @@ class FileClient:
         return str(file_id)
 
     @staticmethod
-    def _translate(exc: Exception, default=None) -> Exception:
-        """Map a storage exception onto this module's failure codes."""
+    def _translate(exc: Exception, default=None, *, upload: bool = False) -> Exception:
+        """Map a storage exception onto this module's failure codes.
+
+        Only an upload's ``ValidationError`` is a rejected payload this module
+        built. On a read it is the storage module's read limit, whose message
+        names the file and the configured limit, so it is reported as the
+        generic storage failure instead.
+        """
 
         from ..exceptions import ESignError
 
@@ -158,7 +164,7 @@ class FileClient:
             return exc
         if type(exc).__name__ in NOT_FOUND_ERROR_NAMES:
             return ESignSourceNotFound()
-        if isinstance(exc, ValidationError):
+        if upload and isinstance(exc, ValidationError):
             # Storage answered, and said our payload is wrong. Reporting that as
             # "temporarily unavailable" hides a defect behind an outage.
             detail = _validation_detail(exc)

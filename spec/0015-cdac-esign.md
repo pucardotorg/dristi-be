@@ -490,11 +490,11 @@ of `PENDING`/`SIGNING`/`SUCCESS` rows and enforces `ESIGN_MAX_ATTEMPTS`.
 
 ```xml
 <Esign ver="2.1" sc="Y" ts="2026-09-22T17:40:03" txn="orders-0f9d..."
-       ekycIdType="A" aspId="ASP-ID" AuthMode="1"
+       ekycId="" ekycIdType="A" aspId="ASP-ID" AuthMode="1"
        responseSigType="pkcs7" responseUrl="https://.../api/v1/esign/_signed">
   <Docs>
     <InputHash id="1" hashAlgorithm="SHA256"
-               docInfo="Order 9f2c..." docUrl="">HEX_HASH</InputHash>
+               docInfo="Order 9f2c...">HEX_HASH</InputHash>
   </Docs>
 </Esign>
 ```
@@ -541,10 +541,14 @@ Parsing rules:
 
 - `status == "1"` is success; anything else is failure with `errCode`/`errMsg`
   mapped to an internal failure code and a generic user-facing message.
-- Success requires a non-empty `DocSignature` with empty `error`; otherwise
+- Success requires a non-empty `DocSignature` whose `error` is empty or `NA`
+  (case-insensitive; eSign API 2.1 #3.4.1 fills error fields with `NA` on
+  success, and C-DAC does so for `DocSignature@error` too); otherwise
   `ESIGN_SIGNATURE_MISSING`.
-- `DocSignature` content must decode from base64 and parse as a PKCS#7
-  structure before being handed to the PDF Service.
+- `DocSignature` and `UserX509Certificate` are base64 that C-DAC may wrap in
+  CRLF lines; whitespace is removed before decoding. `DocSignature` must then
+  decode and start as a PKCS#7 `SignedData` before being handed to the PDF
+  Service.
 - The `UserX509Certificate` subject/serial are recorded in `response_audit`;
   the full certificate is not persisted.
 - Unknown extra elements are ignored; unparsable XML is

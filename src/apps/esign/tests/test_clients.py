@@ -127,8 +127,8 @@ class PDFClientTests(SimpleTestCase):
         with self.assertRaises(ESignPDFEmbedError):
             self.client.embed_signature(b"%PDF", b"pkcs7", "Signature1")
 
-    def test_embed_errors_from_the_pdf_service_keep_their_reason(self):
-        """A failure after OTP must say why: container size, PKCS#7 or field."""
+    def test_embed_errors_keep_their_reason_in_the_audit_only(self):
+        """Support learns why (size, PKCS#7, field); the user sees the safe text."""
 
         class PDFSignatureContainerTooSmall(Exception):  # noqa: N818
             code = "PDF_SIGNATURE_CONTAINER_TOO_SMALL"
@@ -138,9 +138,14 @@ class PDFClientTests(SimpleTestCase):
         with self.assertRaises(ESignPDFEmbedError) as caught:
             self.client.embed_signature(b"%PDF", b"pkcs7", "Signature1")
 
-        self.assertIn("PDF_SIGNATURE_CONTAINER_TOO_SMALL", caught.exception.message)
-        self.assertIn("20000", caught.exception.message)
-        self.assertEqual(caught.exception.audit, {"pdf_error": "PDF_SIGNATURE_CONTAINER_TOO_SMALL"})
+        self.assertEqual(caught.exception.message, ESignPDFEmbedError.default_message)
+        self.assertEqual(
+            caught.exception.audit,
+            {
+                "pdf_error": "PDF_SIGNATURE_CONTAINER_TOO_SMALL",
+                "pdf_error_detail": "The signature needs 20000 bytes but holds 16384.",
+            },
+        )
 
     def test_unexpected_embed_errors_stay_generic(self):
         """Only the known, content-free PDF errors pass their text through."""
@@ -338,6 +343,16 @@ class FileClientTests(SimpleTestCase):
             with self.assertRaises(ESignFileStorageRejected) as caught:
                 self.client.upload(b"%PDF", filename="a.pdf", file_type="pdf", user_id="user-1")
         self.assertIn("payload must be a dict.", caught.exception.message)
+
+    def test_read_limit_on_get_content_is_not_an_upload_rejection(self):
+        """A read-limit ValidationError names storage limits; it stays generic."""
+        refusal = ValidationError("File f1 is 99 bytes, over the 10 byte read limit.")
+        self.use(self.service_module(get_file_content=raising(refusal)))
+        with self.assertRaises(ESignFileStorageError) as caught:
+            self.client.get_content("f1")
+
+        self.assertNotIsInstance(caught.exception, ESignFileStorageRejected)
+        self.assertNotIn("read limit", caught.exception.message)
 
     def test_storage_backend_failure_on_delete_is_reported_safely(self):
         """Cleanup failures are mapped like any other storage failure."""

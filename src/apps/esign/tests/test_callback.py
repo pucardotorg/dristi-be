@@ -189,8 +189,8 @@ class CallbackTests(ESignTestCase):
         self.assertEqual(self.transaction.failure_code, ESIGN_SIGNED_UPLOAD_FAILED)
         self.assertEqual(self.transaction.signed_file_id, "")
 
-    def test_signed_upload_rejection_keeps_the_storage_reason(self):
-        """The failure message on the row says which field storage refused."""
+    def test_signed_upload_rejection_keeps_the_storage_reason_in_the_audit(self):
+        """Support sees which field storage refused; the user sees the safe text."""
         self.files.fail_upload = ESignFileStorageRejected(
             "Document storage rejected the request. files[0].file_type: bad value."
         )
@@ -199,7 +199,28 @@ class CallbackTests(ESignTestCase):
 
         self.transaction.refresh_from_db()
         self.assertEqual(self.transaction.failure_code, ESIGN_SIGNED_UPLOAD_FAILED)
-        self.assertIn("files[0].file_type", self.transaction.failure_message)
+        self.assertEqual(self.transaction.failure_message, ESignSignedUploadError.default_message)
+        self.assertIn("files[0].file_type", self.transaction.response_audit["storage_error"])
+
+    def test_embed_failure_is_logged_once_with_its_diagnostics(self):
+        """One ESIGN_FAILED line, after the row is FAILURE, carrying the PDF reason."""
+        self.pdf.fail_embed = ESignPDFEmbedError(
+            audit={"pdf_error": "PDF_INVALID_PKCS7", "pdf_error_detail": "bad"}
+        )
+        with self.assertLogs("apps.esign", level="INFO") as logs:
+            with self.assertRaises(ESignPDFEmbedError):
+                process_callback(self.callback_payload(self.transaction))
+
+        failed = [line for line in logs.output if "ESIGN_FAILED" in line]
+        self.assertEqual(len(failed), 1)
+        self.assertIn("status='FAILURE'", failed[0])
+        self.assertIn("pdf_error='PDF_INVALID_PKCS7'", failed[0])
+        self.assertIn("signature_bytes=", failed[0])
+
+        self.transaction.refresh_from_db()
+        self.assertEqual(self.transaction.failure_message, ESignPDFEmbedError.default_message)
+        self.assertEqual(self.transaction.response_audit["pdf_error"], "PDF_INVALID_PKCS7")
+        self.assertIn("signature_bytes", self.transaction.response_audit)
 
     def test_duplicate_callback_does_not_sign_twice(self):
         """A replayed delivery is a no-op that reports the same outcome."""

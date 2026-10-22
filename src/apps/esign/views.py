@@ -182,6 +182,7 @@ class ESignRetryView(APIView):
                 errors.ALREADY_IN_PROGRESS,
                 errors.PDF_PREPARATION_FAILED,
                 errors.FILE_STORAGE_UNAVAILABLE,
+                errors.FILE_STORAGE_REJECTED,
                 errors.REQUEST_BUILD_FAILED,
                 errors.REQUEST_SIGNING_FAILED,
                 errors.DISABLED,
