@@ -1,7 +1,5 @@
 """Parties to a case: people and institutions (spec 0020 §2-3)."""
 
-import datetime
-
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, RegexValidator
@@ -31,6 +29,17 @@ contact_number_validator = RegexValidator(
     "Enter digits only, optionally grouped with parentheses, spaces or hyphens"
     " and starting with +.",
 )
+
+# Permanent Account Number: five letters, four digits, a letter (AAACA1234A).
+# Every company, firm, trust and society has one.
+PAN_REGEX = r"^[A-Z]{5}[0-9]{4}[A-Z]$"
+pan_validator = RegexValidator(PAN_REGEX, "Enter a valid PAN, e.g. AAACA1234A.")
+
+# Corporate Identification Number, companies only (U72200KA2010PTC052651):
+# listing status, industry code, state, year of incorporation, ownership type
+# and registration number.
+CIN_REGEX = r"^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$"
+cin_validator = RegexValidator(CIN_REGEX, "Enter a valid CIN, e.g. U72200KA2010PTC052651.")
 
 
 def validate_not_in_future(value):
@@ -62,6 +71,13 @@ def _strip(value):
     A whitespace-only value becomes the empty string, which "required" rejects.
     """
     return value.strip() if isinstance(value, str) else value
+
+
+def _identifier(value):
+    """Return a registration number uppercase with all whitespace removed, or ``None`` if blank."""
+    if not isinstance(value, str):
+        return value
+    return "".join(value.split()).upper() or None
 
 
 class Gender(models.TextChoices):
@@ -129,6 +145,14 @@ class Institution(BaseModel, BaseAuditableModel):
         max_length=20, null=True, blank=True, validators=[contact_number_validator]
     )
     email_address = models.EmailField(max_length=256, null=True, blank=True)
+    # How an institution is recognised again at a later filing (spec 0020 §3.4).
+    # Unique only when set: many institutions have no CIN, and NULLs never clash.
+    pan = models.CharField(
+        "PAN", max_length=10, null=True, blank=True, unique=True, validators=[pan_validator]
+    )
+    cin = models.CharField(
+        "CIN", max_length=21, null=True, blank=True, unique=True, validators=[cin_validator]
+    )
     # Registered office: where notices to the institution are served.
     address = models.ForeignKey(
         "address.Address",
@@ -151,6 +175,14 @@ class Institution(BaseModel, BaseAuditableModel):
                 | Q(contact_number__regex=CONTACT_NUMBER_REGEX),
                 name="parties_institution_contact_number_valid",
             ),
+            models.CheckConstraint(
+                check=Q(pan__isnull=True) | Q(pan__regex=PAN_REGEX),
+                name="parties_institution_pan_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(cin__isnull=True) | Q(cin__regex=CIN_REGEX),
+                name="parties_institution_cin_valid",
+            ),
         ]
 
     def __str__(self):
@@ -161,10 +193,14 @@ class Institution(BaseModel, BaseAuditableModel):
         """Validate values as they will be stored.
 
         The name is trimmed, so a whitespace-only name is rejected as missing,
-        and a blank contact number is stored as no number.
+        and a blank contact number, PAN or CIN is stored as none. PAN and CIN
+        are stored uppercase without spaces, so "aaaca 1234 a" matches
+        "AAACA1234A" when an institution is looked up again.
         """
         self.entity_name = _strip(self.entity_name)
         self.contact_number = _blank_to_none(self.contact_number)
+        self.pan = _identifier(self.pan)
+        self.cin = _identifier(self.cin)
         super().clean_fields(exclude=exclude)
 
     def save(self, *args, **kwargs):
@@ -193,7 +229,8 @@ class Person(BaseModel, BaseAuditableModel):
     relative_name = models.CharField(max_length=256, null=True, blank=True)
     date_of_birth = models.DateField(null=True, blank=True, validators=[validate_not_in_future])
     # For when only an approximate age is known ("aged about 45"), as is often
-    # the case for an accused. When the date of birth is known the two must agree.
+    # the case for an accused. Cleared once the date of birth is known, so it
+    # cannot go stale; read ``current_age`` instead.
     age = models.PositiveSmallIntegerField(
         null=True, blank=True, validators=[MaxValueValidator(MAX_AGE)]
     )
@@ -268,7 +305,8 @@ class Person(BaseModel, BaseAuditableModel):
         """Validate values as they will be stored.
 
         The name is trimmed, so a whitespace-only name is rejected as missing;
-        a blank phone number or relative's name is stored as none.
+        a blank phone number or relative's name is stored as none; and a stated
+        age is dropped once the date of birth is known (spec 0020 §2.4).
         """
         self.name = _strip(self.name)
         # Not given (None or blank) means no disability.
@@ -276,7 +314,16 @@ class Person(BaseModel, BaseAuditableModel):
             self.disability_status = DisabilityStatus.NONE
         self.phone_number = _blank_to_none(self.phone_number)
         self.relative_name = _blank_to_none(self.relative_name)
+        if self.date_of_birth:
+            self.age = None
         super().clean_fields(exclude=exclude)
+
+    @property
+    def current_age(self):
+        """Return today's age: from the date of birth when known, else the stated age."""
+        if self.date_of_birth:
+            return age_on(self.date_of_birth, timezone.localdate())
+        return self.age
 
     def save(self, *args, **kwargs):
         """Validate before every save, so no write path can skip the rules.
@@ -291,9 +338,8 @@ class Person(BaseModel, BaseAuditableModel):
     def clean(self):
         """Check the fields that only make sense together.
 
-        A designation describes a role at an institution, so needs one; a
-        relation ("S/O", "W/O" …) names a relative, so needs their name; and an
-        age given alongside a date of birth must match it.
+        A designation describes a role at an institution, so needs one; and a
+        relation ("S/O", "W/O" …) names a relative, so needs their name.
         """
         super().clean()
         errors = {}
@@ -301,11 +347,5 @@ class Person(BaseModel, BaseAuditableModel):
             errors["designation"] = "A designation is only allowed when an institution is set."
         if self.relation and not self.relative_name:
             errors["relative_name"] = "Enter the relative's name for this relation."
-        if (
-            self.age is not None
-            and isinstance(self.date_of_birth, datetime.date)
-            and self.age != age_on(self.date_of_birth, timezone.localdate())
-        ):
-            errors["age"] = "Age does not match the date of birth."
         if errors:
             raise ValidationError(errors)

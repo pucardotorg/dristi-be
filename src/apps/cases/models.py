@@ -1,4 +1,4 @@
-"""Cases, participants, POA mandates, representations, documents, cheques, evidence (spec 0020)."""
+"""Cases, participants, witnesses, POA mandates, representations, documents, evidence (spec 0020)."""
 
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
@@ -65,6 +65,12 @@ class Case(BaseModel, BaseAuditableModel):
     class Meta(BaseModel.Meta):
         """Meta options."""
 
+        constraints = [
+            models.CheckConstraint(
+                check=Q(status__in=CaseStatus.values),
+                name="cases_case_status_valid",
+            ),
+        ]
         indexes = [
             models.Index(fields=["status", "created_by"]),
             models.Index(fields=["case_type", "status"]),
@@ -182,7 +188,8 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
         Every role but a witness needs an address for service of notice. While
         active, a person cannot hold one role twice on a case, nor be both a
-        complainant and an accused there.
+        complainant and an accused there. A participant cannot be removed while
+        an active witness names them as its caller.
         """
         super().clean()
         errors = {}
@@ -207,6 +214,89 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 )
             elif OPPOSING_ROLES.get(self.role) in held:
                 errors["person"] = "A person cannot be both a complainant and an accused on a case."
+        if (
+            not self.is_active
+            and self.pk
+            and Witness.objects.filter(
+                called_by_participant_id=self.pk, case_participant__is_active=True
+            ).exists()
+        ):
+            errors["is_active"] = "Cannot be removed while an active witness is called by them."
+        if errors:
+            raise ValidationError(errors)
+
+
+class Witness(BaseModel, BaseAuditableModel):
+    """What only a witness has, one row per witness participant (spec 0020 §4.5).
+
+    The participant's id is the primary key, which enforces the 1:1
+    relationship; the participant row holds the witness's ordinal, snapshot
+    and address. A witness recalled by the opposing party is a new participant
+    with its own row.
+    """
+
+    # Replaces BaseModel's own UUID key.
+    id = None
+    case_participant = models.OneToOneField(
+        CaseParticipant, primary_key=True, on_delete=models.CASCADE, related_name="witness"
+    )
+    # RESTRICT: a caller cannot be deleted on its own, but deleting the whole
+    # case still cascades through both participants.
+    called_by_participant = models.ForeignKey(
+        CaseParticipant, on_delete=models.RESTRICT, related_name="witnesses_called"
+    )
+    what_will_witness_prove = models.TextField()
+    additional_details = models.JSONField(default=dict, blank=True)
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        verbose_name_plural = "witnesses"
+
+    def __str__(self):
+        return f"Witness {self.case_participant_id} called by {self.called_by_participant_id}"
+
+    def clean_fields(self, exclude=None):
+        """Trim the statement, so a whitespace-only one is rejected as missing."""
+        if self.what_will_witness_prove:
+            self.what_will_witness_prove = self.what_will_witness_prove.strip()
+        super().clean_fields(exclude=exclude)
+
+    def clean(self):
+        """Apply the rules the database cannot express (spec 0020 §4.5.2).
+
+        The participant must be a witness, called by a complainant or an
+        accused on the same case. Whether the caller is still active matters
+        only while the witness is, so a removed witness can still be edited.
+        Every broken rule is reported, not just the first one per field.
+        """
+        super().clean()
+        if not (self.case_participant_id and self.called_by_participant_id):
+            return
+        witness, caller = self.case_participant, self.called_by_participant
+        # (field, rule holds, message when it does not)
+        rules = [
+            ("case_participant", witness.role == ParticipantRole.WITNESS, "Must be a witness."),
+            (
+                "called_by_participant",
+                caller.role in INSTITUTION_ROLES,
+                "Must be a complainant or an accused.",
+            ),
+            (
+                "called_by_participant",
+                caller.case_id == witness.case_id,
+                "Must be a participant of the same case.",
+            ),
+            (
+                "called_by_participant",
+                not witness.is_active or caller.is_active,
+                "Must be an active participant.",
+            ),
+        ]
+        errors = {}
+        for field, holds, message in rules:
+            if not holds:
+                errors.setdefault(field, []).append(message)
         if errors:
             raise ValidationError(errors)
 

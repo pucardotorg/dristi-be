@@ -13,6 +13,7 @@ from .models import (
     ChequeBounceCase,
     PoaMandate,
     Representation,
+    Witness,
 )
 
 
@@ -36,6 +37,21 @@ class CaseParticipantAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     search_fields = ("case__id", "case__filing_number", "name_at_filing", "phone_number_at_filing")
     raw_id_fields = ("case", "person", "institution", "address")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Witness)
+class WitnessAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
+    """Admin configuration for witnesses."""
+
+    list_display = ("case_participant", "called_by_participant", "created_at")
+    search_fields = (
+        "case_participant__case__id",
+        "case_participant__case__filing_number",
+        "case_participant__name_at_filing",
+        "called_by_participant__name_at_filing",
+    )
+    raw_id_fields = ("case_participant", "called_by_participant")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(PoaMandate)

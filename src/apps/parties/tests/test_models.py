@@ -219,6 +219,70 @@ class TestInstitution:
         institution.refresh_from_db()
         assert institution.contact_number is None
 
+    def test_pan_and_cin_are_optional(self):
+        institution = make_institution()
+
+        assert institution.pan is None
+        assert institution.cin is None
+
+    def test_pan_and_cin_are_stored_uppercase_without_spaces(self):
+        institution = make_institution(pan=" aaaca 1234 a ", cin="u72200 ka2010 ptc052651")
+
+        institution.refresh_from_db()
+        assert institution.pan == "AAACA1234A"
+        assert institution.cin == "U72200KA2010PTC052651"
+
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_pan_and_cin_are_stored_as_none(self, blank):
+        institution = make_institution(pan=blank, cin=blank)
+
+        institution.refresh_from_db()
+        assert institution.pan is None
+        assert institution.cin is None
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("pan", "AAACA1234"),
+            ("pan", "AAAC12345A"),
+            ("pan", "AAACA-1234A"),
+            ("cin", "X72200KA2010PTC052651"),
+            ("cin", "U72200KA2010PTC05265"),
+            ("cin", "U72200K12010PTC052651"),
+        ],
+    )
+    def test_malformed_pan_or_cin_is_rejected(self, field, value):
+        institution = Institution(entity_type="LLP", entity_name="ABC", **{field: value})
+
+        with pytest.raises(ValidationError) as exc:
+            institution.full_clean()
+
+        assert field in exc.value.message_dict
+
+    @pytest.mark.parametrize(
+        ("field", "value"), [("pan", "AAACA1234A"), ("cin", "U72200KA2010PTC052651")]
+    )
+    def test_pan_and_cin_are_unique(self, field, value):
+        make_institution(**{field: value})
+
+        with pytest.raises(ValidationError) as exc:
+            make_institution(**{field: value.lower()})
+
+        assert field in exc.value.message_dict
+
+    def test_many_institutions_may_have_no_pan_or_cin(self):
+        make_institution()
+        make_institution()
+
+        assert Institution.objects.filter(pan__isnull=True, cin__isnull=True).count() == 2
+
+    @pytest.mark.parametrize(("field", "value"), [("pan", "aaaca1234a"), ("cin", "U1")])
+    def test_database_rejects_malformed_pan_or_cin(self, field, value):
+        institution = make_institution()
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Institution.objects.filter(pk=institution.pk).update(**{field: value})
+
     def test_unknown_entity_type_fails_validation(self):
         institution = make_institution()
         institution.entity_type = "NOT_A_TYPE"
@@ -361,19 +425,21 @@ class TestAge:
 
         assert "age" in exc.value.message_dict
 
-    def test_age_matching_the_date_of_birth_is_valid(self):
+    @pytest.mark.parametrize("offset", [0, 5])
+    def test_age_is_cleared_when_the_date_of_birth_is_known(self, offset):
         born = datetime.date(1980, 5, 17)
+        person = make_person(date_of_birth=born, age=age_on(born, timezone.localdate()) + offset)
 
-        Person(name="Ravi", date_of_birth=born, age=age_on(born, timezone.localdate())).full_clean()
+        assert Person.objects.get(pk=person.pk).age is None
 
-    def test_age_contradicting_the_date_of_birth_is_rejected(self):
+    def test_current_age_comes_from_the_date_of_birth(self):
         born = datetime.date(1980, 5, 17)
-        wrong = age_on(born, timezone.localdate()) + 5
+        person = make_person(date_of_birth=born)
 
-        with pytest.raises(ValidationError) as exc:
-            Person(name="Ravi", date_of_birth=born, age=wrong).full_clean()
+        assert person.current_age == age_on(born, timezone.localdate())
 
-        assert "age" in exc.value.message_dict
+    def test_current_age_falls_back_to_the_stated_age(self):
+        assert make_person(age=45).current_age == 45
 
     def test_database_rejects_an_impossible_age(self):
         person = make_person()
