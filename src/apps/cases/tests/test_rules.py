@@ -5,8 +5,17 @@ from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
-from apps.cases.models import Case, CaseDocument, CaseEvidence, CaseStatus, ChequeBounceCase
+from apps.cases.models import (
+    Case,
+    CaseDocument,
+    CaseEvidence,
+    CaseParticipant,
+    CaseStatus,
+    ChequeBounceCase,
+    ParticipantRole,
+)
 from apps.files.models import File
+from apps.parties.tests.factories import make_address, make_person
 
 from .conftest import CHEQUE_INFO
 
@@ -168,6 +177,24 @@ class TestModelRulesMatchTheApi:
 
     def test_empty_sections_are_allowed(self, case):
         ChequeBounceCase(case=case).full_clean()
+
+    def test_a_complainant_cannot_also_be_accused(self, case):
+        person = make_person()
+
+        def participant(role):
+            return CaseParticipant(
+                case=case,
+                person=person,
+                role=role,
+                ordinal=1,
+                name_at_filing=person.name,
+                address=make_address(),
+            )
+
+        participant(ParticipantRole.COMPLAINANT).save()
+
+        with pytest.raises(ValidationError, match="both a complainant and an accused"):
+            participant(ParticipantRole.ACCUSED).full_clean()
 
 
 class TestRemovingADocumentUnlinksEvidence:

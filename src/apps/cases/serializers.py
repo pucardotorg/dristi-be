@@ -6,8 +6,16 @@ from rest_framework import serializers
 
 from apps.files import documents
 from apps.organizations.models import Organization
+from apps.parties.models import MAX_AGE, Gender, Institution, Person
 
-from .models import Case, CaseDocument, CaseEvidence
+from .models import (
+    INSTITUTION_ROLES,
+    Case,
+    CaseDocument,
+    CaseEvidence,
+    CaseParticipant,
+    ParticipantRole,
+)
 from .services.case_types import CaseType, DocumentType, EvidenceType
 
 
@@ -197,3 +205,177 @@ class DetailsSectionSerializer(serializers.Serializer):
     case_id = serializers.UUIDField()
     section = serializers.CharField()
     data = serializers.DictField()
+
+
+# Parties (spec 0021 §4)
+
+
+class AddressInputSerializer(serializers.Serializer):
+    """An address in a party write.
+
+    Only the shape is checked here; the address service normalizes the values
+    and applies the address rules (pincode format and so on) when saving.
+    """
+
+    line1 = serializers.CharField(max_length=255)
+    city = serializers.CharField(max_length=100)
+    pincode = serializers.CharField(max_length=16)
+    district = serializers.CharField(max_length=100)
+    state = serializers.CharField(max_length=100)
+    police_station = serializers.CharField(max_length=255)
+
+
+class PersonInputSerializer(serializers.ModelSerializer):
+    """A person named in a party write. The model's rules apply again when saving."""
+
+    class Meta:
+        """Meta options."""
+
+        model = Person
+        fields = [
+            "name",
+            "phone_number",
+            "email_address",
+            "date_of_birth",
+            "age",
+            "gender",
+            "relation",
+            "relative_name",
+        ]
+
+
+class InstitutionInputSerializer(serializers.ModelSerializer):
+    """An institution named in a party write.
+
+    PAN and CIN are not checked for uniqueness: an existing institution with
+    either is reused rather than refused (spec 0020 §3.4). Their format is
+    checked by the model, after spaces are removed and letters uppercased.
+    """
+
+    pan = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    cin = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+
+    class Meta:
+        """Meta options."""
+
+        model = Institution
+        fields = ["entity_type", "entity_name", "pan", "cin", "contact_number", "email_address"]
+
+
+class ParticipantCreateSerializer(serializers.Serializer):
+    """Body of POST /cases/{id}/complainants and /accused (spec 0021 §4.1, §4.2).
+
+    The individual is ``person`` (someone the filer names) or ``"self": true``
+    (the filer); either may be left out when ``institution`` is given. The
+    role being added is passed in the context as ``role``.
+    """
+
+    person = PersonInputSerializer(required=False)
+    institution = InstitutionInputSerializer(required=False)
+    designation = serializers.CharField(max_length=128, required=False, allow_null=True)
+    address = AddressInputSerializer(required=False)
+    is_party_in_person = serializers.BooleanField(default=False)
+    additional_details = serializers.DictField(default=dict)
+
+    def get_fields(self):
+        """Add ``self``, which cannot be declared as a class attribute."""
+        fields = super().get_fields()
+        fields["self"] = serializers.BooleanField(default=False)
+        return fields
+
+    def validate(self, attrs):
+        """Check the fields that only make sense together, for the role being added.
+
+        ``self`` is returned as ``is_self``.
+        """
+        role = self.context["role"]
+        attrs["is_self"] = attrs.pop("self")
+        has_individual = attrs["is_self"] or "person" in attrs
+        errors = {}
+        if attrs["is_self"] and "person" in attrs:
+            errors["self"] = ["Send either person or self, not both."]
+        elif attrs["is_self"] and role == ParticipantRole.ACCUSED:
+            errors["self"] = ["You cannot name yourself as accused."]
+        elif not has_individual and "institution" not in attrs:
+            errors["person"] = ["Send person, self or institution."]
+        if "institution" in attrs and role not in INSTITUTION_ROLES:
+            errors["institution"] = ["Only a complainant or an accused may be an institution."]
+        if has_individual and "institution" in attrs and not attrs.get("designation"):
+            errors["designation"] = [
+                "Enter the designation of the person acting for the institution."
+            ]
+        if attrs.get("designation") and not (has_individual and "institution" in attrs):
+            errors["designation"] = ["Only for a person acting for an institution."]
+        if "address" not in attrs:
+            errors["address"] = ["An address for service of notice is required for this role."]
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
+
+class ParticipantUpdateSerializer(serializers.Serializer):
+    """Body of PATCH /case-participants/{id} (spec 0021 §4.1).
+
+    Changes only the case's copy of the party's details; the person and
+    institution rows are never changed. Any of the fields may be sent, and
+    nothing else: the role, person and institution cannot change.
+    """
+
+    name_at_filing = serializers.CharField(max_length=256, required=False)
+    phone_number_at_filing = serializers.CharField(max_length=20, required=False, allow_null=True)
+    gender_at_filing = serializers.ChoiceField(
+        choices=Gender.choices, required=False, allow_null=True
+    )
+    age_at_filing = serializers.IntegerField(
+        min_value=0, max_value=MAX_AGE, required=False, allow_null=True
+    )
+    designation_at_filing = serializers.CharField(max_length=128, required=False, allow_null=True)
+    address = AddressInputSerializer(required=False)
+    is_party_in_person = serializers.BooleanField(required=False)
+    additional_details = serializers.DictField(required=False)
+
+    def validate(self, attrs):
+        """Refuse unknown fields, so a typo or a role change is not silently ignored."""
+        unknown = sorted(set(self.initial_data) - set(self.fields))
+        if unknown:
+            raise serializers.ValidationError(
+                {field: ["This field cannot be changed."] for field in unknown}
+            )
+        if not attrs:
+            raise serializers.ValidationError("Send at least one field to change.")
+        return attrs
+
+
+class CaseParticipantSerializer(serializers.ModelSerializer):
+    """A case participant: the case's copy of a party's details.
+
+    Only ids of the person and institution are shown, never their stored
+    details, which may have been entered by the other side (spec 0020 §3.4).
+    """
+
+    case_participant_id = serializers.UUIDField(source="id", read_only=True)
+
+    class Meta:
+        """Meta options."""
+
+        model = CaseParticipant
+        fields = [
+            "case_participant_id",
+            "case_id",
+            "person_id",
+            "institution_id",
+            "role",
+            "ordinal",
+            "name_at_filing",
+            "phone_number_at_filing",
+            "gender_at_filing",
+            "age_at_filing",
+            "designation_at_filing",
+            "address_id",
+            "is_party_in_person",
+            "additional_details",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields

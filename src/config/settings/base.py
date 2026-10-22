@@ -259,6 +259,11 @@ SPECTACULAR_SETTINGS = {
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
         "CaseStatusEnum": "apps.cases.models.CaseStatus",
+        "ParticipantRoleEnum": "apps.cases.models.ParticipantRole",
+        "UserRoleEnum": "apps.users.models.Role",
+        "PartyEntityTypeEnum": "apps.parties.models.EntityType",
+        "ESignEntityTypeEnum": "apps.esign.constants.EntityType",
+        "GenderEnum": "apps.parties.models.Gender",
     },
 }
 

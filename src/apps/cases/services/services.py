@@ -81,7 +81,7 @@ def get_case_type(case_or_draft_id, user):
     """
     case = _get_owned_case(case_or_draft_id, user)
     if case is not None:
-        _ensure_editable(case)
+        ensure_editable(case)
         return case.case_type
     draft = _get_owned_draft(case_or_draft_id, user)
     if draft is not None:
@@ -102,7 +102,7 @@ def get_or_create_case(case_or_draft_id, user):
     """
     case = _get_owned_case(case_or_draft_id, user)
     if case is not None:
-        _ensure_editable(case)
+        ensure_editable(case)
         return case
 
     draft = _get_owned_draft(case_or_draft_id, user)
@@ -110,7 +110,7 @@ def get_or_create_case(case_or_draft_id, user):
         # A concurrent first save may have created the case, and dropped the
         # draft, since the lookup above.
         case = get_case(case_or_draft_id, user)
-        _ensure_editable(case)
+        ensure_editable(case)
         return case
 
     case, created = Case.objects.get_or_create(
@@ -130,19 +130,31 @@ def get_or_create_case(case_or_draft_id, user):
     return case
 
 
-def _ensure_editable(case):
+def ensure_editable(case):
     """Raise ``CaseNotEditable`` unless the case is still a draft."""
     if case.status != CaseStatus.DRAFT_IN_PROGRESS:
         raise CaseNotEditable
 
 
-def _touch(case, user):
+def touch(case, user):
     """Record that ``user`` just changed something on ``case``.
 
     A plain ``update()``: only the timestamps move, so it is not a version
     worth keeping in the case's history.
     """
     Case.objects.filter(pk=case.pk).update(updated_at=timezone.now(), updated_by=user)
+
+
+def deactivate(row, user, **ended):
+    """Soft-delete ``row`` as ``user``, also setting ``ended`` (e.g. ``revoked_at=now``).
+
+    One save per row, not ``update()``, so each removal is kept in history.
+    """
+    row.is_active = False
+    row.updated_by = user
+    for field, value in ended.items():
+        setattr(row, field, value)
+    row.save(update_fields=["is_active", *ended, "updated_by", "updated_at"])
 
 
 def _get_owned_case(case_id, user):
@@ -198,7 +210,7 @@ def add_document(case_or_draft_id, user, upload, document_type):
                 created_by=user,
                 updated_by=user,
             )
-            _touch(case, user)
+            touch(case, user)
             return document
     except Exception:
         documents.discard_documents([file_id])
@@ -212,17 +224,15 @@ def remove_document(case_document_id, user):
     document that is no longer part of the case.
     """
     with transaction.atomic():
-        document = _get_active_case_item(CaseDocument, case_document_id, user)
-        _ensure_editable(document.case)
-        document.is_active = False
-        document.updated_by = user
-        document.save(update_fields=["is_active", "updated_by", "updated_at"])
+        document = get_active_case_item(CaseDocument, case_document_id, user)
+        ensure_editable(document.case)
+        deactivate(document, user)
         # One save per row, not update(), so each unlink is kept in history.
         for evidence in document.evidence.active():
             evidence.case_document = None
             evidence.updated_by = user
             evidence.save(update_fields=["case_document", "updated_by", "updated_at"])
-        _touch(document.case, user)
+        touch(document.case, user)
 
 
 def _store_file(upload, user, case_type):
@@ -285,13 +295,13 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
             created_by=user,
             updated_by=user,
         )
-        _touch(case, user)
+        touch(case, user)
         return evidence
 
 
 def get_evidence(case_evidence_id, user):
     """Return active evidence on one of ``user``'s cases, or raise ``NotFound``."""
-    return _get_active_case_item(CaseEvidence, case_evidence_id, user)
+    return get_active_case_item(CaseEvidence, case_evidence_id, user)
 
 
 def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_UNSET):
@@ -301,7 +311,7 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
     current link. This is how a scan uploaded after the evidence was entered is
     linked to it (spec 0020 §11.4).
     """
-    _ensure_editable(evidence.case)
+    ensure_editable(evidence.case)
     fields = ["updated_by", "updated_at"]
     if evidence_info is not _UNSET:
         validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
@@ -315,22 +325,20 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
     evidence.updated_by = user
     with transaction.atomic():
         evidence.save(update_fields=fields)
-        _touch(evidence.case, user)
+        touch(evidence.case, user)
     return evidence
 
 
 def remove_evidence(evidence, user):
     """Soft-delete evidence."""
-    _ensure_editable(evidence.case)
-    evidence.is_active = False
-    evidence.updated_by = user
+    ensure_editable(evidence.case)
     with transaction.atomic():
-        evidence.save(update_fields=["is_active", "updated_by", "updated_at"])
-        _touch(evidence.case, user)
+        deactivate(evidence, user)
+        touch(evidence.case, user)
 
 
-def _get_active_case_item(model, object_id, user):
-    """Return an active document or evidence row on one of ``user``'s cases.
+def get_active_case_item(model, object_id, user):
+    """Return an active row of ``model`` (a document, evidence, participant …) on ``user``'s case.
 
     Ownership is checked through the item's case, so other users' items are
     not found.
@@ -364,7 +372,7 @@ def save_details_section(case_or_draft_id, user, section, data):
         setattr(detail, section, data)
         detail.updated_by = user
         detail.save(update_fields=[section, "updated_by", "updated_at"])
-        _touch(case, user)
+        touch(case, user)
         return case
 
 

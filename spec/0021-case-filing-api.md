@@ -419,7 +419,9 @@ Exactly one of `person` or `self` describes the individual, and either may be le
    - `person`: a new `person` at `ASSERTED`, with no attempt to match. When given together with an institution, it is created with `institution_id` and `designation` set.
    - The same person cannot be both complainant and accused, nor complainant twice, on one case.
 
-4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created. A reused institution's stored details are not returned or changed.
+4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created, with the request's address as its registered office. A reused institution's stored details are not returned or changed.
+   - A `pan` and a `cin` that belong to two different institutions are refused (400).
+   - The same institution cannot be both complainant and accused, nor hold one role twice, on one case.
 
 5. **Write the address** through the address service (spec 0020 §7): an identical address reuses its row. District and state are not looked up here; the client pre-fills them from `GET /pincodes/{pincode}`. A newly created person also gets this address as their `correspondence_address`; an existing person's addresses are unchanged. The address is required for complainants. When the filer adds themselves without an address, it will come from their profile once profiles carry one; until then it must be sent.
 
@@ -452,11 +454,13 @@ Updates only the participant's own data. The `person` and `institution` rows are
 - `called_by_participant_id` and `what_will_witness_prove` apply only to witnesses (§4.3) and update the `witness` row.
 - `role`, `person` and `institution` cannot be changed; remove the participant and add it again instead.
 - Setting `is_party_in_person` to true is refused while the participant has an active advocate.
+- `designation_at_filing` is accepted only for a person acting for an institution.
 
 **DELETE `/case-participants/{case_participant_id}`:**
 Soft delete: sets `is_active = false`, `end_date = now()`. Then, in the same transaction:
 - the remaining active participants of that role are **renumbered** 1…n, so ordinals stay gap-free (spec 0020 §4.4);
-- the participant's active representations end (`is_active = false`, `to_date = now()`), and so do the mandates in which they are the represented party; removing a POA holder revokes all their mandates.
+- the participant's active representations end (`is_active = false`, `to_date = now()`), and so do the mandates in which they are the represented party; removing a POA holder revokes all their mandates;
+- a POA holder left with no active mandate is removed too.
 
 Refused (400) while an active witness names the participant as its caller: remove or re-point the witness first.
 

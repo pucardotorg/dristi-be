@@ -2,34 +2,63 @@
 
 Ids in POST/PUT paths may be a case id or a draft session id; the first save
 on a draft creates the case (see ``services.get_or_create_case``). Other case
-routes take a case id; a document or evidence item is changed by its own id
-(``/case-documents/{id}``, ``/case-evidence/{id}``). Callers only ever reach
-their own cases.
+routes take a case id; a document, evidence item or participant is changed by
+its own id (``/case-documents/{id}``, ``/case-evidence/{id}``,
+``/case-participants/{id}``). Callers only ever reach their own cases.
 """
 
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+    inline_serializer,
+)
 from rest_framework import generics, status
 from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.fields import CharField
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import NOT_JOINABLE_STATUSES, Case, CaseDocument, CaseEvidence, CaseStatus
+from .models import (
+    NOT_JOINABLE_STATUSES,
+    Case,
+    CaseDocument,
+    CaseEvidence,
+    CaseParticipant,
+    CaseStatus,
+    ParticipantRole,
+)
 from .serializers import (
     CaseDocumentSerializer,
     CaseDocumentUploadSerializer,
     CaseEvidenceSerializer,
+    CaseParticipantSerializer,
     CaseSerializer,
     CaseTypeDescriptionSerializer,
     DetailsSectionSerializer,
     DraftSessionSerializer,
     EvidenceCreateSerializer,
     EvidenceUpdateSerializer,
+    ParticipantCreateSerializer,
+    ParticipantUpdateSerializer,
 )
-from .services import case_types, services
+from .services import case_types, participants, services
 
 TAGS = ["cases"]
+
+# Error bodies, for the schema. A 400 maps each field (or ``non_field_errors``)
+# to its messages, nested for nested input; other errors carry a ``detail``.
+VALIDATION_ERROR = OpenApiResponse(
+    OpenApiTypes.OBJECT, description="Each invalid field mapped to a list of messages."
+)
+DETAIL_ERROR = inline_serializer(name="CaseErrorDetail", fields={"detail": CharField()})
+NOT_FOUND = OpenApiResponse(DETAIL_ERROR, description="Not one of the caller's cases or items.")
+NOT_EDITABLE = OpenApiResponse(
+    DETAIL_ERROR, description="code = case_not_editable; the case has been submitted."
+)
 
 
 @extend_schema(tags=TAGS)
@@ -235,4 +264,106 @@ class CaseEvidenceDetailView(APIView):
         """Remove evidence from its case."""
         evidence = services.get_evidence(case_evidence_id, request.user)
         services.remove_evidence(evidence, request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class _ParticipantCreateView(APIView):
+    """Adds a party in ``role``; the first save on a draft creates the case."""
+
+    role = None
+
+    @extend_schema(
+        tags=TAGS,
+        request=ParticipantCreateSerializer,
+        responses={
+            201: CaseParticipantSerializer,
+            400: VALIDATION_ERROR,
+            404: NOT_FOUND,
+            409: NOT_EDITABLE,
+        },
+    )
+    def post(self, request, case_id):
+        """Add the party; send ``person``, ``"self": true`` or ``institution``."""
+        serializer = ParticipantCreateSerializer(data=request.data, context={"role": self.role})
+        serializer.is_valid(raise_exception=True)
+        participant = participants.add_participant(
+            case_id, request.user, self.role, serializer.validated_data
+        )
+        return Response(CaseParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(tags=TAGS)
+class ComplainantCreateView(_ParticipantCreateView):
+    """POST /cases/{case_id}/complainants — add a complainant."""
+
+    role = ParticipantRole.COMPLAINANT
+
+
+@extend_schema(tags=TAGS)
+class AccusedCreateView(_ParticipantCreateView):
+    """POST /cases/{case_id}/accused — add an accused. ``self`` is not accepted."""
+
+    role = ParticipantRole.ACCUSED
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=TAGS,
+        parameters=[OpenApiParameter("role", str, enum=ParticipantRole.values)],
+        responses={
+            200: CaseParticipantSerializer(many=True),
+            400: VALIDATION_ERROR,
+            404: NOT_FOUND,
+        },
+    )
+)
+class CaseParticipantListView(generics.ListAPIView):
+    """GET /cases/{case_id}/participants — active participants, by role then ordinal."""
+
+    serializer_class = CaseParticipantSerializer
+
+    def get_queryset(self):
+        """Return the case's active participants, optionally of one role."""
+        case = services.get_case(self.kwargs["case_id"], self.request.user)
+        queryset = CaseParticipant.objects.active().filter(case=case).order_by("role", "ordinal")
+        role = self.request.query_params.get("role")
+        if role:
+            if role not in ParticipantRole.values:
+                raise ValidationError({"role": [f"Unknown role: {role}."]})
+            queryset = queryset.filter(role=role)
+        return queryset
+
+
+@extend_schema(tags=TAGS)
+class CaseParticipantDetailView(APIView):
+    """PATCH or DELETE /case-participants/{case_participant_id}."""
+
+    @extend_schema(
+        tags=TAGS,
+        request=ParticipantUpdateSerializer,
+        responses={
+            200: CaseParticipantSerializer,
+            400: VALIDATION_ERROR,
+            404: NOT_FOUND,
+            409: NOT_EDITABLE,
+        },
+    )
+    def patch(self, request, case_participant_id):
+        """Change the case's copy of the party's details; never the person or institution."""
+        participant = participants.get_participant(case_participant_id, request.user)
+        serializer = ParticipantUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        participant = participants.update_participant(
+            participant, request.user, serializer.validated_data
+        )
+        return Response(CaseParticipantSerializer(participant).data)
+
+    @extend_schema(
+        tags=TAGS,
+        responses={204: None, 400: VALIDATION_ERROR, 404: NOT_FOUND, 409: NOT_EDITABLE},
+    )
+    def delete(self, request, case_participant_id):
+        """Remove the party; the rest of the role is renumbered."""
+        participant = participants.get_participant(case_participant_id, request.user)
+        participants.remove_participant(participant, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)

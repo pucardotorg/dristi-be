@@ -187,9 +187,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         """Apply the rules the database cannot express (spec 0020 §4.2, §14.1).
 
         Every role but a witness needs an address for service of notice. While
-        active, a person cannot hold one role twice on a case, nor be both a
-        complainant and an accused there. A participant cannot be removed while
-        an active witness names them as its caller.
+        active, a person or an institution cannot hold one role twice on a
+        case, nor be both a complainant and an accused there. A participant
+        cannot be removed while an active witness names them as its caller.
         """
         super().clean()
         errors = {}
@@ -201,19 +201,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             errors["designation_at_filing"] = (
                 "Enter the designation of the person acting for the institution."
             )
-        if self.is_active and self.case_id and self.person_id:
-            held = set(
-                CaseParticipant.objects.active()
-                .filter(case_id=self.case_id, person_id=self.person_id)
-                .exclude(pk=self.pk)
-                .values_list("role", flat=True)
-            )
-            if self.role in held:
-                errors["person"] = (
-                    f"This person is already a {self.get_role_display().lower()} on this case."
-                )
-            elif OPPOSING_ROLES.get(self.role) in held:
-                errors["person"] = "A person cannot be both a complainant and an accused on a case."
+        for field in ("person", "institution"):
+            if field not in errors and (message := self._role_conflict(field)):
+                errors[field] = message
         if (
             not self.is_active
             and self.pk
@@ -224,6 +214,30 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             errors["is_active"] = "Cannot be removed while an active witness is called by them."
         if errors:
             raise ValidationError(errors)
+
+    def _role_conflict(self, field):
+        """Return why the ``person`` or ``institution`` cannot take this role here, or ``None``.
+
+        Only active participants count, so a party removed from a case can be
+        added again.
+        """
+        party_id = getattr(self, f"{field}_id")
+        if not (self.is_active and self.case_id and party_id):
+            return None
+        held = set(
+            CaseParticipant.objects.active()
+            .filter(case_id=self.case_id, **{f"{field}_id": party_id})
+            .exclude(pk=self.pk)
+            .values_list("role", flat=True)
+        )
+        if self.role in held:
+            role = self.get_role_display().lower()
+            article = "an" if role[0] in "aeiou" else "a"
+            return f"This {field} is already {article} {role} on this case."
+        if OPPOSING_ROLES.get(self.role) in held:
+            party = "An institution" if field == "institution" else "A person"
+            return f"{party} cannot be both a complainant and an accused on a case."
+        return None
 
 
 class Witness(BaseModel, BaseAuditableModel):

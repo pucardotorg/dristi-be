@@ -73,7 +73,7 @@ def _strip(value):
     return value.strip() if isinstance(value, str) else value
 
 
-def _identifier(value):
+def normalize_identifier(value):
     """Return a registration number uppercase with all whitespace removed, or ``None`` if blank."""
     if not isinstance(value, str):
         return value
@@ -199,8 +199,8 @@ class Institution(BaseModel, BaseAuditableModel):
         """
         self.entity_name = _strip(self.entity_name)
         self.contact_number = _blank_to_none(self.contact_number)
-        self.pan = _identifier(self.pan)
-        self.cin = _identifier(self.cin)
+        self.pan = normalize_identifier(self.pan)
+        self.cin = normalize_identifier(self.cin)
         super().clean_fields(exclude=exclude)
 
     def save(self, *args, **kwargs):
