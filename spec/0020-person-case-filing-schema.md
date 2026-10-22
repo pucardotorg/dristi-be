@@ -184,7 +184,7 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `institution_id` | uuid | FK → institution, NULLABLE | The institution party; COMPLAINANT and ACCUSED only |
 | `role` | varchar(32) | NOT NULL | COMPLAINANT, ACCUSED, WITNESS, POA_HOLDER |
 | `ordinal` | smallint | NOT NULL | 1, 2, 3… per role (complainant #1, accused #2) |
-| `name_at_filing` | varchar(256) | NOT NULL | Frozen snapshot of name: the person's, or the institution's when there is no person |
+| `name_at_filing` | varchar(256) | NOT NULL | Frozen snapshot of name: the person's, or the institution's when there is no person; 256 wide, as `person.name` and `institution.entity_name`, so any stored name fits |
 | `phone_number_at_filing` | varchar(20) | NULLABLE | Frozen snapshot of phone; 20 wide so an institution's landline fits |
 | `gender_at_filing` | varchar(32) | NULLABLE | Frozen snapshot of gender |
 | `age_at_filing` | smallint | NULLABLE | Frozen snapshot of age: from `person.date_of_birth` when known, else `person.age` |
