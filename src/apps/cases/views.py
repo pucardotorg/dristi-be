@@ -1,4 +1,4 @@
-"""Case filing API views (spec 0021 §2, §3, §5).
+"""Case filing API views (spec 0021 §2–8).
 
 Ids in POST/PUT paths may be a case id or a draft session id; the first save
 on a draft creates the case (see ``services.get_or_create_case``). Other case
@@ -40,9 +40,12 @@ from .serializers import (
     CaseDocumentSerializer,
     CaseDocumentUploadSerializer,
     CaseEvidenceSerializer,
+    CaseNotReadySerializer,
     CaseParticipantSerializer,
+    CasePreviewSerializer,
     CaseSerializer,
     CaseTypeDescriptionSerializer,
+    CaseValidationSerializer,
     DetailsSectionSerializer,
     DraftSessionSerializer,
     EvidenceCreateSerializer,
@@ -54,9 +57,11 @@ from .serializers import (
     PoaMandateSerializer,
     PoaMandateUpdateSerializer,
     RepresentationSerializer,
+    SignatureSerializer,
+    SignedSerializer,
     WitnessCreateSerializer,
 )
-from .services import case_types, participants, services
+from .services import case_types, filing, participants, services
 
 TAGS = ["cases"]
 
@@ -559,3 +564,104 @@ class RepresentationDetailView(APIView):
         representation = participants.get_representation(representation_id, request.user)
         participants.end_representation(representation, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# Preview, validation, status transitions and signing (spec 0021 §6–8)
+
+NOT_READY = OpenApiResponse(
+    CaseNotReadySerializer, description="code = case_not_ready; errors list what is missing."
+)
+WRONG_STATUS = OpenApiResponse(
+    DETAIL_ERROR, description="code = invalid_status_transition; the case is in another status."
+)
+
+
+@extend_schema(tags=TAGS)
+class CasePreviewView(APIView):
+    """GET /cases/{case_id} — the whole filing, as the case recorded it."""
+
+    @extend_schema(tags=TAGS, responses={200: CasePreviewSerializer, 404: NOT_FOUND})
+    def get(self, request, case_id):
+        """Return the case with everything active on it, and its details sections."""
+        return Response(filing.get_preview(case_id, request.user))
+
+
+@extend_schema(tags=TAGS)
+class CaseValidateView(APIView):
+    """POST /cases/{case_id}/validate — the completeness check."""
+
+    @extend_schema(
+        tags=TAGS, request=None, responses={200: CaseValidationSerializer, 404: NOT_FOUND}
+    )
+    def post(self, request, case_id):
+        """Return whether the filing is complete and, if not, everything that is missing."""
+        is_valid, errors = filing.validate_case(case_id, request.user)
+        return Response(CaseValidationSerializer({"is_valid": is_valid, "errors": errors}).data)
+
+
+class _CaseTransitionView(APIView):
+    """Moves the case one step along its lifecycle; ``transition`` does the work."""
+
+    transition = None
+
+    @extend_schema(
+        tags=TAGS,
+        request=None,
+        responses={200: CaseSerializer, 400: NOT_READY, 404: NOT_FOUND, 409: WRONG_STATUS},
+    )
+    def post(self, request, case_id):
+        """Advance the case and return it."""
+        case = type(self).transition(case_id, request.user)
+        return Response(CaseSerializer(case).data)
+
+
+@extend_schema(tags=TAGS)
+class SubmitForSigningView(_CaseTransitionView):
+    """POST /cases/{case_id}/submit-for-signing — a complete draft moves to PENDING_SIGN."""
+
+    transition = filing.submit_for_signing
+
+
+@extend_schema(tags=TAGS)
+class SubmitForPaymentView(_CaseTransitionView):
+    """POST /cases/{case_id}/submit-for-payment — once every signer has signed."""
+
+    transition = filing.submit_for_payment
+
+
+@extend_schema(tags=TAGS)
+class SubmitForScrutinyView(_CaseTransitionView):
+    """POST /cases/{case_id}/submit-for-scrutiny — the case is filed and goes to scrutiny."""
+
+    transition = filing.submit_for_scrutiny
+
+
+@extend_schema(tags=TAGS)
+class ParticipantSignView(APIView):
+    """POST /cases/{case_id}/participants/{case_participant_id}/sign — record a signature."""
+
+    @extend_schema(
+        tags=TAGS,
+        request=SignatureSerializer,
+        responses={
+            200: SignedSerializer,
+            400: VALIDATION_ERROR,
+            404: NOT_FOUND,
+            409: OpenApiResponse(
+                DETAIL_ERROR,
+                description="code = invalid_status_transition when the case is not "
+                "PENDING_SIGN; code = already_signed when the signature is recorded.",
+            ),
+        },
+    )
+    def post(self, request, case_id, case_participant_id):
+        """Record the participant's e-signature on the filing."""
+        serializer = SignatureSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        participant = filing.record_signature(
+            case_id,
+            case_participant_id,
+            request.user,
+            serializer.validated_data["signature_document_id"],
+        )
+        return Response(SignedSerializer(participant).data)

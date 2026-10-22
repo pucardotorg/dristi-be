@@ -195,6 +195,7 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `end_date` | timestamp | NULLABLE | When participant was removed |
 | `is_party_in_person` | boolean | NOT NULL, default false | Appearing without an advocate |
 | `has_signed` | boolean | NOT NULL, default false | True once they have e-signed, or uploaded a signed copy of, the case filing |
+| `signature_document_id` | uuid | FK → file, nullable, ON DELETE PROTECT | The signed filing the e-sign service stored (spec 0021 §8). When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here |
 | `is_active` | boolean | NOT NULL, default true | Soft delete flag (spec 0006) |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel |

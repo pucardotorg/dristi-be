@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 DRAFT_SESSION_TTL_SECONDS = 60 * 60 * 24
 DRAFT_CACHE_KEY = "cases:draft:{draft_session_id}"
 
+PREVIEW_TTL_SECONDS = 60 * 60
+PREVIEW_CACHE_KEY = "case:{case_id}:preview"
+
 # Tag on every stored case document, so they can be found in apps.files.
 DOCUMENT_TAG = "cases"
 
@@ -140,9 +143,27 @@ def touch(case, user):
     """Record that ``user`` just changed something on ``case``.
 
     A plain ``update()``: only the timestamps move, so it is not a version
-    worth keeping in the case's history.
+    worth keeping in the case's history. Every write passes through here, so
+    this is also where the cached preview is dropped.
     """
     Case.objects.filter(pk=case.pk).update(updated_at=timezone.now(), updated_by=user)
+    clear_preview_cache(case.pk)
+
+
+def get_preview_cache_key(case_id):
+    """Return the cache key of the case's assembled filing (spec 0021 §6.2)."""
+    return PREVIEW_CACHE_KEY.format(case_id=case_id)
+
+
+def clear_preview_cache(case_id):
+    """Drop the cached preview now, and again once the current transaction commits.
+
+    The second delete is the one that matters: a preview read before the
+    commit sees the old rows and would cache them again.
+    """
+    key = get_preview_cache_key(case_id)
+    cache.delete(key)
+    transaction.on_commit(lambda: cache.delete(key))
 
 
 def deactivate(row, user, **ended):
@@ -355,7 +376,11 @@ def get_active_case_item(model, object_id, user):
 
 def get_details(case_id, user):
     """Return every details section of ``user``'s case."""
-    case = get_case(case_id, user)
+    return get_detail_sections(get_case(case_id, user))
+
+
+def get_detail_sections(case):
+    """Return every details section of ``case``, one key per section."""
     detail = _get_detail_row(case)
     return {section: getattr(detail, section) for section in get_config(case.case_type).sections}
 

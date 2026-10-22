@@ -35,6 +35,12 @@ ENDPOINTS = [
     ("get", "case-participant-list", [ANY_ID]),
     ("patch", "case-participant-detail", [ANY_ID]),
     ("delete", "case-participant-detail", [ANY_ID]),
+    ("get", "case-detail", [ANY_ID]),
+    ("post", "case-validate", [ANY_ID]),
+    ("post", "case-submit-for-signing", [ANY_ID]),
+    ("post", "case-submit-for-payment", [ANY_ID]),
+    ("post", "case-submit-for-scrutiny", [ANY_ID]),
+    ("post", "case-participant-sign", [ANY_ID, ANY_ID]),
 ]
 
 

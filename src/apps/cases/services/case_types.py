@@ -68,6 +68,9 @@ class CaseTypeConfig:
     section_schemas: dict[str, dict]
     document_types: tuple[str, ...]
     evidence_schemas: dict[str, dict] = field(default_factory=dict)
+    # The completeness check (spec 0021 §6.3) requires at least one of each.
+    required_document_types: tuple[str, ...] = ()
+    required_evidence_types: tuple[str, ...] = ()
 
     @property
     def sections(self):
@@ -168,6 +171,13 @@ CASE_TYPES = {
             DocumentType.POA_DOCUMENT,
             DocumentType.OTHER_SUPPORTING_DOCUMENT,
         ),
+        required_document_types=(
+            DocumentType.BOUNCED_CHEQUE,
+            DocumentType.RETURN_MEMO,
+            DocumentType.LEGAL_DEMAND_NOTICE,
+            DocumentType.PROOF_OF_DISPATCH,
+        ),
+        required_evidence_types=(EvidenceType.CHEQUE,),
         # One RETURN_MEMO and one LEGAL_DEMAND_NOTICE per cheque, matched to it
         # by ordinal: cheque #1, return memo #1, demand notice #1.
         evidence_schemas={
@@ -259,6 +269,7 @@ def get_description(case_type):
         "document_types": [
             {"code": code, "label": DocumentType(code).label} for code in config.document_types
         ],
+        "required_document_types": list(config.required_document_types),
         "evidence_types": [
             {"code": code, "label": EvidenceType(code).label, "schema": schema}
             for code, schema in config.evidence_schemas.items()

@@ -1179,14 +1179,19 @@ POST /cases/{case_id}/participants/{case_participant_id}/sign
 {
   "case_participant_id": "uuid",
   "has_signed": true,
-  "signed_at": "2024-03-16T10:00:00Z"
+  "signed_at": "2024-03-16T10:00:00Z",
+  "signature_document_id": "uuid"
 }
 ```
 
 **Implementation:**
-Sets `case_participant.has_signed = true`. Integration with eSign service (spec 0015) is assumed to happen before this call; this endpoint records the outcome.
+Integration with eSign service (spec 0015) is assumed to happen before this call; this endpoint records the outcome. `signature_document_id` is the signed filing the e-sign service stored (`esign_transaction.signed_file_id`). It is accepted only when a `SUCCESS` e-sign transaction produced it for this case's filing (`entity_type = CASE_FILING`, `entity_id = case_id`); otherwise `400`.
 
-When all participants have `has_signed = true`, the case can advance to `PENDING_PAYMENT`.
+The call sets `case_participant.has_signed = true` and stores the file as `case_participant.signature_document_id` (spec 0020 §4), so each signed copy stays linked to the participant who signed it. When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here; the response's `signed_at` is read from it.
+
+Only complainants and POA holders sign; the accused and witnesses never do, so signing one of them is `400`. Signing is accepted only while the case is `PENDING_SIGN` (`409` otherwise), and once per participant (`409 already_signed`).
+
+When every active complainant and POA holder has `has_signed = true`, the case can advance to `PENDING_PAYMENT`.
 
 ## 9. Design Decisions and Open Questions
 

@@ -4,6 +4,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from apps.address.models import Address
 from apps.files import documents
 from apps.organizations.models import Organization
 from apps.parties.models import MAX_AGE, Gender, Institution, Person
@@ -199,6 +200,8 @@ class CaseTypeDescriptionSerializer(serializers.Serializer):
     label = serializers.CharField()
     sections = SectionDescriptionSerializer(many=True)
     document_types = CodeLabelSerializer(many=True)
+    # Codes that must each be uploaded before the case can be submitted.
+    required_document_types = serializers.ListField(child=serializers.CharField())
     evidence_types = EvidenceTypeDescriptionSerializer(many=True)
 
 
@@ -567,8 +570,121 @@ class CaseParticipantSerializer(serializers.ModelSerializer):
             "is_party_in_person",
             "additional_details",
             "witness",
+            "has_signed",
+            "signature_document_id",
             "is_active",
             "created_at",
             "updated_at",
         ]
+        read_only_fields = fields
+
+
+# Preview, validation and signing (spec 0021 §6–8)
+
+
+class AddressSerializer(serializers.ModelSerializer):
+    """An address, as recorded for a participant on the case."""
+
+    address_id = serializers.UUIDField(source="id", read_only=True)
+
+    class Meta:
+        """Meta options."""
+
+        model = Address
+        fields = ["address_id", "line1", "city", "district", "state", "pincode", "police_station"]
+        read_only_fields = fields
+
+
+class PreviewParticipantSerializer(CaseParticipantSerializer):
+    """A participant with their address on the case written out."""
+
+    address = AddressSerializer(read_only=True, allow_null=True)
+
+    class Meta(CaseParticipantSerializer.Meta):
+        """Meta options."""
+
+        fields = [*CaseParticipantSerializer.Meta.fields, "address"]
+        read_only_fields = fields
+
+
+class CasePreviewSerializer(CaseSerializer):
+    """GET /cases/{id}: the whole filing, from the case's own frozen copies.
+
+    Reads the ``active_*`` lists and ``detail_sections`` that
+    ``services.filing`` loads onto the case.
+    """
+
+    participants = PreviewParticipantSerializer(
+        source="active_participants", many=True, read_only=True
+    )
+    representations = RepresentationSerializer(
+        source="active_representations", many=True, read_only=True
+    )
+    poa_mandates = PoaMandateSerializer(source="active_poa_mandates", many=True, read_only=True)
+    evidence = CaseEvidenceSerializer(source="active_evidence", many=True, read_only=True)
+    documents = CaseDocumentSerializer(source="active_documents", many=True, read_only=True)
+    # One key per section of the case's type; see GET /case-types/{case_type}.
+    details = serializers.DictField(source="detail_sections", read_only=True)
+
+    class Meta(CaseSerializer.Meta):
+        """Meta options."""
+
+        fields = [
+            *CaseSerializer.Meta.fields,
+            "participants",
+            "representations",
+            "poa_mandates",
+            "evidence",
+            "documents",
+            "details",
+        ]
+        read_only_fields = fields
+
+
+class ValidationErrorItemSerializer(serializers.Serializer):
+    """One reason a case is not ready: the part of the filing, and why."""
+
+    field = serializers.CharField()
+    message = serializers.CharField()
+
+
+class CaseValidationSerializer(serializers.Serializer):
+    """Response of POST /cases/{id}/validate."""
+
+    is_valid = serializers.BooleanField()
+    errors = ValidationErrorItemSerializer(many=True)
+
+
+class CaseNotReadySerializer(serializers.Serializer):
+    """A 400 from a submit step whose precondition does not hold."""
+
+    detail = serializers.CharField()
+    errors = ValidationErrorItemSerializer(many=True)
+
+
+class SignatureSerializer(serializers.Serializer):
+    """Body of POST /cases/{id}/participants/{id}/sign.
+
+    ``signature_document_id`` is the signed file a completed e-sign
+    transaction stored (spec 0015).
+    """
+
+    signature_document_id = serializers.UUIDField()
+
+
+class SignedSerializer(serializers.ModelSerializer):
+    """Response of POST /cases/{id}/participants/{id}/sign.
+
+    ``signed_at`` is the e-sign transaction's ``completed_at``, which
+    ``services.filing.record_signature`` sets on the participant.
+    """
+
+    case_participant_id = serializers.UUIDField(source="id", read_only=True)
+    signed_at = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        """Meta options."""
+
+        model = CaseParticipant
+        fields = ["case_participant_id", "has_signed", "signed_at", "signature_document_id"]
         read_only_fields = fields

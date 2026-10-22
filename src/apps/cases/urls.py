@@ -18,6 +18,23 @@ urlpatterns = [
         views.CaseByNumberView.as_view(),
         name="case-by-number",
     ),
+    path("cases/<uuid:case_id>/", views.CasePreviewView.as_view(), name="case-detail"),
+    path("cases/<uuid:case_id>/validate/", views.CaseValidateView.as_view(), name="case-validate"),
+    path(
+        "cases/<uuid:case_id>/submit-for-signing/",
+        views.SubmitForSigningView.as_view(),
+        name="case-submit-for-signing",
+    ),
+    path(
+        "cases/<uuid:case_id>/submit-for-payment/",
+        views.SubmitForPaymentView.as_view(),
+        name="case-submit-for-payment",
+    ),
+    path(
+        "cases/<uuid:case_id>/submit-for-scrutiny/",
+        views.SubmitForScrutinyView.as_view(),
+        name="case-submit-for-scrutiny",
+    ),
     path(
         "cases/<uuid:case_id>/documents/",
         views.CaseDocumentListView.as_view(),
@@ -53,6 +70,11 @@ urlpatterns = [
         "cases/<uuid:case_id>/participants/",
         views.CaseParticipantListView.as_view(),
         name="case-participant-list",
+    ),
+    path(
+        "cases/<uuid:case_id>/participants/<uuid:case_participant_id>/sign/",
+        views.ParticipantSignView.as_view(),
+        name="case-participant-sign",
     ),
     path(
         "cases/<uuid:case_id>/advocates/",

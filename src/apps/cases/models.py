@@ -92,6 +92,9 @@ class ParticipantRole(models.TextChoices):
 # Only these roles may be an institution; witnesses and POA holders are individuals.
 INSTITUTION_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.ACCUSED)
 
+# The filing side signs the complaint; the accused and witnesses never do (spec 0021 §8).
+SIGNING_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.POA_HOLDER)
+
 # A person holding one of these roles on a case cannot hold the other there.
 OPPOSING_ROLES = {
     ParticipantRole.COMPLAINANT: ParticipantRole.ACCUSED,
@@ -149,6 +152,13 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     end_date = models.DateTimeField(null=True, blank=True)
     is_party_in_person = models.BooleanField(default=False)
     has_signed = models.BooleanField(default=False)
+    signature_document = models.ForeignKey(
+        "files.File",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
 
     class Meta(BaseModel.Meta):
         """Meta options."""
