@@ -1,6 +1,6 @@
 # View Case — Developer & Agent Handover
 
-**Status:** v1.8 — 2026-10-18; `DET-12`: Mark as Evidence and Mark as Void need the **Evidence marker** role ([`court-roles.md`](court-roles.md)), not a staff title. v1.7 — 2026-09-15; Complaint removed as a separate section (not attached); Notice/Process Status rewritten as a consolidated process register (recipients, rounds, channels); Hearings moved under Overview as a pop-up, with an order link; Orders cut to title/date/BoTD/PDF, opening an order shows the PDF, court-staff draft and pending-signature behaviour added; order types, mobile layout and pagination rows removed; attendance is a line of text; Applications reduced to one kind — record cut to type/status/dates/filer/side/ID/order/documents, bulk payment and bulk-or-individual signing added, type catalogues dropped
+**Status:** v1.9 — 2026-10-22; Mark as Void removed; Court Evidence has no exhibits — the court marks as P or D; any document in the case file can be marked as evidence (`DET-12`); Documents (§10) now points to [`document-submission.md`](document-submission.md) — evidence number column replaces submission status, types and statuses follow that PRD. v1.8 — 2026-10-18; `DET-12`: Mark as Evidence and Mark as Void need the **Evidence marker** role ([`court-roles.md`](court-roles.md)), not a staff title. v1.7 — 2026-09-15; Complaint removed as a separate section (not attached); Notice/Process Status rewritten as a consolidated process register (recipients, rounds, channels); Hearings moved under Overview as a pop-up, with an order link; Orders cut to title/date/BoTD/PDF, opening an order shows the PDF, court-staff draft and pending-signature behaviour added; order types, mobile layout and pagination rows removed; attendance is a line of text; Applications reduced to one kind — record cut to type/status/dates/filer/side/ID/order/documents, bulk payment and bulk-or-individual signing added, type catalogues dropped
 **Date:** 2026-09-11
 **Audience:** developers and agents building the View Case module (front end and backend)
 
@@ -181,7 +181,7 @@ viewer on the right.
 | `DET-10` | Tree index | Nested collapsible folder tree. Selection via `?doc=` URL param. Each element is either a **heading** (collapsible, contains children) or a **root element** (leaf, corresponds to a file). |
 | `DET-11` | Document viewer | Two view modes toggled by `?view=`: PDF (iframe) and Digital (structured `DigitalRecord` component). Both views co-exist in the DOM; inactive one is `invisible`, not unmounted. |
 | `DET-13` | Default selection | Opens to the first root element in the tree |
-| `DET-12` | Context menu | Right-click on a root element: **Mark as Evidence**, **Mark as Void**, **Download** (downloads the PDF). **Mark as Evidence and Mark as Void need the Evidence marker role** ([`court-roles.md`](court-roles.md)) — not available to advocates, litigants, or other parties. Download is available to everyone with case access. |
+| `DET-12` | Context menu | Right-click on any document: **Mark as Evidence** (any document in the case file can be marked), **Download** (downloads the PDF). **Mark as Evidence needs the Evidence marker role** ([`court-roles.md`](court-roles.md)) — not available to advocates, litigants, or other parties. Marking works as in [`document-submission.md`](document-submission.md) §4. Download is available to everyone with case access. |
 
 ## 6.2 Case file registry
 
@@ -237,18 +237,17 @@ document's data — the label the user actually sees in the tree for that instan
 | | Affidavit under Section 225 BNSS | 0–1 | yes | — | Affidavit in lieu of examination in chief |
 | | Affidavit under Section 145 NI Act | 1 | yes | — | |
 | Vakalats | Vakalatnama — {advocate name} | 1 per advocate | yes | chronological | |
-| Additional Filings | Additional Filing | 0+ | yes | chronological | Not marked as evidence, not void |
+| Additional Filings | Additional Filing | 0+ | yes | chronological | Not marked as evidence |
 | Mandatory Submissions | Mandatory Submission | 0+ | yes | chronological | Court-directed |
 | Evidence of Complainant | Deposition of {witness number} | 0+ | yes | date of examination | e.g. PW-1, PW-2 |
 | | Exhibit {evidence number} | 0+ | yes | date of marking | e.g. P1, P2 |
-| | Additional document | 0+ | yes | date of submission | Not marked as exhibit, not void |
+| | Additional document | 0+ | yes | date of submission | Not marked as exhibit |
 | 313 Examination and Plea of Accused | 313 Examination and Plea — {accused name} | 0+ | yes | chronological | One per accused examined |
 | Written Statement by Accused | Written Statement — {accused name} | 0+ | yes | chronological | One per accused |
 | Evidence of Accused | Deposition of {witness number} | 0+ | yes | date of examination | e.g. DW-1, DW-2 |
 | | Exhibit {evidence number} | 0+ | yes | date of marking | e.g. D1, D2 |
-| | Additional document | 0+ | yes | date of submission | Not marked as exhibit, not void |
+| | Additional document | 0+ | yes | date of submission | Not marked as exhibit |
 | Court Evidence | Deposition of {witness number} | 0+ | no | date of examination | e.g. CW-1 |
-| | Exhibit {evidence number} | 0+ | no | date of marking | |
 | | Additional document | 0+ | no | date of submission | |
 | Notes | Court Note | 0+ | no | chronological | |
 | | Complainant Note | 0+ | yes | chronological | |
@@ -434,73 +433,18 @@ An application carries:
 
 # 10. Documents
 
-
-## 10.1 Layout
+Submitting documents, their statuses, the Documents tab and marking evidence are specified
+in [`document-submission.md`](document-submission.md). This section covers only the tab's
+layout around that.
 
 | ID | Element | Detail |
 | --- | --- | --- |
 | `DOC-01` | Sub-tabs | Documents and Bail bonds (two sibling populations, not a type filter) |
-| `DOC-02` | Type filter | Grouped combobox of document types (see §10.3) |
+| `DOC-02` | Type filter | Combobox of document types ([`document-submission.md`](document-submission.md) `DSB-11`) |
 | `DOC-03` | Submitted by filter | Combobox of people on the case |
-| `DOC-04` | Search | By filing ID |
-| `DOC-05` | Table | Columns: Document (title + source + filing ID), Document type, Submitted by, Submitted on, Submission status, Evidence (marked/objected badges with evidence numbers), Actions (download). |
+| `DOC-04` | Search | By document title, provisional ID or evidence number |
+| `DOC-05` | Table | Columns as [`document-submission.md`](document-submission.md) `DSB-07` |
 | `DOC-06` | Record dialog | Detail view of a single document |
-
-## 10.2 Document statuses
-
-Same as filing statuses plus one additional state:
-
-| Value | Label | Notes |
-| --- | --- | --- |
-| `pending-review` | Pending review | Between signature and the court's decision. Not present in the Applications register. |
-
-## 10.3 Document types
-
-~18 types, organised into six groups:
-
-| Group | Types |
-| --- | --- |
-| Complaint pack | Legal demand notice, Proof of dispatch, Dishonoured cheque, Cheque return memo, Vakalatnama, Party-in-person affidavit |
-| Affidavits | Affidavit under section 223 BNSS, Affidavit under section 225 BNSS, Affidavit under section 145 NI Act |
-| Exhibits | Account records, Proof of debt or liability, Proof of deposit of cheque, Exhibit index, Documentary |
-| Witness records | Witness deposition |
-| Court forms | Plea record, Questionnaire under section 351 BNSS, Mediation |
-| Bail bonds | Bail bond |
-
-## 10.4 Document sources
-
-| Value | Label |
-| --- | --- |
-| `case-filing` | Case filing |
-| `application` | Application |
-| `hearing` | Hearing |
-| `court` | Court |
-
-## 10.5 Evidence tracking
-
-| Field | Values | Notes |
-| --- | --- | --- |
-| Evidence number | String (e.g. "P1", "D2") or null | Assigned when evidence is marked |
-| Evidence status | `marked` / `void` / null | Court treatment after submission workflow completes |
-
-## 10.6 Document record
-
-Each document carries:
-
-| Field | Notes |
-| --- | --- |
-| Filing ID | The registry's own identifier |
-| Title | Display title |
-| Type | From the catalogue |
-| Submission status | Filing workflow status (including `pending-review`) |
-| Submitted on | Date |
-| Submitted by | Person ID |
-| Source | Where it came from: case filing, application, hearing, court |
-| Linked application | Reference back to the application it was submitted through |
-| Linked hearing | Reference to the hearing it was produced at |
-| Evidence number | Assigned when marked as evidence |
-| Evidence status | Marked or void |
-| File | PDF with optional page reference |
 
 ---
 

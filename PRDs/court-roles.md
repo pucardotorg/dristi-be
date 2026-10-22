@@ -1,6 +1,6 @@
 # Court roles
 
-**Status:** v9.3 — 2026-10-20; **Account approver** is held by the Scrutiny officer in Gujarat and the Ahlmad in Punjab & Haryana (§3); Kerala still names no holder. **Process dispatcher** is held by the Reader in Gujarat and Punjab & Haryana. v9.2 — 2026-10-20; the **Magistrate** holds A-Diary editor and A-Diary signer in Kerala, Gujarat and Punjab & Haryana (§3). v9.1 — 2026-10-20; new role **A-Diary signer** ([`a-diary.md`](a-diary.md) `ADY-12`); not yet mapped to any staff title in §3. v9 — 2026-10-20; Hearing controller now starts, ends and passes over hearings (order-generation §10). Order data filler also sets the A-Diary text (order-generation `PUB-04`). New role **A-Diary editor** ([`a-diary.md`](a-diary.md)); not yet mapped to any staff title in §3. 2026-10-19; **a court establishment sits above the courtroom** (`RLE-02c`): the Account approver, Scrutiny officer and Case registerer roles are held per court establishment, not per courtroom, and the Scrutiny officer chooses the courtroom a case goes to; each state deployment has one establishment in this version. Replaces v6's whole-state Account approver. v8 — 2026-10-19; links point at the scrutiny and registration handover, after the e-filing, scrutiny and registration handover was split in two. v7 — 2026-10-19; new §3, **who holds which role, by state** — one table each for Kerala, Gujarat and Punjab & Haryana, listing each staff title and its roles: Magistrate, Scrutiny officer, Bench clerk / Reader, Typist, Steno, Ahlmad, Post officer. v6 — 2026-10-19; the Account approver role is held for the whole state deployment, replacing v5's court establishment (`RLE-02c`). v5 — 2026-10-19; the Account approver role is held per court establishment (`RLE-02c`). v4 — 2026-10-19; the Account approver role is the exception to per-courtroom roles — held above courtroom level (`RLE-02c`). v3 — 2026-10-18; a Scrutiny officer who also holds Case registerer is not offered Forward for registration. v2 — 2026-10-18; roles are held **per courtroom** — one account can hold
+**Status:** v9.4 — 2026-10-22; **Evidence marker** no longer marks as void, is owned by [`document-submission.md`](document-submission.md), and is held by every court-side staff title in all three states for now. v9.3 — 2026-10-20; **Account approver** is held by the Scrutiny officer in Gujarat and the Ahlmad in Punjab & Haryana (§3); Kerala still names no holder. **Process dispatcher** is held by the Reader in Gujarat and Punjab & Haryana. v9.2 — 2026-10-20; the **Magistrate** holds A-Diary editor and A-Diary signer in Kerala, Gujarat and Punjab & Haryana (§3). v9.1 — 2026-10-20; new role **A-Diary signer** ([`a-diary.md`](a-diary.md) `ADY-12`); not yet mapped to any staff title in §3. v9 — 2026-10-20; Hearing controller now starts, ends and passes over hearings (order-generation §10). Order data filler also sets the A-Diary text (order-generation `PUB-04`). New role **A-Diary editor** ([`a-diary.md`](a-diary.md)); not yet mapped to any staff title in §3. 2026-10-19; **a court establishment sits above the courtroom** (`RLE-02c`): the Account approver, Scrutiny officer and Case registerer roles are held per court establishment, not per courtroom, and the Scrutiny officer chooses the courtroom a case goes to; each state deployment has one establishment in this version. Replaces v6's whole-state Account approver. v8 — 2026-10-19; links point at the scrutiny and registration handover, after the e-filing, scrutiny and registration handover was split in two. v7 — 2026-10-19; new §3, **who holds which role, by state** — one table each for Kerala, Gujarat and Punjab & Haryana, listing each staff title and its roles: Magistrate, Scrutiny officer, Bench clerk / Reader, Typist, Steno, Ahlmad, Post officer. v6 — 2026-10-19; the Account approver role is held for the whole state deployment, replacing v5's court establishment (`RLE-02c`). v5 — 2026-10-19; the Account approver role is held per court establishment (`RLE-02c`). v4 — 2026-10-19; the Account approver role is the exception to per-courtroom roles — held above courtroom level (`RLE-02c`). v3 — 2026-10-18; a Scrutiny officer who also holds Case registerer is not offered Forward for registration. v2 — 2026-10-18; roles are held **per courtroom** — one account can hold
 different roles in different courtrooms (`RLE-02a`, `RLE-02b`); the open question is
 closed. v1 — 2026-10-18; first draft. Court-side permissions are held by **roles**,
 not by user types: a staff account is given one or more roles, and every PRD names the
@@ -52,7 +52,7 @@ action stays in the PRD that owns it, linked from the table.
 | **Process signer** | Sign process — notice, summons, proclamation, attachment and custom process. | [`process-handover.md`](process-handover.md) `SGN-01` |
 | **Warrant signer** | Sign a warrant. | [`process-handover.md`](process-handover.md) `SGN-01` |
 | **Process dispatcher** | Carry out the manual steps of sending process — mark it sent, record whether it was served or executed, record that a recall was communicated. | [`process-handover.md`](process-handover.md) §10 |
-| **Evidence marker** | Mark a document in the case file as evidence, or as void. | [`view-case-handover.md`](view-case-handover.md) `DET-12` |
+| **Evidence marker** | Mark any document in the case file as evidence, as prosecution (P) or defence (D), which allots its evidence number. | [`document-submission.md`](document-submission.md) `DSB-12`–`DSB-14` |
 | **A-Diary editor** | Change an A-Diary entry's text — which also changes the A-Diary text of the order it came from — until that day's A-Diary is signed. | [`a-diary.md`](a-diary.md) `ADY-07`, `ADY-09` |
 | **A-Diary signer** | Sign the A-Diary. | [`a-diary.md`](a-diary.md) `ADY-12` |
 
@@ -70,29 +70,29 @@ means the title exists there but its roles have not been confirmed. Scrutiny off
 | Staff title | Roles |
 |---|---|
 | **Magistrate** | Case registerer, Order drafter, Next hearing setter, Order signer, Hearing controller, Application onboarder, Warrant signer, Evidence marker, A-Diary editor, A-Diary signer |
-| **Scrutiny officer** | Scrutiny officer |
-| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Application onboarder, Process signer |
-| **Typist** | Order drafter, Order data filler, Next hearing setter |
-| **Post officer** | Process dispatcher, for e-Post |
+| **Scrutiny officer** | Scrutiny officer, Evidence marker |
+| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Application onboarder, Process signer, Evidence marker |
+| **Typist** | Order drafter, Order data filler, Next hearing setter, Evidence marker |
+| **Post officer** | Process dispatcher for e-Post, Evidence marker |
 
 ### 3.2 Gujarat
 
 | Staff title | Roles |
 |---|---|
 | **Magistrate** | Case registerer, Order drafter, Next hearing setter, Order signer, Hearing controller, Application onboarder, Warrant signer, Evidence marker, A-Diary editor, A-Diary signer |
-| **Scrutiny officer** | Scrutiny officer, Account approver — one person across five courtrooms today |
-| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Application onboarder, Process signer, Process dispatcher |
-| **Typist** | Order drafter, Order data filler |
-| **Post officer** | Not known |
+| **Scrutiny officer** | Scrutiny officer, Account approver, Evidence marker — one person across five courtrooms today |
+| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Application onboarder, Process signer, Process dispatcher, Evidence marker |
+| **Typist** | Order drafter, Order data filler, Evidence marker |
+| **Post officer** | Evidence marker |
 
 ### 3.3 Punjab & Haryana
 
 | Staff title | Roles |
 |---|---|
 | **Magistrate** | Case registerer, Order drafter, Next hearing setter, Order signer, Hearing controller, Application onboarder, Warrant signer, Evidence marker, A-Diary editor, A-Diary signer |
-| **Scrutiny officer** | Scrutiny officer |
-| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Application onboarder, Process signer, Process dispatcher |
-| **Typist** | Order drafter, Next hearing setter |
-| **Steno** | Order drafter |
-| **Ahlmad** | Order data filler, Account approver |
-| **Post officer** | Not known |
+| **Scrutiny officer** | Scrutiny officer, Evidence marker |
+| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Application onboarder, Process signer, Process dispatcher, Evidence marker |
+| **Typist** | Order drafter, Next hearing setter, Evidence marker |
+| **Steno** | Order drafter, Evidence marker |
+| **Ahlmad** | Order data filler, Account approver, Evidence marker |
+| **Post officer** | Evidence marker |
