@@ -1,4 +1,4 @@
-"""Case parties: complainants and accused (spec 0021 §4.1, §4.2).
+"""Case parties: complainants, accused and witnesses (spec 0021 §4.1–§4.3).
 
 A party write resolves the person and institution (``apps.parties.services``),
 stores the address for service of notice, and records the case's own copy of
@@ -25,7 +25,7 @@ from apps.parties.services import (
     get_or_create_self_person,
 )
 
-from ..models import Case, CaseParticipant, PoaMandate
+from ..models import Case, CaseParticipant, ParticipantRole, PoaMandate, Witness
 from .services import (
     deactivate,
     ensure_editable,
@@ -35,22 +35,24 @@ from .services import (
     touch,
 )
 
+# A witness's model fields, by the names the API gives them.
+WITNESS_FIELD_NAMES = {"called_by_participant": "called_by_participant_id"}
+
 
 @contextmanager
-def _errors_under(field=None, *, as_whole=False):
+def _errors_under(field=None, *, as_whole=False, renamed=None):
     """Turn a model ``ValidationError`` into a 400, nested under ``field`` when given.
 
     ``as_whole`` reports every message as a non-field error, for a request
     with no body (a DELETE), where the model's field names would mean nothing.
+    ``renamed`` maps model field names to the request's.
     """
+    renamed = {NON_FIELD_ERRORS: api_settings.NON_FIELD_ERRORS_KEY, **(renamed or {})}
     try:
         yield
     except DjangoValidationError as exc:
         if hasattr(exc, "error_dict") and not as_whole:
-            detail = {
-                api_settings.NON_FIELD_ERRORS_KEY if key == NON_FIELD_ERRORS else key: messages
-                for key, messages in exc.message_dict.items()
-            }
+            detail = {renamed.get(key, key): messages for key, messages in exc.message_dict.items()}
         else:
             detail = {api_settings.NON_FIELD_ERRORS_KEY: exc.messages}
         raise serializers.ValidationError({field: detail} if field else detail) from exc
@@ -84,44 +86,89 @@ def add_participant(case_or_draft_id, user, role, data):
     with transaction.atomic():
         case = get_or_create_case(case_or_draft_id, user)
         _lock(case)
-        address = _save_address(data.get("address"), user)
+        participant = _create_participant(case, user, role, data)
+        touch(case, user)
+    return participant
 
-        institution = None
-        if "institution" in data:
-            with _errors_under("institution"):
-                institution = get_or_create_institution(user, data["institution"], address=address)
 
-        person = None
-        if data["is_self"]:
-            with _errors_under("self"):
-                person = get_or_create_self_person(user)
-        elif "person" in data:
-            with _errors_under("person"):
-                person = create_asserted_person(
-                    user,
-                    data["person"],
-                    institution=institution,
-                    designation=data.get("designation"),
-                    address=address,
-                )
+def add_witness(case_or_draft_id, user, data):
+    """Add a witness, creating the case on first save (spec 0021 §4.3).
 
-        participant = CaseParticipant(
-            case=case,
-            person=person,
-            institution=institution,
-            role=role,
-            ordinal=_next_ordinal(case, role),
-            address=address,
-            is_party_in_person=data["is_party_in_person"],
+    ``data`` is a validated ``WitnessCreateSerializer`` body. The participant
+    is created as for any party, and a ``Witness`` row records who calls
+    them, what they will prove and the body's ``additional_details``.
+    """
+    get_case_type(case_or_draft_id, user)
+    with transaction.atomic():
+        case = get_or_create_case(case_or_draft_id, user)
+        _lock(case)
+        participant = _create_participant(
+            case, user, ParticipantRole.WITNESS, {**data, "additional_details": {}}
+        )
+        witness = Witness(
+            case_participant=participant,
+            called_by_participant=_get_caller(case, data["called_by_participant_id"]),
+            what_will_witness_prove=data["what_will_witness_prove"],
             additional_details=data["additional_details"],
             created_by=user,
             updated_by=user,
-            **_snapshot(person, data),
         )
-        with _errors_under():
-            participant.full_clean()
-        participant.save()
+        with _errors_under(renamed=WITNESS_FIELD_NAMES):
+            witness.full_clean()
+        witness.save()
         touch(case, user)
+    return participant
+
+
+def _get_caller(case, case_participant_id):
+    """Return the participant of ``case`` calling a witness; ``Witness.clean`` checks the rest."""
+    caller = CaseParticipant.objects.filter(pk=case_participant_id, case=case).first()
+    if caller is None:
+        raise serializers.ValidationError(
+            {"called_by_participant_id": ["Must be a participant of the same case."]}
+        )
+    return caller
+
+
+def _create_participant(case, user, role, data):
+    """Save a new participant in ``role`` on ``case``, within the caller's transaction."""
+    address = _save_address(data.get("address"), user)
+
+    institution = None
+    if "institution" in data:
+        with _errors_under("institution"):
+            institution = get_or_create_institution(user, data["institution"], address=address)
+
+    person = None
+    if data["is_self"]:
+        with _errors_under("self"):
+            person = get_or_create_self_person(user)
+    elif "person" in data:
+        with _errors_under("person"):
+            person = create_asserted_person(
+                user,
+                data["person"],
+                institution=institution,
+                designation=data.get("designation"),
+                address=address,
+            )
+
+    participant = CaseParticipant(
+        case=case,
+        person=person,
+        institution=institution,
+        role=role,
+        ordinal=_next_ordinal(case, role),
+        address=address,
+        is_party_in_person=data["is_party_in_person"],
+        additional_details=data["additional_details"],
+        created_by=user,
+        updated_by=user,
+        **_snapshot(person, data),
+    )
+    with _errors_under():
+        participant.full_clean()
+    participant.save()
     return participant
 
 
@@ -166,10 +213,24 @@ def update_participant(participant, user, data):
 
     ``data`` is a validated ``ParticipantUpdateSerializer`` body. A new address
     is stored as its own row and the participant repointed; the old row stays.
+    A witness's caller, statement and ``additional_details`` are on its
+    ``Witness`` row.
     """
     ensure_editable(participant.case)
     data = dict(data)
+    is_witness = participant.role == ParticipantRole.WITNESS
+    witness_fields = {
+        field: data.pop(field)
+        for field in ("called_by_participant_id", "what_will_witness_prove")
+        if field in data
+    }
+    if is_witness and "additional_details" in data:
+        witness_fields["additional_details"] = data.pop("additional_details")
     errors = {}
+    if not is_witness:
+        errors.update({field: ["Only for a witness."] for field in witness_fields})
+    elif "is_party_in_person" in data:
+        errors["is_party_in_person"] = ["Only for a complainant or an accused."]
     if data.get("is_party_in_person") and participant.representations.active().exists():
         errors["is_party_in_person"] = ["Remove this party's advocates first."]
     if "designation_at_filing" in data and not (
@@ -196,8 +257,24 @@ def update_participant(participant, user, data):
         with _errors_under():
             participant.full_clean()
         participant.save()
+        if witness_fields:
+            _update_witness(participant, user, witness_fields)
         touch(participant.case, user)
     return participant
+
+
+def _update_witness(participant, user, fields):
+    witness = participant.witness
+    if "called_by_participant_id" in fields:
+        witness.called_by_participant = _get_caller(
+            participant.case, fields.pop("called_by_participant_id")
+        )
+    for field, value in fields.items():
+        setattr(witness, field, value)
+    witness.updated_by = user
+    with _errors_under(renamed=WITNESS_FIELD_NAMES):
+        witness.full_clean()
+    witness.save()
 
 
 def remove_participant(participant, user):

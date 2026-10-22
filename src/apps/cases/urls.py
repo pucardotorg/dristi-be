@@ -45,6 +45,11 @@ urlpatterns = [
         name="case-accused-list",
     ),
     path(
+        "cases/<uuid:case_id>/witnesses/",
+        views.WitnessCreateView.as_view(),
+        name="case-witness-list",
+    ),
+    path(
         "cases/<uuid:case_id>/participants/",
         views.CaseParticipantListView.as_view(),
         name="case-participant-list",

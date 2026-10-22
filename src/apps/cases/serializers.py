@@ -15,6 +15,7 @@ from .models import (
     CaseEvidence,
     CaseParticipant,
     ParticipantRole,
+    Witness,
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
 
@@ -306,11 +307,26 @@ class ParticipantCreateSerializer(serializers.Serializer):
             ]
         if attrs.get("designation") and not (has_individual and "institution" in attrs):
             errors["designation"] = ["Only for a person acting for an institution."]
-        if "address" not in attrs:
+        if "address" not in attrs and role != ParticipantRole.WITNESS:
             errors["address"] = ["An address for service of notice is required for this role."]
+        if attrs["is_party_in_person"] and role == ParticipantRole.WITNESS:
+            errors["is_party_in_person"] = ["Only for a complainant or an accused."]
         if errors:
             raise serializers.ValidationError(errors)
         return attrs
+
+
+class WitnessCreateSerializer(ParticipantCreateSerializer):
+    """Body of POST /cases/{id}/witnesses (spec 0021 §4.3).
+
+    The witness is ``person`` or ``"self": true``, never an institution, and
+    the address is optional. ``additional_details`` is stored on the witness
+    row. Whether the caller is an active party of the case is checked when
+    saving.
+    """
+
+    called_by_participant_id = serializers.UUIDField()
+    what_will_witness_prove = serializers.CharField()
 
 
 class ParticipantUpdateSerializer(serializers.Serializer):
@@ -333,6 +349,9 @@ class ParticipantUpdateSerializer(serializers.Serializer):
     address = AddressInputSerializer(required=False)
     is_party_in_person = serializers.BooleanField(required=False)
     additional_details = serializers.DictField(required=False)
+    # Witnesses only (spec 0021 §4.3); they change the witness row.
+    called_by_participant_id = serializers.UUIDField(required=False)
+    what_will_witness_prove = serializers.CharField(required=False)
 
     def validate(self, attrs):
         """Refuse unknown fields, so a typo or a role change is not silently ignored."""
@@ -346,14 +365,27 @@ class ParticipantUpdateSerializer(serializers.Serializer):
         return attrs
 
 
+class WitnessSerializer(serializers.ModelSerializer):
+    """What only a witness has (spec 0020 §4.5)."""
+
+    class Meta:
+        """Meta options."""
+
+        model = Witness
+        fields = ["called_by_participant_id", "what_will_witness_prove", "additional_details"]
+        read_only_fields = fields
+
+
 class CaseParticipantSerializer(serializers.ModelSerializer):
     """A case participant: the case's copy of a party's details.
 
     Only ids of the person and institution are shown, never their stored
     details, which may have been entered by the other side (spec 0020 §3.4).
+    ``witness`` is null for every role but a witness.
     """
 
     case_participant_id = serializers.UUIDField(source="id", read_only=True)
+    witness = WitnessSerializer(read_only=True, allow_null=True)
 
     class Meta:
         """Meta options."""
@@ -374,6 +406,7 @@ class CaseParticipantSerializer(serializers.ModelSerializer):
             "address_id",
             "is_party_in_person",
             "additional_details",
+            "witness",
             "is_active",
             "created_at",
             "updated_at",

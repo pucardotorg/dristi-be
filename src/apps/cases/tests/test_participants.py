@@ -1,4 +1,4 @@
-"""Tests for the complainant, accused and participant endpoints (spec 0021 §4.1, §4.2)."""
+"""Tests for the complainant, accused, witness and participant endpoints (spec 0021 §4.1–§4.3)."""
 
 import uuid
 
@@ -477,6 +477,165 @@ class TestRemove:
             "Cannot be removed while an active witness is called by them."
         ]
         assert CaseParticipant.objects.get(pk=body["case_participant_id"]).is_active is True
+
+
+def add_witness(client, case_id, caller_id, **body):
+    body.setdefault("person", {**PERSON, "name": "Meena Rao"})
+    body.setdefault("what_will_witness_prove", "Saw the cheque being signed")
+    body.setdefault("called_by_participant_id", caller_id)
+    url = reverse("case-witness-list", args=[case_id])
+    return client.post(url, {k: v for k, v in body.items() if v is not None}, format="json")
+
+
+class TestAddWitness:
+    def test_creates_a_participant_and_a_witness_row_without_an_address(self, client, draft):
+        caller = add_complainant(client, draft)
+
+        response = add_witness(
+            client, draft, caller["case_participant_id"], additional_details={"lang": "kn"}
+        )
+
+        assert response.status_code == 201, response.json()
+        body = response.json()
+        assert body["role"] == "WITNESS"
+        assert body["ordinal"] == 1
+        assert body["name_at_filing"] == "Meena Rao"
+        assert body["address_id"] is None
+        assert body["additional_details"] == {}
+        assert body["witness"] == {
+            "called_by_participant_id": caller["case_participant_id"],
+            "what_will_witness_prove": "Saw the cheque being signed",
+            "additional_details": {"lang": "kn"},
+        }
+        assert Witness.objects.filter(case_participant_id=body["case_participant_id"]).exists()
+
+    def test_the_filer_can_be_a_witness_while_a_complainant(self, client, user, draft):
+        add(client, draft, self=True)
+        caller = add_complainant(client, draft)
+
+        response = add_witness(client, draft, caller["case_participant_id"], self=True, person=None)
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["person_id"] == str(Person.objects.get(user=user).pk)
+
+    def test_each_side_may_call_the_same_person_but_not_one_side_twice(self, client, draft):
+        complainant = add_complainant(client, draft)
+        accused = add(client, draft, "accused", person={**PERSON, "name": "Vikram"}).json()
+        for caller in (complainant, accused):
+            response = add_witness(
+                client, draft, caller["case_participant_id"], self=True, person=None
+            )
+            assert response.status_code == 201, response.json()
+
+        again = add_witness(
+            client, draft, complainant["case_participant_id"], self=True, person=None
+        )
+
+        assert again.status_code == 400
+        assert again.json()["called_by_participant_id"] == [
+            "This person is already a witness called by this party."
+        ]
+
+    @pytest.mark.parametrize(
+        "change, field",
+        [
+            ({"what_will_witness_prove": "   "}, "what_will_witness_prove"),
+            ({"institution": INSTITUTION}, "institution"),
+            ({"is_party_in_person": True}, "is_party_in_person"),
+            ({"called_by_participant_id": None}, "called_by_participant_id"),
+        ],
+    )
+    def test_invalid_bodies_are_400(self, client, draft, change, field):
+        caller = add_complainant(client, draft)
+
+        response = add_witness(client, draft, caller["case_participant_id"], **change)
+
+        assert response.status_code == 400
+        assert field in response.json()
+
+    def test_a_caller_on_another_case_is_400_and_creates_nothing(self, client, draft):
+        other = client.post(reverse("case-list"), {"case_type": "CHEQUE_BOUNCE"}, format="json")
+        caller = add_complainant(client, other.json()["draft_session_id"])
+
+        response = add_witness(client, draft, caller["case_participant_id"])
+
+        assert response.status_code == 400
+        assert response.json()["called_by_participant_id"] == [
+            "Must be a participant of the same case."
+        ]
+        assert not Case.objects.filter(pk=draft).exists()
+
+    def test_a_caller_must_be_a_complainant_or_an_accused(self, client, draft):
+        caller = add_complainant(client, draft)
+        first = add_witness(client, draft, caller["case_participant_id"]).json()
+
+        response = add_witness(client, draft, first["case_participant_id"])
+
+        assert response.status_code == 400
+        assert response.json()["called_by_participant_id"] == [
+            "Must be a complainant or an accused."
+        ]
+        assert listing(client, draft, role="WITNESS")["count"] == 1
+
+
+class TestWitnessUpdate:
+    @pytest.fixture
+    def witness(self, client, draft):
+        caller = add_complainant(client, draft)
+        return add_witness(client, draft, caller["case_participant_id"]).json()
+
+    def test_listing_shows_the_witness_fields(self, client, draft, witness):
+        rows = listing(client, draft)["results"]
+
+        by_role = {row["role"]: row for row in rows}
+        assert by_role["COMPLAINANT"]["witness"] is None
+        assert by_role["WITNESS"]["witness"]["what_will_witness_prove"] == (
+            "Saw the cheque being signed"
+        )
+
+    def test_changes_the_statement_caller_and_details(self, client, draft, witness):
+        accused = add(client, draft, "accused", person={**PERSON, "name": "Vikram"}).json()
+
+        response = patch(
+            client,
+            witness["case_participant_id"],
+            {
+                "what_will_witness_prove": "Saw the notice served",
+                "called_by_participant_id": accused["case_participant_id"],
+                "additional_details": {"lang": "kn"},
+                "name_at_filing": "Meena S. Rao",
+            },
+        )
+
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert body["name_at_filing"] == "Meena S. Rao"
+        assert body["additional_details"] == {}
+        assert body["witness"] == {
+            "called_by_participant_id": accused["case_participant_id"],
+            "what_will_witness_prove": "Saw the notice served",
+            "additional_details": {"lang": "kn"},
+        }
+
+    @pytest.mark.parametrize(
+        "change",
+        [{"called_by_participant_id": str(uuid.uuid4())}, {"is_party_in_person": True}],
+    )
+    def test_invalid_changes_are_400(self, client, witness, change):
+        response = patch(client, witness["case_participant_id"], change)
+
+        assert response.status_code == 400
+        assert set(response.json()) >= set(change)
+
+    def test_witness_fields_are_refused_for_other_roles(self, client, draft, witness):
+        complainant = listing(client, draft, role="COMPLAINANT")["results"][0]
+
+        response = patch(
+            client, complainant["case_participant_id"], {"what_will_witness_prove": "X"}
+        )
+
+        assert response.status_code == 400
+        assert response.json()["what_will_witness_prove"] == ["Only for a witness."]
 
 
 class TestAccess:

@@ -498,8 +498,24 @@ POST /cases/{case_id_or_draft_session_id}/witnesses
 - Same steps as §4.1, with `role = 'WITNESS'`, plus a `witness` row (spec 0020 §4.5) holding `called_by_participant_id`, `what_will_witness_prove` and `additional_details`.
 - `called_by_participant_id` is required and must be an active COMPLAINANT or ACCUSED on the same case.
 - `what_will_witness_prove` is required.
-- A witness is always an individual: `institution` is not accepted. `"self": true` is.
+- A witness is always an individual: `institution` is not accepted. `"self": true` is. `is_party_in_person` does not apply to a witness and is refused.
 - The address is optional for witnesses.
+- A complainant or accused may also be a witness. The same person may be a witness more than once on a case (a witness recalled by the other side is a new participant, spec 0020 §4.5.3), but not twice for the same caller while both are active.
+- `additional_details` is stored on the `witness` row; the participant's own `additional_details` stays `{}`. On PATCH, a witness's `additional_details` likewise changes the `witness` row.
+
+**Response (201 Created):** the participant, as in §4.1, with a `witness` block (`null` for every other role, here and in `GET /cases/{id}/participants`):
+```json
+{
+  "case_participant_id": "uuid",
+  "role": "WITNESS",
+  ...
+  "witness": {
+    "called_by_participant_id": "uuid",
+    "what_will_witness_prove": "Eyewitness to the transaction on 2024-01-15",
+    "additional_details": {}
+  }
+}
+```
 
 ### 4.4 Representation (Advocates)
 

@@ -31,6 +31,7 @@ ENDPOINTS = [
     ("delete", "case-evidence-detail", [ANY_ID]),
     ("post", "case-complainant-list", [ANY_ID]),
     ("post", "case-accused-list", [ANY_ID]),
+    ("post", "case-witness-list", [ANY_ID]),
     ("get", "case-participant-list", [ANY_ID]),
     ("patch", "case-participant-detail", [ANY_ID]),
     ("delete", "case-participant-detail", [ANY_ID]),

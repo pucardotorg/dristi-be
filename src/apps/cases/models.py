@@ -219,7 +219,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         """Return why the ``person`` or ``institution`` cannot take this role here, or ``None``.
 
         Only active participants count, so a party removed from a case can be
-        added again.
+        added again. A person may be a witness more than once, since a witness
+        recalled by the other side is a new participant; ``Witness.clean``
+        refuses the same caller twice.
         """
         party_id = getattr(self, f"{field}_id")
         if not (self.is_active and self.case_id and party_id):
@@ -230,7 +232,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             .exclude(pk=self.pk)
             .values_list("role", flat=True)
         )
-        if self.role in held:
+        if self.role in held and self.role != ParticipantRole.WITNESS:
             role = self.get_role_display().lower()
             article = "an" if role[0] in "aeiou" else "a"
             return f"This {field} is already {article} {role} on this case."
@@ -282,6 +284,7 @@ class Witness(BaseModel, BaseAuditableModel):
         The participant must be a witness, called by a complainant or an
         accused on the same case. Whether the caller is still active matters
         only while the witness is, so a removed witness can still be edited.
+        While active, a person cannot be a witness twice for the same caller.
         Every broken rule is reported, not just the first one per field.
         """
         super().clean()
@@ -306,6 +309,11 @@ class Witness(BaseModel, BaseAuditableModel):
                 not witness.is_active or caller.is_active,
                 "Must be an active participant.",
             ),
+            (
+                "called_by_participant",
+                not self._called_twice(),
+                "This person is already a witness called by this party.",
+            ),
         ]
         errors = {}
         for field, holds, message in rules:
@@ -313,6 +321,21 @@ class Witness(BaseModel, BaseAuditableModel):
                 errors.setdefault(field, []).append(message)
         if errors:
             raise ValidationError(errors)
+
+    def _called_twice(self):
+        """Return whether the person is already an active witness for this caller."""
+        witness = self.case_participant
+        if not (witness.is_active and witness.person_id):
+            return False
+        return (
+            Witness.objects.filter(
+                called_by_participant_id=self.called_by_participant_id,
+                case_participant__person_id=witness.person_id,
+                case_participant__is_active=True,
+            )
+            .exclude(pk=self.pk)
+            .exists()
+        )
 
 
 class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):

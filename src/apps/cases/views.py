@@ -44,6 +44,7 @@ from .serializers import (
     EvidenceUpdateSerializer,
     ParticipantCreateSerializer,
     ParticipantUpdateSerializer,
+    WitnessCreateSerializer,
 )
 from .services import case_types, participants, services
 
@@ -306,6 +307,30 @@ class AccusedCreateView(_ParticipantCreateView):
     role = ParticipantRole.ACCUSED
 
 
+@extend_schema(tags=TAGS)
+class WitnessCreateView(APIView):
+    """POST /cases/{case_id}/witnesses — add a witness; the first save on a draft creates the case."""
+
+    @extend_schema(
+        tags=TAGS,
+        request=WitnessCreateSerializer,
+        responses={
+            201: CaseParticipantSerializer,
+            400: VALIDATION_ERROR,
+            404: NOT_FOUND,
+            409: NOT_EDITABLE,
+        },
+    )
+    def post(self, request, case_id):
+        """Add the witness; send ``person`` or ``"self": true``, and the party calling them."""
+        serializer = WitnessCreateSerializer(
+            data=request.data, context={"role": ParticipantRole.WITNESS}
+        )
+        serializer.is_valid(raise_exception=True)
+        participant = participants.add_witness(case_id, request.user, serializer.validated_data)
+        return Response(CaseParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=TAGS,
@@ -325,7 +350,12 @@ class CaseParticipantListView(generics.ListAPIView):
     def get_queryset(self):
         """Return the case's active participants, optionally of one role."""
         case = services.get_case(self.kwargs["case_id"], self.request.user)
-        queryset = CaseParticipant.objects.active().filter(case=case).order_by("role", "ordinal")
+        queryset = (
+            CaseParticipant.objects.active()
+            .filter(case=case)
+            .select_related("witness")
+            .order_by("role", "ordinal")
+        )
         role = self.request.query_params.get("role")
         if role:
             if role not in ParticipantRole.values:
