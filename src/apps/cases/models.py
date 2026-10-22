@@ -1,4 +1,4 @@
-"""Cases, participants, POA mandates, documents, cheque bounce details, evidence (spec 0020)."""
+"""Cases, participants, POA mandates, representations, documents, cheques, evidence (spec 0020)."""
 
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.core.models import BaseActivatableModel, BaseAuditableModel, BaseModel
 from apps.parties.models import MAX_AGE
+from apps.users.models import ApprovalStatus
 
 from .services.case_types import CaseType, DocumentType, EvidenceType, get_config, schema_errors
 
@@ -294,6 +295,102 @@ class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 "represented_participant",
                 not holder.person_id or holder.person_id != represented.person_id,
                 "A person cannot hold a mandate for themselves.",
+            ),
+        ]
+        errors = {}
+        for field, holds, message in rules:
+            if not holds:
+                errors.setdefault(field, []).append(message)
+        if errors:
+            raise ValidationError(errors)
+
+
+class Representation(BaseModel, BaseActivatableModel, BaseAuditableModel):
+    """An advocate acting for one party in one case (spec 0020 §6).
+
+    One row per advocate and client: an advocate for three complainants has
+    three rows, so "who does this advocate represent" is a plain filter.
+    ``case`` repeats the client's case so "every advocate on this case" needs
+    no join. ``to_date`` records when the representation ended; ``is_active =
+    False`` alone marks an administrative removal.
+    """
+
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="representations")
+    # PROTECT: removing an advocate must not erase who represented whom.
+    advocate = models.ForeignKey(
+        "users.AdvocateProfile", on_delete=models.PROTECT, related_name="representations"
+    )
+    case_participant = models.ForeignKey(
+        CaseParticipant, on_delete=models.CASCADE, related_name="representations"
+    )
+    from_date = models.DateTimeField(default=timezone.now)
+    to_date = models.DateTimeField(null=True, blank=True)
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["advocate", "case_participant"],
+                condition=Q(is_active=True),
+                name="cases_representation_unique_active",
+                violation_error_message="This advocate already represents this party.",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["case", "is_active"]),
+            models.Index(fields=["advocate", "is_active"]),
+            models.Index(fields=["case_participant", "is_active"]),
+        ]
+
+    def __str__(self):
+        return f"Advocate {self.advocate_id} for {self.case_participant_id}"
+
+    def clean(self):
+        """Apply the rules the database cannot express (spec 0020 §6.2, §14.1).
+
+        The advocate must be approved and the client a complainant or an
+        accused on this representation's case, and not the advocate themselves.
+        Whether the client is still active and not appearing in person matters
+        only while the representation is, so an ended one can still be edited.
+        Every broken rule is reported, not just the first one per field.
+        """
+        super().clean()
+        if not (self.case_id and self.advocate_id and self.case_participant_id):
+            return
+        advocate, client = self.advocate, self.case_participant
+        client_user_id = client.person.user_id if client.person_id else None
+        # (field, rule holds, message when it does not)
+        rules = [
+            (
+                "advocate",
+                advocate.approval_status == ApprovalStatus.ACCEPTED,
+                "Must be an approved advocate.",
+            ),
+            (
+                "case_participant",
+                client.role in INSTITUTION_ROLES,
+                "Must be a complainant or an accused.",
+            ),
+            (
+                "case_participant",
+                client.case_id == self.case_id,
+                "Must be a participant of the same case.",
+            ),
+            (
+                "case_participant",
+                not self.is_active or client.is_active,
+                "Must be an active participant.",
+            ),
+            (
+                "case_participant",
+                not self.is_active or not client.is_party_in_person,
+                "A party appearing in person cannot be given an advocate.",
+            ),
+            (
+                "case_participant",
+                not client_user_id or client_user_id != advocate.user_id,
+                "An advocate cannot represent themselves.",
             ),
         ]
         errors = {}
