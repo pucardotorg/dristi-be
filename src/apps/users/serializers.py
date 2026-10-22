@@ -1,23 +1,39 @@
 """Request validation for the registration and login endpoints."""
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema_field
 from rest_framework import serializers
 
+from apps.api import errors as api_errors
+
+from . import errors
 from .documents import validate_registration_document
 from .models import (
     AdvocateProfile,
     AdvocateType,
     ApprovalStatus,
     ClerkProfile,
+    LitigantProfile,
+    PowerOfAttorneyProfile,
     Role,
     mobile_number_validator,
 )
 from .services.otp import Purpose
+from .services.permissions import next_step
 from .verification import VERIFICATIONS
 
 MAX_PASSWORD_LENGTH = 128
+
+
+def run_password_validators(field, password, user):
+    """Run AUTH_PASSWORD_VALIDATORS, reporting failures under `field`."""
+    try:
+        validate_password(password, user=user)
+    except DjangoValidationError as exc:
+        raise errors.PASSWORD_REJECTED.validation_error({field: list(exc.messages)}) from exc
 
 
 class OTPRequestSerializer(serializers.Serializer):
@@ -48,7 +64,7 @@ class SessionCreateSerializer(serializers.Serializer):
     def validate(self, attrs):
         """Require one credential, not zero and not both."""
         if bool(attrs.get("otp")) == bool(attrs.get("password")):
-            raise serializers.ValidationError("Provide exactly one of otp or password.")
+            raise errors.CREDENTIAL_CHOICE.validation_error()
         return attrs
 
 
@@ -58,7 +74,7 @@ def _unclaimed_email(value, current):
         return None
     taken = get_user_model().objects.filter(email__iexact=value).exclude(pk=current.pk).exists()
     if taken:
-        raise serializers.ValidationError("An account with this email already exists.")
+        raise errors.EMAIL_TAKEN.validation_error()
     return value
 
 
@@ -70,7 +86,7 @@ class RegistrationDocumentField(serializers.FileField):
 
 
 class RegistrationCompletionSerializer(serializers.Serializer):
-    """Common body of POST /litigants, /advocates and /clerks.
+    """Common body of POST /litigants, /power-of-attorneys, /advocates and /clerks.
 
     `terms_version` is deliberately not declared. A client-supplied version or
     timestamp is unverifiable and therefore worthless as evidence, so both are
@@ -97,10 +113,7 @@ class RegistrationCompletionSerializer(serializers.Serializer):
             name=attrs.get("name", ""),
             email=attrs.get("email") or "",
         )
-        try:
-            validate_password(attrs["password"], user=candidate)
-        except DjangoValidationError as exc:
-            raise serializers.ValidationError({"password": list(exc.messages)}) from exc
+        run_password_validators("password", attrs["password"], candidate)
         return attrs
 
     def validate_email(self, value):
@@ -110,8 +123,64 @@ class RegistrationCompletionSerializer(serializers.Serializer):
     def validate_terms_accepted(self, value):
         """A missing or false acceptance rejects the registration."""
         if not value:
-            raise serializers.ValidationError("The terms must be accepted to register.")
+            raise errors.TERMS_NOT_ACCEPTED.validation_error()
         return value
+
+
+class TermsAcceptanceSerializer(serializers.Serializer):
+    """Body of POST /users/me/terms.
+
+    As with registration, `terms_version` is deliberately not declared: what was
+    accepted is whatever the server has in force, never what the client says.
+    """
+
+    terms_accepted = serializers.BooleanField()
+
+    def validate_terms_accepted(self, value):
+        """A missing or false acceptance is refused rather than recorded."""
+        if not value:
+            raise errors.TERMS_NOT_ACCEPTED.validation_error()
+        return value
+
+
+class TermsStatusSerializer(serializers.ModelSerializer):
+    """Response of POST /users/me/terms: where the account stands on the terms."""
+
+    current_terms_version = serializers.SerializerMethodField()
+    has_current_terms = serializers.BooleanField(read_only=True)
+    next = serializers.SerializerMethodField()
+
+    class Meta:
+        """Meta options."""
+
+        model = get_user_model()
+        fields = [
+            "current_terms_version",
+            "terms_version_accepted",
+            "terms_accepted_at",
+            "has_current_terms",
+            "next",
+        ]
+        read_only_fields = fields
+
+    def get_current_terms_version(self, user) -> int:
+        """The version in force."""
+        return settings.CURRENT_TERMS_VERSION
+
+    def get_next(self, user) -> str | None:
+        """Where the client should send the user next, or None."""
+        return next_step(user)
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    """Body of POST /auth/password-reset. The verified session is the credential."""
+
+    new_password = serializers.CharField(max_length=MAX_PASSWORD_LENGTH, write_only=True)
+
+    def validate(self, attrs):
+        """Run the password through AUTH_PASSWORD_VALIDATORS against the account."""
+        run_password_validators("new_password", attrs["new_password"], self.context["user"])
+        return attrs
 
 
 class AdvocateProfileSerializer(serializers.ModelSerializer):
@@ -154,13 +223,10 @@ class AdvocateRegistrationSerializer(RegistrationCompletionSerializer):
 
 
 class ClerkRegistrationSerializer(RegistrationCompletionSerializer):
-    """Body of POST /clerks.
-
-    The bar ID is optional: only some clerks are asked for one.
-    """
+    """Body of POST /clerks, sent as multipart so it can carry the bar ID."""
 
     profile = ClerkProfileSerializer()
-    bar_id_document = RegistrationDocumentField(required=False)
+    bar_id_document = RegistrationDocumentField()
 
 
 class RegistrationResubmissionSerializer(serializers.Serializer):
@@ -175,7 +241,7 @@ class RegistrationResubmissionSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=256)
     email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
     registration_number = serializers.CharField(max_length=64)
-    bar_id_document = RegistrationDocumentField(required=False)
+    bar_id_document = RegistrationDocumentField()
 
     def validate_email(self, value):
         """Reject an email already claimed by another account."""
@@ -191,15 +257,10 @@ class RegistrationResubmissionSerializer(serializers.Serializer):
             .exists()
         )
         if taken:
-            raise serializers.ValidationError("This registration number is already registered.")
+            raise api_errors.UNIQUE.validation_error(
+                "This registration number is already registered."
+            )
         return value
-
-    def validate(self, attrs):
-        """Require the bar ID document of the roles that must send one."""
-        verification = VERIFICATIONS[self.context["request"].user.role]
-        if verification.document_required and not attrs.get("bar_id_document"):
-            raise serializers.ValidationError({"bar_id_document": "This field is required."})
-        return attrs
 
 
 class RegistrationDocumentSerializer(serializers.Serializer):
@@ -233,6 +294,116 @@ class UserSerializer(serializers.ModelSerializer):
         model = get_user_model()
         fields = ["id", "mobile_number", "name", "email", "role", "is_active", "created_at"]
         read_only_fields = fields
+
+
+class LitigantProfileReadSerializer(serializers.ModelSerializer):
+    """A litigant's profile as returned by GET /users/me."""
+
+    class Meta:
+        """Meta options."""
+
+        model = LitigantProfile
+        fields = ["id", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
+class PowerOfAttorneyProfileReadSerializer(serializers.ModelSerializer):
+    """A power of attorney holder's profile as returned by GET /users/me."""
+
+    class Meta:
+        """Meta options."""
+
+        model = PowerOfAttorneyProfile
+        fields = ["id", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
+class AdvocateProfileReadSerializer(serializers.ModelSerializer):
+    """An advocate's profile as returned by GET /users/me."""
+
+    class Meta:
+        """Meta options."""
+
+        model = AdvocateProfile
+        fields = [
+            "id",
+            "bar_registration_id",
+            "advocate_type",
+            "approval_status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ClerkProfileReadSerializer(serializers.ModelSerializer):
+    """An advocate clerk's profile as returned by GET /users/me."""
+
+    class Meta:
+        """Meta options."""
+
+        model = ClerkProfile
+        fields = [
+            "id",
+            "clerk_registration_number",
+            "approval_status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+PROFILE_SERIALIZERS = {
+    LitigantProfile: LitigantProfileReadSerializer,
+    PowerOfAttorneyProfile: PowerOfAttorneyProfileReadSerializer,
+    AdvocateProfile: AdvocateProfileReadSerializer,
+    ClerkProfile: ClerkProfileReadSerializer,
+}
+
+
+class CurrentUserSerializer(serializers.ModelSerializer):
+    """Body of GET /users/me: the caller's account plus their role's profile.
+
+    `profile` is null until registration completes, and for a role that has
+    no profile table. The display name lives on the account only.
+    """
+
+    has_current_terms = serializers.BooleanField(read_only=True)
+    profile = serializers.SerializerMethodField()
+
+    class Meta:
+        """Meta options."""
+
+        model = get_user_model()
+        fields = [
+            "id",
+            "mobile_number",
+            "name",
+            "email",
+            "role",
+            "registration_status",
+            "terms_accepted_at",
+            "terms_version_accepted",
+            "has_current_terms",
+            "created_at",
+            "profile",
+        ]
+        read_only_fields = fields
+
+    @extend_schema_field(
+        PolymorphicProxySerializer(
+            component_name="Profile",
+            serializers=list(PROFILE_SERIALIZERS.values()),
+            resource_type_field_name=None,
+            allow_null=True,
+        )
+    )
+    def get_profile(self, user):
+        """Serialize the profile matching the user's role, or None."""
+        profile = user.profile
+        if profile is None:
+            return None
+        return PROFILE_SERIALIZERS[type(profile)](profile).data
 
 
 class AuditUserSerializer(serializers.ModelSerializer):

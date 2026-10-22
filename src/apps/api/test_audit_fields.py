@@ -6,6 +6,7 @@ behaviour of :class:`apps.core.mixins.AuditUserMixin` and
 adding a write API to the production URL configuration.
 """
 
+from django.conf import settings
 from django.test import override_settings
 from django.urls import include, path, reverse
 from rest_framework import status, viewsets
@@ -74,6 +75,7 @@ class AuditFieldAPITests(APITestCase):
             email="creator@example.com",
             password="test",
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.other_user = User.objects.create_user(
             mobile_number="+919000000005",
@@ -81,6 +83,7 @@ class AuditFieldAPITests(APITestCase):
             email="other@example.com",
             password="test",
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
 
     def test_create_sets_both_audit_fields_to_request_user(self):
@@ -191,6 +194,7 @@ class SharedBaseViewSetAuditTests(APITestCase):
             email="base-creator@example.com",
             password="test",
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
         self.other_user = User.objects.create_user(
             mobile_number="+919000000007",
@@ -198,6 +202,7 @@ class SharedBaseViewSetAuditTests(APITestCase):
             email="base-editor@example.com",
             password="test",
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
 
     def test_create_through_base_viewset_stamps_both_fields(self):

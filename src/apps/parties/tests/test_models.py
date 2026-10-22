@@ -1,6 +1,7 @@
 """Tests for the Person and Institution models (spec 0020 §2-3)."""
 
 import datetime
+from unittest.mock import patch
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -8,7 +9,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
 
-from apps.parties.models import Institution, Person, VerificationLevel, age_on
+from apps.parties.models import Institution, Person, VerificationLevel, age_on, today_in_india
 from apps.parties.tests.factories import make_address, make_institution, make_person
 from apps.users.models import User
 
@@ -117,7 +118,7 @@ class TestPerson:
         assert {"designation", "relative_name"} <= set(exc.value.message_dict)
 
     def test_date_of_birth_in_the_future_is_rejected(self):
-        tomorrow = timezone.localdate() + datetime.timedelta(days=1)
+        tomorrow = today_in_india() + datetime.timedelta(days=1)
 
         with pytest.raises(ValidationError) as exc:
             Person(name="Ravi", date_of_birth=tomorrow).full_clean()
@@ -125,7 +126,7 @@ class TestPerson:
         assert "date_of_birth" in exc.value.message_dict
 
     def test_date_of_birth_today_or_earlier_is_valid(self):
-        Person(name="Ravi", date_of_birth=timezone.localdate()).full_clean()
+        Person(name="Ravi", date_of_birth=today_in_india()).full_clean()
         Person(name="Ravi", date_of_birth=datetime.date(1980, 5, 17)).full_clean()
 
     def test_user_can_be_claimed_by_only_one_person(self):
@@ -361,25 +362,65 @@ class TestAge:
 
         assert "age" in exc.value.message_dict
 
-    def test_age_matching_the_date_of_birth_is_valid(self):
+    def test_date_of_birth_replaces_a_stated_age(self):
+        person = make_person(date_of_birth=datetime.date(1980, 5, 17), age=30)
+
+        assert Person.objects.get(pk=person.pk).age is None
+
+    def test_contradicting_age_is_not_an_error_when_a_date_of_birth_is_given(self):
+        # The date of birth wins; the stated age is dropped, not checked.
+        Person(name="Ravi", date_of_birth=datetime.date(1980, 5, 17), age=99).full_clean()
+
+    def test_current_age_comes_from_the_date_of_birth_when_known(self):
         born = datetime.date(1980, 5, 17)
+        person = make_person(date_of_birth=born)
 
-        Person(name="Ravi", date_of_birth=born, age=age_on(born, timezone.localdate())).full_clean()
+        assert person.current_age == age_on(born, today_in_india())
 
-    def test_age_contradicting_the_date_of_birth_is_rejected(self):
+    def test_current_age_is_the_stated_age_without_a_date_of_birth(self):
+        assert make_person(age=45).current_age == 45
+
+    def test_person_stays_editable_after_their_birthday(self):
+        # A person saved the day before their birthday, edited two days later.
         born = datetime.date(1980, 5, 17)
-        wrong = age_on(born, timezone.localdate()) + 5
+        with patch(
+            "apps.parties.models.timezone.localdate", return_value=datetime.date(2024, 5, 16)
+        ):
+            person = make_person(date_of_birth=born, age=43)
+            assert person.current_age == 43
 
-        with pytest.raises(ValidationError) as exc:
-            Person(name="Ravi", date_of_birth=born, age=wrong).full_clean()
+        with patch(
+            "apps.parties.models.timezone.localdate", return_value=datetime.date(2024, 5, 18)
+        ):
+            person.phone_number = "+919811111111"
+            person.save()
+            assert person.current_age == 44
 
-        assert "age" in exc.value.message_dict
+        assert Person.objects.get(pk=person.pk).phone_number == "+919811111111"
 
     def test_database_rejects_an_impossible_age(self):
         person = make_person()
 
         with pytest.raises(IntegrityError), transaction.atomic():
             Person.objects.filter(pk=person.pk).update(age=200)
+
+
+@pytest.mark.django_db
+class TestTodayIsIndianDate:
+    """``TIME_ZONE`` is UTC; dates of birth and ages must use India's date."""
+
+    # 01:30 on 18 May in India is still 20:00 on 17 May in UTC.
+    INDIA_EARLY_MORNING = datetime.datetime(2024, 5, 17, 20, 0, tzinfo=datetime.UTC)
+
+    def test_someone_born_today_in_india_is_not_in_the_future(self):
+        with patch.object(timezone, "now", return_value=self.INDIA_EARLY_MORNING):
+            Person(name="Baby", date_of_birth=datetime.date(2024, 5, 18)).full_clean()
+
+    def test_birthday_counts_from_midnight_in_india(self):
+        with patch.object(timezone, "now", return_value=self.INDIA_EARLY_MORNING):
+            person = Person(name="Ravi", date_of_birth=datetime.date(1980, 5, 18))
+
+            assert person.current_age == 44
 
 
 @pytest.mark.django_db

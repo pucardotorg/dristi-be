@@ -151,3 +151,17 @@ class ESignTestCase(APITestCase):
         self.assertIn("timestamp", meta)
         self.assertIn("app_version", meta)
         self.assertEqual(meta["spec_version"], "1.0")
+
+    def assert_error(self, response, error, *, field=None):
+        """Assert ``response`` reports ``error`` alone, in the standard error body.
+
+        Spec 0000 section 9: the status is the code's registered one, and
+        ``field`` names the request field the error is reported on, if any.
+        """
+
+        self.assertEqual(response.status_code, error.status)
+        payload = response.json()
+        self.assert_meta(payload)
+        [item] = payload["errors"]
+        self.assertEqual(item["code"], error.code)
+        self.assertEqual(item.get("field"), field)

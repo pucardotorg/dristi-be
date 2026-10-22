@@ -2,9 +2,12 @@
 
 from rest_framework import serializers
 
+from apps.api import errors as api_errors
+
+from . import errors
 from .clients import get_file_client
 from .constants import PDF_CONTENT_TYPE, EntityType
-from .exceptions import ESignError, ESignNotAPDF, ESignSourceNotFound
+from .exceptions import ESignError, ESignSourceNotFound
 from .models import ESignTransaction
 
 
@@ -32,9 +35,9 @@ class SignPlaceholderSerializer(serializers.Serializer):
         if isinstance(data, dict):
             unknown = sorted(set(data) - set(self.fields))
             if unknown:
-                raise serializers.ValidationError(
-                    {"sign_placeholder": f"Unknown key(s): {', '.join(unknown)}."}
-                )
+                # No key of its own: the parent already files this serializer's
+                # errors under ``sign_placeholder``.
+                raise serializers.ValidationError(f"Unknown key(s): {', '.join(unknown)}.")
         return super().to_internal_value(data)
 
     def validate_page(self, value):
@@ -66,13 +69,17 @@ class ESignInitiateSerializer(serializers.Serializer):
         try:
             metadata = get_file_client().get_metadata(value)
         except ESignSourceNotFound as exc:
-            raise serializers.ValidationError(exc.message) from exc
+            # A reference in the request that resolves to nothing: a 400 on the
+            # field, not the 404 E03002 the services raise for a file gone later.
+            raise api_errors.DOES_NOT_EXIST.validation_error(exc.message) from exc
         except ESignError as exc:
-            raise serializers.ValidationError(exc.message) from exc
+            # Storage being unavailable is not a fault in the request: report it
+            # as the service failure it is, as initiation does later on.
+            raise errors.api_error(exc) from exc
 
         content_type = (metadata.get("content_type") or "").split(";")[0].strip().lower()
         if content_type != PDF_CONTENT_TYPE:
-            raise serializers.ValidationError(ESignNotAPDF.default_message)
+            raise errors.NOT_A_PDF.validation_error()
         return value
 
 
@@ -121,10 +128,3 @@ class ESignTransactionSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = fields
-
-
-class ESignErrorSerializer(serializers.Serializer):
-    """Error body shape used by the eSign endpoints."""
-
-    code = serializers.CharField()
-    detail = serializers.CharField()
