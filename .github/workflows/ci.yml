@@ -64,5 +64,17 @@ jobs:
           python manage.py check --deploy
 
       - name: Run pytest
-        run: pytest --cov --cov-report=xml
+        # Coverage only reads config from the current directory, so point it at
+        # the root pyproject.toml (omit, fail_under); --cov=. measures src/.
+        run: pytest --cov=. --cov-config=../pyproject.toml --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        # Upload even when tests fail, so the report shows what was covered.
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          # `uses:` steps ignore the job's working-directory, so the path is from the repo root.
+          files: src/coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
 
