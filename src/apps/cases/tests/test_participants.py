@@ -1,4 +1,4 @@
-"""Tests for the complainant, accused, witness and participant endpoints (spec 0021 §4.1–§4.3)."""
+"""Tests for the party, participant and POA mandate endpoints (spec 0021 §4.1–§4.3, §4.5)."""
 
 import uuid
 
@@ -9,11 +9,13 @@ from apps.cases.models import (
     Case,
     CaseParticipant,
     CaseStatus,
+    CaseType,
     ParticipantRole,
     PoaMandate,
     Representation,
     Witness,
 )
+from apps.cases.services import services
 from apps.parties.models import Institution, Person, VerificationLevel
 from apps.parties.tests.factories import ADDRESS_DEFAULTS, make_address, make_institution
 from apps.users.models import AdvocateProfile, ApprovalStatus
@@ -663,3 +665,282 @@ class TestAccess:
         )
         assert remove(client, body["case_participant_id"]).status_code == 409
         assert listing(client, draft)["count"] == 1
+
+
+def add_poa_holder(client, case_id, represented_ids, **body):
+    body.setdefault("person", {**PERSON, "name": "Suresh Patel"})
+    body.setdefault("address", ADDRESS_DEFAULTS)
+    body.setdefault("poa_type", "Limited to this case only")
+    body.setdefault("represented_participant_ids", [str(pk) for pk in represented_ids])
+    url = reverse("case-poa-holder-list", args=[case_id])
+    return client.post(url, {k: v for k, v in body.items() if v is not None}, format="json")
+
+
+def mandates(client, case_id):
+    return client.get(reverse("case-poa-mandate-list", args=[case_id]))
+
+
+def patch_mandate(client, mandate_id, body):
+    return client.patch(reverse("poa-mandate-detail", args=[mandate_id]), body, format="json")
+
+
+def revoke(client, mandate_id):
+    return client.delete(reverse("poa-mandate-detail", args=[mandate_id]))
+
+
+class TestAddPoaHolder:
+    def test_one_mandate_per_represented_party(self, client, draft):
+        first = add_complainant(client, draft, name="A")
+        second = add_complainant(client, draft, name="B")
+        add_complainant(client, draft, name="C")
+
+        response = add_poa_holder(
+            client, draft, [first["case_participant_id"], second["case_participant_id"]]
+        )
+
+        assert response.status_code == 201, response.json()
+        body = response.json()
+        assert body["role"] == "POA_HOLDER"
+        assert len(body["poa_mandate_ids"]) == 2
+        holder = CaseParticipant.objects.get(pk=body["case_participant_id"])
+        assert (holder.ordinal, holder.name_at_filing) == (1, "Suresh Patel")
+        assert str(holder.person_id) == body["person_id"]
+        assert holder.person.verification_level == VerificationLevel.ASSERTED
+        rows = PoaMandate.objects.filter(pk__in=body["poa_mandate_ids"])
+        assert {str(m.represented_participant_id) for m in rows} == {
+            first["case_participant_id"],
+            second["case_participant_id"],
+        }
+        assert all(m.is_active and m.poa_type == "Limited to this case only" for m in rows)
+        assert all(str(m.case_id) == draft and m.poa_participant == holder for m in rows)
+
+    def test_an_accused_may_be_represented(self, client, draft):
+        accused = add(client, draft, "accused", person=PERSON).json()
+
+        response = add_poa_holder(client, draft, [accused["case_participant_id"]])
+
+        assert response.status_code == 201, response.json()
+
+    def test_a_complainant_filer_may_hold_for_a_co_complainant(self, client, draft):
+        own = add(client, draft, self=True).json()
+        co = add_complainant(client, draft, name="Co-complainant")
+
+        response = add_poa_holder(
+            client, draft, [co["case_participant_id"]], person=None, self=True
+        )
+
+        assert response.status_code == 201, response.json()
+        body = response.json()
+        assert body["person_id"] == own["person_id"]
+        assert body["case_participant_id"] != own["case_participant_id"]
+
+    def test_a_filer_cannot_hold_a_mandate_for_themselves(self, client, draft):
+        own = add(client, draft, self=True).json()
+
+        response = add_poa_holder(
+            client, draft, [own["case_participant_id"]], person=None, self=True
+        )
+
+        assert response.status_code == 400
+        assert response.json()["represented_participant_ids"] == [
+            "A person cannot hold a mandate for themselves."
+        ]
+        assert not CaseParticipant.objects.filter(role=ParticipantRole.POA_HOLDER).exists()
+
+    @pytest.mark.parametrize(
+        ("body", "field"),
+        [
+            ({"institution": INSTITUTION}, "institution"),
+            ({"is_party_in_person": True}, "is_party_in_person"),
+            ({"represented_participant_ids": []}, "represented_participant_ids"),
+            ({"represented_participant_ids": ["not-a-uuid"]}, "represented_participant_ids"),
+            ({"poa_type": "x" * 65}, "poa_type"),
+        ],
+    )
+    def test_invalid_bodies_are_400(self, client, draft, body, field):
+        complainant = add_complainant(client, draft)
+
+        response = add_poa_holder(client, draft, [complainant["case_participant_id"]], **body)
+
+        assert response.status_code == 400
+        assert field in response.json()
+
+    def test_address_is_required(self, client, draft):
+        complainant = add_complainant(client, draft)
+        url = reverse("case-poa-holder-list", args=[draft])
+        body = {
+            "person": PERSON,
+            "represented_participant_ids": [complainant["case_participant_id"]],
+        }
+
+        response = client.post(url, body, format="json")
+
+        assert response.status_code == 400
+        assert "address" in response.json()
+
+    def test_a_party_listed_twice_is_400(self, client, draft):
+        complainant = add_complainant(client, draft)
+        pk = complainant["case_participant_id"]
+
+        response = add_poa_holder(client, draft, [pk, pk])
+
+        assert response.status_code == 400
+        assert "represented_participant_ids" in response.json()
+
+    def test_only_a_complainant_or_accused_may_be_represented(self, client, draft):
+        complainant = add_complainant(client, draft)
+        witness = add_witness(client, draft, complainant["case_participant_id"]).json()
+
+        response = add_poa_holder(client, draft, [witness["case_participant_id"]])
+
+        assert response.status_code == 400
+        assert response.json()["represented_participant_ids"] == [
+            "Must be a complainant or an accused."
+        ]
+
+    def test_removed_or_other_case_parties_are_400(self, client, user, draft):
+        removed = add_complainant(client, draft, name="Removed")
+        add_complainant(client, draft, name="Stays")
+        remove(client, removed["case_participant_id"])
+        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+        elsewhere = add_complainant(client, other_draft)
+
+        for pk in (removed["case_participant_id"], elsewhere["case_participant_id"]):
+            response = add_poa_holder(client, draft, [pk])
+
+            assert response.status_code == 400
+            assert "represented_participant_ids" in response.json()
+        assert not CaseParticipant.objects.filter(role=ParticipantRole.POA_HOLDER).exists()
+
+    def test_on_a_draft_with_no_parties_nothing_is_created(self, client, draft):
+        response = add_poa_holder(client, draft, [uuid.uuid4()])
+
+        assert response.status_code == 400
+        assert not Case.objects.filter(pk=draft).exists()
+
+
+class TestPoaMandates:
+    def test_lists_active_mandates_with_the_holders_name(self, client, draft):
+        first = add_complainant(client, draft, name="A")
+        second = add_complainant(client, draft, name="B")
+        created = add_poa_holder(
+            client, draft, [first["case_participant_id"], second["case_participant_id"]]
+        ).json()
+        revoke(client, created["poa_mandate_ids"][1])
+
+        response = mandates(client, draft)
+
+        assert response.status_code == 200
+        results = response.json()["results"]
+        assert [m["poa_mandate_id"] for m in results] == [created["poa_mandate_ids"][0]]
+        assert results[0]["poa_holder_name"] == "Suresh Patel"
+        assert results[0]["poa_participant_id"] == created["case_participant_id"]
+        assert results[0]["represented_participant_id"] == first["case_participant_id"]
+        assert "created_by" not in results[0]
+
+    def test_patch_changes_poa_type(self, client, draft):
+        complainant = add_complainant(client, draft)
+        created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
+        mandate_id = created["poa_mandate_ids"][0]
+
+        response = patch_mandate(client, mandate_id, {"poa_type": "General"})
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["poa_type"] == "General"
+        assert PoaMandate.objects.get(pk=mandate_id).poa_type == "General"
+
+    @pytest.mark.parametrize(
+        "body",
+        [{}, {"represented_participant_id": str(uuid.uuid4())}, {"poa_type": "x" * 65}],
+    )
+    def test_patch_refuses_other_changes(self, client, draft, body):
+        complainant = add_complainant(client, draft)
+        created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
+
+        response = patch_mandate(client, created["poa_mandate_ids"][0], body)
+
+        assert response.status_code == 400
+
+    def test_a_holder_cannot_be_a_party_in_person(self, client, draft):
+        complainant = add_complainant(client, draft)
+        created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
+
+        response = patch(client, created["case_participant_id"], {"is_party_in_person": True})
+
+        assert response.status_code == 400
+        assert response.json()["is_party_in_person"] == ["Only for a complainant or an accused."]
+
+
+class TestRevokeMandate:
+    def test_revoking_one_of_two_keeps_the_holder(self, client, draft):
+        first = add_complainant(client, draft, name="A")
+        second = add_complainant(client, draft, name="B")
+        created = add_poa_holder(
+            client, draft, [first["case_participant_id"], second["case_participant_id"]]
+        ).json()
+
+        assert revoke(client, created["poa_mandate_ids"][0]).status_code == 204
+
+        mandate = PoaMandate.objects.get(pk=created["poa_mandate_ids"][0])
+        assert (mandate.is_active, mandate.revoked_at is not None) == (False, True)
+        assert CaseParticipant.objects.get(pk=created["case_participant_id"]).is_active is True
+
+    def test_revoking_the_last_removes_the_holder_and_renumbers(self, client, draft):
+        complainant = add_complainant(client, draft)
+        pk = complainant["case_participant_id"]
+        first = add_poa_holder(client, draft, [pk]).json()
+        second = add_poa_holder(client, draft, [pk], person={**PERSON, "name": "Other"}).json()
+
+        revoke(client, first["poa_mandate_ids"][0])
+
+        holder = CaseParticipant.objects.get(pk=first["case_participant_id"])
+        assert (holder.is_active, holder.end_date is not None) == (False, True)
+        assert CaseParticipant.objects.get(pk=second["case_participant_id"]).ordinal == 1
+
+    def test_revoking_twice_is_404(self, client, draft):
+        complainant = add_complainant(client, draft)
+        created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
+        mandate_id = created["poa_mandate_ids"][0]
+
+        revoke(client, mandate_id)
+
+        assert revoke(client, mandate_id).status_code == 404
+        assert patch_mandate(client, mandate_id, {"poa_type": "General"}).status_code == 404
+
+
+class TestPoaAccess:
+    def test_other_users_cannot_reach_mandates(self, client, client_for, other_user, draft):
+        complainant = add_complainant(client, draft)
+        created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
+        mandate_id = created["poa_mandate_ids"][0]
+        outsider = client_for(other_user)
+
+        assert (
+            add_poa_holder(outsider, draft, [complainant["case_participant_id"]]).status_code == 404
+        )
+        assert mandates(outsider, draft).status_code == 404
+        assert patch_mandate(outsider, mandate_id, {"poa_type": "X"}).status_code == 404
+        assert revoke(outsider, mandate_id).status_code == 404
+
+    def test_submitted_case_cannot_change(self, client, draft):
+        complainant = add_complainant(client, draft)
+        created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
+        mandate_id = created["poa_mandate_ids"][0]
+        Case.objects.filter(pk=draft).update(status=CaseStatus.PENDING_SIGN)
+
+        assert (
+            add_poa_holder(client, draft, [complainant["case_participant_id"]]).status_code == 409
+        )
+        assert patch_mandate(client, mandate_id, {"poa_type": "X"}).status_code == 409
+        assert revoke(client, mandate_id).status_code == 409
+        assert mandates(client, draft).json()["count"] == 1
+
+    def test_writes_touch_the_case(self, client, draft):
+        complainant = add_complainant(client, draft)
+        before = Case.objects.get(pk=draft).updated_at
+        created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
+        after_add = Case.objects.get(pk=draft).updated_at
+
+        revoke(client, created["poa_mandate_ids"][0])
+
+        assert before < after_add < Case.objects.get(pk=draft).updated_at

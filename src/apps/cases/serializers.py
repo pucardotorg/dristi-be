@@ -15,6 +15,7 @@ from .models import (
     CaseEvidence,
     CaseParticipant,
     ParticipantRole,
+    PoaMandate,
     Witness,
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
@@ -357,6 +358,83 @@ class WitnessCreateSerializer(IndividualPartySerializer):
 
     called_by_participant_id = serializers.UUIDField()
     what_will_witness_prove = serializers.CharField()
+
+
+class PoaHolderCreateSerializer(IndividualPartySerializer):
+    """Body of POST /cases/{id}/poa-holders (spec 0021 §4.5).
+
+    The address is required. One mandate is created per represented party;
+    whether each is an active complainant or accused of the case is checked
+    when saving.
+    """
+
+    represented_participant_ids = serializers.ListField(
+        child=serializers.UUIDField(), allow_empty=False
+    )
+    poa_type = serializers.CharField(max_length=64, required=False, allow_null=True)
+
+    def validate(self, attrs):
+        """Require the address, and each represented party once."""
+        attrs = super().validate(attrs)
+        errors = {}
+        if "address" not in attrs:
+            errors["address"] = ["An address for service of notice is required for this role."]
+        ids = attrs["represented_participant_ids"]
+        if len(set(ids)) != len(ids):
+            errors["represented_participant_ids"] = ["Each party may be listed only once."]
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
+
+class PoaHolderCreatedSerializer(serializers.Serializer):
+    """Response of POST /cases/{id}/poa-holders: the holder and their new mandates."""
+
+    case_participant_id = serializers.UUIDField()
+    poa_mandate_ids = serializers.ListField(child=serializers.UUIDField())
+    person_id = serializers.UUIDField()
+    role = serializers.CharField()
+
+
+class PoaMandateSerializer(serializers.ModelSerializer):
+    """A POA mandate, with the holder's name as recorded on the case."""
+
+    poa_mandate_id = serializers.UUIDField(source="id", read_only=True)
+    poa_holder_name = serializers.CharField(source="poa_participant.name_at_filing", read_only=True)
+
+    class Meta:
+        """Meta options."""
+
+        model = PoaMandate
+        fields = [
+            "poa_mandate_id",
+            "case_id",
+            "poa_participant_id",
+            "poa_holder_name",
+            "represented_participant_id",
+            "poa_type",
+            "is_active",
+            "granted_at",
+            "revoked_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class PoaMandateUpdateSerializer(serializers.Serializer):
+    """Body of PATCH /poa-mandates/{id} (spec 0021 §4.5): only ``poa_type`` changes."""
+
+    poa_type = serializers.CharField(max_length=64, allow_null=True)
+
+    def validate(self, attrs):
+        """Refuse unknown fields, so a change of holder or party is not silently ignored."""
+        unknown = sorted(set(self.initial_data) - set(self.fields))
+        if unknown:
+            raise serializers.ValidationError(
+                {field: ["This field cannot be changed."] for field in unknown}
+            )
+        return attrs
 
 
 class ParticipantUpdateSerializer(serializers.Serializer):

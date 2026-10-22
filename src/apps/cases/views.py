@@ -2,9 +2,10 @@
 
 Ids in POST/PUT paths may be a case id or a draft session id; the first save
 on a draft creates the case (see ``services.get_or_create_case``). Other case
-routes take a case id; a document, evidence item or participant is changed by
-its own id (``/case-documents/{id}``, ``/case-evidence/{id}``,
-``/case-participants/{id}``). Callers only ever reach their own cases.
+routes take a case id; a document, evidence item, participant or mandate is
+changed by its own id (``/case-documents/{id}``, ``/case-evidence/{id}``,
+``/case-participants/{id}``, ``/poa-mandates/{id}``). Callers only ever reach
+their own cases.
 """
 
 from drf_spectacular.types import OpenApiTypes
@@ -30,6 +31,7 @@ from .models import (
     CaseParticipant,
     CaseStatus,
     ParticipantRole,
+    PoaMandate,
 )
 from .serializers import (
     CaseDocumentSerializer,
@@ -44,6 +46,10 @@ from .serializers import (
     EvidenceUpdateSerializer,
     ParticipantCreateSerializer,
     ParticipantUpdateSerializer,
+    PoaHolderCreatedSerializer,
+    PoaHolderCreateSerializer,
+    PoaMandateSerializer,
+    PoaMandateUpdateSerializer,
     WitnessCreateSerializer,
 )
 from .services import case_types, participants, services
@@ -394,4 +400,93 @@ class CaseParticipantDetailView(APIView):
         """Remove the party; the rest of the role is renumbered."""
         participant = participants.get_participant(case_participant_id, request.user)
         participants.remove_participant(participant, request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(tags=TAGS)
+class PoaHolderCreateView(APIView):
+    """POST /cases/{case_id}/poa-holders — add a POA holder and their mandates."""
+
+    @extend_schema(
+        tags=TAGS,
+        request=PoaHolderCreateSerializer,
+        responses={
+            201: PoaHolderCreatedSerializer,
+            400: VALIDATION_ERROR,
+            404: NOT_FOUND,
+            409: NOT_EDITABLE,
+        },
+    )
+    def post(self, request, case_id):
+        """Add the holder; send ``person`` or ``"self": true``, and the parties they act for."""
+        serializer = PoaHolderCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        holder, mandates = participants.add_poa_holder(
+            case_id, request.user, serializer.validated_data
+        )
+        body = {
+            "case_participant_id": holder.id,
+            "poa_mandate_ids": [mandate.id for mandate in mandates],
+            "person_id": holder.person_id,
+            "role": holder.role,
+        }
+        return Response(PoaHolderCreatedSerializer(body).data, status=status.HTTP_201_CREATED)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=TAGS,
+        responses={200: PoaMandateSerializer(many=True), 404: NOT_FOUND},
+    )
+)
+class PoaMandateListView(generics.ListAPIView):
+    """GET /cases/{case_id}/poa-mandates — active mandates, by holder then represented party."""
+
+    serializer_class = PoaMandateSerializer
+
+    def get_queryset(self):
+        """Return the case's active mandates."""
+        case = services.get_case(self.kwargs["case_id"], self.request.user)
+        return (
+            PoaMandate.objects.active()
+            .filter(case=case)
+            .select_related("poa_participant")
+            .order_by(
+                "poa_participant__ordinal",
+                "represented_participant__role",
+                "represented_participant__ordinal",
+            )
+        )
+
+
+@extend_schema(tags=TAGS)
+class PoaMandateDetailView(APIView):
+    """PATCH or DELETE /poa-mandates/{poa_mandate_id}."""
+
+    @extend_schema(
+        tags=TAGS,
+        request=PoaMandateUpdateSerializer,
+        responses={
+            200: PoaMandateSerializer,
+            400: VALIDATION_ERROR,
+            404: NOT_FOUND,
+            409: NOT_EDITABLE,
+        },
+    )
+    def patch(self, request, poa_mandate_id):
+        """Change the mandate's ``poa_type``."""
+        mandate = participants.get_mandate(poa_mandate_id, request.user)
+        serializer = PoaMandateUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        mandate = participants.update_mandate(mandate, request.user, serializer.validated_data)
+        return Response(PoaMandateSerializer(mandate).data)
+
+    @extend_schema(
+        tags=TAGS,
+        responses={204: None, 404: NOT_FOUND, 409: NOT_EDITABLE},
+    )
+    def delete(self, request, poa_mandate_id):
+        """Revoke the mandate; a holder left acting for no one is removed too."""
+        mandate = participants.get_mandate(poa_mandate_id, request.user)
+        participants.revoke_mandate(mandate, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)

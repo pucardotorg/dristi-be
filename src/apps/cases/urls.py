@@ -54,6 +54,16 @@ urlpatterns = [
         views.CaseParticipantListView.as_view(),
         name="case-participant-list",
     ),
+    path(
+        "cases/<uuid:case_id>/poa-holders/",
+        views.PoaHolderCreateView.as_view(),
+        name="case-poa-holder-list",
+    ),
+    path(
+        "cases/<uuid:case_id>/poa-mandates/",
+        views.PoaMandateListView.as_view(),
+        name="case-poa-mandate-list",
+    ),
     # Items are changed by their own id: it is unique across cases, and the
     # owning case is found through it.
     path(
@@ -70,5 +80,10 @@ urlpatterns = [
         "case-evidence/<uuid:case_evidence_id>/",
         views.CaseEvidenceDetailView.as_view(),
         name="case-evidence-detail",
+    ),
+    path(
+        "poa-mandates/<uuid:poa_mandate_id>/",
+        views.PoaMandateDetailView.as_view(),
+        name="poa-mandate-detail",
     ),
 ]

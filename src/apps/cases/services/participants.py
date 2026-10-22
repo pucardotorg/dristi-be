@@ -1,4 +1,4 @@
-"""Case parties: complainants, accused and witnesses (spec 0021 §4.1–§4.3).
+"""Case parties: complainants, accused, witnesses and POA holders (spec 0021 §4.1–§4.5).
 
 A party write resolves the person and institution (``apps.parties.services``),
 stores the address for service of notice, and records the case's own copy of
@@ -25,7 +25,14 @@ from apps.parties.services import (
     get_or_create_self_person,
 )
 
-from ..models import Case, CaseParticipant, ParticipantRole, PoaMandate, Witness
+from ..models import (
+    INSTITUTION_ROLES,
+    Case,
+    CaseParticipant,
+    ParticipantRole,
+    PoaMandate,
+    Witness,
+)
 from .services import (
     deactivate,
     ensure_editable,
@@ -37,6 +44,8 @@ from .services import (
 
 # A witness's model fields, by the names the API gives them.
 WITNESS_FIELD_NAMES = {"called_by_participant": "called_by_participant_id"}
+# Likewise for a mandate created with its POA holder.
+MANDATE_FIELD_NAMES = {"represented_participant": "represented_participant_ids"}
 
 
 @contextmanager
@@ -121,6 +130,84 @@ def add_witness(case_or_draft_id, user, data):
         witness.save()
         touch(case, user)
     return participant
+
+
+def add_poa_holder(case_or_draft_id, user, data):
+    """Add a POA holder and one mandate per party they act for (spec 0021 §4.5).
+
+    ``data`` is a validated ``PoaHolderCreateSerializer`` body. The holder is
+    a new participant even when the filer is already a party of the case.
+    Returns the holder and the new mandates.
+    """
+    get_case_type(case_or_draft_id, user)
+    with transaction.atomic():
+        case = get_or_create_case(case_or_draft_id, user)
+        _lock(case)
+        represented = _get_represented(case, data["represented_participant_ids"])
+        holder = _create_participant(
+            case, user, ParticipantRole.POA_HOLDER, {**data, "is_party_in_person": False}
+        )
+        mandates = []
+        for party in represented:
+            mandate = PoaMandate(
+                case=case,
+                poa_participant=holder,
+                represented_participant=party,
+                poa_type=data.get("poa_type"),
+                created_by=user,
+                updated_by=user,
+            )
+            with _errors_under(renamed=MANDATE_FIELD_NAMES):
+                mandate.full_clean()
+            mandate.save()
+            mandates.append(mandate)
+        touch(case, user)
+    return holder, mandates
+
+
+def _get_represented(case, case_participant_ids):
+    """Return the active participants of ``case`` with these ids, in the order given.
+
+    ``PoaMandate.clean`` checks their roles and that the holder is not one of them.
+    """
+    found = CaseParticipant.objects.active().filter(case=case).in_bulk(case_participant_ids)
+    if len(found) != len(case_participant_ids):
+        raise serializers.ValidationError(
+            {"represented_participant_ids": ["Must be active participants of the same case."]}
+        )
+    return [found[pk] for pk in case_participant_ids]
+
+
+def get_mandate(poa_mandate_id, user):
+    """Return an active mandate on one of ``user``'s cases, or raise ``NotFound``."""
+    return get_active_case_item(PoaMandate, poa_mandate_id, user)
+
+
+def update_mandate(mandate, user, data):
+    """Change a mandate's ``poa_type``; ``data`` is a ``PoaMandateUpdateSerializer`` body."""
+    ensure_editable(mandate.case)
+    with transaction.atomic():
+        _lock(mandate.case)
+        mandate.poa_type = data["poa_type"]
+        mandate.updated_by = user
+        with _errors_under():
+            mandate.full_clean()
+        mandate.save()
+        touch(mandate.case, user)
+    return mandate
+
+
+def revoke_mandate(mandate, user):
+    """Revoke a mandate (soft delete); a holder left acting for no one is removed too."""
+    ensure_editable(mandate.case)
+    now = timezone.now()
+    with transaction.atomic():
+        _lock(mandate.case)
+        deactivate(mandate, user, revoked_at=now)
+        holder = mandate.poa_participant
+        if not holder.poa_mandates_held.active().exists():
+            _remove(holder, user, now)
+        touch(mandate.case, user)
 
 
 def _get_caller(case, case_participant_id):
@@ -232,7 +319,7 @@ def update_participant(participant, user, data):
     errors = {}
     if not is_witness:
         errors.update({field: ["Only for a witness."] for field in witness_fields})
-    elif "is_party_in_person" in data:
+    if participant.role not in INSTITUTION_ROLES and "is_party_in_person" in data:
         errors["is_party_in_person"] = ["Only for a complainant or an accused."]
     if data.get("is_party_in_person") and participant.representations.active().exists():
         errors["is_party_in_person"] = ["Remove this party's advocates first."]
