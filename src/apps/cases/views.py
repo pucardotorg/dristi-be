@@ -323,9 +323,7 @@ class WitnessCreateView(APIView):
     )
     def post(self, request, case_id):
         """Add the witness; send ``person`` or ``"self": true``, and the party calling them."""
-        serializer = WitnessCreateSerializer(
-            data=request.data, context={"role": ParticipantRole.WITNESS}
-        )
+        serializer = WitnessCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         participant = participants.add_witness(case_id, request.user, serializer.validated_data)
         return Response(CaseParticipantSerializer(participant).data, status=status.HTTP_201_CREATED)

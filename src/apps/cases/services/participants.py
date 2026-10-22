@@ -103,7 +103,10 @@ def add_witness(case_or_draft_id, user, data):
         case = get_or_create_case(case_or_draft_id, user)
         _lock(case)
         participant = _create_participant(
-            case, user, ParticipantRole.WITNESS, {**data, "additional_details": {}}
+            case,
+            user,
+            ParticipantRole.WITNESS,
+            {**data, "is_party_in_person": False, "additional_details": {}},
         )
         witness = Witness(
             case_participant=participant,

@@ -307,20 +307,50 @@ class ParticipantCreateSerializer(serializers.Serializer):
             ]
         if attrs.get("designation") and not (has_individual and "institution" in attrs):
             errors["designation"] = ["Only for a person acting for an institution."]
-        if "address" not in attrs and role != ParticipantRole.WITNESS:
+        if "address" not in attrs:
             errors["address"] = ["An address for service of notice is required for this role."]
-        if attrs["is_party_in_person"] and role == ParticipantRole.WITNESS:
-            errors["is_party_in_person"] = ["Only for a complainant or an accused."]
         if errors:
             raise serializers.ValidationError(errors)
         return attrs
 
 
-class WitnessCreateSerializer(ParticipantCreateSerializer):
+class IndividualPartySerializer(serializers.Serializer):
+    """Base body for a party who is always an individual, never an institution.
+
+    The individual is ``person`` (someone the filer names) or ``"self": true``
+    (the filer). Fields it does not declare are refused, so an
+    ``institution`` sent anyway is not silently ignored.
+    """
+
+    person = PersonInputSerializer(required=False)
+    address = AddressInputSerializer(required=False)
+    additional_details = serializers.DictField(default=dict)
+
+    def get_fields(self):
+        """Add ``self``, which cannot be declared as a class attribute."""
+        fields = super().get_fields()
+        fields["self"] = serializers.BooleanField(default=False)
+        return fields
+
+    def validate(self, attrs):
+        """Require exactly one of ``person`` and ``self``; ``self`` is returned as ``is_self``."""
+        unknown = sorted(set(self.initial_data) - set(self.fields))
+        if unknown:
+            raise serializers.ValidationError(
+                {field: ["This field is not accepted."] for field in unknown}
+            )
+        attrs["is_self"] = attrs.pop("self")
+        if attrs["is_self"] and "person" in attrs:
+            raise serializers.ValidationError({"self": ["Send either person or self, not both."]})
+        if not attrs["is_self"] and "person" not in attrs:
+            raise serializers.ValidationError({"person": ["Send person or self."]})
+        return attrs
+
+
+class WitnessCreateSerializer(IndividualPartySerializer):
     """Body of POST /cases/{id}/witnesses (spec 0021 §4.3).
 
-    The witness is ``person`` or ``"self": true``, never an institution, and
-    the address is optional. ``additional_details`` is stored on the witness
+    The address is optional. ``additional_details`` is stored on the witness
     row. Whether the caller is an active party of the case is checked when
     saving.
     """
