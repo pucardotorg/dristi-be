@@ -101,6 +101,39 @@ OPPOSING_ROLES = {
     ParticipantRole.ACCUSED: ParticipantRole.COMPLAINANT,
 }
 
+# Messages shared by the model rules and the request checks that run before them.
+ADDRESS_REQUIRED_MESSAGE = "An address for service of notice is required for this role."
+INSTITUTION_ROLE_MESSAGE = "Only a complainant or an accused may be an institution."
+DESIGNATION_REQUIRED_MESSAGE = "Enter the designation of the person acting for the institution."
+DESIGNATION_NOT_ALLOWED_MESSAGE = "Only for a person acting for an institution."
+PARTY_ROLE_MESSAGE = "Must be a complainant or an accused."
+SAME_CASE_MESSAGE = "Must be a participant of the same case."
+ACTIVE_PARTICIPANT_MESSAGE = "Must be an active participant."
+
+# The order each is listed in, by the API and the preview.
+PARTICIPANT_ORDERING = ("role", "ordinal")
+POA_MANDATE_ORDERING = (
+    "poa_participant__ordinal",
+    "represented_participant__role",
+    "represented_participant__ordinal",
+)
+REPRESENTATION_ORDERING = ("case_participant__role", "case_participant__ordinal", "from_date")
+EVIDENCE_ORDERING = ("evidence_type", "ordinal")
+
+
+def _raise_broken_rules(rules):
+    """Raise a ``ValidationError`` listing every rule in ``rules`` that does not hold.
+
+    ``rules`` are ``(field, rule holds, message when it does not)``. Every
+    broken rule is reported, not just the first one per field.
+    """
+    errors = {}
+    for field, holds, message in rules:
+        if not holds:
+            errors.setdefault(field, []).append(message)
+    if errors:
+        raise ValidationError(errors)
+
 
 class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     """One person's or institution's involvement in one case, in one role (spec 0020 §4).
@@ -202,15 +235,15 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         cannot be removed while an active witness names them as its caller.
         """
         super().clean()
+        # Not a ``_raise_broken_rules`` list: the role-conflict and witness
+        # checks query the database, and run only when the cheaper rules allow.
         errors = {}
         if self.role != ParticipantRole.WITNESS and not self.address_id:
-            errors["address"] = "An address for service of notice is required for this role."
+            errors["address"] = ADDRESS_REQUIRED_MESSAGE
         if self.institution_id and self.role not in INSTITUTION_ROLES:
-            errors["institution"] = "Only a complainant or an accused may be an institution."
+            errors["institution"] = INSTITUTION_ROLE_MESSAGE
         if self.person_id and self.institution_id and not self.designation_at_filing:
-            errors["designation_at_filing"] = (
-                "Enter the designation of the person acting for the institution."
-            )
+            errors["designation_at_filing"] = DESIGNATION_REQUIRED_MESSAGE
         for field in ("person", "institution"):
             if field not in errors and (message := self._role_conflict(field)):
                 errors[field] = message
@@ -301,36 +334,23 @@ class Witness(BaseModel, BaseAuditableModel):
         if not (self.case_participant_id and self.called_by_participant_id):
             return
         witness, caller = self.case_participant, self.called_by_participant
-        # (field, rule holds, message when it does not)
-        rules = [
-            ("case_participant", witness.role == ParticipantRole.WITNESS, "Must be a witness."),
-            (
-                "called_by_participant",
-                caller.role in INSTITUTION_ROLES,
-                "Must be a complainant or an accused.",
-            ),
-            (
-                "called_by_participant",
-                caller.case_id == witness.case_id,
-                "Must be a participant of the same case.",
-            ),
-            (
-                "called_by_participant",
-                not witness.is_active or caller.is_active,
-                "Must be an active participant.",
-            ),
-            (
-                "called_by_participant",
-                not self._called_twice(),
-                "This person is already a witness called by this party.",
-            ),
-        ]
-        errors = {}
-        for field, holds, message in rules:
-            if not holds:
-                errors.setdefault(field, []).append(message)
-        if errors:
-            raise ValidationError(errors)
+        _raise_broken_rules(
+            [
+                ("case_participant", witness.role == ParticipantRole.WITNESS, "Must be a witness."),
+                ("called_by_participant", caller.role in INSTITUTION_ROLES, PARTY_ROLE_MESSAGE),
+                ("called_by_participant", caller.case_id == witness.case_id, SAME_CASE_MESSAGE),
+                (
+                    "called_by_participant",
+                    not witness.is_active or caller.is_active,
+                    ACTIVE_PARTICIPANT_MESSAGE,
+                ),
+                (
+                    "called_by_participant",
+                    not self._called_twice(),
+                    "This person is already a witness called by this party.",
+                ),
+            ]
+        )
 
     def _called_twice(self):
         """Return whether the person is already an active witness for this caller."""
@@ -405,41 +425,36 @@ class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):
         if not (self.case_id and self.poa_participant_id and self.represented_participant_id):
             return
         holder, represented = self.poa_participant, self.represented_participant
-        # (field, rule holds, message when it does not)
-        rules = [
-            ("poa_participant", holder.role == ParticipantRole.POA_HOLDER, "Must be a POA holder."),
-            (
-                "poa_participant",
-                holder.case_id == self.case_id,
-                "Must be a participant of the same case.",
-            ),
-            (
-                "represented_participant",
-                represented.role in INSTITUTION_ROLES,
-                "Must be a complainant or an accused.",
-            ),
-            (
-                "represented_participant",
-                represented.case_id == self.case_id,
-                "Must be a participant of the same case.",
-            ),
-            (
-                "represented_participant",
-                not self.is_active or represented.is_active,
-                "Must be an active participant.",
-            ),
-            (
-                "represented_participant",
-                not holder.person_id or holder.person_id != represented.person_id,
-                "A person cannot hold a mandate for themselves.",
-            ),
-        ]
-        errors = {}
-        for field, holds, message in rules:
-            if not holds:
-                errors.setdefault(field, []).append(message)
-        if errors:
-            raise ValidationError(errors)
+        _raise_broken_rules(
+            [
+                (
+                    "poa_participant",
+                    holder.role == ParticipantRole.POA_HOLDER,
+                    "Must be a POA holder.",
+                ),
+                ("poa_participant", holder.case_id == self.case_id, SAME_CASE_MESSAGE),
+                (
+                    "represented_participant",
+                    represented.role in INSTITUTION_ROLES,
+                    PARTY_ROLE_MESSAGE,
+                ),
+                (
+                    "represented_participant",
+                    represented.case_id == self.case_id,
+                    SAME_CASE_MESSAGE,
+                ),
+                (
+                    "represented_participant",
+                    not self.is_active or represented.is_active,
+                    ACTIVE_PARTICIPANT_MESSAGE,
+                ),
+                (
+                    "represented_participant",
+                    not holder.person_id or holder.person_id != represented.person_id,
+                    "A person cannot hold a mandate for themselves.",
+                ),
+            ]
+        )
 
 
 class Representation(BaseModel, BaseActivatableModel, BaseAuditableModel):
@@ -497,45 +512,32 @@ class Representation(BaseModel, BaseActivatableModel, BaseAuditableModel):
             return
         advocate, client = self.advocate, self.case_participant
         client_user_id = client.person.user_id if client.person_id else None
-        # (field, rule holds, message when it does not)
-        rules = [
-            (
-                "advocate",
-                advocate.approval_status == ApprovalStatus.ACCEPTED,
-                "Must be an approved advocate.",
-            ),
-            (
-                "case_participant",
-                client.role in INSTITUTION_ROLES,
-                "Must be a complainant or an accused.",
-            ),
-            (
-                "case_participant",
-                client.case_id == self.case_id,
-                "Must be a participant of the same case.",
-            ),
-            (
-                "case_participant",
-                not self.is_active or client.is_active,
-                "Must be an active participant.",
-            ),
-            (
-                "case_participant",
-                not self.is_active or not client.is_party_in_person,
-                "A party appearing in person cannot be given an advocate.",
-            ),
-            (
-                "case_participant",
-                not client_user_id or client_user_id != advocate.user_id,
-                "An advocate cannot represent themselves.",
-            ),
-        ]
-        errors = {}
-        for field, holds, message in rules:
-            if not holds:
-                errors.setdefault(field, []).append(message)
-        if errors:
-            raise ValidationError(errors)
+        _raise_broken_rules(
+            [
+                (
+                    "advocate",
+                    advocate.approval_status == ApprovalStatus.ACCEPTED,
+                    "Must be an approved advocate.",
+                ),
+                ("case_participant", client.role in INSTITUTION_ROLES, PARTY_ROLE_MESSAGE),
+                ("case_participant", client.case_id == self.case_id, SAME_CASE_MESSAGE),
+                (
+                    "case_participant",
+                    not self.is_active or client.is_active,
+                    ACTIVE_PARTICIPANT_MESSAGE,
+                ),
+                (
+                    "case_participant",
+                    not self.is_active or not client.is_party_in_person,
+                    "A party appearing in person cannot be given an advocate.",
+                ),
+                (
+                    "case_participant",
+                    not client_user_id or client_user_id != advocate.user_id,
+                    "An advocate cannot represent themselves.",
+                ),
+            ]
+        )
 
 
 class CaseDocument(BaseModel, BaseActivatableModel, BaseAuditableModel):

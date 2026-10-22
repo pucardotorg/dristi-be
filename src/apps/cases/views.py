@@ -24,7 +24,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import (
+    EVIDENCE_ORDERING,
     NOT_JOINABLE_STATUSES,
+    PARTICIPANT_ORDERING,
+    POA_MANDATE_ORDERING,
+    REPRESENTATION_ORDERING,
     Case,
     CaseDocument,
     CaseEvidence,
@@ -242,9 +246,7 @@ class CaseEvidenceListView(generics.ListAPIView):
     def get_queryset(self):
         """Return the case's active evidence, optionally of one type."""
         case = services.get_case(self.kwargs["case_id"], self.request.user)
-        queryset = (
-            CaseEvidence.objects.active().filter(case=case).order_by("evidence_type", "ordinal")
-        )
+        queryset = CaseEvidence.objects.active().filter(case=case).order_by(*EVIDENCE_ORDERING)
         if self.request.query_params.get("evidence_type"):
             queryset = queryset.filter(evidence_type=self.request.query_params["evidence_type"])
         return queryset
@@ -367,7 +369,7 @@ class CaseParticipantListView(generics.ListAPIView):
             CaseParticipant.objects.active()
             .filter(case=case)
             .select_related("witness")
-            .order_by("role", "ordinal")
+            .order_by(*PARTICIPANT_ORDERING)
         )
         role = self.request.query_params.get("role")
         if role:
@@ -460,11 +462,7 @@ class PoaMandateListView(generics.ListAPIView):
             PoaMandate.objects.active()
             .filter(case=case)
             .select_related("poa_participant")
-            .order_by(
-                "poa_participant__ordinal",
-                "represented_participant__role",
-                "represented_participant__ordinal",
-            )
+            .order_by(*POA_MANDATE_ORDERING)
         )
 
 
@@ -547,7 +545,7 @@ class RepresentationListView(generics.ListAPIView):
             Representation.objects.active()
             .filter(case=case)
             .select_related("advocate")
-            .order_by("case_participant__role", "case_participant__ordinal", "from_date")
+            .order_by(*REPRESENTATION_ORDERING)
         )
 
 

@@ -16,13 +16,18 @@ from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
-from rest_framework import serializers, status
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework import serializers
+from rest_framework.exceptions import NotFound
 
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 
+from ..exceptions import AlreadySigned, CaseNotReady, InvalidStatusTransition
 from ..models import (
+    EVIDENCE_ORDERING,
+    PARTICIPANT_ORDERING,
+    POA_MANDATE_ORDERING,
+    REPRESENTATION_ORDERING,
     SIGNING_ROLES,
     Case,
     CaseDocument,
@@ -41,35 +46,9 @@ from .services import (
     get_case,
     get_detail_sections,
     get_preview_cache_key,
+    lock_case,
     touch,
 )
-
-
-class InvalidStatusTransition(APIException):  # noqa: N818 - named after its code
-    """The case is not in the status this step starts from."""
-
-    status_code = status.HTTP_409_CONFLICT
-    default_detail = "The case is not in a status this step can start from."
-    default_code = "invalid_status_transition"
-
-
-class CaseNotReady(APIException):  # noqa: N818 - named after its code
-    """The step's precondition does not hold; ``errors`` lists why."""
-
-    status_code = status.HTTP_400_BAD_REQUEST
-    default_code = "case_not_ready"
-
-    def __init__(self, message, errors):
-        super().__init__({"detail": message, "errors": errors})
-
-
-class AlreadySigned(APIException):  # noqa: N818 - named after its code
-    """The participant's signature is already recorded."""
-
-    status_code = status.HTTP_409_CONFLICT
-    default_detail = "This participant has already signed."
-    default_code = "already_signed"
-
 
 # Preview (spec 0021 §6.1, §6.2)
 
@@ -112,30 +91,26 @@ def _load_preview(case_id):
             "participants",
             queryset=CaseParticipant.objects.active()
             .select_related("address", "witness")
-            .order_by("role", "ordinal"),
+            .order_by(*PARTICIPANT_ORDERING),
             to_attr="active_participants",
         ),
         Prefetch(
             "representations",
             queryset=Representation.objects.active()
             .select_related("advocate")
-            .order_by("case_participant__role", "case_participant__ordinal", "from_date"),
+            .order_by(*REPRESENTATION_ORDERING),
             to_attr="active_representations",
         ),
         Prefetch(
             "poa_mandates",
             queryset=PoaMandate.objects.active()
             .select_related("poa_participant")
-            .order_by(
-                "poa_participant__ordinal",
-                "represented_participant__role",
-                "represented_participant__ordinal",
-            ),
+            .order_by(*POA_MANDATE_ORDERING),
             to_attr="active_poa_mandates",
         ),
         Prefetch(
             "evidence",
-            queryset=CaseEvidence.objects.active().order_by("evidence_type", "ordinal"),
+            queryset=CaseEvidence.objects.active().order_by(*EVIDENCE_ORDERING),
             to_attr="active_evidence",
         ),
         Prefetch(
@@ -159,12 +134,17 @@ def validate_case(case_id, user):
     return not errors, errors
 
 
+def _error_item(field, message):
+    """Return one reason a case is not ready, as the API reports it."""
+    return {"field": field, "message": message}
+
+
 def validation_errors(case):
     """Return every reason ``case`` is not yet complete, as ``{field, message}`` items."""
     errors = []
 
     def error(field, message):
-        errors.append({"field": field, "message": message})
+        errors.append(_error_item(field, message))
 
     config = get_config(case.case_type)
     participants = CaseParticipant.objects.active().filter(case=case)
@@ -245,14 +225,13 @@ def submit_for_payment(case_id, user):
         unsigned = (
             CaseParticipant.objects.active()
             .filter(case=case, role__in=SIGNING_ROLES, has_signed=False)
-            .order_by("role", "ordinal")
+            .order_by(*PARTICIPANT_ORDERING)
         )
         errors = [
-            {
-                "field": f"participants.{participant.id}",
-                "message": f"{participant.get_role_display()} #{participant.ordinal} "
-                "has not signed.",
-            }
+            _error_item(
+                f"participants.{participant.id}",
+                f"{participant.get_role_display()} #{participant.ordinal} has not signed.",
+            )
             for participant in unsigned
         ]
         if errors:
@@ -283,8 +262,7 @@ def _transition(case_id, user, from_status, to_status, check=None, **fields):
     status check. A plain ``save()``, so each step is kept in the case's history.
     """
     with transaction.atomic():
-        get_case(case_id, user)
-        case = Case.objects.select_for_update().get(pk=case_id)
+        case = lock_case(get_case(case_id, user))
         if case.status != from_status:
             raise InvalidStatusTransition(
                 f"Only a case in {from_status} can move to {to_status}; this one is {case.status}."
@@ -312,15 +290,15 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
     returned participant as ``signed_at``; it is not stored again here.
     """
     with transaction.atomic():
-        get_case(case_id, user)
-        case = Case.objects.select_for_update().get(pk=case_id)
+        case = lock_case(get_case(case_id, user))
         if case.status != CaseStatus.PENDING_SIGN:
             raise InvalidStatusTransition(
                 f"Signatures are recorded only while the case is {CaseStatus.PENDING_SIGN}; "
                 f"this one is {case.status}."
             )
-        participant = CaseParticipant.objects.active().filter(pk=case_participant_id, case=case)
-        participant = participant.first()
+        participant = (
+            CaseParticipant.objects.active().filter(pk=case_participant_id, case=case).first()
+        )
         if participant is None:
             raise NotFound("Case participant not found.")
         if participant.role not in SIGNING_ROLES:

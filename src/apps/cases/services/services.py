@@ -11,17 +11,19 @@ case's ``updated_at``, which listings show and concurrent-edit checks use.
 
 import logging
 import uuid
+from contextlib import contextmanager
 
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
-from rest_framework import serializers, status
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework import serializers
+from rest_framework.exceptions import NotFound
 
 from apps.files import documents
 
+from ..exceptions import CaseNotEditable
 from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
 from .case_types import get_config, schema_errors
 
@@ -38,14 +40,6 @@ DOCUMENT_TAG = "cases"
 
 # Distinguishes "not sent" from an explicit ``None`` in partial updates.
 _UNSET = object()
-
-
-class CaseNotEditable(APIException):  # noqa: N818 - named after its code
-    """The case has been submitted, so its filing can no longer change."""
-
-    status_code = status.HTTP_409_CONFLICT
-    default_detail = "This case has been submitted and can no longer be changed."
-    default_code = "case_not_editable"
 
 
 # Draft sessions and case resolution
@@ -73,6 +67,19 @@ def get_case(case_id, user):
     if case is None:
         raise NotFound("Case not found.")
     return case
+
+
+def get_active_case_item(model, object_id, user):
+    """Return an active row of ``model`` (a document, evidence, participant …) on ``user``'s case.
+
+    Ownership is checked through the item's case, so other users' items are
+    not found.
+    """
+    found = model.objects.active().select_related("case")
+    instance = found.filter(pk=object_id, case__created_by=user).first()
+    if instance is None:
+        raise NotFound(f"{model._meta.verbose_name.capitalize()} not found.")
+    return instance
 
 
 def get_case_type(case_or_draft_id, user):
@@ -137,6 +144,46 @@ def ensure_editable(case):
     """Raise ``CaseNotEditable`` unless the case is still a draft."""
     if case.status != CaseStatus.DRAFT_IN_PROGRESS:
         raise CaseNotEditable
+
+
+def lock_case(case):
+    """Return ``case`` re-read with its row locked until the transaction ends.
+
+    Serialises the writes on one case, so ordinals are assigned and statuses
+    changed one write at a time.
+    """
+    return Case.objects.select_for_update().get(pk=case.pk)
+
+
+@contextmanager
+def editing(case, user):
+    """Run a write on ``case`` in one transaction, then touch the case.
+
+    The case row is locked and its status checked after the lock, so a
+    concurrent submission cannot slip in between the check and the write.
+    Yields the locked case.
+    """
+    with transaction.atomic():
+        case = lock_case(case)
+        ensure_editable(case)
+        yield case
+        touch(case, user)
+
+
+@contextmanager
+def editing_or_creating(case_or_draft_id, user):
+    """Like ``editing``, creating the case from ``user``'s draft session on first save."""
+    with transaction.atomic():
+        case = lock_case(get_or_create_case(case_or_draft_id, user))
+        ensure_editable(case)
+        yield case
+        touch(case, user)
+
+
+def next_ordinal(queryset):
+    """Return one past the highest ``ordinal`` in ``queryset``, or 1 when it is empty."""
+    last = queryset.aggregate(last=Max("ordinal"))["last"]
+    return (last or 0) + 1
 
 
 def touch(case, user):
@@ -294,30 +341,23 @@ def _require_case_document(case, case_document_id):
 def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_document_id=None):
     """Add evidence with the next ordinal for its type, creating the case on first save."""
     validate_evidence(get_case_type(case_or_draft_id, user), evidence_type, evidence_info)
-    with transaction.atomic():
-        case = get_or_create_case(case_or_draft_id, user)
-        # Serialises ordinal assignment for the case.
-        Case.objects.select_for_update().filter(pk=case.pk).first()
-
+    # The case lock serialises ordinal assignment.
+    with editing_or_creating(case_or_draft_id, user) as case:
         if case_document_id is not None:
             _require_case_document(case, case_document_id)
 
-        last = (
-            CaseEvidence.objects.active()
-            .filter(case=case, evidence_type=evidence_type)
-            .aggregate(last=Max("ordinal"))["last"]
-        )
         evidence = CaseEvidence.objects.create(
             case=case,
             case_document_id=case_document_id,
             evidence_type=evidence_type,
-            ordinal=(last or 0) + 1,
+            ordinal=next_ordinal(
+                CaseEvidence.objects.active().filter(case=case, evidence_type=evidence_type)
+            ),
             evidence_info=evidence_info,
             created_by=user,
             updated_by=user,
         )
-        touch(case, user)
-        return evidence
+    return evidence
 
 
 def get_evidence(case_evidence_id, user):
@@ -356,19 +396,6 @@ def remove_evidence(evidence, user):
     with transaction.atomic():
         deactivate(evidence, user)
         touch(evidence.case, user)
-
-
-def get_active_case_item(model, object_id, user):
-    """Return an active row of ``model`` (a document, evidence, participant …) on ``user``'s case.
-
-    Ownership is checked through the item's case, so other users' items are
-    not found.
-    """
-    found = model.objects.active().select_related("case")
-    instance = found.filter(pk=object_id, case__created_by=user).first()
-    if instance is None:
-        raise NotFound(f"{model._meta.verbose_name.capitalize()} not found.")
-    return instance
 
 
 # Case details (spec 0021 §5.3)

@@ -10,6 +10,10 @@ from apps.organizations.models import Organization
 from apps.parties.models import MAX_AGE, Gender, Institution, Person
 
 from .models import (
+    ADDRESS_REQUIRED_MESSAGE,
+    DESIGNATION_NOT_ALLOWED_MESSAGE,
+    DESIGNATION_REQUIRED_MESSAGE,
+    INSTITUTION_ROLE_MESSAGE,
     INSTITUTION_ROLES,
     Case,
     CaseDocument,
@@ -21,6 +25,34 @@ from .models import (
     Witness,
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
+
+SELF_AND_PERSON_MESSAGE = "Send either person or self, not both."
+
+
+class RejectUnknownFieldsMixin:
+    """Refuses fields the serializer does not declare, so they are not silently ignored.
+
+    Checked before the serializer's own ``validate``; ``unknown_field_message``
+    is the error each unknown field gets.
+    """
+
+    unknown_field_message = "This field is not accepted."
+
+    def validate(self, attrs):
+        """Refuse every field not declared on the serializer."""
+        unknown = sorted(set(self.initial_data) - set(self.fields))
+        if unknown:
+            raise serializers.ValidationError(
+                {field: [self.unknown_field_message] for field in unknown}
+            )
+        return super().validate(attrs)
+
+
+def _require_each_once(ids):
+    """Refuse a list of participant ids that names a party more than once."""
+    if len(set(ids)) != len(ids):
+        raise serializers.ValidationError("Each party may be listed only once.")
+    return ids
 
 
 @extend_schema_field(OpenApiTypes.BINARY)
@@ -268,19 +300,15 @@ class InstitutionInputSerializer(serializers.ModelSerializer):
         fields = ["entity_type", "entity_name", "pan", "cin", "contact_number", "email_address"]
 
 
-class ParticipantCreateSerializer(serializers.Serializer):
-    """Body of POST /cases/{id}/complainants and /accused (spec 0021 §4.1, §4.2).
+class PartySerializer(serializers.Serializer):
+    """Base body of a party write.
 
     The individual is ``person`` (someone the filer names) or ``"self": true``
-    (the filer); either may be left out when ``institution`` is given. The
-    role being added is passed in the context as ``role``.
+    (the filer). ``self`` is returned as ``is_self``.
     """
 
     person = PersonInputSerializer(required=False)
-    institution = InstitutionInputSerializer(required=False)
-    designation = serializers.CharField(max_length=128, required=False, allow_null=True)
     address = AddressInputSerializer(required=False)
-    is_party_in_person = serializers.BooleanField(default=False)
     additional_details = serializers.DictField(default=dict)
 
     def get_fields(self):
@@ -290,65 +318,65 @@ class ParticipantCreateSerializer(serializers.Serializer):
         return fields
 
     def validate(self, attrs):
-        """Check the fields that only make sense together, for the role being added.
-
-        ``self`` is returned as ``is_self``.
-        """
-        role = self.context["role"]
+        """Return ``self`` as ``is_self``."""
+        attrs = super().validate(attrs)
         attrs["is_self"] = attrs.pop("self")
+        return attrs
+
+
+class ParticipantCreateSerializer(PartySerializer):
+    """Body of POST /cases/{id}/complainants and /accused (spec 0021 §4.1, §4.2).
+
+    Either individual may be left out when ``institution`` is given. The role
+    being added is passed in the context as ``role``.
+    """
+
+    institution = InstitutionInputSerializer(required=False)
+    designation = serializers.CharField(max_length=128, required=False, allow_null=True)
+    is_party_in_person = serializers.BooleanField(default=False)
+
+    def validate(self, attrs):
+        """Check the fields that only make sense together, for the role being added."""
+        attrs = super().validate(attrs)
+        role = self.context["role"]
         has_individual = attrs["is_self"] or "person" in attrs
         errors = {}
         if attrs["is_self"] and "person" in attrs:
-            errors["self"] = ["Send either person or self, not both."]
+            errors["self"] = [SELF_AND_PERSON_MESSAGE]
         elif attrs["is_self"] and role == ParticipantRole.ACCUSED:
             errors["self"] = ["You cannot name yourself as accused."]
         elif not has_individual and "institution" not in attrs:
             errors["person"] = ["Send person, self or institution."]
         if "institution" in attrs and role not in INSTITUTION_ROLES:
-            errors["institution"] = ["Only a complainant or an accused may be an institution."]
+            errors["institution"] = [INSTITUTION_ROLE_MESSAGE]
         if has_individual and "institution" in attrs and not attrs.get("designation"):
-            errors["designation"] = [
-                "Enter the designation of the person acting for the institution."
-            ]
+            errors["designation"] = [DESIGNATION_REQUIRED_MESSAGE]
         if attrs.get("designation") and not (has_individual and "institution" in attrs):
-            errors["designation"] = ["Only for a person acting for an institution."]
+            errors["designation"] = [DESIGNATION_NOT_ALLOWED_MESSAGE]
         if "address" not in attrs:
-            errors["address"] = ["An address for service of notice is required for this role."]
+            errors["address"] = [ADDRESS_REQUIRED_MESSAGE]
         if errors:
             raise serializers.ValidationError(errors)
         return attrs
 
 
-class IndividualPartySerializer(serializers.Serializer):
+class IndividualPartySerializer(RejectUnknownFieldsMixin, PartySerializer):
     """Base body for a party who is always an individual, never an institution.
 
-    The individual is ``person`` (someone the filer names) or ``"self": true``
-    (the filer). Fields it does not declare are refused, so an
-    ``institution`` sent anyway is not silently ignored.
+    Fields it does not declare are refused, so an ``institution`` sent anyway
+    is not silently ignored.
     """
 
-    person = PersonInputSerializer(required=False)
-    address = AddressInputSerializer(required=False)
-    additional_details = serializers.DictField(default=dict)
-
-    def get_fields(self):
-        """Add ``self``, which cannot be declared as a class attribute."""
-        fields = super().get_fields()
-        fields["self"] = serializers.BooleanField(default=False)
-        return fields
-
     def validate(self, attrs):
-        """Require exactly one of ``person`` and ``self``; ``self`` is returned as ``is_self``."""
-        unknown = sorted(set(self.initial_data) - set(self.fields))
-        if unknown:
-            raise serializers.ValidationError(
-                {field: ["This field is not accepted."] for field in unknown}
-            )
-        attrs["is_self"] = attrs.pop("self")
+        """Require exactly one of ``person`` and ``self``."""
+        attrs = super().validate(attrs)
+        errors = {}
         if attrs["is_self"] and "person" in attrs:
-            raise serializers.ValidationError({"self": ["Send either person or self, not both."]})
-        if not attrs["is_self"] and "person" not in attrs:
-            raise serializers.ValidationError({"person": ["Send person or self."]})
+            errors["self"] = [SELF_AND_PERSON_MESSAGE]
+        elif not attrs["is_self"] and "person" not in attrs:
+            errors["person"] = ["Send person or self."]
+        if errors:
+            raise serializers.ValidationError(errors)
         return attrs
 
 
@@ -377,17 +405,15 @@ class PoaHolderCreateSerializer(IndividualPartySerializer):
     )
     poa_type = serializers.CharField(max_length=64, required=False, allow_null=True)
 
+    def validate_represented_participant_ids(self, value):
+        """Require each represented party once."""
+        return _require_each_once(value)
+
     def validate(self, attrs):
-        """Require the address, and each represented party once."""
+        """Require the address."""
         attrs = super().validate(attrs)
-        errors = {}
         if "address" not in attrs:
-            errors["address"] = ["An address for service of notice is required for this role."]
-        ids = attrs["represented_participant_ids"]
-        if len(set(ids)) != len(ids):
-            errors["represented_participant_ids"] = ["Each party may be listed only once."]
-        if errors:
-            raise serializers.ValidationError(errors)
+            raise serializers.ValidationError({"address": [ADDRESS_REQUIRED_MESSAGE]})
         return attrs
 
 
@@ -426,19 +452,16 @@ class PoaMandateSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class PoaMandateUpdateSerializer(serializers.Serializer):
-    """Body of PATCH /poa-mandates/{id} (spec 0021 §4.5): only ``poa_type`` changes."""
+class PoaMandateUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializer):
+    """Body of PATCH /poa-mandates/{id} (spec 0021 §4.5): only ``poa_type`` changes.
+
+    Other fields are refused, so a change of holder or party is not silently
+    ignored.
+    """
+
+    unknown_field_message = "This field cannot be changed."
 
     poa_type = serializers.CharField(max_length=64, allow_null=True)
-
-    def validate(self, attrs):
-        """Refuse unknown fields, so a change of holder or party is not silently ignored."""
-        unknown = sorted(set(self.initial_data) - set(self.fields))
-        if unknown:
-            raise serializers.ValidationError(
-                {field: ["This field cannot be changed."] for field in unknown}
-            )
-        return attrs
 
 
 class AdvocateCreateSerializer(serializers.Serializer):
@@ -454,9 +477,7 @@ class AdvocateCreateSerializer(serializers.Serializer):
 
     def validate_client_participant_ids(self, value):
         """Require each client once."""
-        if len(set(value)) != len(value):
-            raise serializers.ValidationError("Each party may be listed only once.")
-        return value
+        return _require_each_once(value)
 
 
 class AdvocateCreatedSerializer(serializers.Serializer):
@@ -492,13 +513,15 @@ class RepresentationSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class ParticipantUpdateSerializer(serializers.Serializer):
+class ParticipantUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializer):
     """Body of PATCH /case-participants/{id} (spec 0021 §4.1).
 
     Changes only the case's copy of the party's details; the person and
     institution rows are never changed. Any of the fields may be sent, and
     nothing else: the role, person and institution cannot change.
     """
+
+    unknown_field_message = "This field cannot be changed."
 
     name_at_filing = serializers.CharField(max_length=256, required=False)
     phone_number_at_filing = serializers.CharField(max_length=20, required=False, allow_null=True)
@@ -517,12 +540,8 @@ class ParticipantUpdateSerializer(serializers.Serializer):
     what_will_witness_prove = serializers.CharField(required=False)
 
     def validate(self, attrs):
-        """Refuse unknown fields, so a typo or a role change is not silently ignored."""
-        unknown = sorted(set(self.initial_data) - set(self.fields))
-        if unknown:
-            raise serializers.ValidationError(
-                {field: ["This field cannot be changed."] for field in unknown}
-            )
+        """Require at least one change."""
+        attrs = super().validate(attrs)
         if not attrs:
             raise serializers.ValidationError("Send at least one field to change.")
         return attrs
