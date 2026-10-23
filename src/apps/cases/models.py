@@ -1,5 +1,6 @@
 """Cases, participants, witnesses, POA mandates, representations, documents, evidence (spec 0020)."""
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
 from django.db import models
@@ -27,13 +28,10 @@ class CaseStatus(models.TextChoices):
     REGISTERED = "REGISTERED", "Registered"
 
 
-# Cases in these statuses cannot be joined by case number (spec 0021 §2.1).
-NOT_JOINABLE_STATUSES = (
-    CaseStatus.DRAFT_IN_PROGRESS,
-    CaseStatus.PENDING_SIGN,
-    CaseStatus.PENDING_PAYMENT,
-    CaseStatus.UNDER_SCRUTINY,
-)
+# Only cases in these statuses can be joined by case number (spec 0021 §2.1).
+# An allow-list, because the lookup is open to every registered user: a status
+# added later stays hidden until it is listed here.
+JOINABLE_STATUSES = (CaseStatus.REGISTERED,)
 
 
 class Case(BaseModel, BaseAuditableModel):
@@ -43,6 +41,14 @@ class Case(BaseModel, BaseAuditableModel):
     key, so the id the client already holds stays valid after the first save.
     """
 
+    # Replaces BaseModel's nullable SET_NULL field: ownership is checked only
+    # through created_by, so the filer must always be set and cannot be deleted
+    # out from under the case (spec 0020 §8). Users are deactivated, not deleted.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="cases_case_created_by",
+    )
     case_type = models.CharField(max_length=32, choices=CaseType.choices)
     # all the "number" fields are not final yet, may differ in future
     filing_number = models.CharField(max_length=64, unique=True, null=True, blank=True)

@@ -3,6 +3,8 @@
 import pytest
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
 from django.urls import reverse
 
 from apps.cases.models import (
@@ -11,6 +13,7 @@ from apps.cases.models import (
     CaseEvidence,
     CaseParticipant,
     CaseStatus,
+    CaseType,
     ChequeBounceCase,
     ParticipantRole,
 )
@@ -344,3 +347,15 @@ class TestHistory:
             for version in CaseDocument.objects.get(pk=document_id).history.order_by("history_date")
         ]
         assert states == [True, False]
+
+
+class TestCaseAlwaysHasAFiler:
+    def test_case_requires_a_filer(self):
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Case.objects.create(case_type=CaseType.CHEQUE_BOUNCE)
+
+    def test_filer_with_a_case_cannot_be_deleted(self, user):
+        Case.objects.create(case_type=CaseType.CHEQUE_BOUNCE, created_by=user)
+
+        with pytest.raises(ProtectedError):
+            user.delete()

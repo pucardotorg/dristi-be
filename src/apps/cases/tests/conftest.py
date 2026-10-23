@@ -4,7 +4,7 @@ import itertools
 
 import pytest
 from django.conf import settings
-from django.core.cache import cache
+from django.core.cache import caches
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
@@ -46,7 +46,7 @@ def files_storage(settings):
 @pytest.fixture(autouse=True)
 def clear_cache():
     """Start every test with no draft sessions."""
-    cache.clear()
+    caches[services.DRAFT_CACHE_ALIAS].clear()
 
 
 @pytest.fixture

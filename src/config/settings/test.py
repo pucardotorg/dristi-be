@@ -59,6 +59,10 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "dristi-tests",
     },
+    "state": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "dristi-tests-state",
+    },
 }
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"

@@ -23,7 +23,7 @@ from . import errors
 from .models import (
     ADDRESS_REQUIRED_MESSAGE,
     EVIDENCE_ORDERING,
-    NOT_JOINABLE_STATUSES,
+    JOINABLE_STATUSES,
     PARTICIPANT_ORDERING,
     POA_MANDATE_ORDERING,
     REPRESENTATION_ORDERING,
@@ -162,7 +162,7 @@ class CaseByNumberView(generics.RetrieveAPIView):
 
     serializer_class = CaseSerializer
     lookup_field = "case_number"
-    queryset = Case.objects.exclude(status__in=NOT_JOINABLE_STATUSES)
+    queryset = Case.objects.filter(status__in=JOINABLE_STATUSES, case_number__isnull=False)
 
 
 @extend_schema_view(
