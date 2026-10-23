@@ -1151,7 +1151,7 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 | `E07011` | 400 | A party is listed more than once. |
 | `E07012` | 400 | Only a complainant or an accused may be an institution. |
 | `E07013` | 400 | The person or institution already holds this role on the case. |
-| `E07014` | 400 | The person or institution would be both a complainant and an accused. |
+| `E07014` | 400 | The person or institution would be both a complainant and an accused, or the advocate would represent both. |
 | `E07015` | 400 | The participant cannot be removed while an active witness is called by them. |
 | `E07016` | 400 | The participant does not have the role this needs (a complainant or an accused; a witness; a POA holder). |
 | `E07017` | 400 | The person is already a witness called by this party. |

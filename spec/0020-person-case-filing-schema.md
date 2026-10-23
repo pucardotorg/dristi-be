@@ -378,6 +378,7 @@ Tracks which advocate represents which party in which case. Many-to-many relatio
 - No self-representation: the advocate's user must not be the client person's user. A party appearing for themselves is marked `is_party_in_person` instead.
 - A client marked `is_party_in_person = true` cannot be given an advocate; the request is rejected.
 - A client may have several active advocates (for example a senior and a junior advocate).
+- An advocate cannot act for both sides: while active, the same advocate cannot represent a complainant and an accused on one case.
 
 ### 6.3 Design Decisions
 
@@ -782,7 +783,7 @@ To add a second case type (e.g., civil suit):
 - `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. `address_id` is required except for witnesses.
 - `witness.called_by_participant_id`: An active COMPLAINANT or ACCUSED on the same case.
 - `poa_mandate`: The represented participant is an active COMPLAINANT or ACCUSED on the same case, and not the holder's own person.
-- `representation`: The client is an active COMPLAINANT or ACCUSED on the same case, not marked `is_party_in_person`, and not the advocate themselves.
+- `representation`: The client is an active COMPLAINANT or ACCUSED on the same case, not marked `is_party_in_person`, not the advocate themselves, and not on the opposite side from another active client of the same advocate.
 - `person.designation`: Only meaningful when `person.institution_id` is set.
 - `poa_mandate`: `poa_participant_id` must have `role = 'POA_HOLDER'`.
 - `representation`: `advocate_id` must point to an `AdvocateProfile` (spec 0005) with `approval_status = ACCEPTED`.

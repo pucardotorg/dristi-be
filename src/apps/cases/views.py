@@ -578,6 +578,10 @@ class AdvocateCreateView(APIView):
                 errors.SELF_REPRESENTATION.example(
                     "An advocate cannot represent themselves.", field="client_participant_ids"
                 ),
+                errors.BOTH_SIDES.example(
+                    "An advocate cannot represent both a complainant and an accused.",
+                    field="client_participant_ids",
+                ),
                 errors.ALREADY_ACTING.example(
                     "This advocate already represents this party.",
                     field="client_participant_ids",

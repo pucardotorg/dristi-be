@@ -124,6 +124,7 @@ DUPLICATE_REPRESENTATION_MESSAGE = "This advocate already represents this party.
 ADVOCATE_NOT_APPROVED_MESSAGE = "Must be an approved advocate."
 PARTY_IN_PERSON_MESSAGE = "A party appearing in person cannot be given an advocate."
 ADVOCATE_FOR_SELF_MESSAGE = "An advocate cannot represent themselves."
+ADVOCATE_BOTH_SIDES_MESSAGE = "An advocate cannot represent both a complainant and an accused."
 
 # The order each is listed in, by the API and the preview.
 PARTICIPANT_ORDERING = ("role", "ordinal")
@@ -520,8 +521,9 @@ class Representation(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
         The advocate must be approved and the client a complainant or an
         accused on this representation's case, and not the advocate themselves.
-        Whether the client is still active and not appearing in person matters
-        only while the representation is, so an ended one can still be edited.
+        Whether the client is still active, not appearing in person, and not on
+        the other side from another client of the advocate matters only while
+        the representation is, so an ended one can still be edited.
         Every broken rule is reported, not just the first one per field.
         """
         super().clean()
@@ -553,7 +555,27 @@ class Representation(BaseModel, BaseActivatableModel, BaseAuditableModel):
                     not client_user_id or client_user_id != advocate.user_id,
                     ADVOCATE_FOR_SELF_MESSAGE,
                 ),
+                (
+                    "case_participant",
+                    not self.is_active or not self._acts_for_other_side(client),
+                    ADVOCATE_BOTH_SIDES_MESSAGE,
+                ),
             ]
+        )
+
+    def _acts_for_other_side(self, client):
+        """Return whether the advocate actively represents a party opposing ``client`` here."""
+        opposing_role = OPPOSING_ROLES.get(client.role)
+        return (
+            opposing_role is not None
+            and Representation.objects.active()
+            .filter(
+                case_id=self.case_id,
+                advocate_id=self.advocate_id,
+                case_participant__role=opposing_role,
+            )
+            .exclude(pk=self.pk)
+            .exists()
         )
 
 

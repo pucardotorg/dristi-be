@@ -1038,6 +1038,37 @@ class TestAddAdvocate:
         assert response.status_code == 400
         assert error_codes(response) == {"client_participant_ids": ["E07018"]}
 
+    def test_an_advocate_cannot_represent_both_sides(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        accused = add(client, draft, "accused", person=PERSON).json()["case_participant_id"]
+        advocate = make_advocate(make_user)
+        add_advocate(client, draft, advocate.pk, [complainant])
+
+        response = add_advocate(client, draft, advocate.pk, [accused])
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"client_participant_ids": ["E07014"]}
+        assert not Representation.objects.filter(case_participant_id=accused).exists()
+
+    def test_both_sides_in_one_request_is_refused(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        accused = add(client, draft, "accused", person=PERSON).json()["case_participant_id"]
+
+        response = add_advocate(client, draft, make_advocate(make_user).pk, [complainant, accused])
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"client_participant_ids": ["E07014"]}
+        assert not Representation.objects.filter(case_id=draft).exists()
+
+    def test_the_other_side_after_ending_the_first(self, client, make_user, draft):
+        complainant = add_complainant(client, draft)["case_participant_id"]
+        accused = add(client, draft, "accused", person=PERSON).json()["case_participant_id"]
+        advocate = make_advocate(make_user)
+        created = add_advocate(client, draft, advocate.pk, [complainant]).json()
+        end(client, created["representation_ids"][0])
+
+        assert add_advocate(client, draft, advocate.pk, [accused]).status_code == 201
+
     def test_nothing_is_written_when_one_client_fails(self, client, make_user, draft):
         complainant = add_complainant(client, draft)["case_participant_id"]
         holder = add_poa_holder(client, draft, [complainant]).json()["case_participant_id"]
@@ -1054,7 +1085,8 @@ class TestRepresentations:
         first = add_complainant(client, draft, name="A")["case_participant_id"]
         second = add_complainant(client, draft, name="B")["case_participant_id"]
         advocate = make_advocate(make_user)
-        created = add_advocate(client, draft, advocate.pk, [second, accused, first]).json()
+        created = add_advocate(client, draft, advocate.pk, [accused]).json()
+        other = add_advocate(client, draft, make_advocate(make_user).pk, [second, first]).json()
         ended = add_advocate(client, draft, make_advocate(make_user).pk, [first]).json()
         end(client, ended["representation_ids"][0])
 
@@ -1063,7 +1095,8 @@ class TestRepresentations:
         assert response.status_code == 200
         results = response.json()["results"]
         assert [r["client_participant_id"] for r in results] == [accused, first, second]
-        assert {r["representation_id"] for r in results} == set(created["representation_ids"])
+        expected = {*created["representation_ids"], *other["representation_ids"]}
+        assert {r["representation_id"] for r in results} == expected
         assert results[0]["advocate_name"] == "Adv. Sharma"
         assert results[0]["advocate_id"] == str(advocate.pk)
         assert "created_by" not in results[0]

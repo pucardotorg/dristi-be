@@ -50,6 +50,7 @@ INSTITUTION_NOT_ALLOWED = define(
 )
 # The message names the party and role: "This person is already a complainant …".
 ROLE_ALREADY_HELD = define("E07013", "This party already holds this role on this case.")
+# Also for an advocate: "An advocate cannot represent both a complainant and an accused."
 BOTH_SIDES = define("E07014", "A party cannot be both a complainant and an accused on a case.")
 CALLS_ACTIVE_WITNESS = define(
     "E07015", "Cannot be removed while an active witness is called by them."
