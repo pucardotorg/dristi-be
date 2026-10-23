@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from apps.cases.models import (
     Case,
+    CaseEvidence,
     CaseParticipant,
     CaseStatus,
     ChequeBounceCase,
@@ -20,13 +21,15 @@ from apps.files.tests.factories import make_file
 from apps.parties.models import Person
 from apps.parties.tests.factories import ADDRESS_DEFAULTS
 
-from .conftest import error_codes
-from .test_api import add_cheque, put_section, upload
+from .conftest import DEMAND_NOTICE_INFO, RETURN_MEMO_INFO, error_codes
+from .test_api import add_cheque, add_evidence, put_section, upload
 from .test_participants import PERSON, add, add_complainant, remove
 
 pytestmark = pytest.mark.django_db
 
 REQUIRED_DOCUMENTS = ["BOUNCED_CHEQUE", "RETURN_MEMO", "LEGAL_DEMAND_NOTICE", "PROOF_OF_DISPATCH"]
+# Required beside the cheque.
+EVIDENCE = [("RETURN_MEMO", RETURN_MEMO_INFO), ("LEGAL_DEMAND_NOTICE", DEMAND_NOTICE_INFO)]
 
 JURISDICTION = {"cheque_deposited_by_payee": False, "cause_of_action_date": "2024-02-20"}
 PRAYER = {"final_relief": "Direct the accused to pay the cheque amount."}
@@ -40,6 +43,8 @@ def make_complete_case(client, case_id, pdf):
     accused = add(client, case_id, "accused", person={**PERSON, "name": "Suresh Patel"})
     assert accused.status_code == 201
     assert add_cheque(client, case_id).status_code == 201
+    for evidence_type, evidence_info in EVIDENCE:
+        assert add_evidence(client, case_id, evidence_type, evidence_info).status_code == 201
     assert put_section(client, case_id, "jurisdiction_limitation", JURISDICTION).status_code == 200
     assert put_section(client, case_id, "adr_other_prayer", PRAYER).status_code == 200
     return complainant
@@ -104,7 +109,11 @@ class TestPreview:
         assert first["case_participant_id"] == complainant["case_participant_id"]
         assert first["address"]["address_id"] == complainant["address_id"]
         assert first["address"]["pincode"]
-        assert [e["evidence_type"] for e in body["evidence"]] == ["CHEQUE"]
+        assert sorted(e["evidence_type"] for e in body["evidence"]) == [
+            "CHEQUE",
+            "LEGAL_DEMAND_NOTICE",
+            "RETURN_MEMO",
+        ]
         assert sorted(d["document_type"] for d in body["documents"]) == sorted(REQUIRED_DOCUMENTS)
         assert body["details"] == {
             "jurisdiction_limitation": JURISDICTION,
@@ -194,6 +203,8 @@ class TestValidate:
             "participants.complainants",
             "participants.accused",
             "evidence.CHEQUE",
+            "evidence.RETURN_MEMO",
+            "evidence.LEGAL_DEMAND_NOTICE",
             "details.jurisdiction_limitation",
             *(f"documents.{document_type}" for document_type in REQUIRED_DOCUMENTS),
         }
@@ -228,6 +239,17 @@ class TestValidate:
 
         upload(client, draft, pdf, "POA_DOCUMENT")
         assert validate(client, draft)["is_valid"] is True
+
+    @pytest.mark.parametrize("evidence_type", ["RETURN_MEMO", "LEGAL_DEMAND_NOTICE"])
+    def test_return_memo_and_demand_notice_evidence_are_required(
+        self, client, draft, pdf, evidence_type
+    ):
+        make_complete_case(client, draft, pdf)
+        CaseEvidence.objects.filter(case_id=draft, evidence_type=evidence_type).update(
+            is_active=False
+        )
+
+        assert fields_of(validate(client, draft)) == {f"evidence.{evidence_type}"}
 
     def test_an_invalid_section_is_reported(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)

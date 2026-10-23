@@ -1117,8 +1117,9 @@ POST /cases/{case_id}/validate
    - When the case has any active `poa_mandate`, it has at least one active `POA_DOCUMENT` case document (checked per case, for the same reason).
 
 4. **Evidence (cheque bounce specific):**
-   - At least one `CHEQUE` evidence row
-   - Each cheque has required fields in `evidence_info` (validated against schema §5.2)
+   - At least one `CHEQUE`, one `RETURN_MEMO` and one `LEGAL_DEMAND_NOTICE` evidence row
+   - Each evidence row has required fields in `evidence_info` (validated against schema §5.2)
+   - Pairing each cheque with its own return memo and demand notice by `ordinal` is not checked yet
 
 5. **Documents:**
    - Every required `document_type` from the checklist exists as an active `case_document`

@@ -32,12 +32,16 @@ def upload(client, case_id, pdf, document_type="BOUNCED_CHEQUE"):
     )
 
 
-def add_cheque(client, case_id, **extra):
+def add_evidence(client, case_id, evidence_type, evidence_info, **extra):
     return client.post(
         reverse("case-evidence-list", args=[case_id]),
-        {"evidence_type": "CHEQUE", "evidence_info": CHEQUE_INFO, **extra},
+        {"evidence_type": evidence_type, "evidence_info": evidence_info, **extra},
         format="json",
     )
+
+
+def add_cheque(client, case_id, **extra):
+    return add_evidence(client, case_id, "CHEQUE", CHEQUE_INFO, **extra)
 
 
 class TestCaseTypes:

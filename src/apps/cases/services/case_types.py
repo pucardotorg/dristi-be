@@ -177,7 +177,11 @@ CASE_TYPES = {
             DocumentType.LEGAL_DEMAND_NOTICE,
             DocumentType.PROOF_OF_DISPATCH,
         ),
-        required_evidence_types=(EvidenceType.CHEQUE,),
+        required_evidence_types=(
+            EvidenceType.CHEQUE,
+            EvidenceType.RETURN_MEMO,
+            EvidenceType.LEGAL_DEMAND_NOTICE,
+        ),
         # One RETURN_MEMO and one LEGAL_DEMAND_NOTICE per cheque, matched to it
         # by ordinal: cheque #1, return memo #1, demand notice #1.
         evidence_schemas={
