@@ -4,6 +4,7 @@ import itertools
 import uuid
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
@@ -38,6 +39,8 @@ def make_user(db):
     from apps.users.models import RegistrationStatus, Role
 
     def factory(name="Payer", **extra):
+        # Registered and on the current terms: both are default API gates.
+        extra.setdefault("terms_version_accepted", settings.CURRENT_TERMS_VERSION)
         return get_user_model().objects.create_user(
             mobile_number=f"+9198{next(_mobile):08d}",
             name=name,
