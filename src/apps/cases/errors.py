@@ -36,7 +36,7 @@ SIGNATURES_PENDING = define("E07006", "Every complainant and POA holder must sig
 ALREADY_SIGNED = define("E07007", "This participant has already signed.", status=409)
 NOT_A_SIGNER = define("E07008", "Only complainants and POA holders sign the filing.")
 SIGNATURE_NOT_FOUND = define(
-    "E07009", "No completed e-signature of this case's filing produced this document."
+    "E07009", "This document is not an e-signed copy of this case's filing."
 )
 
 # References within one case

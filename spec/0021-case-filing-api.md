@@ -1146,7 +1146,7 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 | `E07006` | 400 | Submit for payment: a signer has not signed. One error per signer, on `participants.<id>`. |
 | `E07007` | 409 | The participant has already signed (§8). |
 | `E07008` | 400 | Only complainants and POA holders sign the filing (§8). |
-| `E07009` | 400 | No completed e-signature of this case's filing produced the document (§8). |
+| `E07009` | 400 | The document is not an e-signed copy of this case's filing (§8). |
 | `E07010` | 400 | A referenced participant is not an active participant of this case. |
 | `E07011` | 400 | A party is listed more than once. |
 | `E07012` | 400 | Only a complainant or an accused may be an institution. |
