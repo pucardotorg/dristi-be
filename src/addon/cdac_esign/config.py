@@ -45,6 +45,7 @@ class CDACESignConfig:
     txn_template: str = "{module}-{transaction_id}"
     response_max_skew: int = 900
     verify_response_signature: bool = True
+    allow_sha1_response: bool = False
     response_field: str = ""
 
     def __repr__(self):
@@ -119,6 +120,7 @@ def resolve_config() -> CDACESignConfig:
         txn_template=get("CDAC_ESIGN_TXN_TEMPLATE", "") or "{module}-{transaction_id}",
         response_max_skew=int(get("CDAC_ESIGN_RESPONSE_MAX_SKEW", 900)),
         verify_response_signature=bool(get("CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE", True)),
+        allow_sha1_response=bool(get("CDAC_ESIGN_ALLOW_SHA1_RESPONSE", False)),
         response_field=get("CDAC_ESIGN_RESPONSE_FIELD", ""),
     )
 

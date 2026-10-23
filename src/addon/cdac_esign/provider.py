@@ -140,7 +140,9 @@ class CDACESignProvider(ESignProvider):
 
         if config.verify_response_signature:
             try:
-                verify_response_signature(document, config.response_cert)
+                verify_response_signature(
+                    document, config.response_cert, allow_sha1=config.allow_sha1_response
+                )
             except CDACResponseUntrusted as exc:
                 logger.warning("event='CDAC_RESPONSE_UNTRUSTED' reason=%r", str(exc))
                 raise ESignResponseUntrusted() from exc

@@ -165,6 +165,17 @@ class ParseAndVerifyTests(CDACSettingsMixin, TestCase):
         with self.assertRaises(ESignResponseStale):
             self.provider.verify_response({"msg": document})
 
+    def test_cdac_sha1_response_verifies_only_when_allowed(self):
+        """The provider passes CDAC_ESIGN_ALLOW_SHA1_RESPONSE to the verifier."""
+        from .test_response_verifier import cdac_style_response
+
+        payload = {"eSignResponse": cdac_style_response()}
+        with self.assertRaises(ESignResponseUntrusted):
+            self.provider.verify_response(payload)
+
+        self.configure(CDAC_ESIGN_ALLOW_SHA1_RESPONSE=True, CDAC_ESIGN_RESPONSE_MAX_SKEW=10**9)
+        self.assertIsNone(self.provider.verify_response(payload))
+
     def test_verification_can_be_disabled_locally(self):
         """Only local and CI may skip verification; production checks refuse it."""
         self.configure(CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE=False, CDAC_ESIGN_RESPONSE_CERT="")
