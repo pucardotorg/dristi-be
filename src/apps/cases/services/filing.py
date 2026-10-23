@@ -294,7 +294,9 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
     """Record that a participant has e-signed the filing.
 
     The e-signing itself happens through ``apps.esign`` first; here the
-    document is only accepted if a completed e-sign transaction produced it.
+    document is only accepted if a completed e-sign transaction produced it,
+    after the case was submitted for signing, signed by the participant's own
+    account where they have one, and not already recorded for anyone else.
     When it was signed is that transaction's ``completed_at``, set on the
     returned participant as ``signed_at``; it is not stored again here.
     """
@@ -327,6 +329,7 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
             raise errors.SIGNATURE_NOT_FOUND.validation_error(
                 {"signature_document_id": [errors.SIGNATURE_NOT_FOUND.message]}
             )
+        _check_signature(case, participant, esign, signature_document_id)
         participant.has_signed = True
         participant.signature_document_id = signature_document_id
         participant.updated_by = user
@@ -336,3 +339,34 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
         touch(case, user)
     participant.signed_at = esign.completed_at
     return participant
+
+
+def _check_signature(case, participant, esign, signature_document_id):
+    """Refuse an e-signature that is not this participant's signature of this filing.
+
+    The case only moves forward and enters PENDING_SIGN once, so its first
+    history row in that status is when it was submitted for signing.
+    """
+    if (
+        CaseParticipant.objects.filter(signature_document_id=signature_document_id)
+        .exclude(pk=participant.pk)
+        .exists()
+    ):
+        raise errors.SIGNATURE_ALREADY_USED.validation_error(
+            {"signature_document_id": [errors.SIGNATURE_ALREADY_USED.message]}
+        )
+    person = participant.person
+    if person is not None and person.user_id is not None and esign.signer_id != person.user_id:
+        raise errors.SIGNED_BY_SOMEONE_ELSE.validation_error(
+            {"signature_document_id": [errors.SIGNED_BY_SOMEONE_ELSE.message]}
+        )
+    submitted_at = (
+        case.history.filter(status=CaseStatus.PENDING_SIGN)
+        .order_by("history_date")
+        .values_list("history_date", flat=True)
+        .first()
+    )
+    if esign.completed_at is None or submitted_at is None or esign.completed_at < submitted_at:
+        raise errors.SIGNED_BEFORE_SUBMISSION.validation_error(
+            {"signature_document_id": [errors.SIGNED_BEFORE_SUBMISSION.message]}
+        )

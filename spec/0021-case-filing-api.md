@@ -1169,6 +1169,9 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 | `E07023` | 400 | The field does not apply to this participant (witness fields on another role, `is_party_in_person` on a witness or POA holder, a designation without an institution). |
 | `E07024` | 400 | The field is not accepted by this endpoint, or cannot be changed. |
 | `E07025` | 400 | Both `person` and `"self": true` were sent. |
+| `E07026` | 400 | The signed document is already recorded for another participant (§8). |
+| `E07027` | 400 | The e-sign transaction's signer is not the participant's user account (§8). |
+| `E07028` | 400 | The e-signature was completed before the case entered `PENDING_SIGN` (§8). |
 
 A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
 
@@ -1222,6 +1225,12 @@ Integration with eSign service (spec 0015) is assumed to happen before this call
 The call sets `case_participant.has_signed = true` and stores the file as `case_participant.signature_document_id` (spec 0020 §4), so each signed copy stays linked to the participant who signed it. When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here; the response's `signed_at` is read from it.
 
 Only complainants and POA holders sign; the accused and witnesses never do, so signing one of them is `400` (`E07008`). Signing is accepted only while the case is `PENDING_SIGN` (`409`, `E07004` otherwise), and once per participant (`409`, `E07007`). A document no matching e-sign transaction produced is `400` (`E07009`).
+
+One e-signed document stands for one signer, so a matching transaction is still refused when:
+
+- the document is already recorded as another participant's `signature_document_id` (`400`, `E07026`);
+- the participant's person has a user account and the transaction's `signer` is a different user (`400`, `E07027`); a person without an account is not matched;
+- the transaction's `completed_at` is before the case entered `PENDING_SIGN` (`400`, `E07028`), so a signature of an earlier draft is never accepted.
 
 When every active complainant and POA holder has `has_signed = true`, the case can advance to `PENDING_PAYMENT`.
 

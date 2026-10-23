@@ -744,6 +744,9 @@ class ParticipantSignView(APIView):
             **error_responses(
                 errors.NOT_A_SIGNER.example(field="case_participant_id"),
                 errors.SIGNATURE_NOT_FOUND.example(field="signature_document_id"),
+                errors.SIGNATURE_ALREADY_USED.example(field="signature_document_id"),
+                errors.SIGNED_BY_SOMEONE_ELSE.example(field="signature_document_id"),
+                errors.SIGNED_BEFORE_SUBMISSION.example(field="signature_document_id"),
                 errors.INVALID_STATUS_TRANSITION,
                 errors.ALREADY_SIGNED,
             ),

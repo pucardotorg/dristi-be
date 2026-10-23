@@ -29,7 +29,6 @@ pytestmark = pytest.mark.django_db
 REQUIRED_DOCUMENTS = ["BOUNCED_CHEQUE", "RETURN_MEMO", "LEGAL_DEMAND_NOTICE", "PROOF_OF_DISPATCH"]
 
 JURISDICTION = {"cheque_deposited_by_payee": False, "cause_of_action_date": "2024-02-20"}
-SIGNED_AT = timezone.now().replace(microsecond=0)
 PRAYER = {"final_relief": "Direct the accused to pay the cheque amount."}
 
 
@@ -60,7 +59,7 @@ def submit(client, case_id, step):
     return client.post(reverse(f"case-submit-for-{step}", args=[case_id]))
 
 
-def signed_document(user, case_id, entity_type=EntityType.CASE_FILING):
+def signed_document(user, case_id, entity_type=EntityType.CASE_FILING, completed_at=None):
     """Return the id of a file a completed e-sign of ``case_id``'s filing stored."""
     file = make_file(user=user)
     ESignTransaction.objects.create(
@@ -72,7 +71,7 @@ def signed_document(user, case_id, entity_type=EntityType.CASE_FILING):
         source_file_id=str(uuid.uuid4()),
         signed_file_id=str(file.id),
         status=ESignStatus.SUCCESS.value,
-        completed_at=SIGNED_AT,
+        completed_at=completed_at or timezone.now(),
         expires_at=timezone.now() + timezone.timedelta(minutes=15),
     )
     return file.id
@@ -300,7 +299,8 @@ class TestSign:
         assert response.status_code == 200
         body = response.json()
         assert body["has_signed"] is True
-        assert body["signed_at"] == SIGNED_AT.isoformat().replace("+00:00", "Z")
+        completed_at = ESignTransaction.objects.get(signed_file_id=str(document_id)).completed_at
+        assert body["signed_at"] == completed_at.isoformat().replace("+00:00", "Z")
         assert body["signature_document_id"] == str(document_id)
         participant = CaseParticipant.objects.get(pk=pending["case_participant_id"])
         assert participant.has_signed is True
@@ -333,6 +333,51 @@ class TestSign:
         response = sign(client, draft, pending["case_participant_id"], document_id)
 
         assert response.status_code == 400
+
+    def test_a_document_recorded_for_another_participant_is_refused(self, client, user, draft, pdf):
+        first = make_complete_case(client, draft, pdf)
+        second = add(client, draft, person={**PERSON, "name": "Anil Rao"}, is_party_in_person=True)
+        submit(client, draft, "signing")
+        document_id = signed_document(user, draft)
+        sign(client, draft, first["case_participant_id"], document_id)
+
+        response = sign(client, draft, second.json()["case_participant_id"], document_id)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"signature_document_id": ["E07026"]}
+        assert (
+            CaseParticipant.objects.get(pk=second.json()["case_participant_id"]).has_signed is False
+        )
+
+    def test_a_document_signed_by_another_user_is_refused(
+        self, client, user, other_user, draft, pending
+    ):
+        Person.objects.filter(pk=pending["person_id"]).update(user=user)
+
+        response = sign(
+            client, draft, pending["case_participant_id"], signed_document(other_user, draft)
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"signature_document_id": ["E07027"]}
+
+    def test_the_participants_own_signature_is_accepted(self, client, user, draft, pending):
+        Person.objects.filter(pk=pending["person_id"]).update(user=user)
+
+        response = sign(client, draft, pending["case_participant_id"], signed_document(user, draft))
+
+        assert response.status_code == 200
+
+    def test_a_signature_from_before_submission_is_refused(self, client, user, draft, pending):
+        submitted_at = Case.objects.get(pk=draft).history.first().history_date
+        document_id = signed_document(
+            user, draft, completed_at=submitted_at - timezone.timedelta(seconds=1)
+        )
+
+        response = sign(client, draft, pending["case_participant_id"], document_id)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"signature_document_id": ["E07028"]}
 
     def test_the_accused_does_not_sign(self, client, user, draft, pending):
         accused = CaseParticipant.objects.get(case_id=draft, role=ParticipantRole.ACCUSED)

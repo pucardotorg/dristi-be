@@ -68,3 +68,12 @@ PARTY_IN_PERSON = define("E07022", "A party appearing in person cannot be given 
 FIELD_NOT_APPLICABLE = define("E07023", "This field does not apply to this participant.")
 FIELD_NOT_ACCEPTED = define("E07024", "This field is not accepted.")
 PERSON_AND_SELF = define("E07025", "Send either person or self, not both.")
+
+# Signing, continued (spec 0021 §8)
+SIGNATURE_ALREADY_USED = define(
+    "E07026", "This signed document is already recorded for another participant."
+)
+SIGNED_BY_SOMEONE_ELSE = define("E07027", "This document was e-signed by someone else.")
+SIGNED_BEFORE_SUBMISSION = define(
+    "E07028", "This document was e-signed before the case was submitted for signing."
+)
