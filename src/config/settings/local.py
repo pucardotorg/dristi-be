@@ -53,6 +53,12 @@ MESSAGING_BACKENDS = {**MESSAGING_BACKENDS, "sms": "apps.messaging.senders.sms.D
 # Keep the mock eSign provider locally so no C-DAC keystore is required
 ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockESignProvider")
 
+# Pay through the mock provider locally so no gateway credentials are required
+PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="mock")
+PAYMENT_MOCK_CALLBACK_BASE_URL = env(
+    "PAYMENT_MOCK_CALLBACK_BASE_URL", default="http://localhost:8000"
+)
+
 # Disable HTTPS-only cookies in development
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False

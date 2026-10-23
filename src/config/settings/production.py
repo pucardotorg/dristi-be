@@ -37,3 +37,13 @@ if CDAC_SMS_USE_DEFAULT_NUMBER:
     raise ImproperlyConfigured("CDAC_SMS_USE_DEFAULT_NUMBER must be disabled in production.")
 if not CDAC_SMS_VERIFY_SSL:
     raise ImproperlyConfigured("CDAC_SMS_VERIFY_SSL must be enabled in production.")
+
+
+# ---------------------------------------------------------------------------
+# Payments (spec 0017)
+# ---------------------------------------------------------------------------
+# The mock provider is never registered in production (a system check enforces
+# it). Register the gateway addon here once it ships, e.g.
+# {"egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider"}, and set
+# PAYMENT_DEFAULT_PROVIDER to its name.
+PAYMENT_PROVIDERS = {}
