@@ -335,7 +335,7 @@ DELETE /cases/{case_id}/complainants/{case_participant_id}
 
 3. **Write the address:**
    - Insert new `address` row with provided fields (immutable, spec 0017 §6).
-   - Auto-fill `district` and `state` from pincode via India Post API.
+   - `district` and `state` are pre-filled by the client from the pincode location (spec 0007, spec 0020); the API stores what it is sent.
 
 4. **Create the participant:**
    - Insert `case_participant` with:
@@ -1037,6 +1037,8 @@ When a case has 3 cheques, does the client:
 
 ### 9.5 Address Auto-Fill Failure
 
+_Resolved: pincodes are pre-filled from the locations table (spec 0007), so there is no external service to be unavailable. Kept for history._
+
 If the India Post Pincode API is unavailable, should the call:
 - (a) Fail with 503 Service Unavailable, or
 - (b) Proceed with `district` and `state` left as client-provided values?
@@ -1253,4 +1255,4 @@ CREATE INDEX ON representation (advocate_id, is_active);
 - **Spec 0014**: File storage service
 - **Spec 0015**: eSign integration
 - **Spec 0017**: Person, case filing, and evidence schema
-- **India Post Pincode API**: https://api.postalpincode.in/pincode/{pincode}
+- **Spec 0007**: Locations, including pincodes

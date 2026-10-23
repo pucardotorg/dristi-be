@@ -350,13 +350,16 @@ Court records require stable addresses. If notice was served to 123 Main St in J
 Spec 0000 makes `BaseModel` the default, but its audit fields do not fit an immutable row: `updated_at` and `updated_by` would never change, and its `created_by` is `ON DELETE SET_NULL`, which would rewrite the row when a user is deleted. `Address` declares its own UUID `id`, `created_at` and a `PROTECT` `created_by` instead, and orders newest first like `BaseModel`.
 
 **Why auto-fill district and state:**
-Use the [India Post Pincode API](https://api.postalpincode.in/pincode/{pincode}) to populate district and state at entry time, then store them. This denormalizes the data but makes queries faster and survives API unavailability.
+Pincodes are stored as `pincode` locations under their district (spec
+[`0007`](0007-location.md)), so no third-party API is called. At entry time the
+client calls `GET /api/v1/locations/code/PIN_{pincode}/ancestors/`, which
+returns the country, state and district, and pre-fills `district` and `state`
+from it; the values are then stored on the address. This denormalizes the data
+but makes queries faster. A `404` means the pincode is not loaded, and the user
+enters district and state by hand.
 
-`GET /api/v1/pincodes/{pincode}/` returns the suggestion. Its errors use the
-standard shape of [`0000`](0000-api-coding-spec.md) #9.1 with the codes in
-`apps/address/errors.py` (domain `05`): `400 E05001` for a malformed pincode,
-`404 E05002` when India Post has no record of it, and `503 E05003` when India
-Post is unavailable, in which case district and state are entered by hand.
+The earlier India Post lookup (`GET /api/v1/pincodes/{pincode}/`) is removed and
+its codes `E05001`–`E05003` are retired.
 
 **Why no `updated_at` or `updated_by`:**
 Rows are never updated. The absence of these fields, and of BaseModel itself, is intentional — it signals immutability to future maintainers.
@@ -714,7 +717,7 @@ Implement via `CHECK` constraints and triggers:
 - **Spec 0006**: Active flag pattern for soft deletes
 - **Spec 0008**: Organization model
 - **Spec 0014**: File storage service for document management
-- **India Post Pincode API**: https://api.postalpincode.in/pincode/{pincode}
+- **All India Pincode Directory** (source for `import_pincodes`): https://www.data.gov.in/catalog/all-india-pincode-directory
 
 ## 16. Future Enhancements
 

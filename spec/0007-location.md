@@ -49,6 +49,7 @@ src/apps/locations/
 | `COUNTRY` | `country` | Country |
 | `STATE` | `state` | State |
 | `DISTRICT` | `district` | District |
+| `PINCODE` | `pincode` | Pincode |
 
 The list is intentionally small for v1. Additional choices (e.g. `tehsil`, `block`, `village`) can be added without breaking existing rows.
 
@@ -63,7 +64,7 @@ Inherits from `BaseModel`, `BaseExtendableModel`, and `BaseActivatableModel`.
 | `code` | `CharField(max_length=50, unique=True)` | Stable, unique machine identifier. Not null. Enforced uppercase snake_case. |
 | `name` | `CharField(max_length=255)` | Full display name. |
 | `short_name` | `CharField(max_length=100, blank=True)` | Optional short display name. |
-| `location_type` | `CharField(max_length=50)` | One of `country`, `state`, `district`. |
+| `location_type` | `CharField(max_length=50)` | One of `country`, `state`, `district`, `pincode`. |
 | `parent` | `ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="children")` | Null for top-level locations. Protected from deletion while children exist. |
 | `is_active` | `BooleanField(default=True)` | Inherited from `BaseActivatableModel`. Soft-disable flag. |
 
@@ -137,6 +138,44 @@ Query examples:
 
 `parent_id` and `parent_code` are explicit, mutually-exclusive filters. Validation rejects requests that supply both. `is_active` filtering is provided because `Location` uses `BaseActivatableModel`.
 
+### 7. Pincodes
+
+Postal pincodes are `pincode` locations whose parent is a district, so an
+address form can pre-fill district and state without calling a third-party
+API (spec 0020):
+
+```
+GET /api/v1/locations/code/PIN_560001/ancestors/
+→ [India (country), Karnataka (state), Bengaluru Urban (district)]
+```
+
+| Field | Value |
+|-------|-------|
+| `code` | `PIN_<pincode>`, e.g. `PIN_560001` |
+| `name`, `short_name` | The pincode, e.g. `560001` |
+| `parent` | The district |
+
+They are loaded from India Post's *All India Pincode Directory* CSV
+(data.gov.in), which has one row per post office:
+
+```bash
+python manage.py import_pincodes all_india_pincode_directory.csv [--aliases aliases.json] [--update] [--dry-run]
+```
+
+- **District choice.** A pincode whose post offices sit in more than one
+  district goes under the district with the most of its offices; a tie goes to
+  the district with the higher-ranked office (head, then sub, then branch
+  office), then to the district name. Run with `-v 2` to list these pincodes and
+  their office counts; an admin repoints any wrong one in the Django admin.
+- **Name matching.** CSV state and district names are matched
+  case-insensitively against the `name` or `short_name` of existing state and
+  district locations, which must be loaded first. Names spelled differently are
+  mapped with `--aliases`, a JSON object of
+  `{"<CSV STATE> / <CSV DISTRICT>": "<district code>"}`. Unmatched districts are
+  reported and their pincodes skipped.
+- **Re-import.** Existing pincodes keep their parent, so manual corrections
+  survive; `--update` repoints them to the newly chosen district.
+
 ## Example data
 
 A location `code` may include the parent code for readability (e.g. `IN_BR_PATNA`) or be independent (e.g. `PATNA`). The system does not enforce either convention.
@@ -159,6 +198,8 @@ A location `code` may include the parent code for readability (e.g. `IN_BR_PATNA
 - `src/apps/locations/views.py`
 - `src/apps/locations/urls.py`
 - `src/apps/locations/tests/test_location.py`
+- `src/apps/locations/management/commands/import_pincodes.py`
+- `src/apps/locations/tests/test_import_pincodes.py`
 
 ## Open questions
 
@@ -168,8 +209,8 @@ _None — the `is_active` flag is handled by `0006-active-flag-model.md`._
 
 - GIS/geometry fields.
 - Multi-language location names.
-- Location import utilities from government gazetteers.
-- Address formatting or pincode mappings.
+- Location import utilities from government gazetteers, other than the pincode import (section 7).
+- Address formatting.
 - A persisted `level`/depth column; depth can be derived from ancestors when needed and a denormalised column can be added later if performance requires it.
 
 ## Related specs

@@ -464,16 +464,6 @@ MESSAGING_TASK_TIME_LIMIT = env.int("MESSAGING_TASK_TIME_LIMIT", default=600000)
 
 
 # ---------------------------------------------------------------------------
-# India Post Pincode API (apps.address.services, spec 0020 §7.3)
-# ---------------------------------------------------------------------------
-# Used only to pre-fill district and state; a failure is reported to the
-# client as 503 and never blocks saving an address.
-PINCODE_API_URL = env("PINCODE_API_URL", default="https://api.postalpincode.in/pincode/{pincode}")
-PINCODE_API_TIMEOUT = env.int("PINCODE_API_TIMEOUT", default=5)
-PINCODE_API_CACHE_SECONDS = env.int("PINCODE_API_CACHE_SECONDS", default=60 * 60 * 24 * 7)
-
-
-# ---------------------------------------------------------------------------
 # CDAC SMS gateway addon (addon.cdac_sms_gateway)
 # ---------------------------------------------------------------------------
 # Remove this block, the INSTALLED_APPS entry, and the MESSAGING_BACKENDS["sms"]

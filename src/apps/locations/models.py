@@ -13,7 +13,7 @@ FULL_NAME_SEPARATOR = " / "
 
 
 class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
-    """An administrative area in a hierarchy of countries, states and districts."""
+    """An area in a hierarchy of countries, states, districts and pincodes."""
 
     class LocationType(models.TextChoices):
         """Supported administrative levels."""
@@ -21,6 +21,9 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
         COUNTRY = "country", "Country"
         STATE = "state", "State"
         DISTRICT = "district", "District"
+        # A postal pincode under the district that holds most of its post
+        # offices; loaded with the import_pincodes management command.
+        PINCODE = "pincode", "Pincode"
 
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=255)
