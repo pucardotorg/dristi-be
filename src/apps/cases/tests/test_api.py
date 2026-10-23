@@ -6,7 +6,7 @@ import uuid
 import pytest
 from django.urls import reverse
 
-from apps.cases.models import Case, CaseDocument, CaseStatus, CaseType
+from apps.cases.models import JOINABLE_STATUSES, Case, CaseDocument, CaseStatus, CaseType
 from apps.cases.services import case_types
 from apps.cases.services.case_types import DocumentType
 from apps.files.models import File
@@ -169,6 +169,19 @@ class TestByNumber:
         )
 
         assert client.get(reverse("case-by-number", args=["CC/9/2024"])).status_code == 404
+
+    @pytest.mark.parametrize(
+        "case_status", [s for s in CaseStatus.values if s not in JOINABLE_STATUSES]
+    )
+    def test_only_allow_listed_statuses_are_found(self, client, user, case_status):
+        Case.objects.create(
+            case_type=CaseType.CHEQUE_BOUNCE,
+            created_by=user,
+            case_number="CC/10/2024",
+            status=case_status,
+        )
+
+        assert client.get(reverse("case-by-number", args=["CC/10/2024"])).status_code == 404
 
 
 class TestDocuments:

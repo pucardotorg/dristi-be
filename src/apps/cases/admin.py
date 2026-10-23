@@ -37,6 +37,15 @@ class ChequeBounceCaseAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     raw_id_fields = ("case",)
     readonly_fields = ("created_at", "updated_at")
 
+    def get_readonly_fields(self, request, obj=None):
+        """Lock ``case`` once the row exists.
+
+        ``case`` is the primary key, so changing it would make Django insert a
+        second row for the new case and leave the old one in place.
+        """
+        fields = super().get_readonly_fields(request, obj)
+        return (*fields, "case") if obj is not None else fields
+
 
 @admin.register(CaseEvidence)
 class CaseEvidenceAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):

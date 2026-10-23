@@ -5,6 +5,7 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from django.core.cache import caches
 from django.db import connection, transaction
 from rest_framework.exceptions import NotFound
 
@@ -104,3 +105,19 @@ def test_concurrent_first_saves_create_exactly_one_case(user, draft):
     assert {str(case_id) for case_id in results} == {draft}
     assert Case.objects.count() == ChequeBounceCase.objects.count() == 1
     assert sorted(CaseEvidence.objects.values_list("ordinal", flat=True)) == [1, 2, 3, 4, 5]
+
+
+@pytest.mark.django_db
+class TestDraftCache:
+    def test_draft_survives_clearing_the_default_cache(self, user, draft):
+        caches["default"].clear()
+
+        assert services.get_case_type(draft, user) == "CHEQUE_BOUNCE"
+
+    def test_draft_is_dropped_once_the_case_is_created(
+        self, user, draft, django_capture_on_commit_callbacks
+    ):
+        with django_capture_on_commit_callbacks(execute=True):
+            create_from(draft, user)
+
+        assert caches[services.DRAFT_CACHE_ALIAS].get(services._get_draft_key(draft)) is None

@@ -1,6 +1,6 @@
 """Case filing: draft sessions, lazy case creation, documents, evidence, details.
 
-``POST /cases`` creates only a draft session in the cache (spec 0021 §2.2).
+``POST /cases`` creates only a draft session in the ``state`` cache (spec 0021 §2.2).
 The case row and its type-specific detail row are created by the first save
 that carries data, in the same transaction as that data (spec 0021 §9.1).
 
@@ -12,7 +12,7 @@ case's ``updated_at``, which listings show and concurrent-edit checks use.
 import logging
 import uuid
 
-from django.core.cache import cache
+from django.core.cache import caches
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Max
@@ -31,6 +31,9 @@ from .case_types import get_config, schema_errors
 logger = logging.getLogger(__name__)
 
 DRAFT_SESSION_TTL_SECONDS = 60 * 60 * 24
+# Until its first save a draft exists only here, so it is kept out of the
+# "default" cache, which can be disabled or cleared (see settings CACHES).
+DRAFT_CACHE_ALIAS = "state"
 DRAFT_CACHE_KEY = "cases:draft:{draft_session_id}"
 
 # Tag on every stored case document, so they can be found in apps.files.
@@ -64,7 +67,7 @@ def start_draft(user, case_type, court_id=None):
         "created_by": str(user.pk),
         "created_at": timezone.now().isoformat(),
     }
-    cache.set(_get_draft_key(draft["draft_session_id"]), draft, DRAFT_SESSION_TTL_SECONDS)
+    _draft_cache().set(_get_draft_key(draft["draft_session_id"]), draft, DRAFT_SESSION_TTL_SECONDS)
     return draft
 
 
@@ -130,7 +133,7 @@ def get_or_create_case(case_or_draft_id, user):
         detail_model = get_config(case.case_type).get_detail_model()
         detail_model.objects.create(case=case, created_by=user, updated_by=user)
         key = _get_draft_key(case_or_draft_id)
-        transaction.on_commit(lambda: cache.delete(key))
+        transaction.on_commit(lambda: _draft_cache().delete(key))
     return case
 
 
@@ -154,10 +157,14 @@ def _get_owned_case(case_id, user):
 
 
 def _get_owned_draft(draft_session_id, user):
-    draft = cache.get(_get_draft_key(draft_session_id))
+    draft = _draft_cache().get(_get_draft_key(draft_session_id))
     if draft is None or draft["created_by"] != str(user.pk):
         return None
     return draft
+
+
+def _draft_cache():
+    return caches[DRAFT_CACHE_ALIAS]
 
 
 def _get_draft_key(draft_session_id):

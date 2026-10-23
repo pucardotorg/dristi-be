@@ -19,7 +19,7 @@ from apps.api import errors as api_errors
 from apps.api.schema import error_responses
 
 from . import errors
-from .models import NOT_JOINABLE_STATUSES, Case, CaseDocument, CaseEvidence, CaseStatus
+from .models import JOINABLE_STATUSES, Case, CaseDocument, CaseEvidence, CaseStatus
 from .serializers import (
     CaseDocumentSerializer,
     CaseDocumentUploadSerializer,
@@ -120,7 +120,7 @@ class CaseByNumberView(generics.RetrieveAPIView):
 
     serializer_class = CaseSerializer
     lookup_field = "case_number"
-    queryset = Case.objects.exclude(status__in=NOT_JOINABLE_STATUSES)
+    queryset = Case.objects.filter(status__in=JOINABLE_STATUSES, case_number__isnull=False)
 
 
 @extend_schema_view(
