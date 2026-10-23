@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed
+Implemented (`apps.payments`), with the temporary pieces listed under
+[Implementation notes](#implementation-notes) still to be replaced.
 
 ## Context
 
@@ -644,15 +645,15 @@ The only surface an addon may import. Nothing in it names a gateway.
 
 ```python
 class ProviderOutcome(StrEnum):
-    SUCCESS = "SUCCESS"          # money collected and confirmed by the provider
-    FAILED = "FAILED"            # provider says final failure
-    PENDING = "PENDING"          # outcome not yet known
-    NOT_FOUND = "NOT_FOUND"      # provider has no record of this transaction
+    SUCCESS = "SUCCESS"  # money collected and confirmed by the provider
+    FAILED = "FAILED"  # provider says final failure
+    PENDING = "PENDING"  # outcome not yet known
+    NOT_FOUND = "NOT_FOUND"  # provider has no record of this transaction
 
 
 class ActionKind(StrEnum):
-    REDIRECT_FORM = "REDIRECT_FORM"   # browser posts form_fields to url
-    NONE = "NONE"                     # nothing for the client to do
+    REDIRECT_FORM = "REDIRECT_FORM"  # browser posts form_fields to url
+    NONE = "NONE"  # nothing for the client to do
 
 
 @dataclass(frozen=True)
@@ -670,23 +671,23 @@ class ChargeLine:
     payment_id: UUID
     demand_number: str
     demand_item_id: UUID
-    charge_type: str             # ChargeType value, as a plain string
-    account_head: str            # DemandItem.account_head snapshot, may be ""
+    charge_type: str  # ChargeType value, as a plain string
+    account_head: str  # DemandItem.account_head snapshot, may be ""
     description: str
     amount: Decimal
 
 
 @dataclass(frozen=True)
 class InitiationRequest:
-    reference: UUID              # batch_id, or the payment id for a single payment
+    reference: UUID  # batch_id, or the payment id for a single payment
     payment_numbers: tuple[str, ...]
     demand_numbers: tuple[str, ...]
     lines: tuple[ChargeLine, ...]
-    amount: Decimal              # sum of lines; equals sum of Payment.amount
+    amount: Decimal  # sum of lines; equals sum of Payment.amount
     currency: str
     payer: Payer
-    initiated_at: datetime       # Payment.initiated_at, never now()
-    options: Mapping[str, str]   # opaque provider_options from the client (#12.2)
+    initiated_at: datetime  # Payment.initiated_at, never now()
+    options: Mapping[str, str]  # opaque provider_options from the client (#12.2)
 
 
 @dataclass(frozen=True)
@@ -699,40 +700,40 @@ class ProviderAction:
 
 @dataclass(frozen=True)
 class ProviderInitiation:
-    provider_payment_id: str     # correlation id the provider echoes back
+    provider_payment_id: str  # correlation id the provider echoes back
     action: ProviderAction
-    metadata: dict               # non-sensitive, stored under Payment.metadata["provider"]
+    metadata: dict  # non-sensitive, stored under Payment.metadata["provider"]
 
 
 @dataclass(frozen=True)
 class ProviderStatus:
     provider_payment_id: str
     outcome: ProviderOutcome
-    amount: Decimal | None       # amount the provider says it collected
-    provider_reference: str      # provider-issued receipt/transaction number
+    amount: Decimal | None  # amount the provider says it collected
+    provider_reference: str  # provider-issued receipt/transaction number
     paid_at: datetime | None
-    failure_code: str            # provider's internal code, e.g. "EGRAS_PAYMENT_FAILED"
-    failure_message: str         # safe, user-presentable
-    metadata: dict               # non-sensitive
+    failure_code: str  # provider's internal code, e.g. "EGRAS_PAYMENT_FAILED"
+    failure_message: str  # safe, user-presentable
+    metadata: dict  # non-sensitive
 
 
 @dataclass(frozen=True)
 class ProviderCallback:
     status: ProviderStatus
-    trusted: bool                # True only when the provider verified authenticity
+    trusted: bool  # True only when the provider verified authenticity
 
 
 @dataclass(frozen=True)
 class PaymentOption:
-    code: str                    # opaque, sent back in provider_options
+    code: str  # opaque, sent back in provider_options
     label: str
-    group: str                   # e.g. "NET_BANKING", "UPI"; display only
+    group: str  # e.g. "NET_BANKING", "UPI"; display only
 
 
 class PaymentProvider(ABC):
-    name: ClassVar[str]                       # stored in Payment.provider
-    pending_horizon: ClassVar[timedelta]      # provider's own final-outcome window
-    not_found_grace: ClassVar[timedelta]      # NOT_FOUND is final only after this
+    name: ClassVar[str]  # stored in Payment.provider
+    pending_horizon: ClassVar[timedelta]  # provider's own final-outcome window
+    not_found_grace: ClassVar[timedelta]  # NOT_FOUND is final only after this
 
     @abstractmethod
     def list_options(self) -> list[PaymentOption]: ...
@@ -1078,6 +1079,8 @@ in [`0000`](0000-api-coding-spec.md) #9.2 (`03` belongs to `apps.esign`).
 | `E06018` | `BATCH_TOO_LARGE` | 400 | more selections than `PAYMENT_BATCH_MAX_DEMANDS` (#12.3) |
 | `E06019` | `DEMAND_REPEATED_IN_BATCH` | 400 | same demand twice in one batch (#12.3) |
 | `E06020` | `PROVIDER_OPTION_INVALID` | 400 | provider rejected a `provider_options` value; `field` = `provider_options.<key>` |
+| `E06021` | `DEMAND_NOT_CANCELLABLE` | 409 | cancelling a demand that is paid, partly paid or has a payment in flight (#6.1; a partly paid demand is wound down item by item) |
+| `E06022` | `NOT_DEMAND_CREATOR` | 403 | cancelling a demand or item raised by someone else (#13) |
 
 Rules:
 
@@ -1112,6 +1115,7 @@ timestamps are `read_only_fields`.
 * The caller must be involved in the case of every demand in a batch; one demand on another case rejects the whole batch with `404 E00105`.
 * In-process service calls from other Dristi modules are not subject to the REST case-access filter; those modules are responsible for their own access checks.
 * A payment can be cancelled only by its creator; anyone else on the case gets `403 E06017`.
+* A demand, or one of its items, can be cancelled over REST only by the user who raised it; anyone else on the case gets `403 E06022`. Demands raised in-process are cancelled in-process by their raising module.
 * The provider callback (#9.6) is the only anonymous endpoint. It authenticates nothing; it only selects a payment, and trust comes from provider verification. The options endpoint is not case-scoped because it carries no case data.
 
 ### 14. Background processing
@@ -1275,6 +1279,53 @@ in the addon's own settings block, not here.
 12. Are the process court fee and the e-Post fee for a round paid together or separately? Both work here (two items); the raising module decides whether to raise them on one demand.
 13. Who resolves a payment flagged `needs_reconciliation` — which role, and may they credit a late success when every item is still unpaid, or must it always become a refund?
 14. Whose name goes on the payer snapshot when an advocate pays for a litigant — the payer's or the party's?
+
+---
+
+## Implementation notes
+
+What the first implementation does where this spec could not yet be followed
+literally, and the choices it made for open points. Search the code for the
+`TODO(...)` tags named here.
+
+### Temporary, to be replaced
+
+| Tag | What is temporary | What replaces it |
+| --- | --- | --- |
+| `TODO(cases)` | `Demand.case` is a plain `case_id = UUIDField(db_index=True)`, not `FK("cases.Case", on_delete=PROTECT)`, because `apps.cases` is not on main yet. The column is already named `case_id`, as the FK's column would be. | When `apps.cases` merges: turn the field into `case = ForeignKey("cases.Case", on_delete=PROTECT, related_name="demands")` with a hand-written migration (`SeparateDatabaseAndState`: keep the existing `case_id` column and add the foreign-key constraint; `makemigrations` alone would drop the column). Check every stored id exists first. `DemandService.raise_demand(case=...)` and `selectors.paid_total(case=...)` already accept a case instance or an id. |
+| `TODO(case-person-relationship)` | Case-scoped access (#13). `CasePersonRelationship` (spec 0003) does not exist yet, so `apps/payments/access.py` approximates "involved in the case" per demand: a user sees a demand they created or whose `user_id` they are, and every payment on it; raising over REST is allowed on any `case_id`. This is narrower than the spec (co-participants on a case do not see each other's demands yet) and never wider. | Replace the three functions in `apps/payments/access.py` with the active-relationship rule (the target implementation is in its docstring) and rewrite `tests/test_access.py`, whose temporary-only tests are marked. Nothing else filters by user. |
+
+### Deviations from the sections above
+
+* **Cancelling a demand (#6.1).** `cancel_demand` refuses (`409 E06021`) when any item is `PAID` or has an `INITIATED`/`PENDING` payment, instead of cancelling only the unpaid items. A partly paid demand is wound down with `cancel_item`, so its paid part keeps a live demand. Cancelling an already cancelled demand or item is a no-op.
+* **Due on a cancelled item (#15).** A cancelled item has `due_amount = 0`, not `amount - paid_amount`: nothing is due on it. `payments_verify_balances` checks this rule.
+* **The callback always redirects (#12.5)**, except for an unknown `{provider}` (`404 E00105`, as #9.6 asks) and throttling (`429 E00110`). Unparseable bodies, bodies over `PAYMENT_CALLBACK_MAX_BODY_BYTES` and provider errors redirect with `status=UNKNOWN` or the local status.
+* **Production redirect check (#9.3).** `PAYMENT_UI_REDIRECT_URL` must be `https://` in production only once a default provider is configured; with none, the callback is never used.
+* **Payer defaults (#12.2).** Only `name`, `email` and `phone` default from the caller's profile (name, email, mobile number). The profile has no address, so `address`, `city` and `pincode` stay empty unless sent.
+
+### Choices made for open points
+
+* **Notification (open question 7):** `notify_payment_completed` sends the Django signal `apps.payments.signals.payment_completed(payment, demand, items, demand_paid)`. Raising modules connect a receiver; this module imports none of them. How a receiver tells a demand it raised from one raised over REST is still to be decided (`TODO(demand-origin)` in `signals.py`).
+* **Polling schedule:** the project has no periodic scheduler, so `manage.py payments_poll_pending` (or `--enqueue` for a worker) is meant to run from cron.
+* **Reconciliation (open question 13):** the admin offers "re-check with provider" and "mark reconciliation as resolved" (credits nothing). No action credits a late success.
+* **Provider-less payments (#9.3):** the admin action "Confirm payment collected outside a provider" confirms an `INITIATED` payment that has no provider.
+* **Success without an amount (#9.5):** a `SUCCESS` status whose `amount` is `None` cannot be "equal", so it is treated like a mismatch: flagged `needs_reconciliation`, never credited.
+* **Provider failures #9.4 does not list:** an exception that is not a `ProviderError` (a provider bug), or a default provider that cannot be loaded, fails the payment with `failure_code = PROVIDER_ERROR` and answers `503 E06015`.
+* **Replays (#7, #9.4):** replaying a key of a terminal payment returns it with `200` and no `provider_action`. If rebuilding the action of a `PENDING` payment fails, the replay answers `422 E06014` / `503 E06015` and the payment is left `PENDING`, since the provider may still complete it. A key used for a single payment and then for a batch (or the reverse) is also `409 E06009`.
+* **Cancel while the provider is unreachable (#9.8):** `503 E06015`; nothing is cancelled.
+* **Options endpoint (#12.4):** with no default provider it returns `{"provider": "", "options": []}`; a default that cannot be loaded is `503 E06015`. Options are cached for five minutes.
+* **Callback with no `PAYMENT_UI_REDIRECT_URL`:** a minimal HTML page showing the status is returned instead of a `302`.
+* **Numbering (#11):** the year in `DMD-`/`PAY-` numbers is the year in IST.
+* **Provider names (#9.3):** `Payment.provider` stores the `PAYMENT_PROVIDERS` key; a system check requires it to equal the class's `PaymentProvider.name`.
+* **REST `user_id` (#13):** always the caller; a value sent by the client is ignored.
+* **`client_request_id` is never returned** in payment responses: anyone on the case can read a payment, and the key would let them replay it.
+
+### Small additions to the data model
+
+* `DemandItem.position` (display and initiation order), `Demand`/`DemandItem` `cancelled_at` and `cancellation_reason`, and `Payment.cancelled_at`; a cancelled payment stores `failure_code = PAYMENT_CANCELLED` and the reason in `failure_message`.
+* `PaymentSequence` (prefix, year, value) is the counter row behind `DMD-`/`PAY-` numbers (#11).
+* `DemandItem`, `Payment` and `PaymentDemandItem` refuse deletion, one row or in bulk (#10).
+* Two settings in addition to #17: `PAYMENT_CALLBACK_MAX_BODY_BYTES` (the body limit of #9.6, default `65536`) and `PAYMENT_MOCK_CALLBACK_BASE_URL` (the origin the mock's form posts back to; local only).
 
 ---
 
