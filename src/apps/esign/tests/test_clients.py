@@ -4,6 +4,7 @@ import io
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.core.exceptions import ValidationError
 from django.test import SimpleTestCase, override_settings
 
 from apps.esign.clients.files import FileClient
@@ -14,6 +15,7 @@ from apps.esign.clients.pdf import (
 )
 from apps.esign.exceptions import (
     ESignFileStorageError,
+    ESignFileStorageRejected,
     ESignInvalidPlaceholder,
     ESignPDFEmbedError,
     ESignPDFError,
@@ -124,6 +126,33 @@ class PDFClientTests(SimpleTestCase):
         self.use(signing_module(embed_signature=raising(RuntimeError("boom"))))
         with self.assertRaises(ESignPDFEmbedError):
             self.client.embed_signature(b"%PDF", b"pkcs7", "Signature1")
+
+    def test_embed_errors_keep_their_reason_in_the_audit_only(self):
+        """Support learns why (size, PKCS#7, field); the user sees the safe text."""
+
+        class PDFSignatureContainerTooSmall(Exception):  # noqa: N818
+            code = "PDF_SIGNATURE_CONTAINER_TOO_SMALL"
+
+        error = PDFSignatureContainerTooSmall("The signature needs 20000 bytes but holds 16384.")
+        self.use(signing_module(embed_signature=raising(error)))
+        with self.assertRaises(ESignPDFEmbedError) as caught:
+            self.client.embed_signature(b"%PDF", b"pkcs7", "Signature1")
+
+        self.assertEqual(caught.exception.message, ESignPDFEmbedError.default_message)
+        self.assertEqual(
+            caught.exception.audit,
+            {
+                "pdf_error": "PDF_SIGNATURE_CONTAINER_TOO_SMALL",
+                "pdf_error_detail": "The signature needs 20000 bytes but holds 16384.",
+            },
+        )
+
+    def test_unexpected_embed_errors_stay_generic(self):
+        """Only the known, content-free PDF errors pass their text through."""
+        self.use(signing_module(embed_signature=raising(RuntimeError("/tmp/secret.pdf"))))
+        with self.assertRaises(ESignPDFEmbedError) as caught:
+            self.client.embed_signature(b"%PDF", b"pkcs7", "Signature1")
+        self.assertNotIn("/tmp/secret.pdf", caught.exception.message)
 
     def test_embedded_document_is_returned(self):
         """The signed bytes come straight back from the service."""
@@ -252,7 +281,7 @@ class FileClientTests(SimpleTestCase):
         file_id = self.client.upload(
             b"%PDF",
             filename="a-prepared.pdf",
-            file_type="PDF",
+            file_type="pdf",
             user_id="user-1",
             organization_id=None,
             tags=["esign", "orders"],
@@ -262,7 +291,7 @@ class FileClientTests(SimpleTestCase):
         self.assertEqual(self.uploaded["user_id"], "user-1")
         self.assertIsNone(self.uploaded["organization_id"])
         entry = self.uploaded["files"][0]
-        self.assertEqual(entry["file_type"], "PDF")
+        self.assertEqual(entry["file_type"], "pdf")
         self.assertEqual(entry["tags"], ["esign", "orders"])
         self.assertEqual(entry["file"].content_type, "application/pdf")
 
@@ -270,7 +299,7 @@ class FileClientTests(SimpleTestCase):
         """A storage response with no id cannot be persisted against."""
         self.use(self.service_module(upload_file=lambda payload: {"files": []}))
         with self.assertRaises(ESignFileStorageError):
-            self.client.upload(b"%PDF", filename="a.pdf", file_type="PDF", user_id="user-1")
+            self.client.upload(b"%PDF", filename="a.pdf", file_type="pdf", user_id="user-1")
 
     def test_delete_is_delegated(self):
         """Cleanup calls the storage module's delete."""
@@ -289,7 +318,41 @@ class FileClientTests(SimpleTestCase):
         """A failed store surfaces as a storage error, not the backend's own."""
         self.use(self.service_module(upload_file=raising(ConnectionError("s3 down"))))
         with self.assertRaises(ESignFileStorageError):
-            self.client.upload(b"%PDF", filename="a.pdf", file_type="PDF", user_id="user-1")
+            self.client.upload(b"%PDF", filename="a.pdf", file_type="pdf", user_id="user-1")
+
+    def test_storage_validation_error_on_upload_names_the_field(self):
+        """A rejected payload is a defect, reported with storage's reason."""
+        rejection = ValidationError(
+            {"files[0].file_type": "file_type must be one of ['pdf', 'digitally_signed']."}
+        )
+        self.use(self.service_module(upload_file=raising(rejection)))
+        with self.assertLogs("apps.esign", level="ERROR") as logs:
+            with self.assertRaises(ESignFileStorageRejected) as caught:
+                self.client.upload(b"%PDF", filename="a.pdf", file_type="PDF", user_id="user-1")
+
+        self.assertEqual(caught.exception.code, "ESIGN_FILE_STORAGE_REJECTED")
+        self.assertIn("files[0].file_type", caught.exception.message)
+        self.assertIn("FILE_STORAGE_REJECTED", logs.output[0])
+
+    def test_plain_validation_error_is_flattened(self):
+        """A message-only ValidationError still surfaces its text."""
+        self.use(
+            self.service_module(upload_file=raising(ValidationError("payload must be a dict.")))
+        )
+        with self.assertLogs("apps.esign", level="ERROR"):
+            with self.assertRaises(ESignFileStorageRejected) as caught:
+                self.client.upload(b"%PDF", filename="a.pdf", file_type="pdf", user_id="user-1")
+        self.assertIn("payload must be a dict.", caught.exception.message)
+
+    def test_read_limit_on_get_content_is_not_an_upload_rejection(self):
+        """A read-limit ValidationError names storage limits; it stays generic."""
+        refusal = ValidationError("File f1 is 99 bytes, over the 10 byte read limit.")
+        self.use(self.service_module(get_file_content=raising(refusal)))
+        with self.assertRaises(ESignFileStorageError) as caught:
+            self.client.get_content("f1")
+
+        self.assertNotIsInstance(caught.exception, ESignFileStorageRejected)
+        self.assertNotIn("read limit", caught.exception.message)
 
     def test_storage_backend_failure_on_delete_is_reported_safely(self):
         """Cleanup failures are mapped like any other storage failure."""

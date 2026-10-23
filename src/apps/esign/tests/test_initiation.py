@@ -6,6 +6,7 @@ from django.test import override_settings
 
 from apps.esign import permissions
 from apps.esign.constants import (
+    ESIGN_FILE_STORAGE_REJECTED,
     ESIGN_FILE_STORAGE_UNAVAILABLE,
     ESIGN_PDF_PREPARATION_FAILED,
     ESIGN_REQUEST_BUILD_FAILED,
@@ -15,6 +16,7 @@ from apps.esign.exceptions import (
     ESignAlreadyInProgress,
     ESignDisabled,
     ESignFileStorageError,
+    ESignFileStorageRejected,
     ESignInvalidPlaceholder,
     ESignNotAPDF,
     ESignNotPermitted,
@@ -81,7 +83,7 @@ class InitiationTests(ESignTestCase):
         self.initiate_service()
         upload = self.files.uploads[0]
 
-        self.assertEqual(upload["file_type"], "PDF")
+        self.assertEqual(upload["file_type"], "pdf")
         self.assertEqual(upload["tags"], ["esign", "orders", "9f2c0001"])
         self.assertEqual(upload["user_id"], str(self.user.pk))
 
@@ -136,6 +138,17 @@ class InitiationTests(ESignTestCase):
         with self.assertRaises(ESignFileStorageError) as caught:
             self.initiate_service()
         self.assertEqual(caught.exception.code, ESIGN_FILE_STORAGE_UNAVAILABLE)
+        self.assertEqual(ESignTransaction.objects.count(), 0)
+
+    def test_file_storage_rejection_is_not_reported_as_an_outage(self):
+        """A refused payload has its own code and keeps storage's reason."""
+        self.files.fail_upload = ESignFileStorageRejected(
+            "Document storage rejected the request. files[0].file_type: bad value."
+        )
+        with self.assertRaises(ESignFileStorageRejected) as caught:
+            self.initiate_service()
+        self.assertEqual(caught.exception.code, ESIGN_FILE_STORAGE_REJECTED)
+        self.assertIn("files[0].file_type", caught.exception.message)
         self.assertEqual(ESignTransaction.objects.count(), 0)
 
     def test_provider_build_failure_leaves_a_failed_transaction(self):

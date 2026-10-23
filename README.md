@@ -258,6 +258,7 @@ The Docker Compose stack includes:
 | `CDAC_ESIGN_TXN_TEMPLATE` | Template for the ESP correlation id; must keep `{transaction_id}` | `{module}-{transaction_id}` |
 | `CDAC_ESIGN_RESPONSE_MAX_SKEW` | Seconds of clock skew allowed on the response `ts` | `900` |
 | `CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE` | Verify the response XMLDSig; rejected as `False` in production | `True` |
+| `CDAC_ESIGN_ALLOW_SHA1_RESPONSE` | Also accept RSA-SHA1 / SHA-1 response signatures. C-DAC signs eSign 2.1 responses with SHA-1, so it must be `True` for them to verify | `False` |
 | `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
 | `PDF_SIGNATURE_HASH_ALGORITHM` | Digest the PDF service computes over the signing ByteRange | `SHA256` |
 | `PDF_SIGNATURE_CONTAINER_BYTES` | Bytes reserved for the PKCS#7 signature container | `16384` |

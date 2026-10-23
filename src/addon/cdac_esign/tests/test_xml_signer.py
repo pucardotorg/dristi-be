@@ -6,6 +6,7 @@ from pathlib import Path
 
 from django.test import SimpleTestCase
 from lxml import etree
+from signxml import XMLVerifier
 
 from addon.cdac_esign.keystore import (
     CDACKeystoreError,
@@ -108,7 +109,7 @@ class SigningTests(SimpleTestCase):
         signature = self.signed.find(f"{DSIG}Signature")
         self.assertIsNotNone(signature)
 
-    def test_algorithms_are_sha256_and_exclusive_c14n(self):
+    def test_algorithms_are_sha256_and_inclusive_c14n(self):
         """The algorithm set C-DAC validates the request with."""
         method = self.signed.find(f"{DSIG}Signature/{DSIG}SignedInfo/{DSIG}SignatureMethod")
         digest = self.signed.find(
@@ -120,12 +121,16 @@ class SigningTests(SimpleTestCase):
             method.get("Algorithm"), "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
         )
         self.assertEqual(digest.get("Algorithm"), "http://www.w3.org/2001/04/xmlenc#sha256")
-        self.assertEqual(c14n.get("Algorithm"), "http://www.w3.org/2001/10/xml-exc-c14n#")
+        self.assertEqual(c14n.get("Algorithm"), "http://www.w3.org/TR/2001/REC-xml-c14n-20010315")
 
-    def test_enveloped_transform_is_declared(self):
-        """Without the transform the digest would cover the signature itself."""
+    def test_only_the_enveloped_transform_is_declared(self):
+        """Same transform list as the C-DAC 2.1 reference request."""
         transforms = [element.get("Algorithm") for element in self.signed.iter(f"{DSIG}Transform")]
-        self.assertIn("http://www.w3.org/2000/09/xmldsig#enveloped-signature", transforms)
+        self.assertEqual(transforms, ["http://www.w3.org/2000/09/xmldsig#enveloped-signature"])
+
+    def test_signature_verifies(self):
+        """The ESP verifies the request against the ASP certificate."""
+        XMLVerifier().verify(self.signed, x509_cert=asp_key_pair().certificate_pem)
 
     def test_asp_certificate_is_included_in_key_info(self):
         """The ESP needs the ASP certificate to verify the request."""

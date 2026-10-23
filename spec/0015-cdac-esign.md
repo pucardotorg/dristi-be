@@ -278,8 +278,10 @@ class FileClient(Protocol):
 Adapter responsibilities:
 
 - Call `upload_file()` with the single-file batch shape of [`0014`](0014-file-storage-service.md) #3 and return the one `file_id`; the domain never sees the batch envelope.
-- `file_type` is `FileType.PDF` for the placeholder and `FileType.SIGNED_PDF`
-  for the signed output; tags are `esign`, the `module`, and the `entity_id`, so
+- `file_type` is `pdf` (`FileType.PDF`) for the placeholder and
+  `digitally_signed` (`FileType.DIGITALLY_SIGNED`) for the signed output, passed
+  as the lower-case stored values in `apps.esign.constants` (guarded by
+  `esign.E007`, see [`0014`](0014-file-storage-service.md) #1.2); tags are `esign`, the `module`, and the `entity_id`, so
   artefacts are discoverable through `search_file`.
 - `user_id` is `transaction.signer_id`. The callback leg has **no authenticated
   request user**, so the signer captured at initiation — not the request — is the
@@ -437,7 +439,7 @@ Response `201`:
   "esign_url": "https://esign.cdac.in/...",
   "form_method": "POST",
   "form_fields": {
-    "eSignRequest": "<base64 signed XML>",
+    "eSignRequest": "<signed XML, raw>",
     "aspTxnID": "orders-0f9d...",
     "Content-Type": "application/xml"
   },
@@ -488,11 +490,11 @@ of `PENDING`/`SIGNING`/`SUCCESS` rows and enforces `ESIGN_MAX_ATTEMPTS`.
 
 ```xml
 <Esign ver="2.1" sc="Y" ts="2026-09-22T17:40:03" txn="orders-0f9d..."
-       ekycIdType="A" aspId="ASP-ID" AuthMode="1"
+       ekycId="" ekycIdType="A" aspId="ASP-ID" AuthMode="1"
        responseSigType="pkcs7" responseUrl="https://.../api/v1/esign/_signed">
   <Docs>
     <InputHash id="1" hashAlgorithm="SHA256"
-               docInfo="Order 9f2c..." docUrl="">HEX_HASH</InputHash>
+               docInfo="Order 9f2c...">HEX_HASH</InputHash>
   </Docs>
 </Esign>
 ```
@@ -514,9 +516,12 @@ of `PENDING`/`SIGNING`/`SUCCESS` rows and enforces `ESIGN_MAX_ATTEMPTS`.
 
 The XML is signed with an **enveloped XMLDSig** signature (`signxml` or
 `xmlsec`) using the ASP private key and certificate loaded from a PKCS#12
-keystore: exclusive canonicalisation, SHA-256 digest, RSA-SHA256 signature,
-enveloped transform, and the ASP `X509Certificate` in `KeyInfo`. The signed XML
-is then base64-encoded into the `eSignRequest` form field.
+keystore: inclusive C14N 1.0, SHA-256 digest, RSA-SHA256 signature, a single
+enveloped transform, and the ASP `X509Certificate` in `KeyInfo` (matching the
+C-DAC 2.1 reference ASP, minus its SHA-1). The signed XML is posted **raw** (not
+base64) in the `eSignRequest` form field; the 2.1 form endpoint does not decode
+it and rejects a base64 value with "Invalid transaction for e-authentication
+Process".
 
 Key material is loaded once from deployment-managed secrets (file path or
 injected value), cached in memory, never written to the DB, Git, logs, API
@@ -536,10 +541,14 @@ Parsing rules:
 
 - `status == "1"` is success; anything else is failure with `errCode`/`errMsg`
   mapped to an internal failure code and a generic user-facing message.
-- Success requires a non-empty `DocSignature` with empty `error`; otherwise
+- Success requires a non-empty `DocSignature` whose `error` is empty or `NA`
+  (case-insensitive; eSign API 2.1 #3.4.1 fills error fields with `NA` on
+  success, and C-DAC does so for `DocSignature@error` too); otherwise
   `ESIGN_SIGNATURE_MISSING`.
-- `DocSignature` content must decode from base64 and parse as a PKCS#7
-  structure before being handed to the PDF Service.
+- `DocSignature` and `UserX509Certificate` are base64 that C-DAC may wrap in
+  CRLF lines; whitespace is removed before decoding. `DocSignature` must then
+  decode and start as a PKCS#7 `SignedData` before being handed to the PDF
+  Service.
 - The `UserX509Certificate` subject/serial are recorded in `response_audit`;
   the full certificate is not persisted.
 - Unknown extra elements are ignored; unparsable XML is
@@ -639,6 +648,7 @@ in both models; nothing in `apps.esign` branches on it.
 Initiation: ESIGN_INVALID_REQUEST, ESIGN_SOURCE_NOT_FOUND, ESIGN_NOT_A_PDF,
             ESIGN_INVALID_PLACEHOLDER, ESIGN_NOT_PERMITTED,
             ESIGN_PDF_PREPARATION_FAILED, ESIGN_FILE_STORAGE_UNAVAILABLE,
+            ESIGN_FILE_STORAGE_REJECTED,
             ESIGN_PROVIDER_NOT_CONFIGURED, ESIGN_REQUEST_BUILD_FAILED,
             ESIGN_REQUEST_SIGNING_FAILED
 Callback:   ESIGN_CALLBACK_MALFORMED, ESIGN_RESPONSE_UNTRUSTED,
@@ -658,12 +668,14 @@ key material, stack traces, raw ESP payloads, or infrastructure details.
 These failure codes are what a transaction records in `failure_code` (returned
 by the status endpoint, #6.2) and what the audit log carries. The JSON endpoints
 report a failure in the standard error body of spec 0000 section 9, under the
-registered code `apps.esign.errors` maps it to (`E03001`–`E03026`, one per
+registered code `apps.esign.errors` maps it to (`E03001`–`E03027`, one per
 failure code, with the HTTP status listed in `views.ERROR_STATUS`). Validation
 errors on the initiation request use the common field codes; `file_id` that
 resolves to nothing is `E00011`, a non-PDF source `E03003`; file storage
 being unavailable while it is checked is the service failure `E03007` (502),
-not a validation error. The callback (#6.3)
+not a validation error. Storage *refusing* a payload this module built (a
+`ValidationError`, e.g. an unknown `file_type`) is `E03027` (500): a defect, not an
+outage. Its message carries the storage module's field-level reason. The callback (#6.3)
 is not a JSON API and answers a rejection in plain text with the failure code.
 
 ---
