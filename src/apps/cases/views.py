@@ -11,42 +11,15 @@ representation is changed by its own id (``/case-documents/{id}``,
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import generics, status
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.api.errors import DOES_NOT_EXIST, INVALID, REQUIRED
+from apps.api import errors as api_errors
 from apps.api.schema import error_responses
 
-from .errors import (
-    ADVOCATE_NOT_APPROVED,
-    ALREADY_ACTING,
-    ALREADY_SIGNED,
-    BOTH_SIDES,
-    CALLS_ACTIVE_WITNESS,
-    CASE_NOT_EDITABLE,
-    DOCUMENT_NOT_ON_CASE,
-    DUPLICATE_PARTICIPANT,
-    FIELD_NOT_ACCEPTED,
-    FIELD_NOT_APPLICABLE,
-    FILING_INCOMPLETE,
-    INSTITUTION_NOT_ALLOWED,
-    INVALID_STATUS_TRANSITION,
-    NOT_A_SIGNER,
-    NOT_ACCEPTED_FOR_CASE_TYPE,
-    PARTICIPANT_NOT_ON_CASE,
-    PARTY_IN_PERSON,
-    PERSON_AND_SELF,
-    ROLE_ALREADY_HELD,
-    SCHEMA_MISMATCH,
-    SELF_AS_ACCUSED,
-    SELF_REPRESENTATION,
-    SIGNATURE_NOT_FOUND,
-    SIGNATURES_PENDING,
-    WITNESS_ALREADY_CALLED,
-    WRONG_ROLE,
-)
+from . import errors
 from .models import (
     ADDRESS_REQUIRED_MESSAGE,
     EVIDENCE_ORDERING,
@@ -93,10 +66,6 @@ from .services import case_types, filing, participants, services
 
 TAGS = ["cases"]
 
-# Business errors, for the schema (spec 0000 §10.1). Missing required fields
-# and not-found ids are documented automatically.
-NOT_EDITABLE = error_responses(CASE_NOT_EDITABLE)
-
 
 @extend_schema(tags=TAGS)
 class CaseTypeListView(APIView):
@@ -136,8 +105,8 @@ class CaseTypeDetailView(APIView):
             OpenApiParameter("created_by", str, enum=["me"]),
         ],
         responses=error_responses(
-            INVALID.example("Unknown status: CLOSED.", field="status"),
-            INVALID.example("Only 'me' is supported.", field="created_by"),
+            api_errors.INVALID_CHOICE.example("Unknown status: CLOSED.", field="status"),
+            api_errors.INVALID_CHOICE.example("Only 'me' is supported.", field="created_by"),
         ),
     )
 )
@@ -150,14 +119,18 @@ class CaseListView(generics.ListAPIView):
         """Return the caller's cases, optionally filtered by status."""
         params = self.request.query_params
         if params.get("created_by") not in (None, "me"):
-            raise ValidationError({"created_by": ["Only 'me' is supported."]})
+            raise api_errors.INVALID_CHOICE.validation_error(
+                {"created_by": ["Only 'me' is supported."]}
+            )
 
         queryset = Case.objects.filter(created_by=self.request.user)
         if params.get("status"):
             statuses = params["status"].split(",")
             unknown = sorted(set(statuses) - set(CaseStatus.values))
             if unknown:
-                raise ValidationError({"status": [f"Unknown status: {', '.join(unknown)}."]})
+                raise api_errors.INVALID_CHOICE.validation_error(
+                    {"status": [f"Unknown status: {', '.join(unknown)}."]}
+                )
             queryset = queryset.filter(status__in=statuses)
         return queryset
 
@@ -167,7 +140,7 @@ class CaseListView(generics.ListAPIView):
         responses={
             201: DraftSessionSerializer,
             **error_responses(
-                DOES_NOT_EXIST.example("No active court with this id.", field="court_id")
+                api_errors.DOES_NOT_EXIST.example("No active court with this id.", field="court_id")
             ),
         },
     )
@@ -215,7 +188,8 @@ class CaseDocumentListView(generics.ListAPIView):
         responses={
             201: CaseDocumentSerializer,
             **error_responses(
-                NOT_ACCEPTED_FOR_CASE_TYPE.example(field="document_type"), CASE_NOT_EDITABLE
+                errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="document_type"),
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -232,7 +206,7 @@ class CaseDocumentListView(generics.ListAPIView):
 class CaseDocumentDetailView(APIView):
     """DELETE /case-documents/{case_document_id} — soft delete."""
 
-    @extend_schema(tags=TAGS, responses={204: None, **NOT_EDITABLE})
+    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
     def delete(self, request, case_document_id):
         """Remove a document from its case."""
         services.remove_document(case_document_id, request.user)
@@ -263,17 +237,16 @@ class CaseDetailsSectionView(APIView):
         responses={
             200: DetailsSectionSerializer,
             **error_responses(
-                NOT_ACCEPTED_FOR_CASE_TYPE.example(field="section"),
-                SCHEMA_MISMATCH.example(field="data"),
-                INVALID.example("Expected a JSON object.", field="data"),
-                CASE_NOT_EDITABLE,
+                errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="section"),
+                api_errors.INCORRECT_TYPE.example("Expected a JSON object.", field="data"),
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
     def put(self, request, case_id, section):
         """Replace a section; the first save on a draft creates the case."""
         if not isinstance(request.data, dict):
-            raise ValidationError({"data": ["Expected a JSON object."]})
+            raise api_errors.INCORRECT_TYPE.validation_error({"data": ["Expected a JSON object."]})
         case = services.save_details_section(case_id, request.user, section, request.data)
         return Response({"case_id": case.id, "section": section, "data": request.data})
 
@@ -300,10 +273,9 @@ class CaseEvidenceListView(generics.ListAPIView):
         responses={
             201: CaseEvidenceSerializer,
             **error_responses(
-                NOT_ACCEPTED_FOR_CASE_TYPE.example(field="evidence_type"),
-                SCHEMA_MISMATCH.example(field="evidence_info"),
-                DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
-                CASE_NOT_EDITABLE,
+                errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="evidence_type"),
+                errors.DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -325,9 +297,8 @@ class CaseEvidenceDetailView(APIView):
         responses={
             200: CaseEvidenceSerializer,
             **error_responses(
-                SCHEMA_MISMATCH.example(field="evidence_info"),
-                DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
-                CASE_NOT_EDITABLE,
+                errors.DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -339,7 +310,7 @@ class CaseEvidenceDetailView(APIView):
         evidence = services.update_evidence(evidence, request.user, **serializer.validated_data)
         return Response(CaseEvidenceSerializer(evidence).data)
 
-    @extend_schema(tags=TAGS, responses={204: None, **NOT_EDITABLE})
+    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
     def delete(self, request, case_evidence_id):
         """Remove evidence from its case."""
         evidence = services.get_evidence(case_evidence_id, request.user)
@@ -358,18 +329,18 @@ class _ParticipantCreateView(APIView):
         responses={
             201: CaseParticipantSerializer,
             **error_responses(
-                REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="address"),
-                PERSON_AND_SELF.example(field="self"),
-                SELF_AS_ACCUSED.example(field="self"),
-                INSTITUTION_NOT_ALLOWED.example(field="institution"),
-                ROLE_ALREADY_HELD.example(
+                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="address"),
+                errors.PERSON_AND_SELF.example(field="self"),
+                errors.SELF_AS_ACCUSED.example(field="self"),
+                errors.INSTITUTION_NOT_ALLOWED.example(field="institution"),
+                errors.ROLE_ALREADY_HELD.example(
                     "This person is already a complainant on this case.", field="person"
                 ),
-                BOTH_SIDES.example(
+                errors.BOTH_SIDES.example(
                     "A person cannot be both a complainant and an accused on a case.",
                     field="person",
                 ),
-                CASE_NOT_EDITABLE,
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -407,12 +378,12 @@ class WitnessCreateView(APIView):
         responses={
             201: CaseParticipantSerializer,
             **error_responses(
-                PARTICIPANT_NOT_ON_CASE.example(field="called_by_participant_id"),
-                WRONG_ROLE.example(field="called_by_participant_id"),
-                WITNESS_ALREADY_CALLED.example(field="called_by_participant_id"),
-                PERSON_AND_SELF.example(field="self"),
-                FIELD_NOT_ACCEPTED.example(field="institution"),
-                CASE_NOT_EDITABLE,
+                errors.PARTICIPANT_NOT_ON_CASE.example(field="called_by_participant_id"),
+                errors.WRONG_ROLE.example(field="called_by_participant_id"),
+                errors.WITNESS_ALREADY_CALLED.example(field="called_by_participant_id"),
+                errors.PERSON_AND_SELF.example(field="self"),
+                errors.FIELD_NOT_ACCEPTED.example(field="institution"),
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -430,7 +401,9 @@ class WitnessCreateView(APIView):
         parameters=[OpenApiParameter("role", str, enum=ParticipantRole.values)],
         responses={
             200: CaseParticipantSerializer(many=True),
-            **error_responses(INVALID.example("Unknown role: JUDGE.", field="role")),
+            **error_responses(
+                api_errors.INVALID_CHOICE.example("Unknown role: JUDGE.", field="role")
+            ),
         },
     )
 )
@@ -451,7 +424,9 @@ class CaseParticipantListView(generics.ListAPIView):
         role = self.request.query_params.get("role")
         if role:
             if role not in ParticipantRole.values:
-                raise ValidationError({"role": [f"Unknown role: {role}."]})
+                raise api_errors.INVALID_CHOICE.validation_error(
+                    {"role": [f"Unknown role: {role}."]}
+                )
             queryset = queryset.filter(role=role)
         return queryset
 
@@ -466,15 +441,15 @@ class CaseParticipantDetailView(APIView):
         responses={
             200: CaseParticipantSerializer,
             **error_responses(
-                FIELD_NOT_ACCEPTED.example("This field cannot be changed.", field="role"),
-                FIELD_NOT_APPLICABLE.example(
+                errors.FIELD_NOT_ACCEPTED.example("This field cannot be changed.", field="role"),
+                errors.FIELD_NOT_APPLICABLE.example(
                     "Only for a witness.", field="what_will_witness_prove"
                 ),
-                PARTY_IN_PERSON.example(
+                errors.PARTY_IN_PERSON.example(
                     "Remove this party's advocates first.", field="is_party_in_person"
                 ),
-                PARTICIPANT_NOT_ON_CASE.example(field="called_by_participant_id"),
-                CASE_NOT_EDITABLE,
+                errors.PARTICIPANT_NOT_ON_CASE.example(field="called_by_participant_id"),
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -493,8 +468,8 @@ class CaseParticipantDetailView(APIView):
         responses={
             204: None,
             **error_responses(
-                CALLS_ACTIVE_WITNESS,
-                CASE_NOT_EDITABLE,
+                errors.CALLS_ACTIVE_WITNESS,
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -515,20 +490,20 @@ class PoaHolderCreateView(APIView):
         responses={
             201: PoaHolderCreatedSerializer,
             **error_responses(
-                REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="address"),
-                DUPLICATE_PARTICIPANT.example(field="represented_participant_ids"),
-                PARTICIPANT_NOT_ON_CASE.example(
+                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="address"),
+                errors.DUPLICATE_PARTICIPANT.example(field="represented_participant_ids"),
+                errors.PARTICIPANT_NOT_ON_CASE.example(
                     "Must be active participants of the same case.",
                     field="represented_participant_ids",
                 ),
-                WRONG_ROLE.example(field="represented_participant_ids"),
-                SELF_REPRESENTATION.example(
+                errors.WRONG_ROLE.example(field="represented_participant_ids"),
+                errors.SELF_REPRESENTATION.example(
                     "A person cannot hold a mandate for themselves.",
                     field="represented_participant_ids",
                 ),
-                PERSON_AND_SELF.example(field="self"),
-                FIELD_NOT_ACCEPTED.example(field="institution"),
-                CASE_NOT_EDITABLE,
+                errors.PERSON_AND_SELF.example(field="self"),
+                errors.FIELD_NOT_ACCEPTED.example(field="institution"),
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -580,10 +555,10 @@ class PoaMandateDetailView(APIView):
         responses={
             200: PoaMandateSerializer,
             **error_responses(
-                FIELD_NOT_ACCEPTED.example(
+                errors.FIELD_NOT_ACCEPTED.example(
                     "This field cannot be changed.", field="poa_participant_id"
                 ),
-                CASE_NOT_EDITABLE,
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -595,7 +570,7 @@ class PoaMandateDetailView(APIView):
         mandate = participants.update_mandate(mandate, request.user, serializer.validated_data)
         return Response(PoaMandateSerializer(mandate).data)
 
-    @extend_schema(tags=TAGS, responses={204: None, **NOT_EDITABLE})
+    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
     def delete(self, request, poa_mandate_id):
         """Revoke the mandate; a holder left acting for no one is removed too."""
         mandate = participants.get_mandate(poa_mandate_id, request.user)
@@ -613,23 +588,23 @@ class AdvocateCreateView(APIView):
         responses={
             201: AdvocateCreatedSerializer,
             **error_responses(
-                DOES_NOT_EXIST.example("Advocate not found.", field="advocate_id"),
-                DUPLICATE_PARTICIPANT.example(field="client_participant_ids"),
-                PARTICIPANT_NOT_ON_CASE.example(
+                api_errors.DOES_NOT_EXIST.example("Advocate not found.", field="advocate_id"),
+                errors.DUPLICATE_PARTICIPANT.example(field="client_participant_ids"),
+                errors.PARTICIPANT_NOT_ON_CASE.example(
                     "Must be active participants of the same case.",
                     field="client_participant_ids",
                 ),
-                ADVOCATE_NOT_APPROVED.example(field="advocate"),
-                WRONG_ROLE.example(field="client_participant_ids"),
-                PARTY_IN_PERSON.example(field="client_participant_ids"),
-                SELF_REPRESENTATION.example(
+                errors.ADVOCATE_NOT_APPROVED.example(field="advocate"),
+                errors.WRONG_ROLE.example(field="client_participant_ids"),
+                errors.PARTY_IN_PERSON.example(field="client_participant_ids"),
+                errors.SELF_REPRESENTATION.example(
                     "An advocate cannot represent themselves.", field="client_participant_ids"
                 ),
-                ALREADY_ACTING.example(
+                errors.ALREADY_ACTING.example(
                     "This advocate already represents this party.",
                     field="client_participant_ids",
                 ),
-                CASE_NOT_EDITABLE,
+                errors.CASE_NOT_EDITABLE,
             ),
         },
     )
@@ -673,7 +648,7 @@ class RepresentationListView(generics.ListAPIView):
 class RepresentationDetailView(APIView):
     """DELETE /representations/{representation_id}."""
 
-    @extend_schema(tags=TAGS, responses={204: None, **NOT_EDITABLE})
+    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
     def delete(self, request, representation_id):
         """End the representation; the row is kept."""
         representation = participants.get_representation(representation_id, request.user)
@@ -701,11 +676,11 @@ class CaseValidateView(APIView):
     @extend_schema(tags=TAGS, request=None, responses={200: CaseValidationSerializer})
     def post(self, request, case_id):
         """Return whether the filing is complete and, if not, everything that is missing."""
-        is_valid, errors = filing.validate_case(case_id, request.user)
-        return Response(CaseValidationSerializer({"is_valid": is_valid, "errors": errors}).data)
+        is_valid, problems = filing.validate_case(case_id, request.user)
+        return Response(CaseValidationSerializer({"is_valid": is_valid, "errors": problems}).data)
 
 
-def _transition_schema(*errors):
+def _transition_schema(*step_errors):
     """Document a transition: the case it returns, and the errors its step adds."""
     return extend_schema_view(
         post=extend_schema(
@@ -713,7 +688,7 @@ def _transition_schema(*errors):
             request=None,
             responses={
                 200: CaseSerializer,
-                **error_responses(INVALID_STATUS_TRANSITION, *errors),
+                **error_responses(errors.INVALID_STATUS_TRANSITION, *step_errors),
             },
         )
     )
@@ -731,7 +706,7 @@ class _CaseTransitionView(APIView):
 
 
 @_transition_schema(
-    FILING_INCOMPLETE.example(
+    errors.FILING_INCOMPLETE.example(
         "At least one active accused is required.", field="participants.accused"
     )
 )
@@ -742,7 +717,7 @@ class SubmitForSigningView(_CaseTransitionView):
 
 
 @_transition_schema(
-    SIGNATURES_PENDING.example("Complainant #1 has not signed.", field="participants.<id>")
+    errors.SIGNATURES_PENDING.example("Complainant #1 has not signed.", field="participants.<id>")
 )
 class SubmitForPaymentView(_CaseTransitionView):
     """POST /cases/{case_id}/submit-for-payment — once every signer has signed."""
@@ -767,10 +742,10 @@ class ParticipantSignView(APIView):
         responses={
             200: SignedSerializer,
             **error_responses(
-                NOT_A_SIGNER.example(field="case_participant_id"),
-                SIGNATURE_NOT_FOUND.example(field="signature_document_id"),
-                INVALID_STATUS_TRANSITION,
-                ALREADY_SIGNED,
+                errors.NOT_A_SIGNER.example(field="case_participant_id"),
+                errors.SIGNATURE_NOT_FOUND.example(field="signature_document_id"),
+                errors.INVALID_STATUS_TRANSITION,
+                errors.ALREADY_SIGNED,
             ),
         },
     )

@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from apps.cases.models import Case, CaseType
 from apps.users.models import RegistrationStatus, Role, User
 
-from .conftest import field_codes
+from .conftest import error_codes
 
 pytestmark = pytest.mark.django_db
 
@@ -111,19 +111,16 @@ class TestPagination:
 
 
 class TestErrorShape:
-    """Every error is the standard body: coded items, each on its field (spec 0000 §9.1)."""
+    """Every error uses the standard body: a registered code, on its field (spec 0000 §9)."""
 
     @pytest.mark.parametrize(
         "params", [{"created_by": "someone"}, {"status": "NOPE"}], ids=["created_by", "status"]
     )
-    def test_list_filter_errors_name_their_parameter(self, client, params):
-        body = client.get(reverse("case-list"), params).json()
+    def test_list_filter_errors_name_their_field(self, client, params):
+        response = client.get(reverse("case-list"), params)
 
         (field,) = params
-        [error] = body["errors"]
-        assert error["code"] == "E00001"
-        assert error["field"] == field
-        assert "meta" in body
+        assert error_codes(response) == {field: ["E00005"]}
 
     def test_details_body_must_be_an_object(self, client, draft):
         response = client.put(
@@ -133,15 +130,15 @@ class TestErrorShape:
         )
 
         assert response.status_code == 400
-        assert field_codes(response) == {"data": {"E00001"}}
+        assert error_codes(response) == {"data": ["E00012"]}
         assert Case.objects.count() == 0
 
     def test_business_errors_carry_the_case_code(self, client, draft):
         response = client.put(
-            reverse("case-details-section", args=[draft, "adr_other_prayer"]),
-            {"adr_preference": "SOMETIMES"},
+            reverse("case-details-section", args=[draft, "not_a_section"]),
+            {"final_relief": "Pay the cheque amount"},
             format="json",
         )
 
         assert response.status_code == 400
-        assert field_codes(response) == {"data": {"E07009"}}
+        assert error_codes(response) == {"section": ["E07002"]}

@@ -20,7 +20,7 @@ from apps.parties.models import Institution, Person, VerificationLevel
 from apps.parties.tests.factories import ADDRESS_DEFAULTS, make_address, make_institution
 from apps.users.models import AdvocateProfile, ApprovalStatus
 
-from .conftest import field_codes
+from .conftest import error_codes
 
 pytestmark = pytest.mark.django_db
 
@@ -142,7 +142,7 @@ class TestAddComplainant:
         response = add(client, draft, self=True)
 
         assert response.status_code == 400
-        assert field_codes(response) == {"person": {"E07014"}}
+        assert error_codes(response) == {"person": ["E07013"]}
 
     def test_person_and_self_together_is_400(self, client, draft):
         response = add(client, draft, self=True, person=PERSON)
@@ -161,14 +161,14 @@ class TestAddComplainant:
         )
 
         assert response.status_code == 400
-        assert field_codes(response) == {"address": {"E00002"}}
+        assert error_codes(response) == {"address": ["E00002"]}
         assert not Case.objects.exists()
 
     def test_invalid_person_is_400_and_creates_nothing(self, client, draft):
         response = add(client, draft, person={**PERSON, "phone_number": "98765"})
 
         assert response.status_code == 400
-        assert field_codes(response) == {"person.phone_number": {"E00001"}}
+        assert error_codes(response) == {"person.phone_number": ["E00001"]}
         assert not Case.objects.exists()
 
     def test_invalid_pincode_is_400_and_creates_nothing(self, client, draft):
@@ -177,7 +177,7 @@ class TestAddComplainant:
         )
 
         assert response.status_code == 400
-        assert field_codes(response) == {"address.pincode": {"E00001"}}
+        assert error_codes(response) == {"address.pincode": ["E00001"]}
         assert not Case.objects.exists()
         assert not Person.objects.exists()
 
@@ -210,7 +210,7 @@ class TestInstitutions:
         response = add(client, draft, institution=INSTITUTION, person=PERSON)
 
         assert response.status_code == 400
-        assert field_codes(response) == {"designation": {"E00002"}}
+        assert error_codes(response) == {"designation": ["E00002"]}
 
     def test_self_for_an_institution_leaves_the_filers_person_unchanged(self, client, user, draft):
         response = add(client, draft, institution=INSTITUTION, self=True, designation="Director")
@@ -243,14 +243,14 @@ class TestInstitutions:
         response = add(client, draft, institution={**INSTITUTION, "cin": "U72200KA2010PTC052651"})
 
         assert response.status_code == 400
-        assert field_codes(response) == {"institution.cin": {"E00001"}}
+        assert error_codes(response) == {"institution.cin": ["E00001"]}
         assert not Case.objects.exists()
 
     def test_invalid_pan_is_400(self, client, draft):
         response = add(client, draft, institution={**INSTITUTION, "pan": "NOTAPAN"})
 
         assert response.status_code == 400
-        assert field_codes(response) == {"institution.pan": {"E00001"}}
+        assert error_codes(response) == {"institution.pan": ["E00001"]}
 
     def test_an_institution_cannot_be_both_complainant_and_accused(self, client, draft):
         add(client, draft, institution=INSTITUTION)
@@ -258,7 +258,7 @@ class TestInstitutions:
         response = add(client, draft, role="accused", institution=INSTITUTION)
 
         assert response.status_code == 400
-        assert field_codes(response) == {"institution": {"E07015"}}
+        assert error_codes(response) == {"institution": ["E07014"]}
         assert listing(client, draft, role="ACCUSED")["count"] == 0
 
     def test_an_institution_cannot_hold_a_role_twice(self, client, draft):
@@ -273,7 +273,7 @@ class TestInstitutions:
         )
 
         assert response.status_code == 400
-        assert field_codes(response) == {"institution": {"E07014"}}
+        assert error_codes(response) == {"institution": ["E07013"]}
         # The second director's person row was rolled back with the participant.
         assert not Person.objects.filter(name="Second Director").exists()
 
@@ -291,7 +291,7 @@ class TestInstitutions:
 
         response = add(client, draft, role="accused", institution=INSTITUTION)
 
-        assert field_codes(response) == {"institution": {"E07014"}}
+        assert error_codes(response) == {"institution": ["E07013"]}
 
     def test_directors_can_be_accused_alongside_their_company(self, client, draft):
         company = add(client, draft, role="accused", institution=INSTITUTION)
@@ -314,7 +314,7 @@ class TestAddAccused:
         response = add(client, draft, role="accused", self=True)
 
         assert response.status_code == 400
-        assert field_codes(response) == {"self": {"E07020"}}
+        assert error_codes(response) == {"self": ["E07019"]}
 
 
 class TestListing:
@@ -388,7 +388,7 @@ class TestUpdate:
         response = patch(client, body["case_participant_id"], {"is_party_in_person": True})
 
         assert response.status_code == 400
-        assert field_codes(response) == {"is_party_in_person": {"E07023"}}
+        assert error_codes(response) == {"is_party_in_person": ["E07022"]}
 
 
 class TestRemove:
@@ -471,7 +471,7 @@ class TestRemove:
         response = remove(client, body["case_participant_id"])
 
         assert response.status_code == 400
-        assert field_codes(response) == {None: {"E07016"}}
+        assert error_codes(response) == {None: ["E07015"]}
         assert CaseParticipant.objects.get(pk=body["case_participant_id"]).is_active is True
 
 
@@ -528,14 +528,14 @@ class TestAddWitness:
         )
 
         assert again.status_code == 400
-        assert field_codes(again) == {"called_by_participant_id": {"E07018"}}
+        assert error_codes(again) == {"called_by_participant_id": ["E07017"]}
 
     @pytest.mark.parametrize(
         "change, field, code",
         [
             ({"what_will_witness_prove": "   "}, "what_will_witness_prove", "E00004"),
-            ({"institution": INSTITUTION}, "institution", "E07025"),
-            ({"is_party_in_person": True}, "is_party_in_person", "E07025"),
+            ({"institution": INSTITUTION}, "institution", "E07024"),
+            ({"is_party_in_person": True}, "is_party_in_person", "E07024"),
             ({"called_by_participant_id": None}, "called_by_participant_id", "E00002"),
         ],
     )
@@ -545,7 +545,7 @@ class TestAddWitness:
         response = add_witness(client, draft, caller["case_participant_id"], **change)
 
         assert response.status_code == 400
-        assert field_codes(response) == {field: {code}}
+        assert error_codes(response) == {field: [code]}
 
     def test_a_caller_on_another_case_is_400_and_creates_nothing(self, client, draft):
         other = client.post(reverse("case-list"), {"case_type": "CHEQUE_BOUNCE"}, format="json")
@@ -554,7 +554,7 @@ class TestAddWitness:
         response = add_witness(client, draft, caller["case_participant_id"])
 
         assert response.status_code == 400
-        assert field_codes(response) == {"called_by_participant_id": {"E07011"}}
+        assert error_codes(response) == {"called_by_participant_id": ["E07010"]}
         assert not Case.objects.filter(pk=draft).exists()
 
     def test_a_caller_must_be_a_complainant_or_an_accused(self, client, draft):
@@ -564,7 +564,7 @@ class TestAddWitness:
         response = add_witness(client, draft, first["case_participant_id"])
 
         assert response.status_code == 400
-        assert field_codes(response) == {"called_by_participant_id": {"E07017"}}
+        assert error_codes(response) == {"called_by_participant_id": ["E07016"]}
         assert listing(client, draft, role="WITNESS")["count"] == 1
 
 
@@ -610,8 +610,8 @@ class TestWitnessUpdate:
     @pytest.mark.parametrize(
         ("change", "code"),
         [
-            ({"called_by_participant_id": str(uuid.uuid4())}, "E07011"),
-            ({"is_party_in_person": True}, "E07024"),
+            ({"called_by_participant_id": str(uuid.uuid4())}, "E07010"),
+            ({"is_party_in_person": True}, "E07023"),
         ],
     )
     def test_invalid_changes_are_400(self, client, witness, change, code):
@@ -619,7 +619,7 @@ class TestWitnessUpdate:
 
         assert response.status_code == 400
         (field,) = change
-        assert field_codes(response) == {field: {code}}
+        assert error_codes(response) == {field: [code]}
 
     def test_witness_fields_are_refused_for_other_roles(self, client, draft, witness):
         complainant = listing(client, draft, role="COMPLAINANT")["results"][0]
@@ -629,7 +629,7 @@ class TestWitnessUpdate:
         )
 
         assert response.status_code == 400
-        assert field_codes(response) == {"what_will_witness_prove": {"E07024"}}
+        assert error_codes(response) == {"what_will_witness_prove": ["E07023"]}
 
 
 class TestAccess:
@@ -734,14 +734,14 @@ class TestAddPoaHolder:
         )
 
         assert response.status_code == 400
-        assert field_codes(response) == {"represented_participant_ids": {"E07019"}}
+        assert error_codes(response) == {"represented_participant_ids": ["E07018"]}
         assert not CaseParticipant.objects.filter(role=ParticipantRole.POA_HOLDER).exists()
 
     @pytest.mark.parametrize(
         ("body", "field", "code"),
         [
-            ({"institution": INSTITUTION}, "institution", "E07025"),
-            ({"is_party_in_person": True}, "is_party_in_person", "E07025"),
+            ({"institution": INSTITUTION}, "institution", "E07024"),
+            ({"is_party_in_person": True}, "is_party_in_person", "E07024"),
             ({"represented_participant_ids": []}, "represented_participant_ids", "E00013"),
             (
                 {"represented_participant_ids": ["not-a-uuid"]},
@@ -757,7 +757,7 @@ class TestAddPoaHolder:
         response = add_poa_holder(client, draft, [complainant["case_participant_id"]], **body)
 
         assert response.status_code == 400
-        assert field_codes(response) == {field: {code}}
+        assert error_codes(response) == {field: [code]}
 
     def test_address_is_required(self, client, draft):
         complainant = add_complainant(client, draft)
@@ -770,7 +770,7 @@ class TestAddPoaHolder:
         response = client.post(url, body, format="json")
 
         assert response.status_code == 400
-        assert field_codes(response) == {"address": {"E00002"}}
+        assert error_codes(response) == {"address": ["E00002"]}
 
     def test_a_party_listed_twice_is_400(self, client, draft):
         complainant = add_complainant(client, draft)
@@ -779,7 +779,7 @@ class TestAddPoaHolder:
         response = add_poa_holder(client, draft, [pk, pk])
 
         assert response.status_code == 400
-        assert field_codes(response) == {"represented_participant_ids": {"E07012"}}
+        assert error_codes(response) == {"represented_participant_ids": ["E07011"]}
 
     def test_only_a_complainant_or_accused_may_be_represented(self, client, draft):
         complainant = add_complainant(client, draft)
@@ -788,7 +788,7 @@ class TestAddPoaHolder:
         response = add_poa_holder(client, draft, [witness["case_participant_id"]])
 
         assert response.status_code == 400
-        assert field_codes(response) == {"represented_participant_ids": {"E07017"}}
+        assert error_codes(response) == {"represented_participant_ids": ["E07016"]}
 
     def test_removed_or_other_case_parties_are_400(self, client, user, draft):
         removed = add_complainant(client, draft, name="Removed")
@@ -801,7 +801,7 @@ class TestAddPoaHolder:
             response = add_poa_holder(client, draft, [pk])
 
             assert response.status_code == 400
-            assert field_codes(response) == {"represented_participant_ids": {"E07011"}}
+            assert error_codes(response) == {"represented_participant_ids": ["E07010"]}
         assert not CaseParticipant.objects.filter(role=ParticipantRole.POA_HOLDER).exists()
 
     def test_on_a_draft_with_no_parties_nothing_is_created(self, client, draft):
@@ -860,7 +860,7 @@ class TestPoaMandates:
         response = patch(client, created["case_participant_id"], {"is_party_in_person": True})
 
         assert response.status_code == 400
-        assert field_codes(response) == {"is_party_in_person": {"E07024"}}
+        assert error_codes(response) == {"is_party_in_person": ["E07023"]}
 
 
 class TestRevokeMandate:
@@ -1006,7 +1006,7 @@ class TestAddAdvocate:
         response = add_advocate(client, draft, make_advocate(make_user, status).pk, [complainant])
 
         assert response.status_code == 400
-        assert field_codes(response) == {"advocate": {"E07022"}}
+        assert error_codes(response) == {"advocate": ["E07021"]}
 
     def test_an_unknown_advocate_is_refused(self, client, draft):
         complainant = add_complainant(client, draft)["case_participant_id"]
@@ -1014,16 +1014,16 @@ class TestAddAdvocate:
         response = add_advocate(client, draft, uuid.uuid4(), [complainant])
 
         assert response.status_code == 400
-        assert field_codes(response) == {"advocate_id": {"E00011"}}
+        assert error_codes(response) == {"advocate_id": ["E00011"]}
 
     def test_clients_are_required_once_each(self, client, make_user, draft):
         complainant = add_complainant(client, draft)["case_participant_id"]
         advocate = make_advocate(make_user)
 
-        for client_ids, code in (([], "E00013"), ([complainant, complainant], "E07012")):
+        for client_ids, code in (([], "E00013"), ([complainant, complainant], "E07011")):
             response = add_advocate(client, draft, advocate.pk, client_ids)
             assert response.status_code == 400
-            assert field_codes(response) == {"client_participant_ids": {code}}
+            assert error_codes(response) == {"client_participant_ids": [code]}
 
     def test_a_poa_holder_cannot_be_a_client(self, client, make_user, draft):
         complainant = add_complainant(client, draft)["case_participant_id"]
@@ -1032,7 +1032,7 @@ class TestAddAdvocate:
         response = add_advocate(client, draft, make_advocate(make_user).pk, [holder])
 
         assert response.status_code == 400
-        assert field_codes(response) == {"client_participant_ids": {"E07017"}}
+        assert error_codes(response) == {"client_participant_ids": ["E07016"]}
 
     def test_a_party_in_person_cannot_be_a_client(self, client, make_user, draft):
         complainant = add_complainant(client, draft)["case_participant_id"]
@@ -1041,7 +1041,7 @@ class TestAddAdvocate:
         response = add_advocate(client, draft, make_advocate(make_user).pk, [complainant])
 
         assert response.status_code == 400
-        assert field_codes(response) == {"client_participant_ids": {"E07023"}}
+        assert error_codes(response) == {"client_participant_ids": ["E07022"]}
 
     def test_clients_must_be_active_and_on_the_case(self, client, make_user, user, draft):
         removed = add_complainant(client, draft, name="A")["case_participant_id"]
@@ -1054,7 +1054,7 @@ class TestAddAdvocate:
         for client_id in (removed, elsewhere, str(uuid.uuid4())):
             response = add_advocate(client, draft, advocate.pk, [client_id])
             assert response.status_code == 400
-            assert field_codes(response) == {"client_participant_ids": {"E07011"}}
+            assert error_codes(response) == {"client_participant_ids": ["E07010"]}
 
     def test_an_advocate_cannot_represent_themselves(self, client, make_user, user, draft):
         own = add(client, draft, **{"self": True})
@@ -1068,7 +1068,7 @@ class TestAddAdvocate:
         )
 
         assert response.status_code == 400
-        assert field_codes(response) == {"client_participant_ids": {"E07019"}}
+        assert error_codes(response) == {"client_participant_ids": ["E07018"]}
 
     def test_nothing_is_written_when_one_client_fails(self, client, make_user, draft):
         complainant = add_complainant(client, draft)["case_participant_id"]

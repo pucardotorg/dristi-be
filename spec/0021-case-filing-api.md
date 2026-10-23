@@ -1140,6 +1140,38 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 
 **Only drafts can be changed.** Every write (uploading or removing a document, adding, changing or removing evidence, saving a details section) is refused with `409 Conflict` and code `E07001` once the case has left `DRAFT_IN_PROGRESS`, so what the court reviews cannot change underneath it. Reads are unaffected. Every successful write also sets the case's `updated_at` (and `updated_by`), which listings show and the concurrent-modification check (§10.4) relies on.
 
+**Error codes** (domain `07`, spec 0000 §9). Errors use the standard body; besides the common codes, the case filing endpoints return:
+
+| Code | Status | When |
+| --- | --- | --- |
+| `E07001` | 409 | The case has been submitted, so it can no longer be changed. |
+| `E07002` | 400 | A document type, evidence type or details section this case's type does not accept (`field` names which). |
+| `E07003` | 400 | `case_document_id` is not an active document of the same case. |
+| `E07004` | 409 | The case is not in the status this step starts from (§7, §8). |
+| `E07005` | 400 | Submit for signing: the filing is incomplete. One error per gap, on its part of the filing (`participants.accused`, `documents.VAKALATNAMA` …), as `POST /validate` lists them (§6.3). |
+| `E07006` | 400 | Submit for payment: a signer has not signed. One error per signer, on `participants.<id>`. |
+| `E07007` | 409 | The participant has already signed (§8). |
+| `E07008` | 400 | Only complainants and POA holders sign the filing (§8). |
+| `E07009` | 400 | No completed e-signature of this case's filing produced the document (§8). |
+| `E07010` | 400 | A referenced participant is not an active participant of this case. |
+| `E07011` | 400 | A party is listed more than once. |
+| `E07012` | 400 | Only a complainant or an accused may be an institution. |
+| `E07013` | 400 | The person or institution already holds this role on the case. |
+| `E07014` | 400 | The person or institution would be both a complainant and an accused. |
+| `E07015` | 400 | The participant cannot be removed while an active witness is called by them. |
+| `E07016` | 400 | The participant does not have the role this needs (a complainant or an accused; a witness; a POA holder). |
+| `E07017` | 400 | The person is already a witness called by this party. |
+| `E07018` | 400 | A party cannot act for themselves (a POA holder for themselves, an advocate for themselves). |
+| `E07019` | 400 | The filer cannot name themselves as accused. |
+| `E07020` | 400 | The POA holder or advocate already acts for this party. |
+| `E07021` | 400 | The advocate is not approved. |
+| `E07022` | 400 | A party appearing in person cannot have an advocate (nor be marked in person while they have one). |
+| `E07023` | 400 | The field does not apply to this participant (witness fields on another role, `is_party_in_person` on a witness or POA holder, a designation without an institution). |
+| `E07024` | 400 | The field is not accepted by this endpoint, or cannot be changed. |
+| `E07025` | 400 | Both `person` and `"self": true` were sent. |
+
+A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
+
 ```
 POST /cases/{case_id}/submit-for-signing
 POST /cases/{case_id}/submit-for-payment
@@ -1189,7 +1221,7 @@ Integration with eSign service (spec 0015) is assumed to happen before this call
 
 The call sets `case_participant.has_signed = true` and stores the file as `case_participant.signature_document_id` (spec 0020 §4), so each signed copy stays linked to the participant who signed it. When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here; the response's `signed_at` is read from it.
 
-Only complainants and POA holders sign; the accused and witnesses never do, so signing one of them is `400` (`E07006`). Signing is accepted only while the case is `PENDING_SIGN` (`409`, `E07002` otherwise), and once per participant (`409`, `E07005`). A document no matching e-sign transaction produced is `400` (`E07007`).
+Only complainants and POA holders sign; the accused and witnesses never do, so signing one of them is `400` (`E07008`). Signing is accepted only while the case is `PENDING_SIGN` (`409`, `E07004` otherwise), and once per participant (`409`, `E07007`). A document no matching e-sign transaction produced is `400` (`E07009`).
 
 When every active complainant and POA holder has `has_signed = true`, the case can advance to `PENDING_PAYMENT`.
 
@@ -1296,38 +1328,8 @@ def can_view_case(user, case):
 ## 10. Validation and Error Handling
 
 Every error uses the standard body of spec 0000 §9.1: an `errors` array of
-`{code, message, field}` items plus `meta`. Plain field validation uses the
-common `E00xxx` codes; the case filing rules have their own codes in domain
-`07` (`apps/cases/errors.py`):
-
-| Code | Status | Meaning |
-| --- | --- | --- |
-| `E07001` | 409 | The case has been submitted and can no longer be changed (§7). |
-| `E07002` | 409 | The case is not in the status this step starts from (§7, §8). |
-| `E07003` | 400 | Submit for signing: the filing is incomplete. One item per gap, on its part of the filing (`participants.accused`, `documents.VAKALATNAMA` …), as `POST /validate` lists them (§6.3). |
-| `E07004` | 400 | Submit for payment: a signer has not signed. One item per signer, on `participants.<id>`. |
-| `E07005` | 409 | The participant has already signed (§8). |
-| `E07006` | 400 | Only complainants and POA holders sign the filing (§8). |
-| `E07007` | 400 | No completed e-signature of this case's filing produced the document (§8). |
-| `E07008` | 400 | The value (document type, evidence type, details section) is not accepted for the case's type. |
-| `E07009` | 400 | `evidence_info` or a details section does not match the case type's schema; one item per schema error. |
-| `E07010` | 400 | `case_document_id` is not an active document of this case. |
-| `E07011` | 400 | A referenced participant is not an active participant of this case. |
-| `E07012` | 400 | A party is listed more than once. |
-| `E07013` | 400 | Only a complainant or an accused may be an institution. |
-| `E07014` | 400 | The person or institution already holds this role on the case. |
-| `E07015` | 400 | The person or institution would be both a complainant and an accused. |
-| `E07016` | 400 | The participant cannot be removed while an active witness is called by them. |
-| `E07017` | 400 | The participant does not have the role this needs (a complainant or an accused; a witness; a POA holder). |
-| `E07018` | 400 | The person is already a witness called by this party. |
-| `E07019` | 400 | A party cannot act for themselves (a POA holder for themselves, an advocate for themselves). |
-| `E07020` | 400 | The filer cannot name themselves as accused. |
-| `E07021` | 400 | The POA holder or advocate already acts for this party. |
-| `E07022` | 400 | The advocate is not approved. |
-| `E07023` | 400 | A party appearing in person cannot have an advocate (nor be marked in person while they have one). |
-| `E07024` | 400 | The field does not apply to this participant (witness fields on another role, `is_party_in_person` on a witness or POA holder, a designation without an institution). |
-| `E07025` | 400 | The field is not accepted by this endpoint, or cannot be changed. |
-| `E07026` | 400 | Both `person` and `"self": true` were sent. |
+`{code, message, field}` items plus `meta`. The case filing codes (domain `07`)
+are listed in §7.
 
 A missing address for service of notice, a missing designation, or a party
 write naming no one is `E00002` (required) on that field. Format errors (a
@@ -1336,13 +1338,13 @@ phone number, a PAN, a pincode) keep the common field codes.
 ### 10.1 Document Type Validation
 
 Unknown `document_type` values are rejected with 400; a type the case's type
-does not accept is `E07008`:
+does not accept is `E07002`:
 
 ```json
 {
   "errors": [
     {
-      "code": "E07008",
+      "code": "E07002",
       "message": "'AFFIDAVIT' is not accepted for CHEQUE_BOUNCE cases. Must be one of: BOUNCED_CHEQUE, ...",
       "field": "document_type"
     }

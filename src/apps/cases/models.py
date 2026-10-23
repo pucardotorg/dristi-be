@@ -628,12 +628,14 @@ class ChequeBounceCase(BaseModel, BaseAuditableModel):
         the row is created empty with the case.
         """
         super().clean()
+        if not self.case_id:
+            return
         schemas = get_config(self.case.case_type).section_schemas
         errors = {
-            section: messages
+            section: [str(problem) for problem in problems]
             for section, schema in schemas.items()
             if getattr(self, section)
-            and (messages := schema_errors(schema, getattr(self, section)))
+            and (problems := schema_errors(schema, getattr(self, section)))
         }
         if errors:
             raise ValidationError(errors)
@@ -688,8 +690,8 @@ class CaseEvidence(BaseModel, BaseActivatableModel, BaseAuditableModel):
         schemas = get_config(self.case.case_type).evidence_schemas
         if self.evidence_type not in schemas:
             errors["evidence_type"] = f"Not accepted for {self.case.case_type} cases."
-        elif messages := schema_errors(schemas[self.evidence_type], self.evidence_info):
-            errors["evidence_info"] = messages
+        elif problems := schema_errors(schemas[self.evidence_type], self.evidence_info):
+            errors["evidence_info"] = [str(problem) for problem in problems]
         if self.case_document_id and not (
             self.case_document.case_id == self.case_id and self.case_document.is_active
         ):

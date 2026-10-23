@@ -17,7 +17,7 @@ from apps.cases.models import (
 from apps.files.models import File
 from apps.parties.tests.factories import make_address, make_person
 
-from .conftest import CHEQUE_INFO, field_codes
+from .conftest import CHEQUE_INFO, error_codes
 
 pytestmark = pytest.mark.django_db
 
@@ -59,7 +59,7 @@ class TestUploadsAreRealFiles:
         response = upload(client, draft, SimpleUploadedFile(name, content, content_type))
 
         assert response.status_code == 400
-        assert field_codes(response) == {"file": {"E00001"}}
+        assert error_codes(response) == {"file": ["E00001"]}
         assert Case.objects.count() == File.objects.count() == 0
 
     def test_oversized_upload_is_rejected(self, client, draft, pdf, settings):
@@ -68,7 +68,7 @@ class TestUploadsAreRealFiles:
         response = upload(client, draft, pdf())
 
         assert response.status_code == 400
-        assert field_codes(response) == {"file": {"E00001"}}
+        assert error_codes(response) == {"file": ["E00001"]}
 
     def test_a_real_pdf_is_accepted(self, client, draft, pdf):
         assert upload(client, draft, pdf()).status_code == 201
@@ -103,7 +103,7 @@ class TestSubmittedCasesAreReadOnly:
         response = client.patch(url, {"evidence_info": changed}, format="json")
 
         assert response.status_code == 409
-        assert field_codes(response) == {None: {"E07001"}}
+        assert error_codes(response) == {None: ["E07001"]}
         assert CaseEvidence.objects.get(pk=submitted["evidence"]).evidence_info == CHEQUE_INFO
 
     def test_cannot_remove_evidence(self, client, submitted):
@@ -193,6 +193,12 @@ class TestModelRulesMatchTheApi:
         with pytest.raises(ValidationError, match="both a complainant and an accused"):
             participant(ParticipantRole.ACCUSED).full_clean()
 
+    def test_details_without_a_case_are_a_field_error_not_a_crash(self):
+        with pytest.raises(ValidationError) as exc:
+            ChequeBounceCase().full_clean()
+
+        assert "case" in exc.value.message_dict
+
 
 class TestRemovingADocumentUnlinksEvidence:
     def test_evidence_no_longer_points_at_a_removed_document(self, client, draft, pdf):
@@ -243,7 +249,7 @@ class TestLinkingADocumentLater:
         response = self.patch(client, evidence_id, {"case_document_id": document_id})
 
         assert response.status_code == 400
-        assert field_codes(response) == {"case_document_id": {"E07010"}}
+        assert error_codes(response) == {"case_document_id": ["E07003"]}
 
     def test_an_empty_patch_is_rejected(self, client, evidence_id):
         assert self.patch(client, evidence_id, {}).status_code == 400

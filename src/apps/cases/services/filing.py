@@ -22,14 +22,7 @@ from apps.api.errors import BusinessError
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 
-from ..errors import (
-    ALREADY_SIGNED,
-    FILING_INCOMPLETE,
-    INVALID_STATUS_TRANSITION,
-    NOT_A_SIGNER,
-    SIGNATURE_NOT_FOUND,
-    SIGNATURES_PENDING,
-)
+from .. import errors
 from ..models import (
     EVIDENCE_ORDERING,
     PARTICIPANT_ORDERING,
@@ -137,8 +130,8 @@ def _load_preview(case_id):
 
 def validate_case(case_id, user):
     """Return ``(is_valid, errors)`` for ``user``'s case."""
-    errors = validation_errors(get_case(case_id, user))
-    return not errors, errors
+    problems = validation_errors(get_case(case_id, user))
+    return not problems, problems
 
 
 def _error_item(field, message):
@@ -156,10 +149,10 @@ def _raise_not_ready(error, items):
 
 def validation_errors(case):
     """Return every reason ``case`` is not yet complete, as ``{field, message}`` items."""
-    errors = []
+    problems = []
 
     def error(field, message):
-        errors.append(_error_item(field, message))
+        problems.append(_error_item(field, message))
 
     config = get_config(case.case_type)
     participants = CaseParticipant.objects.active().filter(case=case)
@@ -208,15 +201,15 @@ def validation_errors(case):
     # Writes already check these; a schema tightened since then is caught here.
     for item in evidence:
         schema = config.evidence_schemas.get(item.evidence_type)
-        for message in schema_errors(schema, item.evidence_info) if schema else []:
+        for problem in schema_errors(schema, item.evidence_info) if schema else []:
             label = EvidenceType(item.evidence_type).label
-            error(f"evidence.{item.evidence_type}", f"{label} #{item.ordinal}: {message}")
+            error(f"evidence.{item.evidence_type}", f"{label} #{item.ordinal}: {problem}")
 
     # An unsaved section is still ``{}``, which fails its required fields here.
     for section, data in get_detail_sections(case).items():
-        for message in schema_errors(config.section_schemas[section], data):
-            error(f"details.{section}", message)
-    return errors
+        for problem in schema_errors(config.section_schemas[section], data):
+            error(f"details.{section}", str(problem))
+    return problems
 
 
 # Status transitions (spec 0021 §7)
@@ -226,9 +219,9 @@ def submit_for_signing(case_id, user):
     """Freeze a complete draft for signing."""
 
     def check(case):
-        errors = validation_errors(case)
-        if errors:
-            _raise_not_ready(FILING_INCOMPLETE, errors)
+        problems = validation_errors(case)
+        if problems:
+            _raise_not_ready(errors.FILING_INCOMPLETE, problems)
 
     return _transition(case_id, user, CaseStatus.DRAFT_IN_PROGRESS, CaseStatus.PENDING_SIGN, check)
 
@@ -242,15 +235,15 @@ def submit_for_payment(case_id, user):
             .filter(case=case, role__in=SIGNING_ROLES, has_signed=False)
             .order_by(*PARTICIPANT_ORDERING)
         )
-        errors = [
+        problems = [
             _error_item(
                 f"participants.{participant.id}",
                 f"{participant.get_role_display()} #{participant.ordinal} has not signed.",
             )
             for participant in unsigned
         ]
-        if errors:
-            _raise_not_ready(SIGNATURES_PENDING, errors)
+        if problems:
+            _raise_not_ready(errors.SIGNATURES_PENDING, problems)
 
     return _transition(case_id, user, CaseStatus.PENDING_SIGN, CaseStatus.PENDING_PAYMENT, check)
 
@@ -280,7 +273,7 @@ def _transition(case_id, user, from_status, to_status, check=None, **fields):
         case = lock_case(get_case(case_id, user))
         if case.status != from_status:
             raise BusinessError(
-                INVALID_STATUS_TRANSITION,
+                errors.INVALID_STATUS_TRANSITION,
                 f"Only a case in {from_status} can move to {to_status}; this one is {case.status}.",
             )
         if check is not None:
@@ -309,7 +302,7 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
         case = lock_case(get_case(case_id, user))
         if case.status != CaseStatus.PENDING_SIGN:
             raise BusinessError(
-                INVALID_STATUS_TRANSITION,
+                errors.INVALID_STATUS_TRANSITION,
                 f"Signatures are recorded only while the case is {CaseStatus.PENDING_SIGN}; "
                 f"this one is {case.status}.",
             )
@@ -319,9 +312,11 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
         if participant is None:
             raise NotFound("Case participant not found.")
         if participant.role not in SIGNING_ROLES:
-            raise NOT_A_SIGNER.validation_error({"case_participant_id": [NOT_A_SIGNER.message]})
+            raise errors.NOT_A_SIGNER.validation_error(
+                {"case_participant_id": [errors.NOT_A_SIGNER.message]}
+            )
         if participant.has_signed:
-            raise BusinessError(ALREADY_SIGNED)
+            raise BusinessError(errors.ALREADY_SIGNED)
         esign = ESignTransaction.objects.filter(
             signed_file_id=str(signature_document_id),
             status=ESignStatus.SUCCESS.value,
@@ -329,8 +324,8 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
             entity_id=str(case.pk),
         ).first()
         if esign is None:
-            raise SIGNATURE_NOT_FOUND.validation_error(
-                {"signature_document_id": [SIGNATURE_NOT_FOUND.message]}
+            raise errors.SIGNATURE_NOT_FOUND.validation_error(
+                {"signature_document_id": [errors.SIGNATURE_NOT_FOUND.message]}
             )
         participant.has_signed = True
         participant.signature_document_id = signature_document_id

@@ -15,6 +15,25 @@ from apps.users.models import RegistrationStatus, Role, User
 _numbers = itertools.count(1)
 
 
+def error_codes(response):
+    """Return a standard error body as ``{field: [code, ...]}`` (spec 0000 §9.1).
+
+    An error on the request as a whole is keyed ``None``.
+    """
+    codes = {}
+    for error in response.json()["errors"]:
+        codes.setdefault(error.get("field"), []).append(error["code"])
+    return codes
+
+
+def error_roots(response):
+    """Return the top-level request fields a standard error body points into.
+
+    ``evidence_info.cheque_number`` and ``evidence_info`` both give ``evidence_info``.
+    """
+    return {field.split(".")[0].split("[")[0] for field in error_codes(response) if field}
+
+
 @pytest.fixture(autouse=True)
 def files_storage(settings):
     """Keep uploaded content in memory, as the apps.files suite does."""
@@ -90,25 +109,6 @@ def pdf():
         return SimpleUploadedFile(name, b"%PDF-1.4 fake", content_type=content_type)
 
     return factory
-
-
-def field_codes(response):
-    """Return an error response's codes by field (spec 0000 §9.1).
-
-    Tests assert codes, not messages: clients branch on the code, and the
-    message is for display only. Nested fields are dotted
-    (``person.phone_number``); errors on the request as a whole are under
-    ``None``.
-    """
-    codes = {}
-    for item in response.json()["errors"]:
-        codes.setdefault(item.get("field"), set()).add(item["code"])
-    return codes
-
-
-def error_codes(response):
-    """Return the set of error codes in an error response."""
-    return {item["code"] for item in response.json()["errors"]}
 
 
 CHEQUE_INFO = {
