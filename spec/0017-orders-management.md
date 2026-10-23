@@ -1054,9 +1054,8 @@ Every error response uses the standard shape of
 [`0000`](0000-api-coding-spec.md) #9.1. Validation, authentication, not-found
 and throttling use the common `E00…` codes. Business rules use this module's
 codes, defined in `apps/payments/errors.py` with `apps.api.errors.define()`
-under domain prefix `06` in `apps.api.errors.DOMAINS`, recorded in
-[`0000`](0000-api-coding-spec.md) #9.2. (`03` was already taken by `apps.esign`
-when this module was implemented.)
+under domain prefix `06`, allocated in `apps.api.errors.DOMAINS` and recorded
+in [`0000`](0000-api-coding-spec.md) #9.2 (`03` belongs to `apps.esign`).
 
 | Code | Name | Status | Raised when |
 | --- | --- | --- | --- |

@@ -25,13 +25,15 @@ class Purpose:
 
     REGISTER = "register"
     LOGIN = "login"
+    PASSWORD_RESET = "password_reset"
 
-    CHOICES = (REGISTER, LOGIN)
+    CHOICES = (REGISTER, LOGIN, PASSWORD_RESET)
 
 
 MESSAGE_KEYS = {
     Purpose.REGISTER: "ACCOUNT_REGISTRATION_OTP_SMS",
     Purpose.LOGIN: "ACCOUNT_LOGIN_OTP_SMS",
+    Purpose.PASSWORD_RESET: "ACCOUNT_PASSWORD_RESET_OTP_SMS",
 }
 
 
@@ -52,6 +54,10 @@ def _code_key(purpose: str, mobile_number: str) -> str:
 # for login.
 def _cooldown_key(mobile_number: str) -> str:
     return f"otp:cooldown:{mobile_number}"
+
+
+def _attempts_key(purpose: str, mobile_number: str) -> str:
+    return f"otp:attempts:{purpose}:{mobile_number}"
 
 
 def _digest(code: str) -> str:
@@ -85,6 +91,7 @@ def issue_otp(mobile_number: str, purpose: str) -> None:
         _digest(code),
         timeout=settings.OTP_TTL_SECONDS,
     )
+    cache.delete(_attempts_key(purpose, mobile_number))
 
     try:
         _send_sms(mobile_number, code, purpose)
@@ -97,6 +104,7 @@ def verify_and_consume_otp(mobile_number: str, otp: str, purpose: str) -> bool:
     """Return True if `otp` is the outstanding code, destroying it in the process.
 
     Verification without invalidation permits replay, so the two are one step.
+    `OTP_MAX_ATTEMPTS` wrong guesses also destroy the code.
     """
     if not (mobile_number and otp):
         return False
@@ -107,11 +115,26 @@ def verify_and_consume_otp(mobile_number: str, otp: str, purpose: str) -> bool:
         return False
 
     if not hmac.compare_digest(stored, _digest(str(otp))):
+        _record_failed_attempt(mobile_number, purpose)
         return False
 
     # The delete reports whether this caller was the one that removed the key,
     # so a code submitted twice concurrently succeeds at most once.
     return bool(cache.delete(key))
+
+
+def _record_failed_attempt(mobile_number: str, purpose: str) -> None:
+    """Count a wrong guess atomically, destroying the code at the limit."""
+    key = _attempts_key(purpose, mobile_number)
+    cache.add(key, 0, timeout=settings.OTP_TTL_SECONDS)
+    try:
+        failures = cache.incr(key)
+    except ValueError:
+        # The counter expired between the add and the incr, and the code with it.
+        return
+
+    if failures >= settings.OTP_MAX_ATTEMPTS:
+        cache.delete_many([_code_key(purpose, mobile_number), key])
 
 
 def _send_sms(mobile_number: str, code: str, purpose: str) -> None:

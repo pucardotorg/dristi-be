@@ -7,7 +7,9 @@ import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
 
+from apps.api import errors as api_errors
 from apps.files.models import File
+from apps.pdf import errors
 from apps.pdf.models import PDFJob, PDFJobStatus
 from apps.pdf.tests.conftest import drain
 from apps.pdf.tests.factories import (
@@ -27,6 +29,14 @@ JOBS = "pdf-job-list"
 
 def detail(name, job):
     return reverse(f"pdf-job-{name}", kwargs={"id": str(job.id)})
+
+
+def error_code(response):
+    return response.json()["errors"][0]["code"]
+
+
+def error_field(response):
+    return response.json()["errors"][0].get("field")
 
 
 @pytest.fixture
@@ -132,7 +142,7 @@ class TestCreate:
     def test_unknown_key_is_404(self, client):
         response = create(client, key="missing")
         assert response.status_code == 404
-        assert response.json()["code"] == "PDF_TEMPLATE_NOT_FOUND"
+        assert error_code(response) == errors.TEMPLATE_NOT_FOUND.code
         assert_meta(response.json())
 
     @pytest.mark.parametrize(
@@ -153,6 +163,14 @@ class TestCreate:
         settings.PDF_MAX_REQUEST_DATA_BYTES = 50
         response = create(client, data={"blob": "x" * 100})
         assert response.status_code == 400
+        assert error_code(response) == api_errors.MAX_LENGTH.code
+        assert error_field(response) == "data"
+
+    def test_non_object_data_is_the_wrong_type(self, client, version):
+        response = create(client, data=["not", "an", "object"])
+        assert response.status_code == 400
+        assert error_code(response) == api_errors.INCORRECT_TYPE.code
+        assert error_field(response) == "data"
 
     def test_request_schema_rejects_bad_data_before_a_job_exists(self, client):
         make_template(
@@ -160,7 +178,8 @@ class TestCreate:
         )
         response = create(client, data={"name": "x"})
         assert response.status_code == 400
-        assert response.json()["code"] == "PDF_INVALID_REQUEST_DATA"
+        assert error_code(response) == errors.INVALID_REQUEST_DATA.code
+        assert error_field(response) == "data"
         assert PDFJob.objects.count() == 0
 
     def test_bulk_job(self, client, broker):
@@ -261,7 +280,8 @@ class TestSearchAndRetrieve:
         foreign = other.get(detail("detail", job))
         missing = other.get(unknown)
         assert foreign.status_code == missing.status_code == 404
-        assert foreign.json()["detail"] == missing.json()["detail"]
+        assert foreign.json()["errors"] == missing.json()["errors"]
+        assert error_code(foreign) == api_errors.NOT_FOUND.code
 
     @pytest.mark.parametrize("flag", ["is_staff", "is_superuser"])
     def test_staff_and_superusers_have_no_override(self, client, version, broker, flag):
@@ -294,7 +314,7 @@ class TestCancel:
         job = completed_job(client, broker)
         response = client.post(detail("cancel", job))
         assert response.status_code == 409
-        assert response.json()["code"] == "PDF_INVALID_TRANSITION"
+        assert error_code(response) == errors.INVALID_TRANSITION.code
 
     def test_cannot_cancel_another_users_job(self, client, version, broker):
         job = PDFJob.objects.get(pk=create(client).json()["id"])
@@ -338,14 +358,18 @@ class TestDownloadAndDelete:
         response = client.get(url, {"sequence": 1})
         assert response.status_code == 200
         assert "part-2" in response["Content-Disposition"]
-        assert client.get(url, {"sequence": 9}).status_code == 404
-        assert client.get(url, {"sequence": 1, "index": 0}).status_code == 400
+        missing = client.get(url, {"sequence": 9})
+        assert missing.status_code == 404
+        assert error_code(missing) == errors.NO_DOCUMENT.code
+        both = client.get(url, {"sequence": 1, "index": 0})
+        assert both.status_code == 400
+        assert error_code(both) == api_errors.INVALID.code
 
     def test_download_without_documents_is_404(self, client, version):
         job = PDFJob.objects.get(pk=create(client).json()["id"])
         response = client.get(detail("download", job))
         assert response.status_code == 404
-        assert response.json()["code"] == "PDF_NO_DOCUMENT"
+        assert error_code(response) == errors.NO_DOCUMENT.code
 
     def test_delete_removes_documents_through_apps_files(self, client, version, broker):
         job = completed_job(client, broker)
@@ -375,13 +399,16 @@ class TestDownloadAndDelete:
 
     def test_delete_active_job_conflicts(self, client, version):
         job = PDFJob.objects.get(pk=create(client).json()["id"])
-        assert client.delete(detail("detail", job)).status_code == 409
+        response = client.delete(detail("detail", job))
+        assert response.status_code == 409
+        assert error_code(response) == errors.JOB_ACTIVE.code
 
     def test_partial_storage_delete_failure_keeps_remaining_ids(self, client, version, broker):
         job = completed_job(client, broker)
         with patch("apps.pdf.services.documents.delete_file", side_effect=OSError("down")):
             response = client.delete(detail("detail", job))
-        assert response.status_code == 409
+        assert response.status_code == 502
+        assert error_code(response) == errors.STORAGE_UNAVAILABLE.code
         job.refresh_from_db()
         assert len(job.file_ids) == 1 and job.files_deleted_at is None
 
@@ -409,7 +436,7 @@ class TestSyncRender:
             format="json",
         )
         assert response.status_code == 400
-        assert response.json()["code"] == "PDF_SYNC_RENDER_NOT_ALLOWED"
+        assert error_code(response) == errors.SYNC_RENDER_NOT_ALLOWED.code
 
     def test_external_api_templates_are_rejected(self, client):
         make_template(
@@ -423,6 +450,7 @@ class TestSyncRender:
             reverse(self.url), {"key": "with-api", "tenant_id": "kl", "data": {}}, format="json"
         )
         assert response.status_code == 400
+        assert error_code(response) == errors.SYNC_RENDER_NOT_ALLOWED.code
 
     def test_opt_out_flag_is_honoured(self, client):
         make_template("no-sync", data_config={**DATA_CONFIG, "sync_render": False})
@@ -438,7 +466,8 @@ class TestSyncRender:
             reverse(self.url), {"key": "case-summons", "tenant_id": "kl", "data": {}}, format="json"
         )
         assert response.status_code == 400
-        assert response.json()["code"] == "PDF_INVALID_REQUEST_DATA"
+        assert error_code(response) == errors.INVALID_REQUEST_DATA.code
+        assert error_field(response) == "data"
 
     def test_hard_timeout(self, client, version, settings):
         import time
@@ -456,7 +485,7 @@ class TestSyncRender:
                 format="json",
             )
         assert response.status_code == 504
-        assert response.json()["code"] == "PDF_SYNC_RENDER_TIMEOUT"
+        assert error_code(response) == errors.SYNC_RENDER_TIMEOUT.code
 
 
 class TestAuthentication:

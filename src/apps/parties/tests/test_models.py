@@ -9,7 +9,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
 
-from apps.parties.models import Institution, Person, VerificationLevel, age_on
+from apps.parties.models import Institution, Person, VerificationLevel, age_on, today_in_india
 from apps.parties.tests.factories import make_address, make_institution, make_person
 from apps.users.models import User
 
@@ -118,7 +118,7 @@ class TestPerson:
         assert {"designation", "relative_name"} <= set(exc.value.message_dict)
 
     def test_date_of_birth_in_the_future_is_rejected(self):
-        tomorrow = timezone.localdate() + datetime.timedelta(days=1)
+        tomorrow = today_in_india() + datetime.timedelta(days=1)
 
         with pytest.raises(ValidationError) as exc:
             Person(name="Ravi", date_of_birth=tomorrow).full_clean()
@@ -126,7 +126,7 @@ class TestPerson:
         assert "date_of_birth" in exc.value.message_dict
 
     def test_date_of_birth_today_or_earlier_is_valid(self):
-        Person(name="Ravi", date_of_birth=timezone.localdate()).full_clean()
+        Person(name="Ravi", date_of_birth=today_in_india()).full_clean()
         Person(name="Ravi", date_of_birth=datetime.date(1980, 5, 17)).full_clean()
 
     def test_user_can_be_claimed_by_only_one_person(self):
@@ -375,7 +375,7 @@ class TestAge:
         born = datetime.date(1980, 5, 17)
         person = make_person(date_of_birth=born)
 
-        assert person.current_age == age_on(born, timezone.localdate())
+        assert person.current_age == age_on(born, today_in_india())
 
     def test_current_age_is_the_stated_age_without_a_date_of_birth(self):
         assert make_person(age=45).current_age == 45

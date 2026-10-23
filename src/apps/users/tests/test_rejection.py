@@ -317,16 +317,16 @@ class ResubmissionTests(RejectionTestCase):
 
 
 class ClerkResubmissionTests(RejectionTestCase):
-    """A clerk's bar ID is optional on resubmission, as at registration."""
+    """A clerk's bar ID is required on resubmission, as at registration."""
 
-    def test_clerk_resubmits_without_a_document_and_keeps_the_old_one(self):
-        """Left out, the document already on the request stays."""
+    def test_clerk_resubmits_with_a_new_document(self):
+        """The corrected claim and its new bar ID go back to the approver."""
         user = self.register(role=Role.CLERK)
         old_file_id = self.request_of(user).documents.get().file_id
         self.reject(user)
         self.sign_in()
 
-        response = self.resubmit(registration_number="CLK/100/2020", bar_id_document=None)
+        response = self.resubmit(registration_number="CLK/100/2020")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
         request = self.request_of(user)
@@ -334,7 +334,22 @@ class ClerkResubmissionTests(RejectionTestCase):
         self.assertEqual(
             request.data, {"name": "Sreelakshmi Menon", "clerk_registration_number": "CLK/100/2020"}
         )
-        self.assertEqual(list(request.documents.values_list("file_id", flat=True)), [old_file_id])
+        self.assertNotEqual(request.documents.get().file_id, old_file_id)
         self.assertEqual(
             ClerkProfile.objects.get(user=user).approval_status, ApprovalStatus.PENDING
         )
+
+    def test_clerk_resubmission_without_a_document_is_refused(self):
+        """Left out, the bar ID is a required-field error."""
+        user = self.register(role=Role.CLERK)
+        self.reject(user)
+        self.sign_in()
+
+        response = self.resubmit(registration_number="CLK/100/2020", bar_id_document=None)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": "E00002", "field": "bar_id_document"}],
+        )
+        self.assertEqual(self.request_of(user).status, Request.Status.REJECTED)

@@ -4,6 +4,7 @@ import importlib
 import json
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, RequestDataTooBig, SuspiciousOperation
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -278,6 +279,7 @@ class ErrorResponseAPITests(APITestCase):
             mobile_number="+919000000011",
             password="test",
             registration_status=RegistrationStatus.COMPLETE,
+            terms_version_accepted=settings.CURRENT_TERMS_VERSION,
         )
 
     def assert_error_body(self, response, code):
@@ -577,6 +579,12 @@ class ErrorExampleTests(APITestCase):
             {"code": "E01009", "message": errors.get_error("E01009").message, "field": "email"},
         )
         self.assertIn("E01004", examples["409"])
+
+    def test_power_of_attorney_registration_declares_its_errors(self):
+        examples = operation_examples(self.schema, "/api/v1/power-of-attorneys/", "post")
+        self.assertIn("E01009 (email)", examples["400"])
+        self.assertIn("E01004", examples["409"])
+        self.assertIn("E00102", examples["403"])
 
     def test_validation_example_names_a_real_required_field(self):
         examples = operation_examples(self.schema, "/api/v1/users/", "post")

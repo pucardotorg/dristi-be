@@ -364,7 +364,7 @@ field of the posted form.
   bank codes.
 - `options["bank"]` must be one of the configured codes, else
   `ProviderPermanentError(EGRAS_INVALID_BANK, field="bank")`, which
-  `apps.payments` returns as `400 E03020` on `provider_options.bank`
+  `apps.payments` returns as `400 E06020` on `provider_options.bank`
   ([0017](0017-orders-management.md) #12.5).
 - When the client sends none, `EGRAS_DEFAULT_BANK` is used; when that is empty
   too, `EGRAS_BANK_REQUIRED` with `field="bank"`, returned the same way. A
@@ -678,16 +678,16 @@ providers therefore never changes the API's codes.
 
 | Failure code | Raised as | Stored / returned by `apps.payments` |
 | --- | --- | --- |
-| `EGRAS_DISABLED` | `ProviderPermanentError` | `FAILED`; `422 E03014` |
-| `EGRAS_INVALID_CONFIGURATION` | `ProviderPermanentError` | `FAILED`; `422 E03014` |
-| `EGRAS_UNSUPPORTED_CURRENCY` | `ProviderPermanentError` | `FAILED`; `422 E03014` |
-| `EGRAS_SCHEME_UNMAPPED` | `ProviderPermanentError` | `FAILED`; `422 E03014` |
-| `EGRAS_FRACTIONAL_AMOUNT` | `ProviderPermanentError` | `FAILED`; `422 E03014` |
-| `EGRAS_TOO_MANY_SCHEMES` | `ProviderPermanentError` | `FAILED`; `422 E03014` |
-| `EGRAS_AMOUNT_INCONSISTENT` | `ProviderPermanentError` | `FAILED`; `422 E03014` |
-| `EGRAS_INVALID_PAYER` | `ProviderPermanentError` | `FAILED`; `422 E03014` |
-| `EGRAS_INVALID_BANK` | `ProviderPermanentError(field="bank")` | `FAILED`; `400 E03020` on `provider_options.bank` |
-| `EGRAS_BANK_REQUIRED` | `ProviderPermanentError(field="bank")` | `FAILED`; `400 E03020` on `provider_options.bank` |
+| `EGRAS_DISABLED` | `ProviderPermanentError` | `FAILED`; `422 E06014` |
+| `EGRAS_INVALID_CONFIGURATION` | `ProviderPermanentError` | `FAILED`; `422 E06014` |
+| `EGRAS_UNSUPPORTED_CURRENCY` | `ProviderPermanentError` | `FAILED`; `422 E06014` |
+| `EGRAS_SCHEME_UNMAPPED` | `ProviderPermanentError` | `FAILED`; `422 E06014` |
+| `EGRAS_FRACTIONAL_AMOUNT` | `ProviderPermanentError` | `FAILED`; `422 E06014` |
+| `EGRAS_TOO_MANY_SCHEMES` | `ProviderPermanentError` | `FAILED`; `422 E06014` |
+| `EGRAS_AMOUNT_INCONSISTENT` | `ProviderPermanentError` | `FAILED`; `422 E06014` |
+| `EGRAS_INVALID_PAYER` | `ProviderPermanentError` | `FAILED`; `422 E06014` |
+| `EGRAS_INVALID_BANK` | `ProviderPermanentError(field="bank")` | `FAILED`; `400 E06020` on `provider_options.bank` |
+| `EGRAS_BANK_REQUIRED` | `ProviderPermanentError(field="bank")` | `FAILED`; `400 E06020` on `provider_options.bank` |
 | `EGRAS_CALLBACK_MALFORMED` | `ProviderCallbackMalformed` | nothing written; redirect `status=UNKNOWN` |
 | `EGRAS_VERIFY_TIMEOUT` | `ProviderTransientError` | unchanged; retried by the poller |
 | `EGRAS_VERIFY_UNAVAILABLE` | `ProviderTransientError` | unchanged; retried by the poller |
@@ -775,8 +775,8 @@ egras_status=Successfull outcome=SUCCESS grn=1231234 amount=775 latency_ms=412
   `provider_reference`, CIN in metadata.
 - batch of three demands → one application number, one scheme set, one
   verification → three payments `SUCCESS`.
-- unmapped charge → `422 E03014` and a `FAILED` payment with
-  `failure_code = EGRAS_SCHEME_UNMAPPED`; invalid bank → `400 E03020` on
+- unmapped charge → `422 E06014` and a `FAILED` payment with
+  `failure_code = EGRAS_SCHEME_UNMAPPED`; invalid bank → `400 E06020` on
   `provider_options.bank`. Assertions on `code` and `field`, never message.
 - abandonment → `Not Found` past grace → `FAILED`, items payable again.
 - `Failure` → `FAILED` with `EGRAS_PAYMENT_FAILED`.

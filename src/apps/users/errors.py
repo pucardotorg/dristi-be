@@ -13,7 +13,10 @@ REGISTRATION_INCOMPLETE = define("E01006", "Registration is not complete.", stat
 TERMS_NOT_CURRENT = define("E01007", "The current terms have not been accepted.", status=403)
 CREDENTIAL_CHOICE = define("E01008", "Provide exactly one of otp or password.")
 EMAIL_TAKEN = define("E01009", "An account with this email already exists.")
-TERMS_NOT_ACCEPTED = define("E01010", "The terms must be accepted to register.")
+TERMS_NOT_ACCEPTED = define("E01010", "The terms must be accepted.")
 PASSWORD_REJECTED = define("E01011", "The password does not meet the password policy.")
 NOTHING_TO_RESUBMIT = define("E01012", "There is no rejected registration to resubmit.", status=409)
 APPROVAL_PENDING = define("E01013", "Account approval is pending.", status=403)
+PASSWORD_RESET_NOT_VERIFIED = define(
+    "E01014", "Verify a password reset code first, or request a new one.", status=401
+)

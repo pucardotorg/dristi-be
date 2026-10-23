@@ -19,11 +19,12 @@ class _DataField(serializers.JSONField):
 
         value = super().to_internal_value(data)
         if not isinstance(value, dict):
-            raise serializers.ValidationError("data must be a JSON object.")
+            raise serializers.ValidationError("data must be a JSON object.", code="not_a_dict")
         size = len(json.dumps(value, separators=(",", ":"), default=str).encode("utf-8"))
         if size > settings.PDF_MAX_REQUEST_DATA_BYTES:
             raise serializers.ValidationError(
-                f"data exceeds the {settings.PDF_MAX_REQUEST_DATA_BYTES} byte limit."
+                f"data exceeds the {settings.PDF_MAX_REQUEST_DATA_BYTES} byte limit.",
+                code="max_length",
             )
         return value
 

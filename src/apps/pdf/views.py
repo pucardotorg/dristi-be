@@ -12,30 +12,20 @@ same as an unknown id, so ids cannot be probed.
 from django.http import FileResponse, HttpResponse
 from django.utils.text import get_valid_filename
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import (
-    OpenApiParameter,
-    OpenApiResponse,
-    extend_schema,
-    extend_schema_view,
-)
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
-from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.api import errors as api_errors
+from apps.api.errors import BusinessError
+from apps.api.schema import error_responses
 from apps.api.viewsets import APIModelReadOnlyViewSet
 
-from .exceptions import (
-    PDFConfigurationError,
-    PDFDependencyError,
-    PDFError,
-    PDFJobStateError,
-    PDFRenderError,
-    PDFRequestDataError,
-    PDFTemplateNotFound,
-)
+from . import errors
+from .exceptions import PDFError
 from .models import PDFJob
 from .serializers import (
     PDFDownloadQuerySerializer,
@@ -47,47 +37,16 @@ from .serializers import (
 from .services import jobs
 from .services.documents import PDFDocumentNotFound, open_document
 
-TAGS = ["pdf"]
 CORRELATION_HEADER = "HTTP_X_CORRELATION_ID"
 
-
-class PDFConflict(APIException):
-    """The job is in a state that does not allow the operation."""
-
-    status_code = status.HTTP_409_CONFLICT
-    default_code = "conflict"
-
-
-class PDFUnavailable(APIException):
-    """A dependency needed to answer synchronously is unavailable."""
-
-    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    default_code = "unavailable"
-
-
-class PDFTimeout(APIException):
-    """The synchronous render ran out of time."""
-
-    status_code = status.HTTP_504_GATEWAY_TIMEOUT
-    default_code = "timeout"
-
-
-def to_api_error(exc: PDFError) -> APIException:
-    """Translate a service error into a DRF exception with a stable ``code``."""
-    detail = {"detail": exc.safe_message, "code": exc.code}
-    if isinstance(exc, PDFTemplateNotFound | jobs.PDFJobNotFound):
-        return NotFound(detail)
-    if isinstance(exc, PDFRequestDataError | jobs.PDFSyncRenderNotAllowed):
-        return ValidationError(detail)
-    if isinstance(exc, PDFJobStateError):
-        return PDFConflict(detail)
-    if isinstance(exc, jobs.PDFSyncRenderTimeout):
-        return PDFTimeout(detail)
-    if isinstance(exc, PDFDependencyError):
-        return PDFUnavailable(detail)
-    if isinstance(exc, PDFConfigurationError | PDFRenderError):
-        return APIException(detail)
-    return APIException(detail)
+# Failures any template render can hit, synchronous or queued.
+RENDER_ERRORS = (
+    errors.TEMPLATE_NOT_FOUND.example("No active PDF template for key 'case-summons'."),
+    errors.INVALID_REQUEST_DATA.example(
+        "Request data is invalid: (root): 'case' is a required property", field="data"
+    ),
+    errors.INVALID_CONFIG,
+)
 
 
 def _request_meta(request) -> dict:
@@ -101,35 +60,66 @@ def _pdf_filename(job: PDFJob, suffix: str = "") -> str:
 
 @extend_schema_view(
     list=extend_schema(
-        tags=TAGS,
         parameters=[PDFJobFilterSerializer],
+        responses=error_responses(
+            api_errors.INVALID_CHOICE.example('"DONE" is not a valid choice.', field="status")
+        ),
         summary="Search PDF jobs by entity, key, tenant or status.",
     ),
-    retrieve=extend_schema(tags=TAGS, summary="Retrieve a PDF job; poll until file_ids appear."),
+    retrieve=extend_schema(summary="Retrieve a PDF job; poll until file_ids appear."),
     create=extend_schema(
-        tags=TAGS,
         request=PDFJobCreateSerializer,
-        responses={202: PDFJobSerializer, 200: PDFJobSerializer},
+        responses={
+            202: PDFJobSerializer,
+            200: PDFJobSerializer,
+            **error_responses(
+                *RENDER_ERRORS,
+                api_errors.INCORRECT_TYPE.example("data must be a JSON object.", field="data"),
+                api_errors.MAX_LENGTH.example("data exceeds the 2097152 byte limit.", field="data"),
+            ),
+        },
         summary="Create a generation job (202), or return a reusable one (200, reused=true).",
     ),
     destroy=extend_schema(
-        tags=TAGS,
-        responses={200: PDFJobSerializer},
+        responses={
+            200: PDFJobSerializer,
+            **error_responses(
+                errors.JOB_ACTIVE,
+                errors.STORAGE_UNAVAILABLE.example(
+                    "Some documents could not be deleted; retry the request."
+                ),
+            ),
+        },
         summary="Delete the job's generated documents.",
     ),
     cancel=extend_schema(
-        tags=TAGS,
         request=None,
-        responses={200: PDFJobSerializer, 409: OpenApiResponse(description="Job is terminal.")},
+        responses={
+            200: PDFJobSerializer,
+            **error_responses(
+                errors.INVALID_TRANSITION.example("A COMPLETED job cannot be cancelled.")
+            ),
+        },
         summary="Cancel a job that has not finished.",
     ),
     download=extend_schema(
-        tags=TAGS,
         parameters=[
             OpenApiParameter("sequence", int, description="Bulk chunk sequence to download."),
             OpenApiParameter("index", int, description="Index into file_ids (default 0)."),
         ],
-        responses={(200, "application/pdf"): OpenApiTypes.BINARY},
+        responses={
+            (200, "application/pdf"): OpenApiTypes.BINARY,
+            **error_responses(
+                api_errors.INVALID.example("sequence and index are mutually exclusive."),
+                api_errors.INVALID.example("A valid integer is required.", field="index"),
+                api_errors.MIN_VALUE.example(
+                    "Ensure this value is greater than or equal to 0.", field="index"
+                ),
+                errors.NO_DOCUMENT,
+                errors.NO_DOCUMENT.example("No document for that chunk."),
+                errors.NO_DOCUMENT.example("The document no longer exists."),
+            ),
+        },
         summary="Download a generated document.",
     ),
 )
@@ -188,7 +178,7 @@ class PDFJobViewSet(APIModelReadOnlyViewSet):
                 user=request.user,
             )
         except PDFError as exc:
-            raise to_api_error(exc) from exc
+            raise errors.api_error(exc) from exc
         return self._respond(
             job,
             reused=reused,
@@ -199,16 +189,11 @@ class PDFJobViewSet(APIModelReadOnlyViewSet):
         """Delete the job's documents through the File Storage Service."""
         job = self.get_object()
         if not job.is_terminal:
-            raise PDFConflict(
-                {
-                    "detail": "Cancel the job before deleting its documents.",
-                    "code": "PDF_JOB_ACTIVE",
-                }
-            )
+            raise BusinessError(errors.JOB_ACTIVE)
         try:
             job = jobs.delete_job_documents(job, user=request.user)
         except PDFError as exc:
-            raise to_api_error(exc) from exc
+            raise errors.api_error(exc) from exc
         return self._respond(job)
 
     @action(detail=True, methods=["post"])
@@ -218,7 +203,7 @@ class PDFJobViewSet(APIModelReadOnlyViewSet):
         try:
             job = jobs.cancel_job(job.pk, user=request.user)
         except PDFError as exc:
-            raise to_api_error(exc) from exc
+            raise errors.api_error(exc) from exc
         return self._respond(job)
 
     @action(detail=True, methods=["get"])
@@ -233,14 +218,12 @@ class PDFJobViewSet(APIModelReadOnlyViewSet):
             sequence = query.validated_data["sequence"]
             record = job.records.filter(sequence=sequence).exclude(file_id="").first()
             if record is None:
-                raise NotFound({"detail": "No document for that chunk.", "code": "PDF_NO_DOCUMENT"})
+                raise BusinessError(errors.NO_DOCUMENT, "No document for that chunk.")
             file_id, suffix = record.file_id, f"part-{sequence + 1}"
         else:
             index = query.validated_data.get("index", 0)
             if index >= len(job.file_ids or []):
-                raise NotFound(
-                    {"detail": "The job has no such document.", "code": "PDF_NO_DOCUMENT"}
-                )
+                raise BusinessError(errors.NO_DOCUMENT)
             file_id = job.file_ids[index]
             if len(job.file_ids) > 1:
                 suffix = f"part-{index + 1}"
@@ -248,9 +231,7 @@ class PDFJobViewSet(APIModelReadOnlyViewSet):
         try:
             handle = open_document(file_id)
         except PDFDocumentNotFound as exc:
-            raise NotFound(
-                {"detail": "The document no longer exists.", "code": "PDF_NO_DOCUMENT"}
-            ) from exc
+            raise BusinessError(errors.NO_DOCUMENT, "The document no longer exists.") from exc
         return FileResponse(
             handle,
             as_attachment=True,
@@ -265,15 +246,19 @@ class PDFRenderView(APIView):
     authentication_classes = [SessionAuthentication, TokenAuthentication]
 
     @extend_schema(
-        tags=TAGS,
         request=PDFRenderRequestSerializer,
         responses={
             (200, "application/pdf"): OpenApiTypes.BINARY,
-            400: OpenApiResponse(
-                description="Invalid request or template not renderable synchronously."
+            **error_responses(
+                *RENDER_ERRORS,
+                errors.SYNC_RENDER_NOT_ALLOWED,
+                errors.SYNC_RENDER_NOT_ALLOWED.example(
+                    "Templates that call external APIs cannot be rendered synchronously."
+                ),
+                errors.SYNC_RENDER_TIMEOUT,
+                errors.DEPENDENCY_UNAVAILABLE,
+                errors.RENDER_FAILED,
             ),
-            404: OpenApiResponse(description="Unknown template key."),
-            504: OpenApiResponse(description="Render exceeded PDF_SYNC_RENDER_TIMEOUT_SECONDS."),
         },
         summary="Render a small document synchronously.",
     )
@@ -292,7 +277,7 @@ class PDFRenderView(APIView):
                 **_request_meta(request),
             )
         except PDFError as exc:
-            raise to_api_error(exc) from exc
+            raise errors.api_error(exc) from exc
         response = HttpResponse(content, content_type="application/pdf")
         filename = get_valid_filename(params["key"]) or "document"
         response["Content-Disposition"] = f'inline; filename="{filename}.pdf"'

@@ -352,6 +352,12 @@ Spec 0000 makes `BaseModel` the default, but its audit fields do not fit an immu
 **Why auto-fill district and state:**
 Use the [India Post Pincode API](https://api.postalpincode.in/pincode/{pincode}) to populate district and state at entry time, then store them. This denormalizes the data but makes queries faster and survives API unavailability.
 
+`GET /api/v1/pincodes/{pincode}/` returns the suggestion. Its errors use the
+standard shape of [`0000`](0000-api-coding-spec.md) #9.1 with the codes in
+`apps/address/errors.py` (domain `05`): `400 E05001` for a malformed pincode,
+`404 E05002` when India Post has no record of it, and `503 E05003` when India
+Post is unavailable, in which case district and state are entered by hand.
+
 **Why no `updated_at` or `updated_by`:**
 Rows are never updated. The absence of these fields, and of BaseModel itself, is intentional — it signals immutability to future maintainers.
 
@@ -632,7 +638,7 @@ A piece of evidence may have no uploaded file yet (entered as metadata before sc
 This spec assumes spec 0005's `User` model is already in place:
 - `mobile_number` as `USERNAME_FIELD`
 - Role field: `LITIGANT`, `POWER_OF_ATTORNEY`, `ADVOCATE`, `CLERK`
-- Profile tables: `AdvocateProfile`, `ClerkProfile`, `LitigantProfile`
+- Profile tables: `AdvocateProfile`, `ClerkProfile`, `LitigantProfile`, `PowerOfAttorneyProfile`
 
 The `person.user_id` FK points to this existing model.
 
