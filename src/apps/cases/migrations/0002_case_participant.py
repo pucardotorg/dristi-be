@@ -14,6 +14,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("address", "0001_initial"),
         ("cases", "0001_initial"),
+        ("files", "0001_initial"),
         ("parties", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
@@ -142,6 +143,17 @@ class Migration(migrations.Migration):
                         to=settings.AUTH_USER_MODEL,
                     ),
                 ),
+                (
+                    "signature_document",
+                    models.ForeignKey(
+                        blank=True,
+                        db_constraint=False,
+                        null=True,
+                        on_delete=django.db.models.deletion.DO_NOTHING,
+                        related_name="+",
+                        to="files.file",
+                    ),
+                ),
             ],
             options={
                 "verbose_name": "historical case participant",
@@ -251,6 +263,16 @@ class Migration(migrations.Migration):
                         on_delete=django.db.models.deletion.SET_NULL,
                         related_name="%(app_label)s_%(class)s_updated_by",
                         to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "signature_document",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="+",
+                        to="files.file",
                     ),
                 ),
             ],
