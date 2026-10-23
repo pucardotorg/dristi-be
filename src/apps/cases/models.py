@@ -71,12 +71,6 @@ class Case(BaseModel, BaseAuditableModel):
     class Meta(BaseModel.Meta):
         """Meta options."""
 
-        constraints = [
-            models.CheckConstraint(
-                check=Q(status__in=CaseStatus.values),
-                name="cases_case_status_valid",
-            ),
-        ]
         indexes = [
             models.Index(fields=["status", "created_by"]),
             models.Index(fields=["case_type", "status"]),

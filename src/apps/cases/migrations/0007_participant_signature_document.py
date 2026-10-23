@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("cases", "0006_case_status_check"),
+        ("cases", "0005_witness"),
         ("files", "0001_initial"),
     ]
 
