@@ -25,6 +25,7 @@ from apps.esign.models import ESignTransaction
 from .. import errors
 from ..models import (
     EVIDENCE_ORDERING,
+    FILING_SIDE_ROLES,
     PARTICIPANT_ORDERING,
     POA_MANDATE_ORDERING,
     REPRESENTATION_ORDERING,
@@ -56,10 +57,24 @@ from .services import (
 def get_viewable_case(case_id, user):
     """Return a case ``user`` may preview, or raise ``NotFound`` (spec 0021 §9.6).
 
-    The filer, an active participant who is the user, and staff holding
-    ``cases.view_case`` may; anyone else is told the case does not exist.
+    The filer, an active complainant or POA holder who is the user, an active
+    advocate of a complainant, and staff holding ``cases.view_case`` may.
+    Anyone else, the accused and witnesses included, is told the case does
+    not exist.
     """
-    viewable = Q(created_by=user) | Q(participants__person__user=user, participants__is_active=True)
+    viewable = (
+        Q(created_by=user)
+        | Q(
+            participants__person__user=user,
+            participants__is_active=True,
+            participants__role__in=FILING_SIDE_ROLES,
+        )
+        | Q(
+            representations__advocate__user=user,
+            representations__is_active=True,
+            representations__case_participant__role__in=FILING_SIDE_ROLES,
+        )
+    )
     found = (
         Case.objects.all() if user.has_perm("cases.view_case") else Case.objects.filter(viewable)
     )

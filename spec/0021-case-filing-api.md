@@ -1315,17 +1315,27 @@ If the India Post Pincode API is unavailable, should the call:
 
 Who can call `GET /cases/{case_id}`?
 - The creator (`created_by`)
-- Active participants (`case_participant.person_id → person.user_id`)
-- Court staff (role-based)
+- Active participants on the filing side, complainants and POA holders (`case_participant.person_id → person.user_id`)
+- Active advocates of a complainant (`representation.advocate → advocate_profile.user_id`)
+- Court staff holding `cases.view_case`
 
-**Recommendation:** Implement a `CasePermission` service:
+The accused and witnesses never see the filing through this endpoint, whatever
+the case status. They are entered by the filer as asserted persons, and an
+accused can register and claim that record (spec 0020 scenario 2); a
+participant-only rule would then hand them the complainant's draft: evidence,
+contact details, addresses and advocates. A view for the accused after
+registration belongs in a separate endpoint (not yet specified). Anyone not allowed gets `404`, so the
+case's existence is not disclosed.
+
+Implemented in `apps.cases.services.filing.get_viewable_case`:
 ```python
-def can_view_case(user, case):
-    return (
-        case.created_by_id == user.id
-        or case.participants.filter(person__user_id=user.id, is_active=True).exists()
-        or user.has_perm('cases.view_any_case')
-    )
+viewable = (
+    Q(created_by=user)
+    | Q(participants__person__user=user, participants__is_active=True,
+        participants__role__in=FILING_SIDE_ROLES)
+    | Q(representations__advocate__user=user, representations__is_active=True,
+        representations__case_participant__role__in=FILING_SIDE_ROLES)
+)
 ```
 
 ## 10. Validation and Error Handling

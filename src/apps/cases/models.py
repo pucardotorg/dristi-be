@@ -95,6 +95,10 @@ INSTITUTION_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.ACCUSED)
 # The filing side signs the complaint; the accused and witnesses never do (spec 0021 §8).
 SIGNING_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.POA_HOLDER)
 
+# Only the filing side, and its advocates, may preview the filing. An accused or
+# witness who claims the person record they were entered as must not (spec 0021 §9.6).
+FILING_SIDE_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.POA_HOLDER)
+
 # A person holding one of these roles on a case cannot hold the other there.
 OPPOSING_ROLES = {
     ParticipantRole.COMPLAINANT: ParticipantRole.ACCUSED,

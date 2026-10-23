@@ -14,6 +14,7 @@ from apps.cases.models import (
     CaseStatus,
     ChequeBounceCase,
     ParticipantRole,
+    Representation,
 )
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
@@ -23,7 +24,17 @@ from apps.parties.tests.factories import ADDRESS_DEFAULTS
 
 from .conftest import DEMAND_NOTICE_INFO, RETURN_MEMO_INFO, error_codes
 from .test_api import add_cheque, add_evidence, put_section, upload
-from .test_participants import PERSON, add, add_complainant, remove
+from .test_participants import (
+    PERSON,
+    add,
+    add_advocate,
+    add_complainant,
+    add_poa_holder,
+    add_witness,
+    end,
+    make_advocate,
+    remove,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -88,6 +99,12 @@ def sign(client, case_id, participant_id, document_id):
         {"signature_document_id": str(document_id)},
         format="json",
     )
+
+
+def link_role(case_id, role, user):
+    """Link the person of ``case_id``'s active ``role`` participant to ``user``, as a claim would."""
+    participant = CaseParticipant.objects.active().get(case_id=case_id, role=role)
+    Person.objects.filter(pk=participant.person_id).update(user=user)
 
 
 def set_status(case_id, case_status):
@@ -164,6 +181,79 @@ class TestPreview:
         response = client_for(other_user).get(reverse("case-detail", args=[draft]))
 
         assert response.status_code == 200
+
+    def test_a_poa_holder_who_is_the_user_may_view(self, client, client_for, other_user, draft):
+        complainant = add_complainant(client, draft)
+        assert (
+            add_poa_holder(client, draft, [complainant["case_participant_id"]]).status_code == 201
+        )
+        link_role(draft, ParticipantRole.POA_HOLDER, other_user)
+
+        response = client_for(other_user).get(reverse("case-detail", args=[draft]))
+
+        assert response.status_code == 200
+
+    def test_an_accused_who_claimed_their_record_is_told_it_does_not_exist(
+        self, client, client_for, other_user, draft
+    ):
+        add_complainant(client, draft)
+        accused = add(client, draft, "accused", person={**PERSON, "name": "Suresh Patel"})
+        assert accused.status_code == 201
+        link_role(draft, ParticipantRole.ACCUSED, other_user)
+
+        response = client_for(other_user).get(reverse("case-detail", args=[draft]))
+
+        assert response.status_code == 404
+
+    def test_a_witness_who_is_the_user_is_told_it_does_not_exist(
+        self, client, client_for, other_user, draft
+    ):
+        complainant = add_complainant(client, draft)
+        witness = add_witness(client, draft, complainant["case_participant_id"])
+        assert witness.status_code == 201
+        link_role(draft, ParticipantRole.WITNESS, other_user)
+
+        response = client_for(other_user).get(reverse("case-detail", args=[draft]))
+
+        assert response.status_code == 404
+
+    def test_an_advocate_of_a_complainant_may_view(
+        self, client, client_for, make_user, other_user, draft
+    ):
+        complainant = add_complainant(client, draft)
+        advocate = make_advocate(make_user, user=other_user)
+        response = add_advocate(client, draft, advocate.pk, [complainant["case_participant_id"]])
+        assert response.status_code == 201
+
+        response = client_for(other_user).get(reverse("case-detail", args=[draft]))
+
+        assert response.status_code == 200
+
+    def test_an_advocate_whose_representation_ended_is_told_it_does_not_exist(
+        self, client, client_for, make_user, other_user, draft
+    ):
+        complainant = add_complainant(client, draft)
+        advocate = make_advocate(make_user, user=other_user)
+        add_advocate(client, draft, advocate.pk, [complainant["case_participant_id"]])
+        representation = Representation.objects.get(case_id=draft, advocate=advocate)
+        assert end(client, representation.pk).status_code == 204
+
+        response = client_for(other_user).get(reverse("case-detail", args=[draft]))
+
+        assert response.status_code == 404
+
+    def test_an_advocate_of_the_accused_is_told_it_does_not_exist(
+        self, client, client_for, make_user, other_user, draft
+    ):
+        add_complainant(client, draft)
+        accused = add(client, draft, "accused", person={**PERSON, "name": "Suresh Patel"})
+        advocate = make_advocate(make_user, user=other_user)
+        response = add_advocate(client, draft, advocate.pk, [accused.json()["case_participant_id"]])
+        assert response.status_code == 201
+
+        response = client_for(other_user).get(reverse("case-detail", args=[draft]))
+
+        assert response.status_code == 404
 
     def test_staff_with_the_view_permission_may_view(self, client, client_for, other_user, draft):
         add_complainant(client, draft)
