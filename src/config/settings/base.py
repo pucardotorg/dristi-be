@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     "apps.pdf",
     "apps.address",
     "apps.parties",
+    "apps.cases",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
@@ -305,6 +306,7 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
+        "CaseStatusEnum": "apps.cases.models.CaseStatus",
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
@@ -353,6 +355,14 @@ CACHES["default"]["KEY_PREFIX"] = CACHE_KEY_PREFIX
 
 if not CACHE_ENABLED:
     CACHES["default"] = {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}
+
+# Short-lived state that is the only copy of its data, such as case draft
+# sessions (spec 0021 §2.2). Kept apart from "default" so CACHE_ENABLED, a
+# cache.clear() or a FLUSHDB of the query cache cannot drop it; use its own
+# Redis database, on a server whose maxmemory-policy does not evict keys.
+# apps.cases.checks refuses a dummy backend here.
+CACHES["state"] = env.cache(var="STATE_CACHE_REDIS_URL", default="redis://localhost:6379/3")
+CACHES["state"]["KEY_PREFIX"] = CACHE_KEY_PREFIX
 
 # ---------------------------------------------------------------------------
 # django-cachalot (automatic ORM query caching, Redis-backed)
