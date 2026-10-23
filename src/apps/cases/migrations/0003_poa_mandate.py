@@ -23,7 +23,6 @@ class Migration(migrations.Migration):
                 ("id", models.UUIDField(db_index=True, default=uuid.uuid4, editable=False)),
                 ("created_at", models.DateTimeField(blank=True, db_index=True, editable=False)),
                 ("updated_at", models.DateTimeField(blank=True, editable=False)),
-                ("poa_type", models.CharField(blank=True, max_length=64, null=True)),
                 ("granted_at", models.DateTimeField(default=django.utils.timezone.now)),
                 ("revoked_at", models.DateTimeField(blank=True, null=True)),
                 ("history_id", models.AutoField(primary_key=True, serialize=False)),
@@ -122,7 +121,6 @@ class Migration(migrations.Migration):
                 ),
                 ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
-                ("poa_type", models.CharField(blank=True, max_length=64, null=True)),
                 ("granted_at", models.DateTimeField(default=django.utils.timezone.now)),
                 ("revoked_at", models.DateTimeField(blank=True, null=True)),
                 (

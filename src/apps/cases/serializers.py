@@ -408,7 +408,6 @@ class PoaHolderCreateSerializer(IndividualPartySerializer):
     represented_participant_ids = serializers.ListField(
         child=serializers.UUIDField(), allow_empty=False
     )
-    poa_type = serializers.CharField(max_length=64, required=False, allow_null=True)
 
     def validate_represented_participant_ids(self, value):
         """Require each represented party once."""
@@ -447,7 +446,6 @@ class PoaMandateSerializer(serializers.ModelSerializer):
             "poa_participant_id",
             "poa_holder_name",
             "represented_participant_id",
-            "poa_type",
             "is_active",
             "granted_at",
             "revoked_at",
@@ -455,18 +453,6 @@ class PoaMandateSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = fields
-
-
-class PoaMandateUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializer):
-    """Body of PATCH /poa-mandates/{id} (spec 0021 §4.5): only ``poa_type`` changes.
-
-    Other fields are refused, so a change of holder or party is not silently
-    ignored.
-    """
-
-    unknown_field_message = "This field cannot be changed."
-
-    poa_type = serializers.CharField(max_length=64, allow_null=True)
 
 
 class AdvocateCreateSerializer(serializers.Serializer):

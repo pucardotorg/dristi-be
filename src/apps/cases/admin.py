@@ -62,7 +62,6 @@ class PoaMandateAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
         "case",
         "poa_participant",
         "represented_participant",
-        "poa_type",
         "is_active",
         "granted_at",
         "revoked_at",

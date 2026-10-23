@@ -315,7 +315,6 @@ Records the authority one participant holds to act for another. A POA holder may
 | `case_id` | uuid | FK → cases, NOT NULL | Denormalized for query performance |
 | `poa_participant_id` | uuid | FK → case_participant, NOT NULL | The POA holder (role = 'POA_HOLDER') |
 | `represented_participant_id` | uuid | FK → case_participant, NOT NULL | The party being represented: a COMPLAINANT or ACCUSED |
-| `poa_type` | varchar(64) | NULLABLE | Scope/category of authority |
 | `is_active` | boolean | NOT NULL, default true | Active until revoked |
 | `granted_at` | timestamp | NOT NULL, default now() | When mandate was granted |
 | `revoked_at` | timestamp | NULLABLE | When mandate was revoked |

@@ -201,7 +201,6 @@ def add_poa_holder(case_or_draft_id, user, data):
                 case=case,
                 poa_participant=holder,
                 represented_participant=party,
-                poa_type=data.get("poa_type"),
                 created_by=user,
                 updated_by=user,
             )
@@ -228,16 +227,6 @@ def _get_represented(case, data, field):
 def get_mandate(poa_mandate_id, user):
     """Return an active mandate on one of ``user``'s cases, or raise ``NotFound``."""
     return get_active_case_item(PoaMandate, poa_mandate_id, user)
-
-
-def update_mandate(mandate, user, data):
-    """Change a mandate's ``poa_type``; ``data`` is a ``PoaMandateUpdateSerializer`` body."""
-    ensure_editable(mandate.case)
-    with editing(mandate.case, user):
-        mandate.poa_type = data["poa_type"]
-        mandate.updated_by = user
-        _validated_save(mandate)
-    return mandate
 
 
 def revoke_mandate(mandate, user):

@@ -662,7 +662,6 @@ class TestAccess:
 def add_poa_holder(client, case_id, represented_ids, **body):
     body.setdefault("person", {**PERSON, "name": "Suresh Patel"})
     body.setdefault("address", ADDRESS_DEFAULTS)
-    body.setdefault("poa_type", "Limited to this case only")
     body.setdefault("represented_participant_ids", [str(pk) for pk in represented_ids])
     url = reverse("case-poa-holder-list", args=[case_id])
     return client.post(url, {k: v for k, v in body.items() if v is not None}, format="json")
@@ -670,10 +669,6 @@ def add_poa_holder(client, case_id, represented_ids, **body):
 
 def mandates(client, case_id):
     return client.get(reverse("case-poa-mandate-list", args=[case_id]))
-
-
-def patch_mandate(client, mandate_id, body):
-    return client.patch(reverse("poa-mandate-detail", args=[mandate_id]), body, format="json")
 
 
 def revoke(client, mandate_id):
@@ -703,7 +698,7 @@ class TestAddPoaHolder:
             first["case_participant_id"],
             second["case_participant_id"],
         }
-        assert all(m.is_active and m.poa_type == "Limited to this case only" for m in rows)
+        assert all(m.is_active for m in rows)
         assert all(str(m.case_id) == draft and m.poa_participant == holder for m in rows)
 
     def test_an_accused_may_be_represented(self, client, draft):
@@ -748,7 +743,6 @@ class TestAddPoaHolder:
                 "represented_participant_ids[0]",
                 "E00001",
             ),
-            ({"poa_type": "x" * 65}, "poa_type", "E00006"),
         ],
     )
     def test_invalid_bodies_are_400(self, client, draft, body, field, code):
@@ -830,29 +824,6 @@ class TestPoaMandates:
         assert results[0]["represented_participant_id"] == first["case_participant_id"]
         assert "created_by" not in results[0]
 
-    def test_patch_changes_poa_type(self, client, draft):
-        complainant = add_complainant(client, draft)
-        created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
-        mandate_id = created["poa_mandate_ids"][0]
-
-        response = patch_mandate(client, mandate_id, {"poa_type": "General"})
-
-        assert response.status_code == 200, response.json()
-        assert response.json()["poa_type"] == "General"
-        assert PoaMandate.objects.get(pk=mandate_id).poa_type == "General"
-
-    @pytest.mark.parametrize(
-        "body",
-        [{}, {"represented_participant_id": str(uuid.uuid4())}, {"poa_type": "x" * 65}],
-    )
-    def test_patch_refuses_other_changes(self, client, draft, body):
-        complainant = add_complainant(client, draft)
-        created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
-
-        response = patch_mandate(client, created["poa_mandate_ids"][0], body)
-
-        assert response.status_code == 400
-
     def test_a_holder_cannot_be_a_party_in_person(self, client, draft):
         complainant = add_complainant(client, draft)
         created = add_poa_holder(client, draft, [complainant["case_participant_id"]]).json()
@@ -897,7 +868,6 @@ class TestRevokeMandate:
         revoke(client, mandate_id)
 
         assert revoke(client, mandate_id).status_code == 404
-        assert patch_mandate(client, mandate_id, {"poa_type": "General"}).status_code == 404
 
 
 class TestPoaAccess:
@@ -911,7 +881,6 @@ class TestPoaAccess:
             add_poa_holder(outsider, draft, [complainant["case_participant_id"]]).status_code == 404
         )
         assert mandates(outsider, draft).status_code == 404
-        assert patch_mandate(outsider, mandate_id, {"poa_type": "X"}).status_code == 404
         assert revoke(outsider, mandate_id).status_code == 404
 
     def test_submitted_case_cannot_change(self, client, draft):
@@ -923,7 +892,6 @@ class TestPoaAccess:
         assert (
             add_poa_holder(client, draft, [complainant["case_participant_id"]]).status_code == 409
         )
-        assert patch_mandate(client, mandate_id, {"poa_type": "X"}).status_code == 409
         assert revoke(client, mandate_id).status_code == 409
         assert mandates(client, draft).json()["count"] == 1
 

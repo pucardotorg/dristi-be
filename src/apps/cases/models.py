@@ -410,8 +410,6 @@ class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):
     represented_participant = models.ForeignKey(
         CaseParticipant, on_delete=models.CASCADE, related_name="poa_mandates_granted"
     )
-    # Scope or category of the authority, e.g. "Limited to this case only".
-    poa_type = models.CharField(max_length=64, null=True, blank=True)
     granted_at = models.DateTimeField(default=timezone.now)
     revoked_at = models.DateTimeField(null=True, blank=True)
 

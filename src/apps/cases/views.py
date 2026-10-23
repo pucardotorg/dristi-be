@@ -56,7 +56,6 @@ from .serializers import (
     PoaHolderCreatedSerializer,
     PoaHolderCreateSerializer,
     PoaMandateSerializer,
-    PoaMandateUpdateSerializer,
     RepresentationSerializer,
     SignatureSerializer,
     SignedSerializer,
@@ -547,28 +546,7 @@ class PoaMandateListView(generics.ListAPIView):
 
 @extend_schema(tags=TAGS)
 class PoaMandateDetailView(APIView):
-    """PATCH or DELETE /poa-mandates/{poa_mandate_id}."""
-
-    @extend_schema(
-        tags=TAGS,
-        request=PoaMandateUpdateSerializer,
-        responses={
-            200: PoaMandateSerializer,
-            **error_responses(
-                errors.FIELD_NOT_ACCEPTED.example(
-                    "This field cannot be changed.", field="poa_participant_id"
-                ),
-                errors.CASE_NOT_EDITABLE,
-            ),
-        },
-    )
-    def patch(self, request, poa_mandate_id):
-        """Change the mandate's ``poa_type``."""
-        mandate = participants.get_mandate(poa_mandate_id, request.user)
-        serializer = PoaMandateUpdateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        mandate = participants.update_mandate(mandate, request.user, serializer.validated_data)
-        return Response(PoaMandateSerializer(mandate).data)
+    """DELETE /poa-mandates/{poa_mandate_id}."""
 
     @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
     def delete(self, request, poa_mandate_id):

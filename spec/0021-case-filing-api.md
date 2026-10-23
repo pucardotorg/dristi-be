@@ -315,7 +315,6 @@ GET    /cases/{case_id}/poa-mandates
 PATCH  /case-participants/{case_participant_id}
 DELETE /case-participants/{case_participant_id}
 DELETE /representations/{representation_id}
-PATCH  /poa-mandates/{poa_mandate_id}
 DELETE /poa-mandates/{poa_mandate_id}
 ```
 
@@ -562,7 +561,6 @@ Sets `is_active = false`, `to_date = now()`. Rows are never hard-deleted.
 
 ```
 POST   /cases/{case_id_or_draft_session_id}/poa-holders
-PATCH  /poa-mandates/{poa_mandate_id}
 DELETE /poa-mandates/{poa_mandate_id}
 ```
 
@@ -576,7 +574,6 @@ DELETE /poa-mandates/{poa_mandate_id}
   },
   "address": { ... },
   "represented_participant_ids": ["uuid1", "uuid2"],
-  "poa_type": "Limited to this case only",
   "additional_details": {}
 }
 ```
@@ -600,15 +597,12 @@ DELETE /poa-mandates/{poa_mandate_id}
 1. Get or create the case (same as §3.1, step 1).
 2. Resolve the person (§4.1, step 3): the filer's own with `self`, otherwise a new `person` at `ASSERTED`.
 3. Write the address and create the `case_participant` with `role = 'POA_HOLDER'` (§4.1, steps 5–6).
-4. For each represented participant, insert a `poa_mandate` row with `case_id`, `poa_participant_id`, `represented_participant_id`, `poa_type`, `is_active = true`, `granted_at = now()`.
+4. For each represented participant, insert a `poa_mandate` row with `case_id`, `poa_participant_id`, `represented_participant_id`, `is_active = true`, `granted_at = now()`.
 
 **Why multiple mandate rows:**
 One POA acting for 2 of 3 complainants = 2 `poa_mandate` rows pointing to the same `poa_participant_id`.
 
 **The POA document:** uploaded as a case document of type `POA_DOCUMENT` (§3), not with this request, for the same reason as the vakalatnama (§4.4).
-
-**PATCH:**
-Updates `poa_type`.
 
 **DELETE:**
 Revokes the mandate: `is_active = false`, `revoked_at = now()`. Revoking a holder's last active mandate also removes the holder's participant row (§4.1 DELETE), since a POA holder with no one to act for is no longer a party.
@@ -1004,7 +998,6 @@ GET /cases/{case_id}
       "poa_participant_id": "uuid",
       "poa_holder_name": "Suresh Patel",
       "represented_participant_id": "uuid",
-      "poa_type": "Limited to this case",
       "is_active": true
     }
   ],
@@ -1523,7 +1516,6 @@ CREATE INDEX ON representation (advocate_id, is_active);
 | GET | `/cases/{id}/representations` | List advocates and their clients |
 | DELETE | `/representations/{representation_id}` | End a representation |
 | GET | `/cases/{id}/poa-mandates` | List POA mandates |
-| PATCH | `/poa-mandates/{mandate_id}` | Update a mandate's `poa_type` |
 | DELETE | `/poa-mandates/{mandate_id}` | Revoke a mandate |
 | POST | `/cases/{id_or_draft}/evidence` | Add evidence (creates case if first action) |
 | PATCH | `/case-evidence/{case_evidence_id}` | Update evidence |
