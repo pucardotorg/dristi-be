@@ -5,15 +5,24 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.address.models import Address
+from apps.api.errors import DOES_NOT_EXIST, REQUIRED
 from apps.files import documents
 from apps.organizations.models import Organization
 from apps.parties.models import MAX_AGE, Gender, Institution, Person
 
+from .errors import (
+    DUPLICATE_PARTICIPANT,
+    FIELD_NOT_ACCEPTED,
+    FIELD_NOT_APPLICABLE,
+    INSTITUTION_NOT_ALLOWED,
+    PERSON_AND_SELF,
+    SELF_AS_ACCUSED,
+    coded,
+)
 from .models import (
     ADDRESS_REQUIRED_MESSAGE,
     DESIGNATION_NOT_ALLOWED_MESSAGE,
     DESIGNATION_REQUIRED_MESSAGE,
-    INSTITUTION_ROLE_MESSAGE,
     INSTITUTION_ROLES,
     Case,
     CaseDocument,
@@ -25,8 +34,6 @@ from .models import (
     Witness,
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
-
-SELF_AND_PERSON_MESSAGE = "Send either person or self, not both."
 
 
 class RejectUnknownFieldsMixin:
@@ -42,7 +49,7 @@ class RejectUnknownFieldsMixin:
         """Refuse every field not declared on the serializer."""
         unknown = sorted(set(self.initial_data) - set(self.fields))
         if unknown:
-            raise serializers.ValidationError(
+            raise FIELD_NOT_ACCEPTED.validation_error(
                 {field: [self.unknown_field_message] for field in unknown}
             )
         return super().validate(attrs)
@@ -51,7 +58,7 @@ class RejectUnknownFieldsMixin:
 def _require_each_once(ids):
     """Refuse a list of participant ids that names a party more than once."""
     if len(set(ids)) != len(ids):
-        raise serializers.ValidationError("Each party may be listed only once.")
+        raise DUPLICATE_PARTICIPANT.validation_error()
     return ids
 
 
@@ -79,7 +86,7 @@ class DraftSessionSerializer(serializers.Serializer):
     def validate_court_id(self, court_id):
         """Accept only an existing, active organization."""
         if court_id is not None and not Organization.objects.active().filter(pk=court_id).exists():
-            raise serializers.ValidationError("No active court with this id.")
+            raise DOES_NOT_EXIST.validation_error("No active court with this id.")
         return court_id
 
 
@@ -342,19 +349,19 @@ class ParticipantCreateSerializer(PartySerializer):
         has_individual = attrs["is_self"] or "person" in attrs
         errors = {}
         if attrs["is_self"] and "person" in attrs:
-            errors["self"] = [SELF_AND_PERSON_MESSAGE]
+            errors["self"] = [coded(PERSON_AND_SELF)]
         elif attrs["is_self"] and role == ParticipantRole.ACCUSED:
-            errors["self"] = ["You cannot name yourself as accused."]
+            errors["self"] = [coded(SELF_AS_ACCUSED)]
         elif not has_individual and "institution" not in attrs:
-            errors["person"] = ["Send person, self or institution."]
+            errors["person"] = [coded(REQUIRED, "Send person, self or institution.")]
         if "institution" in attrs and role not in INSTITUTION_ROLES:
-            errors["institution"] = [INSTITUTION_ROLE_MESSAGE]
+            errors["institution"] = [coded(INSTITUTION_NOT_ALLOWED)]
         if has_individual and "institution" in attrs and not attrs.get("designation"):
-            errors["designation"] = [DESIGNATION_REQUIRED_MESSAGE]
+            errors["designation"] = [coded(REQUIRED, DESIGNATION_REQUIRED_MESSAGE)]
         if attrs.get("designation") and not (has_individual and "institution" in attrs):
-            errors["designation"] = [DESIGNATION_NOT_ALLOWED_MESSAGE]
+            errors["designation"] = [coded(FIELD_NOT_APPLICABLE, DESIGNATION_NOT_ALLOWED_MESSAGE)]
         if "address" not in attrs:
-            errors["address"] = [ADDRESS_REQUIRED_MESSAGE]
+            errors["address"] = [coded(REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
         if errors:
             raise serializers.ValidationError(errors)
         return attrs
@@ -372,9 +379,9 @@ class IndividualPartySerializer(RejectUnknownFieldsMixin, PartySerializer):
         attrs = super().validate(attrs)
         errors = {}
         if attrs["is_self"] and "person" in attrs:
-            errors["self"] = [SELF_AND_PERSON_MESSAGE]
+            errors["self"] = [coded(PERSON_AND_SELF)]
         elif not attrs["is_self"] and "person" not in attrs:
-            errors["person"] = ["Send person or self."]
+            errors["person"] = [coded(REQUIRED, "Send person or self.")]
         if errors:
             raise serializers.ValidationError(errors)
         return attrs
@@ -413,7 +420,7 @@ class PoaHolderCreateSerializer(IndividualPartySerializer):
         """Require the address."""
         attrs = super().validate(attrs)
         if "address" not in attrs:
-            raise serializers.ValidationError({"address": [ADDRESS_REQUIRED_MESSAGE]})
+            raise REQUIRED.validation_error({"address": [ADDRESS_REQUIRED_MESSAGE]})
         return attrs
 
 
@@ -543,7 +550,7 @@ class ParticipantUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializ
         """Require at least one change."""
         attrs = super().validate(attrs)
         if not attrs:
-            raise serializers.ValidationError("Send at least one field to change.")
+            raise REQUIRED.validation_error("Send at least one field to change.")
         return attrs
 
 
@@ -671,13 +678,6 @@ class CaseValidationSerializer(serializers.Serializer):
     """Response of POST /cases/{id}/validate."""
 
     is_valid = serializers.BooleanField()
-    errors = ValidationErrorItemSerializer(many=True)
-
-
-class CaseNotReadySerializer(serializers.Serializer):
-    """A 400 from a submit step whose precondition does not hold."""
-
-    detail = serializers.CharField()
     errors = ValidationErrorItemSerializer(many=True)
 
 

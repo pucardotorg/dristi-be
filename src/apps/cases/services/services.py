@@ -21,9 +21,15 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import NotFound
 
+from apps.api.errors import BusinessError
 from apps.files import documents
 
-from ..exceptions import CaseNotEditable
+from ..errors import (
+    CASE_NOT_EDITABLE,
+    DOCUMENT_NOT_ON_CASE,
+    NOT_ACCEPTED_FOR_CASE_TYPE,
+    SCHEMA_MISMATCH,
+)
 from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
 from .case_types import get_config, schema_errors
 
@@ -85,7 +91,7 @@ def get_active_case_item(model, object_id, user):
 def get_case_type(case_or_draft_id, user):
     """Return the case type of ``user``'s editable case or live draft session.
 
-    For writes: raises ``NotFound`` for anything else, and ``CaseNotEditable``
+    For writes: raises ``NotFound`` for anything else, and ``CASE_NOT_EDITABLE``
     for a submitted case. Lets a write be validated against its case type
     before a case is created or a file is stored.
     """
@@ -141,9 +147,9 @@ def get_or_create_case(case_or_draft_id, user):
 
 
 def ensure_editable(case):
-    """Raise ``CaseNotEditable`` unless the case is still a draft."""
+    """Raise ``CASE_NOT_EDITABLE`` (409) unless the case is still a draft."""
     if case.status != CaseStatus.DRAFT_IN_PROGRESS:
-        raise CaseNotEditable
+        raise BusinessError(CASE_NOT_EDITABLE)
 
 
 def lock_case(case):
@@ -243,7 +249,7 @@ def _get_draft_key(draft_session_id):
 def _require_allowed(value, allowed, field, case_type):
     """Raise a 400 on ``field`` unless ``value`` is allowed for ``case_type``."""
     if value not in allowed:
-        raise serializers.ValidationError(
+        raise NOT_ACCEPTED_FOR_CASE_TYPE.validation_error(
             {
                 field: [
                     f"'{value}' is not accepted for {case_type} cases. "
@@ -327,14 +333,14 @@ def _validate_schema(schema, data, field):
     """Raise a 400 on ``field`` listing every way ``data`` breaks ``schema``."""
     messages = schema_errors(schema, data)
     if messages:
-        raise serializers.ValidationError({field: messages})
+        raise SCHEMA_MISMATCH.validation_error({field: messages})
 
 
 def _require_case_document(case, case_document_id):
     """Raise a 400 unless ``case_document_id`` is an active document of ``case``."""
     if not CaseDocument.objects.active().filter(pk=case_document_id, case=case).exists():
-        raise serializers.ValidationError(
-            {"case_document_id": ["No active document with this id on this case."]}
+        raise DOCUMENT_NOT_ON_CASE.validation_error(
+            {"case_document_id": [DOCUMENT_NOT_ON_CASE.message]}
         )
 
 

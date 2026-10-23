@@ -20,6 +20,7 @@ from apps.files.tests.factories import make_file
 from apps.parties.models import Person
 from apps.parties.tests.factories import ADDRESS_DEFAULTS
 
+from .conftest import error_codes, field_codes
 from .test_api import add_cheque, put_section, upload
 from .test_participants import PERSON, add, add_complainant, remove
 
@@ -261,7 +262,8 @@ class TestSubmitForSigning:
         response = submit(client, draft, "signing")
 
         assert response.status_code == 400
-        assert "participants.accused" in fields_of(response.json())
+        assert error_codes(response) == {"E07003"}
+        assert "participants.accused" in field_codes(response)
         assert Case.objects.get(pk=draft).status == CaseStatus.DRAFT_IN_PROGRESS
 
     def test_a_submitted_case_cannot_be_submitted_again(self, client, draft, pdf):
@@ -271,6 +273,7 @@ class TestSubmitForSigning:
         response = submit(client, draft, "signing")
 
         assert response.status_code == 409
+        assert error_codes(response) == {"E07002"}
 
     def test_the_filing_is_frozen_and_the_preview_shows_the_new_status(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)
@@ -309,12 +312,13 @@ class TestSign:
         response = sign(client, draft, pending["case_participant_id"], signed_document(user, draft))
 
         assert response.status_code == 409
+        assert error_codes(response) == {"E07005"}
 
     def test_a_document_no_e_signature_produced_is_refused(self, client, user, draft, pending):
         response = sign(client, draft, pending["case_participant_id"], make_file(user=user).id)
 
         assert response.status_code == 400
-        assert "signature_document_id" in response.json()
+        assert field_codes(response) == {"signature_document_id": {"E07007"}}
 
     def test_a_signature_of_another_case_is_refused(self, client, user, draft, pending):
         document_id = signed_document(user, uuid.uuid4())
@@ -322,7 +326,7 @@ class TestSign:
         response = sign(client, draft, pending["case_participant_id"], document_id)
 
         assert response.status_code == 400
-        assert "signature_document_id" in response.json()
+        assert field_codes(response) == {"signature_document_id": {"E07007"}}
 
     def test_a_signature_of_another_kind_of_document_is_refused(self, client, user, draft, pending):
         document_id = signed_document(user, draft, EntityType.ORDER)
@@ -337,6 +341,7 @@ class TestSign:
         response = sign(client, draft, accused.id, signed_document(user, draft))
 
         assert response.status_code == 400
+        assert error_codes(response) == {"E07006"}
 
     def test_a_participant_of_another_case_is_not_found(self, client, user, draft, pending):
         response = sign(client, draft, uuid.uuid4(), signed_document(user, draft))
@@ -361,7 +366,8 @@ class TestSubmitForPaymentAndScrutiny:
         response = submit(client, draft, "payment")
 
         assert response.status_code == 400
-        assert fields_of(response.json()) == {f"participants.{complainant['case_participant_id']}"}
+        participant = f"participants.{complainant['case_participant_id']}"
+        assert field_codes(response) == {participant: {"E07004"}}
 
     def test_the_full_lifecycle(self, client, user, draft, pdf):
         complainant = make_complete_case(client, draft, pdf)
@@ -392,6 +398,7 @@ class TestSubmitForPaymentAndScrutiny:
         response = submit(client, draft, step)
 
         assert response.status_code == 409
+        assert error_codes(response) == {"E07002"}
         assert Case.objects.get(pk=draft).status == wrong_status
 
     def test_other_users_cases_are_not_found(self, client, client_for, other_user, draft):

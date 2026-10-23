@@ -7,6 +7,7 @@ saved in one transaction, and the case row is locked for it, so ordinals are
 assigned and renumbered one write at a time.
 """
 
+import re
 from contextlib import contextmanager
 
 from django.core.exceptions import NON_FIELD_ERRORS
@@ -14,9 +15,12 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import ErrorDetail
+from rest_framework.fields import get_error_detail
 from rest_framework.settings import api_settings
 
 from apps.address.models import Address
+from apps.api.errors import DOES_NOT_EXIST, REQUIRED
 from apps.parties.models import contact_number_validator, phone_number_validator
 from apps.parties.services import (
     create_asserted_person,
@@ -25,10 +29,25 @@ from apps.parties.services import (
 )
 from apps.users.models import AdvocateProfile
 
+from .. import models
+from ..errors import (
+    ADVOCATE_NOT_APPROVED,
+    ALREADY_ACTING,
+    BOTH_SIDES,
+    CALLS_ACTIVE_WITNESS,
+    FIELD_NOT_APPLICABLE,
+    INSTITUTION_NOT_ALLOWED,
+    PARTICIPANT_NOT_ON_CASE,
+    PARTY_IN_PERSON,
+    ROLE_ALREADY_HELD,
+    SELF_REPRESENTATION,
+    WITNESS_ALREADY_CALLED,
+    WRONG_ROLE,
+    coded,
+)
 from ..models import (
     DESIGNATION_NOT_ALLOWED_MESSAGE,
     INSTITUTION_ROLES,
-    SAME_CASE_MESSAGE,
     CaseParticipant,
     ParticipantRole,
     PoaMandate,
@@ -52,23 +71,70 @@ MANDATE_FIELD_NAMES = {"represented_participant": "represented_participant_ids"}
 # Likewise for a representation created for its advocate.
 REPRESENTATION_FIELD_NAMES = {"case_participant": "client_participant_ids"}
 
+# The API error code for each rule the models enforce (spec 0021 §10). The
+# models raise plain messages, as every model in the project does; the code is
+# chosen here, on the way out. A ``{…}`` part of a message matches any text.
+MODEL_RULE_CODES = [
+    (models.ADDRESS_REQUIRED_MESSAGE, REQUIRED),
+    (models.DESIGNATION_REQUIRED_MESSAGE, REQUIRED),
+    (models.INSTITUTION_ROLE_MESSAGE, INSTITUTION_NOT_ALLOWED),
+    (models.ROLE_HELD_MESSAGE, ROLE_ALREADY_HELD),
+    (models.BOTH_SIDES_MESSAGE, BOTH_SIDES),
+    (models.CALLS_ACTIVE_WITNESS_MESSAGE, CALLS_ACTIVE_WITNESS),
+    (models.PARTY_ROLE_MESSAGE, WRONG_ROLE),
+    (models.NOT_A_WITNESS_MESSAGE, WRONG_ROLE),
+    (models.NOT_A_POA_HOLDER_MESSAGE, WRONG_ROLE),
+    (models.SAME_CASE_MESSAGE, PARTICIPANT_NOT_ON_CASE),
+    (models.ACTIVE_PARTICIPANT_MESSAGE, PARTICIPANT_NOT_ON_CASE),
+    (models.WITNESS_CALLED_TWICE_MESSAGE, WITNESS_ALREADY_CALLED),
+    (models.MANDATE_FOR_SELF_MESSAGE, SELF_REPRESENTATION),
+    (models.PARTICIPANT_MANDATE_FOR_SELF_MESSAGE, SELF_REPRESENTATION),
+    (models.ADVOCATE_FOR_SELF_MESSAGE, SELF_REPRESENTATION),
+    (models.DUPLICATE_MANDATE_MESSAGE, ALREADY_ACTING),
+    (models.DUPLICATE_REPRESENTATION_MESSAGE, ALREADY_ACTING),
+    (models.ADVOCATE_NOT_APPROVED_MESSAGE, ADVOCATE_NOT_APPROVED),
+    (models.PARTY_IN_PERSON_MESSAGE, PARTY_IN_PERSON),
+]
+_MODEL_RULE_PATTERNS = [
+    (re.compile(re.sub(r"\\{\w+\\}", ".+", re.escape(message))), error)
+    for message, error in MODEL_RULE_CODES
+]
+
+
+def _with_api_code(message):
+    """Return ``message`` carrying the API code of the model rule it reports, if any."""
+    for pattern, error in _MODEL_RULE_PATTERNS:
+        if pattern.fullmatch(message):
+            return ErrorDetail(message, code=error.code)
+    return message
+
 
 @contextmanager
 def _errors_under(field=None, *, as_whole=False, renamed=None):
     """Turn a model ``ValidationError`` into a 400, nested under ``field`` when given.
 
-    ``as_whole`` reports every message as a non-field error, for a request
-    with no body (a DELETE), where the model's field names would mean nothing.
-    ``renamed`` maps model field names to the request's.
+    A message from a rule in ``MODEL_RULE_CODES`` gets that rule's API code;
+    any other keeps the code the model gave it. ``as_whole`` reports every
+    message as a non-field error, for a request with no body (a DELETE), where
+    the model's field names would mean nothing. ``renamed`` maps model field
+    names to the request's.
     """
     renamed = {NON_FIELD_ERRORS: api_settings.NON_FIELD_ERRORS_KEY, **(renamed or {})}
     try:
         yield
     except DjangoValidationError as exc:
-        if hasattr(exc, "error_dict") and not as_whole:
-            detail = {renamed.get(key, key): messages for key, messages in exc.message_dict.items()}
+        detail = get_error_detail(exc)
+        if isinstance(detail, dict) and not as_whole:
+            detail = {
+                renamed.get(key, key): [_with_api_code(message) for message in messages]
+                for key, messages in detail.items()
+            }
         else:
-            detail = {api_settings.NON_FIELD_ERRORS_KEY: exc.messages}
+            if isinstance(detail, dict):
+                detail = [message for messages in detail.values() for message in messages]
+            detail = {
+                api_settings.NON_FIELD_ERRORS_KEY: [_with_api_code(message) for message in detail]
+            }
         raise serializers.ValidationError({field: detail} if field else detail) from exc
 
 
@@ -168,7 +234,7 @@ def _get_represented(case, data, field):
     case_participant_ids = data[field]
     found = CaseParticipant.objects.active().filter(case=case).in_bulk(case_participant_ids)
     if len(found) != len(case_participant_ids):
-        raise serializers.ValidationError(
+        raise PARTICIPANT_NOT_ON_CASE.validation_error(
             {field: ["Must be active participants of the same case."]}
         )
     return [found[pk] for pk in case_participant_ids]
@@ -209,7 +275,7 @@ def add_advocate(case_or_draft_id, user, data):
     get_case_type(case_or_draft_id, user)
     advocate = AdvocateProfile.objects.filter(pk=data["advocate_id"]).first()
     if advocate is None:
-        raise serializers.ValidationError({"advocate_id": ["Advocate not found."]})
+        raise DOES_NOT_EXIST.validation_error({"advocate_id": ["Advocate not found."]})
     with editing_or_creating(case_or_draft_id, user) as case:
         clients = _get_represented(case, data, "client_participant_ids")
         representations = []
@@ -242,7 +308,9 @@ def _get_caller(case, case_participant_id):
     """Return the participant of ``case`` calling a witness; ``Witness.clean`` checks the rest."""
     caller = CaseParticipant.objects.filter(pk=case_participant_id, case=case).first()
     if caller is None:
-        raise serializers.ValidationError({"called_by_participant_id": [SAME_CASE_MESSAGE]})
+        raise PARTICIPANT_NOT_ON_CASE.validation_error(
+            {"called_by_participant_id": [PARTICIPANT_NOT_ON_CASE.message]}
+        )
     return caller
 
 
@@ -333,15 +401,26 @@ def update_participant(participant, user, data):
         witness_fields["additional_details"] = data.pop("additional_details")
     errors = {}
     if not is_witness:
-        errors.update({field: ["Only for a witness."] for field in witness_fields})
+        errors.update(
+            {
+                field: [coded(FIELD_NOT_APPLICABLE, "Only for a witness.")]
+                for field in witness_fields
+            }
+        )
     if participant.role not in INSTITUTION_ROLES and "is_party_in_person" in data:
-        errors["is_party_in_person"] = ["Only for a complainant or an accused."]
+        errors["is_party_in_person"] = [
+            coded(FIELD_NOT_APPLICABLE, "Only for a complainant or an accused.")
+        ]
     if data.get("is_party_in_person") and participant.representations.active().exists():
-        errors["is_party_in_person"] = ["Remove this party's advocates first."]
+        errors["is_party_in_person"] = [
+            coded(PARTY_IN_PERSON, "Remove this party's advocates first.")
+        ]
     if "designation_at_filing" in data and not (
         participant.person_id and participant.institution_id
     ):
-        errors["designation_at_filing"] = [DESIGNATION_NOT_ALLOWED_MESSAGE]
+        errors["designation_at_filing"] = [
+            coded(FIELD_NOT_APPLICABLE, DESIGNATION_NOT_ALLOWED_MESSAGE)
+        ]
     if data.get("phone_number_at_filing"):
         # A person's number is a mobile in E.164; an institution's may be a landline.
         validator = phone_number_validator if participant.person_id else contact_number_validator

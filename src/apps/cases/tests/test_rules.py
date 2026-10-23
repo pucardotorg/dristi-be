@@ -17,7 +17,7 @@ from apps.cases.models import (
 from apps.files.models import File
 from apps.parties.tests.factories import make_address, make_person
 
-from .conftest import CHEQUE_INFO
+from .conftest import CHEQUE_INFO, field_codes
 
 pytestmark = pytest.mark.django_db
 
@@ -59,7 +59,7 @@ class TestUploadsAreRealFiles:
         response = upload(client, draft, SimpleUploadedFile(name, content, content_type))
 
         assert response.status_code == 400
-        assert "file" in response.json()
+        assert field_codes(response) == {"file": {"E00001"}}
         assert Case.objects.count() == File.objects.count() == 0
 
     def test_oversized_upload_is_rejected(self, client, draft, pdf, settings):
@@ -68,7 +68,7 @@ class TestUploadsAreRealFiles:
         response = upload(client, draft, pdf())
 
         assert response.status_code == 400
-        assert "file" in response.json()
+        assert field_codes(response) == {"file": {"E00001"}}
 
     def test_a_real_pdf_is_accepted(self, client, draft, pdf):
         assert upload(client, draft, pdf()).status_code == 201
@@ -103,10 +103,7 @@ class TestSubmittedCasesAreReadOnly:
         response = client.patch(url, {"evidence_info": changed}, format="json")
 
         assert response.status_code == 409
-        assert (
-            response.json()["detail"]
-            == "This case has been submitted and can no longer be changed."
-        )
+        assert field_codes(response) == {None: {"E07001"}}
         assert CaseEvidence.objects.get(pk=submitted["evidence"]).evidence_info == CHEQUE_INFO
 
     def test_cannot_remove_evidence(self, client, submitted):
@@ -246,7 +243,7 @@ class TestLinkingADocumentLater:
         response = self.patch(client, evidence_id, {"case_document_id": document_id})
 
         assert response.status_code == 400
-        assert "case_document_id" in response.json()
+        assert field_codes(response) == {"case_document_id": {"E07010"}}
 
     def test_an_empty_patch_is_rejected(self, client, evidence_id):
         assert self.patch(client, evidence_id, {}).status_code == 400

@@ -16,13 +16,20 @@ from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
-from rest_framework import serializers
 from rest_framework.exceptions import NotFound
 
+from apps.api.errors import BusinessError
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 
-from ..exceptions import AlreadySigned, CaseNotReady, InvalidStatusTransition
+from ..errors import (
+    ALREADY_SIGNED,
+    FILING_INCOMPLETE,
+    INVALID_STATUS_TRANSITION,
+    NOT_A_SIGNER,
+    SIGNATURE_NOT_FOUND,
+    SIGNATURES_PENDING,
+)
 from ..models import (
     EVIDENCE_ORDERING,
     PARTICIPANT_ORDERING,
@@ -139,6 +146,14 @@ def _error_item(field, message):
     return {"field": field, "message": message}
 
 
+def _raise_not_ready(error, items):
+    """Raise ``error`` as a 400 with one error per item, each on its part of the filing."""
+    detail = {}
+    for item in items:
+        detail.setdefault(item["field"], []).append(item["message"])
+    raise error.validation_error(detail)
+
+
 def validation_errors(case):
     """Return every reason ``case`` is not yet complete, as ``{field, message}`` items."""
     errors = []
@@ -213,7 +228,7 @@ def submit_for_signing(case_id, user):
     def check(case):
         errors = validation_errors(case)
         if errors:
-            raise CaseNotReady("The filing is incomplete.", errors)
+            _raise_not_ready(FILING_INCOMPLETE, errors)
 
     return _transition(case_id, user, CaseStatus.DRAFT_IN_PROGRESS, CaseStatus.PENDING_SIGN, check)
 
@@ -235,7 +250,7 @@ def submit_for_payment(case_id, user):
             for participant in unsigned
         ]
         if errors:
-            raise CaseNotReady("Every complainant and POA holder must sign first.", errors)
+            _raise_not_ready(SIGNATURES_PENDING, errors)
 
     return _transition(case_id, user, CaseStatus.PENDING_SIGN, CaseStatus.PENDING_PAYMENT, check)
 
@@ -264,8 +279,9 @@ def _transition(case_id, user, from_status, to_status, check=None, **fields):
     with transaction.atomic():
         case = lock_case(get_case(case_id, user))
         if case.status != from_status:
-            raise InvalidStatusTransition(
-                f"Only a case in {from_status} can move to {to_status}; this one is {case.status}."
+            raise BusinessError(
+                INVALID_STATUS_TRANSITION,
+                f"Only a case in {from_status} can move to {to_status}; this one is {case.status}.",
             )
         if check is not None:
             check(case)
@@ -292,9 +308,10 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
     with transaction.atomic():
         case = lock_case(get_case(case_id, user))
         if case.status != CaseStatus.PENDING_SIGN:
-            raise InvalidStatusTransition(
+            raise BusinessError(
+                INVALID_STATUS_TRANSITION,
                 f"Signatures are recorded only while the case is {CaseStatus.PENDING_SIGN}; "
-                f"this one is {case.status}."
+                f"this one is {case.status}.",
             )
         participant = (
             CaseParticipant.objects.active().filter(pk=case_participant_id, case=case).first()
@@ -302,11 +319,9 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
         if participant is None:
             raise NotFound("Case participant not found.")
         if participant.role not in SIGNING_ROLES:
-            raise serializers.ValidationError(
-                {"case_participant_id": ["Only complainants and POA holders sign the filing."]}
-            )
+            raise NOT_A_SIGNER.validation_error({"case_participant_id": [NOT_A_SIGNER.message]})
         if participant.has_signed:
-            raise AlreadySigned
+            raise BusinessError(ALREADY_SIGNED)
         esign = ESignTransaction.objects.filter(
             signed_file_id=str(signature_document_id),
             status=ESignStatus.SUCCESS.value,
@@ -314,12 +329,8 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
             entity_id=str(case.pk),
         ).first()
         if esign is None:
-            raise serializers.ValidationError(
-                {
-                    "signature_document_id": [
-                        "No completed e-signature of this case's filing produced this document."
-                    ]
-                }
+            raise SIGNATURE_NOT_FOUND.validation_error(
+                {"signature_document_id": [SIGNATURE_NOT_FOUND.message]}
             )
         participant.has_signed = True
         participant.signature_document_id = signature_document_id

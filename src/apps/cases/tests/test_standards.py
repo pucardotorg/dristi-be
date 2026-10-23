@@ -9,6 +9,8 @@ from rest_framework.test import APIClient
 from apps.cases.models import Case, CaseType
 from apps.users.models import RegistrationStatus, Role, User
 
+from .conftest import field_codes
+
 pytestmark = pytest.mark.django_db
 
 ANY_ID = uuid.uuid4()
@@ -109,16 +111,19 @@ class TestPagination:
 
 
 class TestErrorShape:
-    """Every 400 reports a list of messages per field, as DRF serializers do."""
+    """Every error is the standard body: coded items, each on its field (spec 0000 §9.1)."""
 
     @pytest.mark.parametrize(
         "params", [{"created_by": "someone"}, {"status": "NOPE"}], ids=["created_by", "status"]
     )
-    def test_list_filter_errors_are_lists(self, client, params):
+    def test_list_filter_errors_name_their_parameter(self, client, params):
         body = client.get(reverse("case-list"), params).json()
 
         (field,) = params
-        assert isinstance(body[field], list)
+        [error] = body["errors"]
+        assert error["code"] == "E00001"
+        assert error["field"] == field
+        assert "meta" in body
 
     def test_details_body_must_be_an_object(self, client, draft):
         response = client.put(
@@ -128,5 +133,15 @@ class TestErrorShape:
         )
 
         assert response.status_code == 400
-        assert response.json()["data"] == ["Expected a JSON object."]
+        assert field_codes(response) == {"data": {"E00001"}}
         assert Case.objects.count() == 0
+
+    def test_business_errors_carry_the_case_code(self, client, draft):
+        response = client.put(
+            reverse("case-details-section", args=[draft, "adr_other_prayer"]),
+            {"adr_preference": "SOMETIMES"},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert field_codes(response) == {"data": {"E07009"}}

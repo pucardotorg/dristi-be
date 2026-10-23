@@ -109,6 +109,21 @@ DESIGNATION_NOT_ALLOWED_MESSAGE = "Only for a person acting for an institution."
 PARTY_ROLE_MESSAGE = "Must be a complainant or an accused."
 SAME_CASE_MESSAGE = "Must be a participant of the same case."
 ACTIVE_PARTICIPANT_MESSAGE = "Must be an active participant."
+# The rest of the rules' messages, so the API can tell the rules apart (see
+# ``services.participants.MODEL_RULE_CODES``). ``{…}`` parts vary per error.
+ROLE_HELD_MESSAGE = "This {field} is already {article} {role} on this case."
+BOTH_SIDES_MESSAGE = "{party} cannot be both a complainant and an accused on a case."
+CALLS_ACTIVE_WITNESS_MESSAGE = "Cannot be removed while an active witness is called by them."
+NOT_A_WITNESS_MESSAGE = "Must be a witness."
+NOT_A_POA_HOLDER_MESSAGE = "Must be a POA holder."
+WITNESS_CALLED_TWICE_MESSAGE = "This person is already a witness called by this party."
+MANDATE_FOR_SELF_MESSAGE = "A person cannot hold a mandate for themselves."
+PARTICIPANT_MANDATE_FOR_SELF_MESSAGE = "A participant cannot hold a mandate for themselves."
+DUPLICATE_MANDATE_MESSAGE = "This holder already has an active mandate for this party."
+DUPLICATE_REPRESENTATION_MESSAGE = "This advocate already represents this party."
+ADVOCATE_NOT_APPROVED_MESSAGE = "Must be an approved advocate."
+PARTY_IN_PERSON_MESSAGE = "A party appearing in person cannot be given an advocate."
+ADVOCATE_FOR_SELF_MESSAGE = "An advocate cannot represent themselves."
 
 # The order each is listed in, by the API and the preview.
 PARTICIPANT_ORDERING = ("role", "ordinal")
@@ -254,7 +269,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 called_by_participant_id=self.pk, case_participant__is_active=True
             ).exists()
         ):
-            errors["is_active"] = "Cannot be removed while an active witness is called by them."
+            errors["is_active"] = CALLS_ACTIVE_WITNESS_MESSAGE
         if errors:
             raise ValidationError(errors)
 
@@ -278,10 +293,10 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         if self.role in held and self.role != ParticipantRole.WITNESS:
             role = self.get_role_display().lower()
             article = "an" if role[0] in "aeiou" else "a"
-            return f"This {field} is already {article} {role} on this case."
+            return ROLE_HELD_MESSAGE.format(field=field, article=article, role=role)
         if OPPOSING_ROLES.get(self.role) in held:
             party = "An institution" if field == "institution" else "A person"
-            return f"{party} cannot be both a complainant and an accused on a case."
+            return BOTH_SIDES_MESSAGE.format(party=party)
         return None
 
 
@@ -336,7 +351,11 @@ class Witness(BaseModel, BaseAuditableModel):
         witness, caller = self.case_participant, self.called_by_participant
         _raise_broken_rules(
             [
-                ("case_participant", witness.role == ParticipantRole.WITNESS, "Must be a witness."),
+                (
+                    "case_participant",
+                    witness.role == ParticipantRole.WITNESS,
+                    NOT_A_WITNESS_MESSAGE,
+                ),
                 ("called_by_participant", caller.role in INSTITUTION_ROLES, PARTY_ROLE_MESSAGE),
                 ("called_by_participant", caller.case_id == witness.case_id, SAME_CASE_MESSAGE),
                 (
@@ -347,7 +366,7 @@ class Witness(BaseModel, BaseAuditableModel):
                 (
                     "called_by_participant",
                     not self._called_twice(),
-                    "This person is already a witness called by this party.",
+                    WITNESS_CALLED_TWICE_MESSAGE,
                 ),
             ]
         )
@@ -398,13 +417,13 @@ class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):
             models.CheckConstraint(
                 check=~Q(poa_participant=F("represented_participant")),
                 name="cases_poa_mandate_not_self",
-                violation_error_message="A participant cannot hold a mandate for themselves.",
+                violation_error_message=PARTICIPANT_MANDATE_FOR_SELF_MESSAGE,
             ),
             models.UniqueConstraint(
                 fields=["poa_participant", "represented_participant"],
                 condition=Q(is_active=True),
                 name="cases_poa_mandate_unique_active",
-                violation_error_message="This holder already has an active mandate for this party.",
+                violation_error_message=DUPLICATE_MANDATE_MESSAGE,
             ),
         ]
         indexes = [models.Index(fields=["case", "is_active"])]
@@ -430,7 +449,7 @@ class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 (
                     "poa_participant",
                     holder.role == ParticipantRole.POA_HOLDER,
-                    "Must be a POA holder.",
+                    NOT_A_POA_HOLDER_MESSAGE,
                 ),
                 ("poa_participant", holder.case_id == self.case_id, SAME_CASE_MESSAGE),
                 (
@@ -451,7 +470,7 @@ class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 (
                     "represented_participant",
                     not holder.person_id or holder.person_id != represented.person_id,
-                    "A person cannot hold a mandate for themselves.",
+                    MANDATE_FOR_SELF_MESSAGE,
                 ),
             ]
         )
@@ -486,7 +505,7 @@ class Representation(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 fields=["advocate", "case_participant"],
                 condition=Q(is_active=True),
                 name="cases_representation_unique_active",
-                violation_error_message="This advocate already represents this party.",
+                violation_error_message=DUPLICATE_REPRESENTATION_MESSAGE,
             ),
         ]
         indexes = [
@@ -517,7 +536,7 @@ class Representation(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 (
                     "advocate",
                     advocate.approval_status == ApprovalStatus.ACCEPTED,
-                    "Must be an approved advocate.",
+                    ADVOCATE_NOT_APPROVED_MESSAGE,
                 ),
                 ("case_participant", client.role in INSTITUTION_ROLES, PARTY_ROLE_MESSAGE),
                 ("case_participant", client.case_id == self.case_id, SAME_CASE_MESSAGE),
@@ -529,12 +548,12 @@ class Representation(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 (
                     "case_participant",
                     not self.is_active or not client.is_party_in_person,
-                    "A party appearing in person cannot be given an advocate.",
+                    PARTY_IN_PERSON_MESSAGE,
                 ),
                 (
                     "case_participant",
                     not client_user_id or client_user_id != advocate.user_id,
-                    "An advocate cannot represent themselves.",
+                    ADVOCATE_FOR_SELF_MESSAGE,
                 ),
             ]
         )
