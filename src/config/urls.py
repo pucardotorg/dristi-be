@@ -23,6 +23,7 @@ urlpatterns = [
     path("api/v1/", include("apps.pdf.urls")),
     path("api/v1/", include("apps.address.urls")),
     path("api/v1/", include("apps.esign.urls")),
+    path("api/v1/", include("apps.payments.urls")),
     path(
         "health/",
         HealthCheckView.as_view(checks=[DatabaseBackend, CacheBackend, RedisHealthCheck]),

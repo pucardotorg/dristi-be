@@ -40,6 +40,7 @@ DOMAINS = {
     "01": "users",
     "02": "dristi_requests",
     "03": "esign",
+    "06": "payments",
 }
 
 
