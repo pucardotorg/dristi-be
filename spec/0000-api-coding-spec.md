@@ -242,6 +242,8 @@ example `E01001`.
 | `04` | `apps.pdf` | PDF generation and jobs (spec 0016) |
 | `05` | `apps.address` | pincode lookup (spec 0020) |
 | `06` | `apps.payments` | demands and payments (spec 0017); reserved, not yet implemented |
+| `08` | `apps.workflows` | case workflows and pending tasks (spec 0011); reserved, not yet implemented |
+| `09` | `apps.scrutiny` | scrutiny and registration (spec 0024); reserved, not yet implemented |
 
 Rules:
 

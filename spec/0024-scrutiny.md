@@ -6,7 +6,7 @@ Proposed
 
 ## References
 
-- PRDs: `efiling-scrutiny-registration-handover.md` (§3 `ROLE-`, §4 `LIFE-`, §11 `JUR-`, §14 `DCM-`, §16 `DOC-`, §18 `SIG-07`, §19.4, §20 `SCR-`, `REF-`, `VAL-01/02`), `case-numbers.md`, `cognizance-cheat-sheet.md`, `pending-tasks-handover.md`, `case-lifecycle-handover.md`
+- PRDs: `scrutiny-registration-handover.md` (`SCR-`, `REF-`, `LIFE-11`), `court-roles.md` (`RLE-`), `efiling-handover.md` (§3 `ROLE-`, §4 `LIFE-`, §9 `CHQ-11`, §10 `LDN-2`, §11 `JUR-`, §14 `DCM-`, §16 `DOC-`, §18 `SIG-07`, `SIG-10`, §18.2 `OTH-`, §19.4, `VAL-01/02`), `account-creation-handover.md` (`REG-31`, `REG-35`–`REG-37`), `case-numbers.md`, `cognizance-cheat-sheet.md`, `pending-tasks-handover.md`, `case-lifecycle-handover.md`
 
 > **Scope note.** This module owns the court's review of a filed complaint:
 > rounds, flags, the filer's responses, and the three decisions — send back,
@@ -19,16 +19,16 @@ Proposed
 
 A §138 complaint reaches the court when the filer has signed and paid. From
 then it is checked for defects before it is registered and goes to the
-magistrate for cognizance:
+court for cognizance:
 
 ```text
 paid ─> Scrutiny ──send back (flags)──> Pending Correction ─correct, re-sign, pay balance─┐
           │  ▲                                                                            │
           │  └────────────────────────── next round ─────────────────────────────────────┘
           │
-          ├─ PIPELINE: MAGISTRATE ─ forward ─> Registration ─ register ─> Cognizance
-          │                                       └─ send back (one comment)
-          └─ PIPELINE: SCRUTINY ─── register ──────────────────────────> Cognizance
+          ├─ Scrutiny officer only ─ forward ─> Registration ─ register ─> Cognizance
+          │                                        └─ send back (one comment)
+          └─ Scrutiny officer + Case registerer ─ register ──────────> Cognizance
 ```
 
 The court screens make the work concrete.
@@ -56,14 +56,14 @@ The court screens make the work concrete.
 | Case history · round N | *Filed → Routed to scrutiny → Scrutiny started · Biju B → Sent back with 3 items → Resubmitted · 2 of 3 items answered → Returned to scrutiny · 1 item contested → Scrutiny started …*, each item with what it was and what became of it ("corrected 13 Jul", "re-uploaded 30 Jul, still poor") |
 | Actions | **Send back** — *Goes to the advocate as recorded. Each item unlocks what you marked.* **Register case** / forward — *N open items travel with it — registering does not clear them*, with *I have seen the open flags and choose to register* |
 
-**Register cases** — the magistrate's list and detail.
+**Register cases** — the Case registerer's list and detail.
 
 | Element | What it shows |
 | --- | --- |
 | List | Case name · Filing number · Advocates · Days since submitted; sorted by waiting |
 | Detail summary | parties; cheque (amount, number, drawn on); dishonour (presented at, return reason); demand notice (mode, tracking number, reply); cause of action (jurisdiction under S.142(2), other complaints between the parties); prayer (compensation, interim compensation under S.143A) |
 | Scrutiny block | cleared by · rounds · took N days · *Show rounds* |
-| Timeline | cheque dated → presented (*within 3 months of the cheque date*) → returned unpaid → notice sent (*within 30 days of the return*) → notice served → cause of action → complaint filed (*beyond 1 month of the cause of action*) → scrutiny → *waiting to be registered · N days since scrutiny cleared it* |
+| Timeline | cheque dated → presented (*within 3 months of the cheque date*, or *beyond 3 months of the cheque date* in warning ink, `SCR-08a`) → returned unpaid → notice sent (*within 30 days of the return*) → notice served → cause of action → complaint filed (*beyond 1 month of the cause of action*) → scrutiny → *waiting to be registered · N days since scrutiny cleared it* |
 | Actions | **Register**, **Send back to scrutiny** |
 
 The PRD fixes the rules:
@@ -71,13 +71,15 @@ The PRD fixes the rules:
 * A case is on a list exactly while its pending task is open; tasks open and close only as side effects of lifecycle transitions (`SCR-09`, `SCR-10`).
 * The officer may mark any field or section with a comment, and flag any document for re-upload (`SCR-02`, `SCR-03`).
 * Marking a date in the chain marks every date downstream of it (`SCR-04`, `REF-03`). Delay that has arisen since filing is flagged to the officer (`SCR-05`, `REF-04`).
-* Send back opens only what was marked (`REF-01`); a magistrate's send back is one overall comment and opens everything (`REF-02`). Send-backs repeat without limit (`LIFE-11`).
+* Send back opens only what was marked (`REF-01`); a send back at Registration is one overall comment and opens everything except the oath (`REF-02`, `OTH-5`). Send-backs repeat without limit (`LIFE-11`).
 * Any edit invalidates all signatures; the corrected case is signed again as at filing (`LIFE-13`, `SIG-07`). The bill is recalculated: higher collects the balance, otherwise payment is skipped (`LIFE-12`).
-* The officer's second action is *Forward* or *Register* by the court's `registration_point` (`SCR-06`, `SCR-11`, `SCR-12`). There is no outright rejection before registration (§20.3).
-* Allocation is configurable per court establishment: a single courtroom in Kerala and Punjab, an institution-to-courtroom mapping with a fallback in Gujarat (§20.1).
-* Practice differs by state — Kerala, Gujarat, Punjab & Haryana — in who scrutinises, where the case goes, and which numbers and checks apply (`case-numbers.md`, e-filing §20.1, process handover §13). This spec carries those differences as jurisdiction-bound business rules (#2).
+* Every court action needs a role: Scrutiny officer for scrutiny, Case registerer for registration, both held per court establishment (`court-roles.md` `RLE-02c`).
+* Whether a case is registered at Scrutiny follows from roles, not a setting: a person holding both roles registers at Scrutiny and is not offered Forward; anyone else forwards (`SCR-06`, `SCR-11`, `SCR-12`). There is no outright rejection before registration.
+* A paid case goes to the court establishment with no courtroom; the Scrutiny officer chooses the courtroom at Forward or Register (`SCR-16`). There is no automatic allocation in this version.
+* A state may register a case as one of several types, each with its own number series: chosen at Forward, editable and final at Register (`SCR-13`).
+* Where the state requires an oath, each oath video is reviewed and flagged on its own (`SCR-14`); a paper upload shows its reason (`SCR-15`).
+* A cheque presented after its validity is a warning under the presentation date, never a flag by itself (`SCR-05a`, `SCR-08a`).
 * Registration assigns the case number and moves the case to Cognizance (`SCR-08`).
-* After payment, the case is routed to a courtroom by a per-establishment rule (§20.1).
 
 ### What this module does and does not decide
 
@@ -89,15 +91,15 @@ does, in the registration transaction.
 
 ## Goals
 
-* Route every paid filing to its courtroom and open the scrutiny officer's task.
-* Carry every step that differs between Kerala, Gujarat and Punjab & Haryana — allocation, pipeline, who may act, advisory checks — as a business rule bound to a jurisdiction, evaluated by [`0019`](0019-business-rules.md), with a hard line between what rules decide and what code does.
-* Record, on every round, which rules decided its steps and roles.
+* Send every paid filing to its court establishment and open the *Scrutinise case* task for the establishment's Scrutiny officers.
+* Gate every action on the court role it needs (`court-roles.md`), held at the establishment, enforced server-side; derive Register at Scrutiny from the roles a person holds.
+* Let the Scrutiny officer choose the courtroom and, where the state has several, the registration type.
+* Carry the advisory checks as a business rule bound to a jurisdiction, evaluated by [`0019`](0019-business-rules.md), with a hard line between what rules decide and what code does.
 * Hold scrutiny as numbered rounds, one per entry into the scrutiny or registration state.
-* Let the officer draft flags on fields, sections and documents, compose them across a session, and raise them all at once on send back.
+* Let the officer draft flags on fields, sections, documents and oath videos, compose them across a session, and raise them all at once on send back.
 * Auto-mark the dependent dates of the date chain, and alert the officer to newly applicable delay.
 * Hand the exact correction scope to `apps.cases`, and record the filer's answer to every flag.
 * Carry unresolved flags into the next round, and let them travel with the case when it is forwarded or registered by acknowledgement.
-* Support both registration points and both magistrate send-backs per court.
 * Assign the case number and move the case to cognizance in one transaction.
 * Serve the scrutiny list, scrutiny detail, registration list, registration detail, round history and the filer's correction view.
 * Expose REST APIs following [`0000`](0000-api-coding-spec.md), with registered error codes.
@@ -107,7 +109,7 @@ does, in the registration transaction.
 * Machine reading of uploads, read-confidence scores and AI consistency checks. Readings are shown when another module supplies them (#7.2) and are never required.
 * Field editing during correction, signing and payment — `apps.cases`, `apps.esign`, `apps.payments`.
 * Case number formats (`case-numbers.md`) — this module only asks for one.
-* Courtroom transfer between magistrates.
+* Automatic courtroom allocation or suggestion (a later version, `SCR-16`); moving a registered case to another courtroom.
 * Cognizance and the order screen.
 * Notification copy (the PRD's master table).
 
@@ -122,23 +124,21 @@ apps/scrutiny/
 ├── apps.py                 # name = "apps.scrutiny"
 ├── models.py               # ScrutinyRound, ScrutinyFlag, ScrutinyFlagResponse
 ├── enums.py
-├── errors.py               # E06xxx (#8.5)
+├── errors.py               # E09xxx (#8.5)
 ├── receivers.py            # 0011 state_entered -> open round; cases field/document changed -> response
 ├── services/
 │   ├── rounds.py           # open_round, start, decide (send back, forward, register)
 │   ├── flags.py            # draft, edit, withdraw, resolve, auto-mark
 │   └── responses.py        # record from case changes, explain
-├── policy/
+├── checks/
 │   ├── models.py           # ScrutinyRuleBinding (imported into apps.scrutiny.models)
-│   ├── contracts.py        # input/output JSON Schemas for the four decisions (#2.4)
-│   ├── resolver.py         # binding resolution along the court hierarchy (#2.3)
-│   ├── payloads.py         # builds each decision's input from case facts
-│   └── service.py          # PolicyService: evaluate, snapshot, dry-run (#2.6, #2.8)
-├── handlers.py             # AllocateCourtroomHandler (0011 automatic task)
-├── assignees.py            # task-user resolvers registered with 0011 (#2.10)
+│   ├── contracts.py        # CHECKS input/output JSON Schemas (#2.4)
+│   ├── resolver.py         # binding resolution along the court hierarchy (#2.4)
+│   └── service.py          # evaluate, dry-run (#2.4)
 ├── management/commands/scrutiny_check_policies.py
 ├── selectors.py            # list rows, detail assembly, history
-├── serializers.py · views.py · urls.py · permissions.py · admin.py
+├── permissions.py          # role checks at the establishment (#2.2)
+├── serializers.py · views.py · urls.py · admin.py
 └── tests/
 ```
 
@@ -148,7 +148,7 @@ Dependency rules:
 apps.scrutiny ── imports ──> apps.workflows.services / selectors / signals
 apps.scrutiny ── imports ──> apps.cases.selectors / services
 apps.scrutiny ── imports ──> apps.core.rules.services (BusinessRuleService only)
-apps.scrutiny ── imports ──> apps.organizations.selectors (court hierarchy, CourtMember)
+apps.scrutiny ── imports ──> apps.organizations.selectors (court hierarchy, role holders)
 apps.cases    ── never imports ──> apps.scrutiny
 apps.workflows ── never imports ──> apps.scrutiny
 ```
@@ -174,183 +174,128 @@ Rules:
 | `plugin.case_context(case)["delay_applicable"]` | delay alert (#3.4) |
 | `plugin.checklist()` | *What to check* items |
 | `plugin.check_facts(case)` | the `CHECKS` rule input (#2.4): dates, amounts, proof flags, complainant type — computed in code |
-| `selectors.filing_establishment(case_id)` | the establishment the filer chose; `ALLOCATION` input |
+| `selectors.establishment(case_id)` | the court establishment the case was filed in |
+| `selectors.registration_types(establishment_id)` | the state's registration types (`SCR-13`) |
+| `selectors.oath_required(case_id)`, `selectors.oaths(case_id)` | whether the state requires an oath; each oath with complainant, recorded by, recorded at, and the round it was recorded in (`SCR-14`, `OTH-2`) |
+| `selectors.paper_upload_reason(case_id)` | the reason given for not e-signing and when (`SCR-15`, `SIG-10`) |
 | `services.open_for_correction(case_id, scope, round_id)` / `close_correction(case_id)` | correction scope (#5) |
-| `services.register_case(case_id, actor)` | assigns the case number and `registered_at`; dispatches `CASE_REGISTERED` |
+| `services.register_case(case_id, registration_type, actor)` | records the final registration type, assigns the case number from that type's series and `registered_at`; dispatches `CASE_REGISTERED` |
 | `services.set_case_title(case_id, complainant, accused, actor)` | *Edit case title* |
-| `services.set_court(case_id, courtroom_id, reason)` | courtroom routing (#2.9); cases stores, scrutiny decides |
+| `services.set_court(case_id, courtroom_id, actor)` | the courtroom the Scrutiny officer chose (`SCR-16`); cases stores, scrutiny decides |
 | signals `case_field_changed`, `case_document_replaced` | filer responses (#5.2) |
 
-### 2. Jurisdiction policy
+### 2. Court roles and jurisdiction differences
 
-Scrutiny is not the same in every state. Some steps exist in one state and not
-in another, some are done by different people, and some are decided by
-different criteria:
+Scrutiny differs by state. The PRDs settle most of the difference as **who holds
+which role** at the court establishment, a little of it as per-state
+configuration, and the advisory checks as rules:
 
-| Step | Kerala (Kollam) | Gujarat | Punjab & Haryana (Panchkula) | Source |
-| --- | --- | --- | --- | --- |
-| Courtroom allocation | single courtroom | institution → courtroom mapping, default fallback | single courtroom | e-filing §20.1 |
-| Who scrutinises | scrutiny officer | scrutiny officer, one across five courtrooms; the Ahmedabad screens show a bench clerk | scrutiny officer | e-filing §20.1, screens |
-| Who registers | magistrate (today's behaviour) | to confirm | to confirm | `SCR-11` |
-| Case and filing numbers | `KL-…` filing, `CMP/n/YYYY` at registration | to confirm | NACT number at filing; CNR at the filing counter | `case-numbers.md` — owned by `apps.cases`, not a scrutiny rule |
-| Magistrate's send back goes to | filer (PRD) | to confirm (screen: *Send back to scrutiny*) | to confirm | `SCR-08`, screens |
-| Advisory checks shown | common set | common set | common set | `SCR-05`, `LIT-18a`; per-state additions to confirm |
+| Step | Kerala | Gujarat | Punjab & Haryana | Decided by | Source |
+| --- | --- | --- | --- | --- | --- |
+| Who scrutinises | holders of the Scrutiny officer role (staff title Scrutiny officer) | same; one person across five courtrooms today | same | role assignment | `court-roles.md` §3, `RLE-02c` |
+| Who registers | holders of the Case registerer role (Magistrate) | holders of the Case registerer role (Magistrate in `court-roles.md` §3.2; the scrutiny PRD says the scrutiny officer and registrar are the same person — question 8) | holders of the Case registerer role (Magistrate) | role assignment | `SCR-08`, `SCR-11`, `SCR-13` |
+| Register at Scrutiny | when one person holds both roles | same | same | roles held | `SCR-11`, `SCR-12` |
+| Courtroom | chosen by the Scrutiny officer at Forward or Register; none shown when the establishment has one courtroom | same | same | the officer | `SCR-16` |
+| Registration types | one: criminal complaint | three: eCC Criminal Case · eCR EN Criminal Inquiry Case · eCR MA Criminal Miscellaneous Application | one: NACT | per-state configuration | `SCR-13`, `case-numbers.md` |
+| Oath review | when the state requires an oath | same | same | per-state configuration (`oathRequired`) | `SCR-14`, e-filing `OTH-2` |
+| Advisory checks | common set | common set | common set | business rule `CHECKS` | `SCR-05`, `SCR-05a`, e-filing `LDN-2` |
 
-The table will grow and change as each state's practice is confirmed. Baking it
-into code, or into string settings, would mean a release, or an untyped value,
-for every change. So every step that varies is a **decision point**, and every
-decision point is a **business rule** evaluated by the business rules module of
-[`0019`](0019-business-rules.md). A rule is bound to a jurisdiction, so Kerala,
-Gujarat and Punjab & Haryana each get their own rule for the same decision.
+There is no setting for where a case is registered (scrutiny PRD batch 10) and
+no automatic courtroom allocation in this version (batch 14).
 
-#### 2.1 Boundary: rules decide, code acts
+#### 2.1 Boundary: what decides, what enforces
 
-| Concern | Decided by | Done by | Never |
+| Concern | Decided by | Enforced by | Never |
 | --- | --- | --- | --- |
-| Which steps a case goes through (`registration_point`, send-back target) | rule `PIPELINE` | `services.rounds` choosing the workflow transition | a rule moving a case, or the workflow guessing the step |
-| Who may take each action (role selection) | rule `ROLES` — designations per action | `permissions.py` checking `CourtMember` of the case's court | a rule naming a user, or granting a court-side action to the filing side |
-| Which courtroom gets the case | rule `ALLOCATION` | `apps.cases.services.set_court()` | a rule querying the database (the mapping is the rule's own decision table); the filer choosing |
-| Which advisory checks the officer sees | rule `CHECKS` | `selectors` attaching alerts to fields | a check blocking an action |
+| Which actions a person gets at Scrutiny and Registration | the roles they hold at the court establishment (`SCR-06`, `SCR-08`, `SCR-11`) | `permissions.py`, server-side (`RLE-04`) | a rule, a configuration value, or a staff title (`RLE-08`) |
+| Whether the case passes through Registration | follows from those roles: a person holding both registers at Scrutiny (`SCR-11`, `SCR-12`) | `services.rounds` choosing the workflow transition | a setting |
+| Which courtroom gets the case | the Scrutiny officer, at Forward or Register (`SCR-16`) | `apps.cases.services.set_court()` | automatic allocation in this version; the filer |
+| Registration type | the Scrutiny officer at Forward; the Case registerer at Register, final there (`SCR-13`) | `apps.cases.services.register_case()` | a pre-selected type at Forward |
+| Which registration types exist; whether the oath is required | per-state configuration owned by `apps.cases` (#2.3) | read through selectors | scrutiny |
+| Which advisory checks the officer sees | business rule `CHECKS`, bound to a jurisdiction (#2.4) | `selectors` attaching warnings to fields | a check blocking an action (`SCR-05a`: information, not a flag) |
 | What is opened for correction | code, from the flags (`REF-01`–`REF-06`) | `apps.cases.services.open_for_correction()` | a rule widening or narrowing the scope |
-| Legal facts (dates, delay, limitation) | code — the case-type plugin (`date_chain`, `delay_applicable`) | passed to rules as input | a rule recomputing the law |
-| Case number format | `apps.cases` (`case-numbers.md`) | `register_case()` | scrutiny |
+| Legal facts (dates, delay, validity) | code — the case-type plugin (`date_chain`, `delay_applicable`) | passed to the `CHECKS` rule as input | a rule recomputing the law |
+| Case number | `apps.cases` (`case-numbers.md`), from the registration type's series | `register_case()` | scrutiny |
 
-Rules are pure: plain data in, plain data out, no I/O ([`0019`](0019-business-rules.md)
-#4.1). Everything a rule needs is assembled by the caller and declared in the
-rule's input schema. Everything a rule returns is validated against its output
-schema before this module acts on it. A rule that fails, or returns the wrong
-shape, stops the action with an error; it never silently falls back to a
-default (#2.7).
+Some things nothing can change:
 
-Some things are **not** policy and no rule can change them:
-
-* Only court staff of the case's court act on scrutiny. Rules choose among court designations, never filing-side roles.
-* Only a `MAGISTRATE` acts at the registration stage, if the pipeline has one.
-* A send back by scrutiny opens only what was flagged; a magistrate's send back opens everything (`REF-01`, `REF-02`).
-* There is no rejection before registration (§20.3).
+* Only holders of the establishment's Scrutiny officer role act at Scrutiny; only holders of its Case registerer role register or send back at Registration.
+* Forward for registration is never offered to someone who also holds Case registerer: they would only forward the case to themselves (`SCR-11`).
+* A send back at Scrutiny opens only what was flagged; a send back at Registration opens everything except the oath (`REF-01`, `REF-02`, `OTH-5`).
+* There is no rejection before registration (scrutiny PRD §6).
 * Unresolved flags travel with the case when it is forwarded or registered.
 
-#### 2.2 Decision points
+#### 2.2 Roles
 
-| Decision | When evaluated | Output used for |
+The court roles of [`court-roles.md`](court-roles.md) used here are
+`SCRUTINY_OFFICER` and `CASE_REGISTERER`. Both are held **per court
+establishment**, not per courtroom (`RLE-02c`); one account may hold both
+(`RLE-02`); any holder can act (`RLE-05`). Who holds them is assigned with the
+account (`REG-31`, `REG-35`) and read through
+`apps.organizations.selectors.role_holders(organization_id, role)` and
+`holds_role(user, role, organization_id)`.
+
+| Action | Needs, at the case's establishment |
+| --- | --- |
+| Start, draft and withdraw flags, resolve, edit case title | `SCRUTINY_OFFICER` |
+| Send back at Scrutiny | `SCRUTINY_OFFICER` |
+| Forward for registration | `SCRUTINY_OFFICER` and **not** `CASE_REGISTERER` |
+| Register at Scrutiny | `SCRUTINY_OFFICER` **and** `CASE_REGISTERER` |
+| Start, register and send back at Registration | `CASE_REGISTERER` |
+
+Roles are checked when the action is taken. A role change is a backend
+operation that applies at once (`RLE-03`), so nothing is snapshotted. Reading
+is not a role: a case with no courtroom yet is seen by holders of the
+establishment's roles (`RLE-06`). What differs between two people on the same
+screen is their first action, not what they may reach (`RLE-07`).
+
+#### 2.3 Per-state configuration
+
+Owned by `apps.cases`, read here; nothing in it is a decision:
+
+| Item | Read through | Used for |
 | --- | --- | --- |
-| `ALLOCATION` | first entry into `scrutiny` | the courtroom |
-| `PIPELINE` | every round opening | forward or register; where a magistrate's send back goes |
-| `ROLES` | every round opening | who may start, flag, send back, forward, register, edit the title; who gets the stage's task |
-| `CHECKS` | every detail read (it depends on today's date) | alerts on the detail screen |
+| Registration types of the establishment, each with its own number series | `apps.cases.selectors.registration_types(establishment_id)` | the type choice at Forward and Register (#4.4, #6.1) |
+| `oathRequired` | `apps.cases.selectors.oath_required(case_id)` | the oath list and oath flags (#3.2) |
 
-`ALLOCATION`, `PIPELINE` and `ROLES` are evaluated once per round and frozen on
-the round as its **policy snapshot** (#2.6). `CHECKS` is evaluated per read and
-not stored.
+#### 2.4 Advisory checks as a business rule
 
-#### 2.3 Binding a rule to a jurisdiction
+The warnings the officer sees beside the case fields are evaluated by the
+business rules module of [`0019`](0019-business-rules.md), so a state can add,
+remove or re-grade a check without a release.
 
-[`0019`](0019-business-rules.md) stores one rule per `code` and deliberately
-has no per-organization variants. Choosing which code applies where is the
-consumer's job, so this module owns the binding.
+**Binding.** [`0019`](0019-business-rules.md) stores one rule per `code` and
+deliberately has no per-organization variants, so this module owns the binding.
 
 `ScrutinyRuleBinding` — `BaseModel`, `BaseActivatableModel`, `BaseAuditableModel`
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `decision` | `CharField(16, choices=Decision)` | `ALLOCATION`, `PIPELINE`, `ROLES`, `CHECKS` |
-| `organization` | `FK("organizations.Organization", null=True, on_delete=PROTECT)` | the court, district court or High Court the binding applies to; `NULL` is the national default |
-| `rule_code` | `CharField(50)` | a `BusinessRule.code` |
+| `decision` | `CharField(16, choices=Decision)` | `CHECKS` in this version |
+| `organization` | `FK("organizations.Organization", null=True, on_delete=PROTECT)` | the establishment or High Court the binding applies to; `NULL` is the national default |
+| `rule_code` | `CharField(50)` | a `BusinessRule.code`, e.g. `SCRUTINY_CHECKS_DEFAULT` |
 | `note` | `CharField(255, blank=True)` | why this jurisdiction differs |
 
 `UniqueConstraint(decision, organization, condition=Q(is_active=True))`;
 `UniqueConstraint(decision, condition=Q(organization__isnull=True, is_active=True))`.
 
-**Resolution.** For a case in court *C*, the binding for a decision is the
-first active one found on *C*, then on each ancestor of *C* from nearest to
-farthest (`Organization.get_ancestors()`), then the national default. The
-organization tree already carries the hierarchy: courtroom → establishment
-(district court) → High Court. A state's practice is therefore bound once, on
-its High Court, and an establishment or a single courtroom can override it.
-Punjab and Haryana share one High Court, which is why the PRDs record them
-together; if they diverge, each is bound on its own establishments.
+For a case at establishment *E*, the binding is the first active one on *E*,
+then on each ancestor of *E* (`Organization.get_ancestors()`), then the
+national default. A state's checks are bound once, on its High Court. Every
+deployment ships a national default.
 
-Before allocation the case has no courtroom. `ALLOCATION` is resolved from the
-**filing establishment** the filer chose (`JUR` section), so it can be bound on
-that establishment or its High Court.
-
-No binding at all for a decision is `500 E06014` and a failing system check
-(#2.8). Every deployment ships a national default for each decision.
-
-#### 2.4 Rule contracts
-
-Each decision has a fixed input and output contract, declared here and
-enforced twice: the bound rule's `rule_input_schema` and `rule_output_schema`
-must accept it (#2.8), and this module validates the output again before using
-it. All four rule codes start with `SCRUTINY_`; the suffix names the
-jurisdiction, for example `SCRUTINY_PIPELINE_DEFAULT`, `SCRUTINY_ALLOCATION_GJ_HC`.
-
-**`ALLOCATION`**
+**Contract.** The input is facts computed by the case-type plugin, never by
+the rule; the output is a list of warnings. Both are validated against the
+rule's schemas by 0019 and again by this module.
 
 ```json
 // input
-{
-  "establishment_code": "AHM_CITY_CIVIL_SESSIONS",
-  "courtroom_codes": ["AHM_CR_01", "AHM_CR_02", "AHM_CR_03", "AHM_CR_04", "AHM_CR_05"],
-  "case_type": "CHEQUE_BOUNCE",
-  "complainant_type": "INSTITUTION",
-  "complainant_institution_code": "HDFC_BANK",
-  "complainant_institution_name": "HDFC Bank Ltd"
-}
-// output
-{ "courtroom_code": "AHM_CR_03", "reason": "INSTITUTION_MAPPING" }
-```
-
-`courtroom_code` must be one of `courtroom_codes`. `reason` is one of
-`SINGLE_COURTROOM`, `INSTITUTION_MAPPING`, `DEFAULT_FALLBACK` and is recorded on
-the round.
-
-**`PIPELINE`**
-
-```json
-// input
-{ "case_type": "CHEQUE_BOUNCE", "court_code": "KLKM_24X7_ON", "round_number": 2, "stage": "SCRUTINY" }
-// output
-{ "registration_point": "MAGISTRATE", "registration_send_back_to": "FILER" }
-```
-
-`registration_point` ∈ `MAGISTRATE`, `SCRUTINY` (`SCR-11`).
-`registration_send_back_to` ∈ `FILER`, `SCRUTINY` (#6.3).
-
-**`ROLES`**
-
-```json
-// input
-{ "case_type": "CHEQUE_BOUNCE", "court_code": "AHM_CR_03", "stage": "SCRUTINY" }
-// output
-{
-  "scrutinise":  ["SCRUTINY_OFFICER", "BENCH_CLERK"],
-  "send_back":   ["SCRUTINY_OFFICER", "BENCH_CLERK"],
-  "decide":      ["SCRUTINY_OFFICER"],
-  "edit_title":  ["SCRUTINY_OFFICER", "BENCH_CLERK"]
-}
-```
-
-* `scrutinise` — start, draft and withdraw flags, resolve; also who receives the *Scrutinise case* task.
-* `send_back` — send back at the scrutiny stage.
-* `decide` — forward, or register when `registration_point = SCRUTINY`.
-* `edit_title` — *Edit case title*.
-
-Every list is non-empty and holds only `CourtMember` designations
-(`SCRUTINY_OFFICER`, `BENCH_CLERK`, `TYPIST`, `MAGISTRATE`); the output schema
-pins the enum. `ROLES` applies to the scrutiny stage only; the registration
-stage is always `MAGISTRATE` (#2.1).
-
-**`CHECKS`**
-
-```json
-// input — facts computed by the case-type plugin, never by the rule
 {
   "case_type": "CHEQUE_BOUNCE",
   "today": "2026-08-03",
   "cheques": [
-    { "index": 0, "cheque_date": "2019-04-05", "presented_on": "2016-04-04", "returned_on": "2016-04-04",
-      "amount": 5205000, "return_reason": "FUNDS_INSUFFICIENT" }
+    { "index": 0, "cheque_date": "2019-04-05", "presented_on": "2016-04-04", "valid_until": "2019-07-04",
+      "returned_on": "2016-04-04", "amount": 5205000, "return_reason": "FUNDS_INSUFFICIENT" }
   ],
   "notice": { "dispatched_on": "2016-04-12", "served_on": "2016-04-14", "delivered": true,
               "postal_receipt_uploaded": false, "delivery_proof_uploaded": false },
@@ -359,8 +304,7 @@ stage is always `MAGISTRATE` (#2.1).
   "delay_applicable": true,
   "delay_prayer_present": true,
   "complainant_is_institution": true,
-  "complainant_cin_or_pan_present": false,
-  "accused_resides_within_jurisdiction": null
+  "complainant_cin_or_pan_present": false
 }
 // output
 {
@@ -373,131 +317,58 @@ stage is always `MAGISTRATE` (#2.1).
 }
 ```
 
-`severity` ∈ `INFO`, `WARNING`. Alerts are advisory: they are shown next to
-their fields and in the *What to check* panel, and the officer may draft a
-flag from one, but no alert ever blocks an action. This keeps the PRD's posture
-that validations warn and never block, and that facts such as residence within
-jurisdiction are information for the court's judgment (`ACC-24`).
+`severity` ∈ `INFO`, `WARNING`. An alert is shown as a warning line under its
+field and in the *What to check* panel; the officer decides whether to mark the
+field (`SCR-02`, `SCR-05a`). No alert blocks an action.
 
-The common checks every default ships with:
+The checks the national default ships with:
 
-| Code | Rule |
-| --- | --- |
-| `PRESENTED_BEFORE_CHEQUE_DATE` | presented before the date on the cheque |
-| `PRESENTED_AFTER_VALIDITY` | presented more than 3 months after the date on the cheque |
-| `NOTICE_AFTER_30_DAYS` | notice dispatched more than 30 days after the return memo |
-| `DELAY_WITHOUT_PRAYER` | `delay_applicable` and no condonation prayer (`SCR-05`) |
-| `NON_FUNDS_RETURN_REASON` | return reason other than insufficiency of funds — check S.138 applies |
-| `NO_POSTAL_RECEIPT`, `NO_DELIVERY_PROOF` | proof of dispatch or service not uploaded |
-| `INSTITUTION_WITHOUT_CIN_OR_PAN` | institutional complainant filed without CIN or PAN (`LIT-18a`) |
-
-A state adds, removes or re-grades checks by binding its own `CHECKS` rule.
-
-#### 2.5 Engines
-
-| Decision | Default engine | Why |
+| Code | Rule | Source |
 | --- | --- | --- |
-| `ALLOCATION` | `gorules` decision table | the institution → courtroom mapping is a table that court administrators maintain; one row per institution, a fallback row last |
-| `PIPELINE` | `rule_engine` expression | a constant, or a small condition, per jurisdiction |
-| `ROLES` | `rule_engine` expression | a constant mapping per jurisdiction |
-| `CHECKS` | `gorules` decision table, collect hit policy | each row is one check; adding a check is adding a row |
+| `PRESENTED_AFTER_VALIDITY` | presented after the cheque's validity; message *"Presented after validity — valid until [last valid day]"* under `CHQ-8[i]` | `SCR-05a`, e-filing `CHQ-11` |
+| `PRESENTED_BEFORE_CHEQUE_DATE` | presented before the date on the cheque | e-filing `VAL-01/02` |
+| `NOTICE_AFTER_30_DAYS` | notice dispatched more than 30 days after the cheque's return | e-filing `LDN-2` |
+| `DELAY_WITHOUT_PRAYER` | `delay_applicable` and no condonation prayer | `SCR-05` |
+| `NON_FUNDS_RETURN_REASON` | return reason other than insufficiency of funds — check S.138 applies | e-filing §22 |
+| `NO_POSTAL_RECEIPT`, `NO_DELIVERY_PROOF` | proof of dispatch or service not uploaded | screens |
+| `INSTITUTION_WITHOUT_CIN_OR_PAN` | institutional complainant filed without CIN or PAN | e-filing `LIT-18a` |
 
-The Gujarat allocation table replaces the separate allocation model this spec
-proposed earlier: the mapping is the decision, so it lives in the rule and is
-edited, versioned and audited with it ([`0019`](0019-business-rules.md) #3,
-#9).
+**Engine.** `SCRUTINY_CHECKS_DEFAULT` is a `gorules` decision table with a
+collect hit policy: one row per check, so adding a check is adding a row.
 
-Examples of bound rules:
+**Failures.** The checks are evaluated on every detail read, because they
+depend on today's date. A missing binding, a missing or inactive rule, or an
+output that breaks the contract never blocks the screen: the detail returns the
+fields without alerts and one alert `CHECKS_UNAVAILABLE`, and the failure is
+logged at error (`E09014`, `E09015` in the log line).
 
-| Code | Bound on | Engine | Expression / table |
-| --- | --- | --- | --- |
-| `SCRUTINY_PIPELINE_DEFAULT` | national default | `rule_engine` | `{"registration_point": "MAGISTRATE", "registration_send_back_to": "FILER"}` |
-| `SCRUTINY_ROLES_DEFAULT` | national default | `rule_engine` | every action → `["SCRUTINY_OFFICER"]` |
-| `SCRUTINY_ALLOCATION_SINGLE` | Kerala HC; P&H HC | `rule_engine` | `{"courtroom_code": courtroom_codes[0], "reason": "SINGLE_COURTROOM"}` |
-| `SCRUTINY_ALLOCATION_GJ_HC` | Gujarat HC | `gorules` | `complainant_institution_code` → `courtroom_code`; last row: default courtroom, `DEFAULT_FALLBACK` |
-| `SCRUTINY_CHECKS_DEFAULT` | national default | `gorules` | the common checks |
+**Validation.** Saving a binding in admin dry-runs the rule through
+`BusinessRuleService.dry_run()` with a sample input and checks the output
+against the contract. `manage.py scrutiny_check_policies` reports
+establishments with no binding, bindings to inactive rules and dry-run
+failures; CI runs it against the seeded fixtures. Rules and the default binding
+are seeded by data migration.
 
-`SCRUTINY_ALLOCATION_SINGLE` refuses an establishment with more than one
-courtroom by returning an output that fails its schema (`minItems`/`maxItems`
-on `courtroom_codes` in its input schema), so a misbinding is caught at once.
+A later version will **suggest** a courtroom that the Scrutiny officer can
+change — for example from Gujarat's mapping of financial institutions to
+courtrooms (`SCR-16`). That suggestion would be a second decision under the
+same binding; it is not part of this version.
 
-#### 2.6 Policy snapshot
+#### 2.5 Establishment and courtroom
 
-When a round opens (#4.1), the module resolves and evaluates `PIPELINE` and
-`ROLES` (and `ALLOCATION` on the first round) and stores the result on the
-round:
+Each state deployment has one court establishment in this version
+(`RLE-00`). When a filed, signed and paid case first enters `scrutiny`, it
+belongs to that establishment and has **no courtroom**. Its *Scrutinise case*
+task goes to the establishment's `SCRUTINY_OFFICER` holders, due `+0`,
+visible to Only Users (`SCR-09`).
 
-```json
-"policy": {
-  "pipeline":   { "registration_point": "MAGISTRATE", "registration_send_back_to": "FILER" },
-  "roles":      { "scrutinise": ["SCRUTINY_OFFICER"], "send_back": ["SCRUTINY_OFFICER"],
-                  "decide": ["SCRUTINY_OFFICER"], "edit_title": ["SCRUTINY_OFFICER"] },
-  "allocation": { "courtroom_code": "KLKM_24X7_ON", "reason": "SINGLE_COURTROOM" },
-  "rules": [
-    { "decision": "PIPELINE", "code": "SCRUTINY_PIPELINE_DEFAULT", "binding_id": "…", "history_id": 41 },
-    { "decision": "ROLES", "code": "SCRUTINY_ROLES_DEFAULT", "binding_id": "…", "history_id": 12 }
-  ]
-}
-```
-
-Every decision and permission check in the round reads the snapshot, never
-re-evaluates. So:
-
-* a rule edited mid-round does not change what the officer is allowed to do in that round; it applies from the next round;
-* the round records which rule, and which version of it (`history_id` from the rule's history table), decided its steps and roles — [`0019`](0019-business-rules.md) #3 asks callers to keep the decision because rules have no version column.
-
-#### 2.7 Failures
-
-| Failure | Result |
-| --- | --- |
-| no binding resolves | `500 E06014`; round not opened, logged at error |
-| `RuleNotFound` (bound code missing or inactive) | `500 E06014` |
-| `RuleInputError` | `500 E06015` — the caller assembled a bad payload; a bug |
-| `RuleEvaluationError`, `RuleOutputError` | `500 E06015` |
-| output passes the rule's schema but not this module's contract (unknown designation, courtroom not in the list) | `500 E06015` |
-
-Round opening runs on `state_entered`, after the case has already moved. A
-failure there leaves the case in `scrutiny` with no open round; the detail
-returns `409 E06016` and the admin action *Re-open round* retries once the
-rule is fixed. `CHECKS` failures do not block the screen: the detail returns
-the fields without alerts and an alert `CHECKS_UNAVAILABLE`.
-
-#### 2.8 Validating bindings
-
-* Saving a binding in admin dry-runs the rule through `BusinessRuleService.dry_run()` with the decision's sample input and validates the output against this module's contract. A rule whose contract does not fit cannot be bound.
-* `manage.py scrutiny_check_policies` resolves every decision for every active court and reports courts with no binding, bindings to inactive rules, and dry-run failures. It reads the database, so it is a command, not a Django system check ([`0019`](0019-business-rules.md) #4.6: nothing in `ready()` touches the database). CI runs it against the seeded fixtures.
-* Rules and default bindings are seeded by data migration.
-
-#### 2.9 Routing
-
-When the case first enters `scrutiny`, the inline automatic task
-`allocate_courtroom` ([`0011`](0011-case-workflows.md) #10.1, handler
-`apps.scrutiny.handlers.AllocateCourtroomHandler`, `execution_order = 0`):
-
-1. resolves and evaluates `ALLOCATION` for the filing establishment;
-2. calls `apps.cases.services.set_court(case_id, courtroom_id, reason)`;
-3. returns the result, which the round stores in its policy snapshot.
-
-The *Scrutinise case* task opens after it in the same transaction. Its users
-come from the `scrutiny.scrutinise_case` users resolver (#2.10). The filer
-never chooses a courtroom, and later rounds keep the court. One officer may
-serve several courtrooms; they pick the courtroom they are working in after
-login and see its tasks (account creation `REG-35`–`REG-37`).
-
-#### 2.10 Task users from the policy
-
-The stage tasks must reach the people the policy names, not a fixed
-designation. [`0011`](0011-case-workflows.md) #7.3 resolves task users from a
-template's rule; this module registers two resolvers with it:
-
-| Resolver | Resolves to |
-| --- | --- |
-| `scrutiny.scrutinise_case` | active `CourtMember`s of the case's court whose designation is in `ROLES.scrutinise` |
-| `scrutiny.register_case` | active `MAGISTRATE` `CourtMember`s of the case's court |
-
-`scrutiny.scrutinise_case` evaluates `ROLES` itself when the round has not yet
-been opened (the task opens in the transition's transaction, the round on
-commit); the round then snapshots the same result.
+The Scrutiny officer chooses the courtroom, from the establishment's
+courtrooms, as part of **Forward for registration** or **Register at Scrutiny**
+(`SCR-16`, #4.4). Nothing is pre-selected. Where the establishment has one
+courtroom no choice is shown and the case goes to it. Send back chooses no
+courtroom. From Cognizance onward the case's work goes to the role holders of
+that courtroom. Moving a registered case to another courtroom is outside this
+module.
 
 
 ### 3. Data model
@@ -509,8 +380,10 @@ classDiagram
         +stage
         +number
         +visit_id
-        +court_id
+        +establishment_id
         +routing_reason
+        +courtroom_id
+        +registration_type
         +started_by
         +started_at
         +decision
@@ -518,7 +391,6 @@ classDiagram
         +decided_at
         +open_items_acknowledged
         +comment
-        +policy
     }
     class ScrutinyFlag {
         +round FK
@@ -563,15 +435,16 @@ One per entry of the case into `scrutiny` or `registration`.
 | `stage` | `CharField(16, choices=RoundStage)` | `SCRUTINY`, `REGISTRATION` |
 | `number` | `PositiveSmallIntegerField` | the [`0011`](0011-case-workflows.md) visit number of that state — round 1, 2, 3 |
 | `visit_id` | `UUIDField(unique=True)` | the workflow visit |
-| `court_id` | `UUIDField(db_index=True)` | |
-| `routing_reason` | `CharField(32, choices=RoutingReason, blank=True)` | `FILER_SKIPPED_WARNING`, `LOW_READ_CONFIDENCE`, `NOT_MACHINE_READ`, `RANDOM_CHECK`, `RESUBMITTED`, `RETURNED_BY_MAGISTRATE`; display only (question 1) |
+| `establishment_id` | `UUIDField(db_index=True)` | the court establishment the round is at; scrutiny and registration happen here (`RLE-02c`) |
+| `routing_reason` | `CharField(32, choices=RoutingReason, blank=True)` | `FILER_SKIPPED_WARNING`, `LOW_READ_CONFIDENCE`, `NOT_MACHINE_READ`, `RANDOM_CHECK`, `RESUBMITTED`; display only (question 1) |
+| `courtroom_id` | `UUIDField(null=True)` | the courtroom chosen at Forward or Register (`SCR-16`); empty until then |
+| `registration_type` | `CharField(32, blank=True)` | the type chosen at Forward (shown pre-selected at Registration) or at Register, where it is final (`SCR-13`); empty when the state has one type |
 | `started_by` / `started_at` | `FK(User, null=True)` / `DateTimeField(null=True)` | first *start* |
-| `decision` | `CharField(16, choices=RoundDecision, blank=True)` | `SENT_BACK`, `FORWARDED`, `REGISTERED`, `RETURNED_TO_SCRUTINY`; empty while open |
+| `decision` | `CharField(16, choices=RoundDecision, blank=True)` | `SENT_BACK`, `FORWARDED`, `REGISTERED`; empty while open |
 | `decided_by` / `decided_at` | | |
 | `open_items_acknowledged` | `BooleanField(default=False)` | forwarded or registered with unresolved flags |
 | `open_items_at_decision` | `PositiveSmallIntegerField(default=0)` | how many |
-| `comment` | `TextField(blank=True)` | the magistrate's overall comment on a registration send back (`REF-02`) |
-| `policy` | `JSONField` | the policy snapshot (#2.6): pipeline, roles, allocation, and the rule codes and history ids that produced them; immutable once the round is open |
+| `comment` | `TextField(blank=True)` | the Case registerer's overall comment on a registration send back (`REF-02`) |
 
 Constraints: `UniqueConstraint(case, stage, number)`;
 `UniqueConstraint(case, condition=Q(decision=""))` — one open round per case.
@@ -581,8 +454,8 @@ Constraints: `UniqueConstraint(case, stage, number)`;
 | Field | Type | Notes |
 | --- | --- | --- |
 | `round` | `FK(ScrutinyRound, on_delete=CASCADE, related_name="flags")` | |
-| `target_type` | `CharField(16, choices=FlagTarget)` | `FIELD`, `SECTION`, `DOCUMENT` |
-| `target_ref` | `CharField(128)` | `FIELD`: PRD field id with record index, e.g. `CHQ-9[0]` (cheque 1's return date), `ACC-1[1]` (accused 2's name); `SECTION`: section code, e.g. `LDN`, `JUR`; `DOCUMENT`: `case_document_id` |
+| `target_type` | `CharField(16, choices=FlagTarget)` | `FIELD`, `SECTION`, `DOCUMENT`, `OATH` |
+| `target_ref` | `CharField(128)` | `FIELD`: PRD field id with record index, e.g. `CHQ-9[0]` (cheque 1's return date), `ACC-1[1]` (accused 2's name); `SECTION`: section code, e.g. `LDN`, `JUR`; `DOCUMENT`: `case_document_id`; `OATH`: the oath id, one per complainant (`SCR-14`) |
 | `target_label` | `CharField(255)` | snapshot for history, e.g. "Cheque amount" |
 | `section_id` | `CharField(16)` | the section the target sits in, for grouping |
 | `reason_code` | `CharField(32, choices=DocumentIssue, blank=True)` | documents only: `BLURRY_UNREADABLE`, `PAGE_MISSING`, `WRONG_DOCUMENT`, `OTHER` |
@@ -599,10 +472,11 @@ Constraints: `UniqueConstraint(case, stage, number)`;
 
 Target validation, at draft time:
 
-* `FIELD` — the id is one the case type defines (`plugin.field_ids()`) and the record index exists on the case (there is a cheque 2, an accused 3). Section ids follow the filing form: `LIT`, `ADV`, `ACC`, `CHQ`, `LDN`, `JUR`, `PRY`, `WIT`, `DCM`, `OTH`.
+* `FIELD` — the id is one the case type defines (`plugin.field_ids()`) and the record index exists on the case (there is a cheque 2, an accused 3). Section ids follow the filing form: `LIT`, `ADV`, `ACC`, `CHQ`, `LDN`, `JUR`, `PRY`, `WIT`, `DCM`.
 * `SECTION` — the id is one of those sections.
 * `DOCUMENT` — an active `CaseDocument` of the case. Generated documents (synopsis, complaint) cannot be flagged; the fields that render into them are flagged instead (`DOC-01`).
-* `FIELD` and `SECTION` need a `note`; `DOCUMENT` needs a `reason_code` or a `note`. The screen's warning — *No note — the advocate won't know what to fix* — is a rule here (`E06004`).
+* `OATH` — an oath of the case, only where the state requires one (`oathRequired`, `OTH-2`); each oath is flagged on its own (`SCR-14`). The oath is not a section of the form, so `OTH` is not a section id.
+* `FIELD`, `SECTION` and `OATH` need a `note`; `DOCUMENT` needs a `reason_code` or a `note`. The screen's warning — *No note — the advocate won't know what to fix* — is a rule here (`E09004`).
 
 #### 3.3 Date chain
 
@@ -612,7 +486,7 @@ The plugin publishes the chain as a dependency graph (`VAL-01/02`):
 CHQ-1 date on cheque
  └─ CHQ-8 presentation
      └─ CHQ-9 return
-         └─ LDN-2 dispatch of demand notice
+         └─ LDN-2 dispatch of demand notice (warn > 30 days after return)
              ├─ LDN-6 delivery        (delivered = Yes)
              └─ LDN-7 return          (delivered = No)
                  └─ JUR-9 cause of action (service + 15 days)
@@ -636,7 +510,7 @@ can edit the dependent dates without failing the ordering validations
 On every detail read, `delay_applicable` is computed by the case-type plugin
 against **today**, never cached (`REF-04`), and passed to the `CHECKS` rule.
 When it is true and the filing carries no delay condonation prayer (`JUR-12`
-empty), the default rule returns `DELAY_WITHOUT_PRAYER` (#2.4). The rule only
+empty), the default checks rule returns `DELAY_WITHOUT_PRAYER` (#2.4). The rule only
 reports the fact; whether delay applies is the law, and stays in code.
 
 On send back the `JUR` delay fields are added to the scope as required
@@ -690,16 +564,15 @@ All decisions go through `apps.scrutiny.services.rounds`. Each takes
 `select_for_update()` on the open round, checks the actor (#8.4), completes the
 stage's task through `TaskService`, and calls `CaseWorkflowService.move_case`
 with the round in `context`, in one transaction. Endpoints accept
-`If-Match: <workflow version>`; a stale version is `412 E05005`.
+`If-Match: <workflow version>`; a stale version is `412 E08005`.
 
 #### 4.1 Opening a round
 
 On `state_entered` for `scrutiny` or `registration`:
 
-1. Create the round with `stage`, `number = visit_number`, `visit_id`, `court_id`, and `routing_reason` — the filing's own reason on round 1, `RESUBMITTED` when the case came back from correction, `RETURNED_BY_MAGISTRATE` when the magistrate sent it back to scrutiny.
-2. Evaluate the policy and store the snapshot (#2.6): `PIPELINE` and `ROLES` for a scrutiny round; `PIPELINE` only for a registration round, whose roles are always `MAGISTRATE`. Round 1 also stores the `ALLOCATION` result from the routing handler. A failure follows #2.7.
-3. Copy forward every flag of the previous round of either stage that is `RAISED` or `RESPONDED`: the old flag becomes `CARRIED`; the new one is `DRAFT` with `carried_from`, the same target, note and reason, and the old responses visible through the chain.
-4. Close correction scope on the case (`close_correction`).
+1. Create the round with `stage`, `number = visit_number`, `visit_id`, `establishment_id`, and `routing_reason` — the filing's own reason on round 1, `RESUBMITTED` when the case came back from correction. A registration round copies `courtroom_id` and `registration_type` from the round that forwarded it.
+2. Copy forward every flag of the previous round of either stage that is `RAISED` or `RESPONDED`: the old flag becomes `CARRIED`; the new one is `DRAFT` with `carried_from`, the same target, note and reason, and the old responses visible through the chain.
+3. Close correction scope on the case (`close_correction`).
 
 The receiver is idempotent on `visit_id`.
 
@@ -718,7 +591,7 @@ If-Match: 9
 {}
 ```
 
-1. At least one live `DRAFT` flag (`400 E06005`).
+1. At least one live `DRAFT` flag (`400 E09005`).
 2. Every `DRAFT` flag becomes `RAISED`.
 3. **Scope** = the targets of the raised flags (fields, sections, documents), their auto-marked dates, and the delay section when the alert is on (#3.4) (`REF-01`, `REF-03`–`REF-06`).
 4. `apps.cases.services.open_for_correction(case_id, scope, round_id)`.
@@ -728,24 +601,28 @@ If-Match: 9
 #### 4.4 Forward and register (scrutiny stage)
 
 ```json
-POST /api/v1/scrutiny/{case_id}/forward/      (policy.pipeline.registration_point = MAGISTRATE)
-POST /api/v1/scrutiny/{case_id}/register/     (policy.pipeline.registration_point = SCRUTINY)
-{ "acknowledge_open_items": true }
+POST /api/v1/scrutiny/{case_id}/forward/      (Scrutiny officer, not Case registerer)
+POST /api/v1/scrutiny/{case_id}/register/     (Scrutiny officer and Case registerer)
+{ "courtroom_id": "…", "registration_type": "ECC", "acknowledge_open_items": true }
 ```
 
-1. The action must match the round's `policy.pipeline.registration_point` (`409 E06007`), and the actor's designation must be in `policy.roles.decide` (`403 E06008`). The service passes `context={"registration_point": …}` to `move_case`, and the workflow's transition conditions check it ([`0011`](0011-case-workflows.md) #10.2): the policy decides, the workflow enforces.
-2. Unresolved flags — carried drafts and anything `RAISED`/`RESPONDED` — need `acknowledge_open_items = true` (`409 E06006` with the count). They are not cleared: they **travel with the case**, recorded in `open_items_at_decision`, and appear on the registration round and the cognizance screen.
-3. Other remaining `DRAFT` flags (never sent) are withdrawn.
-4. Forward: complete the task; `move_case(case, "forward")` → `registration`; `decision = FORWARDED`. A registration-stage round opens for the magistrate (`SCR-07`).
-5. Register: complete the task; `apps.cases.services.register_case(case_id, actor)` assigns the case number (`case-numbers.md`, today `CMP/[n]/[YYYY]` per courtroom in Kerala) and `registered_at`; `move_case(case, "register_at_scrutiny")` → `cognizance`; `decision = REGISTERED` (`SCR-12`). The engine opens the magistrate's *Take Cognizance* task.
+1. The action must match the roles the actor holds at the establishment (#2.2): Forward needs `SCRUTINY_OFFICER` without `CASE_REGISTERER`; Register needs both (`SCR-11`). Otherwise `403 E09008`, or `409 E09007` when the actor holds the roles for the other action. The service passes `context={"registers_at_scrutiny": true|false}` to `move_case`, and the workflow's transition conditions check it ([`0011`](0011-case-workflows.md) #10.2): roles decide, the workflow enforces.
+2. **Courtroom** (`SCR-16`): `courtroom_id` is required and must be one of the establishment's courtrooms; nothing is pre-selected (`E09017`). Where the establishment has one courtroom it may be omitted and that courtroom is used. `apps.cases.services.set_court()` stores it.
+3. **Registration type** (`SCR-13`): where the state has more than one type, `registration_type` is required and must be one of them; nothing is pre-selected (`E09018`). At Register it is final. Where the state has one type it is omitted and that type is used.
+4. Unresolved flags — carried drafts and anything `RAISED`/`RESPONDED` — need `acknowledge_open_items = true` (`409 E09006` with the count). They are not cleared: they **travel with the case**, recorded in `open_items_at_decision`, and appear on the registration round and the cognizance screen.
+5. Other remaining `DRAFT` flags (never sent) are withdrawn.
+6. Forward: complete the task; `move_case(case, "forward")` → `registration`; `decision = FORWARDED`. The engine opens *Register case* for the establishment's `CASE_REGISTERER` holders, and a registration-stage round opens (`SCR-07`).
+7. Register: complete the task; `apps.cases.services.register_case(case_id, registration_type, actor)` assigns the case number from that type's series (`case-numbers.md`) and `registered_at`; `move_case(case, "register_at_scrutiny")` → `cognizance`; `decision = REGISTERED` (`SCR-12`). The case never reaches Registration, so it has no registration send back. From Cognizance its work goes to the chosen courtroom's role holders.
 
-There is no reject action (§20.3). A complaint that should not proceed is
-registered and dismissed by order at cognizance.
+There is no reject action (scrutiny PRD §6). A complaint that should not proceed
+is registered and dismissed by order at cognizance.
 
 #### 4.5 Re-scrutiny
 
 When the corrected case returns, round *N+1* opens (#4.1). For each carried
-item the detail shows what was raised and every response. The officer:
+item the detail shows what was raised and every response. An oath that was not
+recorded again says so, with the date it was recorded, so the officer can tell
+it carried over (`SCR-14`). The officer:
 
 * **resolves** it — `POST /scrutiny/{case_id}/flags/{flag_id}/resolve/` on the carried draft marks it and its whole `carried_from` chain `RESOLVED`; or
 * **keeps** it — leaves it as a draft, editing the note if needed, so it is raised again on the next send back.
@@ -758,7 +635,8 @@ is started.
 
 `PATCH /scrutiny/{case_id}/title/` with `complainant` and `accused` display
 names calls `apps.cases.services.set_case_title`. Recorded in the round's
-history. Allowed to scrutiny staff in an open round of either stage.
+history. Needs `SCRUTINY_OFFICER` at a scrutiny round, `CASE_REGISTERER` at a
+registration round.
 
 ### 5. Correction
 
@@ -777,7 +655,9 @@ history. Allowed to scrutiny staff in an open round of either stage.
 }
 ```
 
-`mode = ALL` for a magistrate send back opens everything (`REF-02`). While the
+`scope` also carries `oaths`: the complainants whose oath was flagged, who
+record it again at re-signing (`OTH-5`). `mode = ALL` for a send back at
+Registration opens everything except the oath (`REF-02`, `OTH-5`). While the
 case is in `pending_correction`, the filing endpoints accept writes only inside
 the scope and refuse the rest with the cases module's own
 `FIELD_NOT_OPEN_FOR_CORRECTION` error. A flagged document may be replaced; an
@@ -794,8 +674,8 @@ unflagged one may not.
 `POST /cases/{case_id}/corrections/submit/` (owned here, because the gate is
 about flags):
 
-1. The case is in `pending_correction` and its latest round was sent back by scrutiny or the magistrate.
-2. At least one flag has a response, or, for `mode = ALL`, at least one change (`409 E06012`). Unanswered flags may remain; they travel to re-scrutiny as unanswered.
+1. The case is in `pending_correction` and its latest round was sent back at Scrutiny or at Registration.
+2. At least one flag has a response, or, for `mode = ALL`, at least one change (`409 E09012`). Unanswered flags may remain; they travel to re-scrutiny as unanswered.
 3. Complete *Correct defects*; `move_case(case, "submit_correction")` → `pending_signature`.
 
 What follows is the engine's ([`0011`](0011-case-workflows.md) #10.2): every
@@ -805,19 +685,27 @@ straight to `scrutiny` (`LIFE-12`).
 
 ### 6. Registration stage
 
-Applies when the pipeline's `registration_point = MAGISTRATE` (`SCR-07`,
-`SCR-08`). Under `SCRUTINY` it never occurs. Every action in this stage needs
-`MAGISTRATE`; no rule changes that (#2.1).
+Applies only to a case forwarded from Scrutiny (`SCR-07`, `SCR-08`). A case
+registered at Scrutiny never reaches it. Every action in this stage needs the
+`CASE_REGISTERER` role at the establishment (#2.2).
 
 #### 6.1 Register
 
 ```json
 POST /api/v1/registration/{case_id}/register/
-{ "acknowledge_open_items": true }
+{ "registration_type": "ECC", "acknowledge_open_items": true }
 ```
 
+The type chosen at Forward is shown pre-selected and may be changed; it is
+final here (`SCR-13`). The courtroom chosen at Forward is kept (question 10).
 Same open-item rule as #4.4. `register_case`, then `move_case(case,
 "register")` → `cognizance`; the round's `decision = REGISTERED`.
+
+The *Register case* timeline states the statutory limit under each step it
+governs. Under the cheque's presentation it reads *within 3 months of the
+cheque date*, or *beyond 3 months of the cheque date* in warning ink where the
+cheque was presented after its validity (`SCR-08a`). Only a step outside its
+window takes the warning ink, and the warning stops neither action.
 
 #### 6.2 Send back
 
@@ -826,34 +714,22 @@ POST /api/v1/registration/{case_id}/send-back/
 { "comment": "Affidavit is for a different cheque. Re-check the whole complaint." }
 ```
 
-One overall comment, required; no field marking (`REF-02`, `E06010`).
-
-#### 6.3 Where the send back goes
-
-The PRD says the magistrate sends the case back to the filer with everything
-open (`SCR-08`). The *Register cases* screen labels the action **Send back to
-scrutiny**. Both are supported, chosen by the round's
-`policy.pipeline.registration_send_back_to` (#2.4), which the service passes to
-`move_case` in `context`:
-
-| Value | Effect |
-| --- | --- |
-| `FILER` (default rule, PRD) | `open_for_correction(mode = ALL)`; `move_case(case, "registration_send_back")` → `pending_correction`; `decision = SENT_BACK` |
-| `SCRUTINY` (screen) | `move_case(case, "registration_return_to_scrutiny")` → `scrutiny`; `decision = RETURNED_TO_SCRUTINY`; the comment is shown on the new scrutiny round, which opens with `routing_reason = RETURNED_BY_MAGISTRATE` |
-
-Question 3 asks which is right.
+One overall comment, required; no field marking (`REF-02`, `E09010`). The case
+goes to the filer: `open_for_correction(mode = ALL)` opens everything except
+the oath (`OTH-5`); `move_case(case, "registration_send_back")` →
+`pending_correction`; `decision = SENT_BACK` (`SCR-08`).
 
 ### 7. Read models
 
 #### 7.1 Scrutiny list
 
-`GET /api/v1/scrutiny/?court=&tab=registry&claimed=anyone&search=&page=`
+`GET /api/v1/scrutiny/?establishment=&tab=registry&claimed=anyone&search=&page=`
 
 | Tab | Rows |
 | --- | --- |
-| `registry` | open *Scrutinise case* tasks of the court |
-| `advocate` | cases of the court whose latest round was sent back and that have not re-entered scrutiny — in correction, re-signing or paying the balance |
-| `closed` | rounds of the court decided `FORWARDED` or `REGISTERED`, and cases withdrawn after scrutiny, in the last `scrutiny.closed_tab_days` days |
+| `registry` | open *Scrutinise case* tasks of the establishment |
+| `advocate` | cases of the establishment whose latest round was sent back and that have not re-entered scrutiny — in correction, re-signing or paying the balance |
+| `closed` | rounds of the establishment decided `FORWARDED` or `REGISTERED`, and cases withdrawn after scrutiny, in the last `scrutiny.closed_tab_days` days |
 
 ```json
 {
@@ -919,12 +795,18 @@ then filing number. Case columns come from one batched
     { "no": 1, "kind": "GENERATED", "name": "Synopsis", "document_id": "…" },
     { "no": 3, "kind": "SCAN", "name": "Affidavit (scanned & signed)", "document_id": "…", "poor_scan": true, "flag_id": "…" }
   ],
+  "oaths": [
+    { "id": "…", "complainant": "Prateek Agrawal", "recorded_by": { "name": "Prateek Agrawal", "capacity": "COMPLAINANT" },
+      "recorded_at": "2026-07-04T11:02:00+05:30", "carried_over": false, "flag_id": null }
+  ],
+  "paper_upload": { "reason": "Complainant has no Aadhaar-linked mobile number", "given_at": "2026-07-03T18:40:00+05:30" },
   "checklist": ["Names match across cheque, ID and notice", "…"],
   "alerts": [
-    { "code": "PRESENTED_BEFORE_CHEQUE_DATE", "severity": "WARNING", "field_refs": ["CHQ-1[0]", "CHQ-8[0]"],
-      "message": "Presented before the date on the cheque." }
+    { "code": "PRESENTED_AFTER_VALIDITY", "severity": "WARNING", "field_refs": ["CHQ-8[0]"],
+      "message": "Presented after validity — valid until 04/07/2019" }
   ],
-  "policy": { "registration_point": "MAGISTRATE", "my_actions": ["scrutinise", "send_back", "decide"] },
+  "courtrooms": [ { "id": "…", "name": "Courtroom 1" }, { "id": "…", "name": "Courtroom 2" } ],
+  "registration_types": [ { "code": "ECC", "label": "eCC Criminal Case" } ],
   "flags": { "draft": [ ], "carried": [ ], "raised_last_round": [ ] },
   "allowed_actions": ["start", "flag", "send_back", "forward"],
   "workflow_version": 9,
@@ -937,14 +819,16 @@ then filing number. Case columns come from one batched
 * Notes for missing proof (*No postal receipt uploaded*, *No delivery proof uploaded*) come from the plugin, from the filing's own data.
 * `bundle` is numbered in bundle order, generated documents first; `poor_scan` is the upload step's mark.
 * `checklist` is display only; nothing is stored against it.
-* `alerts` are the `CHECKS` rule's output for today (#2.4), attached to fields by `field_refs`; advisory only.
-* `policy` shows the round's pipeline and which of the snapshot's actions the caller holds, so the client renders *Forward* or *Register case* without knowing the jurisdiction.
-* `allowed_actions` combine the workflow's available transitions and the caller's designation.
+* `oaths` is present only where the state requires an oath: one per complainant, with who recorded it and when; `carried_over` is true when it was not recorded again in a later round (`SCR-14`). Selecting one plays the video in the centre panel.
+* `paper_upload` is present only when the case was signed by uploading a physically signed copy (`SCR-15`).
+* `alerts` are the `CHECKS` rule's output for today (#2.4), shown as a warning line under each field in `field_refs`; advisory only (`SCR-05a`).
+* `courtrooms` lists the establishment's courtrooms for the Forward / Register choice; a single courtroom means no choice is shown (`SCR-16`). `registration_types` lists the state's types; one type means no choice is shown (`SCR-13`).
+* `allowed_actions` combine the workflow's available transitions and the roles the caller holds at the establishment: *Forward* for a Scrutiny officer only, *Register* for one who also holds Case registerer (`SCR-11`).
 
 #### 7.3 Registration list
 
-`GET /api/v1/registration/?court=&search=&ordering=-waiting_days&page=` — open
-*Register case* tasks of the court:
+`GET /api/v1/registration/?establishment=&search=&ordering=-waiting_days&page=` — open
+*Register case* tasks of the establishment:
 
 | Field | Source |
 | --- | --- |
@@ -952,6 +836,7 @@ then filing number. Case columns come from one batched
 | `days_since_submitted` | days since the case was filed (the screen's *Days since submitted*) |
 | `days_since_cleared` | days since forwarded |
 | `open_items` | carried from scrutiny |
+| `courtroom`, `registration_type` | chosen at Forward |
 
 #### 7.4 Registration detail
 
@@ -959,7 +844,8 @@ then filing number. Case columns come from one batched
 
 * `summary` — from `apps.cases.selectors.get_registration_summary`: parties; cheque amount, number, drawee bank and branch; dishonour bank, branch and return reason; demand notice mode, tracking number and reply; jurisdiction under S.142(2); other complaints between the parties; prayer — compensation and interim compensation under S.143A;
 * `scrutiny` — cleared by, rounds (count of scrutiny-stage rounds), days taken from first entry into scrutiny to forward, and `rounds` for *Show rounds* (#7.5);
-* `timeline` — cheque dated, presented, returned, notice sent, notice served, cause of action, complaint filed, scrutiny, waiting, each with its date and a qualifier computed by the plugin: *within 3 months of the cheque date*, *within 30 days of the return*, *beyond 1 month of the cause of action*. Multiple cheques give one line per cheque;
+* `timeline` — cheque dated, presented, returned, notice sent, notice served, cause of action, complaint filed, scrutiny, waiting, each with its date and a qualifier computed by the plugin: *within 3 months of the cheque date* (or *beyond 3 months of the cheque date* with `warning: true`, `SCR-08a`), *within 30 days of the return*, *beyond 1 month of the cause of action*. Multiple cheques give one line per cheque;
+* `courtroom`, `registration_type` (pre-selected, editable) and `registration_types`;
 * `open_items` — carried flags with their responses;
 * `allowed_actions` — `register`, `send_back`;
 * `workflow_version`.
@@ -977,7 +863,7 @@ then filing number. Case columns come from one batched
 | Sent back with N items · round R | decision; each item with `target_label`, what was wrong (`note` or `value_at_flag`) and its latest state |
 | Resubmitted · {filer} · M of N items answered | `submit_correction` log; response counts |
 | Returned to scrutiny · K items contested | next round created; `EXPLAINED` count |
-| Forwarded · Registered · {case number} · Returned by magistrate | decisions |
+| Forwarded · {courtroom} · Registered · {case number} · Sent back at registration | decisions |
 
 Item states read "corrected 13 Jul", "answered 13 Jul", "re-uploaded 30 Jul,
 still open", "resolved 3 Aug". The header summary is
@@ -990,7 +876,7 @@ same timeline without draft flags and without court-only notes.
 send back, grouped as the screen groups them (*Flags — advocate fixes*,
 *Document issues — advocate re-uploads*), each with note, reason, response
 state, and whether its field or document is open; or, for `mode = ALL`, the
-magistrate's comment. Visible to the filing side (`ROLE-01`–`ROLE-05`).
+Case registerer's comment. Visible to the filing side (`ROLE-01`–`ROLE-05`).
 
 ### 8. APIs
 
@@ -1033,7 +919,7 @@ auto-marked dates.
 | --- | --- | --- |
 | GET | `/registration/` | #7.3 |
 | GET | `/registration/{case_id}/` | #7.4 |
-| POST | `/registration/{case_id}/start/` | as #4.2, for the magistrate |
+| POST | `/registration/{case_id}/start/` | as #4.2, for the Case registerer |
 | POST | `/registration/{case_id}/register/` | #6.1 |
 | POST | `/registration/{case_id}/send-back/` | #6.2 |
 
@@ -1048,39 +934,39 @@ auto-marked dates.
 
 #### 8.4 Permissions
 
-* **Court staff** are `CourtMember`s of the case's court ([`0023`](0023-hearings.md) #1.2).
-* **Role selection is policy; enforcement is code.** At the scrutiny stage the designations allowed for each action come from the round's `policy.roles` (#2.4, #2.6): `scrutinise` (start, draft, withdraw, resolve), `send_back`, `decide` (forward, or register under `SCRUTINY`), `edit_title`. `permissions.py` checks the caller's active `CourtMember` designation on the case's court against the snapshot. The default rule allows `SCRUTINY_OFFICER` only; a jurisdiction where a bench clerk scrutinises binds its own `ROLES` rule (question 2).
-* Before a round is open (the rare window in #2.7), no scrutiny action is allowed.
-* Registration stage — start, register, send back: `MAGISTRATE`.
+* **Court roles.** Every action needs a role held at the case's court establishment (#2.2, `RLE-02c`): `SCRUTINY_OFFICER` for scrutiny actions; `CASE_REGISTERER` for registration; both for Register at Scrutiny; Forward for a `SCRUTINY_OFFICER` who does not hold `CASE_REGISTERER` (`SCR-06`, `SCR-08`, `SCR-11`). Checked server-side on every request (`RLE-04`); never by staff title (`RLE-08`).
+* **Reading.** Holders of the establishment's roles see its cases before a courtroom is chosen (`RLE-06`).
 * **Filing side** — the e-filing scope predicates (`ROLE-01`–`ROLE-05`): corrections, explain, submit, history. A clerk may do all of these (`ROLE-08` restricts only signing).
-* Anyone else: `404 E00105`. Court staff of another court: `404 E00105`. Wrong designation: `403 E06008`.
+* Anyone else: `404 E00105`. Staff of another establishment: `404 E00105`. Missing role: `403 E09008`.
 
 #### 8.5 Error codes
 
-Domain prefix `06` in `apps.api.errors.DOMAINS`, recorded in
-[`0000`](0000-api-coding-spec.md) #9.2 when allocated.
+Domain prefix `09` in `apps.api.errors.DOMAINS`, recorded in
+[`0000`](0000-api-coding-spec.md) #9.2 (reserved).
 
 | Code | Name | Status | Raised when |
 | --- | --- | --- | --- |
-| `E06001` | `ROUND_NOT_OPEN` | 409 | no open round of the right stage |
-| `E06002` | `FLAG_NOT_DRAFT` | 409 | editing or withdrawing a raised flag |
-| `E06003` | `FLAG_TARGET_UNKNOWN` | 400 | field id, record index, section or document not on the case; `field = target_ref` |
-| `E06004` | `FLAG_NOTE_REQUIRED` | 400 | field or section flag without a note; document flag without reason or note |
-| `E06005` | `NOTHING_TO_SEND_BACK` | 400 | scrutiny send back with no draft flags |
-| `E06006` | `OPEN_ITEMS_NOT_ACKNOWLEDGED` | 409 | forward or register with unresolved flags; carries the count |
-| `E06007` | `ACTION_NOT_FOR_REGISTRATION_POINT` | 409 | forward under `scrutiny`, or scrutiny-stage register under `magistrate` |
-| `E06008` | `NOT_SCRUTINY_STAFF` | 403 | wrong designation for the action |
-| `E06009` | `FLAG_DUPLICATE` | 409 | a live flag already on the target |
-| `E06010` | `SEND_BACK_COMMENT_REQUIRED` | 400 | registration send back without a comment, or with flags |
-| `E06011` | `EXPLANATION_REQUIRED` | 400 | `EXPLAINED` without a note |
-| `E06012` | `NOTHING_TO_RESUBMIT` | 409 | resubmission with no response and no change |
-| `E06013` | `GENERATED_DOCUMENT_NOT_FLAGGABLE` | 400 | flagging the synopsis or complaint PDF |
-| `E06014` | `POLICY_NOT_BOUND` | 500 | no binding resolves for a decision, or the bound rule is missing or inactive (#2.7) |
-| `E06015` | `POLICY_EVALUATION_FAILED` | 500 | the rule failed, or its output broke the decision's contract (#2.7) |
-| `E06016` | `ROUND_NOT_OPENED` | 409 | the case is in scrutiny but its round could not be opened; an admin must re-open it (#2.7) |
+| `E09001` | `ROUND_NOT_OPEN` | 409 | no open round of the right stage |
+| `E09002` | `FLAG_NOT_DRAFT` | 409 | editing or withdrawing a raised flag |
+| `E09003` | `FLAG_TARGET_UNKNOWN` | 400 | field id, record index, section or document not on the case; `field = target_ref` |
+| `E09004` | `FLAG_NOTE_REQUIRED` | 400 | field or section flag without a note; document flag without reason or note |
+| `E09005` | `NOTHING_TO_SEND_BACK` | 400 | scrutiny send back with no draft flags |
+| `E09006` | `OPEN_ITEMS_NOT_ACKNOWLEDGED` | 409 | forward or register with unresolved flags; carries the count |
+| `E09007` | `ACTION_NOT_FOR_ROLES` | 409 | Forward by someone who holds both roles, or Register at Scrutiny by someone who holds only Scrutiny officer (`SCR-11`) |
+| `E09008` | `ROLE_REQUIRED` | 403 | the actor does not hold the role the action needs at the establishment |
+| `E09009` | `FLAG_DUPLICATE` | 409 | a live flag already on the target |
+| `E09010` | `SEND_BACK_COMMENT_REQUIRED` | 400 | registration send back without a comment, or with flags |
+| `E09011` | `EXPLANATION_REQUIRED` | 400 | `EXPLAINED` without a note |
+| `E09012` | `NOTHING_TO_RESUBMIT` | 409 | resubmission with no response and no change |
+| `E09013` | `GENERATED_DOCUMENT_NOT_FLAGGABLE` | 400 | flagging the synopsis or complaint PDF |
+| `E09014` | `CHECKS_NOT_BOUND` | 500 | logged, never returned: no binding resolves for `CHECKS`, or the bound rule is missing or inactive (#2.4) |
+| `E09015` | `CHECKS_EVALUATION_FAILED` | 500 | logged, never returned: the checks rule failed or broke its contract (#2.4) |
+| `E09016` | `OATH_NOT_REQUIRED` | 400 | flagging an oath where the state requires none (`OTH-2`) |
+| `E09017` | `COURTROOM_REQUIRED` | 400 | Forward or Register without a courtroom, or with one not in the establishment (`SCR-16`); `field = courtroom_id` |
+| `E09018` | `REGISTRATION_TYPE_REQUIRED` | 400 | Forward or Register without a registration type where the state has several, or with an unknown one (`SCR-13`); `field = registration_type` |
 
-Workflow errors (`E05xxx`) from [`0011`](0011-case-workflows.md) pass through
-unchanged — a stale version is `412 E05005`.
+Workflow errors (`E08xxx`) from [`0011`](0011-case-workflows.md) pass through
+unchanged — a stale version is `412 E08005`.
 
 ### 9. Cross-cutting
 
@@ -1093,7 +979,7 @@ notifications table; this module supplies triggers and context.
 | --- | --- | --- |
 | round 1 opened | filing side | filed, under scrutiny, filing number |
 | scrutiny send back | filing side | item count, round |
-| registration send back | filing side | magistrate's comment |
+| registration send back | filing side | Case registerer's comment |
 | resubmitted (round > 1 opened) | filing side | — |
 | registered | filing side | case number |
 
@@ -1106,25 +992,17 @@ notification.
 | --- | --- | --- | --- |
 | `scrutiny` | `closed_tab_days` | `30` | #7.1 |
 
-That is the only configuration-store value. Everything that differs by
-jurisdiction — allocation, pipeline, roles, checks — is a business rule bound
-through `ScrutinyRuleBinding` (#2), not a configuration string: a value that
-decides who may act and where a case goes needs an input contract, an output
-contract, a dry run on save and an audit trail, which [`0018`](0018-configuration-store.md)
-deliberately does not give ([`0019`](0019-business-rules.md), *Configuration vs
-Business Rules*).
-
-Seeded rules and bindings:
+That is the only configuration-store value here. Who may act is role
+assignment (#2.2); registration types and `oathRequired` are per-state
+configuration owned by `apps.cases` (#2.3). Only the advisory checks are a
+business rule, bound through `ScrutinyRuleBinding` (#2.4):
 
 | Decision | National default | Kerala HC | Gujarat HC | Punjab & Haryana HC |
 | --- | --- | --- | --- | --- |
-| `ALLOCATION` | `SCRUTINY_ALLOCATION_SINGLE` | inherits | `SCRUTINY_ALLOCATION_GJ_HC` | inherits |
-| `PIPELINE` | `SCRUTINY_PIPELINE_DEFAULT` (`MAGISTRATE`, `FILER`) | inherits | inherits until confirmed | inherits until confirmed |
-| `ROLES` | `SCRUTINY_ROLES_DEFAULT` (`SCRUTINY_OFFICER`) | inherits | inherits until confirmed | inherits until confirmed |
 | `CHECKS` | `SCRUTINY_CHECKS_DEFAULT` | inherits | inherits | inherits |
 
-"Inherits until confirmed" is deliberate: a state gets its own rule when its
-practice is confirmed, by adding one rule and one binding, with no code change.
+A state gets its own checks by adding one rule and one binding, with no code
+change.
 
 #### 9.3 Audit
 
@@ -1135,29 +1013,29 @@ practice is confirmed, by adding one rule and one binding, with no code change.
 #### 9.4 Concurrency
 
 * Every decision locks the round, then the workflow instance (through `move_case`).
-* Flag drafting locks the round, so two officers drafting on the same target produce one flag (`E06009`) rather than two.
-* `If-Match` on decisions: two officers deciding the same file — one succeeds, the other gets `412 E05005`.
+* Flag drafting locks the round, so two officers drafting on the same target produce one flag (`E09009`) rather than two.
+* `If-Match` on decisions: two officers deciding the same file — one succeeds, the other gets `412 E08005`.
 
 ### 10. Testing
 
-* **Routing:** single courtroom; institution mapping hit and fallback; kept on later rounds; *Scrutinise case* opened for every officer of the courtroom and visible to an officer serving several.
+* **Routing:** a paid case goes to the establishment with no courtroom; *Scrutinise case* opens for every `SCRUTINY_OFFICER` holder there; Forward and Register require a courtroom of the establishment with none pre-selected, and need none when it has one courtroom; Send back sets no courtroom.
 * **Rounds:** opened on entry to scrutiny and registration, numbered by visit, idempotent on `visit_id`; one open round per case; carried flags copied as drafts with `carried_from`, originals `CARRIED`.
 * **Flags:** validation per target type, record index range, generated documents refused; note rules; date-chain auto-marking per cheque and per delivered/undelivered branch; withdrawal of the source removes unedited children; linked field and document flags saved together and removed independently.
 * **Delay alert:** evaluated against today; absent when a condonation prayer exists; adds the delay fields to the scope on send back.
-* **Policy resolution:** binding on the courtroom beats the establishment, which beats the High Court, which beats the national default; inactive bindings skipped; no binding → `E06014`.
-* **Policy contracts:** each decision's output validated twice; an unknown designation, a courtroom outside the list, an unknown pipeline value → `E06015`; the rule engine is the real one, not mocked, for the seeded rules.
-* **Per-state behaviour (seeded rules):** Kerala and Punjab single-courtroom allocation; Gujarat institution mapping hit and fallback; a jurisdiction bound to `ROLES` with `BENCH_CLERK` lets a bench clerk scrutinise and send back but not decide; a jurisdiction bound to `PIPELINE` `SCRUTINY` shows *Register case* and never opens a registration round; `registration_send_back_to = SCRUTINY` returns the case to scrutiny.
-* **Snapshot:** editing a rule mid-round does not change that round's permissions or pipeline; the next round uses the new rule; the round stores rule codes and history ids.
-* **Boundaries:** no rule can grant a scrutiny action to a filing-side role, change the registration stage's `MAGISTRATE` requirement, widen the correction scope, or block on an alert; `CHECKS` failure degrades to `CHECKS_UNAVAILABLE` without blocking the screen.
-* **Binding validation:** admin refuses a binding whose rule fails the dry run; `scrutiny_check_policies` reports unbound courts and failing rules.
+* **Roles:** Scrutiny officer only → Forward and Send back, no Register; Scrutiny officer and Case registerer → Register and Send back, no Forward; Case registerer only → Registration actions only; no role → `403 E09008`; the wrong one of Forward / Register → `409 E09007`; a role change applies at once.
+* **Registration type:** one type → no choice, that type used; several → required at Forward with none pre-selected, shown pre-selected and changeable at Register, final there; Register at Scrutiny chooses it once; the case number comes from the chosen type's series.
+* **Oath:** absent where `oathRequired` is off (`E09016` on flagging); one entry per complainant with who recorded it and when; flagged one at a time; only flagged oaths are in the correction scope; a Registration send back does not reopen the oath; an unflagged oath shows as carried over in the next round.
+* **Paper upload reason:** shown only for a case signed by upload.
+* **Checks rule:** binding on the establishment beats the High Court, which beats the national default; each seeded check fires on its fixture, including *Presented after validity — valid until …* under the presentation date; output validated twice; failure degrades to `CHECKS_UNAVAILABLE` without blocking the screen; admin refuses a binding whose rule fails the dry run; `scrutiny_check_policies` reports unbound establishments.
+* **Boundaries:** no rule or setting can grant an action, change where a case is registered, widen the correction scope, or make an alert block.
 * **Send back:** raises every draft; scope contains exactly the targets, chain dates and delay fields; case moves to `pending_correction`; *Correct defects* opens; draft flags never visible to the filer before it.
 * **Responses:** field change → `CORRECTED`; document replacement → `REUPLOADED`; explain → `EXPLAINED` shown as contested; multiple edits keep the last.
 * **Resubmission:** refused without any response or change; moves to `pending_signature`; the engine then routes through payment or straight to scrutiny by balance.
 * **Re-scrutiny:** resolve marks the whole chain; kept items raised again on the next send back; list stage and reason.
-* **Forward and register:** matching the snapshot's `registration_point` only; open items need acknowledgement and remain unresolved afterwards; remaining drafts withdrawn; register assigns the case number in the same transaction as the move; a failure in numbering rolls back the move.
-* **Registration stage:** register; send back needs a comment and refuses flags; `registration_send_back_to = FILER` opens everything; `= SCRUTINY` opens a scrutiny round with `RETURNED_BY_MAGISTRATE` and the comment.
+* **Forward and register:** matching the actor's roles only; open items need acknowledgement and remain unresolved afterwards; remaining drafts withdrawn; register assigns the case number in the same transaction as the move; a failure in numbering rolls back the move.
+* **Registration stage:** register with the type pre-selected and editable; send back needs a comment, refuses flags, and opens everything except the oath; the timeline shows *beyond 3 months of the cheque date* in warning ink for a cheque presented after validity and blocks nothing.
 * **Read models:** tab membership from tasks and rounds; counts; `claimed` filter; batched case summaries (query count for a page of 50); `reading` absent without a reading module; registration timeline qualifiers; the three-round example of the screen reproduced exactly from data.
-* **Permissions:** designation per action; other courts and outsiders `404 E00105`; filer sees no draft flags or court-only notes.
+* **Permissions:** role per action at the establishment; other establishments and outsiders `404 E00105`; filer sees no draft flags or court-only notes.
 * **Isolation:** `apps.cases` and `apps.workflows` do not import `apps.scrutiny`.
 * **API:** success paths, `meta` envelope, pagination, every code in #8.5 asserted by `code` and `field`, never message ([`0000`](0000-api-coding-spec.md) #13).
 
@@ -1184,30 +1062,31 @@ cd src && python manage.py check
 | 7 | Correction scope | scrutiny answers "is it editable" / cases stores it | Cases stores it; cases never imports scrutiny |
 | 8 | Recording responses | filer marks each item / derived from case changes | Derived from case changes, plus an explicit *explain* |
 | 9 | Date chain | officer marks each date / auto-mark downstream | Auto-mark (`SCR-04`) |
-| 10 | Magistrate send back | to filer / to scrutiny | Both, by the `PIPELINE` rule; filer in the default (PRD) |
+| 10 | Send back at Registration | to filer / to scrutiny | To the filer, everything open except the oath (`SCR-08`, `OTH-5`) |
 | 11 | Machine readings | required / advisory pass-through | Advisory; never gate an action |
-| 12 | Rejection before registration | allowed / not | Not (§20.3) |
-| 13 | State differences | code branches / configuration strings / business rules | Business rules ([`0019`](0019-business-rules.md)) — typed contracts, dry run on save, audit, no release per change |
-| 14 | Which rule applies where | per-organization rows in 0019 / bindings owned here | Bindings owned here, resolved up the court hierarchy — 0019 stays domain-free, as it requires |
-| 15 | When rules are evaluated | on every action / once per round | Once per round, snapshotted — a round's permissions cannot change under the officer, and the round records what decided it |
-| 16 | What rules may decide | anything / four named decisions with contracts | Four decisions; law, correction scope, the registration stage's magistrate and the court-side-only rule stay in code |
-| 17 | Advisory checks | hard-coded / rule-driven | Rule-driven, never blocking |
+| 12 | Rejection before registration | allowed / not | Not (scrutiny PRD §6) |
+| 13 | Who may act | designations per state / court roles | Court roles held at the establishment (`court-roles.md`); each state assigns them to its own staff titles |
+| 14 | Where a case is registered | setting / follows from roles | Follows from roles (`SCR-11`); the `registrationPoint` setting is removed (PRD batch 10) |
+| 15 | Courtroom | automatic allocation / officer chooses | The Scrutiny officer chooses at Forward or Register (`SCR-16`); a suggestion comes later |
+| 16 | State differences | code branches / configuration / business rules | Roles for who acts; per-state configuration for registration types and the oath; a business rule ([`0019`](0019-business-rules.md)) only for the advisory checks |
+| 17 | Which checks rule applies where | per-organization rows in 0019 / bindings owned here | Bindings owned here, resolved up the court hierarchy — 0019 stays domain-free |
+| 18 | Advisory checks | hard-coded / rule-driven | Rule-driven, never blocking (`SCR-05a`) |
 
 ---
 
 ## Open questions
 
 1. The screens show routing reasons — *Filer skipped a warning*, *Low read confidence*, *Random check*, *Not machine-read* — which suggest only some filings are routed to scrutiny. The PRD sends every paid filing there. Is routing selective, and who sets the reason?
-2. The screens show a bench clerk scrutinising. Which states let a bench clerk scrutinise, and may a bench clerk also forward or register? Each answer becomes that state's `ROLES` rule.
-3. When the magistrate sends a case back from registration, does it go to the filer with everything open (PRD `SCR-08`) or back to the scrutiny officer (the screen's *Send back to scrutiny*)? Per state, this is the `PIPELINE` rule.
-4. The *Closed* tab shows a *Withdrawn* filing. Deletion is not allowed after payment (`LIFE-14`). Can a filer withdraw a filing in scrutiny or correction, and what does it become?
-5. Should a raised flag carry its own deadline, or does the *Correct defects* task carry one due date for everything?
-6. When a resubmission adds the DCA fee (`REF-04`), is the filer told before signing, or only at the payment step?
-7. The PRD keeps the ID card court-only (`DCM-9`, `DCM-10`). Should the scrutiny bundle mark it as such, and must the filer-side correction view hide a flag on it from the accused side?
-8. For Gujarat and Punjab & Haryana: who registers (`SCR-11`), and where does a magistrate's send back go? Until confirmed, both inherit the national default.
-9. Punjab and Haryana share a High Court. Do their scrutiny practices differ, so that bindings must sit on establishments rather than the High Court?
-10. Which checks does each state want in the *What to check* panel, and at which severity?
-11. Can the institution-to-courtroom mapping in Gujarat be maintained by court administrators directly as a decision table, or must it go through a release?
+2. The screens label the registration send back *Send back to scrutiny*; the PRD sends the case to the filer with everything open (`SCR-08`). Which is right?
+3. The *Closed* tab shows a *Withdrawn* filing. Deletion is not allowed after payment (`LIFE-14`). Can a filer withdraw a filing in scrutiny or correction, and what does it become?
+4. Should a raised flag carry its own deadline, or does the *Correct defects* task carry one due date for everything?
+5. When a resubmission adds the DCA fee (`REF-04`), is the filer told before signing, or only at the payment step?
+6. The PRD keeps the ID card court-only (`DCM-9`, `DCM-10`). Should the scrutiny bundle mark it as such, and must the filer-side correction view hide a flag on it from the accused side?
+7. Which checks does each state want in the *What to check* panel, and at which severity?
+8. Gujarat: the scrutiny PRD says the scrutiny officer and the registrar are the same person, so cases are registered at Scrutiny (`SCR-13`); `court-roles.md` §3.2 gives Case registerer to the Magistrate and not to the Scrutiny officer. Which assignment is intended?
+9. After a send back, is the courtroom chosen earlier kept or pre-selected, or does the Scrutiny officer choose afresh (scrutiny PRD `Q-1`)?
+10. At Registration, can the Case registerer change the courtroom the Scrutiny officer chose (scrutiny PRD `Q-2`)?
+11. Which states require the oath (e-filing `Q-6`)?
 
 ---
 
@@ -1216,7 +1095,7 @@ cd src && python manage.py check
 * Machine reading, read confidence and AI consistency checks.
 * Field editing, signing and payment during correction.
 * Case number formats.
-* Courtroom transfer.
+* Automatic courtroom allocation and suggestion; moving a registered case to another courtroom.
 * Cognizance, notice and dismissal at cognizance.
 * Refund notes on a lower recalculated bill.
 * Notification copy.

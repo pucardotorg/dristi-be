@@ -929,7 +929,7 @@ Each transition validates preconditions and updates `cases.status`:
 **(b) Delegate to workflow service:**
 Call the existing workflow service (spec 0011) with a transition event. The workflow service owns status changes and enforces state machine rules.
 
-**Decision:** (b). [0011](0011-case-workflows.md) now specifies the e-filing lifecycle (§10), the correction loop and the `Case.status` projection (§3.3), so these endpoints are thin wrappers: `submit-for-signing` calls `move_case(case, "submit_for_signing")`; signing dispatches `ALL_SIGNED` when the last signatory signs; payment completion dispatches `PAYMENT_COMPLETED`. `submit-for-payment` and `submit-for-scrutiny` are not needed as client endpoints. No code here writes `cases.status`. Option (a) is withdrawn.
+**Recommendation:** Start with (a) for simplicity. The status values and transitions are well-defined (spec 0017 §7.3), so reimplementing them here is low risk. Migrate to (b) if other case types introduce complex branching or approval chains.
 
 ## 8. Signing
 
