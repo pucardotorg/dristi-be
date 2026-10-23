@@ -171,9 +171,6 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `MESSAGING_TASK_TIME_LIMIT` | Dramatiq time limit for `send_message` in milliseconds; must exceed any gateway timeout | `600000` |
 | `OTP_MAX_ATTEMPTS` | Wrong guesses allowed against one OTP before it is destroyed | `5` |
 | `PASSWORD_RESET_WINDOW_SECONDS` | How long a verified password-reset code allows the new password to be set, in seconds | `600` |
-| `PINCODE_API_URL` | India Post Pincode API endpoint; `{pincode}` is substituted | `https://api.postalpincode.in/pincode/{pincode}` |
-| `PINCODE_API_TIMEOUT` | Pincode API connect/read timeout in seconds; on timeout the lookup returns 503 | `5` |
-| `PINCODE_API_CACHE_SECONDS` | How long a successful pincode lookup is cached | `604800` |
 | `CDAC_SMS_URL` | CDAC gateway endpoint (required when the CDAC backend is active) | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
 | `CDAC_SMS_USERNAME` | CDAC username | `dristi` |
 | `CDAC_SMS_PASSWORD` | CDAC password; hashed (SHA-1) before transmission, never sent in plaintext | secret |

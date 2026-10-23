@@ -30,11 +30,3 @@ class AddressSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
-
-
-class PincodeDetailsSerializer(serializers.Serializer):
-    """District and state for a pincode, to pre-fill an address form."""
-
-    pincode = serializers.CharField()
-    district = serializers.CharField()
-    state = serializers.CharField()
