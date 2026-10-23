@@ -200,13 +200,13 @@ class TestValidate:
 
     def test_a_complainant_needs_an_advocate_or_to_appear_in_person(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)
-        add_complainant(client, draft, name="Anita Kumar")
+        second = add_complainant(client, draft, name="Anita Kumar")
 
         body = validate(client, draft)
 
         assert body["errors"] == [
             {
-                "field": "representations",
+                "field": f"participants.{second['case_participant_id']}",
                 "message": "Complainant #2 has no advocate and is not marked as party-in-person.",
             }
         ]

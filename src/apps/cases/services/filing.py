@@ -168,7 +168,7 @@ def validation_errors(case):
     for complainant in complainants:
         if complainant.id not in represented and not complainant.is_party_in_person:
             error(
-                "representations",
+                f"participants.{complainant.id}",
                 f"Complainant #{complainant.ordinal} has no advocate and is not marked "
                 "as party-in-person.",
             )

@@ -1094,7 +1094,7 @@ POST /cases/{case_id}/validate
       "message": "Document type BOUNCED_CHEQUE is required but not uploaded"
     },
     {
-      "field": "representations",
+      "field": "participants.3f1c2a9e-7b4d-4e8a-9c61-2d5f8a0b7e14",
       "message": "Complainant #1 has no advocate and is not marked as party-in-person"
     }
   ]
