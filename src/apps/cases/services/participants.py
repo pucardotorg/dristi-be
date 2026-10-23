@@ -80,6 +80,7 @@ MODEL_RULE_CODES = [
     (models.DUPLICATE_REPRESENTATION_MESSAGE, errors.ALREADY_ACTING),
     (models.ADVOCATE_NOT_APPROVED_MESSAGE, errors.ADVOCATE_NOT_APPROVED),
     (models.PARTY_IN_PERSON_MESSAGE, errors.PARTY_IN_PERSON),
+    (models.PARTY_HAS_ADVOCATES_MESSAGE, errors.PARTY_IN_PERSON),
 ]
 _MODEL_RULE_PATTERNS = [
     (re.compile(re.sub(r"\\{\w+\\}", ".+", re.escape(message))), error)
@@ -388,7 +389,7 @@ def update_participant(participant, user, data):
         ]
     if data.get("is_party_in_person") and participant.representations.active().exists():
         problems["is_party_in_person"] = [
-            errors.coded(errors.PARTY_IN_PERSON, "Remove this party's advocates first.")
+            errors.coded(errors.PARTY_IN_PERSON, models.PARTY_HAS_ADVOCATES_MESSAGE)
         ]
     if "designation_at_filing" in data and not (
         participant.person_id and participant.institution_id

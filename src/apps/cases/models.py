@@ -123,6 +123,7 @@ DUPLICATE_MANDATE_MESSAGE = "This holder already has an active mandate for this 
 DUPLICATE_REPRESENTATION_MESSAGE = "This advocate already represents this party."
 ADVOCATE_NOT_APPROVED_MESSAGE = "Must be an approved advocate."
 PARTY_IN_PERSON_MESSAGE = "A party appearing in person cannot be given an advocate."
+PARTY_HAS_ADVOCATES_MESSAGE = "Remove this party's advocates first."
 ADVOCATE_FOR_SELF_MESSAGE = "An advocate cannot represent themselves."
 ADVOCATE_BOTH_SIDES_MESSAGE = "An advocate cannot represent both a complainant and an accused."
 
@@ -247,7 +248,8 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
         Every role but a witness needs an address for service of notice. While
         active, a person or an institution cannot hold one role twice on a
-        case, nor be both a complainant and an accused there. A participant
+        case, nor be both a complainant and an accused there, nor appear in
+        person while an advocate actively represents them. A participant
         cannot be removed while an active witness names them as its caller.
         """
         super().clean()
@@ -271,6 +273,13 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             ).exists()
         ):
             errors["is_active"] = CALLS_ACTIVE_WITNESS_MESSAGE
+        if (
+            self.is_active
+            and self.is_party_in_person
+            and self.pk
+            and self.representations.active().exists()
+        ):
+            errors["is_party_in_person"] = PARTY_HAS_ADVOCATES_MESSAGE
         if errors:
             raise ValidationError(errors)
 
