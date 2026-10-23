@@ -266,6 +266,16 @@ The Docker Compose stack includes:
 | `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
 | `PDF_SIGNATURE_HASH_ALGORITHM` | Digest the PDF service computes over the signing ByteRange | `SHA256` |
 | `PDF_SIGNATURE_CONTAINER_BYTES` | Bytes reserved for the PKCS#7 signature container | `16384` |
+| `PAYMENT_DEFAULT_PROVIDER` | Name (a key of the `PAYMENT_PROVIDERS` setting) of the provider new payments are started with; empty leaves payments `INITIATED` for an operator. Payments in flight keep their own provider. | `mock` locally, empty in production until a gateway addon ships |
+| `PAYMENT_DEFAULT_CURRENCY` | Currency a demand is raised in when none is given | `INR` |
+| `PAYMENT_UI_REDIRECT_URL` | Server-side redirect target of the provider callback; `https://` in production | `https://app.example.com/payments/return` |
+| `PAYMENT_CALLBACK_THROTTLE_RATE` | Per-IP throttle for the public callback; blank disables it | `60/min` |
+| `PAYMENT_CALLBACK_MAX_BODY_BYTES` | Largest callback body accepted | `65536` |
+| `PAYMENT_STATUS_POLL_INTERVAL_SECONDS` | First status-poll interval for a pending payment; doubles each poll | `300` |
+| `PAYMENT_STATUS_POLL_MAX_INTERVAL_SECONDS` | Cap of the doubling poll interval | `21600` |
+| `PAYMENT_STATUS_POLL_BATCH_SIZE` | Provider transactions checked per poller run | `200` |
+| `PAYMENT_BATCH_MAX_DEMANDS` | Most demands one cross-demand payment may cover | `50` |
+| `PAYMENT_MOCK_CALLBACK_BASE_URL` | API origin the mock provider's form posts back to (local only) | `http://localhost:8000` |
 | `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted for in-process signing | `20971520` |
 
 ## Docker dependency profiles

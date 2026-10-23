@@ -50,6 +50,12 @@ ESIGN_PROVIDER = "apps.esign.providers.mock.MockESignProvider"
 # is off by default and switched on by the test that asserts it.
 ESIGN_CALLBACK_THROTTLE_RATE = ""
 
+# Payments run on the mock provider in tests; the public callback throttle is
+# off by default for the same reason as eSign's.
+PAYMENT_PROVIDERS = {"mock": "apps.payments.providers.mock.MockPaymentProvider"}
+PAYMENT_DEFAULT_PROVIDER = "mock"
+PAYMENT_CALLBACK_THROTTLE_RATE = ""
+
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # The OTP code and its resend cooldown both live in the cache, so tests need a
