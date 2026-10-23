@@ -242,6 +242,7 @@ example `E01001`.
 | `04` | `apps.pdf` | PDF generation and jobs (spec 0016) |
 | `05` | `apps.address` | pincode lookup (spec 0020) |
 | `06` | `apps.payments` | demands and payments (spec 0017); reserved, not yet implemented |
+| `10` | `apps.hearings` | hearings, court calendar and bulk rescheduling (spec 0023); reserved, not yet implemented |
 
 Rules:
 

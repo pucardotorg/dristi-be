@@ -45,11 +45,14 @@ The PRDs fix how hearings and orders meet:
 * The order screen is opened **on a hearing** the court has called. That
   order belongs to the hearing (`ORD-05`), and the hearing's summary is that
   order's text (`HRG-11`).
-* The next date is set **in the order**. It is held provisionally from the
-  moment it is typed, counted in every day's load, and becomes a scheduled
-  hearing only when the magistrate signs (`NXT-10`–`NXT-15`, `PUB-07`).
-* One control ends the current hearing and starts the next listing on the
-  board (`NXT-04`).
+* The next date is part of the **order data**, entered on the order or on the
+  cause list as the court chooses (`PLC-04`). It is held provisionally from the
+  moment it is set, counted in every day's load, and becomes a scheduled
+  hearing only when the order is **triggered** — signed and its order data
+  complete (`NXT-10`–`NXT-15`, `CMP-04`, `PUB-07`).
+* Hearings are started, ended and passed over from the cause list, by a
+  hearing controller, one at a time or in bulk. A listing not finished on its
+  day is abandoned at midnight (`HRG-00`–`HRG-08`).
 * A party asks for a hearing to move by filing an **Advance / Prepone** or
   **Postpone** application. Accepting it is an order whose workflow
   reschedules the hearing; the application expires if its hearing passes
@@ -74,17 +77,17 @@ scheduled, and the case module decides.
 ## Goals
 
 * Tie every hearing to exactly one case, through one foreign key, and never write case tables.
-* Hold a date provisionally from the moment it is set in a draft order, count it in the day's load, and make it a scheduled hearing on signature.
-* Serve the day's board (cause list) for a court, in serial order, with live status.
-* Run the courtroom: start a hearing, pass it over, end it and start the next in one action.
-* Record attendance as structured marks: four fixed roles in this version.
+* Hold a date provisionally from the moment it is set in a draft order, count it in the day's load, and make it a scheduled hearing when the order is triggered.
+* Serve the day's board (cause list) for a court, grouped by status and in serial order, with live status.
+* Run the courtroom: start a hearing, pass it over, end it, singly or in bulk, with every change timed; abandon what is left at midnight.
+* Record the attendance the hearing's order carries as structured marks.
 * Move a hearing to another date for court-side reasons (presiding officer on leave, holiday, not reached), singly or in bulk, without an order.
 * Move a hearing to another date for party or judicial reasons only through a signed order.
 * Keep the hearing's id stable when its date moves, so processes and applications that point at it stay valid.
 * Record every date change with its reason, its source and who sought it.
 * Maintain a court calendar of non-sitting days and daily capacity.
 * Give cases, applications and processes the hearing facts they need through selectors and signals, without importing them.
-* Notify parties when a hearing is scheduled, moved or cancelled, and never before signature.
+* Notify parties when a hearing is scheduled, moved or cancelled, and never before the order is triggered.
 * Expose REST APIs following [`0000`](0000-api-coding-spec.md), including the standard error shape and registered error codes.
 
 ## Non-goals
@@ -121,7 +124,7 @@ apps/hearings/
 ├── services/
 │   ├── __init__.py
 │   ├── listing.py          # hold / change / release / confirm, cancel_open_hearings (#7)
-│   ├── courtroom.py        # start, pass_over, end, end_and_start_next, attendance (#6)
+│   ├── courtroom.py        # start, pass_over, end, bulk actions, attendance (#6)
 │   ├── reschedule.py       # single and bulk reschedule (#8)
 │   └── calendar.py         # sitting days, capacity, business date (#9)
 ├── selectors.py            # read-only queries; the contract other modules use
@@ -163,6 +166,7 @@ instance.
 | --- | --- | --- |
 | `get_case_summaries(case_ids) -> dict[UUID, CaseSummary]` | `id`, `display_number` (case number, else filing number), `title` ("A v. B"), `case_type`, `court_id`, `stage` (key, label), `filed_at`, `registered_at` | every hearing list and detail |
 | `get_case_advocates(case_ids) -> dict[UUID, list[AdvocateRef]]` | active advocates with `name` and `side` (`COMPLAINANT`/`ACCUSED`) | Advocates column |
+| `get_attendance_roll(case_id) -> list[RollEntry]` | every complainant, accused and PoA holder (`participant_id`, `name`, `type`), and one advocate line per complainant and per accused that has an advocate | attendance (#6.5, `ATT-01`) |
 | `get_case_contacts(case_id) -> list[Contact]` | parties and advocates with phone and email, and their side | notifications (#11.1) |
 | `get_listability(case_id) -> Listability` | `listable: bool`, `reason` (`NOT_REGISTERED`, `DISPOSED`, `LONG_PENDING_REGISTER`, `TRANSFERRED`), `court_id` | every date-fixing service (#7) |
 | `cases_awaiting_hearing(court_id) -> QuerySet[UUID]` | registered, live cases of that court | scheduling queue (#10.4.8) |
@@ -173,20 +177,31 @@ instance.
 None of these exist yet on `feat/cases_api`. They are the first piece of work
 this spec needs from the cases module.
 
-#### 1.2 Court staff
+#### 1.2 Court staff and roles
 
-A hearing is acted on by the court that lists it. Three users work a court
-(`order-generation.md` §3): the **magistrate**, the **bench clerk** and the
-**typist**. `users.Role` has no court-side roles today, so this module needs a
-court membership:
+A hearing is acted on by the courtroom that lists it. Court-side permissions are
+**roles**, not staff titles (`court-roles.md` `RLE-01`, `RLE-08`): a staff
+account holds any set of roles **per courtroom** (`RLE-02a`), and each court
+decides which of its staff hold which. `users.Role` has no court-side roles
+today, so this module needs a courtroom membership carrying roles:
 
 ```text
-apps.organizations.CourtMember(user, organization, designation, is_active)
-designation ∈ {MAGISTRATE, BENCH_CLERK, TYPIST, SCRUTINY_OFFICER}
+apps.organizations.CourtMember(user, organization, roles, is_active)
+roles ⊆ {HEARING_CONTROLLER, NEXT_HEARING_SETTER, ...}   # court-roles.md §2
 ```
 
-Hearings read it through `apps.organizations.selectors.court_designation(user, court_id)`.
-Where it lives is open (#12, question 4); hearings only depend on that selector.
+Hearings read it through `apps.organizations.selectors.court_roles(user, court_id) -> set[str]`;
+an active membership with any roles makes the user **court staff** of that
+courtroom. Where it lives is open (#12, question 4); hearings only depend on that
+selector. The roles this module checks:
+
+| Role | Hearing actions |
+| --- | --- |
+| **Hearing controller** | start, end and pass over hearings, singly or in bulk (`HRG-00`, `HRG-07`); reorder the board |
+| **Next hearing setter** | court-side moves, single and bulk (#8); cancel `LISTED_IN_ERROR`; calendar entries (#9.2). Proposed: court-roles.md names no role for these yet (#12, question 11) |
+
+Reading is not a role: any court staff of the courtroom sees its hearings
+(`RLE-06`).
 
 ### 2. Data model
 
@@ -210,7 +225,9 @@ classDiagram
         +order_id
         +started_at
         +ended_at
-        +auto_ended
+        +last_started_at
+        +heard_duration
+        +abandoned_at
         +adjournment_sought_by
         +attendance_locked_at
         +confirmed_at
@@ -227,7 +244,8 @@ classDiagram
     }
     class HearingAttendance {
         +hearing FK
-        +attendee
+        +attendee_type
+        +participant_id
         +mark
         +appearance_mode
     }
@@ -268,7 +286,7 @@ classDiagram
         +result
     }
     Hearing --> HearingPurpose
-    Hearing "1" --> "0..4" HearingAttendance
+    Hearing "1" --> "*" HearingAttendance
     Hearing "1" --> "*" HearingDateChange
     Hearing --> Hearing : previous_hearing
     BulkRescheduleJob "1" --> "*" BulkRescheduleItem
@@ -297,10 +315,12 @@ bounded enum is a `TextChoices` in `apps/hearings/enums.py`.
 | `source_order_id` | `UUIDField(null=True, db_index=True)` | the order that fixed or holds this date |
 | `moves_hearing` | `FK("self", on_delete=PROTECT, null=True, related_name="held_moves")` | set only on a `PROVISIONAL` row held by a *Rescheduling of hearing date* order item (#7.3) |
 | `order_id` | `UUIDField(null=True, unique=True)` | the order passed **in** this hearing (`ORD-05`, `HRG-12`); set by the orders module |
-| `started_at` / `ended_at` | `DateTimeField(null=True)` | `HRG-06`, `HRG-07` |
-| `auto_ended` | `BooleanField(default=False)` | ended by the end-of-day sweep, not by a user (#11.4) |
+| `started_at` / `ended_at` | `DateTimeField(null=True)` | first start and the end (`HRG-08`); start and end time on view case |
+| `last_started_at` | `DateTimeField(null=True)` | start of the current `IN_PROGRESS` period |
+| `heard_duration` | `DurationField(default=0)` | sum of the periods the hearing was `IN_PROGRESS` (`HRG-08`); added to each time it leaves `IN_PROGRESS` |
+| `abandoned_at` | `DateTimeField(null=True)` | set by the midnight sweep (#11.4, `HRG-05`) |
 | `adjournment_sought_by` | `CharField(16, choices=Side, blank=True)` | on end: `COMPLAINANT`, `ACCUSED`, `COURT`, or empty when business was done (#11.3) |
-| `attendance_locked_at` | `DateTimeField(null=True)` | set when the hearing's order is signed; attendance is read-only after (#6.5) |
+| `attendance_locked_at` | `DateTimeField(null=True)` | set when the hearing's order is triggered; attendance is read-only after (#6.5) |
 | `confirmed_at` | `DateTimeField(null=True)` | when it became `SCHEDULED` |
 | `cancelled_at` / `cancellation_reason` | `DateTimeField(null=True)` / `CharField(32, choices=CancellationReason, blank=True)` | #7.6 |
 | `release_reason` | `CharField(32, choices=ReleaseReason, blank=True)` | #7.4 |
@@ -310,7 +330,6 @@ Constraints:
 | Name | Constraint | Why |
 | --- | --- | --- |
 | `hearings_one_scheduled_per_case` | `UniqueConstraint(case, condition=Q(status=SCHEDULED))` | a case has at most one upcoming date |
-| `hearings_one_in_progress_per_court` | `UniqueConstraint(court, condition=Q(status=IN_PROGRESS))` | one matter is heard at a time in a courtroom |
 | `hearings_one_in_progress_per_case` | `UniqueConstraint(case, condition=Q(status=IN_PROGRESS))` | |
 | `hearings_board_sequence` | `UniqueConstraint(court, hearing_date, sequence, condition=Q(status__in=BOARD_STATUSES))` | serial numbers are unique on a day's board |
 | `hearings_one_hold_per_order` | `UniqueConstraint(source_order_id, condition=Q(status=PROVISIONAL))` | one draft order holds one date (`order-template-catalogue.md`, combination rule 3) |
@@ -318,7 +337,10 @@ Constraints:
 | `hearings_hold_has_order` | `CheckConstraint`: `status != PROVISIONAL OR source_order_id IS NOT NULL` | a hold always belongs to a draft |
 | `hearings_started_before_ended` | `CheckConstraint`: `ended_at IS NULL OR started_at <= ended_at` | |
 
-`BOARD_STATUSES = (SCHEDULED, IN_PROGRESS, PASSED_OVER, COMPLETED)`.
+`BOARD_STATUSES = (SCHEDULED, IN_PROGRESS, PASSED_OVER, COMPLETED, ABANDONED)`.
+
+Several hearings of one court may be `IN_PROGRESS` at once (`HRG-06`), so
+there is no per-court constraint on it.
 
 Indexes: `(court, hearing_date, status_order, sequence)` for the board;
 `(case, hearing_date)` for case history; `(court, hearing_date, status)` for
@@ -327,8 +349,9 @@ load counts; `(status, hearing_date)` for the sweeps.
 `Meta.ordering = ("hearing_date", "status_order", "sequence")`.
 
 Rows are never deleted. Every terminal state (`COMPLETED`, `CANCELLED`,
-`RELEASED`) is a status, and `HistoricalHearing` keeps every prior version
-with the responsible user.
+`RELEASED`) and `ABANDONED` is a status, and `HistoricalHearing` keeps every
+prior version with the responsible user and its time, so each start, pass
+over, end and abandonment is timed (`HRG-08`).
 
 #### 2.2 `HearingPurpose` — `BaseModel`, `BaseActivatableModel`, `BaseAuditableModel`
 
@@ -368,28 +391,33 @@ Seeded from the hearing purposes in `order-template-catalogue.md`:
 Rules:
 
 * `REVIEW_APPLICATION` appears twice in the catalogue; it is seeded once.
-* A purpose is retired with `is_active = False`, never deleted. A retired purpose stays on existing hearings and cannot be chosen for a new date (`E04014`).
+* A purpose is retired with `is_active = False`, never deleted. A retired purpose stays on existing hearings and cannot be chosen for a new date (`E10014`).
 * `code` is the identifier other modules pass and store. It SHOULD NOT be renamed; the case lifecycle keys its stage rules on it (#7.5).
 * This is a model, not configuration-store rows: [`0018`](0018-configuration-store.md) stores opaque strings, and purposes are referenced by foreign key.
 * Which order items are likely at a purpose, and who is required to attend it, are order configuration and stay in the orders module.
 
 #### 2.3 `HearingAttendance` — `BaseModel`
 
-One row per marked attendee. The roll is a **fixed list of four** in this version
-(`ATT-01`): nothing is checked against who is actually on the case.
+One row per marked person on the roll. The roll is **every complainant, every
+accused and every PoA holder** on the case, with **one advocate line** under
+each complainant and each accused that has an advocate; a party in person has
+no advocate line (`ATT-01`). It is read from `get_attendance_roll` (#1.1).
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `hearing` | `FK(Hearing, on_delete=CASCADE, related_name="attendance")` | |
-| `attendee` | `CharField(32, choices=Attendee)` | `COMPLAINANT`, `COMPLAINANT_ADVOCATE`, `ACCUSED`, `ACCUSED_ADVOCATE` |
-| `mark` | `CharField(8, choices=AttendanceMark)` | `PRESENT`, `ABSENT` |
+| `attendee_type` | `CharField(32, choices=AttendeeType)` | `COMPLAINANT`, `ACCUSED`, `POA_HOLDER`, `COMPLAINANT_ADVOCATE`, `ACCUSED_ADVOCATE` |
+| `participant_id` | `UUIDField` | the party on the roll; for an advocate line, the party it sits under |
+| `mark` | `CharField(16, choices=AttendanceMark)` | `PRESENT`, `ABSENT`, `NOT_REQUIRED` (`ATT-02`) |
 | `appearance_mode` | `CharField(16, choices=AppearanceMode, blank=True)` | `IN_PERSON`, `VIDEO`; only with `PRESENT` |
 
-`UniqueConstraint(hearing, attendee)`. An unmarked attendee has **no row**:
-no answer is a real state and is never stored as `ABSENT` (`ATT-02`).
+`UniqueConstraint(hearing, attendee_type, participant_id)`. An unmarked person
+has **no row**. The roll is **complete** when every person on it has a row
+(`ATT-04`).
 
-Attendance is kept as data, rather than only as the Present/Absent lines the
-order writes (`ATT-03`), because other rules read it: a complainant absent at
+Attendance is order data, entered on the hearing's order and printed on it
+(`PLC-02`, `ATT-03`). It is kept here as data, rather than only as the
+Present/Absent lines on the order, because other rules read it: a complainant absent at
 an appearance date (§279 BNSS), an accused absent after service (warrant), and
 the view-case attendance line (`HRG-08`), which is rendered from these rows.
 
@@ -447,17 +475,22 @@ Item: `job`, `hearing`, `hearing_updated_at` (snapshot at preview), `from_date`,
 stateDiagram-v2
     [*] --> PROVISIONAL: hold (date set in a draft order)
     PROVISIONAL --> PROVISIONAL: change (date or purpose edited in the draft)
-    PROVISIONAL --> SCHEDULED: confirm (order signed)
+    PROVISIONAL --> SCHEDULED: confirm (order triggered)
     PROVISIONAL --> RELEASED: release (draft discarded, date removed, case closed, consumed)
     SCHEDULED --> SCHEDULED: reschedule / bulk reschedule
     SCHEDULED --> IN_PROGRESS: start
     SCHEDULED --> PASSED_OVER: pass over
     PASSED_OVER --> IN_PROGRESS: start
-    PASSED_OVER --> SCHEDULED: reschedule (not reached)
     IN_PROGRESS --> PASSED_OVER: pass over
     IN_PROGRESS --> COMPLETED: end
+    SCHEDULED --> ABANDONED: midnight sweep
+    IN_PROGRESS --> ABANDONED: midnight sweep
+    PASSED_OVER --> ABANDONED: midnight sweep
+    PASSED_OVER --> SCHEDULED: reschedule
+    ABANDONED --> SCHEDULED: reschedule (not reached)
     SCHEDULED --> CANCELLED: cancel
     PASSED_OVER --> CANCELLED: cancel
+    ABANDONED --> CANCELLED: cancel
     COMPLETED --> [*]
     CANCELLED --> [*]
     RELEASED --> [*]
@@ -466,10 +499,11 @@ stateDiagram-v2
 | Status | Meaning | On the board | Seen by parties | `status_order` |
 | --- | --- | --- | --- | --- |
 | `PROVISIONAL` | A date set in a draft order; nothing is final (`NXT-10`) | no | **no** | — |
-| `SCHEDULED` | Listed; waiting to be called | yes | yes | 20 |
-| `IN_PROGRESS` | Called and being heard | yes | yes | 10 |
-| `PASSED_OVER` | Called, kept back, to be called again | yes | yes | 30 |
-| `COMPLETED` | Heard. The order passed in it is the record | yes | yes | 40 |
+| `SCHEDULED` | Listed; waiting to be called (*Scheduled*) | yes | yes | 20 |
+| `IN_PROGRESS` | Called and being heard (*Ongoing*) | yes | yes | 10 |
+| `PASSED_OVER` | Set aside unheard, to be returned to the same day (*Passed over*) | yes | yes | 30 |
+| `COMPLETED` | Heard (*Heard*). The order passed in it is the record | yes | yes | 40 |
+| `ABANDONED` | Not finished on its day; set by the midnight sweep (*Abandoned*, `HRG-05`) | yes | yes | 50 |
 | `CANCELLED` | Will not be heard (case closed, transferred, listed in error) | no | yes | — |
 | `RELEASED` | A provisional date that never became a hearing | no | **no** | — |
 
@@ -477,18 +511,21 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | hold | — → `PROVISIONAL` | orders module, in-process | #7.1 |
 | change | `PROVISIONAL` → `PROVISIONAL` | orders module, in-process | #7.2 |
-| confirm | `PROVISIONAL` → `SCHEDULED` | orders module, on signature | #7.3 |
+| confirm | `PROVISIONAL` → `SCHEDULED` | orders module, when the order is triggered | #7.3 |
 | release | `PROVISIONAL` → `RELEASED` | orders module; case closure | #7.4 |
-| start | `SCHEDULED`, `PASSED_OVER` → `IN_PROGRESS` | court staff | #6.1 |
-| pass over | `SCHEDULED`, `IN_PROGRESS` → `PASSED_OVER` | court staff | #6.2 |
-| end | `IN_PROGRESS` → `COMPLETED` | court staff | #6.3 |
-| reschedule | `SCHEDULED`, `PASSED_OVER` → `SCHEDULED` | court staff (court-side reasons) or a signed order | #8 |
-| cancel | `SCHEDULED`, `PASSED_OVER` → `CANCELLED` | a signed case-closing order; court staff for `LISTED_IN_ERROR` only | #7.6 |
+| start | `SCHEDULED`, `PASSED_OVER` → `IN_PROGRESS` | hearing controller | #6.1 |
+| pass over | `SCHEDULED`, `IN_PROGRESS` → `PASSED_OVER` | hearing controller | #6.2 |
+| end | `IN_PROGRESS` → `COMPLETED` | hearing controller | #6.3 |
+| abandon | `SCHEDULED`, `IN_PROGRESS`, `PASSED_OVER` → `ABANDONED` | system, at midnight | #11.4 |
+| reschedule | `SCHEDULED`, `PASSED_OVER`, `ABANDONED` → `SCHEDULED` | court staff (court-side reasons) or a triggered order | #8 |
+| cancel | `SCHEDULED`, `PASSED_OVER`, `ABANDONED` → `CANCELLED` | a triggered case-closing order; court staff for `LISTED_IN_ERROR` only | #7.6 |
 
 Rules:
 
-* Every transition is a row in a transition table in `services/`, checked under `select_for_update()` on the hearing. Anything else is `409 E04001` with `allowed_actions` in the error.
-* `COMPLETED`, `CANCELLED` and `RELEASED` are terminal. A heard hearing is never moved: the next date is a new row.
+* Every transition is a row in a transition table in `services/`, checked under `select_for_update()` on the hearing. Anything else is `409 E10001` with `allowed_actions` in the error.
+* `COMPLETED`, `CANCELLED` and `RELEASED` are terminal. A heard hearing is never moved or started again (`HRG-03`): the next date is a new row.
+* A hearing is always started before it is ended (`HRG-02`); ending a `SCHEDULED` hearing in bulk records both, at the same time (#6.6).
+* Every transition is timed: the history row records when, and leaving `IN_PROGRESS` adds the period to `heard_duration` (`HRG-08`).
 * A hearing that has been heard is never "adjourned" by editing it. Adjournment is how a hearing *ends*: it is `COMPLETED`, its order fixes the next date, and `adjournment_sought_by` records at whose request (#11.3).
 * This lifecycle is not a [`0011`](0011-case-workflows.md) workflow. 0011 models one workflow per case; a case has many hearings, and this state machine is small and fixed.
 
@@ -509,7 +546,7 @@ config `hearings.max_hearings_per_day`.
 The **load** of a day is two numbers, always reported separately (`NXT-12`):
 
 ```text
-listed      = count(status IN (SCHEDULED, IN_PROGRESS, PASSED_OVER, COMPLETED))
+listed      = count(status IN (SCHEDULED, IN_PROGRESS, PASSED_OVER, COMPLETED, ABANDONED))
 provisional = count(status = PROVISIONAL)
 ```
 
@@ -521,8 +558,8 @@ must also be after that hearing's date.
 Capacity never silently refuses a date. With config `hearings.capacity_mode =
 warn` (default), a full day is returned as a warning in the response
 (`warnings: [{ "code": "COURT_DAY_FULL", ... }]`) and the date is accepted;
-with `block`, it is `409 E04009`. Whether a date is judicially right is the
-magistrate's call (`NXT-09`).
+with `block`, it is `409 E10009`. Whether a date is judicially right is the
+magistrate's call (`NXT-04`).
 
 Non-production environments MAY pin the business date with config
 `hearings.business_date_override` (`YYYY-MM-DD`). A system check refuses it in
@@ -531,35 +568,41 @@ production, as for other test-only settings.
 ### 5. The day's board
 
 The board (cause list) for a court and date is every hearing on it with a
-`BOARD_STATUS`, ordered by `status_order, sequence`: the hearing being heard
-first, then those waiting, then those passed over, then those heard.
+`BOARD_STATUS`, grouped by status and ordered by `status_order, sequence`:
+those being heard first, then those waiting, then those passed over, then
+those heard, then those abandoned (`CLS-02`). Generating the cause list is
+not specified by the PRDs; here it is the confirmed hearings of the day in
+`sequence`.
 
 Rules:
 
 * `sequence` is assigned when a hearing **joins** a board — on confirm (#7.3) or on being moved to that date (#8) — as `max(sequence) + 1` for that court and date, under the court lock (#11.5). It is the serial number shown to the court ("S. no.") and printed on the board.
 * A hearing that leaves the board (moved away or cancelled) leaves a gap. Gaps are never closed automatically; serial numbers announced to the bar do not change under them.
-* Court staff may **reorder** the waiting part of a board (`SCHEDULED` hearings) for a date, with `POST /api/v1/hearings/board/reorder/`. The request lists every `SCHEDULED` hearing of that court and date exactly once in the new order; anything else is `400 E04019`. Sequences are rewritten in one transaction; `IN_PROGRESS`, `PASSED_OVER` and `COMPLETED` rows keep theirs.
-* The **next listing** is the `SCHEDULED` hearing with the lowest `sequence` on the court's board for the business date; if there is none, the `PASSED_OVER` hearing with the lowest `sequence`; if there is none, there is no next listing (`NXT-08`).
-* A hearing still `SCHEDULED` or `PASSED_OVER` after its date has passed was **not reached**. It is not changed by the system: no date is ever invented for it. It is listed by `?not_reached=true` (#10.4.1) until court staff move it (#8).
+* A hearing controller may **reorder** the waiting part of a board (`SCHEDULED` hearings) for a date, with `POST /api/v1/hearings/board/reorder/`. The request lists every `SCHEDULED` hearing of that court and date exactly once in the new order; anything else is `400 E10019`. Sequences are rewritten in one transaction; rows in every other status keep theirs.
+* A hearing still `SCHEDULED`, `IN_PROGRESS` or `PASSED_OVER` at midnight becomes `ABANDONED` (#11.4): it was **not reached**. No date is ever invented for it. It is listed by `?not_reached=true` (#10.4.1) until court staff move it (#8) or an order gives the case a new date.
 
 ### 6. Running the courtroom
 
-All courtroom actions are taken by court staff of the hearing's court (#10.5)
-and accept `If-Unmodified-Since` against `Hearing.updated_at`; a stale write
-is `412 E04002`.
+Start, pass over and end are taken by a **hearing controller** of the
+hearing's court, from the cause list (`HRG-00`, #10.5), and accept
+`If-Unmodified-Since` against `Hearing.updated_at`; a stale write is
+`412 E10002`. Each sets `last_started_at` or adds to `heard_duration` as it
+enters or leaves `IN_PROGRESS` (`HRG-08`).
 
 #### 6.1 Start
 
-`SCHEDULED` or `PASSED_OVER` → `IN_PROGRESS`. Sets `started_at = now()`.
+`SCHEDULED` or `PASSED_OVER` → `IN_PROGRESS`. Sets `started_at = now()` on
+the first start, and `last_started_at = now()`.
 
-* The hearing's date must be the business date (`409 E04010`).
-* No other hearing of the same court may be `IN_PROGRESS` (`409 E04011`, naming it). The partial unique constraint is the backstop.
+* The hearing's date must be the business date (`409 E10010`).
+* Several hearings of the same court may be `IN_PROGRESS` at once (`HRG-06`).
 
 #### 6.2 Pass over
 
-`SCHEDULED` or `IN_PROGRESS` → `PASSED_OVER`. The matter is called again later
-the same day. `started_at` is kept if set; a passed-over hearing that is
-started again keeps its first `started_at`.
+`SCHEDULED` or `IN_PROGRESS` → `PASSED_OVER`. The matter is set aside unheard
+and returned to later the same day with Start (`HRG-04`). `started_at` is kept
+if set; a passed-over hearing that is started again keeps its first
+`started_at`.
 
 #### 6.3 End
 
@@ -567,30 +610,19 @@ started again keeps its first `started_at`.
 
 ```json
 POST /api/v1/hearings/{id}/end/
-{ "start_next": true, "adjournment_sought_by": "ACCUSED" }
+{ "adjournment_sought_by": "ACCUSED" }
 ```
 
-* Ending does **not** require the hearing's order to exist, be complete or be signed (`NXT-07`). The draft stays on the hearing.
+* Ending does **not** require the hearing's order to exist, be complete, be sent for signing or be signed (`HRG-09`). The draft stays on the hearing.
 * `adjournment_sought_by` is optional; empty means business was done.
-* With `start_next = true`, the next listing (#5) is started in the **same transaction**, under the court lock. The response carries both:
+* Ending starts nothing else. Each hearing is started on its own (`HRG-02`).
 
-```json
-{
-  "ended": { "id": "6f1c…", "status": "COMPLETED", "...": "..." },
-  "started": { "id": "7a22…", "status": "IN_PROGRESS", "sequence": 5, "...": "..." },
-  "meta": { "...": "standard envelope" }
-}
-```
-
-  With no next listing, `started` is `null` and the client returns to the board.
-
-* This is the one hearing control of `NXT-04`. Which users are offered it first is `primary_action` (#10.5), not a permission.
-
-#### 6.4 Current hearing
+#### 6.4 Ongoing hearings
 
 `GET /api/v1/hearings/current/?court=` returns the court's `IN_PROGRESS`
-hearing, or `{"hearing": null}`. The typist's control is enabled and named
-from it (`NXT-05`, `NXT-06`).
+hearings for the business date, in `sequence` order, or an empty list. The
+order screen's **Next case** button opens the next one on the board, is
+disabled while there is none, and names it by its `sequence` (`HRG-10`).
 
 The response carries an `ETag` derived from the court's board state for the
 business date. Clients poll with `If-None-Match`; an unchanged board returns
@@ -603,18 +635,37 @@ indexed query is cheap at one court's scale.
 PUT /api/v1/hearings/{id}/attendance/
 {
   "marks": [
-    { "attendee": "COMPLAINANT", "mark": "PRESENT", "appearance_mode": "IN_PERSON" },
-    { "attendee": "COMPLAINANT_ADVOCATE", "mark": "PRESENT", "appearance_mode": "VIDEO" },
-    { "attendee": "ACCUSED", "mark": "ABSENT" }
+    { "attendee_type": "COMPLAINANT", "participant_id": "3b10…", "mark": "PRESENT", "appearance_mode": "IN_PERSON" },
+    { "attendee_type": "COMPLAINANT_ADVOCATE", "participant_id": "3b10…", "mark": "PRESENT", "appearance_mode": "VIDEO" },
+    { "attendee_type": "ACCUSED", "participant_id": "9c42…", "mark": "ABSENT" },
+    { "attendee_type": "POA_HOLDER", "participant_id": "d7e5…", "mark": "NOT_REQUIRED" }
   ]
 }
 ```
 
-* Replaces the whole roll. An attendee absent from `marks` is unmarked; its row is deleted (`ATT-02`).
-* Allowed while the hearing is `IN_PROGRESS`, `PASSED_OVER` or `COMPLETED`, and `attendance_locked_at` is empty. Otherwise `409 E04022`.
+* Taken by an **order data filler** of the hearing's court: attendance is order data (`ROL-02`, `PLC-02`).
+* Replaces the whole roll. A person absent from `marks` is unmarked; its row is deleted. Every entry must be on the case's roll (`get_attendance_roll`); anything else is `400 E10011`.
+* Allowed while the hearing has been started (`IN_PROGRESS`, `PASSED_OVER`, `COMPLETED`, or `ABANDONED` with `started_at` set) and `attendance_locked_at` is empty. Otherwise `409 E10022`.
 * `appearance_mode` is only accepted with `PRESENT`.
-* The orders module calls `services.courtroom.lock_attendance(hearing_id)` when the hearing's order is signed, so the roll and the signed order cannot disagree afterwards.
-* The order screen writes the Present / Absent lines into the order text from the same marks (`ATT-03`); this module does not render order text.
+* `services.courtroom.attendance_complete(hearing_id) -> bool` tells the orders module whether every person on the roll is marked, so it can refuse *Send for signing* until it is (`ATT-04`, `SND-03`). Marking everyone not yet marked as present, or defaulting them to not required, is done by the screen (`ATT-02`).
+* The orders module calls `services.courtroom.lock_attendance(hearing_id)` when the hearing's order is triggered, so the roll and the order cannot disagree afterwards.
+* The order prints the Present / Absent lines from the same marks, leaving out people not required (`ATT-03`); this module does not render order text.
+
+#### 6.6 Bulk end and pass over
+
+Several listings can be ended or passed over in one action from the cause list
+(`HRG-07`, `CLS-10`), by a hearing controller:
+
+```json
+POST /api/v1/hearings/bulk-action/
+{ "court": "c0f2…", "hearing_ids": ["6f1c…", "7a22…"], "action": "END" }
+```
+
+* `action` is `END` or `PASS_OVER`.
+* **Ending a `SCHEDULED` hearing starts and ends it with the same press**: both are recorded at the same time, and `heard_duration` stays zero (`HRG-02`, `CLS-10`). The business-date rule of #6.1 applies.
+* A hearing that cannot take the action — End needs `SCHEDULED` or `IN_PROGRESS`, Pass over needs `SCHEDULED` or `IN_PROGRESS` — is left as it is and returned under `skipped` with its `allowed_actions`.
+* Applied in one transaction under the court lock (#11.5); the response reports `done` and `skipped`, one entry per hearing.
+* The next hearing set in the same dialog is order data and goes through the orders module (#7.1), not this endpoint.
 
 ### 7. Fixing a date: the orders contract
 
@@ -639,9 +690,14 @@ as a full day or a case that already has a scheduled hearing.
 
 #### 7.1 Hold — a date typed into a draft
 
-Called when the *Next hearing* region of an in-hearing draft gets both a date
-and a purpose (`NXT-02`), or when a *Scheduling of hearing date* or
-*Rescheduling of hearing date* order item is answered outside a hearing.
+Called when a draft order's next hearing gets both a date and a purpose
+(`NXT-02`) — whether it is entered on the order or on the cause list
+(`PLC-04`), by a next hearing setter (`ROL-03`) — or when a *Scheduling of
+hearing date* order item is answered outside a hearing. Outside a hearing the
+next hearing starts at the hearing the case is already listed for; changing it
+adds a *Rescheduling of hearing date* order item, and the hold is made with
+`moves_hearing` set to that hearing (`ORD-08`, `NXT-03`). *Not listed again*
+holds nothing (`NXT-01`).
 
 1. `get_listability(case_id)`; not listable → `CaseNotListable(reason)`.
 2. Validate the date (#4) and the purpose (active).
@@ -659,23 +715,24 @@ row is invisible to parties.
 Moves the `PROVISIONAL` row in place (`NXT-13`) after re-running #7.1 steps
 2–3. No `HearingDateChange` row: nothing that was ever announced has moved.
 
-#### 7.3 Confirm — the order is signed
+#### 7.3 Confirm — the order is triggered
 
-Called on signature, **first** among the order's workflows
+Called when the order is **triggered** — signed and its order data complete,
+in either order (`CMP-04`, `PUB-07`) — **first** among the order's workflows
 (`order-template-catalogue.md`, workflow trigger order rule 1), so every other
 workflow in the same order sees the new date.
 
 Inside one `transaction.atomic()`, under the court lock:
 
-1. Load the `PROVISIONAL` row for `order_id`. Already confirmed by this order → return it unchanged (a retried signature is idempotent). Released → `HoldReleased`.
-2. Re-check listability, sitting day and business date. The order may be signed days after the date was typed; the date may have passed or become a holiday. Any failure → `HoldInvalid(problems)`. Capacity is **not** re-checked: the hold was counted in the load all along.
+1. Load the `PROVISIONAL` row for `order_id`. Already confirmed by this order → return it unchanged (a retried trigger is idempotent). Released → `HoldReleased`.
+2. Re-check listability, sitting day and business date. The order may be triggered days after the date was set; the date may have passed or become a holiday. Any failure → `HoldInvalid(problems)`. Capacity is **not** re-checked: the hold was counted in the load all along.
 3. **A new date** (`moves_hearing` empty): the case must have no `SCHEDULED` hearing (`CaseAlreadyScheduled`). Set `status = SCHEDULED`, assign `sequence` (#5), `confirmed_at = now()`.
 4. **A moved date** (`moves_hearing` set): move the original hearing in place exactly as #8.2 does, with `source = ORDER`, `source_ref = order_id`, and the `reason_code` and `sought_by` the order item carries. Mark the provisional row `RELEASED` with `release_reason = CONSUMED`. The original hearing keeps its id, so processes and applications pointing at it stay valid (`PIA-02`).
 5. `transaction.on_commit`: call `apps.cases.services.record_hearing_scheduled` (#7.5), send `hearing_scheduled` or `hearing_rescheduled` (#11.6), and enqueue notifications (#11.1).
 
 `validate(order_id)` runs steps 1–3 without writing, so the orders module can
-refuse *Add to signing list* (`SGN-04`) before the magistrate signs an order
-whose date can no longer be confirmed.
+refuse *Send for signing* (`SND-03`) for an order whose date can no longer be
+confirmed.
 
 #### 7.4 Release
 
@@ -684,12 +741,12 @@ whose date can no longer be confirmed.
 | Reason | When |
 | --- | --- |
 | `DRAFT_DISCARDED` | the draft order is discarded (`DFT-06`) |
-| `DATE_REMOVED` | the next date is removed from the draft, or *List it again* is unticked (`NXT-01`) |
+| `DATE_REMOVED` | the next date is removed from the draft, or *Not listed again* is chosen (`NXT-01`, `NXT-13`) |
 | `CONSUMED` | a held move was applied to the original hearing (#7.3) |
 | `CASE_CLOSED` | the case was closed while the draft was open (#7.6) |
 
-A hold never expires on its own; it lives and dies with the draft that holds it
-(`NXT-15`). The stale-holds report (#11.4) shows holds older than config
+A hold never expires on its own; it lives and dies with the order that holds
+it, and a draft does not expire (`NXT-15`). The stale-holds report (#11.4) shows holds older than config
 `hearings.stale_hold_days`.
 
 #### 7.5 Case stage
@@ -715,14 +772,14 @@ reconciliation re-reads hearings through the selectors.
 
 #### 7.6 Cancel — the case leaves the court's list
 
-When a signed order closes the case or takes it off this court's list —
+When a triggered order closes the case or takes it off this court's list —
 judgement, dismissal, withdrawal, settlement or compounding, abatement,
 transfer, referral that ends the case, moving to the Long Pending Register —
 its workflow calls `cancel_open_hearings(case_id, reason, order_id)`, **last**
 among the order's workflows (workflow trigger order rule 3):
 
-* every `SCHEDULED` or `PASSED_OVER` hearing of the case → `CANCELLED`, with `cancellation_reason` and `cancelled_at`;
-* every `PROVISIONAL` hearing of the case → `RELEASED` with `CASE_CLOSED`, except one held by the very order being signed;
+* every `SCHEDULED`, `PASSED_OVER` or `ABANDONED` hearing of the case → `CANCELLED`, with `cancellation_reason` and `cancelled_at`;
+* every `PROVISIONAL` hearing of the case → `RELEASED` with `CASE_CLOSED`, except one held by the very order being triggered;
 * the case's `IN_PROGRESS` hearing, if any, is left alone: the order was passed in it, and court staff end it normally.
 
 `CancellationReason`: `CASE_DISPOSED`, `CASE_TRANSFERRED`,
@@ -742,37 +799,41 @@ caller can surface it unchanged.
 
 ```text
 HearingError(code, message)
-├── CaseNotListable(reason)            E04003
-├── CaseAlreadyScheduled(hearing_id)   E04004
-├── InvalidHearingDate(problem)        E04005–E04008
-├── CourtDayFull                       E04009   (block mode only)
-├── HoldNotFound                       E04020
-├── HoldReleased(release_reason)       E04021
-└── HoldInvalid(problems)              E04023
+├── CaseNotListable(reason)            E10003
+├── CaseAlreadyScheduled(hearing_id)   E10004
+├── InvalidHearingDate(problem)        E10005–E10008
+├── CourtDayFull                       E10009   (block mode only)
+├── HoldNotFound                       E10020
+├── HoldReleased(release_reason)       E10021
+└── HoldInvalid(problems)              E10023
 ```
 
-#### 7.8 Sequence: in a hearing, through signature
+#### 7.8 Sequence: in a hearing, through triggering
 
 ```mermaid
 sequenceDiagram
-    actor Clerk as Bench clerk
-    actor Mag as Magistrate
+    actor HC as Hearing controller
+    actor Staff as Order drafter / filler / next hearing setter
+    actor Mag as Order signer
     participant O as apps.orders
     participant H as apps.hearings
     participant C as apps.cases
     participant M as apps.messaging
 
-    Clerk->>H: POST /hearings/{h1}/start/
-    H-->>Clerk: h1 IN_PROGRESS
-    Clerk->>O: draft order for h1
+    HC->>H: POST /hearings/{h1}/start/
+    H-->>HC: h1 IN_PROGRESS
+    Staff->>O: draft order for h1
     O->>H: attach_order(h1, order)
-    Clerk->>O: next hearing 29 Oct, Evidence of the complainant
+    Staff->>O: next hearing 29 Oct, Evidence of the complainant
     O->>H: hold(case, 29 Oct, EVIDENCE_OF_COMPLAINANT, order, previous=h1)
     H-->>O: h2 PROVISIONAL, load 31 listed + 6 provisional
-    Clerk->>H: POST /hearings/{h1}/end/ {start_next: true}
-    H-->>Clerk: h1 COMPLETED, h3 IN_PROGRESS
+    Staff->>H: PUT /hearings/{h1}/attendance/
+    HC->>H: POST /hearings/{h1}/end/
+    H-->>HC: h1 COMPLETED
+    Staff->>O: send for signing (attendance complete, next hearing settled)
     Note over O,H: later the same day
     Mag->>O: sign order
+    Staff->>O: mark order data complete
     O->>H: confirm(order)
     H->>H: h2 SCHEDULED, sequence 32
     H->>C: record_hearing_scheduled(case, EVIDENCE_OF_COMPLAINANT)
@@ -785,7 +846,8 @@ sequenceDiagram
 #### 8.1 Who may move a hearing, and why
 
 A move is a change of `hearing_date` (and optionally `purpose`) on a
-`SCHEDULED` or `PASSED_OVER` hearing. The reason decides the path.
+`SCHEDULED`, `PASSED_OVER` or `ABANDONED` hearing. The reason decides the
+path. Court-side moves are taken by a next hearing setter (#1.2).
 
 | `RescheduleReason` | Path | Typical case |
 | --- | --- | --- |
@@ -800,11 +862,12 @@ A move is a change of `hearing_date` (and optionally `purpose`) on a
 Court-side reasons are administrative: the bench did not sit or did not reach
 the matter, and nothing was decided. Party and judicial reasons are decisions,
 and decisions are orders. `POST /reschedule/` with an order-only reason is
-`400 E04013`.
+`400 E10013`.
 
 For court-side reasons, `sought_by = COURT`. An order-driven move carries
 `sought_by` from the order item (the side whose application was accepted, or
-`COURT`).
+`COURT`). On accepting an Advance / Prepone or Postpone application, a next
+hearing setter sets the new date on the order (`application-lifecycle.md`).
 
 #### 8.2 Single move
 
@@ -822,7 +885,7 @@ If-Unmodified-Since: Thu, 08 Oct 2026 05:40:00 GMT
 In one transaction, under the court lock of **both** dates' court (the same
 court; one lock):
 
-1. Validate the transition (#3) and the new date (#4). Same date and same purpose → `400 E04012`.
+1. Validate the transition (#3) and the new date (#4). Same date and same purpose → `400 E10012`.
 2. Write a `HearingDateChange` row.
 3. Set `hearing_date`, `purpose`, `status = SCHEDULED`, `reschedule_count += 1`, a new `sequence` on the new date (#5), and the change reason on the history row (`update_change_reason`).
 4. `on_commit`: `record_hearing_scheduled` if the purpose changed, signal `hearing_rescheduled`, notify parties.
@@ -850,8 +913,8 @@ given, and for the not-reached matters at the end of a day.
 
 * `mode = TO_DATE` takes `target_date` and moves every hearing to it.
 * `mode = NEXT_AVAILABLE` takes `schedule_after` and fills sitting days after it in order, up to each day's free capacity (capacity minus listed minus provisional), keeping the hearings' relative order.
-* Only court-side reasons are accepted (`E04013`).
-* Every hearing must be on the given court and `SCHEDULED` or `PASSED_OVER`. At most config `hearings.bulk_max_hearings` per job (`E04024`).
+* Only court-side reasons are accepted (`E10013`).
+* Every hearing must be on the given court and `SCHEDULED`, `PASSED_OVER` or `ABANDONED`. At most config `hearings.bulk_max_hearings` per job (`E10024`).
 
 The response is `200` with `job_id`, `preview_expires_at` (config
 `hearings.bulk_preview_minutes`, default 10), one line per hearing `{hearing_id,
@@ -861,7 +924,7 @@ changes.
 
 **Confirm** — `POST /api/v1/hearings/bulk-reschedule/{job_id}/confirm/` →
 `202 Accepted` with `{ "job_id": "…", "status": "QUEUED" }`. An expired preview
-is `409 E04015`; a job already confirmed is `409 E04016`.
+is `409 E10015`; a job already confirmed is `409 E10016`.
 
 `tasks.run_bulk_reschedule(job_id)`:
 
@@ -902,8 +965,8 @@ screen and the reschedule screens (`NXT-11`, `NXT-12`).
 `POST /api/v1/courts/{court_id}/calendar/entries/` and
 `DELETE /api/v1/courts/{court_id}/calendar/entries/{entry_id}/`.
 
-* Creating a non-sitting entry on a date that has `SCHEDULED`, `PASSED_OVER` or `PROVISIONAL` hearings is `409 E04017`, with the counts. The client moves them with a bulk move that has `block_source_dates = true` (#8.3). A holiday never strands a listed hearing silently.
-* Entries in the past cannot be created or deleted (`E04005`).
+* Creating a non-sitting entry on a date that has `SCHEDULED`, `PASSED_OVER` or `PROVISIONAL` hearings is `409 E10017`, with the counts. The client moves them with a bulk move that has `block_source_dates = true` (#8.3). A holiday never strands a listed hearing silently.
+* Entries in the past cannot be created or deleted (`E10005`).
 * Deleting an entry makes the day a sitting day again; nothing moves back.
 
 #### 9.3 Business date
@@ -931,22 +994,23 @@ to `SPECTACULAR_SETTINGS["ENUM_NAME_OVERRIDES"]` (`HearingStatusEnum`,
 | --- | --- | --- | --- |
 | GET | `/api/v1/hearings/` | Board and search | court staff |
 | GET | `/api/v1/hearings/{id}/` | Hearing detail | court staff; parties of the case |
-| POST | `/api/v1/hearings/{id}/start/` | #6.1 | court staff |
-| POST | `/api/v1/hearings/{id}/pass-over/` | #6.2 | court staff |
-| POST | `/api/v1/hearings/{id}/end/` | #6.3, optionally starting the next | court staff |
-| POST | `/api/v1/hearings/{id}/reschedule/` | #8.2, court-side reasons | court staff |
-| POST | `/api/v1/hearings/{id}/cancel/` | `LISTED_IN_ERROR` only (#7.6) | court staff |
-| PUT | `/api/v1/hearings/{id}/attendance/` | #6.5 | court staff |
+| POST | `/api/v1/hearings/{id}/start/` | #6.1 | hearing controller |
+| POST | `/api/v1/hearings/{id}/pass-over/` | #6.2 | hearing controller |
+| POST | `/api/v1/hearings/{id}/end/` | #6.3 | hearing controller |
+| POST | `/api/v1/hearings/bulk-action/` | #6.6, end or pass over several | hearing controller |
+| POST | `/api/v1/hearings/{id}/reschedule/` | #8.2, court-side reasons | next hearing setter |
+| POST | `/api/v1/hearings/{id}/cancel/` | `LISTED_IN_ERROR` only (#7.6) | next hearing setter |
+| PUT | `/api/v1/hearings/{id}/attendance/` | #6.5 | order data filler |
 | GET | `/api/v1/hearings/current/?court=` | #6.4 | court staff |
-| POST | `/api/v1/hearings/board/reorder/` | #5 | court staff |
+| POST | `/api/v1/hearings/board/reorder/` | #5 | hearing controller |
 | GET | `/api/v1/hearings/scheduling-queue/?court=` | Cases waiting for a date | court staff |
 | GET | `/api/v1/hearings/counts/?court=` | Badge counts | court staff |
-| POST | `/api/v1/hearings/bulk-reschedule/preview/` | #8.3 | court staff |
-| POST | `/api/v1/hearings/bulk-reschedule/{job_id}/confirm/` | #8.3, `202` | court staff |
+| POST | `/api/v1/hearings/bulk-reschedule/preview/` | #8.3 | next hearing setter |
+| POST | `/api/v1/hearings/bulk-reschedule/{job_id}/confirm/` | #8.3, `202` | next hearing setter |
 | GET | `/api/v1/hearings/bulk-reschedule/{job_id}/` | Job status | court staff |
 | GET | `/api/v1/hearing-purposes/` | Active purposes | any registered user |
 | GET | `/api/v1/courts/{court_id}/calendar/` | #9.1 | court staff |
-| POST / DELETE | `/api/v1/courts/{court_id}/calendar/entries/` · `…/{entry_id}/` | #9.2 | magistrate, bench clerk |
+| POST / DELETE | `/api/v1/courts/{court_id}/calendar/entries/` · `…/{entry_id}/` | #9.2 | next hearing setter |
 | GET | `/api/v1/courts/{court_id}/business-date/` | #9.3 | any registered user |
 | GET | `/api/v1/cases/{case_id}/hearings/` | Hearings of one case, newest first (`HRG-01`, `HRG-02`) | court staff; parties of the case |
 | GET | `/api/v1/cases/{case_id}/hearings/next/` | The next hearing tile (`OVW-01`–`OVW-04`) | court staff; parties of the case |
@@ -981,18 +1045,18 @@ orders (#7) and court-side moves (#8); nothing else writes a hearing.
   "adjournments": { "COMPLAINANT": 0, "ACCUSED": 3, "COURT": 1 },
   "started_at": null,
   "ended_at": null,
+  "heard_duration": "PT0S",
   "order_id": null,
   "allowed_actions": ["start", "pass_over", "reschedule"],
-  "primary_action": "start",
   "updated_at": "2026-10-07T18:02:11+05:30"
 }
 ```
 
 * `case` and `advocates` are built from **one** batched call each to `get_case_summaries` and `get_case_advocates` for the page's case ids. No per-row call crosses the module boundary.
-* `allowed_actions` is computed from status, date and the caller's court membership, so clients never duplicate the transition table. `primary_action` is the action the caller is offered first (#10.5).
+* `allowed_actions` is computed from status, date and the caller's roles in the hearing's court, so clients never duplicate the transition table and the cause list offers only what the caller may do (`CLS-06`, `CLS-08`).
 * `adjournments` counts the case's adjournments by side (#11.3); `beyond_trial_target` compares `days_since_filing` with config `hearings.trial_target_days` (§143(3) NI Act; default 180).
 * The detail endpoint adds `attendance` (the marks, and the rendered line for `HRG-08`), `date_changes`, `previous_hearing` and `next_hearing` (`{id, hearing_date, purpose, status}` of the confirmed hearing whose `previous_hearing` is this one, for `HRG-09`, `HRG-10`). The hearing summary is the text of `order_id`, read from the orders module by the client (`HRG-11`).
-* Party-side callers never receive `PROVISIONAL` or `RELEASED` rows, `allowed_actions` or `primary_action`.
+* Party-side callers never receive `PROVISIONAL` or `RELEASED` rows or `allowed_actions`.
 
 #### 10.3 `GET /api/v1/hearings/`
 
@@ -1004,9 +1068,11 @@ orders (#7) and court-side moves (#8); nothing else writes a hearing.
 | `status` | repeatable `HearingStatus`; default `BOARD_STATUSES` |
 | `purpose` | repeatable purpose code |
 | `stage` | repeatable stage key, resolved through the cases selector |
+| `advocate` | repeatable advocate id, from the advocates on the day's list (`CLS-07`) |
+| `has_order` | `none`, `draft` or `recorded`, from `order_id` and the orders module's status (`CLS-07`) |
 | `case` | UUID |
 | `search` | case number, title, party or advocate name (`search_case_ids`) |
-| `not_reached` | `true`: `SCHEDULED`/`PASSED_OVER` hearings dated before the business date (#5) |
+| `not_reached` | `true`: `ABANDONED` hearings not yet moved or cancelled (#5) |
 | `changed_since` | timestamp; hearings moved or confirmed since, for the "Recently scheduled" tab |
 | `ordering` | default `status_order,sequence`; also `sequence`, `hearing_date`, `case_number`, `purpose` |
 | `page`, `page_size` | `HearingPagination(PageNumberPagination)`, `page_size_query_param`, max 100 |
@@ -1016,7 +1082,7 @@ orders (#7) and court-side moves (#8); nothing else writes a hearing.
 1. **Board and search** — above.
 2. **`/cases/{case_id}/hearings/`** — same representation, newest first, all statuses visible to the caller.
 3. **`/cases/{case_id}/hearings/next/`** — the case's `IN_PROGRESS` hearing, else its `SCHEDULED` one, else `{"hearing": null}` ("No hearing scheduled", `OVW-04`). The client shows "Today" when `hearing_date` is the business date.
-4. **`/hearings/counts/?court=`** — `{ "today": 23, "in_progress": 1, "passed_over": 2, "not_reached": 4, "scheduling_queue": 17, "stale_holds": 3 }`. Only hearing-owned counts.
+4. **`/hearings/counts/?court=`** — `{ "today": 23, "by_status": { "IN_PROGRESS": 1, "SCHEDULED": 18, "PASSED_OVER": 2, "COMPLETED": 2, "ABANDONED": 0 }, "not_reached": 4, "scheduling_queue": 17, "stale_holds": 3 }`. `by_status` feeds the status quick filters (`CLS-07`). Only hearing-owned counts.
 5. **`/hearing-purposes/`** — active purposes ordered by `sequence`; cacheable.
 6. **`/hearings/current/`** — #6.4.
 7. **`/courts/{court_id}/calendar/`** and **`/business-date/`** — #9.
@@ -1027,74 +1093,67 @@ orders (#7) and court-side moves (#8); nothing else writes a hearing.
 Baseline from [`0000`](0000-api-coding-spec.md) #6: `IsAuthenticated`,
 `IsAuthenticatedAndRegistered`. On top of that, in `permissions.py`:
 
-* **Court staff** — a user with an active `CourtMember` row for the hearing's court, as magistrate, bench clerk or typist. They see every hearing of their court in every status, and may take every courtroom and reschedule action on it.
-* **Parties** — a user whose `case_ids_visible_to(user)` includes the hearing's case. Read-only. They never see `PROVISIONAL` or `RELEASED` rows: a date is not announced before signature (`PUB-07`).
+* **Court staff** — a user with an active `CourtMember` row for the hearing's court. They see every hearing of their court in every status (`RLE-06`). Each action needs the role in #10.1 for that court (#1.2), enforced server-side (`ROL-06`, `RLE-04`); without it the action is `403 E10025`.
+* **Parties** — a user whose `case_ids_visible_to(user)` includes the hearing's case. Read-only. They never see `PROVISIONAL` or `RELEASED` rows: a date is not announced before the order is triggered (`PUB-07`).
 * **Everyone else** — a hearing on a case or court they are not involved in is `404 E00105`, never `403`, so the API does not reveal that it exists.
-* Court staff acting on another court's hearing get `404 E00105` for the same reason; a court-staff-only endpoint called by a non-staff user is `403 E04018`.
-* Calendar entries are created and deleted by the magistrate and the bench clerk only.
-
-Apart from calendar entries, no hearing action is restricted between the
-magistrate, the bench clerk and the typist (`ROL-06`). What differs is
-`primary_action`:
-
-| Designation | `primary_action` on the in-progress hearing | on a waiting hearing |
-| --- | --- | --- |
-| Magistrate, bench clerk | `end_and_start_next` | `start` |
-| Typist | `go_to_current` — `null` until the next hearing has been started (`NXT-05`) | `null` |
+* Court staff acting on another court's hearing get `404 E00105` for the same reason; a court-staff-only endpoint called by a non-staff user is `403 E10018`.
+* Roles are read for the hearing's court only (`RLE-02b`); a role held in another courtroom grants nothing here.
 
 Signing is not a hearing action and is not granted here.
 
 #### 10.6 Error codes
 
 Codes are defined in `apps/hearings/errors.py` with `apps.api.errors.define()`
-under the next free domain prefix in `apps.api.errors.DOMAINS` — `04` at the
-time of writing — recorded in [`0000`](0000-api-coding-spec.md) #9.2 when
-allocated.
+under domain prefix `10`, reserved for `apps.hearings` in
+[`0000`](0000-api-coding-spec.md) #9.2 and added to `apps.api.errors.DOMAINS`
+before the first code is defined.
 
 | Code | Name | Status | Raised when |
 | --- | --- | --- | --- |
-| `E04001` | `INVALID_TRANSITION` | 409 | action not allowed from the current status; error carries `allowed_actions` |
-| `E04002` | `HEARING_STALE` | 412 | `If-Unmodified-Since` older than `updated_at` |
-| `E04003` | `CASE_NOT_LISTABLE` | 409 | case not registered, disposed, in LPR or transferred |
-| `E04004` | `CASE_ALREADY_SCHEDULED` | 409 | the case already has a `SCHEDULED` hearing |
-| `E04005` | `DATE_IN_PAST` | 400 | date before the business date; `field = hearing_date` |
-| `E04006` | `DATE_NOT_SITTING` | 400 | not a sitting day; `field = hearing_date` |
-| `E04007` | `DATE_BEYOND_HORIZON` | 400 | more than `max_days_ahead` ahead |
-| `E04008` | `DATE_NOT_AFTER_PREVIOUS` | 400 | not after the previous hearing's date |
-| `E04009` | `COURT_DAY_FULL` | 409 | capacity reached, `capacity_mode = block` |
-| `E04010` | `HEARING_NOT_TODAY` | 409 | starting a hearing not dated on the business date |
-| `E04011` | `COURT_HEARING_IN_PROGRESS` | 409 | another hearing of the court is in progress |
-| `E04012` | `NOTHING_TO_CHANGE` | 400 | reschedule to the same date and purpose |
-| `E04013` | `REASON_NEEDS_ORDER` | 400 | party or judicial reason on a court-side move; `field = reason_code` |
-| `E04014` | `PURPOSE_INACTIVE` | 400 | retired or unknown purpose; `field = purpose` |
-| `E04015` | `PREVIEW_EXPIRED` | 409 | bulk preview past `preview_expires_at` |
-| `E04016` | `PREVIEW_ALREADY_CONFIRMED` | 409 | bulk job confirmed twice |
-| `E04017` | `DATE_HAS_HEARINGS` | 409 | non-sitting entry on a date with live or held hearings |
-| `E04018` | `NOT_COURT_STAFF` | 403 | court-staff endpoint called by anyone else |
-| `E04019` | `BOARD_MISMATCH` | 400 | reorder list is not exactly the day's `SCHEDULED` hearings |
-| `E04020` | `HOLD_NOT_FOUND` | 404 | in-process: no hold for the order |
-| `E04021` | `HOLD_RELEASED` | 409 | in-process: confirming a released hold |
-| `E04022` | `ATTENDANCE_LOCKED` | 409 | attendance on a hearing not in a markable status, or after its order was signed |
-| `E04023` | `HOLD_INVALID` | 409 | in-process: held date no longer valid at signature |
-| `E04024` | `BULK_TOO_LARGE` | 400 | more hearings than `bulk_max_hearings` |
+| `E10001` | `INVALID_TRANSITION` | 409 | action not allowed from the current status; error carries `allowed_actions` |
+| `E10002` | `HEARING_STALE` | 412 | `If-Unmodified-Since` older than `updated_at` |
+| `E10003` | `CASE_NOT_LISTABLE` | 409 | case not registered, disposed, in LPR or transferred |
+| `E10004` | `CASE_ALREADY_SCHEDULED` | 409 | the case already has a `SCHEDULED` hearing |
+| `E10005` | `DATE_IN_PAST` | 400 | date before the business date; `field = hearing_date` |
+| `E10006` | `DATE_NOT_SITTING` | 400 | not a sitting day; `field = hearing_date` |
+| `E10007` | `DATE_BEYOND_HORIZON` | 400 | more than `max_days_ahead` ahead |
+| `E10008` | `DATE_NOT_AFTER_PREVIOUS` | 400 | not after the previous hearing's date |
+| `E10009` | `COURT_DAY_FULL` | 409 | capacity reached, `capacity_mode = block` |
+| `E10010` | `HEARING_NOT_TODAY` | 409 | starting a hearing not dated on the business date |
+| `E10011` | `NOT_ON_ROLL` | 400 | attendance mark for a person not on the case's roll; `field = marks[i]` |
+| `E10012` | `NOTHING_TO_CHANGE` | 400 | reschedule to the same date and purpose |
+| `E10013` | `REASON_NEEDS_ORDER` | 400 | party or judicial reason on a court-side move; `field = reason_code` |
+| `E10014` | `PURPOSE_INACTIVE` | 400 | retired or unknown purpose; `field = purpose` |
+| `E10015` | `PREVIEW_EXPIRED` | 409 | bulk preview past `preview_expires_at` |
+| `E10016` | `PREVIEW_ALREADY_CONFIRMED` | 409 | bulk job confirmed twice |
+| `E10017` | `DATE_HAS_HEARINGS` | 409 | non-sitting entry on a date with live or held hearings |
+| `E10018` | `NOT_COURT_STAFF` | 403 | court-staff endpoint called by anyone else |
+| `E10019` | `BOARD_MISMATCH` | 400 | reorder list is not exactly the day's `SCHEDULED` hearings |
+| `E10020` | `HOLD_NOT_FOUND` | 404 | in-process: no hold for the order |
+| `E10021` | `HOLD_RELEASED` | 409 | in-process: confirming a released hold |
+| `E10022` | `ATTENDANCE_LOCKED` | 409 | attendance on a hearing not yet started, or after its order was triggered |
+| `E10023` | `HOLD_INVALID` | 409 | in-process: held date no longer valid when the order is triggered |
+| `E10024` | `BULK_TOO_LARGE` | 400 | more hearings than `bulk_max_hearings` |
+| `E10025` | `ROLE_REQUIRED` | 403 | court staff without the role the action needs in this court (#1.2) |
 
 Rules:
 
 * Released codes never change meaning and are never reused.
 * Every endpoint declares its codes with `error_responses(...)` ([`0000`](0000-api-coding-spec.md) #10.1).
-* Codes `E04020`, `E04021`, `E04023` are raised in-process (#7.7); the orders module surfaces them on its own endpoints.
+* Codes `E10020`, `E10021`, `E10023` are raised in-process (#7.7); the orders module surfaces them on its own endpoints.
 * A hearing the caller may not see is `404 E00105`, never a hearings code.
 * Soft problems (a full day in `warn` mode, a case with a hold on another draft) are returned in a `warnings` array with the same code names, never as errors.
 
 #### 10.7 Serializer responsibilities
 
 Serializers check shape only: UUIDs, dates, enum values, `marks` with no
-duplicate `attendee` and `appearance_mode` only with `PRESENT`, a non-empty
+duplicate `(attendee_type, participant_id)` and `appearance_mode` only with
+`PRESENT`, a non-empty
 duplicate-free `hearing_ids` list, a reorder list without duplicates.
 Transitions, dates, capacity and permissions are checked in the services under
 a lock, because a serializer cannot hold one. `status`, `sequence`,
-`status_order`, `original_date`, `reschedule_count`, `order_id`, every
-timestamp and every `*_reason` are `read_only_fields`.
+`status_order`, `original_date`, `reschedule_count`, `order_id`,
+`heard_duration`, every timestamp and every `*_reason` are `read_only_fields`.
 
 ### 11. Cross-cutting
 
@@ -1152,14 +1211,12 @@ Dramatiq actors in `apps/hearings/tasks.py`, enqueued with
 ```text
 run_bulk_reschedule(job_id)          # #8.3
 expire_bulk_previews()               # periodic; PREVIEWED past expiry -> EXPIRED
-end_day(court_id, business_date)     # periodic, after court hours
+end_day(court_id, business_date)     # periodic, at midnight IST
 ```
 
-`end_day`, run after config `hearings.end_of_day_time` (default `20:00` IST) for
-every court:
+`end_day`, run at midnight IST for every court, for the day just ended:
 
-* ends any `IN_PROGRESS` hearing: `COMPLETED`, `ended_at = now()`, `auto_ended = True`, logged at warning. A hearing left running overnight would otherwise block the court's next day (`E04011`);
-* leaves `SCHEDULED` and `PASSED_OVER` hearings untouched: they become not reached (#5) and wait for court staff;
+* every hearing of that day still `SCHEDULED`, `IN_PROGRESS` or `PASSED_OVER` becomes `ABANDONED`, with `abandoned_at = now()`; an `IN_PROGRESS` one adds its open period to `heard_duration` (`HRG-05`, `HRG-08`). Abandoned hearings are not reached (#5) and wait for court staff or an order; no date is invented;
 * reports holds older than `hearings.stale_hold_days` in `counts.stale_holds`.
 
 Dramatiq has no scheduler of its own; periodic actors are triggered by a
@@ -1168,8 +1225,8 @@ question 6).
 
 #### 11.5 Concurrency
 
-Two clerks giving the last free slot on a day, or starting two hearings at
-once, must not both succeed.
+Two clerks giving the last free slot on a day, or acting on the same hearing
+at once, must not both succeed.
 
 * Every service that assigns a `sequence`, counts capacity or starts a hearing first takes `select_for_update()` on the court's `Organization` row. All board writes for a court are serialised; at one court's volume this costs nothing measurable.
 * The hearing row is then locked and its status re-read before the transition is checked.
@@ -1185,7 +1242,7 @@ once, must not both succeed.
 | --- | --- | --- |
 | `hearing_scheduled` | confirm of a new date | — |
 | `hearing_rescheduled` | any move; carries `from_date`, `to_date` | applications: an Advance / Prepone or Postpone application on the hearing may need to expire (`ALC-30`, `Q-8`) |
-| `hearing_ended` | end, including `auto_ended` | applications: expiry when the hearing passes (`ALC-30`) |
+| `hearing_ended` | end, and abandonment by the midnight sweep | applications: expiry when the hearing passes (`ALC-30`) |
 | `hearing_cancelled` | cancel | applications, processes |
 
 A subscriber reads hearing facts back through `apps.hearings.selectors`, never
@@ -1231,7 +1288,6 @@ read boundary ([`0018`](0018-configuration-store.md)):
 | `trial_target_days` | `180` | §143(3) NI Act (#11.2) |
 | `adjournment_warning_threshold` | `2` | §346 BNSS (#11.3) |
 | `stale_hold_days` | `7` | #7.4 |
-| `end_of_day_time` | `20:00` | #11.4 |
 | `bulk_max_hearings` | `500` | #8.3 |
 | `bulk_preview_minutes` | `10` | #8.3 |
 | `business_date_override` | — | non-production only; system check (#4) |
@@ -1245,26 +1301,27 @@ No new environment variables. Nothing here is a secret.
 
 ### 12. Testing
 
-* **Lifecycle:** every allowed transition; every disallowed one returns `409 E04001` with `allowed_actions`; terminal states accept nothing.
+* **Lifecycle:** every allowed transition; every disallowed one returns `409 E10001` with `allowed_actions`; terminal states accept nothing.
 * **Hold → confirm:** hold creates an invisible `PROVISIONAL` row with no notification; it is counted as `provisional` in the day's load; change moves it with no `HearingDateChange`; release by each reason; confirm assigns the next `sequence`, notifies and calls `record_hearing_scheduled` once; a second confirm by the same order returns the same hearing.
-* **Confirm failures:** date passed between hold and signature; date became a holiday; case disposed; case already has a `SCHEDULED` hearing; hold released. `validate()` reports each without writing.
-* **Held move:** a *Rescheduling* hold leaves the original on its old date until signature; confirm moves the original in place, keeps its id, writes `HearingDateChange` with `source = ORDER`, and releases the hold as `CONSUMED`.
-* **Courtroom:** start only on the business date; one `IN_PROGRESS` per court; pass over and restart keeps the first `started_at`; end without an order; `end` with `start_next` starts the lowest-sequence `SCHEDULED`, then the lowest `PASSED_OVER`, then nothing.
-* **Attendance:** full replace; unmarked roles have no row; `appearance_mode` only with `PRESENT`; locked after `lock_attendance`.
-* **Board:** ordering by `status_order, sequence`; gaps kept after a move; reorder rewrites only `SCHEDULED` sequences and rejects a partial or foreign list; not-reached filter.
-* **Moves:** court-side reasons accepted, party and judicial reasons rejected with `E04013`; same date and purpose rejected; `reschedule_count`, `original_date`, `HearingDateChange` and history reason written.
+* **Confirm failures:** date passed between hold and triggering; date became a holiday; case disposed; case already has a `SCHEDULED` hearing; hold released. `validate()` reports each without writing.
+* **Held move:** a *Rescheduling* hold leaves the original on its old date until the order is triggered; confirm moves the original in place, keeps its id, writes `HearingDateChange` with `source = ORDER`, and releases the hold as `CONSUMED`.
+* **Courtroom:** start only on the business date; several `IN_PROGRESS` in one court allowed; pass over and restart keeps the first `started_at` and sums `heard_duration` over both periods; end without an order; end starts nothing else; a heard hearing cannot be started again.
+* **Bulk end and pass over:** a `SCHEDULED` hearing ended in bulk is started and ended at the same time; ineligible hearings are skipped and reported; the rest are applied.
+* **Attendance:** roll of every complainant, accused and PoA holder with one advocate line per party that has one; full replace; unmarked people have no row; `NOT_REQUIRED` accepted; a person not on the roll rejected with `E10011`; `attendance_complete` false until all are marked; `appearance_mode` only with `PRESENT`; locked after `lock_attendance`.
+* **Board:** grouped and ordered by `status_order, sequence`; gaps kept after a move; reorder rewrites only `SCHEDULED` sequences and rejects a partial or foreign list; not-reached filter.
+* **Moves:** court-side reasons accepted, party and judicial reasons rejected with `E10013`; same date and purpose rejected; `reschedule_count`, `original_date`, `HearingDateChange` and history reason written.
 * **Bulk:** preview changes nothing; `NEXT_AVAILABLE` respects free capacity including holds and keeps relative order; expired and double confirm rejected; started and changed hearings skipped; source dates blocked; redelivery finishes rather than repeats; one notification per case.
 * **Calendar:** sitting-day rule with weekday config and each entry type; a non-sitting entry on a date with hearings or holds rejected with counts; past entries rejected.
-* **Cancel:** case closure cancels `SCHEDULED`/`PASSED_OVER`, releases other drafts' holds, leaves the `IN_PROGRESS` hearing and the signing order's own hold; `LISTED_IN_ERROR` is the only direct cancel.
+* **Cancel:** case closure cancels `SCHEDULED`/`PASSED_OVER`/`ABANDONED`, releases other drafts' holds, leaves the `IN_PROGRESS` hearing and the triggering order's own hold; `LISTED_IN_ERROR` is the only direct cancel.
 * **Business date:** IST boundary around midnight UTC; override honoured outside production and refused by the system check in production.
 * **Adjournments and trial target:** counts by side from ends and moves; warning at the threshold, never a block; `beyond_trial_target` flips at `trial_target_days`.
-* **Visibility:** court staff see their court only; parties see their cases only and never `PROVISIONAL`/`RELEASED`; others get `404 E00105`; court-staff endpoints return `403 E04018` to parties.
-* **Primary action:** per designation, and the typist's `null` until the next hearing is started.
-* **Concurrency:** two holds racing for a day's last place in `block` mode leave one; two starts in one court leave one; constraints asserted directly.
-* **End of day:** auto-ends a stuck hearing with `auto_ended`; leaves waiting hearings untouched.
+* **Visibility:** court staff see their court only; parties see their cases only and never `PROVISIONAL`/`RELEASED`; others get `404 E00105`; court-staff endpoints return `403 E10018` to parties.
+* **Roles:** each action allowed with its role (#10.1) in the hearing's court and refused with `403 E10025` without it, including for a role held only in another courtroom; `allowed_actions` follows the caller's roles.
+* **Concurrency:** two holds racing for a day's last place in `block` mode leave one; two starts of one hearing leave one; constraints asserted directly.
+* **Midnight sweep:** `SCHEDULED`, `IN_PROGRESS` and `PASSED_OVER` hearings of the day become `ABANDONED` with `abandoned_at`; an open `IN_PROGRESS` period is added to `heard_duration`; heard hearings untouched.
 * **Selectors and signals:** batched case calls (assert query and call counts for a page of 50); every signal sent once, on commit, never on rollback.
 * **Isolation:** `apps.cases` does not import `apps.hearings`; `apps.hearings` does not import `apps.orders` or `apps.applications`.
-* **API:** success paths, permissions, `meta` envelope, pagination, filters, read-only fields, `ETag`/`304` on `/current/`. Error tests assert `code` and `field`, never the message ([`0000`](0000-api-coding-spec.md) #13); every code in #10.6 is covered and declared in the schema.
+* **API:** success paths, permissions, `meta` envelope, pagination, filters (including `advocate` and `has_order`), read-only fields, `ETag`/`304` on `/current/`. Error tests assert `code` and `field`, never the message ([`0000`](0000-api-coding-spec.md) #13); every code in #10.6 is covered and declared in the schema.
 
 Quality checks before committing:
 
@@ -1282,23 +1339,25 @@ cd src && python manage.py check
 | --- | --- | --- | --- |
 | 1 | Coupling to cases | Copy case fields / FK + selectors | One `PROTECT` FK; everything else through `apps.cases.selectors` |
 | 2 | Who fixes a date | Direct scheduling endpoint / orders only | Orders only (`ORD-`, `NXT-`, `PUB-07`); court-side moves are the one exception |
-| 3 | Dates before signature | Not stored / stored on the order / `PROVISIONAL` hearing | `PROVISIONAL` hearing — the load counts it and confirm is a status change (`NXT-10`–`NXT-14`) |
+| 3 | Dates before the order is triggered | Not stored / stored on the order / `PROVISIONAL` hearing | `PROVISIONAL` hearing — the load counts it and confirm is a status change (`NXT-10`–`NXT-14`) |
 | 4 | Rescheduling | New row / edit in place | In place, with `HearingDateChange` — the id stays stable for processes and applications |
-| 5 | A held move | Edit the original at once / separate provisional row | Separate row; the original stays on its date until signature, then moves in place |
+| 5 | A held move | Edit the original at once / separate provisional row | Separate row; the original stays on its date until the order is triggered, then moves in place |
 | 6 | Adjournment at a hearing | A status / how a hearing ends | `COMPLETED` + next date + `adjournment_sought_by` |
 | 7 | Reschedule requests from parties | Request engine / applications | Applications (Advance / Prepone, Postpone), accepted by an order |
 | 8 | Court-side moves | Need an order / staff action with a reason | Staff action, limited to administrative reasons |
 | 9 | Hearing summary | Text on the hearing / the order's text | The order's text (`HRG-11`); the hearing stores `order_id` |
-| 10 | Attendance | Only in the order text / structured marks | Structured marks, four fixed roles; the order renders the lines |
-| 11 | Ending a hearing and calling the next | Automatic on end / explicit flag | Explicit `start_next` on end — one control (`NXT-04`), never a side effect |
-| 12 | Not-reached matters | Auto-adjourn / leave for staff | Leave for staff; the system never invents a date |
+| 10 | Attendance | Only in the order text / structured marks | Structured marks per person on the case's roll; the order prints the lines (`ATT-01`–`ATT-04`) |
+| 11 | Ending a hearing and calling the next | One combined control / separate controls | Separate start, end and pass over on the cause list (`HRG-02`); ending starts nothing |
+| 12 | Not-reached matters | Auto-adjourn / leave for staff | `ABANDONED` at midnight (`HRG-05`), then left for staff; the system never invents a date |
 | 13 | Hearing terminal for a closed case | `ABATED` / `CANCELLED` with a reason | `CANCELLED` — abatement is a case outcome, not a hearing status |
 | 14 | Case stage | Hearings move the stage / tell cases | Tell cases; the case lifecycle owns its rules |
 | 15 | Capacity | Always block / configurable | `warn` by default; `block` per deployment |
 | 16 | Board ordering | Recompute serials / stable with gaps | Stable with gaps, explicit reorder |
 | 17 | Locking | Row locks on hearings / court row lock | Court row lock — serialises sequence and capacity per court |
 | 18 | Hearing state machine | 0011 workflow engine / service transition table | Service transition table — one workflow per case in 0011, many hearings per case here |
-| 19 | Live typist control | WebSocket / polling with `ETag` | Polling with `ETag`; push later |
+| 19 | Live *Next case* button | WebSocket / polling with `ETag` | Polling with `ETag`; push later (`HRG-10`) |
+| 21 | Permissions | Staff titles / roles per courtroom | Roles per courtroom (`court-roles.md`); titles are never checked |
+| 22 | Hearings in progress per court | One / several | Several (`HRG-06`); no per-court constraint |
 | 20 | Time of hearing | Slot per hearing / court sitting time | Court sitting time for parties; date-only board |
 
 ---
@@ -1308,13 +1367,14 @@ cd src && python manage.py check
 1. Is a session (forenoon / afternoon) or a time slot needed on a hearing, or is the court's sitting time enough?
 2. Must a confirm fail when the case already has a scheduled hearing (current behaviour), or should a second scheduling order replace it as a move?
 3. Can one hearing cover several connected cases of the same accused (the §138 practice of trying cheques of one transaction together)? This spec assumes one case per hearing.
-4. Where does court membership live — `apps.organizations` (proposed) or `apps.users` — and is a court-staff user ever a member of more than one court at once?
-5. Should a court-side bulk move above some size need the magistrate's confirmation, or is a bench clerk action with audit enough?
+4. Where does court membership and its roles live — `apps.organizations` (proposed) or `apps.users`? (A staff account may hold roles in several courtrooms, `RLE-02a`.)
+5. Should a court-side bulk move above some size need the magistrate's confirmation, or is a next hearing setter's action with audit enough?
 6. Which scheduler triggers periodic actors in production: cron calling a management command, or `periodiq`?
 7. What does a warrant's QR code open, and can it show the hearing's current date without a login (`process-handover.md` `Q-14`)? If so, this module needs a public, signed read of one hearing's date.
 8. When a hearing is held by video (§530 BNSS), which VC provider issues links, and per hearing or per court?
-9. Should the end-of-day sweep's auto-ended hearings be reported to the magistrate the next morning?
+9. Should the midnight sweep's abandoned hearings be reported to the court the next morning?
 10. Do other case types need a different trial target, adjournment threshold or set of purposes, and should those then be keyed by case type?
+11. `court-roles.md` names no role for court-side moves, bulk reschedule, `LISTED_IN_ERROR` cancellation, board reorder or calendar entries. This spec uses next hearing setter (and hearing controller for reorder); which roles should hold them?
 
 ---
 
