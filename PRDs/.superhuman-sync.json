@@ -14,10 +14,10 @@
     "efiling-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing Handover",
-      "contentHash": "f43cd45bd672",
-      "pageUpdatedAt": 1792838041.347,
+      "contentHash": "310ce6124b57",
+      "pageUpdatedAt": 1792839560.201,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling-handover\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7)."
+      "note": "Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling-handover\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match)."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -1680,6 +1680,47 @@
           "hash": "1626eee34f9a"
         }
       ]
+    },
+    "signing-methods.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
+      "title": "Signing Methods",
+      "contentHash": "ba271892c2fd",
+      "pageUpdatedAt": 1792839609.337,
+      "calloutElementId": "cl-T3V--SS-ky",
+      "sections": [
+        {
+          "key": "# Signing Methods — Developer & Agent Handover",
+          "elementId": "cl-viwRGSL4rX",
+          "hash": "06a363080fbf"
+        },
+        {
+          "key": "# 1. Digital signing and e-sign",
+          "elementId": "cl-bveZc1QEGI",
+          "hash": "ad6e42fe01e9"
+        },
+        {
+          "key": "# 2. The methods — `SGM`",
+          "elementId": "cl-rwwv_n6Mo3",
+          "hash": "152a03655941"
+        },
+        {
+          "key": "# 3. Switching methods on — `SGM-05`",
+          "elementId": "cl-LTegq-ZpVu",
+          "hash": "5814a77ba81f"
+        },
+        {
+          "key": "# 4. Batch signing — `SGM-04`",
+          "elementId": "cl-OnOFxTPmdx",
+          "hash": "761bba21296f"
+        },
+        {
+          "key": "# 5. Open questions",
+          "elementId": "cl-lLMllPUR5F",
+          "hash": "e9d097904b74"
+        }
+      ],
+      "note": "Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block."
     }
-  }
+  },
+  "prdsTableUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu/tables/grid-3QCTt30e1H"
 }

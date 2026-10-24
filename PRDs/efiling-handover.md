@@ -1443,8 +1443,6 @@ on 2026-09-03 and now matches it.
 
 | Term | Meaning |
 | --- | --- |
-| Digital signing | Signing in the system by any method — mobile OTP, DSC or Aadhaar e-sign (§18, [`signing-methods.md`](signing-methods.md)). |
-| E-sign | Aadhaar-based e-signing through C-DAC only — one digital signing method, not a synonym for it. |
 | DCA | Delay Condonation Application — attaches when filed beyond limitation; carries a fee (§19). |
 | LDN | Legal Demand Notice — notice to the accused before filing. |
 | MDMS | Master Data Management System — reference data behind dropdowns/config. |
@@ -1453,3 +1451,5 @@ on 2026-09-03 and now matches it.
 | Scrutiny | Court-staff defect review before registration — the stage a case enters when payment completes; see [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md). |
 | Natively digital | Per-document attribute: born-digital vs scanned. Shown only under the `nativelyDigitalColumn` config (§14). |
 | Vakalatnama | The document appointing an advocate. |
+| Digital signing | Signing in the system by any method — mobile OTP, DSC or Aadhaar e-sign (§18, [`signing-methods.md`](signing-methods.md)). |
+| E-sign | Aadhaar-based e-signing through C-DAC only — one digital signing method, not a synonym for it. |
