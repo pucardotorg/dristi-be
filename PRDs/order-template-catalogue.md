@@ -1,6 +1,6 @@
 # Order item catalogue
 
-**Status:** 2026-10-20 (20) — dismissal no longer points at `APL-04`–`APL-06` of order-generation.md. 2026-10-19 (19) — templates dropped: retitled *Order item catalogue*; the Template column, the template notes and *How the template system works* moved to [`dropped-ideas.md`](dropped-ideas.md). The catalogue now holds the order items, their variables, workflows, availability, combination restrictions and hearing purposes. 2026-10-19 (18) — contextual order items can now be chosen on the order screen, and ask what they apply to (`ITM-04`). Channels, addresses and police station are fields of the order item like any other (`ITM-11` of order-generation.md removed). Locked / Optional column and the *Locked vs optional variables* section removed: a variable is mandatory to enter or not; the old text is in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
+**Status:** 2026-10-22 (21) — rescheduling of hearing date (#4) is now a dropdown order item under Case management, offered only when the case already has a hearing scheduled and the order is not a hearing's own; it asks only the new hearing date and the purpose, the purpose defaulting to the one the hearing already has. 2026-10-20 (20) — dismissal no longer points at `APL-04`–`APL-06` of order-generation.md. 2026-10-19 (19) — templates dropped: retitled *Order item catalogue*; the Template column, the template notes and *How the template system works* moved to [`dropped-ideas.md`](dropped-ideas.md). The catalogue now holds the order items, their variables, workflows, availability, combination restrictions and hearing purposes. 2026-10-19 (18) — contextual order items can now be chosen on the order screen, and ask what they apply to (`ITM-04`). Channels, addresses and police station are fields of the order item like any other (`ITM-11` of order-generation.md removed). Locked / Optional column and the *Locked vs optional variables* section removed: a variable is mandatory to enter or not; the old text is in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
 application is onboarded; before that it can only be dismissed. New contextual order item
 **26. Dismiss application**, which cites no application number and names the application
 by its type, the party that filed it and its filing date. 2026-10-06 (16) — added a stop-reading marker before "Not in V1":
@@ -70,7 +70,7 @@ How an order is drafted from this configuration is owned by
 | 1 | Mandatory submissions and responses | Dropdown | Filings | Creates submission task |
 | 2 | Referral of case to ADR | Dropdown | Disposal | |
 | 3 | Scheduling of hearing date | Dropdown | Case management | Schedules next hearing |
-| 4 | Rescheduling of hearing date | Contextual | | Reschedules hearing |
+| 4 | Rescheduling of hearing date | Dropdown — only when a hearing is scheduled | Case management | Reschedules hearing |
 | 5 | Accept application | Contextual | | *(see note below)* |
 | 6 | Reject application | Contextual | | |
 | 7 | Case transfer | Dropdown | Case management | |
@@ -167,9 +167,13 @@ rules give for each variable.
 
 | Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
 |---|---|---|---|---|---|
-| `[Original Hearing Date]` | Date of the hearing being moved | None — from the hearing being moved | No | | |
-| `[Hearing Purpose]` | Purpose of the rescheduled hearing | Dropdown — MDMS hearing purposes | Yes | The purpose the hearing already has | |
 | `[New Hearing Date]` | Date it moves to | Date picker *(proposed)* | Yes | | |
+| `[Hearing Purpose]` | Purpose of the rescheduled hearing | Dropdown — MDMS hearing purposes | Yes | The purpose the hearing already has | |
+| `[Original Hearing Date]` | Date of the hearing being moved | None — from the hearing being moved | No | The hearing the case is scheduled for | |
+
+Offered only when the case already has a hearing scheduled. Not offered in a hearing's own
+order, where the next date is set under Next hearing. Only the new hearing date and the
+purpose are asked.
 
 ### 5. Accept application · 6. Reject application
 
@@ -283,7 +287,7 @@ There is no `[Application Number]`: the application is not onboarded, so it has 
 |---|---|---|
 | Filings | Mandatory submissions, Bail | 2 |
 | Disposal | Referral to ADR, Case settlement, Withdrawal, Abate case, Judgement | 5 |
-| Case management | Scheduling of hearing, Case transfer, Moving to/from LP register, Cognizance, Dismiss case | 6 |
+| Case management | Scheduling of hearing, Rescheduling of hearing, Case transfer, Moving to/from LP register, Cognizance, Dismiss case | 7 |
 | Process | Issue of summons, warrants, notice, proclamation, attachment, miscellaneous process | 6 |
 | Miscellaneous | Cost, Witness batta | 2 |
 

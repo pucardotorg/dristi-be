@@ -184,7 +184,7 @@ filer to re-upload it on send-back.
   was recorded, so the officer can tell it carried over from an earlier round.
 
 `SCR-15` **Paper upload reason.** Where the case was signed by uploading a physically
-signed copy, the scrutiny officer sees the reason given for not e-signing and when it was
+signed copy, the scrutiny officer sees the reason given for not signing digitally and when it was
 given (`SIG-10`, [`efiling-handover.md`](efiling-handover.md) §18).
 
 ## Interlinked date auto-marking

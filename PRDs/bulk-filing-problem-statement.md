@@ -1,6 +1,6 @@
 # Bulk Filing — Problem Statement
 
-**Status:** v1.4 — 2026-10-19; links point at the e-filing handover; Related documents lists both handovers, after the e-filing, scrutiny and registration handover was split in two. v1.3 — 2026-10-18. Appendix B: `DCM-7` proof of debt or liability is optional; natively digital now links to the handover's column config (on for Kerala). v1.2 — 2026-09-23. §3.6 adds backend-lookup fields (Bar registration, IFSC,
+**Status:** v1.5 — 2026-10-24; wording: digital signing is the broad term (mobile OTP, DSC, Aadhaar e-sign); e-sign means Aadhaar-based e-signing only. v1.4 — 2026-10-19; links point at the e-filing handover; Related documents lists both handovers, after the e-filing, scrutiny and registration handover was split in two. v1.3 — 2026-10-18. Appendix B: `DCM-7` proof of debt or liability is optional; natively digital now links to the handover's column config (on for Kerala). v1.2 — 2026-09-23. §3.6 adds backend-lookup fields (Bar registration, IFSC,
 pincode) alongside MDMS. §3.7 and Appendix B correct the Aadhaar note against the
 handover's actual §14 decision — masking is settled (none at launch), only storage design
 is open, and neither is bulk-specific. §4.3 now presents three signing methods (upload,
@@ -279,7 +279,7 @@ design that comes back disagrees with it and is better, we would rather have the
 ### 4.1 Verifying the complainants' mobile numbers
 
 **How it works individually.** Every complainant (or their PoA holder) is a required
-signatory (`SIG-03`). In e-sign mode each of them logs in with the phone number entered for
+signatory (`SIG-03`). In digital signing mode each of them logs in with the phone number entered for
 them, which proves the number and creates their account if they do not have one. In
 upload-a-signed-copy mode each of them confirms by phone OTP instead. Either way **the
 verified phone number is the identity check**, and it happens per complainant, per case.
@@ -364,7 +364,7 @@ the complainant, and that's the same open question as §4.1, from the signing si
 - `LIFE-13`: **any edit to a case invalidates all its signatures.** In a batch, a correction
   to one case must not invalidate the other 999 — but the rule has only ever been written
   for a single case. *(open)*
-- A clerk **cannot e-sign** (`ROLE-08`), and this is enforced server-side. A clerk preparing
+- A clerk **cannot sign digitally** (`ROLE-08`), and this is enforced server-side. A clerk preparing
   a batch for an advocate is the likely real-world pattern. *(open)*
 - Whether the DSC lives on a USB token at the filer's desk (as with judges) or elsewhere,
   and what that means for a server-side signing step.
@@ -423,7 +423,7 @@ Things the answer must respect. These are not preferences.
 | 4 | **Per-case independence.** One bad case must not block the other 999, and one correction must not disturb them | §5 |
 | 5 | **Aadhaar Act s.29** — minimise, never display, never print the number | §3.7 |
 | 6 | **DPDP** and the court's access rules apply to the whole batch, at rest and in transit | Thousands of people's identity documents in one upload |
-| 7 | Role and scope rules are unchanged: access is by **association with the case**, and clerks cannot e-sign, enforced server-side | `ROLE-01`…`ROLE-08` |
+| 7 | Role and scope rules are unchanged: access is by **association with the case**, and clerks cannot sign digitally, enforced server-side | `ROLE-01`…`ROLE-08` |
 | 8 | Court fee amounts come from the court's fee master, not from anything hard-coded | [E-filing handover](efiling-handover.md) §19 |
 
 ---

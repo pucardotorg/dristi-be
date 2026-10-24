@@ -1,6 +1,6 @@
 # E-Filing — Developer & Agent Handover
 
-**Status:** v47 — 2026-10-24; **two new SMS to all users on the complainant side**: payment pending (the filer exits or the session expires before paying) and case filed (payment completed, case goes to scrutiny); rows added to the master Notifications table, draft. §20.1, §20.2. v46 — 2026-10-19; **the oath moves into Signing** as §18.2 (was §14a; `OTH` IDs unchanged), signing SMS is now §18.3; the scrutiny officer plays and flags each oath separately (`OTH-4` → `SCR-14`) and sees the reason for a paper upload (`SIG-10` → `SCR-15`). §5, §14b, §16.8, §18, §20.2. v45 — 2026-10-19; **the PoA holder records the oath** for a complainant who signs through them (`OTH-3`, `SIG-08`, `SIG-11`); **Record oath** added to the §3 permission matrix — complainant, PoA holder or Institution representative, never advocate or clerk; a leftover paragraph offering oath upload is removed from §14a (it contradicted `OTH-1`). §3, §14a, §18, §20.2. v44 — 2026-10-19; **the oath is recorded, never uploaded** (§14a, `OTH-1`); **signing SMS** (§18.2, `SIG-11`, new) — e-sign and upload, each with and without the oath, held in the master Notifications table (the two oath rows are new); in upload mode each party confirms the OTP and records the oath **on their own device** (phone or computer with a camera), through the link (`SIG-05`). §14a, §18, §20.2. v43 — 2026-10-19; **the signature is affixed Simple or Multi-page** (`SIG-09`, §18.1) — how it appears on the document, not how signing is done; Simple affixes it once for the entire case file; upload of a physically signed copy is a fallback reached from e-sign and **must be justified** with a reason (`SIG-10`); every signatory's mobile number is verified — by the SMS link or login in e-sign, by a separate phone OTP in upload mode (`SIG-05`). Multi-page to follow. §18, §20.2. v42 — 2026-10-19; **the oath moves to signing** (§14a, rewritten): no longer a form section; each complainant records it at their e-sign or OTP confirmation (`OTH-3`, `SIG-08`), only where the state requires it (`oathRequired`, `OTH-2`, `Q-6`); shown to the scrutiny officer (`OTH-4`); not re-recorded on correction unless flagged as an error (`OTH-5`, `SIG-07`). Affidavit is now form section 10, with its own sidebar heading. §5, §14a, §14b, §16.8, §18, §20.2, §21. v41 — 2026-10-19; **payment calculation is per state and not finalised** (§19): the upfront mechanism stays; every fee head, amount, slab, cap, rate and remittance account in §19 is a Kerala illustration, to be built as per-state configuration (`Q-5`, new). §19, §10 (DCA fee), §20.2, §21, §23. v40 — 2026-10-19; **pending tasks follow actions** (§20.1): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v39 — 2026-10-19; **split into two documents** — scrutiny, registration and editability on send-back (old §20.1–§20.4, the court-side columns of the §3 matrix and rows of the §4 lifecycle, and their decisions-log and glossary entries) move to [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md); requirement IDs unchanged. §20 now holds this module's pending tasks, notifications, events and decisions log. The answered Q-2 to Q-4 rows are removed from §21. v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
+**Status:** v49 — 2026-10-24; **digital signing and e-sign are different terms** (§18, §23): digital signing covers every method — mobile OTP, DSC, Aadhaar e-sign; e-sign means Aadhaar-based e-signing only. Mode choice, the upload fallback, clerk rights, mobile verification and the signing SMS now say digital signing. §1, §3, §4, §18, §21, §23. v48 — 2026-10-24; **where the signature is placed follows the signing method** (`SIG-09`, §18.1): on every document — the complaint on its affidavit page, each attached file on its last page — if the method allows it; otherwise once. The methods themselves move to a new PRD, [`signing-methods.md`](signing-methods.md). Replaces Simple / Multi-page. §1, §16.7, §18, §20.2. v47 — 2026-10-24; **two new SMS to all users on the complainant side**: payment pending (the filer exits or the session expires before paying) and case filed (payment completed, case goes to scrutiny); rows added to the master Notifications table, draft. §20.1, §20.2. v46 — 2026-10-19; **the oath moves into Signing** as §18.2 (was §14a; `OTH` IDs unchanged), signing SMS is now §18.3; the scrutiny officer plays and flags each oath separately (`OTH-4` → `SCR-14`) and sees the reason for a paper upload (`SIG-10` → `SCR-15`). §5, §14b, §16.8, §18, §20.2. v45 — 2026-10-19; **the PoA holder records the oath** for a complainant who signs through them (`OTH-3`, `SIG-08`, `SIG-11`); **Record oath** added to the §3 permission matrix — complainant, PoA holder or Institution representative, never advocate or clerk; a leftover paragraph offering oath upload is removed from §14a (it contradicted `OTH-1`). §3, §14a, §18, §20.2. v44 — 2026-10-19; **the oath is recorded, never uploaded** (§14a, `OTH-1`); **signing SMS** (§18.2, `SIG-11`, new) — e-sign and upload, each with and without the oath, held in the master Notifications table (the two oath rows are new); in upload mode each party confirms the OTP and records the oath **on their own device** (phone or computer with a camera), through the link (`SIG-05`). §14a, §18, §20.2. v43 — 2026-10-19; **the signature is affixed Simple or Multi-page** (`SIG-09`, §18.1) — how it appears on the document, not how signing is done; Simple affixes it once for the entire case file; upload of a physically signed copy is a fallback reached from e-sign and **must be justified** with a reason (`SIG-10`); every signatory's mobile number is verified — by the SMS link or login in e-sign, by a separate phone OTP in upload mode (`SIG-05`). Multi-page to follow. §18, §20.2. v42 — 2026-10-19; **the oath moves to signing** (§14a, rewritten): no longer a form section; each complainant records it at their e-sign or OTP confirmation (`OTH-3`, `SIG-08`), only where the state requires it (`oathRequired`, `OTH-2`, `Q-6`); shown to the scrutiny officer (`OTH-4`); not re-recorded on correction unless flagged as an error (`OTH-5`, `SIG-07`). Affidavit is now form section 10, with its own sidebar heading. §5, §14a, §14b, §16.8, §18, §20.2, §21. v41 — 2026-10-19; **payment calculation is per state and not finalised** (§19): the upfront mechanism stays; every fee head, amount, slab, cap, rate and remittance account in §19 is a Kerala illustration, to be built as per-state configuration (`Q-5`, new). §19, §10 (DCA fee), §20.2, §21, §23. v40 — 2026-10-19; **pending tasks follow actions** (§20.1): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v39 — 2026-10-19; **split into two documents** — scrutiny, registration and editability on send-back (old §20.1–§20.4, the court-side columns of the §3 matrix and rows of the §4 lifecycle, and their decisions-log and glossary entries) move to [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md); requirement IDs unchanged. §20 now holds this module's pending tasks, notifications, events and decisions log. The answered Q-2 to Q-4 rows are removed from §21. v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
 case can be registered at Scrutiny now follows from roles (`SCR-11`, §20.3a): a person who
 holds both the Scrutiny officer and Case registerer roles in the courtroom can register
 the case straight from Scrutiny, or forward it; anyone else forwards it to Registration.
@@ -144,8 +144,8 @@ signing, payment, the generated complaint PDF, interaction patterns; and the fil
 of a correction cycle — re-signing and paying any increase. Scrutiny, registration and
 what a send-back opens for editing are in [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md). **[OWNER]** s.138 NI Act only — no other case types, no generalisation needed.
 
-Out: post-registration stages; e-sign provider internals; payment-gateway integration
-itself. Bulk/batch signing is the separate `../signing/` workstream.
+Out: post-registration stages; digital signing provider internals; payment-gateway integration
+itself. Signing methods, including batch signing, are in [`signing-methods.md`](signing-methods.md).
 
 ---
 
@@ -163,7 +163,7 @@ Role effects at entry:
 | Advocate | PiP for the 1st complainant is **pre-set to No** (editable; an advocate-filed case normally has a represented complainant) | `LIT-1` |
 | Advocate | The filing advocate **and their associated junior advocates** are auto-added to the Advocate section (juniors removable), count set accordingly | `FIL-05`, `ADV-1` |
 | Clerk | **[OWNER]** the advocate(s) the clerk works for are **auto-added the same way** | `ADV-1` |
-| Clerk | Cannot e-sign (only rights difference; everything else allowed, incl. moving to signing and uploading a signed copy). **Enforce server-side** | `ROLE-08` |
+| Clerk | Cannot sign digitally (only rights difference; everything else allowed, incl. moving to signing and uploading a signed copy). **Enforce server-side** | `ROLE-08` |
 | Litigant | **[OWNER]** the logged-in litigant **is Complainant 1**, pre-filled from their account | `FIL-04`, §6 |
 | Any | The prefills above (PiP, advocates, Complainant 1) are **editable defaults** — nothing is enforced on the form. The one check is at the end: the filer must be **related to the case** before Preview | `FIL-06` |
 
@@ -193,7 +193,7 @@ Permission matrix (`ROLE-07` — additionally gated by the predicates and case s
 | Delete draft | ✓ ² | ✓ ² | ✓ ² | ✓ ² | ✓ ² |
 | Add advocates to case | ✓ | ✓ | ✓ | ✓ | ✓ ¹ |
 | Move to signing | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Perform e-sign | ✓ | **✗** | ✓ | ✓ | ✓ |
+| Sign digitally | ✓ | **✗** | ✓ | ✓ | ✓ |
 | Upload signed document | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Record oath ³ | ✗ | ✗ | ✓ | ✓ | ✓ |
 | Make payment / correct errors | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -216,13 +216,13 @@ don't build it. **When someone is removed from a case, they lose access to it.**
 | Draft | Delete Draft | *(deleted)* |
 | Draft | Proceed to Sign | Pending Signature |
 | Pending Signature | Delete Draft | *(deleted)* |
-| Pending Signature | e-Sign | Pending Signature *(partial)* / Pending Payment *(last signature)* |
+| Pending Signature | Sign digitally | Pending Signature *(partial)* / Pending Payment *(last signature)* |
 | Pending Signature | Upload Signed Document | Pending Payment |
 | Pending Payment | Delete Draft | *(deleted)* |
 | Pending Payment | Pay | Scrutiny |
 | Pending Correction | Save Draft | Pending Correction |
 | Pending Correction | Proceed to Sign | Pending Signature |
-| Pending Signature *(correction loop)* | e-Sign / Upload | Scrutiny — or Pending Payment per `LIFE-12` |
+| Pending Signature *(correction loop)* | Sign digitally / Upload | Scrutiny — or Pending Payment per `LIFE-12` |
 
 - What happens at Scrutiny and Registration, and how a case is sent back to Pending
   Correction, is in [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) §3.
@@ -816,7 +816,8 @@ fixed.
 
 After the complaint, the page **`Documents uploaded by the Complainant.`**, then every
 uploaded document appended in the print §3.2 order. A document appended here is the file
-as uploaded; the PDF does not stamp, annotate or re-render it. Exception: the ID card
+as uploaded; the PDF does not stamp, annotate or re-render it — except the signature
+placed on its last page where the signing method allows it (§18.1). Exception: the ID card
 (`DCM-9`, `DCM-10`) — see §14 for its court-only visibility, still open how that's
 reconciled with a single generated PDF.
 
@@ -1013,40 +1014,46 @@ backend data, not added to the case file **[OWNER]**):
 
 # 18. Signing — `SIG`
 
-- `SIG-09` **[OWNER]** — the signature is affixed to the document in one of two ways,
-  **Simple** or **Multi-page** (§18.1). This changes only **how the signature appears on
-  the document**, not how signing is done: modes, signatories, verification and every
-  other rule in this section are the same for both.
-- `SIG-01/02` — mode choice: **e-sign** or **upload a physically signed copy**; more modes
-  later — don't hard-code a binary. **[OWNER]** Upload is a fallback for when e-signing
-  has not worked, not an equal choice: it is reached from the e-sign step ("Unable to
-  e-sign?"), not offered beside it.
+**[OWNER]** Two terms, kept apart. **Digital signing** is the broad term: signing in
+the system by any method — mobile OTP, DSC or Aadhaar e-sign. **E-sign** means
+**Aadhaar-based e-signing** only, and is one of those methods. Methods:
+[`signing-methods.md`](signing-methods.md).
+
+- `SIG-09` **[OWNER]** — **where the signature is placed depends on the signing method**
+  enabled for the state (§18.1). If the method allows it, the signature is placed on
+  every document — the complaint and each attached file; otherwise, once. This changes
+  only where the signature appears, not how signing is done: modes, signatories,
+  verification and every other rule in this section are the same either way.
+- `SIG-01/02` — mode choice: **digital signing** or **upload a physically signed copy**;
+  more modes later — don't hard-code a binary. **[OWNER]** Upload is a fallback for when
+  digital signing has not worked, not an equal choice: it is reached from the digital
+  signing step ("Unable to sign digitally?"), not offered beside it.
 - `SIG-10` **[OWNER]** — **upload must be justified.** Before the upload opens, the filer
-  picks why e-signing did not work: the OTP didn't arrive · the DSC isn't working ·
-  another party can't e-sign (offered only where there are other signatories) · the
-  e-sign service isn't responding · something else. The reason and its time are recorded
+  picks why digital signing did not work: the OTP didn't arrive · the DSC isn't working ·
+  another party can't sign digitally (offered only where there are other signatories) ·
+  the signing service isn't responding · something else. The reason and its time are recorded
   with the signing and **shown to the scrutiny officer** (`SCR-15`,
   [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md)).
 - `SIG-03` — required signatories: **every complainant** (or their PoA-holder) **and one
   advocate for each complainant**.
 - `SIG-04` **[OWNER]** — all parties use the same mode. **Requirement**, not a
   limitation.
-- `SIG-05` **[OWNER]** — **every signatory's mobile number is verified.** In e-sign mode
-  this happens as part of signing: the party opens the signing link sent by SMS to that
+- `SIG-05` **[OWNER]** — **every signatory's mobile number is verified.** In digital signing
+  mode this happens as part of signing: the party opens the signing link sent by SMS to that
   number, or logs in with it, and either verifies the number — no separate OTP. In
   upload mode nothing does that, so it is done separately: the uploader collects all
   wet signatures beforehand, and **each required party confirms via a phone OTP on their
   own device**, through a link sent to them by SMS (§18.3). The upload counts as fully
   signed only when the document is uploaded **and every party has confirmed**.
-- `SIG-06` — e-sign is individual; the case advances when all have signed. **[OWNER]**
+- `SIG-06` — digital signing is individual; the case advances when all have signed. **[OWNER]**
   **no mandated signing order.**
 - **[OWNER]** — **parties cannot change mid-signing**: changing them requires going back
   to edit, and **any edit invalidates all signatures** (`LIFE-13`).
 - **[OWNER]** — **account creation for new complainants happens at signing** (this is
-  how auto-created accounts are retained): in **e-sign** mode each party must log in
+  how auto-created accounts are retained): in **digital signing** mode each party must log in
   with the phone number entered for them in order to sign — creating their account; in
   **upload** mode the per-party OTP verification creates it.
-- `ROLE-08` — clerks cannot e-sign; enforce server-side.
+- `ROLE-08` — clerks cannot sign digitally, by any method; enforce server-side.
 - `SIG-07` **[OWNER]** — **re-signing after a send-back is the same signing step as at
   filing.** Once the filer has made the corrections asked for at scrutiny or
   registration and proceeds to sign (`LIFE-13`), the case goes through this section
@@ -1055,19 +1062,22 @@ backend data, not added to the case file **[OWNER]**):
   every edit invalidates all signatures, so every required party signs again. The one
   exception is the oath, which is not recorded again unless it was flagged (`OTH-5`).
 - `SIG-08` **[OWNER]** — where the state requires an oath (`OTH-2`), the oath is
-  recorded for each complainant, as part of their e-sign or OTP confirmation, by whoever
+  recorded for each complainant, as part of their digital signature or OTP confirmation, by whoever
   signs for them — the complainant, their PoA holder, or an Institution's authorised
   representative (`OTH-3`, §18.2).
 
-E-sign provider selection, failure modes, retry/timeout: left to engineering at
+Digital signing provider selection, failure modes, retry/timeout: left to engineering at
 integration time (with §19's gateway equivalents).
 
 ## 18.1 How the signature is affixed
 
-| Way | Signature on the document |
+| Where | When |
 | --- | --- |
-| **Simple** | Affixed **once, for the entire case file** |
-| **Multi-page** | To follow |
+| **Every document** — the complaint on its affidavit page, each attached file on its last page | The signing method allows it |
+| **Once** — on the affidavit page, covering the whole case file | Otherwise |
+
+Which methods exist, which allow each, and how they are switched on per state:
+[`signing-methods.md`](signing-methods.md).
 
 ## 18.2 Oath — `OTH`
 
@@ -1077,7 +1087,7 @@ signing, and only in states that require it.
 | ID | Requirement |
 | --- | --- |
 | `OTH-2` | **Per state.** `oathRequired`, set per state, on or off. When off there is no oath anywhere: nothing is asked at signing and nothing is shown at scrutiny. Which states have it is `Q-6`. |
-| `OTH-3` | **Asked at signing.** When a complainant signs by e-sign, or confirms by phone OTP in upload mode (`SIG-05`), the flow asks them to record the oath as part of that step. One oath per complainant record (same complainants as §6); for an Institution complainant the authorised representative takes it, and **for a complainant who signs through a PoA holder, the PoA holder takes it**. Advocates and clerks do not record an oath. `[DERIVED]` a complainant's signature or confirmation is not complete until their oath is recorded. |
+| `OTH-3` | **Asked at signing.** When a complainant signs digitally, or confirms by phone OTP in upload mode (`SIG-05`), the flow asks them to record the oath as part of that step. One oath per complainant record (same complainants as §6); for an Institution complainant the authorised representative takes it, and **for a complainant who signs through a PoA holder, the PoA holder takes it**. Advocates and clerks do not record an oath. `[DERIVED]` a complainant's signature or confirmation is not complete until their oath is recorded. |
 | `OTH-4` | **Shown at scrutiny.** Each oath video is shown to the scrutiny officer, who can play it and flag it as an error, one oath at a time (`SCR-14`, [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md)). |
 | `OTH-5` | **Not re-recorded on correction unless flagged.** When the filer signs again after a send-back (`SIG-07`), the oath is asked for again only for the complainants whose oath video was flagged as an error at scrutiny. Otherwise the recorded oath carries over — including after a registration send-back, which opens everything for editing but flags nothing. |
 
@@ -1110,7 +1120,8 @@ Documents view.
 
 Which SMS a signatory gets follows from the signing mode (`SIG-01/02`) and whether the
 state requires an oath (`OTH-2`). The wording is in the master **Notifications** table
-(§20.1) — four rows: e-sign and upload, each with and without the oath.
+(§20.1) — four rows: digital signing and upload, each with and without the oath. The
+table names the digital signing rows "e-sign"; they cover every digital signing method.
 
 - Advocates never record an oath, so they always get the *without oath* row. In a state
   with the oath, each person who has to record one — complainant, PoA holder or
@@ -1120,8 +1131,8 @@ state requires an oath (`OTH-2`). The wording is in the master **Notifications**
 - **[OWNER]** In upload mode each party confirms **on their own device** — a phone, or a
   laptop or desktop with a webcam: the SMS carries the OTP and a link; they open the
   link, enter the OTP there, and record their oath there where the state requires one.
-  The OTP is never entered on the uploader's screen. In e-sign mode the link or login
-  itself verifies the number (`SIG-05`), so the e-sign SMS carries no OTP.
+  The OTP is never entered on the uploader's screen. In digital signing mode the link or
+  login itself verifies the number (`SIG-05`), so the digital signing SMS carries no OTP.
 - Each template has to be registered on the DLT platform before it can be sent.
 
 ---
@@ -1350,6 +1361,12 @@ SMS link or login in e-sign, by a separate phone OTP in upload mode. Multi-page 
 when the filer exits or the session expires before the filing payment is completed; and
 case filed, when payment completes and the case goes to scrutiny. Wording in the master
 Notifications table (§20.1).
+(batch 18) — 2026-10-24: where the signature is placed follows the signing method enabled
+for the state — on every document if the method allows it, otherwise once on the
+affidavit page. Replaces Simple / Multi-page. The methods are in
+[`signing-methods.md`](signing-methods.md).
+(batch 18) — 2026-10-24: digital signing is the broad term — mobile OTP, DSC and Aadhaar
+e-sign; e-sign means Aadhaar-based e-signing only. The mode is digital signing or upload.
 
 ---
 
@@ -1364,7 +1381,7 @@ Items pending delivery:
 | Q-6 | **Which states require the oath** (`oathRequired`, `OTH-2`) | Turning the oath on for any state; not the oath step itself |
 
 **Left to engineering at integration time** (owner): payment failure/timeout/
-reconciliation; e-sign provider, failure modes, retry; gateway and e-sign integration
+reconciliation; digital signing provider, failure modes, retry; gateway and digital signing integration
 specs; complaint-PDF regeneration mechanics.
 
 **Not covered by any source**: data model; API contracts (incl. idempotency on
@@ -1426,6 +1443,8 @@ on 2026-09-03 and now matches it.
 
 | Term | Meaning |
 | --- | --- |
+| Digital signing | Signing in the system by any method — mobile OTP, DSC or Aadhaar e-sign (§18, [`signing-methods.md`](signing-methods.md)). |
+| E-sign | Aadhaar-based e-signing through C-DAC only — one digital signing method, not a synonym for it. |
 | DCA | Delay Condonation Application — attaches when filed beyond limitation; carries a fee (§19). |
 | LDN | Legal Demand Notice — notice to the accused before filing. |
 | MDMS | Master Data Management System — reference data behind dropdowns/config. |
