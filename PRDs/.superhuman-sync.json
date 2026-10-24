@@ -22,10 +22,31 @@
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
       "title": "Case Numbers",
-      "contentHash": "fcef8c1f1367",
-      "pageUpdatedAt": 1790147140.045,
-      "pageDirty": true,
-      "note": "Page edited on Superhuman by Nishika Yadav (updatedAt 1792145445.478, 2026-10-16) after the last sync; local file unchanged. Owner chose to leave it untouched (2026-10-19). Do not overwrite until reconciled. Checked 2026-10-19: the page text matches the pre-rewrite local file; the page-side edit only converted the Number cells of the Kerala and Gujarat tables to canvas cells. No comments. Local file rewritten the same day (case numbers only, from the Case Numbering System sheet); pageDirty left for the owner to clear."
+      "contentHash": "3f066c4dfdac",
+      "pageUpdatedAt": 1792837499.963,
+      "calloutElementId": "eca-eZ95fVXvUC",
+      "sections": [
+        {
+          "key": "# Case Numbers",
+          "elementId": "cl-3CIJDW_LgN",
+          "hash": "665c9d83ecb9"
+        },
+        {
+          "key": "## 1. Kerala",
+          "elementId": "cl-JIoZmJ9MqR",
+          "hash": "e9b1a4c5b88d"
+        },
+        {
+          "key": "## 2. Gujarat",
+          "elementId": "cl-oyI6KuymN_",
+          "hash": "497bb8b78c96"
+        },
+        {
+          "key": "## 3. Punjab & Haryana",
+          "elementId": "cl-khFAPiXRd9",
+          "hash": "6c1c622f3a3d"
+        }
+      ]
     },
     "order-template-catalogue.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
