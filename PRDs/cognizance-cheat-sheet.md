@@ -1,6 +1,6 @@
 # Cognizance Cheat Sheet
 
-**Status:** v7 — 2026-10-19; *Accept application* is an order item, not an order template; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-09-17; the §3 pending-task view now filters on the PRD label
+**Status:** v8 — 2026-10-24; **tabs follow the registration type** (§2): where the state registers cases as more than one type (`SCR-13`), there is one tab per type, each with its own default positive action, and every type tab offers both positive actions (§6); otherwise the two delay tabs stay. Delay fields show on any case filed late (§4). v7 — 2026-10-19; *Accept application* is an order item, not an order template; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-09-17; the §3 pending-task view now filters on the PRD label
 rather than the task name, so newly tagged tasks appear; §7 Linked records added with
 views of the remaining master tables. v5 — one positive action per tab, swappable per state on either
 tab; both positive actions now schedule a hearing and ask for the date; cognizance
@@ -27,19 +27,34 @@ cognizance, in one screen, without opening the case file.
 
 A new **Take Cognizance** option under the Actions area of the Magistrate's Home Screen.
 
-It has two tabs:
+Its tabs depend on how many registration types the state has
+([`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) `SCR-13`).
+
+**One registration type** (Kerala, Punjab & Haryana) — two tabs, split by delay:
 
 | Tab | Contains | Columns |
 |---|---|---|
 | **Without Delay** | Cases where the complaint was filed within one calendar month of the date of accrual of cause of action | Case name · Case number · Advocates |
 | **With Delay** | Cases where the complaint was filed more than one calendar month after the date of accrual of cause of action | Case name · Case number · Advocates · Days of delay |
 
+**More than one registration type** (Gujarat) — one tab per type. A case sits on the tab
+of the type it was registered as; the type is final at Register (`SCR-13`).
+
+| Tab | Registration type | Columns |
+|---|---|---|
+| **Criminal case** | eCC | Case name · Case number · Advocates |
+| **Criminal inquiry** | eCR EN | Case name · Case number · Advocates |
+| **Criminal miscellaneous applications** | eCR MA | Case name · Case number · Advocates |
+
+The tabs are the state's configured registration types, so a state that adds a type gets
+a tab for it.
+
 ---
 
 ## 3. What makes a case appear
 
 Listing is driven by the **pending task**, not by the case stage. Every case with an open
-`Take Cognizance` pending task appears, in the tab its delay status puts it in. A case
+`Take Cognizance` pending task appears, in the tab §2 puts it in. A case
 leaves the list when the task closes.
 
 Stage is not the filter because a case can move to a later stage before cognizance is
@@ -55,7 +70,7 @@ tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-Kztr
 filter: PRDs.Contains("cognizance-cheat-sheet")
 ```
 
-Delay status for the tab split is evaluated from the date of accrual of cause of action
+Where the tabs split by delay, delay status is evaluated from the date of accrual of cause of action
 and the date of complaint filing, on the same basis as the filing form: one **calendar
 month** from the date of cause of action.
 
@@ -71,7 +86,7 @@ The fields visible on a case in the Cognizance tab. Every field is read from the
 the `Source` column gives the filing field ID from
 `efiling-handover.md`.
 
-### Both tabs
+### Every tab
 
 | # | Field | Tooltip | Logic | Source |
 |---|---|---|---|---|
@@ -86,7 +101,10 @@ the `Source` column gives the filing field ID from
 | 9 | Reason for Non-Delivery of Demand Notice | | Show when the demand notice was not delivered | `LDN-8`, shown on `LDN-5` = No |
 | 10 | Bank Branch | | Show the complainant's bank branch if the complainant deposited the cheque in their own account; otherwise show the accused's bank branch | `JUR-4` or `CHQ-7`, switched on `JUR-1` |
 
-### With Delay tab only
+### Cases with a delay only
+
+Shown on the With Delay tab, and on any registration-type tab when the complaint was filed
+more than one calendar month after the date of accrual of cause of action.
 
 | # | Field | Tooltip | Logic | Source |
 |---|---|---|---|---|
@@ -109,18 +127,31 @@ Documents reachable from the Cognizance tab. All three are mandatory at filing.
 
 ## 6. Actions
 
-Each tab carries exactly two actions: one **positive** action that moves the case
-forward, and one **negative** action that ends it. The negative action is always Dismiss
-Case. There is never a second positive action on a tab.
+Each tab has one **positive** action that moves the case forward, and one **negative**
+action that ends it. The negative action is always Dismiss Case.
+
+**Delay tabs** carry exactly those two actions. There is never a second positive action
+on a delay tab.
 
 | Tab | Positive action | Negative action |
 |---|---|---|
 | Without Delay | Take Cognizance | Dismiss Case |
 | With Delay | Issue Notice | Dismiss Case |
 
+**Registration-type tabs** carry three: the tab's positive action first, the other
+positive action, and Dismiss Case. The tab's positive action is the recommended one; the
+judge may still choose the other, for example to hear the parties before taking
+cognizance on an eCC.
+
+| Tab | Positive action | Also offered | Negative action |
+|---|---|---|---|
+| Criminal case (eCC) | Take Cognizance | Issue Notice | Dismiss Case |
+| Criminal inquiry (eCR EN) | Issue Notice | Take Cognizance | Dismiss Case |
+| Criminal miscellaneous applications (eCR MA) | Issue Notice | Take Cognizance | Dismiss Case |
+
 **The positive action is configurable per state, on each tab independently.** A state can
-replace Take Cognizance with Issue Notice, or Issue Notice with Take Cognizance, on
-either tab. The values above are the defaults.
+replace Take Cognizance with Issue Notice, or Issue Notice with Take Cognizance, on any
+tab. The values above are the defaults.
 
 ### Order items
 
