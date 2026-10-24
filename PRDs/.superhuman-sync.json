@@ -170,10 +170,10 @@
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
       "title": "Cognizance Cheat Sheet",
-      "contentHash": "17f7ad2abe59",
-      "pageUpdatedAt": 1792503286.579,
+      "contentHash": "883c27f14c0e",
+      "pageUpdatedAt": 1792837934.39,
       "calloutElementId": "cl-i7saWBgj1-",
-      "note": "Patched in place 2026-10-20 (status, callout, \"order template\" -> \"order item\"). `sections` not refreshed. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed."
+      "note": "Patched in place 2026-10-24 (v8: registration-type tabs; changed blocks re-inserted, so new IDs). `sections` not refreshed. Earlier in-place patches 2026-10-19/20 likewise."
     },
     "process-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
