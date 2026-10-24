@@ -14,7 +14,7 @@ template). Replaces `bulk-filing-problem-statement.md` and the multi-sheet forma
 | Owner decisions, 2026-10-24 | Everything in this document, marked **[OWNER]** where it is a decision |
 | [`efiling-handover.md`](efiling-handover.md) | Every field, validation, document, fee and signing rule a case carries. Field IDs (`ACC-13`, `CHQ-9`, `DCM-12`) are that handover's |
 | [`signing-methods.md`](signing-methods.md) | The signing methods and batch signing |
-| Bulk filing prototype, `Pucar-Dristi-2.0` branch `bulk-filing`, `apps/dristi-app/src/app/filings/bulk/` | The batch screens |
+| Bulk filing prototype, `Pucar-Dristi-2.0` `main`, `apps/dristi-app/src/app/filings/bulk/` | The batch screens |
 
 This document owns **the batch and the Excel format**. Everything a case is, and
 everything that happens to it once it exists, belongs to the e-filing handover. Where the

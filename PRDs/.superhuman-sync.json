@@ -219,51 +219,6 @@
         }
       ]
     },
-    "bulk-filing-problem-statement.md": {
-      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kNAxc6VmZ1",
-      "title": "Bulk Filing Problem Statement",
-      "contentHash": "f72fcce13c7c",
-      "pageUpdatedAt": 1792400395.192,
-      "calloutElementId": "cl-4YTX7M_KF_",
-      "sections": [
-        {
-          "key": "# Bulk Filing — Problem Statement",
-          "elementId": "cl-fvCwNE3prI",
-          "hash": "fb328cd54906"
-        },
-        {
-          "key": "idx-1",
-          "elementId": "ecb-DOdxVuPxez",
-          "hash": "1ed2d8814038"
-        },
-        {
-          "key": "idx-2",
-          "elementId": "cl-630x_vRWua",
-          "hash": "731f1b0bb8ae"
-        },
-        {
-          "key": "# Appendix A — Complete field specification",
-          "elementId": "cl-hEuZ1sqJ1W",
-          "hash": "9e1d139815ec"
-        },
-        {
-          "key": "idx-4",
-          "elementId": "grid-nREF9yj6mI",
-          "hash": "9df0f02f0bee"
-        },
-        {
-          "key": "# Appendix B — Documents",
-          "elementId": "cl-dXU-5D_mxk",
-          "hash": "12749e6f78ef"
-        },
-        {
-          "key": "# Appendix C — What the system derives, and what it checks",
-          "elementId": "cl-VS9n_VSY0l",
-          "hash": "a73b4fb9e48b"
-        }
-      ],
-      "note": "Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed."
-    },
     "dashboards-proposal.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-RwijzgVqck",
       "title": "Dashboards Proposal",
@@ -1720,6 +1675,40 @@
         }
       ],
       "note": "Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block."
+    },
+    "bulk-filing.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
+      "title": "Bulk Filing",
+      "contentHash": "bb775b36dcea",
+      "pageUpdatedAt": 1792846347.399,
+      "calloutElementId": "cl-IwwclcUBOf",
+      "sections": [
+        {
+          "key": "# Bulk Filing — Developer & Agent Handover",
+          "elementId": "cl-huKkmfPrla",
+          "hash": "41d626eb67a2"
+        },
+        {
+          "key": "# 1. What bulk filing is",
+          "elementId": "cl-ZcdvAcOTex",
+          "hash": "4c25b208bc48"
+        },
+        {
+          "key": "# 2. The batch",
+          "elementId": "cl-S40Vb7zJdl",
+          "hash": "dba12f2d80b5"
+        },
+        {
+          "key": "# 3. From upload to filing",
+          "elementId": "cl-_QhA1KaHOY",
+          "hash": "4cc99ee1b0d6"
+        },
+        {
+          "key": "# 4. The Excel format",
+          "elementId": "cl-UZiRGu77Bn",
+          "hash": "00ce141e31d3"
+        }
+      ]
     }
   },
   "prdsTableUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu/tables/grid-3QCTt30e1H"
