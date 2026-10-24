@@ -274,7 +274,7 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
       "title": "Order Generation",
       "contentHash": "f002c0a22254",
-      "pageUpdatedAt": 1792501081.334,
+      "pageUpdatedAt": 1792840816.187,
       "calloutElementId": "eca-DluhcPwJvd",
       "sections": [
         {
@@ -378,8 +378,7 @@
           "hash": "9e1da0487ee1"
         }
       ],
-      "note": "Force-rebuilt 2026-10-20 at the owner's request from commit dccbc03 (v8.1); the page's three old comment threads to Abhiram were discarded. The title chunk was split at the 'v8 —' history line to stay under 9,500 chars (key '#1'). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. Callout is now a short 'Last synced · version' line, not the full Status text. sections hold the first block of each chunk only (Coda explodes chunks into native blocks and grids). Patched in place 2026-10-20 to v8.2: status, callout, PUB-04 row (grid-g-AKZv512k). 2026-10-24: page edited in Coda by Abbas P (updatedAt 1792588941.356, 2026-10-21) after the last sync; local file unchanged. Not reconciled — ask the owner whether to pull the edit down or overwrite.",
-      "pageDirty": true
+      "note": "Force-rebuilt 2026-10-20 at the owner's request from commit dccbc03 (v8.1); the page's three old comment threads to Abhiram were discarded. The title chunk was split at the 'v8 —' history line to stay under 9,500 chars (key '#1'). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. Callout is now a short 'Last synced · version' line, not the full Status text. sections hold the first block of each chunk only (Coda explodes chunks into native blocks and grids). Patched in place 2026-10-20 to v8.2: status, callout, PUB-04 row (grid-g-AKZv512k). 2026-10-24: page edited in Coda by Abbas P (updatedAt 1792588941.356, 2026-10-21) after the last sync; local file unchanged. Owner chose overwrite: the page matched the file word for word; only the §4 diagram borders were 4 characters short, fixed by replacing that code block (now ecb-NW8uxaHYG0). The Status block shows application-lifecycle.md as an http:// link — Coda autolinks the bare filename; left as is."
     },
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
