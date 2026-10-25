@@ -1,6 +1,6 @@
 # Scrutiny and Registration — Developer & Agent Handover
 
-**Status:** v3.4 — 2026-10-24; wording: `SCR-15` says "not signing digitally", not "not e-signing" — e-sign means Aadhaar-based e-signing only ([`efiling-handover.md`](efiling-handover.md) §18). v3.3 — 2026-10-19; **cases go to the court establishment first** (§4): the Scrutiny officer and Case registerer roles are held per court establishment, not per courtroom, and the Scrutiny officer **chooses the courtroom** when forwarding or registering (`SCR-16`, new). Automatic courtroom allocation is removed; a later version will suggest a courtroom. Two questions open (`Q-1`, `Q-2`, §4). v3.2 — 2026-10-19; **oath review** (`SCR-14`, new): each oath is listed with whose it is and when it was recorded, plays in the centre panel, is flagged on its own, and shows when it carried over from an earlier round; **paper upload reason** shown to the scrutiny officer (`SCR-15`, new). Oath now at [`efiling-handover.md`](efiling-handover.md) §18.2. v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling-handover.md`](efiling-handover.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
+**Status:** v3.5 — 2026-10-25; **how the scrutiny and registration lists are built is for the implementer** (`SCR-09`); the pending tasks stay, and a case is on a list exactly while its task is open. No longer says the lists *are* the pending tasks mechanism or forbids a second stage-query (`SCR-10`). v3.4 — 2026-10-24; wording: `SCR-15` says "not signing digitally", not "not e-signing" — e-sign means Aadhaar-based e-signing only ([`efiling-handover.md`](efiling-handover.md) §18). v3.3 — 2026-10-19; **cases go to the court establishment first** (§4): the Scrutiny officer and Case registerer roles are held per court establishment, not per courtroom, and the Scrutiny officer **chooses the courtroom** when forwarding or registering (`SCR-16`, new). Automatic courtroom allocation is removed; a later version will suggest a courtroom. Two questions open (`Q-1`, `Q-2`, §4). v3.2 — 2026-10-19; **oath review** (`SCR-14`, new): each oath is listed with whose it is and when it was recorded, plays in the centre panel, is flagged on its own, and shows when it carried over from an earlier round; **paper upload reason** shown to the scrutiny officer (`SCR-15`, new). Oath now at [`efiling-handover.md`](efiling-handover.md) §18.2. v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling-handover.md`](efiling-handover.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
 court-side rows of its role matrix and lifecycle, and the scrutiny and registration
 entries of its decisions log and glossary). Requirement IDs unchanged. Changes to these
 sections before this date are in the Status line of
@@ -122,12 +122,12 @@ A case enters Scrutiny after signing and payment complete (§3). A holder of the
 establishment's **Scrutiny officer** role reviews the submitted case for defects before
 forwarding it for registration.
 
-## How a case reaches the list — pending tasks
+## How a case reaches the list
 
-`SCR-09` There is **no separate scrutiny queue or registration queue**. Both lists are
-the application-wide **pending tasks** mechanism, filtered to the logged-in user. A case
-is in the list of a Scrutiny officer or a Case registerer exactly as long as its pending
-task is open. The court-side tasks, as a live view of the master Pending Tasks list:
+`SCR-09` A case due for scrutiny or registration has an open **pending task** —
+*Scrutinise case* or *Register case* — and is in the list of a Scrutiny officer or a Case
+registerer exactly as long as that task is open. How the list itself is built is for the
+implementer. The court-side tasks, as a live view of the master Pending Tasks list:
 
 ```superhuman-view
 name: Pending tasks (Court Side) — Scrutiny and Registration
@@ -143,8 +143,7 @@ lifecycle are in `pending-tasks-handover.md`.
 
 `SCR-10` The action that changes a case — sending back, forwarding, registering,
 resubmitting — also **creates and closes these tasks, in the same transaction**. Tasks
-never move the case. An open task is the **only** way a case appears on someone's list:
-do not build a second stage-query alongside it. The filer side works the same way:
+never move the case. The filer side works the same way:
 
 ```superhuman-view
 name: Pending tasks (Citizen-Side) — Scrutiny and Registration
@@ -156,8 +155,7 @@ Both tables are the single source of truth and the place to edit these tasks. A
 downloaded copy of this document is a snapshot.
 
 **PRD language.** The functional spec says a case "appears in the list" for scrutiny and
-for registration without saying how the system knows. That wording should be updated to
-name the pending-task mechanism; the requirement is as stated here.
+for registration without saying how the system knows. The requirement is as stated here (`SCR-09`).
 
 ## Scrutiny interface (initial version)
 
