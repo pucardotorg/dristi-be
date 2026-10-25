@@ -1407,8 +1407,8 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "73e06d30bbbe",
-      "pageUpdatedAt": 1792922189.302,
+      "contentHash": "e15b3ca12e99",
+      "pageUpdatedAt": 1792923010.051,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -1432,7 +1432,7 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "Patched in place 2026-10-25 to v10.2: status, callout, RLE-09 row added to Table 143, roles in Table 221 (rows reused to keep order: Envelope receiver, Process signer, Process dispatcher, Process reporter, Evidence marker, A-Diary editor; A-Diary signer row added), state tables 146/147/150 cells, new §4 Open questions block. Single-marker cells carry a trailing ' *​*' so markdown converts. `sections` not refreshed."
+      "note": "Patched in place 2026-10-25 to v10.2: status, callout, RLE-09 row added to Table 143, roles in Table 221 (rows reused to keep order: Envelope receiver, Process signer, Process dispatcher, Process reporter, Evidence marker, A-Diary editor; A-Diary signer row added), state tables 146/147/150 cells, new §4 Open questions block. Single-marker cells carry a trailing ' *​*' so markdown converts. `sections` not refreshed. Patched 2026-10-25 to v10.3: status, callout, Bench clerk / Reader and Post officer cells in Tables 146/147/150."
     },
     "scrutiny-registration-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
