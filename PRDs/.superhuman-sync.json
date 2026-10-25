@@ -177,10 +177,10 @@
     "process-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
       "title": "Process Handover",
-      "contentHash": "c66a3ef85d8b",
-      "pageUpdatedAt": 1792922725.61,
+      "contentHash": "31ed41348f9f",
+      "pageUpdatedAt": 1792927635.311,
       "calloutElementId": "cl-uH3Q8ik_zE",
-      "note": "Force-rebuilt 2026-10-25 at the owner's go-ahead (page had no comment threads); callout cl-uH3Q8ik_zE kept and updated. Live views: Court Side table-ilvtulVkUa, Citizen-Side table-yags5uzkEd, Notifications table-_0U81wDVwy, Events table-7vAo-OTf67. The Status paragraph is split into two blocks at 'v12 —' to stay under 10,000 chars. `sections` not recorded.",
+      "note": "Patched in place 2026-10-25 for v14.1/v14.2 (Status line, callout, §10.1 status rows, SGN-02, SGN-04, new DSP-11 row); no rebuild. Four table cells written as plain text because a single formatting mark is stored literally: DSP-11 row (ID and text), Errored and Recalled meanings in §10.1. Live views: Court Side table-ilvtulVkUa, Citizen-Side table-yags5uzkEd, Notifications table-_0U81wDVwy, Events table-7vAo-OTf67. The Status paragraph is split into two blocks at 'v12 —' to stay under 10,000 chars. `sections` not recorded.",
       "sections": []
     },
     "dashboards-proposal.md": {
