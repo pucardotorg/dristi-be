@@ -177,47 +177,11 @@
     "process-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
       "title": "Process Handover",
-      "contentHash": "eea079fcc067",
-      "pageUpdatedAt": 1792503291.312,
+      "contentHash": "c66a3ef85d8b",
+      "pageUpdatedAt": 1792922725.61,
       "calloutElementId": "cl-uH3Q8ik_zE",
-      "note": "Patched in place 2026-10-20 (status, callout, \"Order templates, their locked variables\" -> \"Order items, their variables\"). `sections` not refreshed. Patched in place 2026-10-15 (By hand channel: status, callout, A2/A4/A5/§2/§6.3 prose, new A5 bullet; PRC-05, AUT-08, DSP-02, DSP-03, Delivered, Q-2 cells; By hand row in §6.2 grid; By hand column in §6.3 grid; DSP-10 row). Cells with a single inline-code span carry a trailing zero-width code span so Superhuman renders the code. Live view 'Pending tasks (Citizen-Side) — Process' = .../section-7id_OHaaSJ/tables/table-SK008Zu8WP/views/v-qfT2ThtVYQ. `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed.",
-      "sections": [
-        {
-          "key": "# Process — Notice, Summons, Warrant, Proclamation, Attachment",
-          "elementId": "cl-nigB6JuD-L",
-          "hash": "03ddb3583746"
-        },
-        {
-          "key": "# Part A — Overview",
-          "elementId": "cl-2eh86ROhUs",
-          "hash": "c0672d2b9349"
-        },
-        {
-          "key": "# Part B — Requirements",
-          "elementId": "cl-B-rbzc1qXg",
-          "hash": "e83a567c72d0"
-        },
-        {
-          "key": "idx-3",
-          "elementId": "grid-7zWUApBZsJ",
-          "hash": "7aec5f2a32fe"
-        },
-        {
-          "key": "idx-4",
-          "elementId": "grid-cObtadA6rZ",
-          "hash": "e365a0f9c3c2"
-        },
-        {
-          "key": "view:Pending tasks (Citizen-Side) — Process",
-          "elementId": "table-_vUonOorwR",
-          "hash": "92e9dd29b966"
-        },
-        {
-          "key": "idx-6",
-          "elementId": "edl-Smy8YPvXSS",
-          "hash": "0300b17320f9"
-        }
-      ]
+      "note": "Force-rebuilt 2026-10-25 at the owner's go-ahead (page had no comment threads); callout cl-uH3Q8ik_zE kept and updated. Live views: Court Side table-ilvtulVkUa, Citizen-Side table-yags5uzkEd, Notifications table-_0U81wDVwy, Events table-7vAo-OTf67. The Status paragraph is split into two blocks at 'v12 —' to stay under 10,000 chars. `sections` not recorded.",
+      "sections": []
     },
     "dashboards-proposal.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-RwijzgVqck",
@@ -228,8 +192,8 @@
     "order-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
       "title": "Order Generation",
-      "contentHash": "f002c0a22254",
-      "pageUpdatedAt": 1792840816.187,
+      "contentHash": "62237bcd5757",
+      "pageUpdatedAt": 1792921963.923,
       "calloutElementId": "eca-DluhcPwJvd",
       "sections": [
         {
@@ -333,7 +297,7 @@
           "hash": "9e1da0487ee1"
         }
       ],
-      "note": "Force-rebuilt 2026-10-20 at the owner's request from commit dccbc03 (v8.1); the page's three old comment threads to Abhiram were discarded. The title chunk was split at the 'v8 —' history line to stay under 9,500 chars (key '#1'). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. Callout is now a short 'Last synced · version' line, not the full Status text. sections hold the first block of each chunk only (Coda explodes chunks into native blocks and grids). Patched in place 2026-10-20 to v8.2: status, callout, PUB-04 row (grid-g-AKZv512k). 2026-10-24: page edited in Coda by Abbas P (updatedAt 1792588941.356, 2026-10-21) after the last sync; local file unchanged. Owner chose overwrite: the page matched the file word for word; only the §4 diagram borders were 4 characters short, fixed by replacing that code block (now ecb-NW8uxaHYG0). The Status block shows application-lifecycle.md as an http:// link — Coda autolinks the bare filename; left as is."
+      "note": "Patched in place 2026-10-25 to v8.3 (status, callout, DFT-05 cell in Table 133). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. `sections` from the 2026-10-20 rebuild; not refreshed."
     },
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
@@ -1443,8 +1407,8 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "b3c9d14c1df9",
-      "pageUpdatedAt": 1792686444.901,
+      "contentHash": "73e06d30bbbe",
+      "pageUpdatedAt": 1792922189.302,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -1468,13 +1432,13 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "Patched in place 2026-10-20 to v9.3: status, callout, and grid cells in Table 147 (Gujarat: Bench clerk/Reader, Scrutiny officer) and Table 150 (P&H: Bench clerk/Reader, Ahlmad). `sections` not refreshed. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v9 (court establishment): RLE table rows rewritten in place to insert RLE-00 at the top (row IDs now hold different requirements), Scrutiny officer row, §3 intro. A table cell holding only one inline code span (an ID like `RLE-00`) is stored with literal backticks by table_rows_manage; write it as \"`RLE-00`*\\u200b*\" (code span + an italic zero-width space) to get monospace. `sections` stale. Patched in place 2026-10-20 to v9.2 (A-Diary editor/signer rows, Order data filler and Hearing controller rows, Magistrate rows in §3, status, callout); bold-only cells written with the italic zero-width-space trick. `sections` stale. Patched in place 2026-10-22 to v9.4: status, callout, Evidence marker row in §2, §3 rows in all three tables. `sections` stale."
+      "note": "Patched in place 2026-10-25 to v10.2: status, callout, RLE-09 row added to Table 143, roles in Table 221 (rows reused to keep order: Envelope receiver, Process signer, Process dispatcher, Process reporter, Evidence marker, A-Diary editor; A-Diary signer row added), state tables 146/147/150 cells, new §4 Open questions block. Single-marker cells carry a trailing ' *​*' so markdown converts. `sections` not refreshed."
     },
     "scrutiny-registration-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
       "title": "Scrutiny and Registration Handover",
-      "contentHash": "40357bbd071c",
-      "pageUpdatedAt": 1792840221.979,
+      "contentHash": "06b31c0b4d27",
+      "pageUpdatedAt": 1792922029.822,
       "calloutElementId": "cl-x8-19XCI0n",
       "sections": [
         {
@@ -1498,7 +1462,7 @@
           "elementId": "cl-9t1Ux3TNnf"
         }
       ],
-      "note": "Created 2026-10-19. Live views: Court Side table-OvYXzrn9IN, Citizen-Side table-i0Uw4lusP4, Notifications table-eqtvnthi7I, Events table-H3lq7d-M7W. sections hold the first block of each chunk only (Coda explodes chunks into native blocks); no per-chunk hashes. Patched 2026-10-19 to v3.2 (SCR-14, SCR-15). Status block cl-bz00hn-JBr. Patched 2026-10-19 to v3.3 (court establishment): §4 rebuilt (new blocks, open-questions grid grid-YzV7LNGvSc; old allocation table deleted), §2/§3/§5/§6/§7 wording, batch 14 as its own block after the log, glossary row appended. 2026-10-24: patched in place to v3.4 (status, callout, SCR-15 wording)."
+      "note": "Patched in place 2026-10-25 to v3.5 (status, callout, heading, SCR-09, SCR-10, PRD language note). Live views: Court Side table-OvYXzrn9IN, Citizen-Side table-i0Uw4lusP4, Notifications table-eqtvnthi7I, Events table-H3lq7d-M7W. sections hold the first block of each chunk only; no per-chunk hashes."
     },
     "a-diary.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-pKkyj_LFi4",

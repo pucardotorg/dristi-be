@@ -1,6 +1,6 @@
 # Pending task drafts
 
-**Status:** 2026-10-25 — §8, three notifications from [`process-handover.md`](process-handover.md), drafted and **not yet written to Coda**. §4–§7, four court-side tasks from [`process-handover.md`](process-handover.md) `SGN-02`, drafted and **not yet written to Coda** (PRDs label `process-handover`). 2026-10-20 — the three order-generation tasks (§1–§3) written to the master **Pending tasks (Court Side)** table on Coda (PRDs label `order-generation`), and shown in §15 of [`order-generation.md`](order-generation.md). Coda is now the source of truth for them; this file is kept only as the record of the drafts. Nothing is waiting to be written.
+**Status:** 2026-10-25 — §4–§7 (four court-side tasks) and §8 (three notifications) from [`process-handover.md`](process-handover.md) written to the master **Pending tasks (Court Side)** and **Notifications** tables on Coda (PRDs label `process-handover`). Coda is now the source of truth for them; nothing is waiting to be written. 2026-10-20 — the three order-generation tasks (§1–§3) written to the master **Pending tasks (Court Side)** table on Coda (PRDs label `order-generation`), and shown in §15 of [`order-generation.md`](order-generation.md). Coda is now the source of truth for them; this file is kept only as the record of the drafts. Nothing is waiting to be written.
 
 Pending tasks drafted from other PRDs, held here until they are all written to the
 pending tasks page on Coda together. **Not synced.** Each uses the attributes of §2 of
