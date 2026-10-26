@@ -1,35 +1,46 @@
 """Load pincodes as ``pincode`` locations under their districts.
 
 The source is India Post's "All India Pincode Directory" CSV (data.gov.in),
-which has one row per post office. Each pincode becomes one location, coded
-``PIN_<pincode>``, whose parent is the district holding most of its post
-offices; ties go to the district with the higher-ranked office (head, then
-sub, then branch), then to the district name. Pincodes that span districts
-are reported so an admin can repoint any that are wrong.
+which has one row per post office. Each office's state and district names are
+first matched to an active district location; then each pincode becomes one
+location, coded ``PIN_<pincode>``, whose parent is the matched district
+holding most of its offices. Ties go to the district with the higher-ranked
+office (head, then sub, then branch), then to the district name.
 
-District and state names are matched case-insensitively against existing
-district locations (``name`` or ``short_name``) under their state. Names the
-CSV spells differently are mapped with ``--aliases``, a JSON file of
-``{"<CSV STATE> / <CSV DISTRICT>": "<district location code>"}``.
+Names are matched case-insensitively against the ``name`` or ``short_name`` of
+active district locations and their states. Names the CSV spells differently
+are mapped with ``--aliases``, a JSON object whose keys are either a CSV state
+(mapped to a state code) or ``"<CSV STATE> / <CSV DISTRICT>"`` (mapped to a
+district code).
 
-Existing pincodes keep their parent unless ``--update`` is given, so manual
-corrections survive a re-import.
+A pincode that already exists keeps its parent unless ``--update`` is given.
+Even then, a pincode an admin has edited (``updated_by`` set) is left alone
+unless ``--overwrite-edits`` is also given, so manual corrections survive a
+re-import. Rows the import repoints have ``updated_by`` cleared: an empty
+``updated_by`` means the row is as the import left it.
 """
 
+import copy
 import csv
 import json
 import re
 from collections import Counter, defaultdict
 
+from cachalot.api import cachalot_disabled
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
+from apps.address.models import PINCODE_REGEX
 from apps.locations.models import Location
 
-PINCODE_RE = re.compile(r"^[1-9][0-9]{5}$")
+PINCODE_RE = re.compile(PINCODE_REGEX)
 CODE_PREFIX = "PIN_"
-ALIAS_SEPARATOR = " / "
+ALIAS_SEPARATOR = "/"
+# How many examples of skipped values to print.
+SAMPLE_SIZE = 5
 
 # Header names differ between releases of the directory.
 COLUMNS = {
@@ -38,7 +49,9 @@ COLUMNS = {
     "state": ("statename", "state"),
     "office_type": ("officetype",),
 }
-OFFICE_RANK = {"HO": 3, "SO": 2, "BO": 1}
+# Head, sub and branch offices. Older releases write sub offices as "S.O",
+# newer ones as "PO".
+OFFICE_RANK = {"HO": 3, "SO": 2, "PO": 2, "BO": 1}
 
 
 def normalize(value):
@@ -51,6 +64,11 @@ def pincode_code(pincode):
     return f"{CODE_PREFIX}{pincode}"
 
 
+def location_names(location):
+    """Return the normalized names a location can be matched by."""
+    return {normalize(name) for name in (location.name, location.short_name) if name}
+
+
 class Command(BaseCommand):
     """Import pincodes from the India Post directory CSV."""
 
@@ -61,7 +79,8 @@ class Command(BaseCommand):
         parser.add_argument("csv_path", help="All India Pincode Directory CSV.")
         parser.add_argument(
             "--aliases",
-            help='JSON file mapping "<CSV STATE> / <CSV DISTRICT>" to a district code.',
+            help='JSON object mapping a CSV state to a state code, or "STATE / DISTRICT" '
+            "to a district code.",
         )
         parser.add_argument(
             "--update",
@@ -69,43 +88,62 @@ class Command(BaseCommand):
             help="Repoint existing pincodes whose chosen district has changed.",
         )
         parser.add_argument(
+            "--overwrite-edits",
+            action="store_true",
+            help="With --update, also repoint pincodes an admin has edited.",
+        )
+        parser.add_argument(
             "--dry-run", action="store_true", help="Report what would change without saving."
         )
 
     def handle(self, *args, **options):
         """Read the CSV, choose a district per pincode and save the locations."""
-        offices = self._read_offices(options["csv_path"])
-        resolver = DistrictResolver(self._read_aliases(options["aliases"]))
-
-        chosen = {}
-        unmatched = Counter()
-        split = {}
-        for pincode, by_district in sorted(offices.items()):
-            state, district = choose_district(by_district)
-            if len(by_district) > 1:
-                split[pincode] = by_district
-            location = resolver.resolve(state, district)
-            if location is None:
-                unmatched[(state, district)] += 1
-            else:
-                chosen[pincode] = location
-
-        created, updated, kept = self._save(chosen, options["update"], options["dry_run"])
-
-        self._report_split(split, options["verbosity"])
-        self._report_unmatched(unmatched)
-        prefix = "Dry run: would have " if options["dry_run"] else ""
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"{prefix}created {created}, updated {updated}, kept {kept} pincodes; "
-                f"{len(split)} span several districts; "
-                f"{sum(unmatched.values())} skipped for unmatched districts."
+        if options["overwrite_edits"] and not options["update"]:
+            raise CommandError("--overwrite-edits only applies with --update.")
+        resolver = DistrictResolver(read_aliases(options["aliases"]))
+        offices, skipped = self._read_offices(options["csv_path"])
+        if not offices:
+            raise CommandError(
+                f"No usable rows in {options['csv_path']}: {self._describe_skipped(skipped)}. "
+                "Check the file is the comma-separated directory with unmodified pincodes."
             )
-        )
+
+        by_pincode = defaultdict(dict)  # pincode -> {district pk: [count, rank, district]}
+        unmatched, ambiguous = Counter(), Counter()
+        for (pincode, state, district), (count, rank) in offices.items():
+            location, problem = resolver.resolve(state, district)
+            if location is None:
+                (ambiguous if problem == "ambiguous" else unmatched)[(state, district)] += count
+                continue
+            entry = by_pincode[pincode].setdefault(location.pk, [0, 0, location])
+            entry[0] += count
+            entry[1] = max(entry[1], rank)
+        chosen = {pincode: choose_district(found) for pincode, found in by_pincode.items()}
+        split = {pincode: found for pincode, found in by_pincode.items() if len(found) > 1}
+        not_placed = {pincode for pincode, _, _ in offices} - chosen.keys()
+
+        with cachalot_disabled():
+            result = self._save(chosen, options)
+
+        verbose = options["verbosity"] >= 2
+        if skipped:
+            self._warn(f"Skipped {self._describe_skipped(skipped)}.")
+        self._report_names(unmatched, "No active district location for", "unmatched")
+        self._report_names(ambiguous, "Several active districts match", "ambiguous")
+        for code, location_type in result["conflicts"]:
+            self._warn(f"{code} is already used by a {location_type} location; not imported.")
+        if verbose:
+            self._report_split(split)
+            for pincode, (current, new) in sorted(result["differs"].items()):
+                self.stdout.write(f"{pincode}: stored under {current}, CSV now chooses {new}")
+            for code in sorted(result["missing"]):
+                self.stdout.write(f"{code} is not in this CSV")
+        self._report_counts(result, split, not_placed, options)
 
     def _read_offices(self, path):
-        """Return ``{pincode: {(state, district): [office count, best office rank]}}``."""
-        offices = defaultdict(lambda: defaultdict(lambda: [0, 0]))
+        """Return ``{(pincode, state, district): [offices, best rank]}`` and skipped rows."""
+        offices = defaultdict(lambda: [0, 0])
+        skipped = {"pincode": [], "name": 0}
         try:
             with open(path, newline="", encoding="utf-8-sig") as handle:
                 reader = csv.DictReader(handle)
@@ -114,16 +152,20 @@ class Command(BaseCommand):
                     pincode = (row[columns["pincode"]] or "").strip()
                     state = " ".join((row[columns["state"]] or "").split())
                     district = " ".join((row[columns["district"]] or "").split())
-                    if not PINCODE_RE.match(pincode) or not state or not district:
+                    if not PINCODE_RE.match(pincode):
+                        skipped["pincode"].append(pincode)
+                        continue
+                    if not state or not district:
+                        skipped["name"] += 1
                         continue
                     office_type = row[columns["office_type"]] if columns["office_type"] else ""
                     rank = OFFICE_RANK.get(re.sub(r"[^A-Z]", "", (office_type or "").upper()), 0)
-                    entry = offices[pincode][(state, district)]
+                    entry = offices[(pincode, state, district)]
                     entry[0] += 1
                     entry[1] = max(entry[1], rank)
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError, csv.Error) as exc:
             raise CommandError(f"Cannot read {path}: {exc}") from exc
-        return offices
+        return offices, skipped
 
     def _columns(self, fieldnames):
         """Map each needed column to its header in this CSV."""
@@ -132,121 +174,254 @@ class Command(BaseCommand):
         for key, candidates in COLUMNS.items():
             columns[key] = next((headers[c] for c in candidates if c in headers), None)
             if columns[key] is None and key != "office_type":
-                raise CommandError(f"CSV has no {' or '.join(candidates)} column.")
+                raise CommandError(
+                    f"CSV has no {' or '.join(candidates)} column. "
+                    "Check the file is comma-separated with the directory's header row."
+                )
         return columns
 
-    def _read_aliases(self, path):
-        """Return the alias map keyed by normalized (state, district)."""
-        if not path:
-            return {}
-        try:
-            with open(path, encoding="utf-8") as handle:
-                raw = json.load(handle)
-        except (OSError, ValueError) as exc:
-            raise CommandError(f"Cannot read aliases from {path}: {exc}") from exc
-        aliases = {}
-        for key, code in raw.items():
-            state, sep, district = key.partition(ALIAS_SEPARATOR.strip())
-            if not sep:
-                raise CommandError(f'Alias {key!r} must look like "STATE / DISTRICT".')
-            aliases[(normalize(state), normalize(district))] = code
-        return aliases
-
     @transaction.atomic
-    def _save(self, chosen, update, dry_run):
-        """Create or repoint pincode locations; return (created, updated, kept)."""
+    def _save(self, chosen, options):
+        """Create or repoint pincode locations and return what happened."""
+        # Rows coded PIN_* of any type, since codes are unique across all types,
+        # and every pincode row, to report the ones this CSV no longer has.
         existing = {
             location.code: location
-            for location in Location.objects.filter(location_type=Location.LocationType.PINCODE)
+            for location in Location.objects.filter(
+                Q(code__startswith=CODE_PREFIX) | Q(location_type=Location.LocationType.PINCODE)
+            ).only("id", "code", "location_type", "parent_id", "updated_by_id")
         }
-        to_create, to_update = [], []
-        kept = 0
+        defaults = self._attribute_defaults()
         now = timezone.now()
+        result = {
+            "created": [],
+            "repointed": [],
+            "unchanged": 0,
+            "differs": {},
+            "edited": [],
+            "conflicts": [],
+            "missing": [],
+        }
         for pincode, district in chosen.items():
             location = existing.get(pincode_code(pincode))
             if location is None:
-                to_create.append(
+                result["created"].append(
                     Location(
                         code=pincode_code(pincode),
                         name=pincode,
                         short_name=pincode,
                         location_type=Location.LocationType.PINCODE,
                         parent=district,
+                        additional_attributes=copy.deepcopy(defaults),
                     )
                 )
-            elif location.parent_id != district.pk and update:
+            elif location.location_type != Location.LocationType.PINCODE:
+                result["conflicts"].append((location.code, location.location_type))
+            elif location.parent_id == district.pk:
+                result["unchanged"] += 1
+            elif not options["update"]:
+                result["differs"][pincode] = (location.parent_id, district.code)
+            elif location.updated_by_id and not options["overwrite_edits"]:
+                result["edited"].append(location.code)
+            else:
                 location.parent = district
+                location.updated_by = None
                 # bulk_update skips auto_now, so stamp the change by hand.
                 location.updated_at = now
-                to_update.append(location)
-            else:
-                kept += 1
+                result["repointed"].append(location)
 
-        if not dry_run:
-            Location.objects.bulk_create(to_create, batch_size=1000)
-            Location.objects.bulk_update(to_update, ["parent", "updated_at"], batch_size=1000)
-        return len(to_create), len(to_update), kept
+        parent_codes = dict(
+            Location.objects.filter(
+                pk__in={parent_id for parent_id, _ in result["differs"].values()}
+            ).values_list("pk", "code")
+        )
+        result["differs"] = {
+            pincode: (parent_codes.get(parent_id, str(parent_id)), new)
+            for pincode, (parent_id, new) in result["differs"].items()
+        }
 
-    def _report_split(self, split, verbosity):
-        """List pincodes spanning several districts, with office counts (verbosity 2)."""
-        if verbosity < 2:
-            return
-        for pincode, by_district in split.items():
+        imported = {pincode_code(pincode) for pincode in chosen}
+        result["missing"] = [
+            code
+            for code, location in existing.items()
+            if location.location_type == Location.LocationType.PINCODE and code not in imported
+        ]
+
+        if not options["dry_run"]:
+            Location.objects.bulk_create(result["created"], batch_size=1000)
+            Location.objects.bulk_update(
+                result["repointed"], ["parent", "updated_by", "updated_at"], batch_size=1000
+            )
+        return result
+
+    def _attribute_defaults(self):
+        """Return the additional attributes a new pincode starts with.
+
+        ``bulk_create`` skips ``save()``, so the defaults it would fill in are
+        worked out once here instead.
+        """
+        try:
+            return Location(
+                location_type=Location.LocationType.PINCODE
+            )._clean_additional_attributes()
+        except ValidationError as exc:
+            raise CommandError(
+                f"Location has required additional attributes the import cannot set: {exc}"
+            ) from exc
+
+    def _describe_skipped(self, skipped):
+        """Summarize the rows skipped for a bad pincode or a missing name."""
+        bad = skipped["pincode"]
+        parts = []
+        if bad:
+            sample = ", ".join(repr(value) for value in bad[:SAMPLE_SIZE])
+            parts.append(f"{len(bad)} rows with an invalid pincode (e.g. {sample})")
+        if skipped["name"]:
+            parts.append(f"{skipped['name']} rows with no state or district")
+        return "; ".join(parts) or "the file has no data rows"
+
+    def _report_names(self, names, prefix, kind):
+        """Warn about CSV state/district names that matched no single district."""
+        hint = "add an alias" if kind == "unmatched" else "add an alias to choose one"
+        for (state, district), count in sorted(names.items()):
+            self._warn(
+                f"{prefix} {state} / {district} ({count} offices skipped; {hint})",
+            )
+
+    def _report_split(self, split):
+        """List pincodes whose offices sit in several districts, with office counts."""
+        for pincode, found in sorted(split.items()):
             counts = ", ".join(
-                f"{state} / {district}: {count}"
-                for (state, district), (count, _rank) in sorted(by_district.items())
+                f"{district.code}: {count}"
+                for count, _rank, district in sorted(found.values(), key=lambda e: e[2].code)
             )
             self.stdout.write(f"{pincode} spans several districts ({counts})")
 
-    def _report_unmatched(self, unmatched):
-        """List CSV districts with no matching district location."""
-        for (state, district), count in sorted(unmatched.items()):
-            self.stdout.write(
-                self.style.WARNING(
-                    f"No district location for {state}{ALIAS_SEPARATOR}{district} "
-                    f"({count} pincodes skipped)"
-                )
+    def _report_counts(self, result, split, not_placed, options):
+        """Print the summary line and what to do about rows left as they were."""
+        if result["differs"]:
+            self._warn(
+                f"{len(result['differs'])} existing pincodes are under a different district than "
+                "this CSV chooses; run with -v 2 to list them, or --update to repoint them."
             )
+        if result["edited"]:
+            self._warn(
+                f"{len(result['edited'])} pincodes edited by an admin were kept; "
+                "add --overwrite-edits to repoint them too."
+            )
+        if result["missing"]:
+            self._warn(
+                f"{len(result['missing'])} pincode locations are not in this CSV; "
+                "run with -v 2 to list them, then review them in the admin."
+            )
+        prefix = "Dry run: would have " if options["dry_run"] else ""
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"{prefix}created {len(result['created'])}, "
+                f"repointed {len(result['repointed'])}, "
+                f"left {result['unchanged']} unchanged; "
+                f"{len(split)} span several districts; "
+                f"{len(not_placed)} not placed (no matching district)."
+            )
+        )
+
+    def _warn(self, message):
+        """Write ``message`` as a warning."""
+        self.stdout.write(self.style.WARNING(message))
 
 
-def choose_district(by_district):
-    """Return the (state, district) with most offices, then best office, then by name."""
-    return min(
-        by_district,
-        key=lambda key: (-by_district[key][0], -by_district[key][1], normalize(key[0]), key[1]),
+def choose_district(found):
+    """Return the district with most offices, then the best office, then by name."""
+    _count, _rank, district = min(
+        found.values(),
+        key=lambda entry: (-entry[0], -entry[1], normalize(entry[2].name), entry[2].code),
     )
+    return district
+
+
+def read_aliases(path):
+    """Return ``(state aliases, district aliases)`` read from the JSON file at ``path``.
+
+    State aliases are keyed by normalized CSV state, district aliases by
+    normalized ``(CSV state, CSV district)``; both map to location codes.
+    """
+    if not path:
+        return {}, {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise CommandError(f"Cannot read aliases from {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise CommandError(f"Aliases in {path} must be a JSON object.")
+    states, districts = {}, {}
+    for key, code in raw.items():
+        if not isinstance(code, str) or not code:
+            raise CommandError(f"Alias {key!r} must map to a location code.")
+        parts = [part.strip() for part in key.split(ALIAS_SEPARATOR)]
+        if len(parts) == 1 and parts[0]:
+            states[normalize(parts[0])] = code
+        elif len(parts) == 2 and all(parts):
+            districts[(normalize(parts[0]), normalize(parts[1]))] = code
+        else:
+            raise CommandError(f'Alias {key!r} must look like "STATE" or "STATE / DISTRICT".')
+    return states, districts
 
 
 class DistrictResolver:
-    """Find the district location for a CSV state and district name."""
+    """Find the active district location for a CSV state and district name."""
 
     def __init__(self, aliases):
-        """Index active and inactive districts by normalized state and district names."""
-        self.aliases = aliases
-        self.by_name = {}
+        """Index active districts by state and district names, and check every alias."""
+        state_aliases, district_aliases = aliases
+        self.by_name = defaultdict(set)
         districts = Location.objects.filter(
             location_type=Location.LocationType.DISTRICT,
+            is_active=True,
             parent__location_type=Location.LocationType.STATE,
         ).select_related("parent")
         for district in districts:
-            state = district.parent
-            for state_name in {state.name, state.short_name} - {""}:
-                for district_name in {district.name, district.short_name} - {""}:
-                    key = (normalize(state_name), normalize(district_name))
-                    self.by_name.setdefault(key, district)
-        self.by_code = {}
+            for state_name in location_names(district.parent):
+                for district_name in location_names(district):
+                    self.by_name[(state_name, district_name)].add(district)
+
+        bad = []
+        states = {
+            state.code: state
+            for state in Location.objects.filter(
+                code__in=state_aliases.values(), location_type=Location.LocationType.STATE
+            )
+        }
+        # A state alias points the CSV spelling at the state's own names.
+        self.state_aliases = {}
+        for csv_state, code in state_aliases.items():
+            if code in states:
+                self.state_aliases[csv_state] = location_names(states[code])
+            else:
+                bad.append(code)
+        found = {
+            district.code: district
+            for district in districts.filter(code__in=list(district_aliases.values()))
+        }
+        self.district_aliases = {}
+        for key, code in district_aliases.items():
+            if code in found:
+                self.district_aliases[key] = found[code]
+            else:
+                bad.append(code)
+        if bad:
+            raise CommandError(
+                f"Aliases name unknown or inactive locations: {', '.join(sorted(set(bad)))}."
+            )
 
     def resolve(self, state, district):
-        """Return the district location, or None when nothing matches."""
-        key = (normalize(state), normalize(district))
-        code = self.aliases.get(key)
-        if code is None:
-            return self.by_name.get(key)
-        if code not in self.by_code:
-            self.by_code[code] = Location.objects.filter(
-                code=code, location_type=Location.LocationType.DISTRICT
-            ).first()
-        location = self.by_code[code]
-        if location is None:
-            raise CommandError(f"Alias for {state} / {district} names unknown district {code!r}.")
-        return location
+        """Return ``(district location, None)``, or ``(None, "unmatched" | "ambiguous")``."""
+        state_key, district_key = normalize(state), normalize(district)
+        if (state_key, district_key) in self.district_aliases:
+            return self.district_aliases[(state_key, district_key)], None
+        candidates = set()
+        for name in self.state_aliases.get(state_key, {state_key}):
+            candidates |= self.by_name.get((name, district_key), set())
+        if len(candidates) == 1:
+            return next(iter(candidates)), None
+        return None, "ambiguous" if candidates else "unmatched"

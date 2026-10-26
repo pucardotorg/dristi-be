@@ -80,6 +80,10 @@ make format      # Format code with ruff
 
 Run `make help` to see all available commands.
 
+Pincode pre-fill needs location data, which the repository does not ship: load
+the states and districts, then run `import_pincodes` (see
+[docs/development.md](docs/development.md#loading-location-data-pincode-pre-fill)).
+
 ## Pre-commit hooks
 
 The repo uses [pre-commit](https://pre-commit.com/) to run Ruff (lint with auto-fix, then format) automatically on every `git commit`. The hooks are defined in [.pre-commit-config.yaml](.pre-commit-config.yaml).

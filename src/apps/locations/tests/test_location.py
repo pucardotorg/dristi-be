@@ -72,8 +72,11 @@ class TestLocationTypeValidation:
         assert "location_type" in exc_info.value.message_dict
 
     def test_accepts_every_supported_type(self):
+        district = make_location(code="D", location_type=Location.LocationType.DISTRICT)
         for index, value in enumerate(Location.LocationType.values):
-            location = make_location(code=f"C{index}", location_type=value)
+            # A pincode is only valid under a district.
+            parent = district if value == Location.LocationType.PINCODE else None
+            location = make_location(code=f"C{index}", location_type=value, parent=parent)
             assert location.location_type == value
 
 
@@ -108,6 +111,33 @@ class TestParentValidation:
             india.save()
 
         assert "parent" in exc_info.value.message_dict
+
+    @pytest.mark.parametrize("parent_level", ["none", "state"])
+    def test_pincode_must_be_under_a_district(self, parent_level):
+        india, bihar, _patna = make_hierarchy()
+        parent = {"none": None, "state": bihar}[parent_level]
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_location(
+                code="PIN_800001",
+                name="800001",
+                location_type=Location.LocationType.PINCODE,
+                parent=parent,
+            )
+
+        assert "parent" in exc_info.value.message_dict
+
+    def test_pincode_under_a_district_is_valid(self):
+        _india, _bihar, patna = make_hierarchy()
+
+        pincode = make_location(
+            code="PIN_800001",
+            name="800001",
+            location_type=Location.LocationType.PINCODE,
+            parent=patna,
+        )
+
+        assert pincode.get_full_name() == "India / Bihar / Patna / 800001"
 
     def test_allows_many_children_under_one_parent(self):
         india = make_location()

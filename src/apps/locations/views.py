@@ -3,10 +3,10 @@
 import uuid
 
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
@@ -20,6 +20,13 @@ from .serializers import LocationSerializer
 UUID_REGEX = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 CODE_URL_PATH = r"code/(?P<code>[^/.]+)"
 BOOLEAN_VALUES = {"true": True, "false": False}
+# The pincode pre-fill asks for an all-active chain (spec 0007 section 7).
+ANCESTORS_IS_ACTIVE = OpenApiParameter(
+    "is_active",
+    str,
+    enum=["true"],
+    description="'true': not found unless the location and all its ancestors are active.",
+)
 
 
 @extend_schema_view(
@@ -109,14 +116,24 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         return Response(self.get_serializer(children, many=True).data)
 
     def _ancestors_response(self, location):
-        """Return the ancestor chain from root to immediate parent."""
-        return Response(self.get_serializer(location.get_ancestors(), many=True).data)
+        """Return the ancestor chain from root to immediate parent.
+
+        With ``is_active=true`` a chain with any inactive link, the location
+        itself included, is not found: address forms pre-fill from a pincode's
+        ancestors, and a deactivated pincode or district must not pre-fill.
+        """
+        ancestors = location.get_ancestors()
+        is_active = self.request.query_params.get("is_active", "").lower()
+        if is_active == "true" and not all(link.is_active for link in [location, *ancestors]):
+            raise NotFound("No active location with an active ancestor chain was found.")
+        return Response(self.get_serializer(ancestors, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="children", url_name="children")
     def children(self, request, *args, **kwargs):
         """List the direct children of a location identified by id."""
         return self._children_response(self.get_object())
 
+    @extend_schema(parameters=[ANCESTORS_IS_ACTIVE])
     @action(detail=True, methods=["get"], url_path="ancestors", url_name="ancestors")
     def ancestors(self, request, *args, **kwargs):
         """List the ancestors of a location identified by id."""
@@ -137,6 +154,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         """List the direct children of a location identified by code."""
         return self._children_response(self._get_by_code(code))
 
+    @extend_schema(parameters=[ANCESTORS_IS_ACTIVE])
     @action(
         detail=False,
         methods=["get"],

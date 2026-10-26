@@ -145,36 +145,62 @@ address form can pre-fill district and state without calling a third-party
 API (spec 0020):
 
 ```
-GET /api/v1/locations/code/PIN_560001/ancestors/
-→ [India (country), Karnataka (state), Bengaluru Urban (district)]
+GET /api/v1/locations/code/PIN_560001/ancestors/?is_active=true
+→ {"data": [India (country), Karnataka (state), Bengaluru Urban (district)], "meta": {...}}
 ```
+
+The client takes `district` and `state` from the entries whose
+`location_type` is `district` and `state`. `is_active=true` makes the call
+`404` unless the pincode and every location above it are active, so
+deactivating a wrong pincode or district stops it pre-filling. A `404` means
+"no pre-fill": the user enters district and state by hand.
 
 | Field | Value |
 |-------|-------|
 | `code` | `PIN_<pincode>`, e.g. `PIN_560001` |
 | `name`, `short_name` | The pincode, e.g. `560001` |
-| `parent` | The district |
+| `parent` | The district; `clean()` rejects any other parent |
+
+The admin picks a location's parent with a search box, and an organization's
+jurisdictions never list pincodes, since the table holds tens of thousands of
+them.
 
 They are loaded from India Post's *All India Pincode Directory* CSV
 (data.gov.in), which has one row per post office:
 
 ```bash
-python manage.py import_pincodes all_india_pincode_directory.csv [--aliases aliases.json] [--update] [--dry-run]
+python manage.py import_pincodes all_india_pincode_directory.csv \
+    [--aliases aliases.json] [--update [--overwrite-edits]] [--dry-run] [-v 2]
 ```
 
-- **District choice.** A pincode whose post offices sit in more than one
-  district goes under the district with the most of its offices; a tie goes to
-  the district with the higher-ranked office (head, then sub, then branch
-  office), then to the district name. Run with `-v 2` to list these pincodes and
-  their office counts; an admin repoints any wrong one in the Django admin.
-- **Name matching.** CSV state and district names are matched
-  case-insensitively against the `name` or `short_name` of existing state and
-  district locations, which must be loaded first. Names spelled differently are
-  mapped with `--aliases`, a JSON object of
-  `{"<CSV STATE> / <CSV DISTRICT>": "<district code>"}`. Unmatched districts are
-  reported and their pincodes skipped.
-- **Re-import.** Existing pincodes keep their parent, so manual corrections
-  survive; `--update` repoints them to the newly chosen district.
+Loading is part of setting up an environment: the countries, states and
+districts must exist first, and the pincodes are then imported once. The
+repository ships no location data.
+
+- **Name matching.** Each office's state and district are matched
+  case-insensitively against the `name` or `short_name` of **active** district
+  locations and their states. A name that matches no district, or several, is
+  reported with its office count and skipped. `--aliases` takes a JSON object
+  whose keys are a CSV state, mapped to a state code (for a state the CSV
+  spells differently), or `"<CSV STATE> / <CSV DISTRICT>"`, mapped to a district
+  code. Every alias must name an existing active location, or the import stops.
+- **District choice.** Offices are grouped by the district they matched, so
+  spellings of one district count together. A pincode goes under the matched
+  district with most of its offices; a tie goes to the district with the
+  higher-ranked office (head office, then sub office (`S.O` or `PO`), then
+  branch office), then to the district name. A pincode none of whose offices
+  matched is not placed. `-v 2` lists pincodes that span districts, with
+  their office counts; an admin repoints any wrong one.
+- **Re-import.** An existing pincode keeps its parent; the summary says how many
+  now differ from the CSV (`-v 2` lists them). `--update` repoints them, except
+  pincodes an admin has edited (`updated_by` set), which need
+  `--overwrite-edits` too. Rows the import repoints have `updated_by` cleared.
+  Pincodes in the database but not in the CSV are reported, never removed.
+- **Bad input.** Rows with a malformed pincode or no state or district are
+  counted and reported. A file with no usable rows, a missing column, or a
+  file that is not UTF-8 stops the import with an error, and nothing is saved.
+  A location of another type already holding a `PIN_` code is reported and
+  that pincode skipped.
 
 ## Example data
 
@@ -198,7 +224,9 @@ A location `code` may include the parent code for readability (e.g. `IN_BR_PATNA
 - `src/apps/locations/views.py`
 - `src/apps/locations/urls.py`
 - `src/apps/locations/tests/test_location.py`
+- `src/apps/locations/migrations/0003_location_type_pincode.py`
 - `src/apps/locations/management/commands/import_pincodes.py`
+- `src/apps/locations/admin.py`, `src/apps/organizations/admin.py`
 - `src/apps/locations/tests/test_import_pincodes.py`
 
 ## Open questions

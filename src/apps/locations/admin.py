@@ -23,6 +23,8 @@ class LocationAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     list_filter = ("location_type", "is_active")
     search_fields = ("code", "name", "short_name")
     readonly_fields = ("id", "created_at", "updated_at")
+    # A search box, not a <select>: the table holds every pincode.
+    autocomplete_fields = ("parent",)
     list_select_related = ("parent",)
     ordering = ("code",)
 

@@ -5,12 +5,15 @@ import os
 import tempfile
 from io import StringIO
 
+from django.contrib.contenttypes.models import ContentType
 from django.core.management import CommandError, call_command
 from django.test import TestCase
 from django.urls import reverse
 
+from apps.core.models import AdditionalAttribute
 from apps.locations.models import Location
 from apps.locations.tests.factories import make_country, make_district, make_state
+from apps.users.models import User
 
 HEADER = (
     "circlename,regionname,divisionname,officename,pincode,officetype,delivery,district,statename"
@@ -117,7 +120,7 @@ class ImportPincodesTests(TestCase):
         output = self.run_import(self.csv(office("560001", "BANGALORE")))
 
         self.assertFalse(Location.objects.filter(code="PIN_560001").exists())
-        self.assertIn("No district location for KARNATAKA / BANGALORE", output)
+        self.assertIn("No active district location for KARNATAKA / BANGALORE", output)
 
     def test_alias_maps_csv_spelling_to_district(self):
         aliases = self.write(
@@ -133,12 +136,25 @@ class ImportPincodesTests(TestCase):
         with self.assertRaises(CommandError):
             self.run_import(self.csv(office("560001", "BANGALORE")), "--aliases", aliases)
 
-    def test_invalid_pincode_rows_are_ignored(self):
-        self.run_import(self.csv(office("056000", "BENGALURU URBAN")))
-
-        self.assertFalse(
-            Location.objects.filter(location_type=Location.LocationType.PINCODE).exists()
+    def test_invalid_pincode_rows_are_skipped_and_reported(self):
+        output = self.run_import(
+            self.csv(office("056000", "BENGALURU URBAN"), office("560001", "BENGALURU URBAN"))
         )
+
+        self.assertEqual(
+            list(
+                Location.objects.filter(location_type=Location.LocationType.PINCODE).values_list(
+                    "name", flat=True
+                )
+            ),
+            ["560001"],
+        )
+        self.assertIn("1 rows with an invalid pincode (e.g. '056000')", output)
+
+    def test_file_without_usable_rows_fails(self):
+        # A spreadsheet export that turned pincodes into numbers.
+        with self.assertRaisesMessage(CommandError, "No usable rows"):
+            self.run_import(self.csv(office("560001.0", "BENGALURU URBAN")))
 
     def test_reimport_keeps_existing_parent_without_update(self):
         self.run_import(self.csv(office("560001", "BENGALURU RURAL")))
@@ -189,3 +205,202 @@ class ImportPincodesTests(TestCase):
         self.assertEqual(
             types, {"country": "India", "state": "Karnataka", "district": "Bengaluru Urban"}
         )
+
+    def test_spellings_of_one_district_count_together(self):
+        self.run_import(
+            self.csv(
+                office("562106", "Bengaluru Urban"),
+                office("562106", "Bengaluru Urban"),
+                office("562106", "BENGALURU URBAN"),
+                office("562106", "BENGALURU RURAL"),
+                office("562106", "BENGALURU RURAL"),
+            )
+        )
+
+        self.assertEqual(self.parent_code("562106"), "IN_KA_BLR_URBAN")
+
+    def test_aliased_spelling_counts_with_its_district(self):
+        aliases = self.write(
+            json.dumps({"KARNATAKA / BANGALORE": "IN_KA_BLR_URBAN"}), suffix=".json"
+        )
+        self.run_import(
+            self.csv(
+                office("562106", "BANGALORE"),
+                office("562106", "BENGALURU URBAN"),
+                office("562106", "BENGALURU RURAL"),
+                office("562106", "BENGALURU RURAL"),
+                office("562106", "BANGALORE"),
+            ),
+            "--aliases",
+            aliases,
+        )
+
+        self.assertEqual(self.parent_code("562106"), "IN_KA_BLR_URBAN")
+
+    def test_inactive_district_is_never_chosen(self):
+        make_district(
+            parent=self.karnataka, code="A_OLD_URBAN", name="Bengaluru Urban", is_active=False
+        )
+
+        self.run_import(self.csv(office("560001", "BENGALURU URBAN")))
+
+        self.assertEqual(self.parent_code("560001"), "IN_KA_BLR_URBAN")
+
+    def test_name_matching_two_active_districts_is_reported_and_skipped(self):
+        make_district(
+            parent=self.karnataka, code="IN_KA_OTHER", name="Other", short_name="Bengaluru Urban"
+        )
+
+        output = self.run_import(self.csv(office("560001", "BENGALURU URBAN")))
+
+        self.assertFalse(Location.objects.filter(code="PIN_560001").exists())
+        self.assertIn("Several active districts match KARNATAKA / BENGALURU URBAN", output)
+
+    def test_po_counts_as_a_sub_office(self):
+        self.run_import(
+            self.csv(
+                office("562106", "BENGALURU URBAN", office_type="BO"),
+                office("562106", "BENGALURU RURAL", office_type="PO"),
+            )
+        )
+
+        self.assertEqual(self.parent_code("562106"), "IN_KA_BLR_RURAL")
+
+    def test_matched_minority_is_used_when_majority_is_unmatched(self):
+        output = self.run_import(
+            self.csv(
+                office("562106", "UNKNOWN"),
+                office("562106", "UNKNOWN"),
+                office("562106", "BENGALURU RURAL"),
+            )
+        )
+
+        self.assertEqual(self.parent_code("562106"), "IN_KA_BLR_RURAL")
+        self.assertIn("No active district location for KARNATAKA / UNKNOWN (2 offices", output)
+
+    def test_code_held_by_another_type_is_reported_not_crashed(self):
+        make_district(parent=self.karnataka, code="PIN_560001", name="Odd")
+
+        output = self.run_import(
+            self.csv(office("560001", "BENGALURU URBAN"), office("560002", "BENGALURU URBAN"))
+        )
+
+        self.assertIn("PIN_560001 is already used by a district location", output)
+        self.assertEqual(self.parent_code("560002"), "IN_KA_BLR_URBAN")
+
+    def test_file_that_is_not_utf8_fails_cleanly(self):
+        path = self.write("")
+        with open(path, "wb") as handle:
+            handle.write((HEADER + "\n" + office("560001", "MA\xcfSUR")).encode("cp1252"))
+
+        with self.assertRaisesMessage(CommandError, "Cannot read"):
+            self.run_import(path)
+
+    def test_aliases_must_be_an_object(self):
+        aliases = self.write(json.dumps(["KARNATAKA / BANGALORE"]), suffix=".json")
+
+        with self.assertRaisesMessage(CommandError, "must be a JSON object"):
+            self.run_import(self.csv(office("560001", "BANGALORE")), "--aliases", aliases)
+
+    def test_alias_key_with_too_many_parts_fails(self):
+        aliases = self.write(json.dumps({"A / B / C": "IN_KA_BLR_URBAN"}), suffix=".json")
+
+        with self.assertRaisesMessage(CommandError, "must look like"):
+            self.run_import(self.csv(office("560001", "BANGALORE")), "--aliases", aliases)
+
+    def test_unused_bad_alias_still_fails(self):
+        aliases = self.write(json.dumps({"KERALA / NOWHERE": "NOPE"}), suffix=".json")
+
+        with self.assertRaisesMessage(CommandError, "NOPE"):
+            self.run_import(self.csv(office("560001", "BENGALURU URBAN")), "--aliases", aliases)
+
+    def test_state_alias_maps_every_district_of_that_state(self):
+        aliases = self.write(json.dumps({"KARNATAKA STATE": "IN_KA"}), suffix=".json")
+
+        self.run_import(
+            self.csv(office("560001", "BENGALURU URBAN", state="KARNATAKA STATE")),
+            "--aliases",
+            aliases,
+        )
+
+        self.assertEqual(self.parent_code("560001"), "IN_KA_BLR_URBAN")
+
+    def test_differing_pincodes_are_reported_without_update(self):
+        self.run_import(self.csv(office("560001", "BENGALURU RURAL")))
+
+        out = StringIO()
+        call_command(
+            "import_pincodes",
+            self.csv(office("560001", "BENGALURU URBAN")),
+            verbosity=2,
+            stdout=out,
+        )
+
+        self.assertIn("1 existing pincodes are under a different district", out.getvalue())
+        self.assertIn(
+            "560001: stored under IN_KA_BLR_RURAL, CSV now chooses IN_KA_BLR_URBAN", out.getvalue()
+        )
+
+    def test_update_keeps_admin_edits_unless_overwritten(self):
+        self.run_import(self.csv(office("560001", "BENGALURU RURAL")))
+        admin = User.objects.create_user(
+            mobile_number="+919000000001", name="Admin", email="admin@example.com", password="x"
+        )
+        Location.objects.filter(code="PIN_560001").update(updated_by=admin)
+        newer = self.csv(office("560001", "BENGALURU URBAN"))
+
+        output = self.run_import(newer, "--update")
+        self.assertEqual(self.parent_code("560001"), "IN_KA_BLR_RURAL")
+        self.assertIn("1 pincodes edited by an admin were kept", output)
+
+        self.run_import(newer, "--update", "--overwrite-edits")
+        location = Location.objects.get(code="PIN_560001")
+        self.assertEqual(location.parent.code, "IN_KA_BLR_URBAN")
+        self.assertIsNone(location.updated_by)
+
+    def test_overwrite_edits_needs_update(self):
+        with self.assertRaisesMessage(CommandError, "only applies with --update"):
+            self.run_import(self.csv(office("560001", "BENGALURU URBAN")), "--overwrite-edits")
+
+    def test_pincodes_missing_from_the_csv_are_reported(self):
+        self.run_import(
+            self.csv(office("560001", "BENGALURU URBAN"), office("560002", "BENGALURU URBAN"))
+        )
+
+        output = self.run_import(self.csv(office("560001", "BENGALURU URBAN")))
+
+        self.assertIn("1 pincode locations are not in this CSV", output)
+        self.assertTrue(Location.objects.filter(code="PIN_560002").exists())
+
+    def test_new_pincodes_get_additional_attribute_defaults(self):
+        AdditionalAttribute.objects.create(
+            content_type=ContentType.objects.get_for_model(Location),
+            name="lgd_code",
+            data_type="integer",
+            is_nullable=False,
+            default_value=0,
+        )
+
+        self.run_import(self.csv(office("560001", "BENGALURU URBAN")))
+
+        self.assertEqual(
+            Location.objects.get(code="PIN_560001").additional_attributes, {"lgd_code": 0}
+        )
+
+    def test_inactive_pincode_does_not_prefill(self):
+        self.run_import(self.csv(office("560001", "BENGALURU URBAN")))
+        url = reverse("location-by-code-ancestors", args=["PIN_560001"])
+
+        self.assertEqual(self.client.get(url, {"is_active": "true"}).status_code, 200)
+        Location.objects.filter(code="PIN_560001").update(is_active=False)
+        self.assertEqual(self.client.get(url, {"is_active": "true"}).status_code, 404)
+
+    def test_pincode_under_inactive_district_does_not_prefill(self):
+        self.run_import(self.csv(office("560001", "BENGALURU URBAN")))
+        Location.objects.filter(code="IN_KA_BLR_URBAN").update(is_active=False)
+
+        response = self.client.get(
+            reverse("location-by-code-ancestors", args=["PIN_560001"]), {"is_active": "true"}
+        )
+
+        self.assertEqual(response.status_code, 404)

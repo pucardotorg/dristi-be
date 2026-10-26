@@ -352,14 +352,13 @@ Spec 0000 makes `BaseModel` the default, but its audit fields do not fit an immu
 **Why auto-fill district and state:**
 Pincodes are stored as `pincode` locations under their district (spec
 [`0007`](0007-location.md)), so no third-party API is called. At entry time the
-client calls `GET /api/v1/locations/code/PIN_{pincode}/ancestors/`, which
-returns the country, state and district, and pre-fills `district` and `state`
-from it; the values are then stored on the address. This denormalizes the data
-but makes queries faster. A `404` means the pincode is not loaded, and the user
-enters district and state by hand.
+client calls `GET /api/v1/locations/code/PIN_{pincode}/ancestors/?is_active=true`,
+which returns the country, state and district, and pre-fills `district` and
+`state` from it; the values are then stored on the address. This denormalizes
+the data but makes queries faster. A `404` means the pincode is not loaded or
+is deactivated, and the user enters district and state by hand.
 
-The earlier India Post lookup (`GET /api/v1/pincodes/{pincode}/`) is removed and
-its codes `E05001`–`E05003` are retired.
+The earlier India Post lookup (`GET /api/v1/pincodes/{pincode}/`) is removed.
 
 **Why no `updated_at` or `updated_by`:**
 Rows are never updated. The absence of these fields, and of BaseModel itself, is intentional — it signals immutability to future maintainers.

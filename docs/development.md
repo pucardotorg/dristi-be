@@ -36,6 +36,34 @@ docker compose -f docker/docker-compose.yml exec web python manage.py shell
 docker compose -f docker/docker-compose.yml exec web python manage.py makemigrations
 ```
 
+### Loading location data (pincode pre-fill)
+
+The repository ships no location data. Address forms pre-fill district and
+state from a pincode only once the locations are loaded, so whoever sets up
+an environment does this once (spec 0007 section 7):
+
+1. Create the country, states and districts, in the Django admin (Locations) or
+   a data migration of your own: `country` → `state` → `district`, each with
+   its parent.
+2. Download the *All India Pincode Directory* CSV from
+   https://www.data.gov.in/catalog/all-india-pincode-directory and put it under
+   `src/` so the container can read it.
+3. Check what would happen, then import:
+
+   ```bash
+   docker compose -f docker/docker-compose.yml exec web python manage.py import_pincodes all_india_pincode_directory.csv --dry-run
+   docker compose -f docker/docker-compose.yml exec web python manage.py import_pincodes all_india_pincode_directory.csv
+   ```
+
+   The dry run lists CSV state and district names that match no district. Map
+   them with `--aliases aliases.json`, a JSON object such as
+   `{"JAMMU AND KASHMIR": "IN_JK", "KARNATAKA / BANGALORE": "IN_KA_BLR_URBAN"}`
+   (a CSV state to a state code, or a CSV state and district to a district
+   code), and run it again.
+
+Until this is done, every pincode lookup returns 404 and users type district
+and state by hand.
+
 Once the stack is running:
 
 - API root: http://localhost:8000/api/v1/

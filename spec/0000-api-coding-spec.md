@@ -240,7 +240,7 @@ example `E01001`.
 | `02` | `apps.dristi_requests` | request and approval workflow |
 | `03` | `apps.esign` | electronic signing (one code per spec 0015 failure code) |
 | `04` | `apps.pdf` | PDF generation and jobs (spec 0016) |
-| `05` | `apps.address` | address (spec 0020); `E05001`–`E05003` retired with the pincode lookup |
+| `05` | `apps.address` | address (spec 0020) |
 | `06` | `apps.payments` | demands and payments (spec 0017); reserved, not yet implemented |
 
 Rules:

@@ -66,7 +66,12 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
         self._validate_parent()
 
     def _validate_parent(self):
-        """Reject self-parenting and circular parent chains."""
+        """Reject self-parenting, circular parent chains and a pincode not under a district."""
+        if self.location_type == self.LocationType.PINCODE and (
+            self.parent_id is None or self.parent.location_type != self.LocationType.DISTRICT
+        ):
+            # Address forms read a pincode's district and state from its ancestors.
+            raise ValidationError({"parent": "A pincode must be under a district."})
         if self.parent_id is None:
             return
         if self.parent_id == self.pk:
