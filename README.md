@@ -277,4 +277,5 @@ If you run `docker build` directly without setting `REQUIREMENTS_FILE`, it defau
 ## CI/CD
 
 - `.github/workflows/ci.yml` runs linting, Django system checks, and pytest on every push/PR.
+- **Test coverage:** pytest measures coverage of `src/` (tests, migrations and settings excluded). CI fails if the total is below **85%** (`fail_under` in `pyproject.toml`). The report is uploaded to [Codecov](https://about.codecov.io/), which shows the coverage of each PR and of the lines it changes. The upload needs a `CODECOV_TOKEN` repository secret (Settings → Secrets and variables → Actions); without it the CI job fails. See [docs/development.md](docs/development.md#test-coverage) to measure coverage locally.
 - `.github/workflows/docker-publish.yml` builds and pushes the Docker image to GitHub Container Registry on every push to `main`.
