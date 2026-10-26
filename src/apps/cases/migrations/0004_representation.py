@@ -195,6 +195,7 @@ class Migration(migrations.Migration):
                 fields=("advocate", "case_participant"),
                 name="cases_representation_unique_active",
                 violation_error_message="This advocate already represents this party.",
+                violation_error_code="E07020",
             ),
         ),
     ]

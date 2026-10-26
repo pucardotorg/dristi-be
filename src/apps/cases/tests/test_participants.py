@@ -207,10 +207,16 @@ class TestInstitutions:
         assert person.designation == "Director"
 
     def test_designation_is_required_with_a_person(self, client, draft):
-        response = add(client, draft, institution=INSTITUTION, person=PERSON)
+        response = add(client, draft, role="accused", institution=INSTITUTION, person=PERSON)
 
         assert response.status_code == 400
         assert error_codes(response) == {"designation": ["E00002"]}
+
+    def test_designation_is_optional_for_a_complainant(self, client, draft):
+        response = add(client, draft, institution=INSTITUTION, person=PERSON)
+
+        assert response.status_code == 201
+        assert response.json()["designation_at_filing"] is None
 
     def test_self_for_an_institution_leaves_the_filers_person_unchanged(self, client, user, draft):
         response = add(client, draft, institution=INSTITUTION, self=True, designation="Director")

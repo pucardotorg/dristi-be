@@ -350,7 +350,12 @@ class ParticipantCreateSerializer(PartySerializer):
             ]
         if "institution" in attrs and role not in INSTITUTION_ROLES:
             problems["institution"] = [errors.coded(errors.INSTITUTION_NOT_ALLOWED)]
-        if has_individual and "institution" in attrs and not attrs.get("designation"):
+        if (
+            role == ParticipantRole.ACCUSED
+            and has_individual
+            and "institution" in attrs
+            and not attrs.get("designation")
+        ):
             problems["designation"] = [
                 errors.coded(api_errors.REQUIRED, DESIGNATION_REQUIRED_MESSAGE)
             ]

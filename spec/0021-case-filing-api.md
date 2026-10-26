@@ -383,7 +383,7 @@ POST /cases/{case_id_or_draft_session_id}/complainants
 }
 ```
 
-Exactly one of `person` or `self` describes the individual, and either may be left out when `institution` is given. `designation` is required whenever both an individual and an institution are given. `date_of_birth` and `age` are both optional.
+Exactly one of `person` or `self` describes the individual, and either may be left out when `institution` is given. `designation` is accepted only when both an individual and an institution are given; it is optional for a complainant and required for an accused (spec 0020 §4.2). `date_of_birth` and `age` are both optional.
 
 **Response (201 Created):**
 ```json
@@ -475,6 +475,7 @@ Same contract as complainants (§4.1), but `role = 'ACCUSED'`.
 1. `"self": true` is not accepted: a filer cannot name themselves as accused.
 2. The accused is always a **new** `person` at `ASSERTED`; they are named by the complainant, not self-identifying.
 3. An institution may be accused, with or without a person acting for it, exactly as for a complainant.
+4. A person acting for an accused institution needs a `designation`: the officer is liable through that role. Clearing it later with PATCH is refused (`E00002`).
 
 ### 4.3 Witnesses
 
@@ -1344,7 +1345,8 @@ Every error uses the standard body of spec 0000 §9.1: an `errors` array of
 `{code, message, field}` items plus `meta`. The case filing codes (domain `07`)
 are listed in §7.
 
-A missing address for service of notice, a missing designation, or a party
+A missing address for service of notice, a missing designation for a person
+acting for an accused institution, or a party
 write naming no one is `E00002` (required) on that field. Format errors (a
 phone number, a PAN, a pincode) keep the common field codes.
 

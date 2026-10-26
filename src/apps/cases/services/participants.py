@@ -7,7 +7,6 @@ saved in one transaction, and the case row is locked for it, so ordinals are
 assigned and renumbered one write at a time.
 """
 
-import re
 from contextlib import contextmanager
 
 from django.core.exceptions import NON_FIELD_ERRORS
@@ -15,7 +14,6 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.exceptions import ErrorDetail
 from rest_framework.fields import get_error_detail
 from rest_framework.settings import api_settings
 
@@ -56,55 +54,15 @@ MANDATE_FIELD_NAMES = {"represented_participant": "represented_participant_ids"}
 # Likewise for a representation created for its advocate.
 REPRESENTATION_FIELD_NAMES = {"case_participant": "client_participant_ids"}
 
-# The API error code for each rule the models enforce (spec 0021 §10). The
-# models raise plain messages, as every model in the project does; the code is
-# chosen here, on the way out. A ``{…}`` part of a message matches any text.
-MODEL_RULE_CODES = [
-    (models.ADDRESS_REQUIRED_MESSAGE, api_errors.REQUIRED),
-    (models.DESIGNATION_REQUIRED_MESSAGE, api_errors.REQUIRED),
-    (models.INSTITUTION_ROLE_MESSAGE, errors.INSTITUTION_NOT_ALLOWED),
-    (models.ROLE_HELD_MESSAGE, errors.ROLE_ALREADY_HELD),
-    (models.BOTH_SIDES_MESSAGE, errors.BOTH_SIDES),
-    (models.ADVOCATE_BOTH_SIDES_MESSAGE, errors.BOTH_SIDES),
-    (models.CALLS_ACTIVE_WITNESS_MESSAGE, errors.CALLS_ACTIVE_WITNESS),
-    (models.PARTY_ROLE_MESSAGE, errors.WRONG_ROLE),
-    (models.NOT_A_WITNESS_MESSAGE, errors.WRONG_ROLE),
-    (models.NOT_A_POA_HOLDER_MESSAGE, errors.WRONG_ROLE),
-    (models.SAME_CASE_MESSAGE, errors.PARTICIPANT_NOT_ON_CASE),
-    (models.ACTIVE_PARTICIPANT_MESSAGE, errors.PARTICIPANT_NOT_ON_CASE),
-    (models.WITNESS_CALLED_TWICE_MESSAGE, errors.WITNESS_ALREADY_CALLED),
-    (models.MANDATE_FOR_SELF_MESSAGE, errors.SELF_REPRESENTATION),
-    (models.PARTICIPANT_MANDATE_FOR_SELF_MESSAGE, errors.SELF_REPRESENTATION),
-    (models.ADVOCATE_FOR_SELF_MESSAGE, errors.SELF_REPRESENTATION),
-    (models.DUPLICATE_MANDATE_MESSAGE, errors.ALREADY_ACTING),
-    (models.DUPLICATE_REPRESENTATION_MESSAGE, errors.ALREADY_ACTING),
-    (models.ADVOCATE_NOT_APPROVED_MESSAGE, errors.ADVOCATE_NOT_APPROVED),
-    (models.PARTY_IN_PERSON_MESSAGE, errors.PARTY_IN_PERSON),
-    (models.PARTY_HAS_ADVOCATES_MESSAGE, errors.PARTY_IN_PERSON),
-]
-_MODEL_RULE_PATTERNS = [
-    (re.compile(re.sub(r"\\{\w+\\}", ".+", re.escape(message))), error)
-    for message, error in MODEL_RULE_CODES
-]
-
-
-def _with_api_code(message):
-    """Return ``message`` carrying the API code of the model rule it reports, if any."""
-    for pattern, error in _MODEL_RULE_PATTERNS:
-        if pattern.fullmatch(message):
-            return ErrorDetail(message, code=error.code)
-    return message
-
 
 @contextmanager
 def _errors_under(field=None, *, as_whole=False, renamed=None):
     """Turn a model ``ValidationError`` into a 400, nested under ``field`` when given.
 
-    A message from a rule in ``MODEL_RULE_CODES`` gets that rule's API code;
-    any other keeps the code the model gave it. ``as_whole`` reports every
-    message as a non-field error, for a request with no body (a DELETE), where
-    the model's field names would mean nothing. ``renamed`` maps model field
-    names to the request's.
+    Every message keeps the code the model gave it: a case rule's API code, or
+    Django's own. ``as_whole`` reports every message as a non-field error, for
+    a request with no body (a DELETE), where the model's field names would mean
+    nothing. ``renamed`` maps model field names to the request's.
     """
     renamed = {NON_FIELD_ERRORS: api_settings.NON_FIELD_ERRORS_KEY, **(renamed or {})}
     try:
@@ -112,16 +70,11 @@ def _errors_under(field=None, *, as_whole=False, renamed=None):
     except DjangoValidationError as exc:
         detail = get_error_detail(exc)
         if isinstance(detail, dict) and not as_whole:
-            detail = {
-                renamed.get(key, key): [_with_api_code(message) for message in messages]
-                for key, messages in detail.items()
-            }
+            detail = {renamed.get(key, key): messages for key, messages in detail.items()}
         else:
             if isinstance(detail, dict):
                 detail = [message for messages in detail.values() for message in messages]
-            detail = {
-                api_settings.NON_FIELD_ERRORS_KEY: [_with_api_code(message) for message in detail]
-            }
+            detail = {api_settings.NON_FIELD_ERRORS_KEY: detail}
         raise serializers.ValidationError({field: detail} if field else detail) from exc
 
 

@@ -188,7 +188,7 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `phone_number_at_filing` | varchar(20) | NULLABLE | Frozen snapshot of phone; 20 wide so an institution's landline fits |
 | `gender_at_filing` | varchar(32) | NULLABLE | Frozen snapshot of gender |
 | `age_at_filing` | smallint | NULLABLE | Frozen snapshot of age: from `person.date_of_birth` when known, else `person.age` |
-| `designation_at_filing` | varchar(128) | NULLABLE | The acting person's designation at the institution, e.g. Director; required when both `person_id` and `institution_id` are set |
+| `designation_at_filing` | varchar(128) | NULLABLE | The acting person's designation at the institution, e.g. Director; required for an ACCUSED when both `person_id` and `institution_id` are set, optional for a COMPLAINANT |
 | `address_id` | uuid | FK → address, NULLABLE | The address for service of notice; required for every role except WITNESS |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Role-specific data (see §4.3) |
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
@@ -210,12 +210,12 @@ Date of birth is optional when filing: a party may be added with only an approxi
 |---|---|---|
 | set | NULL | An individual party |
 | NULL | set | An institution party, with no one named to act for it yet |
-| set | set | An institution party and the person acting for it (its director, CEO or authorised signatory); `designation_at_filing` is required |
+| set | set | An institution party and the person acting for it (its director, CEO or authorised signatory); `designation_at_filing` is required for an accused |
 
 **Constraints:**
 - `CHECK (person_id IS NOT NULL OR institution_id IS NOT NULL)` — at least one must be set; both may be
 - `CHECK (institution_id IS NULL OR role IN ('COMPLAINANT', 'ACCUSED'))` — witnesses and POA holders are always individuals
-- `CHECK (person_id IS NULL OR institution_id IS NULL OR designation_at_filing IS NOT NULL)`
+- `CHECK (person_id IS NULL OR institution_id IS NULL OR role <> 'ACCUSED' OR designation_at_filing IS NOT NULL)` — an accused institution's officer is liable only through their role (for example a director under section 141 of the Negotiable Instruments Act), so the role is recorded; a complainant institution's representative needs authorisation to act, not a title, so a designation is optional there
 - `CHECK (role IN ('COMPLAINANT', 'ACCUSED', 'WITNESS', 'POA_HOLDER'))`
 - `UNIQUE (case_id, role, ordinal)` WHERE `is_active = true` — each active ordinal is unique per role per case; removed rows keep their old ordinal
 - Index on `(case_id, role, is_active)` — common query pattern
@@ -773,13 +773,13 @@ To add a second case type (e.g., civil suit):
 | 9 | Multiple cheques in one case | `case_evidence` | `evidence_type = CHEQUE`, `ordinal = 1/2/3` |
 | 10 | Case transitions through scrutiny | `cases.status` | DRAFT_IN_PROGRESS → PENDING_SIGN → ... → REGISTERED |
 | 11 | Document replaced during scrutiny | `case_document` | Old row: `is_active = false`, new row: `is_active = true` |
-| 12 | Institution as complainant, represented by CEO | `case_participant`, `person`, `institution` | `institution_id` set (reused when its PAN or CIN matches), `person_id` set for the CEO, `designation_at_filing` set. A CEO entered by the filer is a new `person` with `institution_id` and `designation` set; when the filer is the CEO (`self`), their own `person` is unchanged and the designation is only in the snapshot |
+| 12 | Institution as complainant, represented by CEO | `case_participant`, `person`, `institution` | `institution_id` set (reused when its PAN or CIN matches), `person_id` set for the CEO, `designation_at_filing` set if given (optional for a complainant). A CEO entered by the filer is a new `person` with `institution_id` and `designation` set; when the filer is the CEO (`self`), their own `person` is unchanged and the designation is only in the snapshot |
 
 ## 14. Validation Rules
 
 ### 14.1 Application-Layer Checks
 
-- `case_participant`: At least one of `person_id` or `institution_id` must be set; when both are, `designation_at_filing` is required. Only COMPLAINANT and ACCUSED may have an `institution_id`.
+- `case_participant`: At least one of `person_id` or `institution_id` must be set; when both are set on an ACCUSED, `designation_at_filing` is required. Only COMPLAINANT and ACCUSED may have an `institution_id`.
 - `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. `address_id` is required except for witnesses.
 - `witness.called_by_participant_id`: An active COMPLAINANT or ACCUSED on the same case.
 - `poa_mandate`: The represented participant is an active COMPLAINANT or ACCUSED on the same case, and not the holder's own person.

@@ -189,6 +189,7 @@ class Migration(migrations.Migration):
                 ),
                 name="cases_poa_mandate_not_self",
                 violation_error_message="A participant cannot hold a mandate for themselves.",
+                violation_error_code="E07018",
             ),
         ),
         migrations.AddConstraint(
@@ -198,6 +199,7 @@ class Migration(migrations.Migration):
                 fields=("poa_participant", "represented_participant"),
                 name="cases_poa_mandate_unique_active",
                 violation_error_message="This holder already has an active mandate for this party.",
+                violation_error_code="E07020",
             ),
         ),
     ]

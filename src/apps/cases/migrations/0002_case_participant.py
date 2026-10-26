@@ -306,6 +306,7 @@ class Migration(migrations.Migration):
                 ),
                 name="cases_case_participant_institution_role",
                 violation_error_message="Only a complainant or an accused may be an institution.",
+                violation_error_code="E07012",
             ),
         ),
         migrations.AddConstraint(
@@ -314,13 +315,15 @@ class Migration(migrations.Migration):
                 check=models.Q(
                     ("person__isnull", True),
                     ("institution__isnull", True),
+                    models.Q(("role", "ACCUSED"), _negated=True),
                     ("designation_at_filing__isnull", False),
                     _connector="OR",
                 ),
                 name="cases_case_participant_designation_required",
                 violation_error_message=(
-                    "Enter the designation of the person acting for the institution."
+                    "Enter the designation of the person acting for the accused institution."
                 ),
+                violation_error_code="E00002",
             ),
         ),
         migrations.AddConstraint(
