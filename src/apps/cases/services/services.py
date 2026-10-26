@@ -11,8 +11,9 @@ case's ``updated_at``, which listings show and concurrent-edit checks use.
 
 import logging
 import uuid
+from contextlib import contextmanager
 
-from django.core.cache import caches
+from django.core.cache import cache, caches
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Max
@@ -35,6 +36,9 @@ DRAFT_SESSION_TTL_SECONDS = 60 * 60 * 24
 # "default" cache, which can be disabled or cleared (see settings CACHES).
 DRAFT_CACHE_ALIAS = "state"
 DRAFT_CACHE_KEY = "cases:draft:{draft_session_id}"
+
+PREVIEW_TTL_SECONDS = 60 * 60
+PREVIEW_CACHE_KEY = "case:{case_id}:preview"
 
 # Tag on every stored case document, so they can be found in apps.files.
 DOCUMENT_TAG = "cases"
@@ -79,6 +83,19 @@ def get_case(case_id, user):
     return case
 
 
+def get_active_case_item(model, object_id, user):
+    """Return an active row of ``model`` (a document, evidence, participant …) on ``user``'s case.
+
+    Ownership is checked through the item's case, so other users' items are
+    not found.
+    """
+    found = model.objects.active().select_related("case")
+    instance = found.filter(pk=object_id, case__created_by=user).first()
+    if instance is None:
+        raise NotFound(f"{model._meta.verbose_name.capitalize()} not found.")
+    return instance
+
+
 def get_case_type(case_or_draft_id, user):
     """Return the case type of ``user``'s editable case or live draft session.
 
@@ -88,7 +105,7 @@ def get_case_type(case_or_draft_id, user):
     """
     case = _get_owned_case(case_or_draft_id, user)
     if case is not None:
-        _ensure_editable(case)
+        ensure_editable(case)
         return case.case_type
     draft = _get_owned_draft(case_or_draft_id, user)
     if draft is not None:
@@ -109,7 +126,7 @@ def get_or_create_case(case_or_draft_id, user):
     """
     case = _get_owned_case(case_or_draft_id, user)
     if case is not None:
-        _ensure_editable(case)
+        ensure_editable(case)
         return case
 
     draft = _get_owned_draft(case_or_draft_id, user)
@@ -117,7 +134,7 @@ def get_or_create_case(case_or_draft_id, user):
         # A concurrent first save may have created the case, and dropped the
         # draft, since the lookup above.
         case = get_case(case_or_draft_id, user)
-        _ensure_editable(case)
+        ensure_editable(case)
         return case
 
     case, created = Case.objects.get_or_create(
@@ -137,19 +154,89 @@ def get_or_create_case(case_or_draft_id, user):
     return case
 
 
-def _ensure_editable(case):
+def ensure_editable(case):
     """Raise ``CASE_NOT_EDITABLE`` unless the case is still a draft."""
     if case.status != CaseStatus.DRAFT_IN_PROGRESS:
         raise BusinessError(errors.CASE_NOT_EDITABLE)
 
 
-def _touch(case, user):
+def lock_case(case):
+    """Return ``case`` re-read with its row locked until the transaction ends.
+
+    Serialises the writes on one case, so ordinals are assigned and statuses
+    changed one write at a time.
+    """
+    return Case.objects.select_for_update().get(pk=case.pk)
+
+
+@contextmanager
+def editing(case, user):
+    """Run a write on ``case`` in one transaction, then touch the case.
+
+    The case row is locked and its status checked after the lock, so a
+    concurrent submission cannot slip in between the check and the write.
+    Yields the locked case.
+    """
+    with transaction.atomic():
+        case = lock_case(case)
+        ensure_editable(case)
+        yield case
+        touch(case, user)
+
+
+@contextmanager
+def editing_or_creating(case_or_draft_id, user):
+    """Like ``editing``, creating the case from ``user``'s draft session on first save."""
+    with transaction.atomic():
+        case = lock_case(get_or_create_case(case_or_draft_id, user))
+        ensure_editable(case)
+        yield case
+        touch(case, user)
+
+
+def next_ordinal(queryset):
+    """Return one past the highest ``ordinal`` in ``queryset``, or 1 when it is empty."""
+    last = queryset.aggregate(last=Max("ordinal"))["last"]
+    return (last or 0) + 1
+
+
+def touch(case, user):
     """Record that ``user`` just changed something on ``case``.
 
     A plain ``update()``: only the timestamps move, so it is not a version
-    worth keeping in the case's history.
+    worth keeping in the case's history. Every write passes through here, so
+    this is also where the cached preview is dropped.
     """
     Case.objects.filter(pk=case.pk).update(updated_at=timezone.now(), updated_by=user)
+    clear_preview_cache(case.pk)
+
+
+def get_preview_cache_key(case_id):
+    """Return the cache key of the case's assembled filing (spec 0021 §6.2)."""
+    return PREVIEW_CACHE_KEY.format(case_id=case_id)
+
+
+def clear_preview_cache(case_id):
+    """Drop the cached preview now, and again once the current transaction commits.
+
+    The second delete is the one that matters: a preview read before the
+    commit sees the old rows and would cache them again.
+    """
+    key = get_preview_cache_key(case_id)
+    cache.delete(key)
+    transaction.on_commit(lambda: cache.delete(key))
+
+
+def deactivate(row, user, **ended):
+    """Soft-delete ``row`` as ``user``, also setting ``ended`` (e.g. ``revoked_at=now``).
+
+    One save per row, not ``update()``, so each removal is kept in history.
+    """
+    row.is_active = False
+    row.updated_by = user
+    for field, value in ended.items():
+        setattr(row, field, value)
+    row.save(update_fields=["is_active", *ended, "updated_by", "updated_at"])
 
 
 def _get_owned_case(case_id, user):
@@ -206,7 +293,7 @@ def add_document(case_or_draft_id, user, upload, document_type):
                 created_by=user,
                 updated_by=user,
             )
-            _touch(case, user)
+            touch(case, user)
             return document
     except Exception:
         documents.discard_documents([file_id])
@@ -220,17 +307,15 @@ def remove_document(case_document_id, user):
     document that is no longer part of the case.
     """
     with transaction.atomic():
-        document = _get_active_case_item(CaseDocument, case_document_id, user)
-        _ensure_editable(document.case)
-        document.is_active = False
-        document.updated_by = user
-        document.save(update_fields=["is_active", "updated_by", "updated_at"])
+        document = get_active_case_item(CaseDocument, case_document_id, user)
+        ensure_editable(document.case)
+        deactivate(document, user)
         # One save per row, not update(), so each unlink is kept in history.
         for evidence in document.evidence.active():
             evidence.case_document = None
             evidence.updated_by = user
             evidence.save(update_fields=["case_document", "updated_by", "updated_at"])
-        _touch(document.case, user)
+        touch(document.case, user)
 
 
 def _store_file(upload, user, case_type):
@@ -278,35 +363,28 @@ def _require_case_document(case, case_document_id):
 def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_document_id=None):
     """Add evidence with the next ordinal for its type, creating the case on first save."""
     validate_evidence(get_case_type(case_or_draft_id, user), evidence_type, evidence_info)
-    with transaction.atomic():
-        case = get_or_create_case(case_or_draft_id, user)
-        # Serialises ordinal assignment for the case.
-        Case.objects.select_for_update().filter(pk=case.pk).first()
-
+    # The case lock serialises ordinal assignment.
+    with editing_or_creating(case_or_draft_id, user) as case:
         if case_document_id is not None:
             _require_case_document(case, case_document_id)
 
-        last = (
-            CaseEvidence.objects.active()
-            .filter(case=case, evidence_type=evidence_type)
-            .aggregate(last=Max("ordinal"))["last"]
-        )
         evidence = CaseEvidence.objects.create(
             case=case,
             case_document_id=case_document_id,
             evidence_type=evidence_type,
-            ordinal=(last or 0) + 1,
+            ordinal=next_ordinal(
+                CaseEvidence.objects.active().filter(case=case, evidence_type=evidence_type)
+            ),
             evidence_info=evidence_info,
             created_by=user,
             updated_by=user,
         )
-        _touch(case, user)
-        return evidence
+    return evidence
 
 
 def get_evidence(case_evidence_id, user):
     """Return active evidence on one of ``user``'s cases, or raise ``NotFound``."""
-    return _get_active_case_item(CaseEvidence, case_evidence_id, user)
+    return get_active_case_item(CaseEvidence, case_evidence_id, user)
 
 
 def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_UNSET):
@@ -316,7 +394,7 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
     current link. This is how a scan uploaded after the evidence was entered is
     linked to it (spec 0020 §11.4).
     """
-    _ensure_editable(evidence.case)
+    ensure_editable(evidence.case)
     fields = ["updated_by", "updated_at"]
     if evidence_info is not _UNSET:
         validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
@@ -330,31 +408,16 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
     evidence.updated_by = user
     with transaction.atomic():
         evidence.save(update_fields=fields)
-        _touch(evidence.case, user)
+        touch(evidence.case, user)
     return evidence
 
 
 def remove_evidence(evidence, user):
     """Soft-delete evidence."""
-    _ensure_editable(evidence.case)
-    evidence.is_active = False
-    evidence.updated_by = user
+    ensure_editable(evidence.case)
     with transaction.atomic():
-        evidence.save(update_fields=["is_active", "updated_by", "updated_at"])
-        _touch(evidence.case, user)
-
-
-def _get_active_case_item(model, object_id, user):
-    """Return an active document or evidence row on one of ``user``'s cases.
-
-    Ownership is checked through the item's case, so other users' items are
-    not found.
-    """
-    found = model.objects.active().select_related("case")
-    instance = found.filter(pk=object_id, case__created_by=user).first()
-    if instance is None:
-        raise NotFound(f"{model._meta.verbose_name.capitalize()} not found.")
-    return instance
+        deactivate(evidence, user)
+        touch(evidence.case, user)
 
 
 # Case details (spec 0021 §5.3)
@@ -362,7 +425,11 @@ def _get_active_case_item(model, object_id, user):
 
 def get_details(case_id, user):
     """Return every details section of ``user``'s case."""
-    case = get_case(case_id, user)
+    return get_detail_sections(get_case(case_id, user))
+
+
+def get_detail_sections(case):
+    """Return every details section of ``case``, one key per section."""
     config = get_config(case.case_type)
     detail = config.get_detail_model().objects.filter(case=case).first()
     # A missing row reads as one not yet filled in, rather than a 500.
@@ -381,7 +448,7 @@ def save_details_section(case_or_draft_id, user, section, data):
         setattr(detail, section, data)
         detail.updated_by = user
         detail.save(update_fields=[section, "updated_by", "updated_at"])
-        _touch(case, user)
+        touch(case, user)
         return case
 
 

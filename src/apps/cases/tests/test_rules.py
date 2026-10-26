@@ -11,13 +11,16 @@ from apps.cases.models import (
     Case,
     CaseDocument,
     CaseEvidence,
+    CaseParticipant,
     CaseStatus,
     CaseType,
     ChequeBounceCase,
+    ParticipantRole,
 )
 from apps.files.models import File
+from apps.parties.tests.factories import make_address, make_person
 
-from .conftest import CHEQUE_INFO, error_codes, error_roots
+from .conftest import CHEQUE_INFO, error_codes
 
 pytestmark = pytest.mark.django_db
 
@@ -59,7 +62,7 @@ class TestUploadsAreRealFiles:
         response = upload(client, draft, SimpleUploadedFile(name, content, content_type))
 
         assert response.status_code == 400
-        assert error_roots(response) == {"file"}
+        assert error_codes(response) == {"file": ["E00001"]}
         assert Case.objects.count() == File.objects.count() == 0
 
     def test_oversized_upload_is_rejected(self, client, draft, pdf, settings):
@@ -68,7 +71,7 @@ class TestUploadsAreRealFiles:
         response = upload(client, draft, pdf())
 
         assert response.status_code == 400
-        assert error_roots(response) == {"file"}
+        assert error_codes(response) == {"file": ["E00001"]}
 
     def test_a_real_pdf_is_accepted(self, client, draft, pdf):
         assert upload(client, draft, pdf()).status_code == 201
@@ -174,6 +177,24 @@ class TestModelRulesMatchTheApi:
 
     def test_empty_sections_are_allowed(self, case):
         ChequeBounceCase(case=case).full_clean()
+
+    def test_a_complainant_cannot_also_be_accused(self, case):
+        person = make_person()
+
+        def participant(role):
+            return CaseParticipant(
+                case=case,
+                person=person,
+                role=role,
+                ordinal=1,
+                name_at_filing=person.name,
+                address=make_address(),
+            )
+
+        participant(ParticipantRole.COMPLAINANT).save()
+
+        with pytest.raises(ValidationError, match="both a complainant and an accused"):
+            participant(ParticipantRole.ACCUSED).full_clean()
 
     def test_details_without_a_case_are_a_field_error_not_a_crash(self):
         with pytest.raises(ValidationError) as exc:

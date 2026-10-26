@@ -31,6 +31,18 @@ ENDPOINTS = [
     ("post", "case-evidence-list", [ANY_ID]),
     ("patch", "case-evidence-detail", [ANY_ID]),
     ("delete", "case-evidence-detail", [ANY_ID]),
+    ("post", "case-complainant-list", [ANY_ID]),
+    ("post", "case-accused-list", [ANY_ID]),
+    ("post", "case-witness-list", [ANY_ID]),
+    ("get", "case-participant-list", [ANY_ID]),
+    ("patch", "case-participant-detail", [ANY_ID]),
+    ("delete", "case-participant-detail", [ANY_ID]),
+    ("get", "case-detail", [ANY_ID]),
+    ("post", "case-validate", [ANY_ID]),
+    ("post", "case-submit-for-signing", [ANY_ID]),
+    ("post", "case-submit-for-payment", [ANY_ID]),
+    ("post", "case-submit-for-scrutiny", [ANY_ID]),
+    ("post", "case-participant-sign", [ANY_ID, ANY_ID]),
 ]
 
 
@@ -118,7 +130,15 @@ class TestErrorShape:
         )
 
         assert response.status_code == 400
-        assert response.json()["errors"] == [
-            {"code": "E00012", "message": "Expected a JSON object.", "field": "data"}
-        ]
+        assert error_codes(response) == {"data": ["E00012"]}
         assert Case.objects.count() == 0
+
+    def test_business_errors_carry_the_case_code(self, client, draft):
+        response = client.put(
+            reverse("case-details-section", args=[draft, "not_a_section"]),
+            {"final_relief": "Pay the cheque amount"},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"section": ["E07002"]}

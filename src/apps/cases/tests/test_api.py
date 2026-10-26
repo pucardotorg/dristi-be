@@ -32,12 +32,16 @@ def upload(client, case_id, pdf, document_type="BOUNCED_CHEQUE"):
     )
 
 
-def add_cheque(client, case_id, **extra):
+def add_evidence(client, case_id, evidence_type, evidence_info, **extra):
     return client.post(
         reverse("case-evidence-list", args=[case_id]),
-        {"evidence_type": "CHEQUE", "evidence_info": CHEQUE_INFO, **extra},
+        {"evidence_type": evidence_type, "evidence_info": evidence_info, **extra},
         format="json",
     )
+
+
+def add_cheque(client, case_id, **extra):
+    return add_evidence(client, case_id, "CHEQUE", CHEQUE_INFO, **extra)
 
 
 class TestCaseTypes:
@@ -104,8 +108,10 @@ class TestDraftsAndListing:
 
         assert Case.objects.get(pk=draft).court is None
 
-    @pytest.mark.parametrize("court_id", [str(uuid.uuid4()), "not-a-uuid"])
-    def test_unknown_court_is_400(self, client, court_id):
+    @pytest.mark.parametrize(
+        ("court_id", "code"), [(str(uuid.uuid4()), "E00011"), ("not-a-uuid", "E00001")]
+    )
+    def test_unknown_court_is_400(self, client, court_id, code):
         response = client.post(
             reverse("case-list"),
             {"case_type": "CHEQUE_BOUNCE", "court_id": court_id},
@@ -113,7 +119,7 @@ class TestDraftsAndListing:
         )
 
         assert response.status_code == 400
-        assert error_roots(response) == {"court_id"}
+        assert error_codes(response) == {"court_id": [code]}
 
     def test_list_shows_only_the_callers_cases(self, client, user, other_user, draft):
         add_cheque(client, draft)
@@ -241,9 +247,7 @@ class TestDocuments:
         response = upload(client, draft, pdf, document_type="AFFIDAVIT")
 
         assert response.status_code == 400
-        (error,) = response.json()["errors"]
-        assert (error["code"], error["field"]) == ("E07002", "document_type")
-        assert "not accepted for CHEQUE_BOUNCE" in error["message"]
+        assert error_codes(response) == {"document_type": ["E07002"]}
         assert Case.objects.count() == File.objects.count() == 0
 
     def test_unsupported_file_type_is_400(self, client, draft, pdf):
@@ -254,7 +258,7 @@ class TestDocuments:
         )
 
         assert response.status_code == 400
-        assert error_roots(response) == {"file"}
+        assert error_codes(response) == {"file": ["E00001"]}
 
     def test_unknown_id_is_404_and_stores_no_file(self, client, pdf):
         assert upload(client, uuid.uuid4(), pdf).status_code == 404

@@ -58,9 +58,9 @@ class CaseTypeConfig:
     """What one case type accepts.
 
     ``document_types`` are the types uploadable through the case documents
-    endpoint. VAKALATNAMA and POA_DOCUMENT are accepted there until the
-    advocate and POA holder endpoints exist (spec 0021 §3.4); they are then
-    linked to the case only, not to the advocate or POA holder they belong to.
+    endpoint. VAKALATNAMA and POA_DOCUMENT are uploaded there too (spec 0021
+    §3.4): they are linked to the case only, not to the representation or
+    mandate they belong to.
     """
 
     detail_model: str
@@ -68,6 +68,9 @@ class CaseTypeConfig:
     section_schemas: dict[str, dict]
     document_types: tuple[str, ...]
     evidence_schemas: dict[str, dict] = field(default_factory=dict)
+    # The completeness check (spec 0021 §6.3) requires at least one of each.
+    required_document_types: tuple[str, ...] = ()
+    required_evidence_types: tuple[str, ...] = ()
 
     @property
     def sections(self):
@@ -167,6 +170,17 @@ CASE_TYPES = {
             DocumentType.VAKALATNAMA,
             DocumentType.POA_DOCUMENT,
             DocumentType.OTHER_SUPPORTING_DOCUMENT,
+        ),
+        required_document_types=(
+            DocumentType.BOUNCED_CHEQUE,
+            DocumentType.RETURN_MEMO,
+            DocumentType.LEGAL_DEMAND_NOTICE,
+            DocumentType.PROOF_OF_DISPATCH,
+        ),
+        required_evidence_types=(
+            EvidenceType.CHEQUE,
+            EvidenceType.RETURN_MEMO,
+            EvidenceType.LEGAL_DEMAND_NOTICE,
         ),
         # One RETURN_MEMO and one LEGAL_DEMAND_NOTICE per cheque, matched to it
         # by ordinal: cheque #1, return memo #1, demand notice #1.
@@ -292,6 +306,7 @@ def get_description(case_type):
         "document_types": [
             {"code": code, "label": DocumentType(code).label} for code in config.document_types
         ],
+        "required_document_types": list(config.required_document_types),
         "evidence_types": [
             {"code": code, "label": EvidenceType(code).label, "schema": schema}
             for code, schema in config.evidence_schemas.items()
