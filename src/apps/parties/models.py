@@ -31,6 +31,17 @@ contact_number_validator = RegexValidator(
     " and starting with +.",
 )
 
+# Permanent Account Number: five letters, four digits, a letter (AAACA1234A).
+# Every company, firm, trust and society has one.
+PAN_REGEX = r"^[A-Z]{5}[0-9]{4}[A-Z]$"
+pan_validator = RegexValidator(PAN_REGEX, "Enter a valid PAN, e.g. AAACA1234A.")
+
+# Corporate Identification Number, companies only (U72200KA2010PTC052651):
+# listing status, industry code, state, year of incorporation, ownership type
+# and registration number.
+CIN_REGEX = r"^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$"
+cin_validator = RegexValidator(CIN_REGEX, "Enter a valid CIN, e.g. U72200KA2010PTC052651.")
+
 
 def today_in_india():
     """Return today's date in India.
@@ -70,6 +81,13 @@ def _strip(value):
     A whitespace-only value becomes the empty string, which "required" rejects.
     """
     return value.strip() if isinstance(value, str) else value
+
+
+def normalize_identifier(value):
+    """Return a registration number uppercase with all whitespace removed, or ``None`` if blank."""
+    if not isinstance(value, str):
+        return value
+    return "".join(value.split()).upper() or None
 
 
 class Gender(models.TextChoices):
@@ -137,6 +155,14 @@ class Institution(BaseModel, BaseAuditableModel):
         max_length=20, null=True, blank=True, validators=[contact_number_validator]
     )
     email_address = models.EmailField(max_length=256, null=True, blank=True)
+    # How an institution is recognised again at a later filing (spec 0020 §3.4).
+    # Unique only when set: many institutions have no CIN, and NULLs never clash.
+    pan = models.CharField(
+        "PAN", max_length=10, null=True, blank=True, unique=True, validators=[pan_validator]
+    )
+    cin = models.CharField(
+        "CIN", max_length=21, null=True, blank=True, unique=True, validators=[cin_validator]
+    )
     # Registered office: where notices to the institution are served.
     address = models.ForeignKey(
         "address.Address",
@@ -159,6 +185,14 @@ class Institution(BaseModel, BaseAuditableModel):
                 | Q(contact_number__regex=CONTACT_NUMBER_REGEX),
                 name="parties_institution_contact_number_valid",
             ),
+            models.CheckConstraint(
+                check=Q(pan__isnull=True) | Q(pan__regex=PAN_REGEX),
+                name="parties_institution_pan_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(cin__isnull=True) | Q(cin__regex=CIN_REGEX),
+                name="parties_institution_cin_valid",
+            ),
         ]
 
     def __str__(self):
@@ -169,10 +203,14 @@ class Institution(BaseModel, BaseAuditableModel):
         """Validate values as they will be stored.
 
         The name is trimmed, so a whitespace-only name is rejected as missing,
-        and a blank contact number is stored as no number.
+        and a blank contact number, PAN or CIN is stored as none. PAN and CIN
+        are stored uppercase without spaces, so "aaaca 1234 a" matches
+        "AAACA1234A" when an institution is looked up again.
         """
         self.entity_name = _strip(self.entity_name)
         self.contact_number = _blank_to_none(self.contact_number)
+        self.pan = normalize_identifier(self.pan)
+        self.cin = normalize_identifier(self.cin)
         super().clean_fields(exclude=exclude)
 
     def save(self, *args, **kwargs):
@@ -279,7 +317,8 @@ class Person(BaseModel, BaseAuditableModel):
         """Validate values as they will be stored.
 
         The name is trimmed, so a whitespace-only name is rejected as missing;
-        a blank phone number or relative's name is stored as none.
+        a blank phone number or relative's name is stored as none; and a stated
+        age is dropped once the date of birth is known (spec 0020 §2.4).
         """
         self.name = _strip(self.name)
         # Not given (None or blank) means no disability.
