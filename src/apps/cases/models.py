@@ -130,6 +130,12 @@ PARTY_IN_PERSON_MESSAGE = "A party appearing in person cannot be given an advoca
 PARTY_HAS_ADVOCATES_MESSAGE = "Remove this party's advocates first."
 ADVOCATE_FOR_SELF_MESSAGE = "An advocate cannot represent themselves."
 ADVOCATE_BOTH_SIDES_MESSAGE = "An advocate cannot represent both a complainant and an accused."
+# Reached only through the admin: the API sets these itself.
+PERSON_OR_INSTITUTION_MESSAGE = "Choose a person, an institution, or both."
+ROLE_VALID_MESSAGE = "Choose a valid role."
+DUPLICATE_ORDINAL_MESSAGE = (
+    "Another active participant already has this role and number on this case."
+)
 
 # The order each is listed in, by the API and the preview.
 PARTICIPANT_ORDERING = ("role", "ordinal")
@@ -221,25 +227,30 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             models.CheckConstraint(
                 check=Q(person__isnull=False) | Q(institution__isnull=False),
                 name="cases_case_participant_person_or_institution",
+                violation_error_message=PERSON_OR_INSTITUTION_MESSAGE,
             ),
             models.CheckConstraint(
                 check=Q(institution__isnull=True) | Q(role__in=INSTITUTION_ROLES),
                 name="cases_case_participant_institution_role",
+                violation_error_message=INSTITUTION_ROLE_MESSAGE,
             ),
             models.CheckConstraint(
                 check=Q(person__isnull=True)
                 | Q(institution__isnull=True)
                 | Q(designation_at_filing__isnull=False),
                 name="cases_case_participant_designation_required",
+                violation_error_message=DESIGNATION_REQUIRED_MESSAGE,
             ),
             models.CheckConstraint(
                 check=Q(role__in=ParticipantRole.values),
                 name="cases_case_participant_role_valid",
+                violation_error_message=ROLE_VALID_MESSAGE,
             ),
             models.UniqueConstraint(
                 fields=["case", "role", "ordinal"],
                 condition=Q(is_active=True),
                 name="cases_case_participant_unique_active_ordinal",
+                violation_error_message=DUPLICATE_ORDINAL_MESSAGE,
             ),
         ]
         indexes = [models.Index(fields=["case", "role", "is_active"])]

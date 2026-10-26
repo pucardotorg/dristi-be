@@ -293,6 +293,7 @@ class Migration(migrations.Migration):
                     ("person__isnull", False), ("institution__isnull", False), _connector="OR"
                 ),
                 name="cases_case_participant_person_or_institution",
+                violation_error_message="Choose a person, an institution, or both.",
             ),
         ),
         migrations.AddConstraint(
@@ -304,6 +305,7 @@ class Migration(migrations.Migration):
                     _connector="OR",
                 ),
                 name="cases_case_participant_institution_role",
+                violation_error_message="Only a complainant or an accused may be an institution.",
             ),
         ),
         migrations.AddConstraint(
@@ -316,6 +318,9 @@ class Migration(migrations.Migration):
                     _connector="OR",
                 ),
                 name="cases_case_participant_designation_required",
+                violation_error_message=(
+                    "Enter the designation of the person acting for the institution."
+                ),
             ),
         ),
         migrations.AddConstraint(
@@ -323,6 +328,7 @@ class Migration(migrations.Migration):
             constraint=models.CheckConstraint(
                 check=models.Q(("role__in", ["COMPLAINANT", "ACCUSED", "WITNESS", "POA_HOLDER"])),
                 name="cases_case_participant_role_valid",
+                violation_error_message="Choose a valid role.",
             ),
         ),
         migrations.AddConstraint(
@@ -331,6 +337,9 @@ class Migration(migrations.Migration):
                 condition=models.Q(("is_active", True)),
                 fields=("case", "role", "ordinal"),
                 name="cases_case_participant_unique_active_ordinal",
+                violation_error_message=(
+                    "Another active participant already has this role and number on this case."
+                ),
             ),
         ),
     ]
