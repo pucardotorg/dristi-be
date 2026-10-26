@@ -118,7 +118,21 @@ class PaymentAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
     inlines = (PaymentDemandItemInline,)
     actions = ("recheck_with_provider", "clear_reconciliation", "confirm_without_provider")
 
-    @admin.action(description="Re-check status with the payment's provider")
+    # Each operator action has its own permission (``Payment.Meta.permissions``).
+    # ``permissions=["change"]`` cannot be used: change is always refused here.
+    def has_recheck_status_permission(self, request):
+        return request.user.has_perm("payments.recheck_payment_status")
+
+    def has_resolve_reconciliation_permission(self, request):
+        return request.user.has_perm("payments.resolve_payment_reconciliation")
+
+    def has_confirm_manually_permission(self, request):
+        return request.user.has_perm("payments.confirm_payment_manually")
+
+    @admin.action(
+        description="Re-check status with the payment's provider",
+        permissions=["recheck_status"],
+    )
     def recheck_with_provider(self, request, queryset):
         """Fetch and apply the provider's current verdict."""
 
@@ -131,7 +145,10 @@ class PaymentAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
                 )
         self.message_user(request, "Re-checked the selected payments with their providers.")
 
-    @admin.action(description="Mark reconciliation as resolved (credits nothing)")
+    @admin.action(
+        description="Mark reconciliation as resolved (credits nothing)",
+        permissions=["resolve_reconciliation"],
+    )
     def clear_reconciliation(self, request, queryset):
         """Clear the flag once an operator has dealt with the money outside the system."""
 
@@ -139,7 +156,10 @@ class PaymentAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
             PaymentService.clear_reconciliation(payment, actor=request.user, note="admin action")
         self.message_user(request, "Cleared the reconciliation flag on the selected payments.")
 
-    @admin.action(description="Confirm payment collected outside a provider")
+    @admin.action(
+        description="Confirm payment collected outside a provider",
+        permissions=["confirm_manually"],
+    )
     def confirm_without_provider(self, request, queryset):
         """Credit an INITIATED payment no provider was engaged for (spec 0017 #9.3)."""
 
