@@ -242,6 +242,7 @@ example `E01001`.
 | `04` | `apps.pdf` | PDF generation and jobs (spec 0016) |
 | `05` | `apps.address` | address (spec 0020) |
 | `06` | `apps.payments` | demands and payments (spec 0017); reserved, not yet implemented |
+| `07` | `apps.cases` | case filing (spec 0021) |
 
 Rules:
 

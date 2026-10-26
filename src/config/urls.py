@@ -21,6 +21,8 @@ urlpatterns = [
     path("api/v1/", include("apps.organizations.urls")),
     path("api/v1/", include("apps.dristi_requests.urls")),
     path("api/v1/", include("apps.pdf.urls")),
+    path("api/v1/", include("apps.address.urls")),
+    path("api/v1/", include("apps.cases.urls")),
     path("api/v1/", include("apps.esign.urls")),
     path("api/v1/", include("apps.cms.urls")),
     path(

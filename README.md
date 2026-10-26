@@ -151,6 +151,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CACHE_REDIS_URL` | Redis connection for Django cache | `redis://redis:6379/1` |
 | `CACHE_ENABLED` | Enable or disable Django's cache backend. When disabled, Django uses the dummy cache backend. | `True` |
 | `CACHE_KEY_PREFIX` | Prefix added to Django cache keys to namespace cached data. | `dristi-dev` |
+| `STATE_CACHE_REDIS_URL` | Redis database for state that exists nowhere else, such as case draft sessions. Not affected by `CACHE_ENABLED`; use a database separate from `CACHE_REDIS_URL`, on a server whose `maxmemory-policy` does not evict keys. | `redis://redis:6379/3` |
 | `CACHALOT_ENABLED` | Enable or disable django-cachalot automatic ORM query caching. Defaults to `CACHE_ENABLED`. | `True` |
 | `CACHALOT_TIMEOUT` | Default lifetime of django-cachalot cached ORM query results, in seconds. | `120` |
 | `RULES_EVALUATION_TIMEOUT_SECONDS` | Per-evaluation time limit for business rules, in seconds. A GoRules evaluation that times out still finishes in the background. | `2` |
