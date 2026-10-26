@@ -82,3 +82,40 @@ def test_recheck_reports_an_unreachable_provider(admin_request, raise_demand, us
     payment_admin().recheck_with_provider(admin_request, Payment.objects.all())
     messages = [str(m) for m in admin_request._messages]
     assert any("DOWN" in m for m in messages)
+
+
+def staff_with(make_user, *codenames):
+    """A staff user holding only the given payments permissions."""
+    from django.contrib.auth.models import Permission
+
+    staff = make_user("Clerk", is_staff=True)
+    staff.user_permissions.set(
+        Permission.objects.filter(content_type__app_label="payments", codename__in=codenames)
+    )
+    return type(staff).objects.get(pk=staff.pk)  # drop the cached permissions
+
+
+def actions_for(user):
+    request = RequestFactory().get("/admin/payments/payment/")
+    request.user = user
+    return set(payment_admin().get_actions(request))
+
+
+def test_view_only_staff_cannot_move_money(make_user):
+    """Actions without permissions= are offered to anyone who can view the list."""
+    viewer = staff_with(make_user, "view_payment")
+    assert actions_for(viewer).isdisjoint(
+        {"confirm_without_provider", "clear_reconciliation", "recheck_with_provider"}
+    )
+
+
+def test_each_action_needs_its_own_permission(make_user):
+    operator = staff_with(make_user, "view_payment", "confirm_payment_manually")
+    assert "confirm_without_provider" in actions_for(operator)
+    assert "clear_reconciliation" not in actions_for(operator)
+
+    reconciler = staff_with(
+        make_user, "view_payment", "resolve_payment_reconciliation", "recheck_payment_status"
+    )
+    assert {"clear_reconciliation", "recheck_with_provider"} <= actions_for(reconciler)
+    assert "confirm_without_provider" not in actions_for(reconciler)

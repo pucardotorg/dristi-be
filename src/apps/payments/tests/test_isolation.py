@@ -41,10 +41,17 @@ class DependencyDirectionTests(SimpleTestCase):
         self.assertEqual(addon_imports("from apps.payments.providers import registry"), [])
 
     def test_no_module_imports_an_addon(self):
+        # Filter on the package-relative path: a checkout under any directory
+        # named "tests" would otherwise skip every file and pass vacuously.
+        modules = [
+            path
+            for path in PACKAGE_ROOT.rglob("*.py")
+            if "tests" not in path.relative_to(PACKAGE_ROOT).parts
+        ]
+        self.assertIn(PACKAGE_ROOT / "services" / "payments.py", modules)
         offenders = [
             f"{path.relative_to(PACKAGE_ROOT)}:{offender}"
-            for path in PACKAGE_ROOT.rglob("*.py")
-            if "tests" not in path.parts
+            for path in modules
             for offender in addon_imports(path.read_text())
         ]
         self.assertEqual(offenders, [])

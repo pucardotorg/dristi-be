@@ -291,6 +291,13 @@ class Payment(SnapshotMixin, BaseModel, BaseAuditableModel):
             ),
             models.Index(fields=["status", "last_polled_at"], name="payments_payment_poll"),
         ]
+        # One permission per operator action: viewing payments must never be
+        # enough to credit or resolve one (the admin is otherwise read-only).
+        permissions = [
+            ("confirm_payment_manually", "Can confirm a payment collected outside a provider"),
+            ("resolve_payment_reconciliation", "Can mark a payment's reconciliation resolved"),
+            ("recheck_payment_status", "Can re-check a payment's status with its provider"),
+        ]
 
     def __str__(self):
         return f"{self.payment_number} ({self.status})"
