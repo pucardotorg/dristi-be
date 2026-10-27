@@ -152,14 +152,16 @@ GET /api/v1/locations/code/PIN_560001/ancestors/?is_active=true
 The client takes `district` and `state` from the entries whose
 `location_type` is `district` and `state`. `is_active=true` makes the call
 `404` unless the pincode and every location above it are active, so
-deactivating a wrong pincode or district stops it pre-filling. A `404` means
+deactivating a wrong pincode or district stops it pre-filling. On both
+`ancestors` routes, `is_active=false` finds only an inactive location, and any
+other value is a `400`, so a typo never skips the check. A `404` means
 "no pre-fill": the user enters district and state by hand.
 
 | Field | Value |
 |-------|-------|
 | `code` | `PIN_<pincode>`, e.g. `PIN_560001` |
 | `name`, `short_name` | The pincode, e.g. `560001` |
-| `parent` | The district; `clean()` rejects any other parent |
+| `parent` | The district. `clean()` rejects any other parent, any location placed under a pincode, and a type change on a district that holds pincodes |
 
 The admin picks a location's parent with a search box, and an organization's
 jurisdictions never list pincodes, since the table holds tens of thousands of

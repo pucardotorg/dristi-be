@@ -66,12 +66,31 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
         self._validate_parent()
 
     def _validate_parent(self):
-        """Reject self-parenting, circular parent chains and a pincode not under a district."""
+        """Reject self-parenting, circular chains and anything that breaks a pincode's chain.
+
+        Address forms read a pincode's district and state from its ancestors,
+        so a pincode must sit directly under a district, must stay a leaf, and
+        a district holding pincodes must stay a district.
+        """
         if self.location_type == self.LocationType.PINCODE and (
             self.parent_id is None or self.parent.location_type != self.LocationType.DISTRICT
         ):
-            # Address forms read a pincode's district and state from its ancestors.
             raise ValidationError({"parent": "A pincode must be under a district."})
+        if self.parent_id is not None and self.parent.location_type == self.LocationType.PINCODE:
+            raise ValidationError({"parent": "A pincode cannot have locations under it."})
+        if self.pk is not None and not self._state.adding:
+            children = Location.objects.filter(parent_id=self.pk)
+            if self.location_type == self.LocationType.PINCODE and children.exists():
+                raise ValidationError(
+                    {"location_type": "A location with locations under it cannot be a pincode."}
+                )
+            if (
+                self.location_type != self.LocationType.DISTRICT
+                and children.filter(location_type=self.LocationType.PINCODE).exists()
+            ):
+                raise ValidationError(
+                    {"location_type": "A location with pincodes under it must stay a district."}
+                )
         if self.parent_id is None:
             return
         if self.parent_id == self.pk:

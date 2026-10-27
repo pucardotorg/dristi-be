@@ -127,6 +127,69 @@ class TestParentValidation:
 
         assert "parent" in exc_info.value.message_dict
 
+    def make_pincode(self, district):
+        """Create pincode 800001 under ``district``."""
+        return make_location(
+            code="PIN_800001",
+            name="800001",
+            location_type=Location.LocationType.PINCODE,
+            parent=district,
+        )
+
+    def test_nothing_can_be_put_under_a_pincode(self):
+        _india, _bihar, patna = make_hierarchy()
+        pincode = self.make_pincode(patna)
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_location(
+                code="NALANDA",
+                name="Nalanda",
+                location_type=Location.LocationType.DISTRICT,
+                parent=pincode,
+            )
+
+        assert "A pincode cannot have locations under it." in exc_info.value.message_dict["parent"]
+
+    def test_district_holding_pincodes_cannot_change_type(self):
+        _india, _bihar, patna = make_hierarchy()
+        self.make_pincode(patna)
+        patna.location_type = Location.LocationType.STATE
+
+        with pytest.raises(ValidationError) as exc_info:
+            patna.save()
+
+        assert "location_type" in exc_info.value.message_dict
+
+    def test_location_with_children_cannot_become_a_pincode(self):
+        # A location under a district, so only the "has children" rule applies.
+        _india, _bihar, patna = make_hierarchy()
+        area = make_location(
+            code="AREA", name="Area", location_type=Location.LocationType.DISTRICT, parent=patna
+        )
+        make_location(
+            code="SUB_AREA",
+            name="Sub area",
+            location_type=Location.LocationType.DISTRICT,
+            parent=area,
+        )
+        area.location_type = Location.LocationType.PINCODE
+
+        with pytest.raises(ValidationError) as exc_info:
+            area.full_clean()
+
+        assert exc_info.value.message_dict["location_type"] == [
+            "A location with locations under it cannot be a pincode."
+        ]
+
+    def test_district_without_pincodes_can_still_change_type(self):
+        _india, bihar, patna = make_hierarchy()
+        patna.location_type = Location.LocationType.STATE
+        patna.parent = None
+
+        patna.save()
+
+        assert Location.objects.get(pk=patna.pk).location_type == Location.LocationType.STATE
+
     def test_pincode_under_a_district_is_valid(self):
         _india, _bihar, patna = make_hierarchy()
 
