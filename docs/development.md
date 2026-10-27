@@ -75,11 +75,29 @@ cd src
 pytest
 ```
 
-To run with coverage:
+### Test coverage
+
+Coverage settings live in the root `pyproject.toml`: `src/` is measured,
+`tests/`, `migrations/` and `settings/` are left out, and the run fails if total
+coverage is below **85%**. CI runs the same command and uploads the result to
+Codecov, which reports on each pull request.
+
+Without Docker, from `src/`:
 
 ```bash
-pytest --cov --cov-report=html
+pytest --cov=. --cov-config=../pyproject.toml --cov-report=term-missing
 ```
+
+With Docker: the container only mounts `src/`, so copy `pyproject.toml` in
+first:
+
+```bash
+docker compose -f docker/docker-compose.yml cp pyproject.toml web:/tmp/pyproject.toml
+docker compose -f docker/docker-compose.yml exec web pytest --cov=. --cov-config=/tmp/pyproject.toml --cov-report=term-missing
+```
+
+`term-missing` lists the uncovered line numbers of each file; use
+`--cov-report=html` instead for a browsable report in `src/htmlcov/`.
 
 ## File uploads and media storage
 

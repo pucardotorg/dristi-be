@@ -147,6 +147,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CACHE_REDIS_URL` | Redis connection for Django cache | `redis://redis:6379/1` |
 | `CACHE_ENABLED` | Enable or disable Django's cache backend. When disabled, Django uses the dummy cache backend. | `True` |
 | `CACHE_KEY_PREFIX` | Prefix added to Django cache keys to namespace cached data. | `dristi-dev` |
+| `STATE_CACHE_REDIS_URL` | Redis database for state that exists nowhere else, such as case draft sessions. Not affected by `CACHE_ENABLED`; use a database separate from `CACHE_REDIS_URL`, on a server whose `maxmemory-policy` does not evict keys. | `redis://redis:6379/3` |
 | `CACHALOT_ENABLED` | Enable or disable django-cachalot automatic ORM query caching. Defaults to `CACHE_ENABLED`. | `True` |
 | `CACHALOT_TIMEOUT` | Default lifetime of django-cachalot cached ORM query results, in seconds. | `120` |
 | `RULES_EVALUATION_TIMEOUT_SECONDS` | Per-evaluation time limit for business rules, in seconds. A GoRules evaluation that times out still finishes in the background. | `2` |
@@ -276,4 +277,5 @@ If you run `docker build` directly without setting `REQUIREMENTS_FILE`, it defau
 ## CI/CD
 
 - `.github/workflows/ci.yml` runs linting, Django system checks, and pytest on every push/PR.
+- **Test coverage:** pytest measures coverage of `src/` (tests, migrations and settings excluded). CI fails if the total is below **85%** (`fail_under` in `pyproject.toml`). The report is uploaded to [Codecov](https://about.codecov.io/), which shows the coverage of each PR and of the lines it changes. The upload needs a `CODECOV_TOKEN` repository secret (Settings → Secrets and variables → Actions); without it the CI job fails. See [docs/development.md](docs/development.md#test-coverage) to measure coverage locally.
 - `.github/workflows/docker-publish.yml` builds and pushes the Docker image to GitHub Container Registry on every push to `main`.
