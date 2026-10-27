@@ -507,13 +507,12 @@ One filing. Holds only what every dispute type shares; type-specific data goes i
 
 ### 8.3 Case Status Lifecycle
 
-**TODO:** Case statuses and their transitions are not meant to be hardcoded.
-They will be driven by the workflow configuration in
-0011 — Case Workflows(0011-case-workflows.md) `WorkflowDefinition` /
-`WorkflowState` / `WorkflowTransition` per `case_type`, with the case's
-current state held by `CaseWorkflowInstance`. The table below describes the
-expected e-filing lifecycle for the first case type and is illustrative
-until that integration is specified.
+Case statuses and their transitions are not hardcoded. They are driven by the
+workflow configuration in [0011 — Case Workflows](0011-case-workflows.md)
+(`WorkflowDefinition` / `WorkflowState` / `WorkflowTransition` per
+`case_type`), with the case's current state held by `CaseWorkflowInstance`.
+`cases.status` is a projection of that state, written only by the workflow
+engine (0011 §3.3); the §138 lifecycle is 0011 §10.
 
 **Why `created_by` is NOT NULL:**
 Every case has a filer. System-created cases (migrations, imports) should use a dedicated system user (see spec 0002, §5).
