@@ -38,6 +38,12 @@ class ConfigTests(CDACSettingsMixin, SimpleTestCase):
         self.assertEqual(config.txn_template, "{module}-{transaction_id}")
         self.assertEqual(config.response_max_skew, 900)
         self.assertTrue(config.verify_response_signature)
+        self.assertFalse(config.allow_sha1_response)
+
+    def test_sha1_response_opt_in_is_loaded(self):
+        """CDAC_ESIGN_ALLOW_SHA1_RESPONSE reaches the configuration."""
+        self.configure(CDAC_ESIGN_ALLOW_SHA1_RESPONSE=True)
+        self.assertTrue(resolve_config().allow_sha1_response)
 
     def test_settings_are_loaded_and_cached(self):
         """The configuration is read once per process."""

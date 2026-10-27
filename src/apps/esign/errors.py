@@ -63,6 +63,9 @@ PLACEHOLDER_MISSING = define(
 # Module
 DISABLED = define("E03026", "Electronic signing is temporarily unavailable.", status=503)
 
+# Storage (added after the initial release; never renumber the codes above)
+FILE_STORAGE_REJECTED = define("E03027", "Document storage rejected the request.", status=500)
+
 BY_FAILURE_CODE = {
     constants.ESIGN_INVALID_REQUEST: INVALID_REQUEST,
     constants.ESIGN_SOURCE_NOT_FOUND: SOURCE_NOT_FOUND,
@@ -71,6 +74,7 @@ BY_FAILURE_CODE = {
     constants.ESIGN_NOT_PERMITTED: NOT_PERMITTED,
     constants.ESIGN_PDF_PREPARATION_FAILED: PDF_PREPARATION_FAILED,
     constants.ESIGN_FILE_STORAGE_UNAVAILABLE: FILE_STORAGE_UNAVAILABLE,
+    constants.ESIGN_FILE_STORAGE_REJECTED: FILE_STORAGE_REJECTED,
     constants.ESIGN_PROVIDER_NOT_CONFIGURED: PROVIDER_NOT_CONFIGURED,
     constants.ESIGN_REQUEST_BUILD_FAILED: REQUEST_BUILD_FAILED,
     constants.ESIGN_REQUEST_SIGNING_FAILED: REQUEST_SIGNING_FAILED,

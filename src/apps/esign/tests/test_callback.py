@@ -19,6 +19,7 @@ from apps.esign.constants import (
 from apps.esign.exceptions import (
     ESignCallbackMalformed,
     ESignFileStorageError,
+    ESignFileStorageRejected,
     ESignNotProcessable,
     ESignPDFEmbedError,
     ESignResponseStale,
@@ -34,7 +35,7 @@ from apps.esign.services import (
     retry_transaction,
 )
 
-from .base import PKCS7_BLOB, ESignTestCase
+from .base import PKCS7_BASE64, PKCS7_BLOB, ESignTestCase
 from .fakes import SIGNED_MARKER
 
 
@@ -59,7 +60,7 @@ class CallbackTests(ESignTestCase):
 
         signed = self.files.content_of(self.transaction.signed_file_id)
         self.assertIn(SIGNED_MARKER + PKCS7_BLOB, signed)
-        self.assertEqual(self.files.uploads[-1]["file_type"], "DIGITALLY_SIGNED")
+        self.assertEqual(self.files.uploads[-1]["file_type"], "digitally_signed")
 
     def test_signed_upload_is_attributed_to_the_signer(self):
         """The callback leg has no request user, so the stored signer is the actor."""
@@ -169,6 +170,14 @@ class CallbackTests(ESignTestCase):
         self.assertEqual(self.transaction.status, ESignStatus.FAILURE.value)
         self.assertEqual(self.transaction.failure_code, ESIGN_PDF_EMBED_FAILED)
 
+    def test_line_wrapped_signature_is_decoded(self):
+        """Whitespace in the provider's base64 is not data."""
+        wrapped = "\r\n".join(PKCS7_BASE64[i : i + 8] for i in range(0, len(PKCS7_BASE64), 8))
+
+        outcome = process_callback(self.callback_payload(self.transaction, signature=wrapped))
+
+        self.assertEqual(outcome.status, ESignStatus.SUCCESS.value)
+
     def test_signed_upload_failure_is_recorded(self):
         """A storage failure after embedding is its own failure code."""
         self.files.fail_upload = ESignFileStorageError()
@@ -179,6 +188,39 @@ class CallbackTests(ESignTestCase):
         self.assertEqual(self.transaction.status, ESignStatus.FAILURE.value)
         self.assertEqual(self.transaction.failure_code, ESIGN_SIGNED_UPLOAD_FAILED)
         self.assertEqual(self.transaction.signed_file_id, "")
+
+    def test_signed_upload_rejection_keeps_the_storage_reason_in_the_audit(self):
+        """Support sees which field storage refused; the user sees the safe text."""
+        self.files.fail_upload = ESignFileStorageRejected(
+            "Document storage rejected the request. files[0].file_type: bad value."
+        )
+        with self.assertRaises(ESignSignedUploadError):
+            process_callback(self.callback_payload(self.transaction))
+
+        self.transaction.refresh_from_db()
+        self.assertEqual(self.transaction.failure_code, ESIGN_SIGNED_UPLOAD_FAILED)
+        self.assertEqual(self.transaction.failure_message, ESignSignedUploadError.default_message)
+        self.assertIn("files[0].file_type", self.transaction.response_audit["storage_error"])
+
+    def test_embed_failure_is_logged_once_with_its_diagnostics(self):
+        """One ESIGN_FAILED line, after the row is FAILURE, carrying the PDF reason."""
+        self.pdf.fail_embed = ESignPDFEmbedError(
+            audit={"pdf_error": "PDF_INVALID_PKCS7", "pdf_error_detail": "bad"}
+        )
+        with self.assertLogs("apps.esign", level="INFO") as logs:
+            with self.assertRaises(ESignPDFEmbedError):
+                process_callback(self.callback_payload(self.transaction))
+
+        failed = [line for line in logs.output if "ESIGN_FAILED" in line]
+        self.assertEqual(len(failed), 1)
+        self.assertIn("status='FAILURE'", failed[0])
+        self.assertIn("pdf_error='PDF_INVALID_PKCS7'", failed[0])
+        self.assertIn("signature_bytes=", failed[0])
+
+        self.transaction.refresh_from_db()
+        self.assertEqual(self.transaction.failure_message, ESignPDFEmbedError.default_message)
+        self.assertEqual(self.transaction.response_audit["pdf_error"], "PDF_INVALID_PKCS7")
+        self.assertIn("signature_bytes", self.transaction.response_audit)
 
     def test_duplicate_callback_does_not_sign_twice(self):
         """A replayed delivery is a no-op that reports the same outcome."""

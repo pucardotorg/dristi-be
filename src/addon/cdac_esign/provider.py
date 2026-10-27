@@ -5,7 +5,6 @@ dotted path in ``ESIGN_PROVIDER``. Everything C-DAC specific — the 2.1 XML, th
 ASP keystore, the response format — stops here.
 """
 
-import base64
 import logging
 from collections.abc import Mapping
 
@@ -51,7 +50,13 @@ class CDACESignProvider(ESignProvider):
     name = constants.PROVIDER_NAME
 
     def build_initiation(self, transaction, document_hash: str) -> ESignInitiation:
-        """Build, sign and base64-encode the ``<Esign>`` request."""
+        """Build and sign the ``<Esign>`` request.
+
+        The 2.1 form endpoint reads ``eSignRequest`` as the signed XML itself,
+        exactly as the C-DAC reference ASP posts it. A base64-encoded value is
+        not parsed, so the ESP finds no ``txn`` and answers "Invalid
+        transaction for e-authentication Process".
+        """
 
         config = resolve_config()
         provider_transaction_id = build_transaction_id(
@@ -84,7 +89,7 @@ class CDACESignProvider(ESignProvider):
         return ESignInitiation(
             esign_url=config.url,
             form_fields={
-                constants.FORM_FIELD_REQUEST: base64.b64encode(signed_xml).decode(),
+                constants.FORM_FIELD_REQUEST: signed_xml.decode("utf-8"),
                 constants.FORM_FIELD_ASP_TXN: provider_transaction_id,
                 constants.FORM_FIELD_CONTENT_TYPE: constants.FORM_CONTENT_TYPE,
             },
@@ -135,7 +140,9 @@ class CDACESignProvider(ESignProvider):
 
         if config.verify_response_signature:
             try:
-                verify_response_signature(document, config.response_cert)
+                verify_response_signature(
+                    document, config.response_cert, allow_sha1=config.allow_sha1_response
+                )
             except CDACResponseUntrusted as exc:
                 logger.warning("event='CDAC_RESPONSE_UNTRUSTED' reason=%r", str(exc))
                 raise ESignResponseUntrusted() from exc
