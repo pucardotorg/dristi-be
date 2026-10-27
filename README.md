@@ -86,6 +86,25 @@ the India Post CSV in `src/data/pincodes/`, then run
 which also creates the states and districts (see
 [src/data/pincodes/README.md](src/data/pincodes/README.md)).
 
+## Scheduled jobs
+
+No scheduler is bundled with the Docker setup, so periodic commands must be run
+from cron (or whatever scheduler the deployment uses).
+
+| Command | How often | Why |
+| --- | --- | --- |
+| `python manage.py payments_poll_pending` | Every 5 minutes | Resolves payments whose provider callback never arrived (spec 0017 #9.7). Each payment backs off on its own (`PAYMENT_STATUS_POLL_*`), so running it often is cheap. |
+
+Example crontab entries:
+
+```bash
+# Development: run the pass inside the web container
+*/5 * * * * docker compose -f /path/to/dristi-be/docker/docker-compose.yml exec -T web python manage.py payments_poll_pending
+
+# Production: hand the pass to the Dramatiq worker instead of running it inline
+*/5 * * * * docker compose -f /path/to/dristi-be/docker/docker-compose.prod.yml exec -T web python manage.py payments_poll_pending --enqueue
+```
+
 ## Pre-commit hooks
 
 The repo uses [pre-commit](https://pre-commit.com/) to run Ruff (lint with auto-fix, then format) automatically on every `git commit`. The hooks are defined in [.pre-commit-config.yaml](.pre-commit-config.yaml).

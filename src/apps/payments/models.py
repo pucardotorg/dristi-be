@@ -89,16 +89,9 @@ class Demand(BaseModel, BaseAuditableModel):
     Status = DemandStatus
 
     demand_number = models.CharField(max_length=32, unique=True)
-    # TODO(cases): spec 0017 #2.1 makes this ``FK("cases.Case", on_delete=PROTECT,
-    # related_name="demands")``. ``apps.cases`` is not on main yet, so the id is
-    # kept as a plain UUID column with the same name (``case_id``) a ForeignKey
-    # named ``case`` would use. Once the cases app merges, replace this field with
-    # the FK. Write that migration by hand: ``makemigrations`` sees a removed
-    # ``case_id`` and a new ``case`` and would drop the column with its data. Use
-    # ``SeparateDatabaseAndState`` (state: remove ``case_id``, add ``case``;
-    # database: keep the column, add the foreign-key constraint), after checking
-    # every stored id exists in ``cases_case``.
-    case_id = models.UUIDField(db_index=True)
+    # The only foreign key into a domain app (spec 0017 #3); every other
+    # reference is a plain id. Who may see the demand follows this case (#13).
+    case = models.ForeignKey("cases.Case", on_delete=models.PROTECT, related_name="demands")
     reference_type = models.CharField(max_length=32, choices=ReferenceType.choices)
     reference_id = models.CharField(max_length=64, db_index=True)
     organization_id = models.UUIDField(null=True, blank=True, db_index=True)
@@ -135,7 +128,7 @@ class Demand(BaseModel, BaseAuditableModel):
             ),
         ]
         indexes = [
-            models.Index(fields=["case_id", "status"], name="payments_demand_case_status"),
+            models.Index(fields=["case", "status"], name="payments_demand_case_status"),
             models.Index(
                 fields=["reference_type", "reference_id"], name="payments_demand_reference"
             ),

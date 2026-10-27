@@ -172,3 +172,60 @@ class TestReconciliationTools:
         with pytest.raises(CommandError):
             call_command("payments_verify_balances")
         assert "paid 0.00 != successful payments 12.50" in capsys.readouterr().out
+
+
+class TestResolvedFlagsStayResolved:
+    """Poll -> clear -> poll: an operator's resolution is not undone by the poller."""
+
+    HORIZON = int(FakeProvider.pending_horizon.total_seconds())
+
+    def answer(self, payment, outcome, amount=None):
+        FakeProvider.statuses = {
+            payment.provider_payment_id: status(payment.provider_payment_id, outcome, amount)
+        }
+
+    def reconciliation(self, payment):
+        payment.refresh_from_db()
+        return payment.needs_reconciliation, payment.metadata.get("reconciliation", {})
+
+    def test_stuck_payment(self, payment, user):
+        self.answer(payment, "PENDING")
+        polling.poll_pending_payments(now=at(payment, self.HORIZON + 61))
+        flagged, record = self.reconciliation(payment)
+        assert flagged and record["reason"] == "PAYMENT_STUCK"
+
+        PaymentService.clear_reconciliation(payment, actor=user, note="checked with the bank")
+        polling.poll_pending_payments(now=at(payment, self.HORIZON + 5000))
+        flagged, record = self.reconciliation(payment)
+        assert not flagged
+        assert record["note"] == "checked with the bank"
+        assert payment.poll_count == 2  # still polled, just not re-flagged
+
+    def test_amount_mismatch(self, payment, user):
+        self.answer(payment, "SUCCESS", "1.00")
+        polling.poll_pending_payments(now=at(payment, 61))
+        flagged, first = self.reconciliation(payment)
+        assert flagged and first["reason"] == "PAYMENT_AMOUNT_MISMATCH"
+
+        # A second poll leaves the existing flag and its record alone.
+        polling.poll_pending_payments(now=at(payment, 1000))
+        flagged, again = self.reconciliation(payment)
+        assert flagged and again == first
+
+        PaymentService.clear_reconciliation(payment, actor=user)
+        polling.poll_pending_payments(now=at(payment, 2000))
+        flagged, record = self.reconciliation(payment)
+        assert not flagged and record["resolved_at"]
+        assert payment.status == PaymentStatus.PENDING
+        assert payment.demand.paid_amount == 0
+
+    def test_a_new_problem_is_still_flagged(self, payment, user):
+        self.answer(payment, "SUCCESS", "1.00")
+        polling.poll_pending_payments(now=at(payment, 61))
+        PaymentService.clear_reconciliation(payment, actor=user)
+
+        # Later the payment is also stuck past the provider's horizon.
+        self.answer(payment, "PENDING")
+        polling.poll_pending_payments(now=at(payment, self.HORIZON + 61))
+        flagged, record = self.reconciliation(payment)
+        assert flagged and record["reason"] == "PAYMENT_STUCK"

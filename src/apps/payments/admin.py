@@ -76,7 +76,7 @@ class DemandAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
         "created_at",
     )
     list_filter = ("status", "reference_type", "currency")
-    search_fields = ("demand_number", "=id", "=case_id", "reference_id")
+    search_fields = ("demand_number", "=id", "=case__id", "reference_id")
     date_hierarchy = "created_at"
     inlines = (DemandItemInline,)
 

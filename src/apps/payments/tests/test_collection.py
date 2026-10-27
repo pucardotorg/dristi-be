@@ -389,16 +389,16 @@ class TestBatch:
 
 
 class TestPaidTotal:
-    def test_sums_paid_items_of_the_charge_types_on_the_case(self, raise_demand, user, case_id):
+    def test_sums_paid_items_of_the_charge_types_on_the_case(
+        self, raise_demand, user, case_id, make_case
+    ):
         filing = raise_demand(
             [item(ChargeType.PROCESS_COURT_FEE, quantity=2), item(ChargeType.COURT_FEE)]
         )
         later = raise_demand(
             [item(ChargeType.PROCESS_COURT_FEE), item(ChargeType.PROCESS_COURT_FEE)]
         )
-        other_case = raise_demand(
-            [item(ChargeType.PROCESS_COURT_FEE)], case="00000000-0000-0000-0000-000000000001"
-        )
+        other_case = raise_demand([item(ChargeType.PROCESS_COURT_FEE)], case=make_case())
 
         PaymentService.confirm_payment(pay(filing, item_ids(filing), user=user).payment)
         PaymentService.confirm_payment(pay(later, item_ids(later, 0), user=user).payment)

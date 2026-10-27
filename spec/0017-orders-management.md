@@ -2,8 +2,8 @@
 
 ## Status
 
-Implemented (`apps.payments`), with the temporary pieces listed under
-[Implementation notes](#implementation-notes) still to be replaced.
+Implemented (`apps.payments`). Where it differs from the text below, and the
+choices it made for open questions, see [Implementation notes](#implementation-notes).
 
 ## Context
 
@@ -1285,16 +1285,14 @@ in the addon's own settings block, not here.
 
 ## Implementation notes
 
-What the first implementation does where this spec could not yet be followed
-literally, and the choices it made for open points. Search the code for the
-`TODO(...)` tags named here.
+Where the implementation differs from this spec, and the choices it made for
+open points. Search the code for the `TODO(...)` tag named here.
 
-### Temporary, to be replaced
+### Still to be decided
 
-| Tag | What is temporary | What replaces it |
-| --- | --- | --- |
-| `TODO(cases)` | `Demand.case` is a plain `case_id = UUIDField(db_index=True)`, not `FK("cases.Case", on_delete=PROTECT)`, because `apps.cases` is not on main yet. The column is already named `case_id`, as the FK's column would be. | When `apps.cases` merges: turn the field into `case = ForeignKey("cases.Case", on_delete=PROTECT, related_name="demands")` with a hand-written migration (`SeparateDatabaseAndState`: keep the existing `case_id` column and add the foreign-key constraint; `makemigrations` alone would drop the column). Check every stored id exists first. `DemandService.raise_demand(case=...)` and `selectors.paid_total(case=...)` already accept a case instance or an id. |
-| `TODO(case-person-relationship)` | Case-scoped access (#13). `CasePersonRelationship` (spec 0003) does not exist yet, so `apps/payments/access.py` approximates "involved in the case" per demand: a user sees a demand they created or whose `user_id` they are, and every payment on it; raising over REST is allowed on any `case_id`. This is narrower than the spec (co-participants on a case do not see each other's demands yet) and never wider. | Replace the three functions in `apps/payments/access.py` with the active-relationship rule (the target implementation is in its docstring) and rewrite `tests/test_access.py`, whose temporary-only tests are marked. Nothing else filters by user. |
+| Tag | What is open |
+| --- | --- |
+| `TODO(demand-origin)` | How a module that listens for paid demands tells a demand it raised in-process from one any participant raised over REST (#12, #14, open question 7). Harmless while no receiver exists; decide before the first one is written. See `apps/payments/signals.py`. |
 
 ### Deviations from the sections above
 
@@ -1307,8 +1305,9 @@ literally, and the choices it made for open points. Search the code for the
 ### Choices made for open points
 
 * **Notification (open question 7):** `notify_payment_completed` sends the Django signal `apps.payments.signals.payment_completed(payment, demand, items, demand_paid)`. Raising modules connect a receiver; this module imports none of them. How a receiver tells a demand it raised from one raised over REST is still to be decided (`TODO(demand-origin)` in `signals.py`).
-* **Polling schedule:** the project has no periodic scheduler, so `manage.py payments_poll_pending` (or `--enqueue` for a worker) is meant to run from cron.
-* **Reconciliation (open question 13):** the admin offers "re-check with provider" and "mark reconciliation as resolved" (credits nothing). No action credits a late success.
+* **Case access (#13, open question 2):** `Demand.case` is a foreign key to `cases.Case`. "Involved in the case" is read from the cases module (spec 0020), which has no `CasePersonRelationship`: the filer (`Case.created_by`); an active `CaseParticipant` whose person is the user, in the role complainant, accused or POA holder; and an advocate with an active `Representation` on the case. Witnesses are excluded (#13 does not list them). Clerks are not covered yet: the cases module does not link a clerk to an advocate or a case. Removal (soft delete, or an end date in the past) ends access at once.
+* **Polling schedule:** the project has no periodic scheduler, so `manage.py payments_poll_pending` (or `--enqueue` for a worker) is meant to run from cron every five minutes; see "Scheduled jobs" in the README.
+* **Reconciliation (open question 13):** the admin offers "re-check with provider" and "mark reconciliation as resolved" (credits nothing), each behind its own permission. No action credits a late success. A flag is raised once: polling again neither overwrites it nor raises it again for the same reason after an operator has resolved it; a different reason flags the payment afresh. A resolved payment that is still `PENDING` keeps being polled.
 * **Provider-less payments (#9.3):** the admin action "Confirm payment collected outside a provider" confirms an `INITIATED` payment that has no provider.
 * **Success without an amount (#9.5):** a `SUCCESS` status whose `amount` is `None` cannot be "equal", so it is treated like a mismatch: flagged `needs_reconciliation`, never credited.
 * **Provider failures #9.4 does not list:** an exception that is not a `ProviderError` (a provider bug), or a default provider that cannot be loaded, fails the payment with `failure_code = PROVIDER_ERROR` and answers `503 E06015`.

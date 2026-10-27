@@ -6,6 +6,7 @@ snapshots and stores. A demand for nothing is refused: where nothing is due the
 raising module skips its payment step instead.
 """
 
+import uuid
 from collections.abc import Iterable, Mapping
 from decimal import Decimal, InvalidOperation
 
@@ -14,6 +15,7 @@ from django.utils import timezone
 
 from apps.api import errors as api_errors
 from apps.api.errors import BusinessError
+from apps.cases.models import Case
 
 from .. import conf, errors
 from ..enums import (
@@ -32,9 +34,19 @@ REFERENCE_ID_MAX_LENGTH = 64
 
 
 def case_pk(case):
-    """Accept a case instance or its id (``Demand.case`` is an id until cases merge)."""
+    """Accept a case instance or its id."""
 
     return getattr(case, "pk", case)
+
+
+def _existing_case_pk(case):
+    """The id of ``case`` if that case exists; ``None`` otherwise."""
+
+    try:
+        pk = uuid.UUID(str(case_pk(case)))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return pk if Case.objects.filter(pk=pk).exists() else None
 
 
 def breakdown_product(breakdown) -> Decimal:
@@ -160,13 +172,16 @@ class DemandService:
         """Create a demand and all its items atomically, or nothing at all.
 
         ``paid_amount``, ``due_amount`` and ``status`` are never taken from the
-        caller. ``case`` is a case instance or its id.
+        caller. ``case`` is a case instance or its id, and must exist.
         """
 
         if reference_type not in ReferenceType.values:
             raise BusinessError(api_errors.INVALID_CHOICE, field="reference_type")
         if not case_pk(case):
             raise BusinessError(api_errors.REQUIRED, field="case_id")
+        case_id = _existing_case_pk(case)
+        if case_id is None:
+            raise BusinessError(api_errors.DOES_NOT_EXIST, field="case_id")
         if not reference_id:
             raise BusinessError(api_errors.REQUIRED, field="reference_id")
         if len(str(reference_id)) > REFERENCE_ID_MAX_LENGTH:
@@ -183,7 +198,7 @@ class DemandService:
         with transaction.atomic():
             demand = Demand.objects.create(
                 demand_number=next_number(DEMAND_PREFIX),
-                case_id=case_pk(case),
+                case_id=case_id,
                 reference_type=reference_type,
                 reference_id=str(reference_id),
                 organization_id=organization_id,

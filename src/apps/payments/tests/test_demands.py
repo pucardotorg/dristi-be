@@ -101,10 +101,10 @@ class TestRaise:
         assert prefix == "DMD" and len(year) == 4 and len(seq) == 6
         assert int(second.demand_number.split("-")[2]) == int(seq) + 1
 
-    def test_empty_item_list_is_rejected(self, raise_demand):
+    def test_empty_item_list_is_rejected(self, case_id):
         with raises(api_errors.EMPTY, field="items"):
             DemandService.raise_demand(
-                case=uuid.uuid4(), reference_type="ORDER", reference_id="o", items=[]
+                case=case_id, reference_type="ORDER", reference_id="o", items=[]
             )
 
     @pytest.mark.parametrize("quantity", ["0", "-1"])
@@ -160,14 +160,21 @@ class TestRaise:
                 case=None, reference_type="ORDER", reference_id="o", items=[item()]
             )
 
-    def test_case_may_be_an_instance(self, user):
-        class Case:
-            pk = uuid.uuid4()
-
+    def test_case_may_be_an_instance(self, user, make_case):
+        case = make_case()
         demand = DemandService.raise_demand(
-            case=Case(), reference_type="ORDER", reference_id="o", items=[item()], actor=user
+            case=case, reference_type="ORDER", reference_id="o", items=[item()], actor=user
         )
-        assert demand.case_id == Case.pk
+        assert demand.case == case
+
+    @pytest.mark.parametrize("case", [uuid.UUID(int=1), "not-a-uuid"])
+    def test_case_must_exist(self, case):
+        """An unknown case is a validation error, not a database error."""
+        with raises(api_errors.DOES_NOT_EXIST, field="case_id"):
+            DemandService.raise_demand(
+                case=case, reference_type="ORDER", reference_id="o", items=[item()]
+            )
+        assert not Demand.objects.exists()
 
 
 class TestCancel:
