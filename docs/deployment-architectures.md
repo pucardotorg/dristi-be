@@ -3,11 +3,11 @@
 
 ## Local - For Development
 
-It is [Docker Compose](https://github.com/pucardotorg/dristi-be/blob/main/docs/development.md) based.
+It is [Docker Compose](development.md) based.
 
 ## Test - For Testing
 
-It is [Docker Compose](https://github.com/pucardotorg/dristi-be/blob/main/docs/>
+It is [Docker Compose](development.md) based.
 
 ## Stage - Staging
 
