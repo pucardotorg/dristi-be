@@ -134,10 +134,12 @@ class TestRaiseDemand:
 
 
 class TestListAndRetrieve:
-    def test_list_is_paginated_newest_first_and_filtered(self, api, raise_demand, case_id):
+    def test_list_is_paginated_newest_first_and_filtered(
+        self, api, raise_demand, case_id, make_case
+    ):
         older = raise_demand([item()], reference_id="a")
         newer = raise_demand([item()], reference_id="b")
-        raise_demand([item()], case=uuid.uuid4())
+        raise_demand([item()], case=make_case())
 
         body = api.get(DEMANDS).json()
         assert body["count"] == 3 and "meta" in body
@@ -175,10 +177,11 @@ class TestListAndRetrieve:
 
 
 class TestCancelDemand:
-    def test_only_the_creator_can_cancel(self, raise_demand, make_user):
-        """The party a demand is raised on can see and pay it, not cancel it (spec 0017 #13)."""
+    def test_only_the_creator_can_cancel(self, raise_demand, make_user, involve):
+        """Others on the case can see and pay a demand, not cancel it (spec 0017 #13)."""
         party = make_user("Directed party")
         demand = raise_demand(user_id=party.pk)
+        involve(party, demand.case_id)
         [first] = item_ids(demand, 0)
         party_api = APIClient()
         party_api.force_authenticate(party)
@@ -190,11 +193,12 @@ class TestCancelDemand:
         assert demand.status == DemandStatus.RAISED
         assert set(demand.items.values_list("status", flat=True)) == {"UNPAID"}
 
-    def test_system_raised_demand_cannot_be_cancelled_over_rest(self, make_user, case_id):
+    def test_system_raised_demand_cannot_be_cancelled_over_rest(self, make_user, case_id, involve):
         """No creator user: only the raising module cancels it, in-process."""
         from apps.payments.services import DemandService
 
         party = make_user("Directed party")
+        involve(party, case_id)
         demand = DemandService.raise_demand(
             case=case_id,
             reference_type="ORDER",
@@ -414,9 +418,10 @@ class TestPaymentEndpoints:
         api.post(payment_url(payment, "cancel"), {})
         assert_error(api.post(payment_url(payment, "cancel"), {}), errors.PAYMENT_NOT_CANCELLABLE)
 
-    def test_cancel_by_someone_else(self, raise_demand, user, make_user):
+    def test_cancel_by_someone_else(self, raise_demand, user, make_user, involve):
         payer = make_user("Payer")
         demand = raise_demand(user_id=payer.pk)
+        involve(payer, demand.case_id)
         payer_api = APIClient()
         payer_api.force_authenticate(payer)
         payment = self.created(payer_api, demand, outcome="PENDING")

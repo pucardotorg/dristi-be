@@ -107,13 +107,12 @@ def poll_one(payment: Payment, *, now=None) -> None:
         still_pending
         and now - min(p.initiated_at for p in still_pending) > provider.pending_horizon
     ):
-        if not all(p.needs_reconciliation for p in still_pending):
+        if PaymentService.flag_for_reconciliation(still_pending, "PAYMENT_STUCK"):
             logger.error(
                 "PAYMENT_STUCK: %s is still pending past provider %s's horizon.",
                 payment.provider_payment_id,
                 payment.provider,
             )
-        PaymentService.flag_for_reconciliation(still_pending, "PAYMENT_STUCK")
 
 
 def _touch(payments: list[Payment], now) -> None:

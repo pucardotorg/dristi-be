@@ -710,14 +710,15 @@ class PaymentService:
                     # Only a reported amount equal to the batch sum is credited; a
                     # success that reports no amount cannot be checked (spec 0017 #9.5).
                     if status.amount is None or Decimal(status.amount) != expected:
-                        logger.error(
-                            "PAYMENT_AMOUNT_MISMATCH: provider %s reported %s for %s, expected %s",
-                            locked[0].provider,
-                            status.amount,
-                            status.provider_payment_id,
-                            expected,
-                        )
-                        cls._flag(locked, "PAYMENT_AMOUNT_MISMATCH", status)
+                        if cls._flag(locked, "PAYMENT_AMOUNT_MISMATCH", status):
+                            logger.error(
+                                "PAYMENT_AMOUNT_MISMATCH: provider %s reported %s for %s, "
+                                "expected %s",
+                                locked[0].provider,
+                                status.amount,
+                                status.provider_payment_id,
+                                expected,
+                            )
                         return locked
                     return cls.confirm_payment(
                         locked[0],
@@ -741,12 +742,13 @@ class PaymentService:
             if outcome == ProviderOutcome.SUCCESS and any(
                 p.status in (PaymentStatus.FAILED, PaymentStatus.CANCELLED) for p in locked
             ):
-                logger.error(
-                    "PAYMENT_LATE_SUCCESS: provider %s reported success for terminal payment %s",
-                    locked[0].provider,
-                    status.provider_payment_id,
-                )
-                cls._flag(locked, "PAYMENT_LATE_SUCCESS", status)
+                if cls._flag(locked, "PAYMENT_LATE_SUCCESS", status):
+                    logger.error(
+                        "PAYMENT_LATE_SUCCESS: provider %s reported success for terminal "
+                        "payment %s",
+                        locked[0].provider,
+                        status.provider_payment_id,
+                    )
             return locked
 
     @staticmethod
@@ -759,8 +761,16 @@ class PaymentService:
         return timezone.now() - oldest > grace
 
     @staticmethod
-    def _flag(payments: list[Payment], reason: str, status: ProviderStatus | None = None):
-        """Mark ``payments`` for an operator; never credits (spec 0017 #9.5)."""
+    def _flag(
+        payments: list[Payment], reason: str, status: ProviderStatus | None = None
+    ) -> list[Payment]:
+        """Mark ``payments`` for an operator; never credits (spec 0017 #9.5).
+
+        Idempotent, because a pending payment is polled again and again: a
+        payment already flagged keeps its first record, and one whose flag for
+        the same ``reason`` an operator resolved is not flagged again. A new
+        reason flags it afresh. Returns the payments actually flagged.
+        """
 
         detail = {"reason": reason, "flagged_at": timezone.now().isoformat()}
         if status is not None:
@@ -769,23 +779,33 @@ class PaymentService:
                 amount=None if status.amount is None else str(status.amount),
                 provider_reference=status.provider_reference,
             )
+        flagged = []
         for p in payments:
+            previous = p.metadata.get("reconciliation") or {}
+            if p.needs_reconciliation or (
+                previous.get("reason") == reason and previous.get("resolved_at")
+            ):
+                continue
             p.needs_reconciliation = True
             p.metadata = {**p.metadata, "reconciliation": detail}
             p.save(update_fields=["needs_reconciliation", "metadata", "updated_at"])
+            flagged.append(p)
+        return flagged
 
     @classmethod
-    def flag_for_reconciliation(cls, payments: list[Payment], reason: str) -> None:
-        """Flag ``payments`` that need an operator, e.g. stuck past the provider horizon."""
+    def flag_for_reconciliation(cls, payments: list[Payment], reason: str) -> list[Payment]:
+        """Flag ``payments`` that need an operator, e.g. stuck past the provider horizon.
+
+        Returns the payments newly flagged (see ``_flag``).
+        """
 
         with transaction.atomic():
             locked = list(
                 Payment.objects.select_for_update()
-                .filter(pk__in=[p.pk for p in payments], needs_reconciliation=False)
+                .filter(pk__in=[p.pk for p in payments])
                 .order_by("pk")
             )
-            if locked:
-                cls._flag(locked, reason)
+            return cls._flag(locked, reason)
 
     @staticmethod
     def clear_reconciliation(payment: Payment, *, actor=None, note: str = "") -> Payment:

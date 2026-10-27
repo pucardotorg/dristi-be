@@ -1,13 +1,14 @@
 """Shared fixtures for the payments suite."""
 
 import itertools
-import uuid
 
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
+from apps.cases.models import Case, CaseParticipant, CaseType, ParticipantRole
+from apps.parties.models import Person
 from apps.payments.enums import ReferenceType
 from apps.payments.providers import registry
 from apps.payments.services import DemandService
@@ -77,10 +78,40 @@ def api(user):
 
 
 @pytest.fixture
-def case_id():
-    """The case demands are raised on (a plain id until apps.cases merges)."""
+def make_case(user):
+    """Create cases; by default filed by ``user``, who is then involved in them."""
 
-    return uuid.uuid4()
+    def factory(created_by=None):
+        return Case.objects.create(created_by=created_by or user, case_type=CaseType.CHEQUE_BOUNCE)
+
+    return factory
+
+
+@pytest.fixture
+def case_id(make_case):
+    """The case demands are raised on, filed by ``user``."""
+
+    return make_case().pk
+
+
+@pytest.fixture
+def involve(db):
+    """Put a user on a case as a participant (complainant by default)."""
+
+    def factory(user, case_id, role=ParticipantRole.COMPLAINANT):
+        person = Person.objects.filter(user=user).first() or Person.objects.create(
+            name=user.name or "Party", user=user
+        )
+        ordinal = CaseParticipant.objects.filter(case_id=case_id, role=role).count() + 1
+        return CaseParticipant.objects.create(
+            case_id=case_id,
+            person=person,
+            role=role,
+            ordinal=ordinal,
+            name_at_filing=person.name,
+        )
+
+    return factory
 
 
 @pytest.fixture

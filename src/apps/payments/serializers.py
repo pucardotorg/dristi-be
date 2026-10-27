@@ -125,6 +125,7 @@ class PaymentSummarySerializer(serializers.Serializer):
 class DemandSerializer(AuditedModelSerializer):
     """A demand with its items and a payment summary."""
 
+    case_id = serializers.UUIDField(read_only=True)
     items = DemandItemSerializer(many=True, read_only=True)
     payment_summary = serializers.SerializerMethodField()
 
