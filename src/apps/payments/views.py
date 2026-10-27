@@ -526,7 +526,10 @@ class ProviderCallbackView(APIView):
                     logger.exception("The %s provider failed to verify a callback.", provider)
                 return self._redirect_for(payments)
 
-        PaymentService.apply_provider_status(payments, status_)
+        try:
+            PaymentService.apply_provider_status(payments, status_)
+        except Exception:  # noqa: BLE001 - always redirect (#12.5); the poller retries (#9.7)
+            logger.exception("Could not apply the %s callback outcome.", provider)
         return self._redirect_for(payments)
 
     # -- helpers ------------------------------------------------------------

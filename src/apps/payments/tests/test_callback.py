@@ -189,3 +189,19 @@ def test_provider_bugs_still_redirect(payment):
 def test_malformed_json_body_redirects_unknown(payment):
     response = APIClient().post(callback_url(), "{not json", content_type="application/json")
     assert redirect_params(response) == {"status": "UNKNOWN"}
+
+
+def test_a_failure_while_applying_the_outcome_still_redirects(payment):
+    """A lock timeout or database error must not reach the browser as a JSON 500."""
+    from unittest.mock import patch
+
+    from django.db import OperationalError
+
+    FakeProvider.trusted = True
+    with patch.object(
+        PaymentService, "apply_provider_status", side_effect=OperationalError("lock timeout")
+    ):
+        params = redirect_params(post({"id": payment.provider_payment_id, "amount": "37.50"}))
+    # Nothing was applied; the browser sees the current local status and the
+    # poller finishes the job later.
+    assert params == {"payment_id": str(payment.pk), "status": PaymentStatus.PENDING}

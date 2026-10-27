@@ -1299,7 +1299,7 @@ open points. Search the code for the `TODO(...)` tag named here.
 * **Cancelling a demand (#6.1).** `cancel_demand` refuses (`409 E06021`) when any item is `PAID` or has an `INITIATED`/`PENDING` payment, instead of cancelling only the unpaid items. A partly paid demand is wound down with `cancel_item`, so its paid part keeps a live demand. Cancelling an already cancelled demand or item is a no-op.
 * **Due on a cancelled item (#15).** A cancelled item has `due_amount = 0`, not `amount - paid_amount`: nothing is due on it. `payments_verify_balances` checks this rule.
 * **The callback always redirects (#12.5)**, except for an unknown `{provider}` (`404 E00105`, as #9.6 asks) and throttling (`429 E00110`). Unparseable bodies, bodies over `PAYMENT_CALLBACK_MAX_BODY_BYTES` and provider errors redirect with `status=UNKNOWN` or the local status.
-* **Production redirect check (#9.3).** `PAYMENT_UI_REDIRECT_URL` must be `https://` in production only once a default provider is configured; with none, the callback is never used.
+* **Production redirect check (#9.3).** A configured `PAYMENT_UI_REDIRECT_URL` must be an `https://` URL with a host in production, whatever the default provider (payments pending at a former default still redirect through it). It may be left empty only while no default provider is configured; the callback then renders a minimal status page.
 * **Payer defaults (#12.2).** Only `name`, `email` and `phone` default from the caller's profile (name, email, mobile number). The profile has no address, so `address`, `city` and `pincode` stay empty unless sent.
 
 ### Choices made for open points

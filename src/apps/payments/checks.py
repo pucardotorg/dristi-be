@@ -4,6 +4,8 @@ Run before ``runserver``, ``migrate`` and every management command, so a
 misconfigured deployment fails at boot rather than on a payer's first click.
 """
 
+from urllib.parse import urlsplit
+
 from django.conf import settings
 from django.core.checks import Error, register
 
@@ -67,9 +69,13 @@ def check_payment_settings(app_configs, **kwargs):
         )
 
     redirect_url = conf.ui_redirect_url()
-    if redirect_url and not redirect_url.startswith(("http://", "https://")):
+    redirect = urlsplit(redirect_url)
+    if redirect_url and (redirect.scheme not in ("http", "https") or not redirect.hostname):
         messages.append(
-            Error("PAYMENT_UI_REDIRECT_URL must be an absolute URL.", id="payments.E004")
+            Error(
+                "PAYMENT_UI_REDIRECT_URL must be an absolute http(s) URL with a host.",
+                id="payments.E004",
+            )
         )
 
     if is_production_settings():
@@ -81,11 +87,22 @@ def check_payment_settings(app_configs, **kwargs):
                     id="payments.E005",
                 )
             )
-        if default and not redirect_url.startswith("https://"):
+        # Checked whatever the default provider is: payments still pending at a
+        # provider that is no longer the default keep getting callbacks, and the
+        # callback appends their id and status to this URL.
+        if redirect_url and redirect.scheme != "https":
             messages.append(
                 Error(
                     "PAYMENT_UI_REDIRECT_URL must be an https:// URL in production.",
                     id="payments.E006",
+                )
+            )
+        if default and not redirect_url:
+            messages.append(
+                Error(
+                    "PAYMENT_UI_REDIRECT_URL is required in production once "
+                    "PAYMENT_DEFAULT_PROVIDER is set.",
+                    id="payments.E007",
                 )
             )
 
