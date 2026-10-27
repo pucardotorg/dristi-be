@@ -145,6 +145,34 @@ class TestRaise:
         assert not Demand.objects.exists()
         assert not DemandItem.objects.exists()
 
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("unit_amount", "12.505"),  # more places than the column keeps
+            ("unit_amount", "1" * 17),  # more whole digits than numeric(18, 2)
+            ("quantity", "1.005"),
+            ("quantity", "1" * 9),  # numeric(10, 2) keeps 8 whole digits
+        ],
+    )
+    def test_numbers_must_fit_their_columns(self, raise_demand, field, value):
+        """In-process callers get the serializer's validation, not rounding or a 500."""
+        with raises(api_errors.TOO_MANY_DIGITS, field=f"items[0].{field}"):
+            raise_demand([item(**{field: value})])
+        assert not Demand.objects.exists()
+
+    def test_amounts_that_overflow_are_rejected(self, raise_demand):
+        huge = "99999999999999.99"  # fits on its own; times the quantity it does not
+        with raises(api_errors.MAX_VALUE, field="items[0]"):
+            raise_demand([item(unit_amount=huge, quantity="99999999")])
+        nearly = "9999999999999999.99"  # the largest single amount
+        with raises(api_errors.MAX_VALUE, field="items"):
+            raise_demand([item(unit_amount=nearly), item(unit_amount=nearly)])
+        assert not Demand.objects.exists()
+
+    def test_trailing_zeros_are_fine(self, raise_demand):
+        demand = raise_demand([item(unit_amount="12.5000", quantity="2.00")])
+        assert demand.total_amount == Decimal("25.00")
+
     def test_reference_ids_are_bounded(self, raise_demand):
         """In-process callers get a validation error, not a database error."""
         with raises(api_errors.MAX_LENGTH, field="reference_id"):

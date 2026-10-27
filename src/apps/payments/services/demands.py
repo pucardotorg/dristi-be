@@ -79,13 +79,36 @@ def quantity_matches_breakdown(quantity: Decimal, metadata) -> bool:
         return False
 
 
-def _decimal(value, field: str) -> Decimal:
+# Column limits (max_digits, decimal_places) of the DecimalFields written here.
+QUANTITY_DIGITS = (10, 2)
+MONEY_DIGITS = (18, 2)
+
+
+def fits(number: Decimal, digits: tuple[int, int]) -> bool:
+    """Whether ``number`` is stored exactly in a ``DecimalField`` of these limits."""
+
+    max_digits, decimal_places = digits
+    _sign, figures, exponent = number.normalize().as_tuple()
+    places = max(0, -exponent)
+    whole = max(0, len(figures) + exponent)
+    return places <= decimal_places and whole <= max_digits - decimal_places
+
+
+def _decimal(value, field: str, digits: tuple[int, int] = MONEY_DIGITS) -> Decimal:
+    """Parse a number the caller sent, refusing what its column cannot hold exactly.
+
+    The REST serializer already enforces this; in-process callers would otherwise
+    get a silently rounded snapshot, or a database error instead of a validation one.
+    """
+
     try:
         number = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise BusinessError(api_errors.INVALID, "A valid number is required.", field=field) from exc
     if not number.is_finite():
         raise BusinessError(api_errors.INVALID, "A valid number is required.", field=field)
+    if not fits(number, digits):
+        raise BusinessError(api_errors.TOO_MANY_DIGITS, field=field)
     return number
 
 
@@ -109,7 +132,7 @@ def _validated_items(items, *, reference_type: str, reference_id: str) -> list[d
         if not description:
             raise BusinessError(api_errors.REQUIRED, field=f"{prefix}.description")
 
-        quantity = _decimal(raw.get("quantity", 1), f"{prefix}.quantity")
+        quantity = _decimal(raw.get("quantity", 1), f"{prefix}.quantity", QUANTITY_DIGITS)
         if quantity <= 0:
             raise BusinessError(
                 api_errors.MIN_VALUE, "Must be greater than zero.", field=f"{prefix}.quantity"
@@ -120,6 +143,8 @@ def _validated_items(items, *, reference_type: str, reference_id: str) -> list[d
                 api_errors.MIN_VALUE, "Must be greater than zero.", field=f"{prefix}.unit_amount"
             )
         amount = balances.quantize(quantity * unit_amount)
+        if not fits(amount, MONEY_DIGITS):
+            raise BusinessError(api_errors.MAX_VALUE, "The item amount is too large.", field=prefix)
         if amount <= 0:
             raise BusinessError(
                 api_errors.MIN_VALUE, "The item amount rounds to zero.", field=prefix
@@ -192,6 +217,10 @@ class DemandService:
 
         cleaned = _validated_items(items, reference_type=reference_type, reference_id=reference_id)
         total = balances.quantize(sum(item["amount"] for item in cleaned))
+        if not fits(total, MONEY_DIGITS):
+            raise BusinessError(
+                api_errors.MAX_VALUE, "The demand total is too large.", field="items"
+            )
         if total <= 0:
             raise BusinessError(errors.DEMAND_TOTAL_ZERO)
 

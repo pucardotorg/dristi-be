@@ -382,7 +382,32 @@ class TestChecks:
         settings.PAYMENT_UI_REDIRECT_URL = "/relative"
         assert {"payments.E001.PAYMENT_STATUS_POLL_BATCH_SIZE", "payments.E004"} <= self.run()
 
+    @pytest.mark.parametrize(
+        "url", ["https:///payments", "https://", "ftp://app.example.com/pay", "app.example.com"]
+    )
+    def test_redirect_needs_a_scheme_and_a_host(self, settings, url):
+        settings.PAYMENT_UI_REDIRECT_URL = url
+        assert "payments.E004" in self.run()
+
     def test_production_guards(self, settings):
         settings.PAYMENT_UI_REDIRECT_URL = "http://app.example.com/pay"
         with patch("apps.payments.checks.is_production_settings", return_value=True):
             assert {"payments.E005", "payments.E006"} <= self.run()
+
+    def test_production_https_even_without_a_default_provider(self, settings):
+        """Payments pending at a former default still redirect through this URL."""
+        settings.PAYMENT_PROVIDERS = {}
+        settings.PAYMENT_DEFAULT_PROVIDER = ""
+        settings.PAYMENT_UI_REDIRECT_URL = "http://app.example.com/pay"
+        with patch("apps.payments.checks.is_production_settings", return_value=True):
+            assert self.run() == {"payments.E006"}
+
+    def test_production_requires_a_redirect_once_payments_can_start(self, settings):
+        settings.PAYMENT_PROVIDERS = {"fake": "apps.payments.tests.fakes.FakeProvider"}
+        settings.PAYMENT_DEFAULT_PROVIDER = "fake"
+        settings.PAYMENT_UI_REDIRECT_URL = ""
+        with patch("apps.payments.checks.is_production_settings", return_value=True):
+            assert self.run() == {"payments.E007"}
+        settings.PAYMENT_UI_REDIRECT_URL = "https://app.example.com/pay"
+        with patch("apps.payments.checks.is_production_settings", return_value=True):
+            assert self.run() == set()
