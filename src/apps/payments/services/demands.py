@@ -88,7 +88,15 @@ def fits(number: Decimal, digits: tuple[int, int]) -> bool:
     """Whether ``number`` is stored exactly in a ``DecimalField`` of these limits."""
 
     max_digits, decimal_places = digits
-    _sign, figures, exponent = number.normalize().as_tuple()
+    # Read the digits as given. normalize() would first round to the decimal
+    # context (28 significant digits), hiding a nonzero digit beyond it.
+    _sign, figures, exponent = number.as_tuple()
+    figures = list(figures)
+    if not any(figures):
+        return True  # zero in any form (0, 0.000, 0E+5) fits
+    while figures[-1] == 0:  # trailing zeros carry no precision
+        figures.pop()
+        exponent += 1
     places = max(0, -exponent)
     whole = max(0, len(figures) + exponent)
     return places <= decimal_places and whole <= max_digits - decimal_places

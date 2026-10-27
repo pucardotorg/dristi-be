@@ -69,8 +69,13 @@ def check_payment_settings(app_configs, **kwargs):
         )
 
     redirect_url = conf.ui_redirect_url()
-    redirect = urlsplit(redirect_url)
-    if redirect_url and (redirect.scheme not in ("http", "https") or not redirect.hostname):
+    try:
+        redirect = urlsplit(redirect_url)
+        scheme, host = redirect.scheme, redirect.hostname
+    except ValueError:  # e.g. an unmatched IPv6 bracket: report it, don't crash the checks
+        scheme, host = "", None
+    usable_redirect = scheme in ("http", "https") and bool(host)
+    if redirect_url and not usable_redirect:
         messages.append(
             Error(
                 "PAYMENT_UI_REDIRECT_URL must be an absolute http(s) URL with a host.",
@@ -90,7 +95,8 @@ def check_payment_settings(app_configs, **kwargs):
         # Checked whatever the default provider is: payments still pending at a
         # provider that is no longer the default keep getting callbacks, and the
         # callback appends their id and status to this URL.
-        if redirect_url and redirect.scheme != "https":
+        # An unusable URL is already reported as E004 above.
+        if usable_redirect and scheme != "https":
             messages.append(
                 Error(
                     "PAYMENT_UI_REDIRECT_URL must be an https:// URL in production.",

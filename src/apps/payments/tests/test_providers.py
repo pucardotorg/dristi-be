@@ -383,7 +383,14 @@ class TestChecks:
         assert {"payments.E001.PAYMENT_STATUS_POLL_BATCH_SIZE", "payments.E004"} <= self.run()
 
     @pytest.mark.parametrize(
-        "url", ["https:///payments", "https://", "ftp://app.example.com/pay", "app.example.com"]
+        "url",
+        [
+            "https:///payments",
+            "https://",
+            "ftp://app.example.com/pay",
+            "app.example.com",
+            "https://[::1/pay",  # urlsplit() raises on an unmatched IPv6 bracket
+        ],
     )
     def test_redirect_needs_a_scheme_and_a_host(self, settings, url):
         settings.PAYMENT_UI_REDIRECT_URL = url
@@ -393,6 +400,11 @@ class TestChecks:
         settings.PAYMENT_UI_REDIRECT_URL = "http://app.example.com/pay"
         with patch("apps.payments.checks.is_production_settings", return_value=True):
             assert {"payments.E005", "payments.E006"} <= self.run()
+
+    def test_unparseable_redirect_is_reported_not_raised_in_production(self, settings):
+        settings.PAYMENT_UI_REDIRECT_URL = "https://[::1/pay"
+        with patch("apps.payments.checks.is_production_settings", return_value=True):
+            assert "payments.E004" in self.run()
 
     def test_production_https_even_without_a_default_provider(self, settings):
         """Payments pending at a former default still redirect through this URL."""

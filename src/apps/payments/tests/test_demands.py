@@ -160,6 +160,34 @@ class TestRaise:
             raise_demand([item(**{field: value})])
         assert not Demand.objects.exists()
 
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            # A nonzero digit beyond the 28-digit decimal context: normalize()
+            # would round it away and accept the value.
+            ("12.500000000000000000000000000001", False),
+            ("12.5000000000000000000000000000000", True),  # only trailing zeros
+            ("12.50", True),
+            ("12.505", False),
+            ("0", True),
+            ("0.000", True),
+            ("0E+5", True),
+            ("1E+2", True),
+            ("9999999999999999.99", True),  # 16 whole digits, the most numeric(18, 2) holds
+            ("1E+16", False),  # 17 whole digits
+            ("-1.005", False),
+        ],
+    )
+    def test_fits_reads_the_digits_without_rounding(self, value, expected):
+        from apps.payments.services.demands import MONEY_DIGITS, fits
+
+        assert fits(Decimal(value), MONEY_DIGITS) is expected
+
+    def test_digit_beyond_context_precision_is_rejected(self, raise_demand):
+        with raises(api_errors.TOO_MANY_DIGITS, field="items[0].unit_amount"):
+            raise_demand([item(unit_amount="12.500000000000000000000000000001")])
+        assert not Demand.objects.exists()
+
     def test_amounts_that_overflow_are_rejected(self, raise_demand):
         huge = "99999999999999.99"  # fits on its own; times the quantity it does not
         with raises(api_errors.MAX_VALUE, field="items[0]"):
