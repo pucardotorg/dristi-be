@@ -492,6 +492,44 @@ class ImportPincodesTests(TestCase):
 
         self.assertFalse(Location.objects.filter(code__startswith="IN_KERALA").exists())
 
+    def test_create_districts_does_not_recreate_a_deactivated_district(self):
+        make_district(parent=self.karnataka, code="IN_KA_MYSURU", name="Mysuru", is_active=False)
+
+        output = self.run_import(self.csv(office("570001", "MYSURU")), "--create-districts")
+
+        self.assertEqual(Location.objects.filter(name="Mysuru").count(), 1)
+        self.assertFalse(Location.objects.filter(code="PIN_570001").exists())
+        self.assertIn("District or state is deactivated for KARNATAKA / MYSURU", output)
+        self.assertNotIn("districts.", output)  # no "Created N states and M districts."
+
+    def test_create_districts_does_not_recreate_a_deactivated_state(self):
+        india = Location.objects.get(code="IN")
+        make_state(parent=india, code="IN_KERALA", name="Kerala", is_active=False)
+
+        output = self.run_import(
+            self.csv(office("682001", "ERNAKULAM", state="KERALA")), "--create-districts"
+        )
+
+        self.assertEqual(Location.objects.filter(name="Kerala").count(), 1)
+        self.assertFalse(Location.objects.filter(name="Ernakulam").exists())
+        self.assertIn("District or state is deactivated for KERALA / ERNAKULAM", output)
+
+    def test_deactivated_district_is_reported_as_such(self):
+        make_district(parent=self.karnataka, code="IN_KA_MYSURU", name="Mysuru", is_active=False)
+
+        output = self.run_import(self.csv(office("570001", "MYSURU")))
+
+        self.assertIn("District or state is deactivated for KARNATAKA / MYSURU", output)
+        self.assertNotIn("No active district location for KARNATAKA / MYSURU", output)
+
+    def test_old_inactive_state_with_an_active_namesake_does_not_block_creation(self):
+        india = Location.objects.get(code="IN")
+        make_state(parent=india, code="IN_KA_OLD", name="Karnataka", is_active=False)
+
+        self.run_import(self.csv(office("570001", "MYSURU")), "--create-districts")
+
+        self.assertEqual(self.parent_code("570001"), "IN_KA_MYSURU")
+
 
 class DefaultDataDirTests(TestCase):
     """With no path, the CSV and aliases come from data/pincodes/ under BASE_DIR."""

@@ -160,11 +160,11 @@ class Command(BaseCommand):
     def _place(self, offices, skipped, resolver, created, options):
         """Choose a district per pincode, save the pincodes and report."""
         by_pincode = defaultdict(dict)  # pincode -> {district pk: [count, rank, district]}
-        unmatched, ambiguous = Counter(), Counter()
+        problems = defaultdict(Counter)  # problem -> {(state, district): offices}
         for (pincode, state, district), (count, rank) in offices.items():
             location, problem = resolver.resolve(state, district)
             if location is None:
-                (ambiguous if problem == "ambiguous" else unmatched)[(state, district)] += count
+                problems[problem][(state, district)] += count
                 continue
             entry = by_pincode[pincode].setdefault(location.pk, [0, 0, location])
             entry[0] += count
@@ -179,8 +179,15 @@ class Command(BaseCommand):
         self._report_created(created, verbose, options["dry_run"])
         if skipped:
             self._warn(f"Skipped {self._describe_skipped(skipped)}.")
-        self._report_names(unmatched, "No active district location for", "unmatched")
-        self._report_names(ambiguous, "Several active districts match", "ambiguous")
+        self._report_names(problems["unmatched"], "No active district location for", "add an alias")
+        self._report_names(
+            problems["ambiguous"], "Several active districts match", "add an alias to choose one"
+        )
+        self._report_names(
+            problems["inactive"],
+            "District or state is deactivated for",
+            "reactivate it in the admin, or add an alias",
+        )
         for code, location_type in result["conflicts"]:
             self._warn(f"{code} is already used by a {location_type} location; not imported.")
         if verbose:
@@ -366,9 +373,8 @@ class Command(BaseCommand):
             parts.append(f"{skipped['name']} rows with no state or district")
         return "; ".join(parts) or "the file has no data rows"
 
-    def _report_names(self, names, prefix, kind):
-        """Warn about CSV state/district names that matched no single district."""
-        hint = "add an alias" if kind == "unmatched" else "add an alias to choose one"
+    def _report_names(self, names, prefix, hint):
+        """Warn about CSV state/district names that matched no single active district."""
         for (state, district), count in sorted(names.items()):
             self._warn(
                 f"{prefix} {state} / {district} ({count} offices skipped; {hint})",
@@ -458,7 +464,8 @@ def create_missing_districts(names, resolver):
     """Create the states and districts in ``names`` that resolve to nothing.
 
     ``names`` is a set of CSV ``(state, district)`` pairs. A pair that resolves,
-    or matches several districts, is left alone. Returns the created
+    matches several districts, or matches a deactivated district or state is
+    left alone, so a deactivation is never undone. Returns the created
     ``(states, districts)``.
     """
     country = default_country()
@@ -473,7 +480,8 @@ def create_missing_districts(names, resolver):
     }
     for (state_key, _district_key), (state_name, district_name) in sorted(pairs.items()):
         location, problem = resolver.resolve(state_name, district_name)
-        if location is not None or problem == "ambiguous":
+        # Only names nothing knows of: an ambiguous or deactivated one is left alone.
+        if location is not None or problem != "unmatched":
             continue
         state = next(
             (states[n] for n in resolver.state_aliases.get(state_key, {state_key}) if n in states),
@@ -549,6 +557,23 @@ class DistrictResolver:
             for state_name in location_names(district.parent):
                 for district_name in location_names(district):
                     self.by_name[(state_name, district_name)].add(district)
+        # Deactivated on purpose: never matched, and never created again.
+        self.inactive = {
+            (state_name, district_name)
+            for district in Location.objects.filter(
+                location_type=Location.LocationType.DISTRICT,
+                is_active=False,
+                parent__location_type=Location.LocationType.STATE,
+            ).select_related("parent")
+            for state_name in location_names(district.parent)
+            for district_name in location_names(district)
+        }
+        active_states = set()
+        inactive_states = set()
+        for state in Location.objects.filter(location_type=Location.LocationType.STATE):
+            (active_states if state.is_active else inactive_states).update(location_names(state))
+        # A name an active state also has is not treated as deactivated.
+        self.inactive_states = inactive_states - active_states
 
         bad = []
         states = {
@@ -580,13 +605,25 @@ class DistrictResolver:
             )
 
     def resolve(self, state, district):
-        """Return ``(district location, None)``, or ``(None, "unmatched" | "ambiguous")``."""
+        """Return ``(district location, None)`` or ``(None, problem)``.
+
+        ``problem`` is ``"ambiguous"`` when several active districts match,
+        ``"inactive"`` when the only match is a deactivated district, or the
+        state is deactivated, and ``"unmatched"`` when nothing matches.
+        """
         state_key, district_key = normalize(state), normalize(district)
         if (state_key, district_key) in self.district_aliases:
             return self.district_aliases[(state_key, district_key)], None
+        state_names = self.state_aliases.get(state_key, {state_key})
         candidates = set()
-        for name in self.state_aliases.get(state_key, {state_key}):
+        for name in state_names:
             candidates |= self.by_name.get((name, district_key), set())
         if len(candidates) == 1:
             return next(iter(candidates)), None
-        return None, "ambiguous" if candidates else "unmatched"
+        if candidates:
+            return None, "ambiguous"
+        if state_names & self.inactive_states or any(
+            (name, district_key) in self.inactive for name in state_names
+        ):
+            return None, "inactive"
+        return None, "unmatched"

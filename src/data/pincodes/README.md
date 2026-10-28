@@ -24,7 +24,9 @@ whoever sets up an environment adds the CSV here and runs the import once.
    ```
 
    Without `--create-districts`, pincodes go only under districts that already
-   exist, and every other district is reported as unmatched.
+   exist, and every other district is reported as unmatched. A district or
+   state an admin has deactivated is never created again; its pincodes are
+   reported and skipped until it is reactivated.
 3. **Created names and codes.** States and districts get the CSV's name (in
    title case when the CSV writes it in capitals, e.g. `MYSURU` → `Mysuru`)
    and a generated code such as `IN_KARNATAKA_MYSURU`; codes too long for the

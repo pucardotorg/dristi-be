@@ -186,7 +186,9 @@ no location data. Pincodes go under existing districts. On an empty database,
 matches nothing: under the one country location (India is created if there is
 none), named as in the CSV (title case when it is in capitals), with generated
 codes such as `IN_KARNATAKA_MYSURU` (shortened with a hash when over 50
-characters). Rows whose state or district is `NA` are skipped. A dry run rolls
+characters). A district or state an admin has deactivated is never created
+again: its pincodes are reported as under a deactivated location and skipped.
+Rows whose state or district is `NA` are skipped. A dry run rolls
 back everything, created states and districts included.
 
 - **Name matching.** Each office's state and district are matched
