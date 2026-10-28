@@ -61,3 +61,11 @@ class FlagStatus(models.TextChoices):
     RESOLVED = "RESOLVED", "Resolved"
     CARRIED = "CARRIED", "Carried"
     WITHDRAWN = "WITHDRAWN", "Withdrawn"
+
+
+class ResponseKind(models.TextChoices):
+    """How the filer answered a raised flag (#3.6, #5.2)."""
+
+    CORRECTED = "CORRECTED", "Corrected"
+    REUPLOADED = "REUPLOADED", "Re-uploaded"
+    EXPLAINED = "EXPLAINED", "Explained"

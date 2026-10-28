@@ -12,12 +12,13 @@ from .enums import (
     DocumentIssue,
     FlagStatus,
     FlagTarget,
+    ResponseKind,
     RoundDecision,
     RoundStage,
     RoutingReason,
 )
 
-__all__ = ["ScrutinyFlag", "ScrutinyRound", "ScrutinyRuleBinding"]
+__all__ = ["ScrutinyFlag", "ScrutinyFlagResponse", "ScrutinyRound", "ScrutinyRuleBinding"]
 
 
 class ScrutinyRound(BaseModel, BaseAuditableModel):
@@ -272,6 +273,63 @@ class ScrutinyFlag(BaseModel, BaseAuditableModel):
             ):
                 errors["carried_from"] = "Must be the same target."
         return errors
+
+    def save(self, *args, **kwargs):
+        """Validate the model before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class ScrutinyFlagResponse(BaseModel, BaseAuditableModel):
+    """The filer's answer to a raised flag: a correction, a re-upload or an explanation (#3.6).
+
+    Recorded by ``apps.scrutiny.services.responses`` from the ``apps.cases``
+    change signals or the explain endpoint (#5.2). A flag may get several in
+    one correction; history shows the last.
+    """
+
+    flag = models.ForeignKey(ScrutinyFlag, on_delete=models.CASCADE, related_name="responses")
+    kind = models.CharField(max_length=16, choices=ResponseKind.choices)
+    note = models.TextField(blank=True)
+    value_after = models.JSONField(null=True, blank=True)
+    document_id = models.UUIDField(null=True, blank=True, help_text="The new case document.")
+    responded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    responded_at = models.DateTimeField()
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("responded_at",)
+        verbose_name = "Scrutiny flag response"
+        verbose_name_plural = "Scrutiny flag responses"
+
+    def __str__(self):
+        return f"{self.get_kind_display()} · {self.flag}"
+
+    def clean(self):
+        """Keep the response's payload consistent with its kind and its flag's target."""
+        super().clean()
+        errors = {}
+        if self.kind == ResponseKind.EXPLAINED and not self.note.strip():
+            errors["note"] = "An explanation needs a note."
+        if self.value_after is not None and self.kind != ResponseKind.CORRECTED:
+            errors["value_after"] = "Only a correction records a value."
+        if (self.kind == ResponseKind.REUPLOADED) != (self.document_id is not None):
+            errors["document_id"] = "Set exactly when a document was re-uploaded."
+        if self.flag_id:
+            # A field change answers its field flag or the section flag that holds it.
+            target = self.flag.target_type
+            if self.kind == ResponseKind.CORRECTED and target not in (
+                FlagTarget.FIELD,
+                FlagTarget.SECTION,
+            ):
+                errors["kind"] = "Only a field or section flag is corrected."
+            elif self.kind == ResponseKind.REUPLOADED and target != FlagTarget.DOCUMENT:
+                errors["kind"] = "Only a document flag is re-uploaded."
+        if errors:
+            raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         """Validate the model before saving."""

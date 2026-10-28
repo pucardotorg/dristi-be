@@ -11,7 +11,7 @@ from apps.core.rules.exceptions import RuleError, RuleNotFound
 
 from .checks import service
 from .checks.contracts import ContractError
-from .models import ScrutinyFlag, ScrutinyRound, ScrutinyRuleBinding
+from .models import ScrutinyFlag, ScrutinyFlagResponse, ScrutinyRound, ScrutinyRuleBinding
 
 
 class ScrutinyRuleBindingAdminForm(forms.ModelForm):
@@ -114,6 +114,21 @@ class ScrutinyRoundAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     )
 
 
+class ScrutinyFlagResponseInline(admin.TabularInline):
+    """The flag's responses, read-only; open one to see or edit it."""
+
+    model = ScrutinyFlagResponse
+    fields = ("kind", "note", "value_after", "document_id", "responded_by", "responded_at")
+    readonly_fields = fields
+    extra = 0
+    can_delete = False
+    show_change_link = True
+
+    def has_add_permission(self, request, obj=None):
+        """Responses are added from their own page, where they are validated."""
+        return False
+
+
 @admin.register(ScrutinyFlag)
 class ScrutinyFlagAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Review flags; they are drafted and moved through their lifecycle by the services (#3.5)."""
@@ -129,6 +144,7 @@ class ScrutinyFlagAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     )
     autocomplete_fields = ("round", "auto_marked_by", "linked_flag", "carried_from")
     readonly_fields = ("id", "created_at", "updated_at")
+    inlines = (ScrutinyFlagResponseInline,)
     fieldsets = (
         (None, {"fields": ("round", "status")}),
         (
@@ -138,5 +154,21 @@ class ScrutinyFlagAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
         ("For the advocate", {"fields": ("reason_code", "note", "value_at_flag")}),
         ("Links", {"fields": ("auto_marked_by", "linked_flag", "carried_from")}),
         ("Resolution", {"fields": ("resolved_by", "resolved_at")}),
+        ("Audit", {"fields": ("id", "created_at", "updated_at", "created_by", "updated_by")}),
+    )
+
+
+@admin.register(ScrutinyFlagResponse)
+class ScrutinyFlagResponseAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
+    """Review the filer's responses; they are recorded by the services (#5.2)."""
+
+    list_display = ("flag", "kind", "responded_by", "responded_at")
+    list_filter = ("kind", "flag__target_type")
+    search_fields = ("note", "flag__target_ref", "flag__target_label")
+    autocomplete_fields = ("flag",)
+    readonly_fields = ("id", "created_at", "updated_at")
+    fieldsets = (
+        (None, {"fields": ("flag", "kind", "note", "value_after", "document_id")}),
+        ("Responded", {"fields": ("responded_by", "responded_at")}),
         ("Audit", {"fields": ("id", "created_at", "updated_at", "created_by", "updated_by")}),
     )
