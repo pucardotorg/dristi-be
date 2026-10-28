@@ -286,11 +286,26 @@ removes the `sensitive` flag itself before rendering.
 
 ```python
 DENY_SENSITIVE_KEYS = {
-    "password", "token", "access_token", "authorization", "api_key", "secret",
-    "license_no", "pan", "phone", "email",
+    "password",
+    "token",
+    "access_token",
+    "authorization",
+    "api_key",
+    "secret",
+    "license_no",
+    "pan",
+    "phone",
+    "email",
     # Dristi additions
-    "mobile", "mobile_number", "mobileno", "phone_number", "otp", "aadhaar",
-    "refresh_token", "cookie", "secure_key",
+    "mobile",
+    "mobile_number",
+    "mobileno",
+    "phone_number",
+    "otp",
+    "aadhaar",
+    "refresh_token",
+    "cookie",
+    "secure_key",
 }
 ```
 
