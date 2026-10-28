@@ -46,7 +46,9 @@
           "elementId": "cl-khFAPiXRd9",
           "hash": "6c1c622f3a3d"
         }
-      ]
+      ],
+      "pageDirty": true,
+      "note": "2026-10-28: page edited by Thejesh GN (thej@pucar.org) at updatedAt 1793081184.315 after the last sync (1792837499.963); local file unchanged. Not synced. Decide whether to pull the page edit into case-numbers.md or overwrite it. "
     },
     "order-template-catalogue.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
@@ -302,8 +304,8 @@
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
       "title": "Application Lifecycle",
-      "contentHash": "376bc5b49fc6",
-      "pageUpdatedAt": 1792503392.931,
+      "contentHash": "0b0ced16e761",
+      "pageUpdatedAt": 1793189132.772,
       "calloutElementId": "cl-cvBOSX08p4",
       "sections": [
         {
@@ -1402,7 +1404,7 @@
           "hash": "f2112e0e8d91"
         }
       ],
-      "note": "Patched in place 2026-10-20: status, callout, and grid cells ALC-02, ALC-14, ALC-16, ALC-19 and Q-5 updated with table_rows_manage (APL references removed). `sections` not refreshed. Patched in place 2026-10-19 (block-level insert+delete; comments kept). sections = one entry per page block. The Status paragraph is split across two page blocks (cl-kwvO8-2qLg, cl-LeLHZMzzQ9); the diagram image block is not tracked. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Status block cl-kwvO8-2qLg was already damaged on the page before this sync (\"v33 — 2026-10v33…**Eion**\", truncated at v14); left as is."
+      "note": "Patched in place 2026-10-28 to v36: Status block and callout, step 1.2 prose and new Application details bullet (cl-*, after Litigant), Every application grid rows rewritten (Application details, Supporting documents), reason rows deleted from grids 152, 153, 159, 162, 164, 165; grids 158, 160, 161, 170, 171, 172 deleted and replaced by a 'No fields of its own' line. `sections` not refreshed. Patched in place 2026-10-20: status, callout, and grid cells ALC-02, ALC-14, ALC-16, ALC-19 and Q-5 updated with table_rows_manage (APL references removed). `sections` not refreshed. Patched in place 2026-10-19 (block-level insert+delete; comments kept). sections = one entry per page block. The Status paragraph is split across two page blocks (cl-kwvO8-2qLg, cl-LeLHZMzzQ9); the diagram image block is not tracked. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Status block cl-kwvO8-2qLg was already damaged on the page before this sync (\"v33 — 2026-10v33…**Eion**\", truncated at v14); left as is."
     },
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
