@@ -79,7 +79,7 @@ way, through settings and env vars.
 
 - Every log line is one structured event with a stable set of base fields.
 - Every line emitted while handling a request carries `request_id`, and so does
-  every line from a task that request enqueued.
+  every task-scoped line (§9.1) of a task that request enqueued.
 - No configured sensitive key, and no exception local, ever reaches a handler.
 - A single log file can't grow without bound, and old files can be removed by
   age.
@@ -143,15 +143,25 @@ Add to `src/requirements/base.txt`:
 
 ```text
 structlog>=25.1.0
-django-structlog>=9.0.0
+django-structlog>=10.1.0,<11
 concurrent-log-handler>=0.9.25
 ```
 
-django-structlog is expected to support Django 5.0, which the repo pins
-(`Django>=5.0,<5.1`), and Python 3.11. The PoC (§9) confirms this. The bounds
-above are placeholders: pin exact lower bounds against the versions the PoC was
-tested on. `rich` is **not** added, so
-the console renderer uses plain tracebacks.
+**django-structlog is capped below 11.** The repo pins `Django>=5.0,<5.1`.
+django-structlog 11.0.0 requires `django>=5.2`. 10.1.0 is the newest release
+that supports Django 5.0 (it declares 4.2–5.2 and Python ≥3.10).
+
+10.x has no `DJANGO_STRUCTLOG_TRUST_UPSTREAM_*` settings. It copies the client's
+`X-Request-ID` and `X-Correlation-ID` headers into the context unconditionally.
+That trust boundary is therefore enforced locally (§5).
+
+When the project moves to Django ≥5.2:
+- lift the cap to 11.x;
+- replace the local middleware with the library's trust settings.
+
+The other bounds are placeholders. Pin exact lower bounds against the versions
+the PoC (§9) is tested on. `rich` is **not** added, so the console renderer uses
+plain tracebacks.
 
 ### 2. Module layout
 
@@ -161,6 +171,7 @@ src/apps/core/logs/
 ├── config.py          # build_logging(): returns the LOGGING dict and calls structlog.configure()
 ├── processors.py      # drop_sensitive_events, sanitise, strip_query_string
 ├── filters.py         # SensitiveRecordFilter, the stdlib counterpart of drop_sensitive_events
+├── middleware.py      # UpstreamHeaderMiddleware: the request-id trust boundary (§5)
 ├── dramatiq.py        # LogContextMiddleware (§9)
 └── checks.py          # system checks (§10.3), imported from CoreConfig.ready()
 ```
@@ -187,11 +198,14 @@ structlog.get_logger().info("EVENT", k=v)          logging.getLogger(x).info("%s
   wrap_for_formatter                                          │
         │                                                     │
         └────────────────────►  ProcessorFormatter.processors  ◄────┘
-                                  remove_processors_meta
-                                  strip_query_string
-                                  sanitise                ── deny / allow / off; strips `sensitive`
-                                  exception renderer      ── show_locals=False
-                                  renderer                ── "json" or "console" formatter
+                                         │
+              "json" formatter           │            "console" formatter
+              remove_processors_meta     │            remove_processors_meta
+              strip_query_string         │            strip_query_string
+              ExceptionRenderer(         │            sanitise   ── keeps exc_info
+                ExceptionDictTransformer)│            ConsoleRenderer(
+              sanitise                   │              exception_formatter=plain_traceback)
+              JSONRenderer               │
                                          │
                         ┌────────────────┴────────────────┐
                  StreamHandler (stdout)      ConcurrentTimedRotatingFileHandler
@@ -200,13 +214,30 @@ structlog.get_logger().info("EVENT", k=v)          logging.getLogger(x).info("%s
 ```
 
 `LOGGING` defines two `ProcessorFormatter`s, `json` and `console`. They share
-the processor list above and differ only in the final renderer.
+every processor except exception handling and the final renderer.
+
+`build_logging()` configures structlog to log **through stdlib**. Without
+`logger_factory` and `wrapper_class`, structlog defaults to `PrintLogger`, and
+events would bypass `ProcessorFormatter`, `SensitiveRecordFilter` and both
+handlers.
+
+```python
+structlog.configure(
+    processors=[...],  # the left-hand chain above
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+```
 
 Rules that fall out of this shape:
 
-- **`sanitise` runs in `ProcessorFormatter.processors`**, the last stage before
-  rendering. It therefore sees first-party and third-party events alike,
+- **`sanitise` runs in `ProcessorFormatter.processors`**, just before the
+  renderer. It therefore sees first-party and third-party events alike,
   including context merged from contextvars.
+- **In `json`, exceptions are rendered before `sanitise`.** `sanitise` then sees
+  the final `exception` field. In `console`, `ConsoleRenderer` formats `exc_info`
+  itself, so `sanitise` runs first and keeps `exc_info` (§6.5).
 - **`drop_sensitive_events` runs only in the structlog chain.** `DropEvent`
   derives from `BaseException`. Raised inside a formatter, it would escape
   `Handler.emit`'s `except Exception` and crash the caller. The stdlib side
@@ -214,7 +245,9 @@ Rules that fall out of this shape:
 - **Only explicitly listed `extra=` keys are copied.** `ExtraAdder` takes an
   opt-in set, which today is only `sensitive`. This stops objects such as
   `django.request`'s `request` from being serialised. Add a key to the set only
-  if it is safe under §6.
+  if it is safe under §6. Every other `extra` key on a stdlib record is
+  discarded before `sanitise` runs, so the only fields on a third-party line
+  come from the pre-chain and from contextvars.
 
 ### 4. Event shape
 
@@ -231,12 +264,14 @@ logger.info("PDF_RENDERED", key=config.key, version=version, bytes=size, duratio
 | `timestamp` | `TimeStamper`, ISO 8601, UTC | every line |
 | `level` | `add_log_level` | every line |
 | `logger` | `add_logger_name` | every line |
-| `request_id` | django-structlog middleware, or the Dramatiq middleware | request- and task-scoped lines |
-| `correlation_id` | django-structlog, only when trusted upstream (§5) | as above |
+| `request_id` | django-structlog middleware, or the Dramatiq middleware | request-scoped and task-scoped lines |
 | `user_id` | django-structlog | request-scoped lines (see §5 for the DRF caveat) |
 | `ip` | django-structlog | request-scoped lines |
-| `task_id`, `actor` | Dramatiq middleware | task-scoped lines |
-| `exception` | the exception renderer | lines logged with `exc_info` |
+| `task_id`, `actor` | Dramatiq middleware | task-scoped lines (§9.1) |
+| `exception` | the `json` exception renderer | JSON lines logged with `exc_info` (console prints a plain traceback instead) |
+
+`correlation_id` is not used. Its header is always stripped (§5), so it is never
+bound. Only `request_id` crosses into tasks.
 
 Existing domain events keep their current names (`PDF_RENDERED`,
 `GATEWAY_REQUEST` and so on). django-structlog's own events keep theirs
@@ -244,16 +279,32 @@ Existing domain events keep their current names (`PDF_RENDERED`,
 
 ### 5. Request context
 
-Add `django_structlog.middlewares.RequestMiddleware` to `MIDDLEWARE` directly
-after `AuthenticationMiddleware`, so `request.user` is resolved before the
-middleware reads it.
+Add two entries to `MIDDLEWARE`, directly after `AuthenticationMiddleware` and
+in this order:
+
+1. `apps.core.logs.middleware.UpstreamHeaderMiddleware`
+2. `django_structlog.middlewares.RequestMiddleware`
+
+`RequestMiddleware` comes after authentication so that `request.user` is
+resolved before it reads it.
+
+**Trust boundary.** django-structlog 10.x copies `X-Request-ID` and
+`X-Correlation-ID` from any client (§1), and today's `docker/nginx.conf` passes
+both headers through untouched. A client could therefore choose its own
+`request_id` and pollute or forge correlation. `UpstreamHeaderMiddleware` runs
+first and fixes this:
+
+- it always deletes `HTTP_X_CORRELATION_ID` from `request.META`;
+- it deletes `HTTP_X_REQUEST_ID` unless `LOG_TRUST_UPSTREAM_REQUEST_ID=True`;
+- `RequestMiddleware` then finds no header and generates a fresh UUID.
+
+Turn the trust setting on only after nginx overwrites the header on every
+request (Open question 4).
 
 | Setting | Value | Why |
 | --- | --- | --- |
 | `DJANGO_STRUCTLOG_USER_ID_FIELD` | `"pk"` (default) | |
 | `DJANGO_STRUCTLOG_IP_LOGGING_ENABLED` | `True` (default) | Needed for abuse investigation |
-| `DJANGO_STRUCTLOG_TRUST_UPSTREAM_REQUEST_ID` | `LOG_TRUST_UPSTREAM_REQUEST_ID`, default `False` | Only nginx should set `X-Request-ID`. Turn it on once nginx overwrites the client's header. |
-| `DJANGO_STRUCTLOG_TRUST_UPSTREAM_CORRELATION_ID` | `False` | Not used |
 
 Known limitations:
 
@@ -329,7 +380,8 @@ Matching rules:
 `ALLOW_KEYS` has two parts:
 
 - **Base set, always allowed:** every §4 field, plus django-structlog's
-  `request`, `code` and `user_agent`.
+  `request`, `code` and `user_agent`, plus `exc_info` for the console formatter
+  (§6.5).
 - **Extras:** the field names that migrated call sites use, maintained in
   `apps/core/logs/processors.py` next to the base set. Today these are
   `message_id`, `message_key`, `attempt`, `job_id`, `file_id`, `transaction_id`,
@@ -362,12 +414,33 @@ structlog's `ExceptionDictTransformer` defaults to `show_locals=True`, and so do
 `RichTracebackFormatter`. A frame's locals can hold passwords, OTPs, keys and
 whole request bodies.
 
-- **JSON:** `ExceptionRenderer(ExceptionDictTransformer(show_locals=LOG_SHOW_LOCALS, use_rich=False))`.
-- **Console:** `ConsoleRenderer(exception_formatter=structlog.dev.plain_traceback)`,
-  which never prints locals. `rich` is not installed (§1).
+Each formatter handles exceptions with its own processor, because a console
+formatter can't consume a traceback that has already been turned into dicts:
+
+- **JSON:** `ExceptionRenderer(ExceptionDictTransformer(show_locals=LOG_SHOW_LOCALS, use_rich=False))`
+  runs **before** `sanitise`. It replaces `exc_info` with an `exception` list
+  (type, value, frames).
+- **Console:** no exception processor. `exc_info` is left for
+  `ConsoleRenderer(exception_formatter=structlog.dev.plain_traceback)`, which
+  never prints locals. `rich` is not installed (§1).
 - **`LOG_SHOW_LOCALS`** defaults to `False` in every environment, and
   `production.py` refuses `True` (§10.3). It exists only for a developer chasing
-  a bug locally.
+  a bug locally, and it affects only JSON output.
+
+**How `sanitise` treats exceptions** (nested exception policy):
+
+- **`exception` and `exc_info` are always kept, in every mode.** They are in the
+  allow base set (§6.3), so allow mode never drops a traceback.
+- **`sanitise` does not filter the transformer's own structure** (`exc_type`,
+  `exc_value`, `frames`, `filename`, `lineno`, `name`). That structure is
+  library-defined and holds no request data.
+- **Frame `locals`**, present only when `LOG_SHOW_LOCALS=True`:
+  - deny mode: each frame's `locals` dict gets the deny-key matching of §6.2;
+  - allow mode: `locals` are removed entirely;
+  - off mode: they are kept.
+- **The exception message (`exc_value`, and the text in a console traceback)**
+  is free text. Keys can't redact it, so the §6.4 rules apply: don't raise
+  exceptions whose message contains user input.
 
 #### 6.6 Defaults per environment
 
@@ -383,9 +456,9 @@ Third-party libraries use stdlib `logging`, so they skip the structlog chain. To
 handle them:
 
 - **Route all formatting through the shared processors.** Every handler in
-  `LOGGING` uses one of the two `ProcessorFormatter`s (§3), and both run the same
-  processors. `sanitise`, `strip_query_string` and the exception renderer
-  therefore apply to every record, whatever logger it came from.
+  `LOGGING` uses one of the two `ProcessorFormatter`s (§3). `sanitise`,
+  `strip_query_string` and the formatter's exception handling therefore apply
+  to every record, whatever logger it came from.
 - **Keep the existing named loggers.** `django`, `dramatiq`, `cachalot`,
   `apps.messaging`, `apps.pdf` and `addon.cdac_sms_gateway` keep their
   `propagate: False` entries and point at the same handlers. Nothing is left on
@@ -419,7 +492,8 @@ handle them:
 
 #### 8.1 Handlers
 
-- **`console`.** A `StreamHandler` on stdout. It is always on, so
+- **`console`.** A `logging.StreamHandler` with `"stream": "ext://sys.stdout"`.
+  Without an explicit stream it writes to stderr. It is always on, so
   `docker compose logs` keeps working.
 - **`file`.** `concurrent_log_handler.ConcurrentTimedRotatingFileHandler`, on
   when `LOG_FILE_ENABLED=True`. It always uses the `json` formatter, whatever
@@ -457,7 +531,7 @@ handle them:
   - pin `appuser` to a fixed UID and GID (`10001`). Today `useradd -r` assigns
     an arbitrary system UID, so the host directory in the bind mount below
     can't be given the right owner. The host runs
-    `chown 10001:10001 /var/log/dristi` once.
+    `chown 10001:10001 "$LOG_HOST_DIR"` once (default `/var/log/dristi`).
   - **Existing hosts.** On any host that already runs the stack, the
     `staticfiles` named volume belongs to the old UID. `entrypoint.sh` runs
     `collectstatic --clear` into it on every start, which would fail with
@@ -481,18 +555,29 @@ handle them:
 
 - **Rotation.** Rotation happens at UTC midnight. A day's file also rotates
   early when it reaches `LOG_FILE_MAX_BYTES`. Rotated files are gzipped and
-  named `dristi-<host>.log.YYYY-MM-DD[.N].gz`.
+  named `<LOG_FILE_PREFIX>-<host>.log.YYYY-MM-DD[.N].gz`.
 - **Stale files after a redeploy.** Every redeploy gets a new container id, so
-  the previous container's live `.log` file and its `.__dristi-<host>.lock`
-  file stop changing and are never rotated. The cron job therefore matches
-  every file type, by age. A running container's live file is always recent, so
-  it is never deleted.
-- **Deletion by cron.** Old files are deleted by a cron job on the host:
+  the previous container's live `.log` file and its
+  `.__<LOG_FILE_PREFIX>-<host>.lock` file stop changing and are never rotated.
+  The cron job therefore matches every file type, by age. A running container's
+  live file is always recent, so it is never deleted.
+- **Deletion by cron.** Old files are deleted by a cron job on the host. The
+  folder, prefix and retention period are variables at the top of the cron
+  file. They **must equal** the deployment's `LOG_HOST_DIR` and
+  `LOG_FILE_PREFIX`, or files fall outside the cleanup pattern:
 
   ```cron
-  # /etc/cron.d/dristi-logs: delete log, rotated and lock files untouched for 30 days
-  15 1 * * * root find /var/log/dristi -maxdepth 1 -type f \( -name 'dristi-*.log*' -o -name '.__dristi-*.lock' \) -mtime +30 -delete
+  # /etc/cron.d/dristi-logs: delete log, rotated and lock files untouched for LOG_RETENTION_DAYS
+  # Keep these in sync with the deployment's LOG_HOST_DIR and LOG_FILE_PREFIX.
+  LOG_HOST_DIR=/var/log/dristi
+  LOG_FILE_PREFIX=dristi
+  LOG_RETENTION_DAYS=30
+  15 1 * * * root find "$LOG_HOST_DIR" -maxdepth 1 -type f \( -name "$LOG_FILE_PREFIX-*.log*" -o -name ".__$LOG_FILE_PREFIX-*.lock" \) -mtime +"$LOG_RETENTION_DAYS" -delete
   ```
+
+  `docs/production.md` lists these three variables next to the compose env.
+  Changing `LOG_HOST_DIR` or `LOG_FILE_PREFIX` on a host means changing them in
+  both places.
 
 - **Safety net.** `LOG_FILE_BACKUP_COUNT` is a backstop in case the cron job is
   missing. Set it high enough (default 60) that cron is what normally removes
@@ -528,11 +613,35 @@ class LogContextMiddleware(dramatiq.Middleware):
     after_skip_message = after_process_message
 ```
 
-- Register it in `DRAMATIQ_BROKER["MIDDLEWARE"]` in `base.py` and in
-  `test.py`.
+- **Register it first** in `DRAMATIQ_BROKER["MIDDLEWARE"]`, in `base.py` and in
+  `test.py`, ahead of `AgeLimit`, `TimeLimit`, `Callbacks` and `Retries`.
+  Dramatiq runs `before_*` hooks in list order and `after_*` hooks in reverse.
+  Being first therefore means:
+  - its `before_process_message` binds context before any other middleware
+    runs, so `AgeLimit`'s and `TimeLimit`'s lines carry it;
+  - its `after_process_message` clears context last, so `Retries`' retry and
+    give-up lines carry it.
 - It clears the context on entry as well as on exit. Worker threads are reused,
   so a missed `after_*` hook must not leak one task's `request_id` into the
   next.
+
+**Task-scoped lines**, which carry `task_id`, `actor` and the propagated
+`request_id`, are every line emitted on the worker thread between
+`before_process_message` and `after_process_message`. That covers:
+
+- the actor body and everything it calls;
+- every Dramatiq middleware hook in that window.
+
+**Out of scope:**
+
+- Dramatiq's own ack and nack lines (`Acknowledging message …`,
+  `Rejecting message …`). Dramatiq logs them at DEBUG on the **consumer
+  thread**, after the after-hooks have run. That is another thread with its own
+  context, so no worker-thread middleware can tag them.
+- The `dramatiq` main process lines (§7).
+
+The goal and the acceptance criterion about task lines refer to task-scoped
+lines only.
 
 #### 9.2 PoC checks
 
@@ -580,8 +689,9 @@ questions.
 | `LOG_ALLOW_KEYS_EXTRA` | Extra allow keys, comma-separated | empty |
 | `LOG_DROP_SENSITIVE_EVENTS` | Drop events marked `sensitive=True` | `False` locally, `True` in prod |
 | `LOG_SHOW_LOCALS` | Include exception locals (local debugging only) | `False` |
-| `LOG_TRUST_UPSTREAM_REQUEST_ID` | Trust the `X-Request-ID` header set by nginx | `False` |
-| `LOG_HOST_DIR` | Host path mounted at `LOG_DIR` (compose only) | `/var/log/dristi` |
+| `LOG_TRUST_UPSTREAM_REQUEST_ID` | Keep an incoming `X-Request-ID` header, which `UpstreamHeaderMiddleware` otherwise strips (§5) | `False` |
+| `LOG_HOST_DIR` | Host path mounted at `LOG_DIR` (compose and the cron file only) | `/var/log/dristi` |
+| `LOG_RETENTION_DAYS` | Age after which the host cron job deletes log files (cron file only, §8.3) | `30` |
 | `CDAC_SMS_PRINT_RESPONSE` | **Changed:** default is now `False` | `False` |
 
 Following AGENTS.md:
@@ -711,24 +821,48 @@ Tests go in `apps/core/tests/test_logs_*.py` unless noted.
      is a stdlib record with `extra={"sensitive": True}`;
    - with it off, both are rendered and the flag is removed;
    - neither raises.
-4. **Locals:** an exception raised with a local `password = "x"` renders without
-   the value in JSON and console output.
-5. **Third-party records:** a record from `logging.getLogger("django.request")`
-   with a denied `extra` key, and with a query string in `request`, renders
-   sanitised.
-6. **Request context:** two log calls inside one test-client request share the
-   `request_id` of `request_finished`.
-7. **Dramatiq (stub broker):** a task enqueued inside a bound context logs that
-   `request_id`; a task enqueued outside one logs only `task_id` and `actor`;
-   back-to-back tasks don't leak context.
-8. **File handler:** with `LOG_FILE_ENABLED=True` and a temporary `LOG_DIR`,
-   several processes (`multiprocessing`) write to one file without interleaving
-   lines. Forcing a rollover produces a gzipped backup.
-9. **Validation:**
+4. **Exceptions:**
+   - an exception raised with a local `password = "x"` renders without the value
+     in JSON and console output;
+   - in allow mode, a `logger.exception(...)` still renders its traceback (the
+     `exception` field in JSON, a plain traceback in console);
+   - with `LOG_SHOW_LOCALS=True` in deny mode, a denied key inside frame
+     `locals` is removed from the JSON `exception` field. In allow mode, `locals`
+     are absent.
+5. **Third-party records:**
+   - a `logging.getLogger("django.request")` record with
+     `extra={"phone": "…", "request": object()}` renders without either key,
+     because `ExtraAdder` copies only `sensitive`;
+   - a stdlib record logged while a denied key is bound in contextvars renders
+     without that key.
+6. **Query strings:**
+   - `strip_query_string` is tested directly on `{"request": "GET /x?phone=1"}`;
+   - end to end, a test-client `GET` with a query string produces a
+     `request_finished` line whose `request` has no `?`.
+7. **Request context and trust boundary:**
+   - two log calls inside one test-client request share the `request_id` of
+     `request_finished`;
+   - a request sent with `X-Request-ID: forged` and `X-Correlation-ID: forged`
+     gets a generated `request_id` and no `correlation_id`;
+   - with `LOG_TRUST_UPSTREAM_REQUEST_ID=True`, the `X-Request-ID` value is
+     kept.
+8. **Routing through stdlib:** with `LOG_FILE_ENABLED=True` and a temporary
+   `LOG_DIR`, a migrated event logged through `structlog.get_logger(...)` with a
+   denied field appears on stdout **and** in the file. The denied field is
+   removed in both. This guards the `logger_factory` configuration (§3).
+9. **Dramatiq (stub broker):**
+   - a task enqueued inside a bound context logs that `request_id`;
+   - a task enqueued outside one logs only `task_id` and `actor`;
+   - back-to-back tasks don't leak context;
+   - `LogContextMiddleware` is first in the configured middleware list.
+10. **File handler:** with `LOG_FILE_ENABLED=True` and a temporary `LOG_DIR`,
+    several processes (`multiprocessing`) write to one file without interleaving
+    lines. Forcing a rollover produces a gzipped backup.
+11. **Validation:**
    - each system check in §10.3;
    - importing production settings with `LOG_SHOW_LOCALS=True` or
      `LOG_REDACTION_MODE=off` raises `ImproperlyConfigured`.
-10. **Migration:**
+12. **Migration:**
     - the OTP send no longer logs the mobile number;
     - the CDAC default for `print_response` is `False`;
     - an allow-mode test runs the migrated call sites and fails on any key
@@ -755,8 +889,10 @@ before merging.
    step 2 is deployed:
    - before the new image starts, re-own the `staticfiles` volume if it exists
      (§8.2);
-   - create `/var/log/dristi` on the host and `chown` it to `10001:10001`;
-   - install the cron entry (§8.3).
+   - create `LOG_HOST_DIR` (default `/var/log/dristi`) on the host and `chown`
+     it to `10001:10001`;
+   - install the cron entry (§8.3), with its variables matching this host's
+     `LOG_HOST_DIR` and `LOG_FILE_PREFIX`.
 
    Under `production.py`, JSON output, the file handler and dropping sensitive
    events are the defaults (§10.2). An environment on another settings module
@@ -767,8 +903,10 @@ before merging.
 
 ## Acceptance criteria
 
-- Every request-scoped line carries `request_id`. Worker lines for a task
-  enqueued by that request carry the same `request_id`, provided the PoC passed.
+- Every request-scoped line carries `request_id`. Every task-scoped line (§9.1)
+  of a task enqueued by that request carries the same `request_id`, provided the
+  PoC passed. A client-supplied `X-Request-ID` or `X-Correlation-ID` is never
+  used unless `LOG_TRUST_UPSTREAM_REQUEST_ID=True`.
 - No key on `DENY_SENSITIVE_KEYS` appears in output in deny mode, and no key
   outside `ALLOW_KEYS` appears in allow mode. This holds for first-party and
   third-party records alike.
@@ -790,7 +928,10 @@ before merging.
   setup). Mitigation: the PoC gate in §9, and the fallback of task-local context
   only.
 - **Allow mode silently hides a new field.** Mitigation: the allow-list test in
-  §14 item 10, and convention rule 5 in §12.
+  §14 item 12, and convention rule 5 in §12.
+- **django-structlog stays on 10.x while Django is pinned to 5.0** (§1).
+  Mitigation: `UpstreamHeaderMiddleware` enforces the trust boundary that 11.x
+  would provide. Revisit when Django moves to ≥5.2.
 - **The cron job is missing on a host, so the disk fills.** Mitigation:
   `LOG_FILE_BACKUP_COUNT` cap, `maxBytes` per day, and the Docker `json-file`
   limits.
@@ -811,7 +952,7 @@ before merging.
    Should production run `allow` from day one, accepting the upkeep of rule 5 in
    §12?
 2. **Cron ownership.** Who installs and owns the host cron entry and the
-   one-time `chown` of `/var/log/dristi`: ops, or a compose sidecar shipped with
+   one-time `chown` of `LOG_HOST_DIR`: ops, or a compose sidecar shipped with
    the repo?
 3. **Retention period.** Is 30 days right, or is there a legal or compliance
    requirement?
