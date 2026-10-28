@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "addon.cdac_sms_gateway",
     "apps.esign",
     "addon.cdac_esign",
+    "addon.egras_payment_gateway",
 ]
 
 MIDDLEWARE = [
@@ -587,6 +588,40 @@ CDAC_ESIGN_RESPONSE_FIELD = env("CDAC_ESIGN_RESPONSE_FIELD", default="")
 
 
 # ---------------------------------------------------------------------------
+# e-GRAS payment provider addon (addon.egras_payment_gateway, spec 0022 #9)
+# ---------------------------------------------------------------------------
+# Remove this block, the INSTALLED_APPS entry, and the PAYMENT_PROVIDERS["egras"]
+# entry to remove the integration entirely; apps.payments keeps working on the
+# mock provider. The addon's system checks require every value below only when
+# "egras" is selected in PAYMENT_PROVIDERS, so local/CI need no e-GRAS codes.
+EGRAS_PAYMENT_URL = env("EGRAS_PAYMENT_URL", default="")
+EGRAS_VERIFY_URL = env("EGRAS_VERIFY_URL", default="")
+EGRAS_RETURN_URL = env("EGRAS_RETURN_URL", default="")
+EGRAS_DEPT_CODE = env("EGRAS_DEPT_CODE", default="")
+EGRAS_DTO = env("EGRAS_DTO", default="")
+EGRAS_STO = env("EGRAS_STO", default="")
+EGRAS_DDO = env("EGRAS_DDO", default="")
+EGRAS_OFFICE_NAME = env("EGRAS_OFFICE_NAME", default="")
+EGRAS_USER_ID = env("EGRAS_USER_ID", default="guest")
+# JSON object: account_head or charge_type -> 17-character scheme code.
+EGRAS_SCHEME_MAP = env.json("EGRAS_SCHEME_MAP", default={})
+EGRAS_MAX_SCHEMES = env.int("EGRAS_MAX_SCHEMES", default=4)
+# JSON list of {code, label, group} issued by NIC.
+EGRAS_BANK_OPTIONS = env.json("EGRAS_BANK_OPTIONS", default=[])
+EGRAS_DEFAULT_BANK = env("EGRAS_DEFAULT_BANK", default="")
+EGRAS_APPLICATION_PREFIX = env("EGRAS_APPLICATION_PREFIX", default="DR")
+EGRAS_REMARKS_TEMPLATE = env("EGRAS_REMARKS_TEMPLATE", default="Dristi {demand_numbers}")
+EGRAS_PAYER_FALLBACK_CITY = env("EGRAS_PAYER_FALLBACK_CITY", default="NA")
+EGRAS_PAYER_FALLBACK_ADDRESS = env("EGRAS_PAYER_FALLBACK_ADDRESS", default="NA")
+EGRAS_PAYER_FALLBACK_PINCODE = env("EGRAS_PAYER_FALLBACK_PINCODE", default="000000")
+EGRAS_TIMEOUT = env.int("EGRAS_TIMEOUT", default=15)
+EGRAS_VERIFY_SSL = env.bool("EGRAS_VERIFY_SSL", default=True)
+EGRAS_PENDING_HORIZON = env.int("EGRAS_PENDING_HORIZON", default=9)
+EGRAS_NOT_FOUND_GRACE = env.int("EGRAS_NOT_FOUND_GRACE", default=2)
+EGRAS_ENABLED = env.bool("EGRAS_ENABLED", default=True)
+
+
+# ---------------------------------------------------------------------------
 # PDF Service (spec 0016) — signing primitives consumed by apps.esign
 # ---------------------------------------------------------------------------
 # Declared here because the eSign system checks verify that the algorithm this
@@ -652,6 +687,11 @@ LOGGING = {
             "propagate": False,
         },
         "addon.cdac_sms_gateway": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "addon.egras_payment_gateway": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

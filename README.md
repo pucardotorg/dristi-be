@@ -294,6 +294,40 @@ The Docker Compose stack includes:
 - **Dramatiq Dashboard** - Background job monitoring
 - **httpbin** - HTTP testing service (for dummy SMS backend)
 
+### e-GRAS payment gateway addon (spec 0022)
+
+The e-GRAS addon (`addon.egras_payment_gateway`) is the real payment provider.
+It is selected purely by registering `"egras"` in `PAYMENT_PROVIDERS` and
+pointing `PAYMENT_DEFAULT_PROVIDER` at it (done in `config.settings.production`).
+Leave the block blank while the mock provider is the default; the addon's system
+checks require every value below only when `"egras"` is a registered provider,
+so local and CI need no e-GRAS codes. Removing the `EGRAS_*` block, the
+`INSTALLED_APPS` entry and the `PAYMENT_PROVIDERS["egras"]` entry removes the
+integration and leaves payments working on the mock provider.
+
+| Variable | Purpose | Example |
+| --- | --- | --- |
+| `EGRAS_PAYMENT_URL` | NIC e-Challan posting URL the browser submits the form to | `https://egras.<state>.gov.in/echallan` |
+| `EGRAS_VERIFY_URL` | SOAP GRN status service used for server-to-server verification | `https://egras.<state>.gov.in/grnstatus` |
+| `EGRAS_RETURN_URL` | Absolute `https://` callback URL; must end `/api/v1/payments/providers/egras/_callback` | `https://api.example.com/api/v1/payments/providers/egras/_callback` |
+| `EGRAS_DEPT_CODE` | 3-character department code from the budget | `DRI` |
+| `EGRAS_DTO` / `EGRAS_STO` | 2-digit treasury / sub-treasury codes | `01` / `02` |
+| `EGRAS_DDO` | 4-character drawing & disbursing officer code | `DDO1` |
+| `EGRAS_OFFICE_NAME` | 8-character office name; defaults to `DTO+STO+DDO` | `0102DDO1` |
+| `EGRAS_USER_ID` | e-GRAS user id | `guest` |
+| `EGRAS_SCHEME_MAP` | JSON: `account_head` or `charge_type` → 17-character scheme code `NNNN-NN-NNN-NN-NN` | `{"COURT_FEE": "0030-01-501-01-00"}` |
+| `EGRAS_MAX_SCHEMES` | Government-charge scheme slots per transaction | `4` |
+| `EGRAS_BANK_OPTIONS` | JSON list of `{code, label, group}` bank/UPI choices issued by NIC | `[{"code": "SBI", "label": "State Bank of India", "group": "NET_BANKING"}]` |
+| `EGRAS_DEFAULT_BANK` | Bank code used when the client sends none; must be one of the options | `SBI` |
+| `EGRAS_APPLICATION_PREFIX` | ≤ 2 alphanumeric characters prefixing the application number | `DR` |
+| `EGRAS_REMARKS_TEMPLATE` | Remarks template; `{demand_numbers}` is filled in | `Dristi {demand_numbers}` |
+| `EGRAS_PAYER_FALLBACK_CITY` / `_ADDRESS` / `_PINCODE` | Fallbacks when a payer field is empty after sanitisation | `NA` / `NA` / `000000` |
+| `EGRAS_TIMEOUT` | Verification connect/read timeout in seconds | `15` |
+| `EGRAS_VERIFY_SSL` | TLS certificate verification for the SOAP call; rejected as `False` in production | `True` |
+| `EGRAS_PENDING_HORIZON` | Days a payment may stay pending (≥ 8; e-GRAS fails on the 8th day) | `9` |
+| `EGRAS_NOT_FOUND_GRACE` | Hours a missing GRN stays `NOT_FOUND` before it is final | `2` |
+| `EGRAS_ENABLED` | Kill switch; `False` refuses new payments while verification keeps resolving in-flight ones | `True` |
+
 ## Docker dependency profiles
 
 The Docker image supports selecting which requirements file to install via the `REQUIREMENTS_FILE` build arg:

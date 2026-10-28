@@ -31,3 +31,4 @@ fonttools>=4.40.0
 signxml>=4.1.0
 cryptography>=42.0.0
 lxml>=5.0.0
+defusedxml>=0.7.1

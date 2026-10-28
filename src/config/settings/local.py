@@ -53,8 +53,16 @@ MESSAGING_BACKENDS = {**MESSAGING_BACKENDS, "sms": "apps.messaging.senders.sms.D
 # Keep the mock eSign provider locally so no C-DAC keystore is required
 ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockESignProvider")
 
-# Pay through the mock provider locally so no gateway credentials are required
+# Pay through the mock provider locally so no gateway credentials are required.
+# Opt into the e-GRAS addon for local testing by setting
+# PAYMENT_DEFAULT_PROVIDER=egras in .env (and the EGRAS_* block); that registers
+# egras here and the addon's system checks then require a full EGRAS_* config.
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="mock")
+if PAYMENT_DEFAULT_PROVIDER == "egras":
+    PAYMENT_PROVIDERS = {
+        "mock": "apps.payments.providers.mock.MockPaymentProvider",
+        "egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider",
+    }
 PAYMENT_MOCK_CALLBACK_BASE_URL = env(
     "PAYMENT_MOCK_CALLBACK_BASE_URL", default="http://localhost:8000"
 )
