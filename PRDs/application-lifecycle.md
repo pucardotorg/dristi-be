@@ -1,6 +1,6 @@
 # Application Lifecycle
 
-**Status:** v35 — 2026-10-19; references to `APL-02`–`APL-11` of order-generation.md removed, including from `ALC-02` and `Q-5` (that section now only lists pending applications and points here); links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v34 — 2026-10-18; **court-side permissions are named by role**
+**Status:** v36 — 2026-10-28; **Other details becomes Application details**, a mandatory rich-text field on every type, and the type's own reason box is removed from Bail, Edit Litigant Details, Case Settlement, Case Transfer, Case Withdrawal, Delay Condonation, Generic (Details), PoA Change, Production of Documents, Absent Application, Reopen Evidence and Objection, so no type asks for its reasons twice. v35 — 2026-10-19; references to `APL-02`–`APL-11` of order-generation.md removed, including from `ALC-02` and `Q-5` (that section now only lists pending applications and points here); links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v34 — 2026-10-18; **court-side permissions are named by role**
 ([`court-roles.md`](court-roles.md)): onboarding and setting or moving the decision date
 need the **Application onboarder** role; orders are drafted by an **Order drafter** and
 signed by an **Order signer** (`ALC-22`). "Users and actions" lists roles, not staff titles.
@@ -261,13 +261,15 @@ hearing is scheduled in the case, and Edit Litigant Details as its workflow cont
 allows. **Objection** is never chosen here — it is raised only from a File objection task
 (step 4).
 
-**1.2 Fill in the form.** Every application asks the same three things first (see "Every
+**1.2 Fill in the form.** Every application asks the same four things (see "Every
 application" under "Fields by application type"):
 
 - **Raised by** — the advocate/PiP the application is raised by, preselected where the
   filer's role makes it obvious. This is the person who will sign it.
 - **Litigant** — the litigant it is raised on behalf of, from those the advocate in
   Raised by represents.
+- **Application details** — mandatory; the application in the filer's own words, with
+  formatting.
 - **Supporting documents** — optional; as many as needed, each named by the filer.
 
 Then come the type's own fields, listed under its heading in "Fields by application type".
@@ -591,8 +593,8 @@ taken from the case record; shown, not editable.
 |---|---|---|---|
 | Raised by | Filer | Dropdown, single select | Options: everyone with advocate access on the case. Preselected: the user's own name for an advocate with vakalatnama access or a party-in-person; for a clerk, or a junior advocate without vakalatnama access, the advocate they work for — left empty if they work for more than one. Saved as Application Raised By. |
 | Litigant | Filer | Dropdown, single select | Options: the litigants represented by the person selected in Raised by; they refresh when Raised by changes. Preselected when there is only one. Saved as Application Raised On Behalf Of. |
+| Application details | Filer | Rich text: bold, italic, underline, bulleted and numbered lists, alignment | Mandatory. The application in the filer's own words, and the only free-text box on the form: a type has no reason box of its own. Printed as the body of the application. |
 | Supporting documents | Filer | Document name, file upload | Optional. Add as many; one entry per document. The filer names each document. |
-| Other details | Filer | Text | Optional. Anything the filer wants to add that the type's own fields don't cover. |
 
 ### Bail
 
@@ -609,7 +611,6 @@ Template: `application-bail-bond`. The surety fields follow the bail bond form (
 | Surety email ID | Filer | Email | Shown when Type of bail is Surety; once per surety. Optional. |
 | Surety address | Filer | Address | Shown when Type of bail is Surety; once per surety. |
 | Surety ID proof | Filer | File upload | Shown when Type of bail is Surety; once per surety. |
-| Reason for bail | Filer | Text | |
 | Proof of solvency | Filer | File upload | Shown when Type of bail is Surety; once per surety. Any other documents go in the optional Supporting documents on every application. |
 
 ### Edit Litigant Details
@@ -622,7 +623,6 @@ details, it takes them from the case record.
 | Field | Filled by | Field type | Associated logic |
 |---|---|---|---|
 | Litigant to edit | Filer | Dropdown, single select | Options: the litigants whose details the person raising the application is allowed to edit, per the control. Prefills the fields below. |
-| Reason for editing | Filer | Text | |
 | Litigant type (`LIT-2` / `ACC-1`) | Filer | Radio: Individual, Institution | Prefilled with the litigant's current type; editable. Together with whether the litigant is a complainant or an accused, decides which of the tables below is shown. Changing it shows the other type's table; those fields start empty. |
 
 The fields below are the litigant fields from e-filing ([e-filing handover](efiling-handover.md)
@@ -692,9 +692,7 @@ The institution's persons responsible (`ACC-14…23`) are not edited here. Each 
 
 Template: `application-case-settlement`
 
-| Field | Filled by | Field type | Associated logic |
-|---|---|---|---|
-| Reason for settlement | Filer | Text | |
+No fields of its own; the reason goes in Application details.
 
 ### Case Transfer
 
@@ -704,23 +702,18 @@ Template: `application-case-transfer`
 |---|---|---|---|
 | Current court | System | — | The court the case is in. |
 | Requested court | Filer | Text | |
-| Reason for transfer | Filer | Text | |
 
 ### Case Withdrawal
 
 Template: `application-case-withdrawal`
 
-| Field | Filled by | Field type | Associated logic |
-|---|---|---|---|
-| Reason for withdrawal | Filer | Text | |
+No fields of its own; the reason goes in Application details.
 
 ### Delay Condonation
 
 Template: `application-delay-condonation`
 
-| Field | Filled by | Field type | Associated logic |
-|---|---|---|---|
-| Reasons for delay | Filer | Text | |
+No fields of its own; the reason goes in Application details.
 
 ### Generic
 
@@ -729,7 +722,6 @@ Template: `application-generic`
 | Field | Filled by | Field type | Associated logic |
 |---|---|---|---|
 | Application title | Filer | Text | Used as the application's heading. |
-| Details | Filer | Text | |
 
 ### Advance (Prepone) / Postpone
 
@@ -753,7 +745,6 @@ not by an advocate.
 |---|---|---|---|
 | Litigants appointing the applicant | Filer | Multi-select | Options: the case's litigants. Whether a litigant already has a PoA holder is a property of that litigant on the case record, not a field here. |
 | Authorization document | Filer | File upload | One per litigant selected above. |
-| Reason for change | Filer | Text | |
 
 ### Production of Documents
 
@@ -761,7 +752,6 @@ Template: `application-production-of-documents`
 
 | Field | Filled by | Field type | Associated logic |
 |---|---|---|---|
-| Reason for application | Filer | Text | |
 | Documents | Filer | Document type, file upload | Add as many; one entry per document. PDF or JPEG, within the file size limit. |
 
 ### Addition of Witness
@@ -793,25 +783,19 @@ No template of its own.
 
 No template.
 
-| Field | Filled by | Field type | Associated logic |
-|---|---|---|---|
-| Reason for absence | Filer | Text | |
+No fields of its own; the reason goes in Application details.
 
 ### Reopen Evidence
 
 No template.
 
-| Field | Filled by | Field type | Associated logic |
-|---|---|---|---|
-| Reason for reopening | Filer | Text | |
+No fields of its own; the reason goes in Application details.
 
 ### Objection
 
 No template yet.
 
-| Field | Filled by | Field type | Associated logic |
-|---|---|---|---|
-| Reason for objection | Filer | Text | |
+No fields of its own; the reason goes in Application details.
 
 
 ---
