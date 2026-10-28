@@ -80,9 +80,11 @@ make format      # Format code with ruff
 
 Run `make help` to see all available commands.
 
-Pincode pre-fill needs location data, which the repository does not ship: load
-the states and districts, then run `import_pincodes` (see
-[docs/development.md](docs/development.md#loading-location-data-pincode-pre-fill)).
+Pincode pre-fill needs location data, which the repository does not ship: put
+the India Post CSV in `src/data/pincodes/`, then run
+`python manage.py import_pincodes --create-districts` in the `web` container,
+which also creates the states and districts (see
+[src/data/pincodes/README.md](src/data/pincodes/README.md)).
 
 ## Pre-commit hooks
 

@@ -18,15 +18,28 @@ Even then, a pincode an admin has edited (``updated_by`` set) is left alone
 unless ``--overwrite-edits`` is also given, so manual corrections survive a
 re-import. Rows the import repoints have ``updated_by`` cleared: an empty
 ``updated_by`` means the row is as the import left it.
+
+``--create-districts`` first creates every state and district the CSV names
+that matches nothing, under the one country location (India is created if
+there is none), so an empty database can be loaded in one run. Their names are
+the CSV's, in title case when the CSV has them in capitals; their codes are
+generated (``IN_KARNATAKA``, ``IN_KARNATAKA_MYSURU``). A dry run rolls back
+everything, these included.
+
+With no CSV path the files are read from ``data/pincodes/`` under ``src/``, so
+loading an environment is: put the CSV there and run ``manage.py
+import_pincodes``. See that folder's README.
 """
 
 import copy
 import csv
+import hashlib
 import json
 import re
 from collections import Counter, defaultdict
 
 from cachalot.api import cachalot_disabled
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -41,6 +54,14 @@ CODE_PREFIX = "PIN_"
 ALIAS_SEPARATOR = "/"
 # How many examples of skipped values to print.
 SAMPLE_SIZE = 5
+# Where the files are looked for when no path is given, relative to src/.
+DATA_DIR = ("data", "pincodes")
+DEFAULT_CSV = "all_india_pincode_directory.csv"
+DEFAULT_ALIASES = "aliases.json"
+# The directory writes a missing state or district as "NA".
+MISSING_NAMES = {"na"}
+# Created when --create-districts finds no country location.
+DEFAULT_COUNTRY = {"code": "IN", "name": "India", "short_name": "IN"}
 
 # Header names differ between releases of the directory.
 COLUMNS = {
@@ -64,6 +85,11 @@ def pincode_code(pincode):
     return f"{CODE_PREFIX}{pincode}"
 
 
+def data_dir():
+    """Return the directory the CSV and aliases are read from by default."""
+    return settings.BASE_DIR.joinpath(*DATA_DIR)
+
+
 def location_names(location):
     """Return the normalized names a location can be matched by."""
     return {normalize(name) for name in (location.name, location.short_name) if name}
@@ -76,11 +102,16 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         """Register the CSV path and options."""
-        parser.add_argument("csv_path", help="All India Pincode Directory CSV.")
+        folder = "/".join(DATA_DIR)
+        parser.add_argument(
+            "csv_path",
+            nargs="?",
+            help=f"All India Pincode Directory CSV (default: {folder}/{DEFAULT_CSV}).",
+        )
         parser.add_argument(
             "--aliases",
             help='JSON object mapping a CSV state to a state code, or "STATE / DISTRICT" '
-            "to a district code.",
+            f"to a district code (default: {folder}/{DEFAULT_ALIASES}, if present).",
         )
         parser.add_argument(
             "--update",
@@ -93,6 +124,11 @@ class Command(BaseCommand):
             help="With --update, also repoint pincodes an admin has edited.",
         )
         parser.add_argument(
+            "--create-districts",
+            action="store_true",
+            help="First create the states and districts the CSV names that match nothing.",
+        )
+        parser.add_argument(
             "--dry-run", action="store_true", help="Report what would change without saving."
         )
 
@@ -100,14 +136,29 @@ class Command(BaseCommand):
         """Read the CSV, choose a district per pincode and save the locations."""
         if options["overwrite_edits"] and not options["update"]:
             raise CommandError("--overwrite-edits only applies with --update.")
-        resolver = DistrictResolver(read_aliases(options["aliases"]))
-        offices, skipped = self._read_offices(options["csv_path"])
+        csv_path = options["csv_path"] or self._default_csv()
+        aliases_path = options["aliases"] or self._default_aliases()
+        aliases = read_aliases(aliases_path)
+        resolver = DistrictResolver(aliases)
+        offices, skipped = self._read_offices(csv_path)
         if not offices:
             raise CommandError(
-                f"No usable rows in {options['csv_path']}: {self._describe_skipped(skipped)}. "
+                f"No usable rows in {csv_path}: {self._describe_skipped(skipped)}. "
                 "Check the file is the comma-separated directory with unmodified pincodes."
             )
+        # One transaction, so a dry run can roll back created districts too.
+        with transaction.atomic(), cachalot_disabled():
+            created = ([], [])
+            if options["create_districts"]:
+                names = {(state, district) for _pincode, state, district in offices}
+                created = create_missing_districts(names, resolver)
+                resolver = DistrictResolver(aliases)
+            self._place(offices, skipped, resolver, created, options)
+            if options["dry_run"]:
+                transaction.set_rollback(True)
 
+    def _place(self, offices, skipped, resolver, created, options):
+        """Choose a district per pincode, save the pincodes and report."""
         by_pincode = defaultdict(dict)  # pincode -> {district pk: [count, rank, district]}
         unmatched, ambiguous = Counter(), Counter()
         for (pincode, state, district), (count, rank) in offices.items():
@@ -122,10 +173,10 @@ class Command(BaseCommand):
         split = {pincode: found for pincode, found in by_pincode.items() if len(found) > 1}
         not_placed = {pincode for pincode, _, _ in offices} - chosen.keys()
 
-        with cachalot_disabled():
-            result = self._save(chosen, options)
+        result = self._save(chosen, options)
 
         verbose = options["verbosity"] >= 2
+        self._report_created(created, verbose, options["dry_run"])
         if skipped:
             self._warn(f"Skipped {self._describe_skipped(skipped)}.")
         self._report_names(unmatched, "No active district location for", "unmatched")
@@ -139,6 +190,37 @@ class Command(BaseCommand):
             for code in sorted(result["missing"]):
                 self.stdout.write(f"{code} is not in this CSV")
         self._report_counts(result, split, not_placed, options)
+
+    def _report_created(self, created, verbose, dry_run):
+        """Say how many states and districts --create-districts made, listing them at -v 2."""
+        states, districts = created
+        if not (states or districts):
+            return
+        verb = "Would create" if dry_run else "Created"
+        self.stdout.write(f"{verb} {len(states)} states and {len(districts)} districts.")
+        if verbose:
+            for location in [*states, *districts]:
+                self.stdout.write(f"  {location.code}: {location.name}")
+
+    def _default_csv(self):
+        """Return the CSV in the data directory, or explain where to put it."""
+        path = data_dir() / DEFAULT_CSV
+        if not path.exists():
+            raise CommandError(
+                f"No CSV given and none at {path}. Download the All India Pincode Directory "
+                "from https://www.data.gov.in/catalog/all-india-pincode-directory and save it "
+                f"there as {DEFAULT_CSV} (see {'/'.join(DATA_DIR)}/README.md), or pass its path."
+            )
+        self.stdout.write(f"Reading {path}")
+        return path
+
+    def _default_aliases(self):
+        """Return the aliases file in the data directory, if there is one."""
+        path = data_dir() / DEFAULT_ALIASES
+        if not path.exists():
+            return None
+        self.stdout.write(f"Using aliases from {path}")
+        return path
 
     def _read_offices(self, path):
         """Return ``{(pincode, state, district): [offices, best rank]}`` and skipped rows."""
@@ -155,7 +237,11 @@ class Command(BaseCommand):
                     if not PINCODE_RE.match(pincode):
                         skipped["pincode"].append(pincode)
                         continue
-                    if not state or not district:
+                    if (
+                        not state
+                        or not district
+                        or {normalize(state), normalize(district)} & MISSING_NAMES
+                    ):
                         skipped["name"] += 1
                         continue
                     office_type = row[columns["office_type"]] if columns["office_type"] else ""
@@ -366,6 +452,85 @@ def read_aliases(path):
         else:
             raise CommandError(f'Alias {key!r} must look like "STATE" or "STATE / DISTRICT".')
     return states, districts
+
+
+def create_missing_districts(names, resolver):
+    """Create the states and districts in ``names`` that resolve to nothing.
+
+    ``names`` is a set of CSV ``(state, district)`` pairs. A pair that resolves,
+    or matches several districts, is left alone. Returns the created
+    ``(states, districts)``.
+    """
+    country = default_country()
+    states = {}
+    for state in Location.objects.filter(location_type=Location.LocationType.STATE, is_active=True):
+        for name in location_names(state):
+            states.setdefault(name, state)
+    created_states, created_districts = [], []
+    # Spellings differing only in case or spacing are one district.
+    pairs = {
+        (normalize(state), normalize(district)): (state, district) for state, district in names
+    }
+    for (state_key, _district_key), (state_name, district_name) in sorted(pairs.items()):
+        location, problem = resolver.resolve(state_name, district_name)
+        if location is not None or problem == "ambiguous":
+            continue
+        state = next(
+            (states[n] for n in resolver.state_aliases.get(state_key, {state_key}) if n in states),
+            None,
+        )
+        if state is None:
+            state = Location.objects.create(
+                code=new_code(country.code, state_name),
+                name=display_name(state_name),
+                location_type=Location.LocationType.STATE,
+                parent=country,
+            )
+            states[state_key] = state
+            created_states.append(state)
+        created_districts.append(
+            Location.objects.create(
+                code=new_code(state.code, district_name),
+                name=display_name(district_name),
+                location_type=Location.LocationType.DISTRICT,
+                parent=state,
+            )
+        )
+    return created_states, created_districts
+
+
+def default_country():
+    """Return the one active country location, creating India when there is none."""
+    countries = list(
+        Location.objects.filter(location_type=Location.LocationType.COUNTRY, is_active=True)[:2]
+    )
+    if len(countries) > 1:
+        raise CommandError(
+            "--create-districts needs exactly one active country location; found several."
+        )
+    if countries:
+        return countries[0]
+    return Location.objects.create(location_type=Location.LocationType.COUNTRY, **DEFAULT_COUNTRY)
+
+
+def display_name(name):
+    """Return a CSV name for display: title case when the CSV wrote it in capitals."""
+    return name.title() if name.isupper() else name
+
+
+def new_code(prefix, name):
+    """Return an unused location code ``<prefix>_<NAME>``.
+
+    Shortened, with a hash of the full code for uniqueness, when too long for
+    the field or already taken.
+    """
+    max_length = Location._meta.get_field("code").max_length
+    slug = re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or "X"
+    code = f"{prefix}_{slug}"
+    if len(code) <= max_length and not Location.objects.filter(code=code).exists():
+        return code
+    suffix = hashlib.sha1(code.encode()).hexdigest()[:8].upper()
+    return f"{code[: max_length - len(suffix) - 1].rstrip('_')}_{suffix}"
 
 
 class DistrictResolver:

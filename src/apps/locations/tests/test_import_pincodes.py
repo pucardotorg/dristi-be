@@ -4,10 +4,11 @@ import json
 import os
 import tempfile
 from io import StringIO
+from pathlib import Path
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.management import CommandError, call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.core.models import AdditionalAttribute
@@ -404,3 +405,142 @@ class ImportPincodesTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_na_rows_are_skipped_as_missing_names(self):
+        output = self.run_import(
+            self.csv(office("560001", "NA", state="NA"), office("560002", "BENGALURU URBAN"))
+        )
+
+        self.assertIn("1 rows with no state or district", output)
+        self.assertNotIn("NA / NA", output)
+
+    def test_create_districts_adds_missing_states_and_districts(self):
+        output = self.run_import(
+            self.csv(
+                office("570001", "MYSURU"),
+                office("682001", "ERNAKULAM", state="KERALA"),
+                office("682002", "Ernakulam", state="KERALA"),
+                office("560001", "BENGALURU URBAN"),
+            ),
+            "--create-districts",
+        )
+
+        kerala = Location.objects.get(code="IN_KERALA")
+        self.assertEqual(
+            (kerala.name, kerala.location_type, kerala.parent.code),
+            ("Kerala", Location.LocationType.STATE, "IN"),
+        )
+        # Karnataka already exists, so Mysuru goes under it; Ernakulam is created once.
+        self.assertEqual(self.parent_code("570001"), "IN_KA_MYSURU")
+        self.assertEqual(Location.objects.get(code="IN_KA_MYSURU").name, "Mysuru")
+        self.assertEqual(self.parent_code("682001"), "IN_KERALA_ERNAKULAM")
+        self.assertEqual(self.parent_code("682002"), "IN_KERALA_ERNAKULAM")
+        self.assertEqual(self.parent_code("560001"), "IN_KA_BLR_URBAN")
+        self.assertIn("Created 1 states and 2 districts.", output)
+        self.assertNotIn("No active district location", output)
+
+    def test_create_districts_dry_run_saves_nothing(self):
+        output = self.run_import(
+            self.csv(office("682001", "ERNAKULAM", state="KERALA")),
+            "--create-districts",
+            "--dry-run",
+        )
+
+        self.assertIn("Would create 1 states and 1 districts.", output)
+        self.assertIn("Dry run: would have created 1", output)
+        self.assertFalse(Location.objects.filter(code__startswith="IN_KERALA").exists())
+        self.assertFalse(Location.objects.filter(code="PIN_682001").exists())
+
+    def test_create_districts_keeps_codes_within_the_field(self):
+        state = "THE DADRA AND NAGAR HAVELI AND DAMAN AND DIU"
+        self.run_import(
+            self.csv(office("396230", "DADRA AND NAGAR HAVELI", state=state)),
+            "--create-districts",
+        )
+
+        district = Location.objects.get(code=Location.objects.get(code="PIN_396230").parent.code)
+        self.assertLessEqual(len(district.code), 50)
+        self.assertEqual(district.name, "Dadra And Nagar Haveli")
+        self.assertEqual(district.parent.name, "The Dadra And Nagar Haveli And Daman And Diu")
+
+    def test_create_districts_creates_india_when_there_is_no_country(self):
+        # Children first: a parent cannot be deleted while it has children.
+        for location_type in ("district", "state", "country"):
+            Location.objects.filter(location_type=location_type).delete()
+
+        self.run_import(
+            self.csv(office("682001", "ERNAKULAM", state="KERALA")), "--create-districts"
+        )
+
+        self.assertEqual(
+            Location.objects.get(code="PIN_682001").get_full_name(),
+            "India / Kerala / Ernakulam / 682001",
+        )
+
+    def test_create_districts_refuses_several_countries(self):
+        Location.objects.create(
+            code="NP", name="Nepal", location_type=Location.LocationType.COUNTRY
+        )
+
+        with self.assertRaisesMessage(CommandError, "exactly one active country"):
+            self.run_import(
+                self.csv(office("682001", "ERNAKULAM", state="KERALA")), "--create-districts"
+            )
+
+    def test_without_create_districts_nothing_is_created(self):
+        self.run_import(self.csv(office("682001", "ERNAKULAM", state="KERALA")))
+
+        self.assertFalse(Location.objects.filter(code__startswith="IN_KERALA").exists())
+
+
+class DefaultDataDirTests(TestCase):
+    """With no path, the CSV and aliases come from data/pincodes/ under BASE_DIR."""
+
+    def setUp(self):
+        """Point BASE_DIR at an empty temporary project with a Karnataka district."""
+        india = make_country()
+        karnataka = make_state(parent=india, code="IN_KA", name="Karnataka", short_name="KA")
+        make_district(parent=karnataka, code="IN_KA_BLR_URBAN", name="Bengaluru Urban")
+        base = tempfile.TemporaryDirectory()
+        self.addCleanup(base.cleanup)
+        self.base_dir = Path(base.name)
+        self.folder = self.base_dir / "data" / "pincodes"
+        self.folder.mkdir(parents=True)
+        settings_override = override_settings(BASE_DIR=self.base_dir)
+        settings_override.enable()
+        self.addCleanup(settings_override.disable)
+
+    def run_default(self, *args):
+        """Run the command with no CSV path and return its output."""
+        out = StringIO()
+        call_command("import_pincodes", *args, stdout=out)
+        return out.getvalue()
+
+    def test_missing_default_csv_says_where_to_put_it(self):
+        with self.assertRaisesMessage(
+            CommandError, str(self.folder / "all_india_pincode_directory.csv")
+        ):
+            self.run_default()
+
+    def test_default_csv_is_imported(self):
+        (self.folder / "all_india_pincode_directory.csv").write_text(
+            "\n".join([HEADER, office("560001", "BENGALURU URBAN")]) + "\n", encoding="utf-8"
+        )
+
+        output = self.run_default()
+
+        self.assertIn("Reading", output)
+        self.assertTrue(Location.objects.filter(code="PIN_560001").exists())
+
+    def test_default_aliases_are_used_when_present(self):
+        (self.folder / "all_india_pincode_directory.csv").write_text(
+            "\n".join([HEADER, office("560001", "BANGALORE")]) + "\n", encoding="utf-8"
+        )
+        (self.folder / "aliases.json").write_text(
+            json.dumps({"KARNATAKA / BANGALORE": "IN_KA_BLR_URBAN"}), encoding="utf-8"
+        )
+
+        output = self.run_default()
+
+        self.assertIn("Using aliases from", output)
+        self.assertEqual(Location.objects.get(code="PIN_560001").parent.code, "IN_KA_BLR_URBAN")

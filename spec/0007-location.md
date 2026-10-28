@@ -171,13 +171,23 @@ They are loaded from India Post's *All India Pincode Directory* CSV
 (data.gov.in), which has one row per post office:
 
 ```bash
-python manage.py import_pincodes all_india_pincode_directory.csv \
-    [--aliases aliases.json] [--update [--overwrite-edits]] [--dry-run] [-v 2]
+python manage.py import_pincodes [CSV] \
+    [--create-districts] [--aliases aliases.json] [--update [--overwrite-edits]] [--dry-run] [-v 2]
 ```
 
-Loading is part of setting up an environment: the countries, states and
-districts must exist first, and the pincodes are then imported once. The
-repository ships no location data.
+With no `CSV`, the file is read from
+`src/data/pincodes/all_india_pincode_directory.csv` (git- and docker-ignored),
+and `src/data/pincodes/aliases.json` is used when present and no `--aliases`
+is given.
+
+Loading is part of setting up an environment, done once; the repository ships
+no location data. Pincodes go under existing districts. On an empty database,
+`--create-districts` first creates every state and district the CSV names that
+matches nothing: under the one country location (India is created if there is
+none), named as in the CSV (title case when it is in capitals), with generated
+codes such as `IN_KARNATAKA_MYSURU` (shortened with a hash when over 50
+characters). Rows whose state or district is `NA` are skipped. A dry run rolls
+back everything, created states and districts included.
 
 - **Name matching.** Each office's state and district are matched
   case-insensitively against the `name` or `short_name` of **active** district
