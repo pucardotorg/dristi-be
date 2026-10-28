@@ -11,7 +11,7 @@ from apps.core.rules.exceptions import RuleError, RuleNotFound
 
 from .checks import service
 from .checks.contracts import ContractError
-from .models import ScrutinyRound, ScrutinyRuleBinding
+from .models import ScrutinyFlag, ScrutinyRound, ScrutinyRuleBinding
 
 
 class ScrutinyRuleBindingAdminForm(forms.ModelForm):
@@ -67,6 +67,22 @@ class ScrutinyRuleBindingAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
             messages.success(request, f"Dry run on the sample filing raised: {codes}")
 
 
+class ScrutinyFlagInline(admin.TabularInline):
+    """The round's flags, read-only; open one to see or edit it."""
+
+    model = ScrutinyFlag
+    fk_name = "round"
+    fields = ("target_type", "target_ref", "target_label", "status", "note")
+    readonly_fields = fields
+    extra = 0
+    can_delete = False
+    show_change_link = True
+
+    def has_add_permission(self, request, obj=None):
+        """Flags are added from their own page, where they are validated."""
+        return False
+
+
 @admin.register(ScrutinyRound)
 class ScrutinyRoundAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Review rounds; they are opened and decided by the scrutiny services (#4)."""
@@ -76,6 +92,7 @@ class ScrutinyRoundAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     search_fields = ("case__filing_number", "case__case_number", "visit_id")
     autocomplete_fields = ("case",)
     readonly_fields = ("id", "created_at", "updated_at")
+    inlines = (ScrutinyFlagInline,)
     fieldsets = (
         (None, {"fields": ("case", "stage", "number", "visit_id", "routing_reason")}),
         ("Court", {"fields": ("establishment_id", "courtroom_id", "registration_type")}),
@@ -93,5 +110,33 @@ class ScrutinyRoundAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
                 )
             },
         ),
+        ("Audit", {"fields": ("id", "created_at", "updated_at", "created_by", "updated_by")}),
+    )
+
+
+@admin.register(ScrutinyFlag)
+class ScrutinyFlagAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
+    """Review flags; they are drafted and moved through their lifecycle by the services (#3.5)."""
+
+    list_display = ("target_label", "target_type", "target_ref", "status", "round", "created_at")
+    list_filter = ("status", "target_type", "reason_code", "round__stage")
+    search_fields = (
+        "target_ref",
+        "target_label",
+        "note",
+        "round__case__filing_number",
+        "round__case__case_number",
+    )
+    autocomplete_fields = ("round", "auto_marked_by", "linked_flag", "carried_from")
+    readonly_fields = ("id", "created_at", "updated_at")
+    fieldsets = (
+        (None, {"fields": ("round", "status")}),
+        (
+            "Target",
+            {"fields": ("target_type", "target_ref", "target_label", "section_id")},
+        ),
+        ("For the advocate", {"fields": ("reason_code", "note", "value_at_flag")}),
+        ("Links", {"fields": ("auto_marked_by", "linked_flag", "carried_from")}),
+        ("Resolution", {"fields": ("resolved_by", "resolved_at")}),
         ("Audit", {"fields": ("id", "created_at", "updated_at", "created_by", "updated_by")}),
     )

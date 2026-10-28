@@ -8,9 +8,16 @@ from django.db.models import Q
 from apps.core.models import BaseAuditableModel, BaseModel
 
 from .checks.models import ScrutinyRuleBinding
-from .enums import RoundDecision, RoundStage, RoutingReason
+from .enums import (
+    DocumentIssue,
+    FlagStatus,
+    FlagTarget,
+    RoundDecision,
+    RoundStage,
+    RoutingReason,
+)
 
-__all__ = ["ScrutinyRound", "ScrutinyRuleBinding"]
+__all__ = ["ScrutinyFlag", "ScrutinyRound", "ScrutinyRuleBinding"]
 
 
 class ScrutinyRound(BaseModel, BaseAuditableModel):
@@ -127,6 +134,144 @@ class ScrutinyRound(BaseModel, BaseAuditableModel):
                 errors["registration_type"] = "Chosen only at Forward or Register."
         if errors:
             raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        """Validate the model before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class ScrutinyFlag(BaseModel, BaseAuditableModel):
+    """One item the court wants fixed: a field, section, document or oath (#3.2).
+
+    Drafted, raised, responded to and resolved through
+    ``apps.scrutiny.services.flags``; the lifecycle is in #3.5. Whether the
+    target exists on the case is checked there, against the case-type plugin.
+    """
+
+    round = models.ForeignKey(ScrutinyRound, on_delete=models.CASCADE, related_name="flags")
+    target_type = models.CharField(max_length=16, choices=FlagTarget.choices)
+    target_ref = models.CharField(
+        max_length=128,
+        help_text="FIELD: field id with record index, e.g. CHQ-9[0]; SECTION: section code; "
+        "DOCUMENT: case document id; OATH: oath id.",
+    )
+    target_label = models.CharField(max_length=255, help_text="Snapshot for history.")
+    # Empty only for an oath, which is not a section of the form (#3.2).
+    section_id = models.CharField(max_length=16, blank=True)
+    reason_code = models.CharField(max_length=32, choices=DocumentIssue.choices, blank=True)
+    note = models.TextField(blank=True, help_text="The note for the advocate.")
+    value_at_flag = models.JSONField(null=True, blank=True)
+    auto_marked_by = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="auto_marked_flags",
+        help_text="The flag whose date chain marked this one (#3.3).",
+    )
+    linked_flag = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="A field flag and its document issue, saved together.",
+    )
+    carried_from = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="carried_to",
+        help_text="The same item, still unresolved, in the previous round.",
+    )
+    status = models.CharField(max_length=16, choices=FlagStatus.choices)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("round", "target_type", "target_ref"),
+                condition=~Q(status=FlagStatus.WITHDRAWN),
+                name="scrutiny_flag_one_live_per_target",
+                violation_error_message="This target already has a live flag in this round.",
+            ),
+        ]
+        verbose_name = "Scrutiny flag"
+        verbose_name_plural = "Scrutiny flags"
+
+    def __str__(self):
+        return f"{self.get_target_type_display()} {self.target_ref} ({self.get_status_display()})"
+
+    def clean(self):
+        """Keep the flag consistent with its target type and with the flags it links to."""
+        super().clean()
+        errors = {}
+        is_oath = self.target_type == FlagTarget.OATH
+        if is_oath and self.section_id:
+            errors["section_id"] = "An oath is not a section of the form."
+        elif not is_oath and not self.section_id:
+            errors["section_id"] = "This field is required."
+        if self.reason_code and self.target_type != FlagTarget.DOCUMENT:
+            errors["reason_code"] = "Only a document flag has a reason."
+        # The screen's "No note — the advocate won't know what to fix" (E09004).
+        if self.target_type == FlagTarget.DOCUMENT:
+            if not self.reason_code and not self.note.strip():
+                errors["note"] = "A document flag needs a reason or a note."
+        elif self.target_type and not self.note.strip():
+            errors["note"] = "A note for the advocate is required."
+        if self.value_at_flag is not None and self.target_type != FlagTarget.FIELD:
+            errors["value_at_flag"] = "Only a field flag records a value."
+        resolved = self.status == FlagStatus.RESOLVED
+        if resolved != (self.resolved_by_id is not None):
+            errors["resolved_by"] = "Set exactly when the flag is resolved."
+        if resolved != (self.resolved_at is not None):
+            errors["resolved_at"] = "Set exactly when the flag is resolved."
+        errors.update(self._clean_links())
+        if errors:
+            raise ValidationError(errors)
+
+    def _clean_links(self):
+        errors = {}
+        if self.auto_marked_by_id:
+            source = self.auto_marked_by
+            if source.pk == self.pk:
+                errors["auto_marked_by"] = "A flag cannot mark itself."
+            elif source.round_id != self.round_id:
+                errors["auto_marked_by"] = "Must be a flag of the same round."
+            elif self.target_type != FlagTarget.FIELD or source.target_type != FlagTarget.FIELD:
+                errors["auto_marked_by"] = "The date chain links field flags only."
+        if self.linked_flag_id:
+            linked = self.linked_flag
+            if linked.pk == self.pk:
+                errors["linked_flag"] = "A flag cannot link to itself."
+            elif linked.round_id != self.round_id:
+                errors["linked_flag"] = "Must be a flag of the same round."
+            elif {self.target_type, linked.target_type} != {FlagTarget.FIELD, FlagTarget.DOCUMENT}:
+                errors["linked_flag"] = "Links a field flag to a document issue."
+        if self.carried_from_id and self.round_id:
+            previous = self.carried_from
+            if previous.round_id == self.round_id:
+                errors["carried_from"] = "Must be a flag of another round."
+            elif previous.round.case_id != self.round.case_id:
+                errors["carried_from"] = "Must be a flag of the same case."
+            elif (previous.target_type, previous.target_ref) != (
+                self.target_type,
+                self.target_ref,
+            ):
+                errors["carried_from"] = "Must be the same target."
+        return errors
 
     def save(self, *args, **kwargs):
         """Validate the model before saving."""

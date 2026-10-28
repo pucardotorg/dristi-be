@@ -32,3 +32,32 @@ class RoundDecision(models.TextChoices):
     SENT_BACK = "SENT_BACK", "Sent back"
     FORWARDED = "FORWARDED", "Forwarded"
     REGISTERED = "REGISTERED", "Registered"
+
+
+class FlagTarget(models.TextChoices):
+    """What a flag points at (#3.2)."""
+
+    FIELD = "FIELD", "Field"
+    SECTION = "SECTION", "Section"
+    DOCUMENT = "DOCUMENT", "Document"
+    OATH = "OATH", "Oath"
+
+
+class DocumentIssue(models.TextChoices):
+    """What is wrong with a flagged document (#3.2)."""
+
+    BLURRY_UNREADABLE = "BLURRY_UNREADABLE", "Blurry / unreadable"
+    PAGE_MISSING = "PAGE_MISSING", "Page missing"
+    WRONG_DOCUMENT = "WRONG_DOCUMENT", "Wrong document"
+    OTHER = "OTHER", "Other"
+
+
+class FlagStatus(models.TextChoices):
+    """Where a flag is in its lifecycle (#3.5)."""
+
+    DRAFT = "DRAFT", "Draft"
+    RAISED = "RAISED", "Raised"
+    RESPONDED = "RESPONDED", "Responded"
+    RESOLVED = "RESOLVED", "Resolved"
+    CARRIED = "CARRIED", "Carried"
+    WITHDRAWN = "WITHDRAWN", "Withdrawn"

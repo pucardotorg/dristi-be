@@ -457,7 +457,7 @@ Constraints: `UniqueConstraint(case, stage, number)`;
 | `target_type` | `CharField(16, choices=FlagTarget)` | `FIELD`, `SECTION`, `DOCUMENT`, `OATH` |
 | `target_ref` | `CharField(128)` | `FIELD`: PRD field id with record index, e.g. `CHQ-9[0]` (cheque 1's return date), `ACC-1[1]` (accused 2's name); `SECTION`: section code, e.g. `LDN`, `JUR`; `DOCUMENT`: `case_document_id`; `OATH`: the oath id, one per complainant (`SCR-14`) |
 | `target_label` | `CharField(255)` | snapshot for history, e.g. "Cheque amount" |
-| `section_id` | `CharField(16)` | the section the target sits in, for grouping |
+| `section_id` | `CharField(16, blank=True)` | the section the target sits in, for grouping; empty for `OATH` |
 | `reason_code` | `CharField(32, choices=DocumentIssue, blank=True)` | documents only: `BLURRY_UNREADABLE`, `PAGE_MISSING`, `WRONG_DOCUMENT`, `OTHER` |
 | `note` | `TextField(blank=True)` | the note for the advocate |
 | `value_at_flag` | `JSONField(null=True)` | the field's value when flagged, so history shows "₹52,05,000 → ₹50,25,000" |
