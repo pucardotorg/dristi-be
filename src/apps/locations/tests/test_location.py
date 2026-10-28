@@ -72,8 +72,11 @@ class TestLocationTypeValidation:
         assert "location_type" in exc_info.value.message_dict
 
     def test_accepts_every_supported_type(self):
+        district = make_location(code="D", location_type=Location.LocationType.DISTRICT)
         for index, value in enumerate(Location.LocationType.values):
-            location = make_location(code=f"C{index}", location_type=value)
+            # A pincode is only valid under a district.
+            parent = district if value == Location.LocationType.PINCODE else None
+            location = make_location(code=f"C{index}", location_type=value, parent=parent)
             assert location.location_type == value
 
 
@@ -108,6 +111,96 @@ class TestParentValidation:
             india.save()
 
         assert "parent" in exc_info.value.message_dict
+
+    @pytest.mark.parametrize("parent_level", ["none", "state"])
+    def test_pincode_must_be_under_a_district(self, parent_level):
+        india, bihar, _patna = make_hierarchy()
+        parent = {"none": None, "state": bihar}[parent_level]
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_location(
+                code="PIN_800001",
+                name="800001",
+                location_type=Location.LocationType.PINCODE,
+                parent=parent,
+            )
+
+        assert "parent" in exc_info.value.message_dict
+
+    def make_pincode(self, district):
+        """Create pincode 800001 under ``district``."""
+        return make_location(
+            code="PIN_800001",
+            name="800001",
+            location_type=Location.LocationType.PINCODE,
+            parent=district,
+        )
+
+    def test_nothing_can_be_put_under_a_pincode(self):
+        _india, _bihar, patna = make_hierarchy()
+        pincode = self.make_pincode(patna)
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_location(
+                code="NALANDA",
+                name="Nalanda",
+                location_type=Location.LocationType.DISTRICT,
+                parent=pincode,
+            )
+
+        assert "A pincode cannot have locations under it." in exc_info.value.message_dict["parent"]
+
+    def test_district_holding_pincodes_cannot_change_type(self):
+        _india, _bihar, patna = make_hierarchy()
+        self.make_pincode(patna)
+        patna.location_type = Location.LocationType.STATE
+
+        with pytest.raises(ValidationError) as exc_info:
+            patna.save()
+
+        assert "location_type" in exc_info.value.message_dict
+
+    def test_location_with_children_cannot_become_a_pincode(self):
+        # A location under a district, so only the "has children" rule applies.
+        _india, _bihar, patna = make_hierarchy()
+        area = make_location(
+            code="AREA", name="Area", location_type=Location.LocationType.DISTRICT, parent=patna
+        )
+        make_location(
+            code="SUB_AREA",
+            name="Sub area",
+            location_type=Location.LocationType.DISTRICT,
+            parent=area,
+        )
+        area.location_type = Location.LocationType.PINCODE
+
+        with pytest.raises(ValidationError) as exc_info:
+            area.full_clean()
+
+        assert exc_info.value.message_dict["location_type"] == [
+            "A location with locations under it cannot be a pincode."
+        ]
+
+    def test_district_without_pincodes_can_still_change_type(self):
+        _india, bihar, patna = make_hierarchy()
+        patna.location_type = Location.LocationType.STATE
+        patna.parent = None
+
+        patna.save()
+
+        assert Location.objects.get(pk=patna.pk).location_type == Location.LocationType.STATE
+
+    def test_pincode_under_a_district_is_valid(self):
+        _india, _bihar, patna = make_hierarchy()
+
+        pincode = make_location(
+            code="PIN_800001",
+            name="800001",
+            location_type=Location.LocationType.PINCODE,
+            parent=patna,
+        )
+
+        assert pincode.get_full_name() == "India / Bihar / Patna / 800001"
 
     def test_allows_many_children_under_one_parent(self):
         india = make_location()

@@ -418,6 +418,9 @@ Exactly one of `person` or `self` describes the individual, and either may be le
    - `person`: a new `person` at `ASSERTED`, with no attempt to match. When given together with an institution, it is created with `institution_id` and `designation` set.
    - The same person cannot be both complainant and accused, nor complainant twice, on one case.
 
+3. **Write the address:**
+   - Insert new `address` row with provided fields (immutable, spec 0017 §6).
+   - `district` and `state` are pre-filled by the client from the pincode location (spec 0007, spec 0020); the API stores what it is sent.
 4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created, with the request's address as its registered office. A reused institution's stored details are not returned or changed.
    - A `pan` and a `cin` that belong to two different institutions are refused (400).
    - The same institution cannot be both complainant and accused, nor hold one role twice, on one case.
@@ -1306,6 +1309,8 @@ When a case has 3 cheques, does the client:
 
 ### 9.5 Address Auto-Fill Failure
 
+_Resolved: pincodes are pre-filled from the locations table (spec 0007), so there is no external service to be unavailable. Kept for history._
+
 If the India Post Pincode API is unavailable, should the call:
 - (a) Fail with 503 Service Unavailable, or
 - (b) Proceed with `district` and `state` left as client-provided values?
@@ -1546,4 +1551,4 @@ CREATE INDEX ON representation (advocate_id, is_active);
 - **Spec 0014**: File storage service
 - **Spec 0015**: eSign integration
 - **Spec 0017**: Person, case filing, and evidence schema
-- **India Post Pincode API**: https://api.postalpincode.in/pincode/{pincode}
+- **Spec 0007**: Locations, including pincodes

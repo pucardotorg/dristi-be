@@ -3,10 +3,10 @@
 import uuid
 
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
@@ -20,6 +20,34 @@ from .serializers import LocationSerializer
 UUID_REGEX = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 CODE_URL_PATH = r"code/(?P<code>[^/.]+)"
 BOOLEAN_VALUES = {"true": True, "false": False}
+IS_ACTIVE_MESSAGE = "Must be 'true' or 'false'."
+# The pincode pre-fill asks for an all-active chain (spec 0007 section 7).
+ANCESTORS_IS_ACTIVE = OpenApiParameter(
+    "is_active",
+    str,
+    enum=["true", "false"],
+    description=(
+        "'true': not found unless the location and all its ancestors are active. "
+        "'false': not found unless the location itself is inactive."
+    ),
+)
+ANCESTORS_SCHEMA = extend_schema(
+    parameters=[ANCESTORS_IS_ACTIVE],
+    responses=error_responses(errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active")),
+)
+
+
+def parse_is_active(params):
+    """Return the ``is_active`` query parameter as a bool, or None when absent.
+
+    Raises a 400 for any other value, so a typo is never silently ignored.
+    """
+    value = params.get("is_active")
+    if value is None:
+        return None
+    if value.lower() not in BOOLEAN_VALUES:
+        raise ValidationError({"is_active": IS_ACTIVE_MESSAGE})
+    return BOOLEAN_VALUES[value.lower()]
 
 
 @extend_schema_view(
@@ -32,7 +60,7 @@ BOOLEAN_VALUES = {"true": True, "false": False}
             ),
             errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
             errors.INVALID.example("No location exists with code 'XX'.", field="parent_code"),
-            errors.INVALID.example("Must be 'true' or 'false'.", field="is_active"),
+            errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active"),
             errors.INVALID.example(
                 "parent_id and parent_code are mutually exclusive; supply only one."
             ),
@@ -88,11 +116,9 @@ class LocationViewSet(APIModelReadOnlyViewSet):
                 )
             queryset = queryset.filter(parent_id=parent.pk)
 
-        is_active = params.get("is_active")
+        is_active = parse_is_active(params)
         if is_active is not None:
-            if is_active.lower() not in BOOLEAN_VALUES:
-                raise ValidationError({"is_active": "Must be 'true' or 'false'."})
-            queryset = queryset.filter(is_active=BOOLEAN_VALUES[is_active.lower()])
+            queryset = queryset.filter(is_active=is_active)
 
         return queryset
 
@@ -109,14 +135,28 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         return Response(self.get_serializer(children, many=True).data)
 
     def _ancestors_response(self, location):
-        """Return the ancestor chain from root to immediate parent."""
-        return Response(self.get_serializer(location.get_ancestors(), many=True).data)
+        """Return the ancestor chain from root to immediate parent.
+
+        With ``is_active=true`` a chain with any inactive link, the location
+        itself included, is not found: address forms pre-fill from a pincode's
+        ancestors, and a deactivated pincode or district must not pre-fill.
+        With ``is_active=false`` an active location is not found, as the id
+        route's queryset filter already does. Any other value is a 400.
+        """
+        is_active = parse_is_active(self.request.query_params)
+        ancestors = location.get_ancestors()
+        if is_active and not all(link.is_active for link in [location, *ancestors]):
+            raise NotFound("No active location with an active ancestor chain was found.")
+        if is_active is False and location.is_active:
+            raise NotFound("No inactive location with this code was found.")
+        return Response(self.get_serializer(ancestors, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="children", url_name="children")
     def children(self, request, *args, **kwargs):
         """List the direct children of a location identified by id."""
         return self._children_response(self.get_object())
 
+    @ANCESTORS_SCHEMA
     @action(detail=True, methods=["get"], url_path="ancestors", url_name="ancestors")
     def ancestors(self, request, *args, **kwargs):
         """List the ancestors of a location identified by id."""
@@ -137,6 +177,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         """List the direct children of a location identified by code."""
         return self._children_response(self._get_by_code(code))
 
+    @ANCESTORS_SCHEMA
     @action(
         detail=False,
         methods=["get"],
