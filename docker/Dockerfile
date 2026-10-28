@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+
+ARG PYTHON_VERSION=3.11
+FROM python:${PYTHON_VERSION}-slim as base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Install system dependencies. A download that stalls is dropped after 10s and
+# retried, rather than hanging the build until it is killed.
+RUN printf 'Acquire::http::Timeout "10";\nAcquire::Retries "10";\n' > /etc/apt/apt.conf.d/99retries \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY src/requirements /app/requirements
+ARG REQUIREMENTS_FILE=requirements/production.txt
+RUN pip install --no-cache-dir -r /app/${REQUIREMENTS_FILE}
+
+# Copy application code
+COPY src /app
+
+# Inject the Git commit SHA into the image (passed via --build-arg).
+ARG GIT_COMMIT_SHA
+RUN sed -i "s/^GIT_COMMIT_SHA = \"unknown\"/GIT_COMMIT_SHA = \"$GIT_COMMIT_SHA\"/" /app/config/settings/version.py
+
+# Make entrypoint executable
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 8000
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
