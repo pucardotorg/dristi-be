@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "apps.address",
     "apps.parties",
     "apps.cases",
+    "apps.scrutiny",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",

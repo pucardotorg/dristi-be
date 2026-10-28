@@ -1,3 +1,5 @@
-from django.db import models
+"""Scrutiny models (spec 0024 #3)."""
 
-# Create your models here.
+from .checks.models import ScrutinyRuleBinding
+
+__all__ = ["ScrutinyRuleBinding"]

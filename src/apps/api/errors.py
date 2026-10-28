@@ -44,6 +44,7 @@ DOMAINS = {
     "05": "address",
     "06": "payments",
     "07": "cases",
+    "09": "scrutiny",
 }
 
 
