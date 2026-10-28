@@ -43,8 +43,13 @@ if not CDAC_SMS_VERIFY_SSL:
 # Payments (spec 0017)
 # ---------------------------------------------------------------------------
 # The mock provider is never registered in production (a system check enforces
-# it). The e-GRAS gateway addon (spec 0022) is the live provider; the addon's
-# own system checks validate the EGRAS_* block because "egras" is registered
-# here. Removing this entry and the EGRAS_* block falls back to no provider.
-PAYMENT_PROVIDERS = {"egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider"}
-PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="egras")
+# it). A provider is a settings change (spec 0017 #9), so the gateway is enabled
+# from the environment: set PAYMENT_DEFAULT_PROVIDER=egras to register e-GRAS and
+# turn on its system checks (which then require the EGRAS_* block). Until a
+# deployment is onboarded with NIC, leave PAYMENT_DEFAULT_PROVIDER empty — no
+# provider is registered, the addon's checks stay silent, and the web container
+# boots so the rest of the app runs.
+PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="")
+PAYMENT_PROVIDERS = {}
+if PAYMENT_DEFAULT_PROVIDER == "egras":
+    PAYMENT_PROVIDERS = {"egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider"}

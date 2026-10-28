@@ -103,11 +103,17 @@ class BuildRequestTests(SimpleTestCase):
         request = make_request(
             [
                 make_line("10", charge_type="COURT_FEE"),
-                make_line("15", account_head="0099-09-909-09-09"),
+                make_line("15", charge_type="PROCESS_COURT_FEE"),
             ],
             amount=Decimal("25"),
         )
-        form = build_request(request, make_config()).form_fields
+        config = make_config(
+            scheme_map={
+                "COURT_FEE": "0030-01-501-01-00",
+                "PROCESS_COURT_FEE": "0099-09-909-09-09",
+            }
+        )
+        form = build_request(request, config).form_fields
         self.assertEqual(form["SCHEMECOUNT"], "2")
         self.assertIn("SCHEMENAME", form)
         self.assertIn("SCHEMENAME2", form)
@@ -117,11 +123,16 @@ class BuildRequestTests(SimpleTestCase):
         request = make_request(
             [
                 make_line("20", charge_type="COURT_FEE"),
-                make_line("5", account_head="0099-09-909-09-09"),
+                make_line("5", charge_type="PROCESS_COURT_FEE"),
             ],
             amount=Decimal("25"),
         )
-        config = make_config(scheme_map={"COURT_FEE": "0030-01-501-01-00"})
+        config = make_config(
+            scheme_map={
+                "COURT_FEE": "0030-01-501-01-00",
+                "PROCESS_COURT_FEE": "0099-09-909-09-09",
+            }
+        )
         form = build_request(request, config).form_fields
         fees = sum(int(form[constants.fee_amount_field(i)]) for i in (1, 2))
         self.assertEqual(int(form[constants.FIELD_TOTAL_AMOUNT]), fees)

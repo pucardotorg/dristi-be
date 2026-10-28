@@ -155,3 +155,6 @@ EVENT_REQUEST_BUILT = "EGRAS_REQUEST_BUILT"
 EVENT_CALLBACK_RECEIVED = "EGRAS_CALLBACK_RECEIVED"
 EVENT_VERIFY_REQUEST = "EGRAS_VERIFY_REQUEST"
 EVENT_VERIFY_RESPONSE = "EGRAS_VERIFY_RESPONSE"
+# More than one successful GRN for one Applicationnumber (e.g. a double payment):
+# credited once, flagged for reconciliation by apps.payments.
+EVENT_MULTIPLE_SUCCESS = "EGRAS_MULTIPLE_SUCCESS"

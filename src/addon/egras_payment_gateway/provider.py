@@ -25,8 +25,8 @@ from . import constants
 from .callback_parser import parse
 from .config import resolve_config
 from .request_builder import build_request
-from .status_mapper import map_grn_details
-from .verification_client import fetch_grn_details
+from .status_mapper import map_grn_records
+from .verification_client import fetch_grn_records
 
 
 class EGRASPaymentProvider(PaymentProvider):
@@ -80,8 +80,8 @@ class EGRASPaymentProvider(PaymentProvider):
         """Verify the payment by its identity through the SOAP GRN lookup (#6)."""
 
         config = resolve_config()
-        details = fetch_grn_details(config, provider_payment_id=provider_payment_id)
-        return map_grn_details(details, provider_payment_id=provider_payment_id)
+        records = fetch_grn_records(config, provider_payment_id=provider_payment_id)
+        return map_grn_records(records, provider_payment_id=provider_payment_id)
 
     def parse_callback(self, payload: Mapping[str, str]) -> ProviderCallback:
         """Parse the return-URL form; ``trusted`` is always ``False`` (#5)."""
