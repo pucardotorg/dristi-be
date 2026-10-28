@@ -10,10 +10,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies. A download that stalls is dropped after 10s and
-# retried, rather than hanging the build until it is killed.
-RUN printf 'Acquire::http::Timeout "10";\nAcquire::Retries "10";\n' > /etc/apt/apt.conf.d/99retries \
-    && apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     postgresql-client \
