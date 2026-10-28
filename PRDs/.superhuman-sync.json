@@ -23,7 +23,7 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
       "title": "Case Numbers",
       "contentHash": "3f066c4dfdac",
-      "pageUpdatedAt": 1792837499.963,
+      "pageUpdatedAt": 1793081184.315,
       "calloutElementId": "eca-eZ95fVXvUC",
       "sections": [
         {
@@ -47,8 +47,7 @@
           "hash": "6c1c622f3a3d"
         }
       ],
-      "pageDirty": true,
-      "note": "2026-10-28: page edited by Thejesh GN (thej@pucar.org) at updatedAt 1793081184.315 after the last sync (1792837499.963); local file unchanged. Not synced. Decide whether to pull the page edit into case-numbers.md or overwrite it. "
+      "note": "2026-10-28: page edit by Thejesh GN (updatedAt 1793081184.315) checked — every block and table cell still matches case-numbers.md; flag cleared, page not written. "
     },
     "order-template-catalogue.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
