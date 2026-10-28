@@ -7,7 +7,8 @@ payment happens in ``apps.payments`` (0017 #9.5) — the provider only reports.
 """
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 
@@ -22,6 +23,17 @@ from . import constants
 logger = logging.getLogger(constants.LOGGER_NAME)
 
 _BANKDATE_FORMAT = "%d/%m/%Y"
+
+# Selection order when an ArrayOfGrnDetails holds several records for one
+# application number: a collected payment (SUCCESS) always wins, and a payment
+# that may still complete (PENDING, then NOT_FOUND) is never overridden by a
+# FAILED record — so money that is in, or on its way, is never marked failed.
+_OUTCOME_PRIORITY = {
+    ProviderOutcome.SUCCESS: 3,
+    ProviderOutcome.PENDING: 2,
+    ProviderOutcome.NOT_FOUND: 1,
+    ProviderOutcome.FAILED: 0,
+}
 
 
 def map_status_text(text: str) -> ProviderOutcome:
@@ -58,24 +70,26 @@ def _paid_at(bankdate: str) -> datetime | None:
     return datetime.combine(naive.date(), time.min, tzinfo=constants.IST)
 
 
-def map_grn_details(details: Mapping[str, str], *, provider_payment_id: str) -> ProviderStatus:
-    """Map a parsed ``<GrnDetails>`` document to a ``ProviderStatus`` (#6.3)."""
+def _status_for_record(
+    record: Mapping[str, str], provider_payment_id: str
+) -> ProviderStatus | None:
+    """Map one ``<GrnDetails>`` record to a ``ProviderStatus``, or ``None``.
 
-    status_raw = (details.get(constants.STATUS_ELEMENT, "") or "").strip()
+    ``None`` means an empty "try later" record (nothing populated, status blank
+    or ``Pending``): it carries no outcome of its own and is skipped so a sibling
+    record with a real outcome is used instead.
+    """
+
+    status_raw = (record.get(constants.STATUS_ELEMENT, "") or "").strip()
     status = status_raw.lower()
-    grn = (details.get(constants.GRN_ELEMENT, "") or "").strip()
-    cin = (details.get(constants.CIN_ELEMENT, "") or "").strip()
-    amount_raw = (details.get(constants.AMOUNT_ELEMENT, "") or "").strip()
-    bankdate = (details.get(constants.BANKDATE_ELEMENT, "") or "").strip()
+    grn = (record.get(constants.GRN_ELEMENT, "") or "").strip()
+    cin = (record.get(constants.CIN_ELEMENT, "") or "").strip()
+    amount_raw = (record.get(constants.AMOUNT_ELEMENT, "") or "").strip()
+    bankdate = (record.get(constants.BANKDATE_ELEMENT, "") or "").strip()
     amount = _decimal(amount_raw)
 
-    # The e-GRAS "try later" response: nothing populated. Transient, so the
-    # poller tries again rather than resolving the payment on an empty answer.
     if not any((grn, cin, amount_raw, bankdate)) and status in ("", constants.STATUS_PENDING):
-        raise ProviderTransientError(
-            constants.EGRAS_VERIFY_EMPTY,
-            "e-GRAS returned an empty GRN status response.",
-        )
+        return None
 
     metadata = {"cin": cin, "bank_date": bankdate, "egras_status": status_raw}
 
@@ -116,3 +130,51 @@ def map_grn_details(details: Mapping[str, str], *, provider_payment_id: str) -> 
         status_raw,
     )
     return build(ProviderOutcome.PENDING, failure_code=constants.EGRAS_UNKNOWN_STATUS)
+
+
+def map_grn_records(
+    records: Sequence[Mapping[str, str]], *, provider_payment_id: str
+) -> ProviderStatus:
+    """Map an ``ArrayOfGrnDetails`` to a single ``ProviderStatus`` (spec 0022 #6.3).
+
+    Each record is classified on its own (fields are never mixed across records).
+    A ``SUCCESS`` record always wins; more than one success for the same
+    application number is a double payment, credited once and flagged for
+    reconciliation. Otherwise the highest-priority outcome is chosen, so a
+    FAILED record never overrides a sibling that is in or still pending. When no
+    record carries an outcome, the lookup is transient ("try later").
+    """
+
+    statuses = [
+        status
+        for record in records
+        if (status := _status_for_record(record, provider_payment_id)) is not None
+    ]
+    if not statuses:
+        raise ProviderTransientError(
+            constants.EGRAS_VERIFY_EMPTY,
+            "e-GRAS returned an empty GRN status response.",
+        )
+
+    successes = [status for status in statuses if status.outcome == ProviderOutcome.SUCCESS]
+    if len(successes) > 1:
+        grns = [status.provider_reference for status in successes]
+        logger.warning(
+            "event=%s provider_payment_id=%s success_grns=%s",
+            constants.EVENT_MULTIPLE_SUCCESS,
+            provider_payment_id,
+            grns,
+        )
+        chosen = successes[0]
+        return replace(
+            chosen,
+            metadata={**chosen.metadata, "needs_reconciliation": True, "success_grns": grns},
+        )
+
+    return max(statuses, key=lambda status: _OUTCOME_PRIORITY[status.outcome])
+
+
+def map_grn_details(details: Mapping[str, str], *, provider_payment_id: str) -> ProviderStatus:
+    """Map a single ``<GrnDetails>`` record (convenience over :func:`map_grn_records`)."""
+
+    return map_grn_records([details], provider_payment_id=provider_payment_id)

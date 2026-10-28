@@ -297,13 +297,14 @@ The Docker Compose stack includes:
 ### e-GRAS payment gateway addon (spec 0022)
 
 The e-GRAS addon (`addon.egras_payment_gateway`) is the real payment provider.
-It is selected purely by registering `"egras"` in `PAYMENT_PROVIDERS` and
-pointing `PAYMENT_DEFAULT_PROVIDER` at it (done in `config.settings.production`).
-Leave the block blank while the mock provider is the default; the addon's system
-checks require every value below only when `"egras"` is a registered provider,
-so local and CI need no e-GRAS codes. Removing the `EGRAS_*` block, the
-`INSTALLED_APPS` entry and the `PAYMENT_PROVIDERS["egras"]` entry removes the
-integration and leaves payments working on the mock provider.
+It is enabled from the environment: set `PAYMENT_DEFAULT_PROVIDER=egras` and
+`config.settings.production` (and `config.settings.local`) registers `"egras"`
+in `PAYMENT_PROVIDERS` for you. The addon's system checks require every value
+below only when `"egras"` is a registered provider, so a deployment that is not
+yet onboarded with NIC leaves `PAYMENT_DEFAULT_PROVIDER` empty — no provider is
+registered, the checks stay silent, and the app boots normally. Local and CI
+need no e-GRAS codes. Removing the `EGRAS_*` block and the `INSTALLED_APPS`
+entry removes the integration entirely.
 
 | Variable | Purpose | Example |
 | --- | --- | --- |

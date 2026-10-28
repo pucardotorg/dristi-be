@@ -27,15 +27,17 @@ class Scheme:
 def resolve_scheme(line: ChargeLine, scheme_map: Mapping[str, str]) -> str:
     """Return the 17-character scheme code a charge line credits (spec 0022 #4.3).
 
-    ``account_head`` is tried first because it is the fee master's own snapshot,
-    then ``account_head`` taken as a literal scheme code, then ``charge_type``.
-    An unmapped charge is a permanent, operator-visible configuration error.
+    Both ``account_head`` and ``charge_type`` are resolved only through the
+    operator-controlled ``EGRAS_SCHEME_MAP``; ``account_head`` is tried first
+    because it is the fee master's own snapshot. A charge-supplied value is
+    never used as a literal scheme code: ``account_head`` can be set by any
+    participant raising a demand over REST, so honouring it directly would let
+    the client choose which head of account the treasury credits. An unmapped
+    charge is a permanent, operator-visible configuration error.
     """
 
     if line.account_head and line.account_head in scheme_map:
         return scheme_map[line.account_head]
-    if line.account_head and constants.SCHEME_CODE_RE.match(line.account_head):
-        return line.account_head
     if line.charge_type and line.charge_type in scheme_map:
         return scheme_map[line.charge_type]
     raise ProviderPermanentError(

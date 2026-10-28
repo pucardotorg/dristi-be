@@ -59,36 +59,49 @@ def build_envelope(application_number: str, dept_code: str) -> str:
     )
 
 
-def _extract_details(root: Element) -> dict[str, str] | None:
-    """Collect the wanted ``<GrnDetails>`` fields from a parsed response.
-
-    Namespaces vary with the NIC environment, so elements are matched by local
-    name. Some deployments wrap the ``<GrnDetails>`` document as escaped XML
-    inside a result element; that nested document is parsed once more.
-    """
+def _record_fields(grndetails: Element) -> dict[str, str]:
+    """Collect the wanted fields scoped to a single ``<GrnDetails>`` element."""
 
     found = {}
-    for element in root.iter():
+    for element in grndetails.iter():
         name = _local_name(element.tag)
         if name in _WANTED and name not in found:
             found[name] = (element.text or "").strip()
+    return found
 
-    if found:
-        return found
+
+def _extract_records(root: Element) -> list[dict[str, str]]:
+    """One field dict per ``<GrnDetails>`` in the response (spec 0022 #6.2).
+
+    ``GetGrnDetails_identity`` returns an ``ArrayOfGrnDetails``, so each record is
+    parsed on its own — fields are never mixed across records, and a second
+    successful GRN for the same application number is not lost behind a failed
+    first one. Namespaces vary with the environment, so elements are matched by
+    local name. Some deployments wrap the document as escaped XML inside a result
+    element; that nested document is parsed once more.
+    """
+
+    records = [
+        _record_fields(element)
+        for element in root.iter()
+        if _local_name(element.tag) == constants.GRN_DETAILS_ELEMENT
+    ]
+    if records:
+        return records
 
     # The XML-in-a-string case: a single text node that is itself a document.
     for element in root.iter():
         text = (element.text or "").strip()
         if text.startswith("<") and constants.GRN_DETAILS_ELEMENT in text:
             try:
-                return _extract_details(fromstring(text))
+                return _extract_records(fromstring(text))
             except _XML_ERRORS:
-                return None
-    return None
+                return []
+    return []
 
 
-def fetch_grn_details(config, *, provider_payment_id: str) -> dict[str, str]:
-    """Look the transaction up by identity and return the ``GrnDetails`` fields.
+def fetch_grn_records(config, *, provider_payment_id: str) -> list[dict[str, str]]:
+    """Look the transaction up by identity and return every ``GrnDetails`` record.
 
     Raises :class:`ProviderTransientError` on timeout, connection failure, a
     non-2xx response or an unparsable body, so the poller retries rather than
@@ -137,20 +150,22 @@ def fetch_grn_details(config, *, provider_payment_id: str) -> dict[str, str]:
             constants.EGRAS_VERIFY_MALFORMED, "The e-GRAS status response was not valid XML."
         ) from exc
 
-    details = _extract_details(root)
-    if details is None:
+    records = _extract_records(root)
+    if not records:
         raise ProviderTransientError(
             constants.EGRAS_VERIFY_MALFORMED,
             "The e-GRAS status response carried no GrnDetails.",
         )
 
+    first = records[0]
     logger.info(
-        "event=%s provider_payment_id=%s egras_status=%r grn=%s amount=%s latency_ms=%d",
+        "event=%s provider_payment_id=%s records=%d egras_status=%r grn=%s amount=%s latency_ms=%d",
         constants.EVENT_VERIFY_RESPONSE,
         provider_payment_id,
-        details.get(constants.STATUS_ELEMENT, ""),
-        details.get(constants.GRN_ELEMENT, ""),
-        details.get(constants.AMOUNT_ELEMENT, ""),
+        len(records),
+        first.get(constants.STATUS_ELEMENT, ""),
+        first.get(constants.GRN_ELEMENT, ""),
+        first.get(constants.AMOUNT_ELEMENT, ""),
         latency_ms,
     )
-    return details
+    return records

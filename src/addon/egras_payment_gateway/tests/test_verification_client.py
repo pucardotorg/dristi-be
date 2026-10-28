@@ -92,16 +92,17 @@ class FetchGrnDetailsTests(SimpleTestCase):
 
     def _fetch(self, response):
         with mock.patch.object(requests, "post", return_value=response) as post:
-            details = verification_client.fetch_grn_details(
+            records = verification_client.fetch_grn_records(
                 self.config, provider_payment_id=APPLICATION_NUMBER
             )
-        return details, post
+        return records, post
 
     def test_success_is_parsed(self):
-        details, post = self._fetch(_response(SUCCESS_XML))
-        self.assertEqual(details[constants.GRN_ELEMENT], "1231234")
-        self.assertEqual(details[constants.STATUS_ELEMENT], "Successfull")
-        self.assertEqual(details[constants.CIN_ELEMENT], "CIN123")
+        records, post = self._fetch(_response(SUCCESS_XML))
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0][constants.GRN_ELEMENT], "1231234")
+        self.assertEqual(records[0][constants.STATUS_ELEMENT], "Successfull")
+        self.assertEqual(records[0][constants.CIN_ELEMENT], "CIN123")
 
     def test_tls_and_timeout_are_applied(self):
         _, post = self._fetch(_response(SUCCESS_XML))
@@ -111,20 +112,35 @@ class FetchGrnDetailsTests(SimpleTestCase):
         self.assertEqual(kwargs["headers"]["SOAPAction"], constants.SOAP_ACTION)
 
     def test_namespaced_response_is_parsed(self):
-        details, _ = self._fetch(_response(NAMESPACED_XML))
-        self.assertEqual(details[constants.GRN_ELEMENT], "1231234")
+        records, _ = self._fetch(_response(NAMESPACED_XML))
+        self.assertEqual(records[0][constants.GRN_ELEMENT], "1231234")
 
     def test_array_of_grndetails_response_is_parsed(self):
         """The real .NET ArrayOfGrnDetails wrapper is unwrapped by local name."""
-        details, _ = self._fetch(_response(ARRAY_RESPONSE_XML))
-        self.assertEqual(details[constants.GRN_ELEMENT], "1231234")
-        self.assertEqual(details[constants.STATUS_ELEMENT], "Successfull")
-        self.assertEqual(details[constants.CIN_ELEMENT], "CIN123")
+        records, _ = self._fetch(_response(ARRAY_RESPONSE_XML))
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0][constants.GRN_ELEMENT], "1231234")
+        self.assertEqual(records[0][constants.STATUS_ELEMENT], "Successfull")
+        self.assertEqual(records[0][constants.CIN_ELEMENT], "CIN123")
+
+    def test_multiple_grndetails_records_are_each_returned(self):
+        """Two GrnDetails for one application number come back as two records."""
+        two = (
+            b'<?xml version="1.0"?><GetGrnDetails_identityResult>'
+            b"<GrnDetails><GRN>111</GRN><Status>Failure</Status></GrnDetails>"
+            b"<GrnDetails><GRN>222</GRN><Status>Successfull</Status><CIN>CIN9</CIN>"
+            b"<Amount>100</Amount></GrnDetails>"
+            b"</GetGrnDetails_identityResult>"
+        )
+        records, _ = self._fetch(_response(two))
+        self.assertEqual([r[constants.GRN_ELEMENT] for r in records], ["111", "222"])
+        self.assertEqual(records[0][constants.STATUS_ELEMENT], "Failure")
+        self.assertEqual(records[1][constants.CIN_ELEMENT], "CIN9")
 
     def test_timeout_is_transient(self):
         with mock.patch.object(requests, "post", side_effect=requests.Timeout()):
             with self.assertRaises(ProviderTransientError) as caught:
-                verification_client.fetch_grn_details(
+                verification_client.fetch_grn_records(
                     self.config, provider_payment_id=APPLICATION_NUMBER
                 )
         self.assertEqual(caught.exception.code, constants.EGRAS_VERIFY_TIMEOUT)
@@ -132,7 +148,7 @@ class FetchGrnDetailsTests(SimpleTestCase):
     def test_connection_error_is_transient(self):
         with mock.patch.object(requests, "post", side_effect=requests.ConnectionError()):
             with self.assertRaises(ProviderTransientError) as caught:
-                verification_client.fetch_grn_details(
+                verification_client.fetch_grn_records(
                     self.config, provider_payment_id=APPLICATION_NUMBER
                 )
         self.assertEqual(caught.exception.code, constants.EGRAS_VERIFY_UNAVAILABLE)

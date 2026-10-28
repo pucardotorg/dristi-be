@@ -24,9 +24,12 @@ class ResolveSchemeTests(SimpleTestCase):
         line = make_line("10", charge_type="COURT_FEE", account_head="0040-02-502-02-00")
         self.assertEqual(resolve_scheme(line, SCHEME_MAP), "0040-02-502-02-00")
 
-    def test_valid_format_account_head_is_used_directly(self):
-        line = make_line("10", charge_type="UNKNOWN", account_head="0099-09-909-09-09")
-        self.assertEqual(resolve_scheme(line, SCHEME_MAP), "0099-09-909-09-09")
+    def test_unmapped_account_head_code_is_not_used_directly(self):
+        """A client-supplied account_head is never a literal scheme code (spec 0022 #4.3)."""
+        line = make_line("10", charge_type="UNKNOWN", account_head="9999-99-999-99-99")
+        with self.assertRaises(ProviderPermanentError) as caught:
+            resolve_scheme(line, SCHEME_MAP)
+        self.assertEqual(caught.exception.code, constants.EGRAS_SCHEME_UNMAPPED)
 
     def test_charge_type_is_the_fallback(self):
         line = make_line("10", charge_type="COURT_FEE", account_head="")
@@ -65,11 +68,10 @@ class BuildSchemesTests(SimpleTestCase):
         )
 
     def test_too_many_schemes_fail(self):
-        lines = [make_line("1", charge_type="COURT_FEE")]
+        lines = [
+            make_line("1", charge_type="COURT_FEE"),
+            make_line("1", charge_type="PROCESS_COURT_FEE"),
+        ]
         with self.assertRaises(ProviderPermanentError) as caught:
-            build_schemes(
-                lines + [make_line("1", account_head="0099-09-909-09-09")],
-                scheme_map=SCHEME_MAP,
-                max_schemes=1,
-            )
+            build_schemes(lines, scheme_map=SCHEME_MAP, max_schemes=1)
         self.assertEqual(caught.exception.code, constants.EGRAS_TOO_MANY_SCHEMES)
