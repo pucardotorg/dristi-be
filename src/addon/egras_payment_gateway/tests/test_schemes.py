@@ -31,6 +31,13 @@ class ResolveSchemeTests(SimpleTestCase):
             resolve_scheme(line, SCHEME_MAP)
         self.assertEqual(caught.exception.code, constants.EGRAS_SCHEME_UNMAPPED)
 
+    def test_bogus_account_head_cannot_override_the_charge_type_mapping(self):
+        """Reviewer repro: a valid-format account_head must not pick the head of account."""
+        line = make_line("10", charge_type="COURT_FEE", account_head="9999-99-999-99-99")
+        self.assertEqual(
+            resolve_scheme(line, {"COURT_FEE": "0030-01-101-01-01"}), "0030-01-101-01-01"
+        )
+
     def test_charge_type_is_the_fallback(self):
         line = make_line("10", charge_type="COURT_FEE", account_head="")
         self.assertEqual(resolve_scheme(line, SCHEME_MAP), "0030-01-501-01-00")
