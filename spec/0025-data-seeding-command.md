@@ -114,9 +114,9 @@ Natural keys below are taken from the current models.
 For each row the engine computes the natural key and looks up an existing record:
 
 - **Not found** → create it (collecting for a `bulk_create`, or `create()` where a model needs `save()` side effects / `full_clean`).
-- **Found** → count as *unchanged* and skip. The engine never writes to an existing row. (This is the seed-only rule; it means a field changed in the file after first load will **not** propagate — called out in reporting so it is not silently surprising.)
+- **Found** → by default, count as *unchanged* and skip (insert-only, the seed-only rule). With `--upsert`, update the row's fields to match the file (relationships re-resolved too) and count it as *updated*.
 
-Re-running any file therefore converges to zero writes. A composite key (Configuration) is matched on the tuple.
+Without `--upsert`, re-running a file converges to zero writes; with `--upsert`, re-running is still idempotent because an unchanged row produces no update. A composite key (Configuration) is matched on the tuple.
 
 ### 6. Relationship resolution
 
@@ -132,10 +132,12 @@ When multiple files are passed, they are grouped by target model and loaded in e
 
 ```
 manage.py seed FILE [FILE ...]
-    --dry-run        Report what would be created without saving.
+    --upsert         Also update existing rows to match the file.
+                     Default is insert-only (existing rows are skipped).
+    --dry-run        Report what would change without saving.
     --strict         Treat any unresolved reference or skipped row as an error
                      (non-zero exit), instead of warning and continuing.
-    -v 2             List every created row and every unresolved reference.
+    -v 2             List every created/updated row and every unresolved reference.
 ```
 
 Examples:
@@ -150,11 +152,11 @@ python manage.py seed  <<data-repo>>/kl/locations.toml  <<data-repo>>/kl/organiz
 
 ### 9. Reporting
 
-Per file and as a run total: `created`, `unchanged` (already present), `skipped` (unresolved references), with a one-line `SUCCESS`/`WARNING` summary mirroring `import_pincodes`. At `-v 2`, each created row's key and each unresolved reference are listed. `--dry-run` prefixes counts with "Dry run: would have…".
+Per file and as a run total: `created`, `updated` (with `--upsert`), `unchanged` (already present), `skipped` (unresolved references), with a one-line `SUCCESS`/`WARNING` summary mirroring `import_pincodes`. At `-v 2`, each created/updated row's key and each unresolved reference are listed. `--dry-run` prefixes counts with "Dry run: would have…".
 
 ## Testing
 
-- Unit tests per registered seeder: create-from-empty, re-run-is-noop (idempotency), FK/M2M resolution by code, unresolved reference handling, composite-key match (Configuration).
+- Unit tests per registered seeder: create-from-empty, re-run-is-noop (idempotency), existing row skipped by default, updated with `--upsert`, FK/M2M resolution by code, unresolved reference handling, composite-key match (Configuration).
 - Engine tests: `[seed]` header parsing, missing-header/empty-rows errors, unknown model error, multi-file load order, `--dry-run` rolls back, `--strict` exit code, transaction rollback on mid-run failure.
 - A small fixture seed set under `src/data/seed/` used by tests and as living documentation of the file format.
 
@@ -171,5 +173,5 @@ Per file and as a run total: `created`, `unchanged` (already present), `skipped`
 2. ~~**TOML and CSV, or TOML only?**~~ **Resolved: TOML only**, per the ticket. CSV is out of scope; `import_pincodes` keeps its own CSV reader for the India Post directory.
 3. **"Permissions" scope.** Are these DB-backed rows to seed, or the code-level `users.Role` choices (not seedable)? Deferred until clarified.
 4. **Config value typing in TOML.** `Configuration.config_value` — stored as-is from TOML (native types) or always coerced? Need the field's current type to finalize.
-5. **Edit preservation vs. pure seed-only.** `import_pincodes` can optionally repoint rows unless an admin edited them. This spec is strictly seed-only (never touch existing rows) per the ticket. Confirm we do **not** want an opt-in `--update` for seeds.
+5. ~~**Edit preservation vs. pure seed-only.**~~ **Resolved** (@thejeshgn): default is insert-only, with an opt-in `--upsert` flag to also update existing rows. See §5 and §8.
 6. **External data repo** — is it in scope to define its directory layout and wire a default `--from <dir>`, or is that a follow-up?
