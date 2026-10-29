@@ -24,7 +24,9 @@ from apps.users.models import AdvocateProfile
 
 from .. import errors, models
 from ..models import (
+    COMPLAINANT_ONLY_MESSAGE,
     DESIGNATION_NOT_ALLOWED_MESSAGE,
+    INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE,
     INSTITUTION_ROLES,
     CaseParticipant,
     ParticipantRole,
@@ -241,6 +243,7 @@ def _create_participant(case, user, role, data):
         resides_within_jurisdiction=data.get(
             "resides_within_jurisdiction", True if role == ParticipantRole.ACCUSED else None
         ),
+        party_in_person_affidavit=data.get("party_in_person_affidavit"),
         additional_details=data["additional_details"],
         created_by=user,
         updated_by=user,
@@ -253,22 +256,29 @@ def _create_participant(case, user, role, data):
 def _snapshot(person, data):
     """Return the ``*_at_filing`` values for a new participant.
 
-    Taken from the person when there is one. An institution alone is shown by
-    the name and number the filer entered, not those stored for a reused
+    Taken from the person when there is one. An institution is recorded by the
+    name, number and email the filer entered, not those stored for a reused
     institution, which the filer is never shown.
     """
+    institution = data.get("institution")
+    snapshot = {}
+    if institution is not None:
+        snapshot = {"entity_name_at_filing": institution["entity_name"].strip()}
     if person is not None:
         return {
+            **snapshot,
             "name_at_filing": person.name,
             "phone_number_at_filing": person.phone_number,
+            "email_at_filing": person.email_address,
             "gender_at_filing": person.gender,
             "age_at_filing": person.current_age,
             "designation_at_filing": data.get("designation"),
         }
-    institution = data["institution"]
     return {
-        "name_at_filing": institution["entity_name"].strip(),
+        **snapshot,
+        "name_at_filing": snapshot["entity_name_at_filing"],
         "phone_number_at_filing": institution.get("contact_number") or None,
+        "email_at_filing": institution.get("email_address") or None,
     }
 
 
@@ -312,6 +322,10 @@ def update_participant(participant, user, data):
         problems["resides_within_jurisdiction"] = [
             errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")
         ]
+    if participant.role != ParticipantRole.COMPLAINANT and "party_in_person_affidavit" in data:
+        problems["party_in_person_affidavit"] = [
+            errors.coded(errors.FIELD_NOT_APPLICABLE, COMPLAINANT_ONLY_MESSAGE)
+        ]
     if data.get("is_party_in_person") and participant.representations.active().exists():
         problems["is_party_in_person"] = [
             errors.coded(errors.PARTY_IN_PERSON, models.PARTY_HAS_ADVOCATES_MESSAGE)
@@ -328,6 +342,20 @@ def update_participant(participant, user, data):
         ]
     if problem := police_station_error(participant.role, data.get("address")):
         problems["address"] = problem
+    if not participant.institution_id:
+        if "entity_name_at_filing" in data:
+            problems["entity_name_at_filing"] = [
+                errors.coded(errors.FIELD_NOT_APPLICABLE, INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE)
+            ]
+    elif not participant.person_id:
+        # An institution alone is named by the institution's name, so the two
+        # stay the same whichever is changed.
+        for field, other in (
+            ("name_at_filing", "entity_name_at_filing"),
+            ("entity_name_at_filing", "name_at_filing"),
+        ):
+            if field in data and other not in data:
+                data[other] = data[field]
     if data.get("phone_number_at_filing"):
         # A person's number is a mobile in E.164; an institution's may be a landline.
         validator = phone_number_validator if participant.person_id else contact_number_validator

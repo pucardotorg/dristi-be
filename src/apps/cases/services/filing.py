@@ -194,6 +194,15 @@ def validation_errors(case):
                 f"Complainant #{complainant.ordinal} has no advocate and is not marked "
                 "as party-in-person.",
             )
+        if complainant.is_party_in_person and not complainant.party_in_person_affidavit:
+            error(
+                f"participants.{complainant.id}",
+                f"Complainant #{complainant.ordinal} appears in person but has no "
+                "party-in-person affidavit.",
+            )
+
+    if not case.affidavit:
+        error("affidavit", "The affidavit is required.")
 
     documents = list(
         CaseDocument.objects.active()
