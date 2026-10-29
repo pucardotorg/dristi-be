@@ -267,14 +267,15 @@ def submit_for_scrutiny(case_id, user):
     """Send a paid case to scrutiny; this is when it counts as filed.
 
     There is no payment service yet, so being in ``PENDING_PAYMENT`` is the
-    only precondition until one records the payment.
+    only precondition until one records the payment. A case resubmitted after
+    correction keeps its first filing date: limitation and delay run from it.
     """
     return _transition(
         case_id,
         user,
         CaseStatus.PENDING_PAYMENT,
         CaseStatus.UNDER_SCRUTINY,
-        filed_at=timezone.now(),
+        filed_at=lambda case: case.filed_at or timezone.now(),
     )
 
 
@@ -283,6 +284,7 @@ def _transition(case_id, user, from_status, to_status, check=None, **fields):
 
     The case row is locked, so two concurrent submissions cannot both pass the
     status check. A plain ``save()``, so each step is kept in the case's history.
+    A callable value in ``fields`` is called with the locked case.
     """
     with transaction.atomic():
         case = lock_case(get_case(case_id, user))
@@ -296,7 +298,7 @@ def _transition(case_id, user, from_status, to_status, check=None, **fields):
         case.status = to_status
         case.updated_by = user
         for field, value in fields.items():
-            setattr(case, field, value)
+            setattr(case, field, value(case) if callable(value) else value)
         case.save(update_fields=["status", *fields, "updated_by", "updated_at"])
         clear_preview_cache(case.pk)
     return case

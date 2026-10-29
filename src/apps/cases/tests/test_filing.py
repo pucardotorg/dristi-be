@@ -1,5 +1,6 @@
 """Tests for the preview, completeness check, status transitions and signing (spec 0021 §6–8)."""
 
+import datetime
 import uuid
 
 import pytest
@@ -538,6 +539,17 @@ class TestSubmitForPaymentAndScrutiny:
         assert scrutiny.status_code == 200
         assert scrutiny.json()["status"] == "UNDER_SCRUTINY"
         assert scrutiny.json()["filed_at"]
+
+    def test_resubmission_keeps_the_first_filing_date(self, client, draft):
+        add_complainant(client, draft)
+        filed_at = timezone.now() - datetime.timedelta(days=6)
+        Case.objects.filter(pk=draft).update(filed_at=filed_at)
+        set_status(draft, CaseStatus.PENDING_PAYMENT)
+
+        response = submit(client, draft, "scrutiny")
+
+        assert response.status_code == 200
+        assert Case.objects.get(pk=draft).filed_at == filed_at
 
     @pytest.mark.parametrize(
         ("step", "wrong_status"),

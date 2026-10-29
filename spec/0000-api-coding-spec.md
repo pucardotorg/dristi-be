@@ -243,8 +243,8 @@ example `E01001`.
 | `05` | `apps.address` | address (spec 0020) |
 | `06` | `apps.payments` | demands and payments (spec 0017); reserved, not yet implemented |
 | `07` | `apps.cases` | case filing (spec 0021) |
-| `08` | `apps.workflows` | case workflows and pending tasks (spec 0011); reserved, not yet implemented |
-| `09` | `apps.scrutiny` | scrutiny and registration (spec 0024); reserved, not yet implemented |
+| `08` | `apps.workflows` | case workflows and pending tasks (spec 0011); only `E08005`, defined by the `apps.scrutiny` stand-in until the app exists |
+| `09` | `apps.scrutiny` | scrutiny and registration (spec 0024) |
 
 Rules:
 
