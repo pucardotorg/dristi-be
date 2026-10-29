@@ -121,7 +121,8 @@ class Address(models.Model):
         ],
     )
     district = models.CharField(max_length=100)
-    police_station = models.CharField(max_length=255)
+    # Blank when not given: complainant and POA holder addresses may leave it out.
+    police_station = models.CharField(max_length=255, blank=True)
     # SHA-256 of the canonical content; the unique index is what deduplicates.
     hash = models.CharField(max_length=64, unique=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)

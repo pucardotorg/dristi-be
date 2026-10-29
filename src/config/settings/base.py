@@ -343,6 +343,10 @@ OTP_MAX_ATTEMPTS = env.int("OTP_MAX_ATTEMPTS", default=5)
 # How long a verified password-reset code lets the session set a new password.
 PASSWORD_RESET_WINDOW_SECONDS = env.int("PASSWORD_RESET_WINDOW_SECONDS", default=600)
 
+# Per-user rate of GET /advocates/?search= (finding an advocate to add to a
+# case); blank disables it. Limits scraping the list of advocates.
+ADVOCATE_SEARCH_THROTTLE_RATE = env("ADVOCATE_SEARCH_THROTTLE_RATE", default="60/min")
+
 
 # ---------------------------------------------------------------------------
 # Cache (Redis)

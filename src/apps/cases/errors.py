@@ -52,12 +52,9 @@ INSTITUTION_NOT_ALLOWED = define(
 ROLE_ALREADY_HELD = define("E07013", "This party already holds this role on this case.")
 # Also for an advocate: "An advocate cannot represent both a complainant and an accused."
 BOTH_SIDES = define("E07014", "A party cannot be both a complainant and an accused on a case.")
-CALLS_ACTIVE_WITNESS = define(
-    "E07015", "Cannot be removed while an active witness is called by them."
-)
 # The message names the role needed: "Must be a POA holder." …
 WRONG_ROLE = define("E07016", "Must be a complainant or an accused.")
-WITNESS_ALREADY_CALLED = define("E07017", "This person is already a witness called by this party.")
+WITNESS_ALREADY_CALLED = define("E07017", "This person is already a witness for this side.")
 SELF_REPRESENTATION = define("E07018", "A party cannot act for themselves.")
 SELF_AS_ACCUSED = define("E07019", "You cannot name yourself as accused.")
 ALREADY_ACTING = define("E07020", "This holder or advocate already acts for this party.")
@@ -78,3 +75,10 @@ SIGNED_BY_SOMEONE_ELSE = define("E07027", "This document was e-signed by someone
 SIGNED_BEFORE_SUBMISSION = define(
     "E07028", "This document was e-signed before the case was submitted for signing."
 )
+
+# Document links (spec 0021 §3, §5)
+# A cheque's scan must be a bounced cheque, a proof of dispatch must belong to
+# a demand notice, and so on.
+DOCUMENT_TYPE_MISMATCH = define("E07029", "This document's type does not fit what it is linked to.")
+DOCUMENT_LINK_NOT_ALLOWED = define("E07030", "This document type cannot be linked here.")
+EVIDENCE_NOT_ON_CASE = define("E07031", "No active evidence with this id on this case.")

@@ -13,7 +13,16 @@ from apps.parties.models import MAX_AGE
 from apps.users.models import ApprovalStatus
 
 from . import errors as case_errors
-from .services.case_types import CaseType, DocumentType, EvidenceType, get_config, schema_errors
+from .services.case_types import (
+    EVIDENCE_DOCUMENT_TYPES,
+    EVIDENCE_SCAN_TYPES,
+    PARTY_DOCUMENT_ROLES,
+    CaseType,
+    DocumentType,
+    EvidenceType,
+    get_config,
+    schema_errors,
+)
 
 
 class CaseStatus(models.TextChoices):
@@ -107,6 +116,12 @@ OPPOSING_ROLES = {
     ParticipantRole.ACCUSED: ParticipantRole.COMPLAINANT,
 }
 
+
+def scan_type_message(scan_type):
+    """Return the message for an evidence scan of the wrong type."""
+    return f"Must be a {DocumentType(scan_type).label.lower()} document."
+
+
 # Messages shared by the model rules and the request checks that run before them.
 # Each rule raises its message with the API code it is reported as (spec 0021
 # §10), which the project error handler keeps.
@@ -122,10 +137,9 @@ ACTIVE_PARTICIPANT_MESSAGE = "Must be an active participant."
 # The rest of the rules' messages. ``{…}`` parts vary per error.
 ROLE_HELD_MESSAGE = "This {field} is already {article} {role} on this case."
 BOTH_SIDES_MESSAGE = "{party} cannot be both a complainant and an accused on a case."
-CALLS_ACTIVE_WITNESS_MESSAGE = "Cannot be removed while an active witness is called by them."
 NOT_A_WITNESS_MESSAGE = "Must be a witness."
 NOT_A_POA_HOLDER_MESSAGE = "Must be a POA holder."
-WITNESS_CALLED_TWICE_MESSAGE = "This person is already a witness called by this party."
+WITNESS_TWICE_MESSAGE = "This person is already a witness for this side."
 MANDATE_FOR_SELF_MESSAGE = "A person cannot hold a mandate for themselves."
 PARTICIPANT_MANDATE_FOR_SELF_MESSAGE = "A participant cannot hold a mandate for themselves."
 DUPLICATE_MANDATE_MESSAGE = "This holder already has an active mandate for this party."
@@ -280,11 +294,10 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         Every role but a witness needs an address for service of notice. While
         active, a person or an institution cannot hold one role twice on a
         case, nor be both a complainant and an accused there, nor appear in
-        person while an advocate actively represents them. A participant
-        cannot be removed while an active witness names them as its caller.
+        person while an advocate actively represents them.
         """
         super().clean()
-        # Not a ``_raise_broken_rules`` list: the role-conflict and witness
+        # Not a ``_raise_broken_rules`` list: the role-conflict and advocate
         # checks query the database, and run only when the cheaper rules allow.
         errors = {}
         if self.role != ParticipantRole.WITNESS and not self.address_id:
@@ -306,16 +319,6 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             if field not in errors and (error := self._role_conflict(field)):
                 errors[field] = error
         if (
-            not self.is_active
-            and self.pk
-            and Witness.objects.filter(
-                called_by_participant_id=self.pk, case_participant__is_active=True
-            ).exists()
-        ):
-            errors["is_active"] = _rule_error(
-                case_errors.CALLS_ACTIVE_WITNESS, CALLS_ACTIVE_WITNESS_MESSAGE
-            )
-        if (
             self.is_active
             and self.is_party_in_person
             and self.pk
@@ -333,7 +336,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         Only active participants count, so a party removed from a case can be
         added again. A person may be a witness more than once, since a witness
         recalled by the other side is a new participant; ``Witness.clean``
-        refuses the same caller twice.
+        refuses the same side twice.
         """
         party_id = getattr(self, f"{field}_id")
         if not (self.is_active and self.case_id and party_id):
@@ -357,13 +360,21 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         return None
 
 
+class WitnessSide(models.TextChoices):
+    """Whose witness: the side that calls them (spec 0020 §4.5)."""
+
+    COMPLAINANT = "COMPLAINANT", "Complainant's witness"
+    ACCUSED = "ACCUSED", "Accused's witness"
+
+
 class Witness(BaseModel, BaseAuditableModel):
     """What only a witness has, one row per witness participant (spec 0020 §4.5).
 
     The participant's id is the primary key, which enforces the 1:1
-    relationship; the participant row holds the witness's ordinal, snapshot
-    and address. A witness recalled by the opposing party is a new participant
-    with its own row.
+    relationship; the participant row holds the witness's case, ordinal,
+    snapshot and address. ``side`` records whether the complainant or the
+    accused calls them. A witness recalled by the other side is a new
+    participant with its own row.
     """
 
     # Replaces BaseModel's own UUID key.
@@ -371,11 +382,7 @@ class Witness(BaseModel, BaseAuditableModel):
     case_participant = models.OneToOneField(
         CaseParticipant, primary_key=True, on_delete=models.CASCADE, related_name="witness"
     )
-    # RESTRICT: a caller cannot be deleted on its own, but deleting the whole
-    # case still cascades through both participants.
-    called_by_participant = models.ForeignKey(
-        CaseParticipant, on_delete=models.RESTRICT, related_name="witnesses_called"
-    )
+    side = models.CharField(max_length=16, choices=WitnessSide.choices)
     what_will_witness_prove = models.TextField()
     additional_details = models.JSONField(default=dict, blank=True)
 
@@ -383,9 +390,16 @@ class Witness(BaseModel, BaseAuditableModel):
         """Meta options."""
 
         verbose_name_plural = "witnesses"
+        constraints = [
+            models.CheckConstraint(
+                check=Q(side__in=WitnessSide.values),
+                name="cases_witness_side_valid",
+                violation_error_message="Choose a valid side.",
+            ),
+        ]
 
     def __str__(self):
-        return f"Witness {self.case_participant_id} called by {self.called_by_participant_id}"
+        return f"{self.get_side_display()} {self.case_participant_id}"
 
     def clean_fields(self, exclude=None):
         """Trim the statement, so a whitespace-only one is rejected as missing."""
@@ -396,59 +410,38 @@ class Witness(BaseModel, BaseAuditableModel):
     def clean(self):
         """Apply the rules the database cannot express (spec 0020 §4.5.2).
 
-        The participant must be a witness, called by a complainant or an
-        accused on the same case. Whether the caller is still active matters
-        only while the witness is, so a removed witness can still be edited.
-        While active, a person cannot be a witness twice for the same caller.
-        Every broken rule is reported, not just the first one per field.
+        The participant must be a witness. While active, a person cannot be a
+        witness twice for the same side of a case.
         """
         super().clean()
-        if not (self.case_participant_id and self.called_by_participant_id):
+        if not self.case_participant_id:
             return
-        witness, caller = self.case_participant, self.called_by_participant
         _raise_broken_rules(
             [
                 (
                     "case_participant",
-                    witness.role == ParticipantRole.WITNESS,
+                    self.case_participant.role == ParticipantRole.WITNESS,
                     case_errors.WRONG_ROLE,
                     NOT_A_WITNESS_MESSAGE,
                 ),
                 (
-                    "called_by_participant",
-                    caller.role in INSTITUTION_ROLES,
-                    case_errors.WRONG_ROLE,
-                    PARTY_ROLE_MESSAGE,
-                ),
-                (
-                    "called_by_participant",
-                    caller.case_id == witness.case_id,
-                    case_errors.PARTICIPANT_NOT_ON_CASE,
-                    SAME_CASE_MESSAGE,
-                ),
-                (
-                    "called_by_participant",
-                    not witness.is_active or caller.is_active,
-                    case_errors.PARTICIPANT_NOT_ON_CASE,
-                    ACTIVE_PARTICIPANT_MESSAGE,
-                ),
-                (
-                    "called_by_participant",
-                    not self._called_twice(),
+                    "side",
+                    not self._witness_twice(),
                     case_errors.WITNESS_ALREADY_CALLED,
-                    WITNESS_CALLED_TWICE_MESSAGE,
+                    WITNESS_TWICE_MESSAGE,
                 ),
             ]
         )
 
-    def _called_twice(self):
-        """Return whether the person is already an active witness for this caller."""
+    def _witness_twice(self):
+        """Return whether the person is already an active witness for this side of the case."""
         witness = self.case_participant
-        if not (witness.is_active and witness.person_id):
+        if not (witness.is_active and witness.person_id and self.side):
             return False
         return (
             Witness.objects.filter(
-                called_by_participant_id=self.called_by_participant_id,
+                side=self.side,
+                case_participant__case_id=witness.case_id,
                 case_participant__person_id=witness.person_id,
                 case_participant__is_active=True,
             )
@@ -681,6 +674,12 @@ class CaseDocument(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
     Removing a document from the case sets ``is_active = False``; the file
     itself is never deleted through here.
+
+    A document may say whose it is (``case_participant``: an identity proof,
+    vakalatnama or POA document) or which evidence item it supports
+    (``case_evidence``: a cheque's scan, a demand notice's proof of dispatch).
+    Both are optional; ``PARTY_DOCUMENT_ROLES`` and ``EVIDENCE_DOCUMENT_TYPES``
+    say which types may be linked to what.
     """
 
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="documents")
@@ -688,6 +687,22 @@ class CaseDocument(BaseModel, BaseActivatableModel, BaseAuditableModel):
         "files.File", on_delete=models.PROTECT, related_name="case_documents"
     )
     document_type = models.CharField(max_length=64, choices=DocumentType.choices)
+    # SET_NULL: participants and evidence are removed by soft delete; a hard
+    # delete (the whole case, or the admin) only drops the link.
+    case_participant = models.ForeignKey(
+        CaseParticipant,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="documents",
+    )
+    case_evidence = models.ForeignKey(
+        "CaseEvidence",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="documents",
+    )
     additional_details = models.JSONField(default=dict, blank=True)
 
     class Meta(BaseModel.Meta):
@@ -704,14 +719,72 @@ class CaseDocument(BaseModel, BaseActivatableModel, BaseAuditableModel):
         return f"{self.document_type} for {self.case_id}"
 
     def clean(self):
-        """Accept only a document type the case's type accepts, as the API does."""
+        """Apply the API's rules: an accepted type, and links that fit it.
+
+        The case's type must accept the document type. A linked participant
+        must be on the same case, in a role the document type belongs to; a
+        linked evidence item must be on the same case and of a type the
+        document supports. While the document is active, both must be too.
+        """
         super().clean()
-        if self.case_id and self.document_type:
-            allowed = get_config(self.case.case_type).document_types
-            if self.document_type not in allowed:
-                raise ValidationError(
-                    {"document_type": f"Not accepted for {self.case.case_type} cases."}
-                )
+        if not (self.case_id and self.document_type):
+            return
+        allowed = get_config(self.case.case_type).document_types
+        if self.document_type not in allowed:
+            raise ValidationError(
+                {"document_type": f"Not accepted for {self.case.case_type} cases."}
+            )
+        errors = {}
+        if self.case_participant_id and (problem := self._participant_link_error()):
+            errors["case_participant"] = problem
+        if self.case_evidence_id and (problem := self._evidence_link_error()):
+            errors["case_evidence"] = problem
+        if errors:
+            raise ValidationError(errors)
+
+    def _participant_link_error(self):
+        """Return why ``case_participant`` cannot own this document, or ``None``."""
+        roles = PARTY_DOCUMENT_ROLES.get(self.document_type)
+        if roles is None:
+            return _rule_error(
+                case_errors.DOCUMENT_LINK_NOT_ALLOWED,
+                "Only an identity proof, vakalatnama or POA document belongs to a participant.",
+            )
+        participant = CaseParticipant.objects.filter(pk=self.case_participant_id).first()
+        if participant is None:
+            # A missing id is already reported by the field's own check.
+            return None
+        if participant.case_id != self.case_id:
+            return _rule_error(case_errors.PARTICIPANT_NOT_ON_CASE, SAME_CASE_MESSAGE)
+        if self.is_active and not participant.is_active:
+            return _rule_error(case_errors.PARTICIPANT_NOT_ON_CASE, ACTIVE_PARTICIPANT_MESSAGE)
+        if participant.role not in roles:
+            return _rule_error(
+                case_errors.WRONG_ROLE,
+                "Must be a complainant." if len(roles) == 1 else PARTY_ROLE_MESSAGE,
+            )
+        return None
+
+    def _evidence_link_error(self):
+        """Return why ``case_evidence`` cannot be supported by this document, or ``None``."""
+        evidence_types = EVIDENCE_DOCUMENT_TYPES.get(self.document_type)
+        if evidence_types is None:
+            return _rule_error(
+                case_errors.DOCUMENT_LINK_NOT_ALLOWED,
+                "This document type does not belong to an evidence item.",
+            )
+        evidence = CaseEvidence.objects.filter(pk=self.case_evidence_id).first()
+        if evidence is None:
+            # A missing id is already reported by the field's own check.
+            return None
+        if evidence.case_id != self.case_id or (self.is_active and not evidence.is_active):
+            return _rule_error(
+                case_errors.EVIDENCE_NOT_ON_CASE, case_errors.EVIDENCE_NOT_ON_CASE.message
+            )
+        if evidence.evidence_type not in evidence_types:
+            labels = " or ".join(EvidenceType(t).label.lower() for t in evidence_types)
+            return _rule_error(case_errors.DOCUMENT_TYPE_MISMATCH, f"Must be a {labels}.")
+        return None
 
 
 class ChequeBounceCase(BaseModel, BaseAuditableModel):
@@ -798,7 +871,8 @@ class CaseEvidence(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
         The case's type must accept the evidence type, ``evidence_info`` must
         match its schema, and a linked document must be an active document of
-        the same case.
+        the same case, of the type this evidence's scan is (a cheque's must be
+        a bounced cheque).
         """
         super().clean()
         if not self.case_id:
@@ -809,9 +883,14 @@ class CaseEvidence(BaseModel, BaseActivatableModel, BaseAuditableModel):
             errors["evidence_type"] = f"Not accepted for {self.case.case_type} cases."
         elif problems := schema_errors(schemas[self.evidence_type], self.evidence_info):
             errors["evidence_info"] = [str(problem) for problem in problems]
-        if self.case_document_id and not (
-            self.case_document.case_id == self.case_id and self.case_document.is_active
-        ):
-            errors["case_document"] = "Must be an active document of the same case."
+        if self.case_document_id:
+            document = self.case_document
+            scan_type = EVIDENCE_SCAN_TYPES.get(self.evidence_type)
+            if not (document.case_id == self.case_id and document.is_active):
+                errors["case_document"] = "Must be an active document of the same case."
+            elif scan_type and document.document_type != scan_type:
+                errors["case_document"] = _rule_error(
+                    case_errors.DOCUMENT_TYPE_MISMATCH, scan_type_message(scan_type)
+                )
         if errors:
             raise ValidationError(errors)

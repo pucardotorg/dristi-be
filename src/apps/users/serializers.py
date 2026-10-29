@@ -318,6 +318,27 @@ class PowerOfAttorneyProfileReadSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class AdvocateSearchResultSerializer(serializers.ModelSerializer):
+    """An approved advocate found by GET /advocates/?search=.
+
+    Only what is needed to pick the advocate for a case: no contact details,
+    since any registered user can search.
+    """
+
+    name = serializers.SerializerMethodField()
+
+    class Meta:
+        """Meta options."""
+
+        model = AdvocateProfile
+        fields = ["id", "name", "bar_registration_id"]
+        read_only_fields = fields
+
+    def get_name(self, profile) -> str:
+        """Return the name on the profile, or the account's name when it has none."""
+        return profile.name or profile.user.name
+
+
 class AdvocateProfileReadSerializer(serializers.ModelSerializer):
     """An advocate's profile as returned by GET /users/me."""
 

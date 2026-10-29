@@ -14,20 +14,23 @@ import uuid
 from contextlib import contextmanager
 
 from django.core.cache import cache, caches
+from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import ErrorDetail, NotFound
+from rest_framework.fields import get_error_detail
+from rest_framework.settings import api_settings
 
 from apps.api import errors as api_errors
 from apps.api.errors import BusinessError
 from apps.files import documents
 
 from .. import errors
-from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
-from .case_types import get_config, schema_errors
+from ..models import Case, CaseDocument, CaseEvidence, CaseStatus, scan_type_message
+from .case_types import EVIDENCE_SCAN_TYPES, get_config, schema_errors
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +57,39 @@ SCHEMA_KEYWORD_ERRORS = {
     "enum": api_errors.INVALID_CHOICE,
     "const": api_errors.INVALID_CHOICE,
 }
+
+
+# Model rules as API errors
+
+
+@contextmanager
+def errors_under(field=None, *, as_whole=False, renamed=None):
+    """Turn a model ``ValidationError`` into a 400, nested under ``field`` when given.
+
+    Every message keeps the code the model gave it: a case rule's API code, or
+    Django's own. ``as_whole`` reports every message as a non-field error, for
+    a request with no body (a DELETE), where the model's field names would mean
+    nothing. ``renamed`` maps model field names to the request's.
+    """
+    renamed = {NON_FIELD_ERRORS: api_settings.NON_FIELD_ERRORS_KEY, **(renamed or {})}
+    try:
+        yield
+    except DjangoValidationError as exc:
+        detail = get_error_detail(exc)
+        if isinstance(detail, dict) and not as_whole:
+            detail = {renamed.get(key, key): messages for key, messages in detail.items()}
+        else:
+            if isinstance(detail, dict):
+                detail = [message for messages in detail.values() for message in messages]
+            detail = {api_settings.NON_FIELD_ERRORS_KEY: detail}
+        raise serializers.ValidationError({field: detail} if field else detail) from exc
+
+
+def validated_save(row, **errors_under_kwargs):
+    """Save ``row`` once ``full_clean`` passes; its errors become a 400 as in ``errors_under``."""
+    with errors_under(**errors_under_kwargs):
+        row.full_clean()
+    row.save()
 
 
 # Draft sessions and case resolution
@@ -271,28 +307,59 @@ def _require_allowed(value, allowed, field, case_type):
 # Documents (spec 0021 §3)
 
 
-def add_document(case_or_draft_id, user, upload, document_type):
+# A case document's model fields, by the names the API gives them.
+DOCUMENT_FIELD_NAMES = {
+    "case_participant": "case_participant_id",
+    "case_evidence": "case_evidence_id",
+}
+
+
+def add_document(
+    case_or_draft_id,
+    user,
+    upload,
+    document_type,
+    *,
+    case_participant_id=None,
+    case_evidence_id=None,
+    is_digital=None,
+    display_name=None,
+):
     """Store ``upload`` and file it under the case, creating the case on first save.
 
     The upload has already passed ``apps.files.documents.document_error``
     (content, extension and size), in the serializer. The file is written to
     storage before the database transaction, as ``apps.files`` requires; if the
     transaction fails the file is deleted again.
+
+    ``case_participant_id`` and ``case_evidence_id`` link the document to the
+    party it belongs to or the evidence item it supports; ``CaseDocument.clean``
+    checks they fit its type. ``is_digital`` and ``display_name`` are kept in
+    ``additional_details``.
     """
     case_type = get_case_type(case_or_draft_id, user)
     allowed = get_config(case_type).document_types
     _require_allowed(document_type, allowed, "document_type", case_type)
+    details = {}
+    if is_digital is not None:
+        details["is_digital"] = is_digital
+    if display_name and display_name.strip():
+        details["display_name"] = display_name.strip()
     file_id = _store_file(upload, user, case_type)
     try:
         with transaction.atomic():
             case = get_or_create_case(case_or_draft_id, user)
-            document = CaseDocument.objects.create(
+            document = CaseDocument(
                 case=case,
                 document_id=file_id,
                 document_type=document_type,
+                case_participant_id=case_participant_id,
+                case_evidence_id=case_evidence_id,
+                additional_details=details,
                 created_by=user,
                 updated_by=user,
             )
+            validated_save(document, renamed=DOCUMENT_FIELD_NAMES)
             touch(case, user)
             return document
     except Exception:
@@ -354,10 +421,21 @@ def _validate_schema(schema, data, field):
         raise serializers.ValidationError(detail)
 
 
-def _require_case_document(case, case_document_id):
-    """Raise ``DOCUMENT_NOT_ON_CASE`` unless ``case_document_id`` is an active document of ``case``."""
-    if not CaseDocument.objects.active().filter(pk=case_document_id, case=case).exists():
+def _require_case_document(case, case_document_id, evidence_type):
+    """Check ``case_document_id`` can be the scan of ``evidence_type`` evidence on ``case``.
+
+    Raises ``DOCUMENT_NOT_ON_CASE`` unless it is an active document of the
+    case, and ``DOCUMENT_TYPE_MISMATCH`` unless it is of the evidence's scan
+    type: a cheque's scan must be a bounced cheque, not a proof of dispatch.
+    """
+    document = CaseDocument.objects.active().filter(pk=case_document_id, case=case).first()
+    if document is None:
         raise BusinessError(errors.DOCUMENT_NOT_ON_CASE, field="case_document_id")
+    scan_type = EVIDENCE_SCAN_TYPES.get(evidence_type)
+    if scan_type and document.document_type != scan_type:
+        raise BusinessError(
+            errors.DOCUMENT_TYPE_MISMATCH, scan_type_message(scan_type), field="case_document_id"
+        )
 
 
 def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_document_id=None):
@@ -366,7 +444,7 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
     # The case lock serialises ordinal assignment.
     with editing_or_creating(case_or_draft_id, user) as case:
         if case_document_id is not None:
-            _require_case_document(case, case_document_id)
+            _require_case_document(case, case_document_id, evidence_type)
 
         evidence = CaseEvidence.objects.create(
             case=case,
@@ -402,7 +480,7 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
         fields.append("evidence_info")
     if case_document_id is not _UNSET:
         if case_document_id is not None:
-            _require_case_document(evidence.case, case_document_id)
+            _require_case_document(evidence.case, case_document_id, evidence.evidence_type)
         evidence.case_document_id = case_document_id
         fields.append("case_document")
     evidence.updated_by = user

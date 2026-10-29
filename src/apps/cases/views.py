@@ -188,16 +188,33 @@ class CaseDocumentListView(generics.ListAPIView):
             201: CaseDocumentSerializer,
             **error_responses(
                 errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="document_type"),
+                errors.DOCUMENT_LINK_NOT_ALLOWED.example(
+                    "Only an identity proof, vakalatnama or POA document belongs to a participant.",
+                    field="case_participant_id",
+                ),
+                errors.WRONG_ROLE.example("Must be a complainant.", field="case_participant_id"),
+                errors.PARTICIPANT_NOT_ON_CASE.example(field="case_participant_id"),
+                errors.DOCUMENT_TYPE_MISMATCH.example(
+                    "Must be a legal demand notice.", field="case_evidence_id"
+                ),
+                errors.EVIDENCE_NOT_ON_CASE.example(field="case_evidence_id"),
                 errors.CASE_NOT_EDITABLE,
             ),
         },
     )
     def post(self, request, case_id):
-        """Upload a case document; the first save on a draft creates the case."""
+        """Upload a case document; the first save on a draft creates the case.
+
+        ``case_participant_id`` links an identity proof, vakalatnama or POA
+        document to its party; ``case_evidence_id`` links a document to the
+        evidence item it supports, such as a demand notice's proof of delivery.
+        """
         serializer = CaseDocumentUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        document = services.add_document(case_id, request.user, data["file"], data["document_type"])
+        data = dict(serializer.validated_data)
+        document = services.add_document(
+            case_id, request.user, data.pop("file"), data.pop("document_type"), **data
+        )
         return Response(CaseDocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
 
@@ -274,6 +291,9 @@ class CaseEvidenceListView(generics.ListAPIView):
             **error_responses(
                 errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="evidence_type"),
                 errors.DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
+                errors.DOCUMENT_TYPE_MISMATCH.example(
+                    "Must be a bounced cheque document.", field="case_document_id"
+                ),
                 errors.CASE_NOT_EDITABLE,
             ),
         },
@@ -297,6 +317,9 @@ class CaseEvidenceDetailView(APIView):
             200: CaseEvidenceSerializer,
             **error_responses(
                 errors.DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
+                errors.DOCUMENT_TYPE_MISMATCH.example(
+                    "Must be a bounced cheque document.", field="case_document_id"
+                ),
                 errors.CASE_NOT_EDITABLE,
             ),
         },
@@ -377,9 +400,7 @@ class WitnessCreateView(APIView):
         responses={
             201: CaseParticipantSerializer,
             **error_responses(
-                errors.PARTICIPANT_NOT_ON_CASE.example(field="called_by_participant_id"),
-                errors.WRONG_ROLE.example(field="called_by_participant_id"),
-                errors.WITNESS_ALREADY_CALLED.example(field="called_by_participant_id"),
+                errors.WITNESS_ALREADY_CALLED.example(field="side"),
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.FIELD_NOT_ACCEPTED.example(field="institution"),
                 errors.CASE_NOT_EDITABLE,
@@ -387,7 +408,7 @@ class WitnessCreateView(APIView):
         },
     )
     def post(self, request, case_id):
-        """Add the witness; send ``person`` or ``"self": true``, and the party calling them."""
+        """Add the witness; send ``person`` or ``"self": true``, and which side calls them."""
         serializer = WitnessCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         participant = participants.add_witness(case_id, request.user, serializer.validated_data)
@@ -447,7 +468,6 @@ class CaseParticipantDetailView(APIView):
                 errors.PARTY_IN_PERSON.example(
                     "Remove this party's advocates first.", field="is_party_in_person"
                 ),
-                errors.PARTICIPANT_NOT_ON_CASE.example(field="called_by_participant_id"),
                 errors.CASE_NOT_EDITABLE,
             ),
         },
@@ -464,13 +484,7 @@ class CaseParticipantDetailView(APIView):
 
     @extend_schema(
         tags=TAGS,
-        responses={
-            204: None,
-            **error_responses(
-                errors.CALLS_ACTIVE_WITNESS,
-                errors.CASE_NOT_EDITABLE,
-            ),
-        },
+        responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)},
     )
     def delete(self, request, case_participant_id):
         """Remove the party; the rest of the role is renumbered."""

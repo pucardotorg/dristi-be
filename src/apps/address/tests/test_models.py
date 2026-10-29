@@ -186,7 +186,9 @@ class TestDeduplication:
 
         Address(**{**ADDRESS_DEFAULTS, "line1": "99 Brigade Road"}).full_clean()
 
-    @pytest.mark.parametrize("field", Address.CONTENT_FIELDS)
+    @pytest.mark.parametrize(
+        "field", [field for field in Address.CONTENT_FIELDS if field != "police_station"]
+    )
     @pytest.mark.parametrize("missing", [None, "", "   "])
     def test_full_clean_reports_a_missing_field_instead_of_crashing(self, field, missing):
         address = Address(**{**ADDRESS_DEFAULTS, field: missing})
@@ -195,6 +197,13 @@ class TestDeduplication:
             address.full_clean()
 
         assert field in exc.value.message_dict
+
+    def test_police_station_may_be_left_out(self):
+        address, _ = Address.objects.get_or_create_address(
+            **{**ADDRESS_DEFAULTS, "police_station": ""}
+        )
+
+        assert address.police_station == ""
 
     def test_validate_unique_skips_the_duplicate_check_while_a_field_is_missing(self):
         make_address()

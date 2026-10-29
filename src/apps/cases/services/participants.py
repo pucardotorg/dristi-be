@@ -7,15 +7,10 @@ saved in one transaction, and the case row is locked for it, so ordinals are
 assigned and renumbered one write at a time.
 """
 
-from contextlib import contextmanager
-
-from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.fields import get_error_detail
-from rest_framework.settings import api_settings
 
 from apps.address.models import Address
 from apps.api import errors as api_errors
@@ -37,59 +32,31 @@ from ..models import (
     Representation,
     Witness,
 )
+from ..serializers import police_station_error
 from .services import (
     deactivate,
     editing,
     editing_or_creating,
     ensure_editable,
+    errors_under,
     get_active_case_item,
     get_case_type,
     next_ordinal,
+    validated_save,
 )
 
-# A witness's model fields, by the names the API gives them.
-WITNESS_FIELD_NAMES = {"called_by_participant": "called_by_participant_id"}
-# Likewise for a mandate created with its POA holder.
+# A mandate's model fields, by the names the API gives them, for a mandate
+# created with its POA holder.
 MANDATE_FIELD_NAMES = {"represented_participant": "represented_participant_ids"}
 # Likewise for a representation created for its advocate.
 REPRESENTATION_FIELD_NAMES = {"case_participant": "client_participant_ids"}
-
-
-@contextmanager
-def _errors_under(field=None, *, as_whole=False, renamed=None):
-    """Turn a model ``ValidationError`` into a 400, nested under ``field`` when given.
-
-    Every message keeps the code the model gave it: a case rule's API code, or
-    Django's own. ``as_whole`` reports every message as a non-field error, for
-    a request with no body (a DELETE), where the model's field names would mean
-    nothing. ``renamed`` maps model field names to the request's.
-    """
-    renamed = {NON_FIELD_ERRORS: api_settings.NON_FIELD_ERRORS_KEY, **(renamed or {})}
-    try:
-        yield
-    except DjangoValidationError as exc:
-        detail = get_error_detail(exc)
-        if isinstance(detail, dict) and not as_whole:
-            detail = {renamed.get(key, key): messages for key, messages in detail.items()}
-        else:
-            if isinstance(detail, dict):
-                detail = [message for messages in detail.values() for message in messages]
-            detail = {api_settings.NON_FIELD_ERRORS_KEY: detail}
-        raise serializers.ValidationError({field: detail} if field else detail) from exc
-
-
-def _validated_save(row, **errors_under):
-    """Save ``row`` once ``full_clean`` passes; its errors become a 400 as in ``_errors_under``."""
-    with _errors_under(**errors_under):
-        row.full_clean()
-    row.save()
 
 
 def _save_address(fields, user):
     """Return the stored address for ``fields``, reusing an identical row; ``None`` if none."""
     if fields is None:
         return None
-    with _errors_under("address"):
+    with errors_under("address"):
         address, _ = Address.objects.get_or_create_address(created_by=user, **fields)
     return address
 
@@ -114,8 +81,8 @@ def add_witness(case_or_draft_id, user, data):
     """Add a witness, creating the case on first save (spec 0021 §4.3).
 
     ``data`` is a validated ``WitnessCreateSerializer`` body. The participant
-    is created as for any party, and a ``Witness`` row records who calls
-    them, what they will prove and the body's ``additional_details``.
+    is created as for any party, and a ``Witness`` row records which side
+    calls them, what they will prove and the body's ``additional_details``.
     """
     get_case_type(case_or_draft_id, user)
     with editing_or_creating(case_or_draft_id, user) as case:
@@ -127,13 +94,13 @@ def add_witness(case_or_draft_id, user, data):
         )
         witness = Witness(
             case_participant=participant,
-            called_by_participant=_get_caller(case, data["called_by_participant_id"]),
+            side=data["side"],
             what_will_witness_prove=data["what_will_witness_prove"],
             additional_details=data["additional_details"],
             created_by=user,
             updated_by=user,
         )
-        _validated_save(witness, renamed=WITNESS_FIELD_NAMES)
+        validated_save(witness)
     return participant
 
 
@@ -159,7 +126,7 @@ def add_poa_holder(case_or_draft_id, user, data):
                 created_by=user,
                 updated_by=user,
             )
-            _validated_save(mandate, renamed=MANDATE_FIELD_NAMES)
+            validated_save(mandate, renamed=MANDATE_FIELD_NAMES)
             mandates.append(mandate)
     return holder, mandates
 
@@ -216,7 +183,7 @@ def add_advocate(case_or_draft_id, user, data):
                 created_by=user,
                 updated_by=user,
             )
-            _validated_save(representation, renamed=REPRESENTATION_FIELD_NAMES)
+            validated_save(representation, renamed=REPRESENTATION_FIELD_NAMES)
             representations.append(representation)
     return representations
 
@@ -233,31 +200,21 @@ def end_representation(representation, user):
         deactivate(representation, user, to_date=timezone.now())
 
 
-def _get_caller(case, case_participant_id):
-    """Return the participant of ``case`` calling a witness; ``Witness.clean`` checks the rest."""
-    caller = CaseParticipant.objects.filter(pk=case_participant_id, case=case).first()
-    if caller is None:
-        raise errors.PARTICIPANT_NOT_ON_CASE.validation_error(
-            {"called_by_participant_id": [errors.PARTICIPANT_NOT_ON_CASE.message]}
-        )
-    return caller
-
-
 def _create_participant(case, user, role, data):
     """Save a new participant in ``role`` on ``case``, within the caller's transaction."""
     address = _save_address(data.get("address"), user)
 
     institution = None
     if "institution" in data:
-        with _errors_under("institution"):
+        with errors_under("institution"):
             institution = get_or_create_institution(user, data["institution"], address=address)
 
     person = None
     if data["is_self"]:
-        with _errors_under("self"):
+        with errors_under("self"):
             person = get_or_create_self_person(user)
     elif "person" in data:
-        with _errors_under("person"):
+        with errors_under("person"):
             person = create_asserted_person(
                 user,
                 data["person"],
@@ -279,7 +236,7 @@ def _create_participant(case, user, role, data):
         updated_by=user,
         **_snapshot(person, data),
     )
-    _validated_save(participant)
+    validated_save(participant)
     return participant
 
 
@@ -315,16 +272,14 @@ def update_participant(participant, user, data):
 
     ``data`` is a validated ``ParticipantUpdateSerializer`` body. A new address
     is stored as its own row and the participant repointed; the old row stays.
-    A witness's caller, statement and ``additional_details`` are on its
-    ``Witness`` row.
+    A witness's side, statement and ``additional_details`` are on its
+    ``Witness`` row. Accused and witness addresses need a police station.
     """
     ensure_editable(participant.case)
     data = dict(data)
     is_witness = participant.role == ParticipantRole.WITNESS
     witness_fields = {
-        field: data.pop(field)
-        for field in ("called_by_participant_id", "what_will_witness_prove")
-        if field in data
+        field: data.pop(field) for field in ("side", "what_will_witness_prove") if field in data
     }
     if is_witness and "additional_details" in data:
         witness_fields["additional_details"] = data.pop("additional_details")
@@ -345,11 +300,15 @@ def update_participant(participant, user, data):
             errors.coded(errors.PARTY_IN_PERSON, models.PARTY_HAS_ADVOCATES_MESSAGE)
         ]
     if "designation_at_filing" in data and not (
-        participant.person_id and participant.institution_id
+        is_witness or (participant.person_id and participant.institution_id)
     ):
         problems["designation_at_filing"] = [
             errors.coded(errors.FIELD_NOT_APPLICABLE, DESIGNATION_NOT_ALLOWED_MESSAGE)
         ]
+    if participant.role in (ParticipantRole.ACCUSED, ParticipantRole.WITNESS) and (
+        problem := police_station_error(data)
+    ):
+        problems["address"] = problem
     if data.get("phone_number_at_filing"):
         # A person's number is a mobile in E.164; an institution's may be a landline.
         validator = phone_number_validator if participant.person_id else contact_number_validator
@@ -366,7 +325,7 @@ def update_participant(participant, user, data):
         for field, value in data.items():
             setattr(participant, field, value)
         participant.updated_by = user
-        _validated_save(participant)
+        validated_save(participant)
         if witness_fields:
             _update_witness(participant, user, witness_fields)
     return participant
@@ -375,14 +334,10 @@ def update_participant(participant, user, data):
 def _update_witness(participant, user, fields):
     """Apply ``fields``, by the API's names, to the participant's ``Witness`` row."""
     witness = participant.witness
-    if "called_by_participant_id" in fields:
-        witness.called_by_participant = _get_caller(
-            participant.case, fields.pop("called_by_participant_id")
-        )
     for field, value in fields.items():
         setattr(witness, field, value)
     witness.updated_by = user
-    _validated_save(witness, renamed=WITNESS_FIELD_NAMES)
+    validated_save(witness)
 
 
 def remove_participant(participant, user):
@@ -391,8 +346,7 @@ def remove_participant(participant, user):
     The remaining participants of the role are renumbered 1…n. The party's
     representations end, and every mandate they hold or are represented by is
     revoked; a POA holder left with no active mandate is removed in turn, as
-    they no longer act for anyone. Refused while an active witness names the
-    party as its caller.
+    they no longer act for anyone.
     """
     ensure_editable(participant.case)
     with editing(participant.case, user):
@@ -403,7 +357,7 @@ def _remove(participant, user, now):
     """Remove ``participant`` and end what depended on them, within the caller's transaction."""
     # clean() holds the removal rules, so it is run on the row as removed.
     participant.is_active = False
-    with _errors_under(as_whole=True):
+    with errors_under(as_whole=True):
         participant.full_clean()
     deactivate(participant, user, end_date=now)
     _renumber(participant.case_id, participant.role, user)

@@ -8,14 +8,22 @@ from django.contrib.auth import (
     logout,
     update_session_auth_hash,
 )
+from django.db.models import Q
 from django.utils.decorators import method_decorator
 from django.views.decorators.debug import sensitive_post_parameters
-from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
-from rest_framework import serializers, status
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    extend_schema,
+    extend_schema_view,
+    inline_serializer,
+)
+from rest_framework import generics, serializers, status
 from rest_framework.exceptions import Throttled
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.api import errors as api_errors
@@ -25,6 +33,7 @@ from apps.api.schema import error_responses
 from . import errors
 from .models import (
     PROFILE_MODELS,
+    AdvocateProfile,
     AdvocateType,
     ApprovalStatus,
     RegistrationStatus,
@@ -32,6 +41,7 @@ from .models import (
 )
 from .serializers import (
     AdvocateRegistrationSerializer,
+    AdvocateSearchResultSerializer,
     ClerkRegistrationSerializer,
     CurrentRegistrationSerializer,
     CurrentUserSerializer,
@@ -575,19 +585,92 @@ class PowerOfAttorneyRegistrationView(BaseRegistrationCompletionView):
     role = Role.POWER_OF_ATTORNEY
 
 
+# Shortest search text accepted, so a search cannot list every advocate.
+ADVOCATE_SEARCH_MIN_LENGTH = 3
+
+
+class AdvocateSearchThrottle(UserRateThrottle):
+    """Per-user limit on advocate searches (``ADVOCATE_SEARCH_THROTTLE_RATE``)."""
+
+    scope = "advocate_search"
+
+    def get_rate(self):
+        """Return the configured rate, or ``None`` to disable throttling."""
+        return settings.ADVOCATE_SEARCH_THROTTLE_RATE or None
+
+
 @extend_schema_view(
+    get=extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "search",
+                str,
+                required=True,
+                description=(
+                    f"At least {ADVOCATE_SEARCH_MIN_LENGTH} characters of the advocate's "
+                    "name or bar registration number."
+                ),
+            )
+        ],
+        responses=error_responses(
+            api_errors.MIN_LENGTH.example(
+                f"Enter at least {ADVOCATE_SEARCH_MIN_LENGTH} characters.", field="search"
+            )
+        ),
+    ),
     post=extend_schema(request={"multipart/form-data": ADVOCATE_REGISTRATION_FORM}),
 )
-class AdvocateRegistrationView(BaseRegistrationCompletionView):
-    """POST /advocates.
+class AdvocateRegistrationView(generics.ListAPIView, BaseRegistrationCompletionView):
+    """GET /advocates?search= — find an approved advocate. POST /advocates — register as one.
 
-    Multipart only: the bar ID document is required, and a JSON body cannot
-    carry it. The nested profile is sent as ``profile.<field>`` form keys.
+    The search is how a filer finds the ``advocate_id`` to add an advocate to a
+    case (spec 0021 §4.4). It needs a complete registration, returns approved
+    advocates only, with no contact details, and is rate-limited per user.
+
+    Registration is multipart only: the bar ID document is required, and a JSON
+    body cannot carry it. The nested profile is sent as ``profile.<field>``
+    form keys.
     """
 
     role = Role.ADVOCATE
     serializer_class = AdvocateRegistrationSerializer
     parser_classes = [MultiPartParser, FormParser]
+
+    def get_permissions(self):
+        """Search needs a complete registration; registering only a session."""
+        if self.request.method == "GET":
+            return [permission() for permission in api_settings.DEFAULT_PERMISSION_CLASSES]
+        return super().get_permissions()
+
+    def get_throttles(self):
+        """Rate-limit searches only."""
+        if self.request.method == "GET":
+            return [AdvocateSearchThrottle()]
+        return super().get_throttles()
+
+    def get_serializer_class(self):
+        """Return the search result for GET; POST uses ``serializer_class`` directly."""
+        if self.request.method == "GET":
+            return AdvocateSearchResultSerializer
+        return super().get_serializer_class()
+
+    def get_queryset(self):
+        """Return approved advocates whose name or bar number contains ``search``."""
+        search = self.request.query_params.get("search", "").strip()
+        if len(search) < ADVOCATE_SEARCH_MIN_LENGTH:
+            raise api_errors.MIN_LENGTH.validation_error(
+                {"search": [f"Enter at least {ADVOCATE_SEARCH_MIN_LENGTH} characters."]}
+            )
+        return (
+            AdvocateProfile.objects.filter(approval_status=ApprovalStatus.ACCEPTED)
+            .filter(
+                Q(name__icontains=search)
+                | Q(user__name__icontains=search)
+                | Q(bar_registration_id__icontains=search)
+            )
+            .select_related("user")
+            .order_by("name", "bar_registration_id")
+        )
 
 
 @extend_schema_view(

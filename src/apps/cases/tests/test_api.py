@@ -24,10 +24,10 @@ from .conftest import (
 pytestmark = pytest.mark.django_db
 
 
-def upload(client, case_id, pdf, document_type="BOUNCED_CHEQUE"):
+def upload(client, case_id, pdf, document_type="BOUNCED_CHEQUE", **extra):
     return client.post(
         reverse("case-document-list", args=[case_id]),
-        {"file": pdf(), "document_type": document_type},
+        {"file": pdf(), "document_type": document_type, **extra},
         format="multipart",
     )
 
@@ -63,6 +63,13 @@ class TestCaseTypes:
         ]
         cheque = next(item for item in body["evidence_types"] if item["code"] == "CHEQUE")
         assert "ifsc_code" in cheque["schema"]["required"]
+
+    def test_detail_lists_required_evidence_and_the_new_document_types(self, client):
+        body = client.get(reverse("case-type-detail", args=["CHEQUE_BOUNCE"])).json()
+
+        assert body["required_evidence_types"] == ["CHEQUE", "RETURN_MEMO", "LEGAL_DEMAND_NOTICE"]
+        codes = {item["code"] for item in body["document_types"]}
+        assert {"IDENTITY_PROOF", "PROOF_OF_TRANSACTION"} <= codes
 
     def test_unknown_case_type_is_404(self, client):
         assert client.get(reverse("case-type-detail", args=["CIVIL"])).status_code == 404

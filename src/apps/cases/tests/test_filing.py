@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from apps.cases.models import (
     Case,
+    CaseDocument,
     CaseEvidence,
     CaseParticipant,
     CaseStatus,
@@ -51,14 +52,36 @@ def make_complete_case(client, case_id, pdf):
     for document_type in REQUIRED_DOCUMENTS:
         assert upload(client, case_id, pdf, document_type).status_code == 201
     complainant = add(client, case_id, person=PERSON, is_party_in_person=True).json()
+    upload_identity_proof(client, case_id, pdf, complainant)
     accused = add(client, case_id, "accused", person={**PERSON, "name": "Suresh Patel"})
     assert accused.status_code == 201
     assert add_cheque(client, case_id).status_code == 201
     for evidence_type, evidence_info in EVIDENCE:
-        assert add_evidence(client, case_id, evidence_type, evidence_info).status_code == 201
+        response = add_evidence(client, case_id, evidence_type, evidence_info)
+        assert response.status_code == 201
+    # DEMAND_NOTICE_INFO is delivered, so it needs its proof of delivery.
+    response = upload(
+        client,
+        case_id,
+        pdf,
+        "PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
+        case_evidence_id=response.json()["case_evidence_id"],
+    )
+    assert response.status_code == 201, response.json()
     assert put_section(client, case_id, "jurisdiction_limitation", JURISDICTION).status_code == 200
     assert put_section(client, case_id, "adr_other_prayer", PRAYER).status_code == 200
     return complainant
+
+
+def upload_identity_proof(client, case_id, pdf, participant):
+    response = upload(
+        client,
+        case_id,
+        pdf,
+        "IDENTITY_PROOF",
+        case_participant_id=participant["case_participant_id"],
+    )
+    assert response.status_code == 201, response.json()
 
 
 def validate(client, case_id):
@@ -131,7 +154,9 @@ class TestPreview:
             "LEGAL_DEMAND_NOTICE",
             "RETURN_MEMO",
         ]
-        assert sorted(d["document_type"] for d in body["documents"]) == sorted(REQUIRED_DOCUMENTS)
+        assert sorted(d["document_type"] for d in body["documents"]) == sorted(
+            [*REQUIRED_DOCUMENTS, "IDENTITY_PROOF", "PROOF_OF_DELIVERY_OF_DEMAND_NOTICE"]
+        )
         assert body["details"] == {
             "jurisdiction_limitation": JURISDICTION,
             "adr_other_prayer": PRAYER,
@@ -208,8 +233,8 @@ class TestPreview:
     def test_a_witness_who_is_the_user_is_told_it_does_not_exist(
         self, client, client_for, other_user, draft
     ):
-        complainant = add_complainant(client, draft)
-        witness = add_witness(client, draft, complainant["case_participant_id"])
+        add_complainant(client, draft)
+        witness = add_witness(client, draft)
         assert witness.status_code == 201
         link_role(draft, ParticipantRole.WITNESS, other_user)
 
@@ -302,6 +327,7 @@ class TestValidate:
     def test_a_complainant_needs_an_advocate_or_to_appear_in_person(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)
         second = add_complainant(client, draft, name="Anita Kumar")
+        upload_identity_proof(client, draft, pdf, second)
 
         body = validate(client, draft)
 
@@ -327,7 +353,81 @@ class TestValidate:
 
         assert fields_of(validate(client, draft)) == {"documents.POA_DOCUMENT"}
 
-        upload(client, draft, pdf, "POA_DOCUMENT")
+        upload(
+            client,
+            draft,
+            pdf,
+            "POA_DOCUMENT",
+            case_participant_id=complainant["case_participant_id"],
+        )
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_each_complainant_needs_their_own_identity_proof(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        second = add(client, draft, person={**PERSON, "name": "Anil Rao"}, is_party_in_person=True)
+        # Not linked to anyone, so it counts for no complainant.
+        upload(client, draft, pdf, "IDENTITY_PROOF")
+
+        body = validate(client, draft)
+
+        assert body["errors"] == [
+            {
+                "field": "documents.IDENTITY_PROOF",
+                "message": "Complainant #2 has no identity proof.",
+            }
+        ]
+        upload_identity_proof(client, draft, pdf, second.json())
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_each_represented_complainant_needs_their_own_vakalatnama(
+        self, client, make_user, draft, pdf
+    ):
+        make_complete_case(client, draft, pdf)
+        second = add_complainant(client, draft, name="Anil Rao")
+        upload_identity_proof(client, draft, pdf, second)
+        advocate = make_advocate(make_user)
+        assert (
+            add_advocate(client, draft, advocate.pk, [second["case_participant_id"]]).status_code
+            == 201
+        )
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "documents.VAKALATNAMA",
+                "message": "Complainant #2 has an advocate but no vakalatnama.",
+            }
+        ]
+        upload(client, draft, pdf, "VAKALATNAMA", case_participant_id=second["case_participant_id"])
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_delivered_notice_needs_its_proof_of_delivery(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        CaseDocument.objects.filter(
+            case_id=draft, document_type="PROOF_OF_DELIVERY_OF_DEMAND_NOTICE"
+        ).update(is_active=False)
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "documents.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
+                "message": "Demand notice #1 was delivered but has no proof of delivery.",
+            }
+        ]
+
+    def test_an_undelivered_notice_needs_no_proof_of_delivery(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        CaseDocument.objects.filter(
+            case_id=draft, document_type="PROOF_OF_DELIVERY_OF_DEMAND_NOTICE"
+        ).update(is_active=False)
+        notice = CaseEvidence.objects.get(case_id=draft, evidence_type="LEGAL_DEMAND_NOTICE")
+        undelivered = {**DEMAND_NOTICE_INFO, "is_delivered": False}
+        undelivered.pop("delivery_date")
+        response = client.patch(
+            reverse("case-evidence-detail", args=[notice.pk]),
+            {"evidence_info": undelivered},
+            format="json",
+        )
+        assert response.status_code == 200, response.json()
+
         assert validate(client, draft)["is_valid"] is True
 
     @pytest.mark.parametrize("evidence_type", ["RETURN_MEMO", "LEGAL_DEMAND_NOTICE"])
@@ -449,7 +549,8 @@ class TestSign:
     def test_a_document_recorded_for_another_participant_is_refused(self, client, user, draft, pdf):
         first = make_complete_case(client, draft, pdf)
         second = add(client, draft, person={**PERSON, "name": "Anil Rao"}, is_party_in_person=True)
-        submit(client, draft, "signing")
+        upload_identity_proof(client, draft, pdf, second.json())
+        assert submit(client, draft, "signing").status_code == 200
         document_id = signed_document(user, draft)
         sign(client, draft, first["case_participant_id"], document_id)
 
