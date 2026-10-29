@@ -1,0 +1,1680 @@
+{
+  "docUri": "superhuman://docs/KtL_rwN6Qw",
+  "parentPageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu",
+  "parentPageTitle": "PRDs",
+  "files": {
+    "account-creation-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-Ebr9Pgtqan",
+      "title": "Account Creation Handover",
+      "contentHash": "a561aebe9240",
+      "pageUpdatedAt": 1793244854.066,
+      "note": "Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v19 (court establishment): REG-23a, REG-23b (re-inserted, cl-e4SVsr-xBQ), §6.1 intro and example bullets (re-inserted), REG-31/35/36/38 cells, 2026-10-19 decision. 2026-10-24: patched in place to v19.1 (status, callout, digital signing wording). 2026-10-29: patched in place to v19.2 (status, callout, Q-4 row added to §11 table grid-E3ATru_vvq).",
+      "calloutElementId": "cl-023ZWT-x7f"
+    },
+    "efiling-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
+      "title": "E-Filing Handover",
+      "contentHash": "310ce6124b57",
+      "pageUpdatedAt": 1792839560.201,
+      "calloutElementId": "cl-sUwstgBvn-",
+      "note": "Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling-handover\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match)."
+    },
+    "case-numbers.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
+      "title": "Case Numbers",
+      "contentHash": "3f066c4dfdac",
+      "pageUpdatedAt": 1793081184.315,
+      "calloutElementId": "eca-eZ95fVXvUC",
+      "sections": [
+        {
+          "key": "# Case Numbers",
+          "elementId": "cl-3CIJDW_LgN",
+          "hash": "665c9d83ecb9"
+        },
+        {
+          "key": "## 1. Kerala",
+          "elementId": "cl-JIoZmJ9MqR",
+          "hash": "e9b1a4c5b88d"
+        },
+        {
+          "key": "## 2. Gujarat",
+          "elementId": "cl-oyI6KuymN_",
+          "hash": "497bb8b78c96"
+        },
+        {
+          "key": "## 3. Punjab & Haryana",
+          "elementId": "cl-khFAPiXRd9",
+          "hash": "6c1c622f3a3d"
+        }
+      ],
+      "note": "2026-10-28: page edit by Thejesh GN (updatedAt 1793081184.315) checked — every block and table cell still matches case-numbers.md; flag cleared, page not written. "
+    },
+    "order-template-catalogue.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
+      "title": "Order Item Catalogue",
+      "contentHash": "566da6dd8b79",
+      "pageUpdatedAt": 1792840284.94,
+      "note": "Force-rebuilt 2026-10-20 (no comments on the page) after templates and locked/optional were dropped; page renamed \"Order Item Catalogue\". Callout is a short Last synced line. `sections` not recorded. Patched in place 2026-10-14 (Not in V1 intro, removed app-drift paragraph, generic accept/reject sentence, callout date). '#### General variables' renders as a plain paragraph. `sections` not recorded. 2026-10-24: page updatedAt was 25 s after the recorded value (own sync write; Status block still showed entry 20); patched in place to (21): rows 4 and Case management updated, #4 variable rows rewritten in place to the new order, note paragraph added after the #4 table, status and callout.",
+      "sections": []
+    },
+    "join-a-case-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WxtSmHU5wu",
+      "title": "Join a Case Handover",
+      "contentHash": "f091bd2da604",
+      "pageUpdatedAt": 1792400085.119,
+      "calloutElementId": "cl-_KL_8kabnW",
+      "note": "Force-rebuilt 2026-10-14 at the owner's request (local wins); the unrecorded 2026-10-06 page edit and all page comments were discarded. Live views recreated: Court Side table-7SpA4aFqK0, Citizen-Side table-XWc8kp4Y5A, Notifications table-6VFhpFf1Lu, Events table-1FusHbDJ7v. `sections` not recorded (Coda explodes chunks into native blocks). Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed."
+    },
+    "case-lifecycle-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-oci-tqnIPh",
+      "title": "Case Lifecycle Handover",
+      "contentHash": "265a5f96fa25",
+      "pageUpdatedAt": 1789468915.138
+    },
+    "pending-tasks-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-brLkhW_t8M",
+      "title": "Pending Tasks Handover",
+      "contentHash": "6ef1d259a9b4",
+      "pageUpdatedAt": 1789456825.959
+    },
+    "view-case-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
+      "title": "View Case Handover",
+      "contentHash": "df0ee6ed33e9",
+      "pageUpdatedAt": 1792686345.082,
+      "calloutElementId": "eca-cluFlrCGVO",
+      "sections": [
+        {
+          "key": "# View Case — Developer & Agent Handover",
+          "elementId": "cl-MvPziNzeIg",
+          "hash": "6e6b796bccf6"
+        },
+        {
+          "key": "# 1. Scope",
+          "elementId": "cl-6CiKJdHOyT",
+          "hash": "98cd68e0d53c"
+        },
+        {
+          "key": "# 2. Entry context",
+          "elementId": "cl-1v26PqzVzd",
+          "hash": "e6366e0f8ded"
+        },
+        {
+          "key": "# 3. Case detail — header",
+          "elementId": "cl-GTyNPHeBmq",
+          "hash": "ecde57b4b254"
+        },
+        {
+          "key": "# 4. Section navigation",
+          "elementId": "cl-Vt2LuUT8ej",
+          "hash": "c7a59b32a41c"
+        },
+        {
+          "key": "# 5. Overview",
+          "elementId": "cl-cu8LUSJYuN",
+          "hash": "2ab11c6f5920"
+        },
+        {
+          "key": "# 6. Case File",
+          "elementId": "cl-VgmEGB4dY7",
+          "hash": "4ef3e4e2d217"
+        },
+        {
+          "key": "# 7. Notice/Process Status",
+          "elementId": "cl-X4XiAU8VoM",
+          "hash": "c171ac1e4f87"
+        },
+        {
+          "key": "# 8. Orders & Notifications",
+          "elementId": "cl-5Wz0kifnDZ",
+          "hash": "e228875bb5e3"
+        },
+        {
+          "key": "# 9. Applications",
+          "elementId": "cl-vBdRHK4yYn",
+          "hash": "f4c464ab06a5"
+        },
+        {
+          "key": "# 10. Documents",
+          "elementId": "cl-7C50XhyGZn",
+          "hash": "cbc132e128c0"
+        },
+        {
+          "key": "# 11. Parties",
+          "elementId": "cl-7KxOksE2sO",
+          "hash": "872828c6be22"
+        },
+        {
+          "key": "# 12. Case History",
+          "elementId": "cl-VjVLKfXvf6",
+          "hash": "1b5d8577cce6"
+        },
+        {
+          "key": "# 13. Bail lifecycle",
+          "elementId": "cl-DEJz-_8Kag",
+          "hash": "fb11d8dc72c4"
+        },
+        {
+          "key": "# 14. Open questions",
+          "elementId": "cl-PZj3mxqX9q",
+          "hash": "7255cbefba14"
+        },
+        {
+          "key": "# 15. Not yet covered",
+          "elementId": "cl-3x7xUxv8po",
+          "hash": "2ce404e69b82"
+        }
+      ],
+      "note": "Patched in place 2026-10-22 to v1.9: status, callout, DET-12 cell, registry notes and Court Evidence exhibit row, DOC-02/04/05 cells, §10.1 heading and §10.2–10.6 removed, §10 intro inserted. `sections` stale."
+    },
+    "cognizance-cheat-sheet.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
+      "title": "Cognizance Cheat Sheet",
+      "contentHash": "883c27f14c0e",
+      "pageUpdatedAt": 1792837934.39,
+      "calloutElementId": "cl-i7saWBgj1-",
+      "note": "Patched in place 2026-10-24 (v8: registration-type tabs; changed blocks re-inserted, so new IDs). `sections` not refreshed. Earlier in-place patches 2026-10-19/20 likewise."
+    },
+    "process-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
+      "title": "Process Handover",
+      "contentHash": "31ed41348f9f",
+      "pageUpdatedAt": 1792927635.311,
+      "calloutElementId": "cl-uH3Q8ik_zE",
+      "note": "Patched in place 2026-10-25 for v14.1/v14.2 (Status line, callout, §10.1 status rows, SGN-02, SGN-04, new DSP-11 row); no rebuild. Four table cells written as plain text because a single formatting mark is stored literally: DSP-11 row (ID and text), Errored and Recalled meanings in §10.1. Live views: Court Side table-ilvtulVkUa, Citizen-Side table-yags5uzkEd, Notifications table-_0U81wDVwy, Events table-7vAo-OTf67. The Status paragraph is split into two blocks at 'v12 —' to stay under 10,000 chars. `sections` not recorded.",
+      "sections": []
+    },
+    "dashboards-proposal.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-RwijzgVqck",
+      "title": "Dashboards Proposal",
+      "contentHash": "7ca1e41459d4",
+      "pageUpdatedAt": 1789634456.011
+    },
+    "order-generation.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
+      "title": "Order Generation",
+      "contentHash": "62237bcd5757",
+      "pageUpdatedAt": 1792921963.923,
+      "calloutElementId": "eca-DluhcPwJvd",
+      "sections": [
+        {
+          "key": "# Order generation",
+          "elementId": "cl-KrRUqMchAG",
+          "hash": "461405cf65c7"
+        },
+        {
+          "key": "#1",
+          "elementId": "cl-6v-wGMVquO",
+          "hash": "4c188ec240a9"
+        },
+        {
+          "key": "## 1. Context",
+          "elementId": "cl-9mJZ5C9mLZ",
+          "hash": "f81e8f4ec267"
+        },
+        {
+          "key": "## 2. Where the screen is used",
+          "elementId": "cl-gRXPfwdrGj",
+          "hash": "69d1f1450fdd"
+        },
+        {
+          "key": "## 3. Roles",
+          "elementId": "cl-Jw2rX0qhuC",
+          "hash": "ca2a49a8c236"
+        },
+        {
+          "key": "## 4. The screen",
+          "elementId": "cl-CCbQtJvC2L",
+          "hash": "a9d0e29bb09a"
+        },
+        {
+          "key": "## 5. The order text",
+          "elementId": "cl-FIghXs3Cye",
+          "hash": "d06364c01404"
+        },
+        {
+          "key": "## 6. The order data",
+          "elementId": "cl-VQCzs2WhAI",
+          "hash": "f4b77afb6f95"
+        },
+        {
+          "key": "## 7. The draft",
+          "elementId": "cl-Ie7F_aKRrm",
+          "hash": "9e7323c46ad4"
+        },
+        {
+          "key": "## 8. Sending for signing",
+          "elementId": "cl-mlU7ZaLnCv",
+          "hash": "5f90dda8f43c"
+        },
+        {
+          "key": "## 9. Attendance and the next hearing",
+          "elementId": "cl-4bBQD2T1qZ",
+          "hash": "e71eee62e118"
+        },
+        {
+          "key": "## 10. Hearings — in a hearing only",
+          "elementId": "cl-Bx9cn6i-Vj",
+          "hash": "c801f8eed7f0"
+        },
+        {
+          "key": "## 11. Pending orders",
+          "elementId": "cl-9-RD040EYR",
+          "hash": "d7f1ee74b156"
+        },
+        {
+          "key": "## 12. Signing",
+          "elementId": "cl-zOlOhXEMCg",
+          "hash": "ea3594696246"
+        },
+        {
+          "key": "## 13. Completing the order data and triggering",
+          "elementId": "cl-tV4Oo6e4fa",
+          "hash": "8b35af40baba"
+        },
+        {
+          "key": "## 14. Once triggered — what the order becomes",
+          "elementId": "cl-YFMg5vBUqW",
+          "hash": "e96998f7b44f"
+        },
+        {
+          "key": "## 15. Pending tasks",
+          "elementId": "cl-4mzkGP3SFv",
+          "hash": "d0fde634a8a2"
+        },
+        {
+          "key": "view",
+          "elementId": "table-PXd-K2TdnW",
+          "hash": "9af9a8c6cfbb"
+        },
+        {
+          "key": "#18",
+          "elementId": "cl-m9zjNSffub",
+          "hash": "99612556a305"
+        },
+        {
+          "key": "## 16. Open questions",
+          "elementId": "cl-a0rFZ5JpxW",
+          "hash": "9e1da0487ee1"
+        }
+      ],
+      "note": "Patched in place 2026-10-25 to v8.3 (status, callout, DFT-05 cell in Table 133). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. `sections` from the 2026-10-20 rebuild; not refreshed."
+    },
+    "application-lifecycle.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
+      "title": "Application Lifecycle",
+      "contentHash": "0b0ced16e761",
+      "pageUpdatedAt": 1793189132.772,
+      "calloutElementId": "cl-cvBOSX08p4",
+      "sections": [
+        {
+          "key": "# Application Lifecycle",
+          "elementId": "cl-yXZ8cQwK6M",
+          "hash": "e887c65ad8cd"
+        },
+        {
+          "key": "idx-1",
+          "elementId": "cl-kwvO8-2qLg",
+          "hash": "194238d728ca"
+        },
+        {
+          "key": "idx-2",
+          "elementId": "cl-61fcL0mY8o",
+          "hash": "55b33f2911bc"
+        },
+        {
+          "key": "idx-3",
+          "elementId": "edl-Cy3IH79vVr",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## The workflow",
+          "elementId": "cl-pwH8ASttY8",
+          "hash": "ae5367508b4b"
+        },
+        {
+          "key": "idx-5",
+          "elementId": "cl-vEmKL_im_1",
+          "hash": "d5223e261040"
+        },
+        {
+          "key": "idx-6",
+          "elementId": "cl-F8tex9hyvs",
+          "hash": "36b6adae2916"
+        },
+        {
+          "key": "idx-7",
+          "elementId": "cl-QrR93f4rWz",
+          "hash": "bcb4e1463ec3"
+        },
+        {
+          "key": "idx-8",
+          "elementId": "cl-X580lPZfvc",
+          "hash": "5a0666205d3e"
+        },
+        {
+          "key": "idx-9",
+          "elementId": "cl-aW8zI3awV3",
+          "hash": "cd9ffd784265"
+        },
+        {
+          "key": "idx-10",
+          "elementId": "cl-3wXQi3KG_3",
+          "hash": "6e34692b8f80"
+        },
+        {
+          "key": "idx-11",
+          "elementId": "cl-oN4eTrb8Cq",
+          "hash": "332b85286d4d"
+        },
+        {
+          "key": "idx-12",
+          "elementId": "cl-sRbr2AKDA_",
+          "hash": "d920ce225cec"
+        },
+        {
+          "key": "idx-13",
+          "elementId": "grid-vovl6Y1e4_",
+          "hash": "29a68211cfb5"
+        },
+        {
+          "key": "idx-15",
+          "elementId": "cl-Y-B35GLpTQ",
+          "hash": "353735a2a93c"
+        },
+        {
+          "key": "idx-16",
+          "elementId": "cl-dzPx41IPUB",
+          "hash": "7c87eb91151d"
+        },
+        {
+          "key": "idx-17",
+          "elementId": "edl-esGLDQVyp6",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Users and actions",
+          "elementId": "cl-VkOisFSRm4",
+          "hash": "71e49c4a460f"
+        },
+        {
+          "key": "idx-19",
+          "elementId": "cl-ihEG2W-dp_",
+          "hash": "5d5b260b2c49"
+        },
+        {
+          "key": "idx-20",
+          "elementId": "cl-DpTJUgB0eF",
+          "hash": "d196011121ae"
+        },
+        {
+          "key": "idx-21",
+          "elementId": "cl-gdlXYSjoQQ",
+          "hash": "4b039e55edb1"
+        },
+        {
+          "key": "idx-22",
+          "elementId": "cl-3x4Dy1BmjU",
+          "hash": "2abcd8bc832d"
+        },
+        {
+          "key": "idx-23",
+          "elementId": "cl-EHOZiipjwP",
+          "hash": "ed9b13dc9d53"
+        },
+        {
+          "key": "idx-24",
+          "elementId": "cl-j0P6fQoYbF",
+          "hash": "d250ac9c71dc"
+        },
+        {
+          "key": "idx-25",
+          "elementId": "cl-94hLPzygNm",
+          "hash": "763593297ef6"
+        },
+        {
+          "key": "idx-26",
+          "elementId": "cl--8ZjgC8k-M",
+          "hash": "07498e20adb2"
+        },
+        {
+          "key": "idx-27",
+          "elementId": "cl-glW2TiecHf",
+          "hash": "54b899e32080"
+        },
+        {
+          "key": "idx-28",
+          "elementId": "cl-cGW2BL7U_P",
+          "hash": "b0cf7119e53f"
+        },
+        {
+          "key": "idx-29",
+          "elementId": "cl-sei0xnZXJV",
+          "hash": "2abcd8bc832d"
+        },
+        {
+          "key": "idx-30",
+          "elementId": "cl-6TmbEEuDfq",
+          "hash": "aab775ee2cf2"
+        },
+        {
+          "key": "idx-31",
+          "elementId": "cl-TKqkMLMJ0F",
+          "hash": "253f06c27f36"
+        },
+        {
+          "key": "idx-32",
+          "elementId": "cl-iQ6-AMfI3v",
+          "hash": "2abcd8bc832d"
+        },
+        {
+          "key": "idx-33",
+          "elementId": "cl-PTOGsr5FhU",
+          "hash": "3daf5d890d68"
+        },
+        {
+          "key": "idx-34",
+          "elementId": "cl-4eVJH8Dbz6",
+          "hash": "940f0230b2c8"
+        },
+        {
+          "key": "idx-35",
+          "elementId": "cl-j6EZPdw0pP",
+          "hash": "2abcd8bc832d"
+        },
+        {
+          "key": "idx-36",
+          "elementId": "cl-67OMLFOwg5",
+          "hash": "418e91587f13"
+        },
+        {
+          "key": "idx-37",
+          "elementId": "cl-yyNnC-RCLA",
+          "hash": "3a20b82789e0"
+        },
+        {
+          "key": "idx-38",
+          "elementId": "cl-j6eJbftu1z",
+          "hash": "2d7083a89061"
+        },
+        {
+          "key": "idx-39",
+          "elementId": "cl-WFsSzRmTiX",
+          "hash": "25af4797d8ff"
+        },
+        {
+          "key": "idx-40",
+          "elementId": "cl-PXP9Jd_W7Q",
+          "hash": "e968c6a59fdf"
+        },
+        {
+          "key": "idx-41",
+          "elementId": "cl-YHZUX57buR",
+          "hash": "523d5bbb311e"
+        },
+        {
+          "key": "idx-42",
+          "elementId": "cl-bCU787UJmE",
+          "hash": "971a414bfde4"
+        },
+        {
+          "key": "idx-43",
+          "elementId": "grid-wYNmR7Uphv",
+          "hash": "97d86922d4eb"
+        },
+        {
+          "key": "idx-44",
+          "elementId": "edl-JN3b0cVDkf",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Step 1 — Filing",
+          "elementId": "cl-9XsQorOAvT",
+          "hash": "12f59708adc2"
+        },
+        {
+          "key": "idx-46",
+          "elementId": "cl-3TvC4wMeo-",
+          "hash": "f77354d01851"
+        },
+        {
+          "key": "idx-47",
+          "elementId": "cl-ZY4a78EZd2",
+          "hash": "85da3e39a727"
+        },
+        {
+          "key": "idx-48",
+          "elementId": "grid-ghVfA5mSv5",
+          "hash": "1b6e66750c8e"
+        },
+        {
+          "key": "idx-49",
+          "elementId": "cl-v9xkNzRpgl",
+          "hash": "8191712ee773"
+        },
+        {
+          "key": "idx-50",
+          "elementId": "cl-6ebjZUB5GM",
+          "hash": "f9d281e0090b"
+        },
+        {
+          "key": "idx-51",
+          "elementId": "grid-r8gXvda5a9",
+          "hash": "53733789864a"
+        },
+        {
+          "key": "idx-52",
+          "elementId": "cl-w_0va3LsBW",
+          "hash": "218de38b46b1"
+        },
+        {
+          "key": "idx-53",
+          "elementId": "cl-jrbjVgD7Ry",
+          "hash": "d0b496fe06f8"
+        },
+        {
+          "key": "idx-54",
+          "elementId": "cl-UqZwMgg8uh",
+          "hash": "3391f4347d62"
+        },
+        {
+          "key": "idx-55",
+          "elementId": "cl-bY3gVqcvJG",
+          "hash": "146533c4e636"
+        },
+        {
+          "key": "idx-56",
+          "elementId": "cl-ECVHf0SgPm",
+          "hash": "f608379d9d16"
+        },
+        {
+          "key": "idx-57",
+          "elementId": "cl-frz_LR2g3C",
+          "hash": "4b7a2ad09974"
+        },
+        {
+          "key": "idx-58",
+          "elementId": "cl-g3kFoBU-7k",
+          "hash": "a593b4d2d624"
+        },
+        {
+          "key": "idx-59",
+          "elementId": "cl-WuPr9_MnNN",
+          "hash": "4ea48e24ecd0"
+        },
+        {
+          "key": "idx-60",
+          "elementId": "cl-Af0E6Pgl6I",
+          "hash": "1a485f92fec9"
+        },
+        {
+          "key": "idx-61",
+          "elementId": "cl-onzUG01G-8",
+          "hash": "8343b80900ef"
+        },
+        {
+          "key": "idx-62",
+          "elementId": "cl-3KVy5sLc1w",
+          "hash": "d02cfa2e1c7b"
+        },
+        {
+          "key": "idx-63",
+          "elementId": "cl-aTuQSBgxDQ",
+          "hash": "b5635b3b7fc5"
+        },
+        {
+          "key": "idx-64",
+          "elementId": "cl-Qd3joNIr0G",
+          "hash": "7c4d51e74d50"
+        },
+        {
+          "key": "idx-65",
+          "elementId": "cl-fESg9sF3B6",
+          "hash": "de133442fd8b"
+        },
+        {
+          "key": "idx-66",
+          "elementId": "cl-ZTbBKuyf6w",
+          "hash": "bf2bb1a30bc0"
+        },
+        {
+          "key": "idx-67",
+          "elementId": "cl-3tp1i66ETm",
+          "hash": "5ac4a250e4ba"
+        },
+        {
+          "key": "idx-68",
+          "elementId": "grid-VUEs5iRuwk",
+          "hash": "8220047ec2bb"
+        },
+        {
+          "key": "idx-69",
+          "elementId": "edl-afv4MkQB8B",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Step 2 — Review: the first gate",
+          "elementId": "cl-JEDDA2joO4",
+          "hash": "42fb06cf42f1"
+        },
+        {
+          "key": "idx-71",
+          "elementId": "cl-p60GGqX1Kg",
+          "hash": "8c739c39fb52"
+        },
+        {
+          "key": "idx-72",
+          "elementId": "cl-6lSqZw5eLl",
+          "hash": "90081a837780"
+        },
+        {
+          "key": "idx-73",
+          "elementId": "cl-jiT8pW4km7",
+          "hash": "cd6a860f4c07"
+        },
+        {
+          "key": "idx-74",
+          "elementId": "cl-TOkUBP1ITV",
+          "hash": "3f7129c4331a"
+        },
+        {
+          "key": "idx-75",
+          "elementId": "grid-MDT06ZpMnb",
+          "hash": "feca24b05596"
+        },
+        {
+          "key": "idx-76",
+          "elementId": "edl-nzZ_c2aDYz",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Step 3 — Onboarding",
+          "elementId": "cl-EoGH1CJISH",
+          "hash": "4af4c2e42f57"
+        },
+        {
+          "key": "idx-78",
+          "elementId": "cl-mxeiuct4VE",
+          "hash": "9bf4dfc12b87"
+        },
+        {
+          "key": "idx-79",
+          "elementId": "cl-YmA0riWpYK",
+          "hash": "3fa3d116e405"
+        },
+        {
+          "key": "idx-80",
+          "elementId": "cl-suwnFYU087",
+          "hash": "9596e8b89819"
+        },
+        {
+          "key": "idx-81",
+          "elementId": "cl-FjTvLBkZei",
+          "hash": "6fe4d4a34449"
+        },
+        {
+          "key": "idx-82",
+          "elementId": "cl-iw6YEmLi_F",
+          "hash": "0a796f671721"
+        },
+        {
+          "key": "idx-83",
+          "elementId": "cl-mcgGzp9Pof",
+          "hash": "7d16cad77f5f"
+        },
+        {
+          "key": "idx-84",
+          "elementId": "cl-MZZLmw-re4",
+          "hash": "df3ecb71bd48"
+        },
+        {
+          "key": "idx-85",
+          "elementId": "cl-XPGtBIwfeN",
+          "hash": "afd49c6056fe"
+        },
+        {
+          "key": "idx-86",
+          "elementId": "cl-VKob6jxSI8",
+          "hash": "91b8fadd23b9"
+        },
+        {
+          "key": "idx-87",
+          "elementId": "grid-ZbXloLmtmX",
+          "hash": "818bd412b311"
+        },
+        {
+          "key": "idx-88",
+          "elementId": "edl-He4VL1Xv8K",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Step 4 — Objections",
+          "elementId": "cl-Yj5L_sejee",
+          "hash": "623e71389ebd"
+        },
+        {
+          "key": "idx-90",
+          "elementId": "cl-hDfbDqvbKJ",
+          "hash": "e2d3d7a5b637"
+        },
+        {
+          "key": "idx-91",
+          "elementId": "cl-yxrgLNLGib",
+          "hash": "055f22598e3c"
+        },
+        {
+          "key": "idx-92",
+          "elementId": "cl-Ki5Usf0ca0",
+          "hash": "01c4d45f3473"
+        },
+        {
+          "key": "idx-93",
+          "elementId": "cl-OYIe5gf4y4",
+          "hash": "267fca396982"
+        },
+        {
+          "key": "idx-94",
+          "elementId": "cl-a3_PF4JDpl",
+          "hash": "5b66fafee357"
+        },
+        {
+          "key": "idx-95",
+          "elementId": "cl-eNSIojTqGC",
+          "hash": "571cf602d655"
+        },
+        {
+          "key": "idx-96",
+          "elementId": "cl-hPupMkoZ_e",
+          "hash": "7501d606520d"
+        },
+        {
+          "key": "idx-97",
+          "elementId": "grid-tSjJIfijzU",
+          "hash": "36c2bc088668"
+        },
+        {
+          "key": "idx-98",
+          "elementId": "edl-XhW-0mkdEi",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Step 5 — Decision: the second gate",
+          "elementId": "cl--gcNwNIehv",
+          "hash": "e196afe3af34"
+        },
+        {
+          "key": "idx-100",
+          "elementId": "cl-EU84qDXcZG",
+          "hash": "281bf103fe1b"
+        },
+        {
+          "key": "idx-101",
+          "elementId": "cl-1QrXWkcOsL",
+          "hash": "7d844d81467f"
+        },
+        {
+          "key": "idx-102",
+          "elementId": "cl-8pXpJNZdnp",
+          "hash": "490a173e6174"
+        },
+        {
+          "key": "idx-103",
+          "elementId": "cl-DPLX7o2QY2",
+          "hash": "2e947082202e"
+        },
+        {
+          "key": "idx-104",
+          "elementId": "cl-NyjHzWh9bW",
+          "hash": "e8d3bb0bc9b6"
+        },
+        {
+          "key": "idx-105",
+          "elementId": "cl-Y7iU4ZBRjC",
+          "hash": "f7d775a57be0"
+        },
+        {
+          "key": "idx-106",
+          "elementId": "grid-SLxEZNHOmq",
+          "hash": "68b9094384a7"
+        },
+        {
+          "key": "idx-107",
+          "elementId": "edl-6AYK1aemfd",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Step 6 — After the decision",
+          "elementId": "cl-v6GTdbZUuT",
+          "hash": "fa42a2493859"
+        },
+        {
+          "key": "idx-109",
+          "elementId": "cl-8RaaC15QNJ",
+          "hash": "0b49cefebdfb"
+        },
+        {
+          "key": "idx-110",
+          "elementId": "grid-ly2BnZtisD",
+          "hash": "ed046b41df05"
+        },
+        {
+          "key": "idx-111",
+          "elementId": "edl-9TFHlZFbXf",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Expiry (Advance / Prepone and Postpone only)",
+          "elementId": "cl-sY4kr25wH7",
+          "hash": "906689b617cb"
+        },
+        {
+          "key": "idx-113",
+          "elementId": "cl-2NeRCspoq3",
+          "hash": "00407aa6c2e9"
+        },
+        {
+          "key": "idx-114",
+          "elementId": "grid-EAgdcbd96G",
+          "hash": "2ff22828b0dc"
+        },
+        {
+          "key": "idx-115",
+          "elementId": "edl-P6iVB-IEaf",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Suggesting a date",
+          "elementId": "cl-UsWRZq91w5",
+          "hash": "e01a19c37400"
+        },
+        {
+          "key": "idx-117",
+          "elementId": "cl-wfF03q-aGd",
+          "hash": "ce00a8719b23"
+        },
+        {
+          "key": "idx-118",
+          "elementId": "grid-2T36CMwtp5",
+          "hash": "a867107072fe"
+        },
+        {
+          "key": "idx-119",
+          "elementId": "edl-LlizrpKRn0",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Every status change",
+          "elementId": "cl-z_AG1HEfFL",
+          "hash": "0b2c5ef353a4"
+        },
+        {
+          "key": "idx-121",
+          "elementId": "grid-Bf7-evV-FJ",
+          "hash": "8998393d1496"
+        },
+        {
+          "key": "idx-122",
+          "elementId": "cl-1I4dfIUGS9",
+          "hash": "93c5aedd70d4"
+        },
+        {
+          "key": "idx-123",
+          "elementId": "edl-HYw-xSrzd6",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Application attributes",
+          "elementId": "cl-vA1-Wwy3Qq",
+          "hash": "fa8ff6037ecf"
+        },
+        {
+          "key": "idx-125",
+          "elementId": "grid-fGs17LLbg-",
+          "hash": "35f8c96b6095"
+        },
+        {
+          "key": "### What looks missing",
+          "elementId": "cl-O0bhL9JYVn",
+          "hash": "27a719f9b7b1"
+        },
+        {
+          "key": "idx-127",
+          "elementId": "cl-GMSMY9CoAr",
+          "hash": "5667b537ee82"
+        },
+        {
+          "key": "idx-128",
+          "elementId": "edl-hE0C-MwGnw",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Number formats by state",
+          "elementId": "cl-p7PapqnhRK",
+          "hash": "562985caf530"
+        },
+        {
+          "key": "idx-130",
+          "elementId": "cl-O_K3madeEu",
+          "hash": "0989adadf9b8"
+        },
+        {
+          "key": "idx-131",
+          "elementId": "grid-PZFMkIidzK",
+          "hash": "3c4643d103c9"
+        },
+        {
+          "key": "idx-132",
+          "elementId": "cl-7jdiz4GzET",
+          "hash": "8e5db49b30c3"
+        },
+        {
+          "key": "idx-133",
+          "elementId": "edl-suH87-qRcj",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Application types",
+          "elementId": "cl-v1eYVpmecp",
+          "hash": "1b57723486c4"
+        },
+        {
+          "key": "idx-135",
+          "elementId": "cl-rhUu21eX6S",
+          "hash": "555031169efb"
+        },
+        {
+          "key": "idx-136",
+          "elementId": "grid-ZuAERJeJOz",
+          "hash": "a2080f140800"
+        },
+        {
+          "key": "idx-137",
+          "elementId": "cl-CbMcY-rY3r",
+          "hash": "ed7996edebd6"
+        },
+        {
+          "key": "idx-138",
+          "elementId": "cl-ZrAWpJBn0M",
+          "hash": "e7c97e22a021"
+        },
+        {
+          "key": "idx-139",
+          "elementId": "edl-FBF2W4sm5z",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Fields by application type",
+          "elementId": "cl-yqmSvsft7o",
+          "hash": "0c57b803adaa"
+        },
+        {
+          "key": "idx-141",
+          "elementId": "cl-AtIEi5Pzs7",
+          "hash": "255d5c29a945"
+        },
+        {
+          "key": "idx-142",
+          "elementId": "cl-ZyA7Oyzq3S",
+          "hash": "2acba8c2a173"
+        },
+        {
+          "key": "idx-143",
+          "elementId": "cl-RibIxAWZgJ",
+          "hash": "3eb54f1547d3"
+        },
+        {
+          "key": "### Every application",
+          "elementId": "cl-hj0akStzt2",
+          "hash": "9fbc04f59540"
+        },
+        {
+          "key": "idx-145",
+          "elementId": "grid-_J9bNGwp7D",
+          "hash": "53c047f9b5e6"
+        },
+        {
+          "key": "### Bail",
+          "elementId": "cl-Zsp4gDYF-c",
+          "hash": "89ae4ed50d2e"
+        },
+        {
+          "key": "idx-147",
+          "elementId": "cl-p3vOkoDnGT",
+          "hash": "dedf96d4325d"
+        },
+        {
+          "key": "idx-148",
+          "elementId": "grid-81Hjlxa8tk",
+          "hash": "ca997f385eb9"
+        },
+        {
+          "key": "### Edit Litigant Details",
+          "elementId": "cl-Jwct0oIlIj",
+          "hash": "39205904de85"
+        },
+        {
+          "key": "idx-150",
+          "elementId": "cl-JJ8sxwco5a",
+          "hash": "4049e732a403"
+        },
+        {
+          "key": "idx-151",
+          "elementId": "grid-oyto1spkcL",
+          "hash": "812e94a78e73"
+        },
+        {
+          "key": "idx-152",
+          "elementId": "cl-nd7D-Yh9vS",
+          "hash": "35afb24555d5"
+        },
+        {
+          "key": "idx-153",
+          "elementId": "cl-chQl4AjUo6",
+          "hash": "145fa9131294"
+        },
+        {
+          "key": "idx-154",
+          "elementId": "grid-2YEAWc3PSi",
+          "hash": "10bcdebc4295"
+        },
+        {
+          "key": "idx-155",
+          "elementId": "cl-npZo81ljaL",
+          "hash": "c9fa037e3c0c"
+        },
+        {
+          "key": "idx-156",
+          "elementId": "grid-t6UO7oaVGq",
+          "hash": "f43510044aef"
+        },
+        {
+          "key": "idx-157",
+          "elementId": "cl-J5YT32RONX",
+          "hash": "12eec42b7b68"
+        },
+        {
+          "key": "idx-158",
+          "elementId": "grid-WLunM-kG2N",
+          "hash": "1c53cb053f65"
+        },
+        {
+          "key": "idx-159",
+          "elementId": "cl-PS8oqk-ZSZ",
+          "hash": "ded3c746a570"
+        },
+        {
+          "key": "idx-160",
+          "elementId": "grid-a0imCq6cml",
+          "hash": "dc06954e8742"
+        },
+        {
+          "key": "idx-161",
+          "elementId": "cl-ars7y3Dpyf",
+          "hash": "64b3924cc4c9"
+        },
+        {
+          "key": "### Case Settlement",
+          "elementId": "cl-w7F1xy0_5R",
+          "hash": "050f85be5068"
+        },
+        {
+          "key": "idx-163",
+          "elementId": "cl-hXV-nzV_4W",
+          "hash": "554fdd6338f3"
+        },
+        {
+          "key": "idx-164",
+          "elementId": "grid-2k8qtWFzjk",
+          "hash": "daa6e58289c4"
+        },
+        {
+          "key": "### Case Transfer",
+          "elementId": "cl-cXKbOcLsOS",
+          "hash": "632c3e8beb26"
+        },
+        {
+          "key": "idx-166",
+          "elementId": "cl-eVUPKrogVE",
+          "hash": "632a13860c90"
+        },
+        {
+          "key": "idx-167",
+          "elementId": "grid-oDVF9kjMDT",
+          "hash": "fdbed0a7dd5d"
+        },
+        {
+          "key": "### Case Withdrawal",
+          "elementId": "cl-dgFCDuKlSr",
+          "hash": "42b7585bc819"
+        },
+        {
+          "key": "idx-169",
+          "elementId": "cl-b1-CS5x37k",
+          "hash": "4088f1953e2f"
+        },
+        {
+          "key": "idx-170",
+          "elementId": "grid-t6gfGriuQz",
+          "hash": "a2e448778e1a"
+        },
+        {
+          "key": "### Delay Condonation",
+          "elementId": "cl-OSjho4zgR_",
+          "hash": "fb41f82a2290"
+        },
+        {
+          "key": "idx-172",
+          "elementId": "cl-GmVskCBKhi",
+          "hash": "d9cb00de55c6"
+        },
+        {
+          "key": "idx-173",
+          "elementId": "grid-eVNnt1zEON",
+          "hash": "fe285332eedf"
+        },
+        {
+          "key": "### Generic",
+          "elementId": "cl-M0iMNylYWB",
+          "hash": "8d097c025eb4"
+        },
+        {
+          "key": "idx-175",
+          "elementId": "cl-GASge7agTi",
+          "hash": "d40732c752fd"
+        },
+        {
+          "key": "idx-176",
+          "elementId": "grid-QpSOi8i6RD",
+          "hash": "7b44291c7ea8"
+        },
+        {
+          "key": "### Advance (Prepone) / Postpone",
+          "elementId": "cl-eA7-ogNKiX",
+          "hash": "c1600e27b36a"
+        },
+        {
+          "key": "idx-178",
+          "elementId": "cl-sVtp0njDid",
+          "hash": "b5b97c5cd8ac"
+        },
+        {
+          "key": "idx-179",
+          "elementId": "grid-b6TimnpDSj",
+          "hash": "ed120673c794"
+        },
+        {
+          "key": "### PoA Change",
+          "elementId": "cl-Krc7jrFwws",
+          "hash": "6954eca468cc"
+        },
+        {
+          "key": "idx-181",
+          "elementId": "cl-BNldUPsmhm",
+          "hash": "ec11e545a948"
+        },
+        {
+          "key": "idx-182",
+          "elementId": "grid-BRt1owRjic",
+          "hash": "21d9c0b87224"
+        },
+        {
+          "key": "### Production of Documents",
+          "elementId": "cl-ORYOGFRyYT",
+          "hash": "9fafdede83ec"
+        },
+        {
+          "key": "idx-184",
+          "elementId": "cl-3ETv2RdQX7",
+          "hash": "24ab713bd807"
+        },
+        {
+          "key": "idx-185",
+          "elementId": "grid-rToKx2lTcO",
+          "hash": "51155d01242c"
+        },
+        {
+          "key": "### Addition of Witness",
+          "elementId": "cl-wToF5dYscu",
+          "hash": "8012ca297ece"
+        },
+        {
+          "key": "idx-187",
+          "elementId": "cl-vnbqlbT3Nj",
+          "hash": "50c4ef2e6297"
+        },
+        {
+          "key": "idx-188",
+          "elementId": "grid-Ojy5jlNHrr",
+          "hash": "90a2b7cfb811"
+        },
+        {
+          "key": "### Warrant by Hand",
+          "elementId": "cl-xQoPA6ZP20",
+          "hash": "afd6217b7bdc"
+        },
+        {
+          "key": "idx-190",
+          "elementId": "cl-Moox0a2sMx",
+          "hash": "0a416ffe3093"
+        },
+        {
+          "key": "idx-191",
+          "elementId": "grid-WHTypi49yd",
+          "hash": "a515c2f788a6"
+        },
+        {
+          "key": "### Absent Application",
+          "elementId": "cl-2Rw7Tq5-fP",
+          "hash": "8a1143da7f65"
+        },
+        {
+          "key": "idx-193",
+          "elementId": "cl-sPe-9iwl-1",
+          "hash": "d2a52f1f08a2"
+        },
+        {
+          "key": "idx-194",
+          "elementId": "grid-WfMR6Gj9ts",
+          "hash": "9aafe1d7ad63"
+        },
+        {
+          "key": "### Reopen Evidence",
+          "elementId": "cl-LnLJkWZzDC",
+          "hash": "0aee8a2d4908"
+        },
+        {
+          "key": "idx-196",
+          "elementId": "cl-BBfc48L6Lj",
+          "hash": "d2a52f1f08a2"
+        },
+        {
+          "key": "idx-197",
+          "elementId": "grid-f_ccfKF3Jg",
+          "hash": "44cb8aef0a49"
+        },
+        {
+          "key": "### Objection",
+          "elementId": "cl-zfRzcbg7U8",
+          "hash": "c2247aff487c"
+        },
+        {
+          "key": "idx-199",
+          "elementId": "cl-IvrvhQIbBF",
+          "hash": "e1fed13e3c9e"
+        },
+        {
+          "key": "idx-200",
+          "elementId": "grid-kh-oLrIbeu",
+          "hash": "f7dc272214bf"
+        },
+        {
+          "key": "idx-201",
+          "elementId": "edl-sDNRu_bvjJ",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## A note on onboarding",
+          "elementId": "cl-dKzSUPK_32",
+          "hash": "c07f4998367e"
+        },
+        {
+          "key": "idx-203",
+          "elementId": "cl-6IAgbwmXxc",
+          "hash": "ea239f8e37d8"
+        },
+        {
+          "key": "idx-204",
+          "elementId": "cl-S4av1GN7St",
+          "hash": "df59811edef4"
+        },
+        {
+          "key": "idx-205",
+          "elementId": "cl-FsQR6AgOWD",
+          "hash": "e9da0090bfdd"
+        },
+        {
+          "key": "idx-206",
+          "elementId": "edl-xN3lqHjbOv",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Linked records",
+          "elementId": "cl-eBzneF2HwI",
+          "hash": "d248461aad7f"
+        },
+        {
+          "key": "idx-208",
+          "elementId": "cl--NqArETRNQ",
+          "hash": "bcc8e3947431"
+        },
+        {
+          "key": "### Pending tasks (Court Side)",
+          "elementId": "cl-4ToYQ61Pex",
+          "hash": "12d57265ee5e"
+        },
+        {
+          "key": "idx-210",
+          "elementId": "table-N1x8sZsOyl",
+          "hash": "eafc6a594ec1"
+        },
+        {
+          "key": "### Pending tasks (Citizen-Side)",
+          "elementId": "cl-wAIw3zdVAe",
+          "hash": "20c1668ccaf5"
+        },
+        {
+          "key": "idx-212",
+          "elementId": "table-P590ChDPEI",
+          "hash": "9922b7338da8"
+        },
+        {
+          "key": "### Notifications",
+          "elementId": "cl-cWSif2egvt",
+          "hash": "65ac5c2cf5a5"
+        },
+        {
+          "key": "idx-214",
+          "elementId": "table-YR1viY99K_",
+          "hash": "7ce28f97c666"
+        },
+        {
+          "key": "### Events",
+          "elementId": "cl-RAtpaqCusH",
+          "hash": "72199396868f"
+        },
+        {
+          "key": "idx-216",
+          "elementId": "table-wx2MOZx6ma",
+          "hash": "223ae3135c12"
+        },
+        {
+          "key": "idx-217",
+          "elementId": "edl-9SkRh3LHaD",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## Open questions",
+          "elementId": "cl-U1DmXiqks5",
+          "hash": "7d15237b384d"
+        },
+        {
+          "key": "idx-219",
+          "elementId": "grid-YISD05LCjd",
+          "hash": "f2112e0e8d91"
+        }
+      ],
+      "note": "Patched in place 2026-10-28 to v36: Status block and callout, step 1.2 prose and new Application details bullet (cl-*, after Litigant), Every application grid rows rewritten (Application details, Supporting documents), reason rows deleted from grids 152, 153, 159, 162, 164, 165; grids 158, 160, 161, 170, 171, 172 deleted and replaced by a 'No fields of its own' line. `sections` not refreshed. Patched in place 2026-10-20: status, callout, and grid cells ALC-02, ALC-14, ALC-16, ALC-19 and Q-5 updated with table_rows_manage (APL references removed). `sections` not refreshed. Patched in place 2026-10-19 (block-level insert+delete; comments kept). sections = one entry per page block. The Status paragraph is split across two page blocks (cl-kwvO8-2qLg, cl-LeLHZMzzQ9); the diagram image block is not tracked. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Status block cl-kwvO8-2qLg was already damaged on the page before this sync (\"v33 — 2026-10v33…**Eion**\", truncated at v14); left as is."
+    },
+    "court-roles.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
+      "title": "Court Roles",
+      "contentHash": "e15b3ca12e99",
+      "pageUpdatedAt": 1792923010.051,
+      "calloutElementId": "cl-F9ItCYdmYV",
+      "sections": [
+        {
+          "key": "# Court roles",
+          "elementId": "cl-XCC5WlGTMz",
+          "hash": "2913614b50b3"
+        },
+        {
+          "key": "## 1. How roles work",
+          "elementId": "cl-FOWR_QPYdx",
+          "hash": "cc19d48e90e2"
+        },
+        {
+          "key": "## 2. The roles",
+          "elementId": "cl-7H8w9i70dP",
+          "hash": "d93b964bffa7"
+        },
+        {
+          "key": "## 3. Who holds which role, by state",
+          "elementId": "cl-QNDZq8RlBI",
+          "hash": "41f457719d9b"
+        }
+      ],
+      "note": "Patched in place 2026-10-25 to v10.2: status, callout, RLE-09 row added to Table 143, roles in Table 221 (rows reused to keep order: Envelope receiver, Process signer, Process dispatcher, Process reporter, Evidence marker, A-Diary editor; A-Diary signer row added), state tables 146/147/150 cells, new §4 Open questions block. Single-marker cells carry a trailing ' *​*' so markdown converts. `sections` not refreshed. Patched 2026-10-25 to v10.3: status, callout, Bench clerk / Reader and Post officer cells in Tables 146/147/150."
+    },
+    "scrutiny-registration-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
+      "title": "Scrutiny and Registration Handover",
+      "contentHash": "06b31c0b4d27",
+      "pageUpdatedAt": 1792922029.822,
+      "calloutElementId": "cl-x8-19XCI0n",
+      "sections": [
+        {
+          "key": "# Scrutiny and Registration — Developer & Agent Handover",
+          "elementId": "cl-C3b_lOX0UY"
+        },
+        {
+          "key": "1",
+          "elementId": "cl-giQYqF3reb"
+        },
+        {
+          "key": "2",
+          "elementId": "cl-s3rKGiGXIP"
+        },
+        {
+          "key": "3",
+          "elementId": "cl-tXAIX87yHf"
+        },
+        {
+          "key": "4",
+          "elementId": "cl-9t1Ux3TNnf"
+        }
+      ],
+      "note": "Patched in place 2026-10-25 to v3.5 (status, callout, heading, SCR-09, SCR-10, PRD language note). Live views: Court Side table-OvYXzrn9IN, Citizen-Side table-i0Uw4lusP4, Notifications table-eqtvnthi7I, Events table-H3lq7d-M7W. sections hold the first block of each chunk only; no per-chunk hashes."
+    },
+    "a-diary.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-pKkyj_LFi4",
+      "title": "A-Diary",
+      "contentHash": "9b49a5bda2cf",
+      "pageUpdatedAt": 1792502108.621,
+      "calloutElementId": "cl-yNgT6gDmxc",
+      "sections": [
+        {
+          "key": "# A-Diary",
+          "elementId": "cl-PRWDB9507R",
+          "hash": "19eb7e60cb59"
+        },
+        {
+          "key": "## 1. Context",
+          "elementId": "cl-P84gJfd1wm",
+          "hash": "29d2ed8acbb2"
+        },
+        {
+          "key": "## 2. The register",
+          "elementId": "cl-W_V3qoGGU9",
+          "hash": "7fa200e7fb92"
+        },
+        {
+          "key": "## 3. Where entries come from",
+          "elementId": "cl-koz4fQvF7e",
+          "hash": "da7868208280"
+        },
+        {
+          "key": "## 4. Editing an entry",
+          "elementId": "cl-HbrGSuRcJD",
+          "hash": "99d3b6aebf30"
+        },
+        {
+          "key": "## 5. Signing",
+          "elementId": "cl-sZe5v8mx-8",
+          "hash": "d7dc83927f39"
+        }
+      ],
+      "note": "Created 2026-10-20. sections hold the first block of each chunk only. Patched in place to v1.6: ADY-02/03 rows, ADY-03a written into the old ADY-04 row and ADY-04 re-added as a new row (rows reordered by reuse), ADY-12a row, status, callout. `sections` hashes stale."
+    },
+    "dropped-ideas.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
+      "title": "Dropped Ideas",
+      "contentHash": "556584e407af",
+      "pageUpdatedAt": 1792503826.93,
+      "note": "Created 2026-10-20. Callout is a short Last synced line. `sections` not recorded."
+    },
+    "office-management-handover.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-lxUEhfnjuv",
+      "title": "Office Management Handover",
+      "contentHash": "99685d969371",
+      "pageUpdatedAt": 1792550169.657,
+      "calloutElementId": "eca-zJsZcK9_hd",
+      "sections": [
+        {
+          "key": "# Office Management — Developer & Agent Handover",
+          "elementId": "cl-RBE1ifaoKu",
+          "hash": "a990d895b950"
+        },
+        {
+          "key": "# 1. What office management is",
+          "elementId": "cl-5c7NgeMYqE",
+          "hash": "0c3b72a97d40"
+        },
+        {
+          "key": "# 2. People tab",
+          "elementId": "cl-5VIG8fzi8t",
+          "hash": "4516c741b397"
+        },
+        {
+          "key": "# 3. Adding a person",
+          "elementId": "cl-l0h-R7yoxK",
+          "hash": "571f08c5f90d"
+        },
+        {
+          "key": "# 4. Person detail",
+          "elementId": "cl-NVoU5xyNGz",
+          "hash": "909312b132c0"
+        },
+        {
+          "key": "# 5. Other entry points",
+          "elementId": "cl-LpYQyZ3DVX",
+          "hash": "e13f24605ce2"
+        },
+        {
+          "key": "# 6. Notifications",
+          "elementId": "cl-K5B9Otamqt",
+          "hash": "257efed51590"
+        },
+        {
+          "key": "# 7. Future enhancements",
+          "elementId": "cl-103ozYdoay",
+          "hash": "b89186ed84bf"
+        },
+        {
+          "key": "# 8. Open questions",
+          "elementId": "cl-2gzLEBeqTh",
+          "hash": "1bf07ef2f477"
+        }
+      ],
+      "note": "Created 2026-10-21. Each markdown chunk was split by Superhuman into several blocks; elementId is the chunk's heading block."
+    },
+    "document-submission.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-A_B7aTjEeJ",
+      "title": "Document Submission",
+      "contentHash": "9e5af92f90e8",
+      "pageUpdatedAt": 1792686494.977,
+      "calloutElementId": "cl-EB0O_W8ymk",
+      "sections": [
+        {
+          "key": "# Document Submission",
+          "elementId": "cl-HzRiRKvUiR",
+          "hash": "16e052b49b0a"
+        },
+        {
+          "key": "# 1. Submitting documents",
+          "elementId": "cl-NgIAqE1P0v",
+          "hash": "38a3ff2fb79d"
+        },
+        {
+          "key": "# 2. Statuses",
+          "elementId": "cl-ICaeCYMko7",
+          "hash": "4be5f6c4cf82"
+        },
+        {
+          "key": "# 3. Documents tab",
+          "elementId": "cl-9QYqUQKvtt",
+          "hash": "e266a56dbda6"
+        },
+        {
+          "key": "# 4. Marking evidence",
+          "elementId": "cl-K02Qu4HXxY",
+          "hash": "1626eee34f9a"
+        }
+      ]
+    },
+    "signing-methods.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
+      "title": "Signing Methods",
+      "contentHash": "ba271892c2fd",
+      "pageUpdatedAt": 1792839609.337,
+      "calloutElementId": "cl-T3V--SS-ky",
+      "sections": [
+        {
+          "key": "# Signing Methods — Developer & Agent Handover",
+          "elementId": "cl-viwRGSL4rX",
+          "hash": "06a363080fbf"
+        },
+        {
+          "key": "# 1. Digital signing and e-sign",
+          "elementId": "cl-bveZc1QEGI",
+          "hash": "ad6e42fe01e9"
+        },
+        {
+          "key": "# 2. The methods — `SGM`",
+          "elementId": "cl-rwwv_n6Mo3",
+          "hash": "152a03655941"
+        },
+        {
+          "key": "# 3. Switching methods on — `SGM-05`",
+          "elementId": "cl-LTegq-ZpVu",
+          "hash": "5814a77ba81f"
+        },
+        {
+          "key": "# 4. Batch signing — `SGM-04`",
+          "elementId": "cl-OnOFxTPmdx",
+          "hash": "761bba21296f"
+        },
+        {
+          "key": "# 5. Open questions",
+          "elementId": "cl-lLMllPUR5F",
+          "hash": "e9d097904b74"
+        }
+      ],
+      "note": "Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block."
+    },
+    "bulk-filing.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
+      "title": "Bulk Filing",
+      "contentHash": "bb775b36dcea",
+      "pageUpdatedAt": 1792846347.399,
+      "calloutElementId": "cl-IwwclcUBOf",
+      "sections": [
+        {
+          "key": "# Bulk Filing — Developer & Agent Handover",
+          "elementId": "cl-huKkmfPrla",
+          "hash": "41d626eb67a2"
+        },
+        {
+          "key": "# 1. What bulk filing is",
+          "elementId": "cl-ZcdvAcOTex",
+          "hash": "4c25b208bc48"
+        },
+        {
+          "key": "# 2. The batch",
+          "elementId": "cl-S40Vb7zJdl",
+          "hash": "dba12f2d80b5"
+        },
+        {
+          "key": "# 3. From upload to filing",
+          "elementId": "cl-_QhA1KaHOY",
+          "hash": "4cc99ee1b0d6"
+        },
+        {
+          "key": "# 4. The Excel format",
+          "elementId": "cl-UZiRGu77Bn",
+          "hash": "00ce141e31d3"
+        }
+      ]
+    }
+  },
+  "prdsTableUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu/tables/grid-3QCTt30e1H"
+}
