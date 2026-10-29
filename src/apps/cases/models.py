@@ -1,11 +1,14 @@
 """Cases, participants, witnesses, POA mandates, representations, documents, evidence (spec 0020)."""
 
+from html import unescape
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from apps.address.models import normalize_field
 from apps.api import errors as api_errors
@@ -172,6 +175,10 @@ DESIGNATION_NOT_ALLOWED_MESSAGE = "Only for a person acting for an institution."
 INSTITUTION_DETAILS_REQUIRED_MESSAGE = "Required for an institution."
 INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE = "Only for an institution."
 COMPLAINANT_ONLY_MESSAGE = "Only for a complainant."
+EMPTY_TEXT_MESSAGE = "Enter some text; the editor content is empty."
+INSTITUTION_NAMES_DIFFER_MESSAGE = (
+    "For an institution with no person acting for it, this must equal name_at_filing."
+)
 PARTY_ROLE_MESSAGE = "Must be a complainant or an accused."
 RESIDES_WITHIN_JURISDICTION_MESSAGE = (
     "Whether the party resides within the court's jurisdiction is recorded for an accused only."
@@ -211,6 +218,15 @@ POA_MANDATE_ORDERING = (
 )
 REPRESENTATION_ORDERING = ("case_participant__role", "case_participant__ordinal", "from_date")
 EVIDENCE_ORDERING = ("evidence_type", "ordinal")
+
+
+def has_visible_text(html):
+    """Return whether rich-text editor output shows any text once rendered.
+
+    An editor emits markup even when empty (``<p><br></p>``, ``<p>&nbsp;</p>``),
+    so a non-blank string is not enough.
+    """
+    return bool(html and unescape(strip_tags(html)).strip())
 
 
 def _rule_error(error, message):

@@ -38,6 +38,7 @@ from ..models import (
     ParticipantRole,
     PoaMandate,
     Representation,
+    has_visible_text,
     scan_type_message,
 )
 from ..serializers import CasePreviewSerializer
@@ -194,14 +195,18 @@ def validation_errors(case):
                 f"Complainant #{complainant.ordinal} has no advocate and is not marked "
                 "as party-in-person.",
             )
-        if complainant.is_party_in_person and not complainant.party_in_person_affidavit:
+        if complainant.is_party_in_person and not has_visible_text(
+            complainant.party_in_person_affidavit
+        ):
             error(
                 f"participants.{complainant.id}",
                 f"Complainant #{complainant.ordinal} appears in person but has no "
                 "party-in-person affidavit.",
             )
 
-    if not case.affidavit:
+    # Writes refuse empty editor output; this also catches what reached the
+    # database another way (the admin, a shell).
+    if not has_visible_text(case.affidavit):
         error("affidavit", "The affidavit is required.")
 
     documents = list(
