@@ -40,6 +40,10 @@ DRAMATIQ_BROKER = {
     ],
 }
 
+# No scheduler lock URL: dramatiq-crontab falls back to an in-process lock, so
+# tests never need Redis (spec 0026 #3.3).
+DRAMATIQ_CRONTAB = {}
+
 # Tests run on the dummy SMS backend; CDAC is exercised via override_settings.
 MESSAGING_BACKENDS = {**MESSAGING_BACKENDS, "sms": "apps.messaging.senders.sms.DummySMSBackend"}
 

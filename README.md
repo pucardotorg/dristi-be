@@ -30,7 +30,7 @@ A Django-based API project template using:
    docker compose --env-file .env -f docker/docker-compose.yml up -d --build
    ```
 
-   This starts: PostgreSQL, Redis, Django dev server, Dramatiq workers, Rustfs (S3-compatible storage), MailHog, Adminer, and monitoring dashboards.
+   This starts: PostgreSQL, Redis, Django dev server, Dramatiq workers and scheduler, Rustfs (S3-compatible storage), MailHog, Adminer, and monitoring dashboards.
 
 3. **Create an admin user** (first time only):
 
@@ -85,6 +85,59 @@ the India Post CSV in `src/data/pincodes/`, then run
 `python manage.py import_pincodes --create-districts` in the `web` container,
 which also creates the states and districts (see
 [src/data/pincodes/README.md](src/data/pincodes/README.md)).
+
+## Scheduled and delayed jobs
+
+Background jobs are Dramatiq actors in `src/apps/<app>/tasks.py`, run by the
+`worker` service. Two kinds of jobs run later rather than now. Both are
+specified in [spec/0026-dramatiq-crontab.md](spec/0026-dramatiq-crontab.md).
+
+**Periodic job (on a timetable).** Add `@cron(...)` from
+[`dramatiq-crontab`](https://github.com/voiio/dramatiq-crontab) on top of the
+actor. A separate `scheduler` service (`python manage.py crontab`) enqueues it
+on each tick, and the worker runs it:
+
+```python
+from dramatiq import actor
+from dramatiq_crontab import cron
+
+
+@cron("*/5 * * * *")  # every 5 minutes, UTC
+@actor(max_retries=0)
+def expire_stale_transactions() -> int: ...
+```
+
+A scheduled actor must:
+
+- live in `<app>/tasks.py` of an installed app;
+- take no arguments;
+- be idempotent and safe to run twice at once;
+- process a bounded batch per run;
+- use `max_retries=0`.
+
+Cron expressions are in UTC, and the day of week must be a name (`Sun`), not a
+number. Schedules are read when the scheduler starts, so restart it after a
+change. See spec 0026 §4 for the full checklist.
+
+**One-off delayed job (for example, "run once, 30 minutes from now").** No
+scheduler is needed. Send a delayed message after the transaction commits:
+
+```python
+from datetime import timedelta
+from functools import partial
+
+from django.db import transaction
+
+transaction.on_commit(
+    partial(my_actor.send_with_options, args=(str(obj.pk),), delay=timedelta(minutes=30))
+)
+```
+
+The message is kept in Redis and runs no earlier than the delay. Delivery is at
+least once, and the delay must be under 7 days. To make the job run exactly
+once, have the actor re-read the row under `select_for_update` and do nothing
+unless the row is still in the state the job was scheduled for. Rescheduling or
+cancelling is done by changing that state. See spec 0026 §5.
 
 ## Pre-commit hooks
 
