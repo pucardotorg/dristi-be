@@ -181,8 +181,8 @@ Rules:
 
 | Module | Function | Used for |
 | --- | --- | --- |
-| `apps.cases` | `selectors.get_case_summaries(case_ids)` | header and list rows: number, title, stage, courtroom |
-| | `selectors.order_context(case_id)` | facts for defaults and availability: parties by type, joined flags, witnesses (examined or not), registered, cognizance taken, long-pending flag (`VAR-01`–`VAR-03`, `AUT-05`, `AUT-06`) |
+| `apps.cases` | `selectors.get_case_summaries(case_ids)` | header and list rows: number, title, courtroom |
+| | `selectors.order_context(case_id)` | facts for defaults and availability: parties by type, joined flags, witnesses (examined or not), registered, cognizance taken (`VAR-01`–`VAR-03`, `AUT-05`, `AUT-06`) |
 | | `selectors.case_documents(case_id)` | linking documents (`ORD-17`) |
 | | `selectors.delay_applicable(case_id)` | the cognizance preset (#5.2) |
 | | `services.record_outcome(case_id, outcome, order_id)` | case-closing items with a stated outcome (#9.4) |
@@ -190,6 +190,7 @@ Rules:
 | | `courtroom.attendance_complete`, `courtroom.lock_attendance` | `ATT-04`, and the roll at triggering ([`0023`](0023-hearings.md) #6.5) |
 | | `selectors.get_hearing`, `selectors.next_hearing` | hearing orders; the default next hearing outside a hearing (`ORD-08`) |
 | `apps.workflows` | `TaskService.open`, `complete`, `expire`, `complete_for` | the three order tasks (#12.1), item tasks, `take_cognizance` |
+| | `selectors.current_stages(case_ids)` | the case stage (key, label) in the header and list rows, batched; whether the case is in the Long Pending Register (#6.1) |
 | | `CaseWorkflowService.dispatch` | stage events (#9.4) |
 | `apps.esign` | initiation service; transaction selector; `register_entity_authorizer("ORDER", …)` | Aadhaar e-sign (#8.1) |
 | `apps.pdf` | in-process render of template `court-order` | the PDF to sign (#5.3) |
@@ -200,7 +201,9 @@ Rules:
 
 `order_context`, `case_documents`, `delay_applicable` and `record_outcome` do
 not exist yet on `apps.cases`. They are the first work this spec needs from the
-cases module.
+cases module. [`0011`](0011-case-workflows.md) has `stage_history(case_id)` but no
+batched current-stage read; `current_stages(case_ids)` is needed for list rows,
+returning `{case_id: {key, label}}` from each instance's current visit.
 
 `apps.esign` sends no completion signal today; the order learns of a signature
 when the client confirms it (#8.1). An `esign_succeeded` signal on commit in
@@ -735,7 +738,7 @@ Availability reasons owned by built-in rules:
 | Accept · Reject · Acceptance of bail | the application is not onboarded | `APPLICATION_NOT_ONBOARDED` (from the applications handler) |
 | Dismiss application | the application is onboarded | `APPLICATION_ONBOARDED` |
 | Cognizance | cognizance already taken | `COGNIZANCE_TAKEN` |
-| Moving out of LPR | the case is not on the register | `NOT_IN_LPR` |
+| Moving out of LPR | the case's workflow stage is not `long_pending_register` | `NOT_IN_LPR` |
 
 #### 6.2 Adding, editing and removing items
 
