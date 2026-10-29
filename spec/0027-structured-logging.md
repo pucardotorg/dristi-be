@@ -1,4 +1,4 @@
-# 0025 — Structured Logging (`apps.core.logs`)
+# 0027 — Structured Logging (`apps.core.logs`)
 
 ## Status
 
@@ -66,7 +66,7 @@ way, through settings and env vars.
    - in **deny** mode, drop keys on `DENY_SENSITIVE_KEYS`;
    - in **allow** mode, keep only keys on `ALLOW_KEYS`;
    - **off** is allowed only locally, and production refuses it.
-4. **Never render exception locals.**
+4. **Never render exception locals.** There is no setting to turn them on.
 5. **Write a rotating file** with `concurrent-log-handler`'s
    `ConcurrentTimedRotatingFileHandler`, which is safe for many processes, in
    addition to stdout. A host cron job deletes old files.
@@ -85,7 +85,9 @@ way, through settings and env vars.
   responses produced by early middleware (redirects, CORS preflight, rejected
   hosts). So does every task-scoped line (§9.1) of a task that request
   enqueued.
-- The client receives the same `request_id` it can quote to support.
+- The client receives the same `request_id` it can quote to support, on every
+  response Django produces. Responses that nginx produces on its own
+  (`/static/`, proxy errors) are out of scope (Non-goals).
 - No configured sensitive key, and no exception local, ever reaches a handler.
 - A single log file can't grow without bound, and old files can be removed by
   age.
@@ -101,6 +103,12 @@ way, through settings and env vars.
 - Request latency fields (see Future enhancements).
 - nginx's own access log. It runs outside Django and is configured in
   `docker/nginx.conf`.
+- `X-Request-ID` on responses nginx produces without reaching Django:
+  `/static/` (served from the `staticfiles` volume by `location /static/`) and
+  nginx-generated errors (`502`/`504` when `web` is down or slow, `413` over
+  `client_max_body_size`). These requests write no application log line, so
+  there is nothing to correlate. Open question 4 covers having nginx issue the
+  id.
 
 ---
 
@@ -150,6 +158,7 @@ Add to `src/requirements/base.txt`:
 ```text
 structlog>=25.1.0
 django-structlog>=10.1.0,<11
+django-ipware>=7.0.1,<8
 concurrent-log-handler>=0.9.25
 ```
 
@@ -164,6 +173,16 @@ That trust boundary is therefore enforced locally (§5).
 When the project moves to Django ≥5.2:
 - lift the cap to 11.x;
 - replace the local middleware with the library's trust settings.
+
+**django-ipware is listed explicitly** although django-structlog pulls it in.
+django-structlog uses it to resolve `ip`, and §5 configures it through
+`IPWARE_META_PRECEDENCE_ORDER`, so its version must not float. django-ipware
+8.x requires `django>=5.2`, so 7.0.1 is what resolves today. Lift the cap with
+django-structlog's.
+
+**Transitive dependencies.** These also arrive and get pinned with the rest:
+`python-ipware` (through django-ipware) and `portalocker` (through
+concurrent-log-handler, used for the file lock).
 
 The other bounds are placeholders. Pin exact lower bounds against the versions
 the PoC (§9) is tested on. `rich` is **not** added, so the console renderer uses
@@ -354,19 +373,37 @@ At the top of the list, every request is covered.
   passes both through untouched. So the middleware:
   - always deletes `HTTP_X_CORRELATION_ID`;
   - keeps an incoming `X-Request-ID` only when `LOG_TRUST_UPSTREAM_REQUEST_ID=True`
-    **and** the value is at most 64 characters of `[A-Za-z0-9-]`;
-  - otherwise generates `uuid4().hex`.
+    **and** the whole value matches `REQUEST_ID_PATTERN`,
+    `re.compile(r"[A-Za-z0-9-]{1,64}")` used with `fullmatch`: 1 to 64
+    characters, never empty;
+  - otherwise (header absent, empty, too long or with other characters)
+    generates `uuid4().hex`.
+
+  The chosen id is therefore always a non-empty string. The Dramatiq middleware
+  (§9.1) relies on this and validates propagated ids with the same pattern.
 - **It writes the chosen id back into `request.META["HTTP_X_REQUEST_ID"]`.**
-  django-structlog 10.x reads that header unconditionally, so it binds our id
-  instead of generating its own. This works because `request.headers` is
-  read lazily and nothing reads it before the outermost middleware runs.
+  django-structlog 10.x reads that header unconditionally, through
+  `request.headers`, so it binds our id instead of generating its own. This
+  works only because `request.headers` is a `cached_property` built from
+  `META` on first access, and nothing reads it before the outermost
+  middleware runs. So `RequestIdMiddleware` itself must read and write
+  `request.META` only, never `request.headers`. Reading `request.headers`
+  first would cache the client's value, and django-structlog would bind that
+  instead.
 - **It sets `request.request_id`.**
 - **It returns the id to the client**, as the `X-Request-ID` header on every
-  response, error pages included. `build_response_meta()` (`apps/api/meta.py`)
-  adds `"request_id"` to the JSON `meta` (spec 0000 §8), reading it from the
-  bound context. It omits the key when no id is bound, for example when a
-  response is built outside a request. Spec 0000 §8 and the `ResponseMeta`
-  schema example are updated to match.
+  response that passes through Django, error pages and WhiteNoise static files
+  included. Responses nginx produces on its own carry no id (Non-goals).
+  `build_response_meta()` (`apps/api/meta.py`) adds `"request_id"` to the API
+  JSON `meta` (spec 0000 §8), reading it from the bound context. It omits the
+  key when no id is bound, for example when a response is built outside a
+  request. Spec 0000 §8 and the `ResponseMeta` schema example are updated to
+  match.
+- **Browsers can read the header.** A cross-origin frontend
+  (`CORS_ALLOWED_ORIGINS`) can only read response headers that CORS exposes,
+  and `X-Request-ID` is not a safelisted header. `base.py` sets
+  `CORS_EXPOSE_HEADERS = ["X-Request-ID"]`, so the id is readable on responses
+  that have no `meta`, such as file downloads and HTML error pages.
 
 Turn the trust setting on only after nginx overwrites the header on every
 request (Open question 4).
@@ -386,7 +423,7 @@ unchanged. `request_started` is logged before authentication, so it has no
 | Setting | Value | Why |
 | --- | --- | --- |
 | `DJANGO_STRUCTLOG_USER_ID_FIELD` | `"pk"` (default) | |
-| `DJANGO_STRUCTLOG_IP_LOGGING_ENABLED` | `True` (default) | Needed for abuse investigation |
+| `DJANGO_STRUCTLOG_IP_LOGGING_ENABLED` | `True` (default) | Needed for abuse investigation. Only useful with the `IPWARE_*` setting below. |
 | `DJANGO_STRUCTLOG_STATUS_START_LOG_LEVEL` | `logging.DEBUG` | `request_started` would roughly double the line count. `request_finished` carries the same `request` field. |
 | `DJANGO_STRUCTLOG_STATUS_2XX_LOG_LEVEL` | `logging.INFO` (default) | |
 | `DJANGO_STRUCTLOG_STATUS_4XX_LOG_LEVEL` | `logging.WARNING` (default) | |
@@ -394,6 +431,25 @@ unchanged. `request_started` is logged before authentication, so it has no
 
 django-structlog 10.x has no setting to ignore a path. `drop_quiet_paths` (§3)
 does that job.
+
+**Client IP.** django-structlog binds `ip` from django-ipware's
+`get_client_ip(request)`, called with no arguments. By default that checks
+`X-Forwarded-For` first and takes its **left-most** address. `docker/nginx.conf`
+sets `X-Forwarded-For` to `$proxy_add_x_forwarded_for`, which appends to
+whatever the client sent, so the left-most address is chosen by the client.
+nginx overwrites `X-Real-IP` with `$remote_addr`, and `web` publishes no port in
+the production compose, so every request reaches Django through nginx. So
+`base.py` sets:
+
+```python
+# nginx overwrites X-Real-IP; X-Forwarded-For is client-controlled.
+IPWARE_META_PRECEDENCE_ORDER = ("HTTP_X_REAL_IP", "REMOTE_ADDR")
+```
+
+If a load balancer is ever placed in front of nginx, `$remote_addr` becomes the
+balancer's address. nginx must then restore the client address with its
+`real_ip` module (`set_real_ip_from` the balancer, `real_ip_header
+X-Forwarded-For`) before this setting gives the right answer.
 
 **One closing event per request.** django-structlog 10.1.0 logs exactly one of
 these:
@@ -474,6 +530,8 @@ DENY_SENSITIVE_KEYS = {
     "csrfmiddlewaretoken",
     "sessionid",
     "apikey",
+    # Sensitive word followed by a qualifier, which suffix matching misses
+    "phone_number_at_filing",
 }
 
 # Matched exactly, never as a suffix (see below)
@@ -499,6 +557,11 @@ Matching rules:
 - **Suffix matching needs the underscore.** A rule that also matched a bare
   suffix would remove `span` and `japan` (for `pan`). So compound names with no
   underscore (`csrftoken`, `sessionid`, `apikey`) are listed explicitly.
+- **A qualifier after the sensitive word defeats suffix matching.**
+  `phone_number_at_filing` (`apps/cases/serializers.py`) ends with
+  `_at_filing`, so it is listed explicitly. Prefix matching is not used
+  instead, because it would remove useful fields such as `address_id` and
+  `signature_valid`. A test (§14 item 1) catches new names of this shape.
 - Matching recurses into `dict` values, and into `list` and `tuple` values
   containing dicts. The gateway's `body` form is therefore cleaned too.
 - A matching key is removed, not masked. A masked value still leaks length and
@@ -562,18 +625,24 @@ structlog's `ExceptionDictTransformer` defaults to `show_locals=True`, and so do
 `RichTracebackFormatter`. A frame's locals can hold passwords, OTPs, keys and
 whole request bodies.
 
+Locals can't be redacted after the transformer runs. It renders each local as
+a `repr()` string, so `payload={"phone": "…"}` reaches `sanitise` as the text
+`"{'phone': '…'}"`, which key matching can't see into. So locals are never
+collected at all.
+
 Each formatter handles exceptions with its own processor, because a console
 formatter can't consume a traceback that has already been turned into dicts:
 
-- **JSON:** `ExceptionRenderer(ExceptionDictTransformer(show_locals=LOG_SHOW_LOCALS, use_rich=False))`
+- **JSON:** `ExceptionRenderer(ExceptionDictTransformer(show_locals=False, use_rich=False))`
   runs **before** `sanitise`. It replaces `exc_info` with an `exception` list
-  (type, value, frames).
+  (type, value, frames). `show_locals=False` is hard-coded, in every
+  environment and every redaction mode, `off` included.
 - **Console:** no exception processor. `exc_info` is left for
-  `ConsoleRenderer(exception_formatter=structlog.dev.plain_traceback)`, which
-  never prints locals. `rich` is not installed (§1).
-- **`LOG_SHOW_LOCALS`** defaults to `False` in every environment, and
-  `production.py` refuses `True` (§10.3). It exists only for a developer chasing
-  a bug locally, and it affects only JSON output.
+  `ConsoleRenderer(exception_formatter=structlog.dev.plain_traceback, colors=sys.stdout.isatty())`,
+  which never prints locals. `rich` is not installed (§1). structlog enables
+  colours by default on non-Windows systems, which would put ANSI codes into
+  `docker compose logs` and test output.
+- **No setting enables locals.** A developer who needs them uses a debugger.
 
 **How `sanitise` treats exceptions** (nested exception policy):
 
@@ -581,14 +650,29 @@ formatter can't consume a traceback that has already been turned into dicts:
   allow base set (§6.3), so allow mode never drops a traceback.
 - **`sanitise` does not filter the transformer's own structure** (`exc_type`,
   `exc_value`, `frames`, `filename`, `lineno`, `name`). That structure is
-  library-defined and holds no request data.
-- **Frame `locals`**, present only when `LOG_SHOW_LOCALS=True`:
-  - deny mode: each frame's `locals` dict gets the deny-key matching of §6.2;
-  - allow mode: `locals` are removed entirely;
-  - off mode: they are kept.
+  library-defined and holds no request data. Frames never carry `locals`.
 - **The exception message (`exc_value`, and the text in a console traceback)**
   is free text. Keys can't redact it, so the §6.5 rules apply: don't raise
   exceptions whose message contains user input.
+- **`sanitise` keeps only the first line of every `exc_value`** in the JSON
+  `exception` list, including chained causes, in every mode except `off`.
+  Library exceptions carry user data that our rules can't prevent. With
+  psycopg 3, `str()` of a database error is PostgreSQL's full error message,
+  for example:
+
+  ```text
+  duplicate key value violates unique constraint "users_user_mobile_number_key"
+  DETAIL:  Key (mobile_number)=(9876543210) already exists.
+  ```
+
+  Django's `IntegrityError` copies that text. PostgreSQL puts the summary on
+  the first line and the row values on `DETAIL` lines, so keeping the first
+  line keeps the diagnosis and drops the values. The transformer records only
+  the class name (`exc_type.__name__`), so the rule can't be limited to
+  database errors by type. It applies to every exception.
+- **Console output prints the full message.** `plain_traceback` formats the
+  live exception, so the first-line rule can't apply to it. `console` is the
+  default only in local and test. Production keeps `LOG_FORMAT=json`.
 
 #### 6.7 Defaults per environment
 
@@ -596,7 +680,6 @@ formatter can't consume a traceback that has already been turned into dicts:
 | --- | --- | --- | --- |
 | `LOG_REDACTION_MODE` | `deny` (`off` allowed) | `deny` | `deny` (see Open questions); `off` refused |
 | `LOG_DROP_SENSITIVE_EVENTS` | `False` | `False` | `True` |
-| `LOG_SHOW_LOCALS` | `False` | `False` | `False` (`True` refused) |
 
 ### 7. Third-party loggers
 
@@ -609,27 +692,36 @@ handle them:
   to every record, whatever logger it came from.
 - **Keep the existing named loggers.** `django`, `dramatiq`, `cachalot`,
   `apps.messaging`, `apps.pdf` and `addon.cdac_sms_gateway` keep their
-  `propagate: False` entries and point at the same handlers. Nothing is left on
-  its own private handler.
+  `propagate: False` entries and point at the same handlers. No logger keeps a
+  handler outside the pipeline.
 - **Take over `django.server`.** Django applies its `DEFAULT_LOGGING` before
   calling `configure()`. That config gives `django.server` (runserver's access
   log, which prints full paths with query strings) its own plain handler and
   `propagate: False`. With `disable_existing_loggers: False` it would survive
-  our config and bypass redaction. `configure()` therefore declares
-  `django.server` explicitly:
-  - point it at our handlers;
-  - pin it to `WARNING` (table below). Its access lines carry the URL inside the
-    message text, where `strip_query_string` can't reach it, and
-    django-structlog's `request_finished` already covers access logging.
+  our config and bypass redaction. `configure()` therefore **silences**
+  `django.server`:
+  - its access lines carry the full URL, query string included, inside the
+    message text, where `strip_query_string` can't reach it;
+  - Django logs them at `INFO` for 1xx–3xx, `WARNING` for 4xx and `ERROR` for
+    5xx, so pinning a level would still leak `/x?token=…` on a 404 or a 500;
+  - django-structlog's `request_finished` / `request_failed` already cover
+    access logging, with the query string stripped.
 
-  The same applies to `django`, whose default `mail_admins` handler is replaced.
+  So `django.server` gets `{"handlers": ["null"], "propagate": False}`, where
+  `null` is a `logging.NullHandler`. The handler list must not be empty: a
+  logger with no handlers and `propagate: False` falls back to
+  `logging.lastResort`, which prints `WARNING` and above to stderr, outside the
+  pipeline.
+
+  `django` is declared explicitly too, so its default `mail_admins` handler is
+  replaced by ours.
 - **Pin levels regardless of `LOG_LEVEL`:**
 
   | Logger | Level | Reason |
   | --- | --- | --- |
   | `django.db.backends` | `WARNING` | At DEBUG it logs SQL with parameter values |
   | `django.request`, `django.security` | `WARNING` | |
-  | `django.server` | `WARNING` | runserver access lines put the full URL in the message text |
+  | `django.server` | silenced (`NullHandler`) | runserver access lines put the full URL in the message text at every level |
   | `urllib3`, `requests` | `WARNING` | At DEBUG they log full URLs |
   | `botocore`, `boto3`, `s3transfer` | `WARNING` | At DEBUG they log request headers, including auth |
   | `pyhanko`, `signxml` | `WARNING` | Signing detail |
@@ -669,6 +761,7 @@ handle them:
     "maxBytes": LOG_FILE_MAX_BYTES,       # size cap inside one day
     "backupCount": LOG_FILE_BACKUP_COUNT,  # hard safety cap, see 8.3
     "use_gzip": False,                     # compressed by cron, see below
+    "lock_file_directory": "/tmp/dristi-log-locks",  # inside the container, see below
     "chmod": 0o640,
     "formatter": "json",
     "filters": ["sensitive"],
@@ -683,7 +776,24 @@ handle them:
   its next log call. Rollover is therefore only a rename. The host cron job
   compresses closed files (§8.3). The PoC (§9.2) measures rollover latency under
   load. If even the rename stalls workers, the fallback is a
-  `QueueHandler`/`QueueListener` in front of the file handler.
+  `QueueHandler`/`QueueListener` in front of the file handler. The stdlib
+  `QueueHandler.prepare()` formats the record in the calling thread, replaces
+  `msg` with the formatted string and clears `exc_info`. So the `json`
+  `ProcessorFormatter` and `SensitiveRecordFilter` go on the `QueueHandler`,
+  and the file handler behind the listener uses a plain `%(message)s`
+  formatter. This also resolves `exc_info=True` while the exception is still
+  active.
+
+- **Lock file inside the container, not in `LOG_DIR`.** The handler opens its
+  lock file (`.__<LOG_FILE_PREFIX>-<host>.lock`) once per process and never
+  writes to it, so its modification time never changes. In the bind-mounted
+  `LOG_DIR`, the age-based cron cleanup (§8.3) would delete the lock file of
+  any container running longer than `LOG_RETENTION_DAYS`. A worker that
+  restarts after that creates a new lock file, while the others keep locking
+  the deleted one, so rotations race. The lock is only ever shared within one
+  container, so it lives in the container's own filesystem: it disappears with
+  the container and is never in reach of the cron job. The handler creates the
+  directory if it is missing, and `/tmp` is writable by `appuser`.
 
 - **One file per container.** The hostname, which is the container id in Docker,
   goes in the filename. The processes inside a container (4 Gunicorn workers, or
@@ -730,10 +840,10 @@ handle them:
   `….gz`. The handler's `backupCount` cleanup counts both the plain and the
   `.gz` forms.
 - **Stale files after a redeploy.** Every redeploy gets a new container id, so
-  the previous container's live `.log` file and its
-  `.__<LOG_FILE_PREFIX>-<host>.lock` file stop changing and are never rotated.
-  The cron job therefore matches every file type, by age. A running container's
-  live file is always recent, so it is never deleted.
+  the previous container's live `.log` file stops changing and is never
+  rotated. The cron job therefore deletes plain `.log` files by age too. A
+  running container's live file is written to and rotated daily, so it stays
+  recent. Lock files are not in `LOG_HOST_DIR` (§8.1).
 - **Compression and deletion by cron.** A cron job on the host compresses
   rotated files and deletes old ones. The folder, prefix and retention period
   are variables at the top of the cron file. They **must equal** the
@@ -746,11 +856,20 @@ handle them:
   LOG_HOST_DIR=/var/log/dristi
   LOG_FILE_PREFIX=dristi
   LOG_RETENTION_DAYS=30
-  # Hourly: gzip rotated files. They are closed once renamed; the live .log never matches.
-  5 * * * * root find "$LOG_HOST_DIR" -maxdepth 1 -type f -name "$LOG_FILE_PREFIX-*.log.20*" ! -name '*.gz' -exec gzip {} +
-  # Daily: delete log, rotated and lock files untouched for LOG_RETENTION_DAYS.
-  15 1 * * * root find "$LOG_HOST_DIR" -maxdepth 1 -type f \( -name "$LOG_FILE_PREFIX-*.log*" -o -name ".__$LOG_FILE_PREFIX-*.lock" \) -mtime +"$LOG_RETENTION_DAYS" -delete
+  # Hourly: gzip rotated files untouched for over 24 hours. The live .log never matches.
+  5 * * * * root find "$LOG_HOST_DIR" -maxdepth 1 -type f -name "$LOG_FILE_PREFIX-*.log.20*" ! -name '*.gz' -mtime +0 -exec gzip {} +
+  # Daily: delete log and rotated files untouched for LOG_RETENTION_DAYS.
+  15 1 * * * root find "$LOG_HOST_DIR" -maxdepth 1 -type f -name "$LOG_FILE_PREFIX-*.log*" -mtime +"$LOG_RETENTION_DAYS" -delete
   ```
+
+  **Why `-mtime +0`.** With `use_gzip=False` the handler checks only whether
+  the plain dated name exists before it renames. Once cron has gzipped
+  `….log.2026-10-30`, a second size rotation that day reuses the plain name.
+  The next gzip then fails with "`….gz` already exists -- skipping", and the
+  file stays uncompressed. A file untouched for over 24 hours belongs to an
+  earlier UTC day, and rotation only ever names files after the current day,
+  so the two can't collide. Uncompressed files wait at most about a day, which
+  `LOG_FILE_MAX_BYTES` and `LOG_FILE_BACKUP_COUNT` already bound.
 
   `docs/production.md` lists these three variables next to the compose env.
   Changing `LOG_HOST_DIR` or `LOG_FILE_PREFIX` on a host means changing them in
@@ -770,6 +889,20 @@ built as a proof of concept first, and is merged only if every PoC check passes.
 #### 9.1 Design: `apps.core.logs.dramatiq.LogContextMiddleware`
 
 ```python
+from apps.core.logs.middleware import REQUEST_ID_PATTERN
+
+
+def _propagated_request_id(message):
+    """Return the propagated request id, or None if absent or malformed."""
+    log_context = message.options.get("log_context")
+    if not isinstance(log_context, dict):
+        return None
+    request_id = log_context.get("request_id")
+    if isinstance(request_id, str) and REQUEST_ID_PATTERN.fullmatch(request_id):
+        return request_id
+    return None
+
+
 class LogContextMiddleware(dramatiq.Middleware):
     def before_enqueue(self, broker, message, delay):
         ctx = structlog.contextvars.get_contextvars()
@@ -778,10 +911,13 @@ class LogContextMiddleware(dramatiq.Middleware):
 
     def before_process_message(self, broker, message):
         structlog.contextvars.clear_contextvars()
+        context = {}
+        if request_id := _propagated_request_id(message):
+            context["request_id"] = request_id
         structlog.contextvars.bind_contextvars(
+            **context,
             task_id=message.message_id,
             actor=message.actor_name,
-            **message.options.get("log_context", {}),
         )
 
     def after_process_message(self, broker, message, *, result=None, exception=None):
@@ -801,6 +937,27 @@ class LogContextMiddleware(dramatiq.Middleware):
 - It clears the context on entry as well as on exit. Worker threads are reused,
   so a missed `after_*` hook must not leak one task's `request_id` into the
   next.
+- **`log_context` is untrusted input.** It travels in the serialised message,
+  and any producer with broker access can set it through `send_with_options`.
+  So `before_process_message` never expands it:
+  - it accepts only a `dict`; anything else (`None`, a string, a list) is
+    ignored;
+  - it reads only `request_id`, and only when it is a string matching
+    `REQUEST_ID_PATTERN` (§5); every other key is dropped;
+  - `task_id` and `actor` come from the message itself and are always bound,
+    so a propagated key can never override them or collide with them.
+
+  This matters because Dramatiq (2.2.1) catches an exception from a `before_*`
+  hook, logs it at `CRITICAL` and carries on. A `TypeError` from expanding a
+  bad `log_context` would let the task run with no context at all, since the
+  context was already cleared.
+- **Compatibility.** Messages already queued before this ships have no
+  `log_context`, and log with `task_id` and `actor` only. No caller sets
+  `log_context` today: the `send_with_options` calls in `apps/pdf/tasks.py`
+  and `apps/messaging/tasks.py` pass only `args` and `delay`. Those requeues
+  run on the worker thread, so `before_enqueue` re-attaches the task's
+  `request_id`. (The `log_context` argument in `addon/cdac_sms_gateway` is an
+  unrelated local dict, not a message option.)
 
 **Task-scoped lines**, which carry `task_id`, `actor` and the propagated
 `request_id`, are every line emitted on the worker thread between
@@ -861,13 +1018,12 @@ questions.
 | `LOG_FILE_ENABLED` | Enable the rotating file handler | `False` locally, `True` in prod |
 | `LOG_DIR` | Directory for log files inside the container | `/app/logs` |
 | `LOG_FILE_PREFIX` | Filename prefix | `dristi` |
-| `LOG_FILE_MAX_BYTES` | Size cap within one day before early rotation | `104857600` (100 MB) |
-| `LOG_FILE_BACKUP_COUNT` | Safety cap on rotated files kept | `60` |
+| `LOG_FILE_MAX_BYTES` | Size cap within one day before early rotation; must be positive (§10.3) | `104857600` (100 MB) |
+| `LOG_FILE_BACKUP_COUNT` | Safety cap on rotated files kept; must be positive (§10.3) | `60` |
 | `LOG_REDACTION_MODE` | `deny`, `allow` or `off` (`off` is refused in production) | `deny` |
 | `LOG_DENY_KEYS_EXTRA` | Extra deny keys, comma-separated | empty |
 | `LOG_ALLOW_KEYS_EXTRA` | Extra allow keys, comma-separated | empty |
 | `LOG_DROP_SENSITIVE_EVENTS` | Drop events marked `sensitive=True` | `False` locally, `True` in prod |
-| `LOG_SHOW_LOCALS` | Include exception locals (local debugging only) | `False` |
 | `LOG_TRUST_UPSTREAM_REQUEST_ID` | Keep a well-formed incoming `X-Request-ID` instead of generating one (§5) | `False` |
 | `LOG_QUIET_PATHS` | Path prefixes whose successful `request_finished` is dropped, comma-separated (§3) | `/health/,/static/` |
 | `LOG_HOST_DIR` | Host path mounted at `LOG_DIR` (compose and the cron file only) | `/var/log/dristi` |
@@ -923,8 +1079,8 @@ rebuild" rule:
     (default `True`) and `LOG_DROP_SENSITIVE_EVENTS` (default `True`). A
     deployment that forgets them still gets production behaviour.
   - Next to the existing "Addon guards", raises `ImproperlyConfigured` when
-    `LOG_SHOW_LOCALS=True` or `LOG_REDACTION_MODE=off`. This is the same pattern
-    as `CDAC_SMS_VERIFY_SSL`.
+    `LOG_REDACTION_MODE=off`. This is the same pattern as
+    `CDAC_SMS_VERIFY_SSL`.
 - **`.env.ci`:** sets `LOG_DIR=/tmp/dristi-ci-logs`. The CI deploy check loads
   production settings, where the file handler is on by default, and
   `/app/logs` doesn't exist on the runner.
@@ -944,13 +1100,17 @@ setting when:
 - `LOG_REDACTION_MODE` is not `deny`, `allow` or `off`;
 - `LOG_FORMAT` is not `json` or `console`;
 - `LOG_LEVEL` is not a standard level name;
+- `LOG_FILE_MAX_BYTES` or `LOG_FILE_BACKUP_COUNT` is not a positive integer.
+  `concurrent-log-handler` treats `maxBytes=0` as "no size rotation" and
+  `backupCount=0` as "delete nothing", so a typo would silently remove the disk
+  caps of §8.3. Both are checked whether or not the file handler is on, so a
+  bad value fails before it is first enabled;
 - `LOG_FILE_ENABLED=True` and `LOG_DIR` can't be created
   (`os.makedirs(..., exist_ok=True)`) or isn't writable (`os.access(..., W_OK)`).
   This is checked before `dictConfig` would fail inside the file handler.
 
-**Production guards (`production.py`, `ImproperlyConfigured`):**
+**Production guard (`production.py`, `ImproperlyConfigured`):**
 
-- `LOG_SHOW_LOCALS=True`
 - `LOG_REDACTION_MODE=off`
 
 **System checks (`apps/core/logs/checks.py`)** hold soft warnings only. It is
@@ -965,7 +1125,7 @@ imported from `CoreConfig.ready()`, like `apps/pdf/checks.py` and
 
 Every `logger.*` call under `src/apps` and `src/addon` moves to
 `structlog.get_logger(...)` with an event name and keyword fields. That is about
-76 call sites, counting the `log_event` and `_log_event` helpers, in the 22
+70 call sites, counting the `log_event` and `_log_event` helpers, in the 21
 modules that call `logging.getLogger`. Logger names don't change, so the
 `LOGGING` entries keep matching.
 
@@ -976,17 +1136,17 @@ modules that call `logging.getLogger`. Logger names don't change, so the
 | eSign addon | `addon/cdac_esign/provider.py:86,147,150` | Structured fields. `reason=str(exc)` is reviewed against §6.5. |
 | Messaging | `apps/messaging/tasks.py` | `_log_event()` emits keyword fields. Remove the `fields` string join. |
 | SMS gateway | `addon/cdac_sms_gateway/{client,response,filtering}.py` | Structured fields. `mask_form()` stays as defence in depth, because the gateway owns its wire secrets, and the form gains `mobileno` coverage from the deny list. |
-| SMS default | `base.py:510`, `addon/cdac_sms_gateway/config.py:42,102`, `.env.example:98`, `README.md:192`, `addon/cdac_sms_gateway/tests/test_config.py:40` | `CDAC_SMS_PRINT_RESPONSE` defaults to `False`. Update the test that asserts the old default. |
-| PDF | `apps/pdf/tasks.py`, `apps/pdf/services/*` | Replace `event=%s ...` strings and `" ".join(f"{k}={v}")` with keyword fields |
+| SMS default | `base.py:500`, `addon/cdac_sms_gateway/config.py:42,102`, `.env.example:91`, `README.md:195`, `addon/cdac_sms_gateway/tests/test_config.py:40` | `CDAC_SMS_PRINT_RESPONSE` defaults to `False`. Update the test that asserts the old default. |
+| PDF | `apps/pdf/tasks.py`, `apps/pdf/services/*` | Replace `event=%s ...` strings and `" ".join(f"{k}={v}")` with keyword fields. `log_event()` in `apps/pdf/services/generator.py` keeps its signature, like the eSign helper. |
 | Requests | `apps/dristi_requests/hooks.py:112` | Logs the request type under the bare name `code`. Migrate to `logger.info("HOOK_RUN", on=on, request_pk=request.pk, request_type=code)`, because `code` is denied (§6.2). |
 | Others | `apps/users/tasks.py`, `apps/address/services.py`, `apps/files/documents.py`, `apps/dristi_requests/services.py`, `apps/cases/services/services.py`, `apps/core/rules/engines/base.py` | Turn sentence-style messages into an event name plus fields |
 
 Tests that assert on log text move to `structlog.testing.capture_logs()` and
-assert on `event` and field values. Eleven test files use `assertLogs` or
+assert on `event` and field values. Twelve test files use `assertLogs` or
 `caplog` today:
 
 - `addon/cdac_sms_gateway/tests/test_{backend,response,delivery,filtering}.py`
-- `apps/esign/tests/test_{security,callback}.py`
+- `apps/esign/tests/test_{security,callback,clients}.py`
 - `apps/pdf/tests/test_{signing,tasks}.py`
 - `apps/files/tests/test_documents.py`
 - `apps/messaging/tests/test_tasks.py`
@@ -1023,11 +1183,11 @@ Add this as a "Logging" section in `AGENTS.md` and `CONTRIBUTING.md`:
 ### 13. Affected files
 
 ```text
-src/requirements/base.txt                       # + structlog, django-structlog, concurrent-log-handler
+src/requirements/base.txt                       # + structlog, django-structlog, django-ipware, concurrent-log-handler
 src/apps/core/logs/                             # new package (§2)
 src/apps/core/apps.py                           # import logs.checks in ready()
 src/apps/api/meta.py, src/apps/api/schema.py    # request_id in meta and the ResponseMeta example
-src/config/settings/base.py                     # MIDDLEWARE, LOGGING_CONFIG, LOG_* values, DJANGO_STRUCTLOG_*, Dramatiq middleware, CDAC default
+src/config/settings/base.py                     # MIDDLEWARE, LOGGING_CONFIG, LOG_* values, DJANGO_STRUCTLOG_*, IPWARE_META_PRECEDENCE_ORDER, CORS_EXPOSE_HEADERS, Dramatiq middleware, CDAC default
 src/config/settings/test.py                     # stub broker middleware, LOG_* values, LOG_CACHE_LOGGERS, silenced W001
 src/config/settings/production.py               # prod LOG_* defaults, guards
 .env.ci                                         # LOG_DIR for the CI deploy check
@@ -1049,6 +1209,11 @@ Tests go in `apps/core/tests/test_logs_*.py` unless noted. They run with
 test order.
 
 1. **Sanitise, deny mode:**
+   - every model field name (`django.apps.apps.get_models()`) and every
+     declared field of a `Serializer` subclass in `apps.*.serializers` that
+     contains `phone`, `mobile`, `email`, `aadhaar`, `otp`, `password`, `dob`
+     or `pan` as an underscore-separated word is denied, unless it is on a
+     short reviewed exemption list in the test (for example `mobile_prefix`);
    - exact keys and `_<entry>` suffix keys are removed;
    - `csrftoken`, `sessionid` and `apikey` are removed;
    - `code` and `name` are removed, while `status_code`, `error_code` and
@@ -1071,13 +1236,16 @@ test order.
    - with the setting off, both are rendered and the flag is removed;
    - nothing raises.
 5. **Exceptions:**
-   - an exception raised with a local `password = "x"` renders without the value
-     in JSON and console output;
+   - an exception raised with locals `password = "x"` and
+     `payload = {"phone": "9999999999"}` renders without either value in JSON
+     and console output, and no JSON frame has a `locals` key, in `deny`,
+     `allow` **and** `off` mode;
    - in allow mode, a `logger.exception(...)` still renders its traceback (the
      `exception` field in JSON, a plain traceback in console);
-   - with `LOG_SHOW_LOCALS=True` in deny mode, a denied key inside frame
-     `locals` is removed from the JSON `exception` field, and in allow mode
-     `locals` are absent.
+   - an exception whose message is `"summary\nDETAIL:  Key (mobile_number)=(9876543210) already exists."`,
+     raised from another exception with a similar message, renders in JSON
+     with only `"summary"` as `exc_value` in every stack, in `deny` and
+     `allow` mode.
 6. **Third-party records:**
    - a `logging.getLogger("django.request")` record with
      `extra={"phone": "…", "request": object()}` renders without either key,
@@ -1096,8 +1264,10 @@ test order.
      backend check) produces `request_finished` with `status_code=500`;
    - a view under a quiet path that **raises** produces `request_failed`, which
      is never dropped;
-   - after `configure()`, `logging.getLogger("django.server")` has only our
-     handlers and level `WARNING`, so an `INFO` access line is not emitted.
+   - after `configure()`, `logging.getLogger("django.server")` has only a
+     `NullHandler` and `propagate=False`; access lines for
+     `GET /x?token=abc` logged at `INFO`, `WARNING` (404) and `ERROR` (500)
+     reach neither handler nor stderr (`lastResort`).
 8. **Request id and trust boundary:**
    - two log calls inside one test-client request share the `request_id` of
      `request_finished`;
@@ -1108,7 +1278,15 @@ test order.
    - a request sent with `X-Request-ID: forged` and `X-Correlation-ID: forged`
      gets a generated `request_id` and no `correlation_id`;
    - with `LOG_TRUST_UPSTREAM_REQUEST_ID=True`, a well-formed `X-Request-ID` is
-     kept, and a malformed one (too long, or bad characters) is replaced.
+     kept, and an empty, too long (65 characters) or badly formed one is
+     replaced with a generated id;
+   - a non-API response, such as the Django 404 page or `/health/`, carries
+     `X-Request-ID`. (WhiteNoise is removed in `test.py`, so static files are
+     not tested here);
+   - a cross-origin request from an allowed origin gets
+     `Access-Control-Expose-Headers` containing `X-Request-ID`;
+   - a request with `X-Forwarded-For: 1.2.3.4` and `X-Real-IP: 5.6.7.8` binds
+     `ip=5.6.7.8`.
 9. **User context:** a view line inside a session-authenticated request carries
    that user's `user_id`. `request_started` has none.
 10. **Routing through stdlib:** with `LOG_FILE_ENABLED=True` and a temporary
@@ -1119,18 +1297,24 @@ test order.
     - a task enqueued inside a bound context logs that `request_id`;
     - a task enqueued outside one logs only `task_id` and `actor`;
     - back-to-back tasks don't leak context;
+    - a message whose `log_context` is `None`, a string, a dict with an empty,
+      non-string or malformed `request_id`, or a dict carrying `task_id`,
+      `actor` or other extra keys runs normally, logs no `CRITICAL` middleware
+      failure, binds the message's own `task_id` and `actor`, and binds
+      `request_id` only when it is valid;
     - `LogContextMiddleware` is first in the configured middleware list.
 12. **File handler:** with `LOG_FILE_ENABLED=True` and a temporary `LOG_DIR`,
     several processes (`multiprocessing`) write to one file without
     interleaving lines. Forcing a rollover produces a dated, uncompressed
-    backup, and `emit()` never gzips.
+    backup, and `emit()` never gzips. No lock file is created in `LOG_DIR`.
 13. **Configuration and validation:**
     - `configure()` raises `ImproperlyConfigured` for an invalid
-      `LOG_REDACTION_MODE`, `LOG_FORMAT` or `LOG_LEVEL`, and for an unwritable
-      `LOG_DIR` when the file handler is on;
+      `LOG_REDACTION_MODE`, `LOG_FORMAT` or `LOG_LEVEL`, for a
+      `LOG_FILE_MAX_BYTES` or `LOG_FILE_BACKUP_COUNT` of `0` or below, and for
+      an unwritable `LOG_DIR` when the file handler is on;
     - `LOGGING_CONFIG` points at `configure`, and `LOGGING` is non-empty;
-    - importing production settings with `LOG_SHOW_LOCALS=True` or
-      `LOG_REDACTION_MODE=off` raises `ImproperlyConfigured`;
+    - importing production settings with `LOG_REDACTION_MODE=off` raises
+      `ImproperlyConfigured`;
     - `logs.W001` fires with `DEBUG=False` and the file handler off, and is
       silenced under test settings.
 
@@ -1192,8 +1376,10 @@ before merging.
   PoC passed. This includes responses produced by early middleware. A
   client-supplied `X-Request-ID` or `X-Correlation-ID` is never used unless
   `LOG_TRUST_UPSTREAM_REQUEST_ID=True`.
-- Every response carries `X-Request-ID`, and every JSON response carries the
-  same value as `meta.request_id`.
+- Every response that passes through Django carries a non-empty
+  `X-Request-ID`, exposed to cross-origin callers, and every API JSON response
+  (the ones with a `meta` block) carries the same value as `meta.request_id`. Responses nginx serves or generates on its own
+  (`/static/`, `502`/`504`/`413`) are excluded (Non-goals).
 - Successful health and static requests produce no `request_finished` line.
   `request_started` is not logged at `INFO`.
 - Logs never contain a bare `code` field, and never contain a non-primitive
@@ -1203,11 +1389,20 @@ before merging.
   third-party records alike.
 - With `LOG_DROP_SENSITIVE_EVENTS=True`, events marked sensitive never reach a
   handler.
-- No rendered traceback contains frame locals. Production settings refuse
-  `LOG_SHOW_LOCALS=True` and `LOG_REDACTION_MODE=off`.
+- No rendered traceback contains frame locals, in any mode or environment.
+  In JSON output, no `exc_value` has more than one line unless the mode is
+  `off`.
+- `ip` is never taken from a client-supplied `X-Forwarded-For`.
+  Production settings refuse `LOG_REDACTION_MODE=off`.
+- `django.server` access lines never reach a handler, at any level.
+- A malformed propagated `log_context` never stops a task from binding
+  `task_id` and `actor`.
+- `configure()` refuses a non-positive `LOG_FILE_MAX_BYTES` or
+  `LOG_FILE_BACKUP_COUNT`.
 - With the file handler on, each container writes one daily-rotated and
   size-capped file. Rotation never compresses in-process; cron gzips closed
-  files. Concurrent processes lose no lines.
+  files. Concurrent processes lose no lines. No lock file lives in
+  `LOG_HOST_DIR`.
 - No existing `logger.*` call formats values into its message.
   `otp.py` no longer logs the mobile number.
 - `CDAC_SMS_PRINT_RESPONSE` defaults to `False` in code, env examples and the
@@ -1250,8 +1445,15 @@ before merging.
    the repo?
 3. **Retention period.** Is 30 days right, or is there a legal or compliance
    requirement?
-4. **`X-Request-ID` from nginx.** Should nginx generate and forward
-   `X-Request-ID`, which lets us turn on `LOG_TRUST_UPSTREAM_REQUEST_ID`?
+4. **`X-Request-ID` from nginx.** Should nginx issue the id? One shape:
+   `proxy_set_header X-Request-ID $request_id;` (overwrites any client value;
+   nginx's `$request_id` is 32 hex characters, so it matches
+   `REQUEST_ID_PATTERN`), `proxy_hide_header X-Request-ID;` and
+   `add_header X-Request-ID $request_id always;` at `server` level, plus
+   `$request_id` in nginx's `log_format`. Then `LOG_TRUST_UPSTREAM_REQUEST_ID`
+   can be turned on, `/static/` and nginx-generated errors also carry an id,
+   and that id matches the nginx access log. This would bring those responses
+   into the acceptance criterion and needs tests on the compose stack.
 
 ## Future enhancements (optional)
 
