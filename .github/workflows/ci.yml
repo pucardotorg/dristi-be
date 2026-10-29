@@ -71,7 +71,7 @@ jobs:
       - name: Upload coverage to Codecov
         # Upload even when tests fail, so the report shows what was covered.
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           # `uses:` steps ignore the job's working-directory, so the path is from the repo root.
           files: src/coverage.xml
