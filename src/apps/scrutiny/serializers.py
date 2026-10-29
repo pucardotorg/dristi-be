@@ -1,4 +1,4 @@
-"""Scrutiny API serializers (spec 0024 #7, #8).
+"""Scrutiny and registration API serializers (spec 0024 #7, #8).
 
 Request serializers validate bodies and query parameters; the services apply
 the business rules. Response serializers render the read models of
@@ -9,7 +9,7 @@ from rest_framework import serializers
 
 from apps.cases.models import CaseStatus
 
-from . import selectors
+from . import errors, selectors
 from .enums import DocumentIssue, FlagStatus, FlagTarget, ResponseKind, RoundDecision, RoundStage
 
 # Requests
@@ -21,6 +21,16 @@ class ScrutinyListQuerySerializer(serializers.Serializer):
     tab = serializers.ChoiceField(choices=selectors.TABS, default="registry")
     claimed = serializers.ChoiceField(choices=selectors.CLAIMED, default="anyone")
     search = serializers.CharField(required=False, allow_blank=True, default="")
+    establishment = serializers.UUIDField(required=False, allow_null=True, default=None)
+
+
+class RegistrationListQuerySerializer(serializers.Serializer):
+    """Query parameters of the registration list (#7.3)."""
+
+    search = serializers.CharField(required=False, allow_blank=True, default="")
+    ordering = serializers.ChoiceField(
+        choices=tuple(selectors.REGISTRATION_ORDERING), default="-waiting_days"
+    )
     establishment = serializers.UUIDField(required=False, allow_null=True, default=None)
 
 
@@ -67,11 +77,40 @@ class MoveOnSerializer(serializers.Serializer):
     acknowledge_open_items = serializers.BooleanField(required=False, default=False)
 
 
+class RegisterSerializer(serializers.Serializer):
+    """Register at Registration (#6.1); the type chosen at Forward is kept unless changed."""
+
+    registration_type = serializers.CharField(
+        required=False, allow_blank=True, max_length=32, default=""
+    )
+    acknowledge_open_items = serializers.BooleanField(required=False, default=False)
+
+
+class RegistrationSendBackSerializer(serializers.Serializer):
+    """Send back at Registration (#6.2): one overall comment, never flags (``REF-02``)."""
+
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        """Refuse field marking, which only Scrutiny sends back."""
+        if "flags" in self.initial_data:
+            raise errors.SEND_BACK_COMMENT_REQUIRED.validation_error(
+                {"flags": [errors.SEND_BACK_COMMENT_REQUIRED.message]}
+            )
+        return attrs
+
+
 class TitleSerializer(serializers.Serializer):
     """PATCH /scrutiny/{case_id}/title/: the parties' display names (#4.6)."""
 
     complainant = serializers.CharField(max_length=256)
     accused = serializers.CharField(max_length=256)
+
+
+class ExplainSerializer(serializers.Serializer):
+    """POST /cases/{case_id}/corrections/{flag_id}/explain/ (#5.2)."""
+
+    note = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 # Responses: shared pieces
@@ -171,7 +210,7 @@ class ScrutinyDecisionSerializer(serializers.Serializer):
     workflow_version = serializers.IntegerField()
 
 
-# Responses: list (#7.1)
+# Responses: lists (#7.1, #7.3)
 
 
 class ScrutinyRowSerializer(serializers.Serializer):
@@ -190,6 +229,21 @@ class ScrutinyRowSerializer(serializers.Serializer):
     waiting_days = serializers.IntegerField()
     round = serializers.IntegerField()
     task_id = serializers.UUIDField(allow_null=True)
+
+
+class RegistrationRowSerializer(serializers.Serializer):
+    """One row of the registration list."""
+
+    case_id = serializers.UUIDField()
+    case_name = serializers.CharField()
+    filing_number = serializers.CharField(allow_null=True)
+    advocates = serializers.ListField(child=serializers.CharField())
+    days_since_submitted = serializers.IntegerField(allow_null=True)
+    days_since_cleared = serializers.IntegerField()
+    open_items = serializers.IntegerField()
+    courtroom = NamedSerializer(allow_null=True)
+    registration_type = serializers.CharField()
+    round = serializers.IntegerField()
 
 
 # Responses: scrutiny detail (#7.2)
@@ -287,7 +341,68 @@ class ScrutinyDetailSerializer(serializers.Serializer):
     workflow_version = serializers.IntegerField()
 
 
-# Responses: history (#7.5)
+# Responses: registration detail (#7.4)
+
+
+class RoundBriefSerializer(serializers.Serializer):
+    """One round, for *Show rounds*."""
+
+    id = serializers.UUIDField()
+    stage = serializers.ChoiceField(choices=RoundStage.choices)
+    number = serializers.IntegerField()
+    started_by = PersonSerializer(allow_null=True)
+    decision = serializers.CharField()
+    decided_by = PersonSerializer(allow_null=True)
+    decided_at = serializers.DateTimeField(allow_null=True)
+    item_count = serializers.IntegerField()
+    open_items_at_decision = serializers.IntegerField()
+
+
+class ScrutinyBlockSerializer(serializers.Serializer):
+    """Who cleared the case at Scrutiny, and how long it took."""
+
+    cleared_by = PersonSerializer(allow_null=True)
+    round_count = serializers.IntegerField()
+    days_taken = serializers.IntegerField()
+    rounds = RoundBriefSerializer(many=True)
+
+
+class TimelineLineSerializer(serializers.Serializer):
+    """One step of the *Register case* timeline."""
+
+    step = serializers.CharField()
+    date = serializers.DateField(allow_null=True)
+    cheque_index = serializers.IntegerField(allow_null=True)
+    qualifier = serializers.CharField(allow_null=True)
+    warning = serializers.BooleanField()
+
+
+class RegistrationCaseSerializer(serializers.Serializer):
+    """The registration detail's header."""
+
+    id = serializers.UUIDField()
+    filing_number = serializers.CharField(allow_null=True)
+    parties = serializers.CharField()
+    submitted_at = serializers.DateField(allow_null=True)
+    advocates = serializers.ListField(child=serializers.CharField())
+
+
+class RegistrationDetailSerializer(serializers.Serializer):
+    """GET /registration/{case_id}/."""
+
+    case = RegistrationCaseSerializer()
+    summary = serializers.DictField(help_text="Parties, cheques, dishonour, notice, cause, prayer.")
+    scrutiny = ScrutinyBlockSerializer()
+    timeline = TimelineLineSerializer(many=True)
+    courtroom = NamedSerializer(allow_null=True)
+    registration_type = serializers.CharField()
+    registration_types = RegistrationTypeSerializer(many=True)
+    open_items = FlagSerializer(many=True)
+    allowed_actions = serializers.ListField(child=serializers.CharField())
+    workflow_version = serializers.IntegerField()
+
+
+# Responses: history and correction (#7.5, #7.6)
 
 
 class HistoryItemSerializer(serializers.Serializer):
@@ -312,10 +427,44 @@ class HistoryEntrySerializer(serializers.Serializer):
 
 
 class HistorySerializer(serializers.Serializer):
-    """GET /scrutiny/{case_id}/history/."""
+    """GET /scrutiny/{case_id}/history/ and the filer's /cases/{case_id}/scrutiny-history/."""
 
     summary = serializers.CharField()
     entries = HistoryEntrySerializer(many=True)
+
+
+class CorrectionItemSerializer(serializers.Serializer):
+    """A raised item, as the filing side corrects it."""
+
+    id = serializers.UUIDField()
+    target_type = serializers.ChoiceField(choices=FlagTarget.choices)
+    target_ref = serializers.CharField()
+    target_label = serializers.CharField()
+    section_id = serializers.CharField()
+    reason_code = serializers.CharField()
+    note = serializers.CharField()
+    status = serializers.ChoiceField(choices=FlagStatus.choices)
+    auto_marked_by = serializers.UUIDField(allow_null=True)
+    response = FlagResponseSerializer(allow_null=True)
+    open = serializers.BooleanField(help_text="Whether its target may be changed now.")
+
+
+class CorrectionsSerializer(serializers.Serializer):
+    """GET /cases/{case_id}/corrections/."""
+
+    open = serializers.BooleanField()
+    mode = serializers.ChoiceField(choices=("MARKED", "ALL"), allow_null=True)
+    round = serializers.IntegerField(allow_null=True)
+    comment = serializers.CharField(allow_blank=True)
+    flags = CorrectionItemSerializer(many=True)
+    document_issues = CorrectionItemSerializer(many=True)
+
+
+class ResubmittedSerializer(serializers.Serializer):
+    """Where a resubmitted case went."""
+
+    case_status = serializers.ChoiceField(choices=CaseStatus.choices)
+    workflow_version = serializers.IntegerField()
 
 
 class TitleResultSerializer(TitleSerializer):

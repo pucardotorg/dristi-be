@@ -7,12 +7,13 @@ from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
 from apps.api.errors import BusinessError
-from apps.cases.models import Case, CaseStatus
-from apps.scrutiny import permissions, selectors
-from apps.scrutiny.enums import ResponseKind, RoundStage
-from apps.scrutiny.services import rounds
+from apps.cases.models import Case, CaseEvidence, CaseStatus
+from apps.cases.services.case_types import EvidenceType
+from apps.scrutiny import case_selectors, permissions, selectors
+from apps.scrutiny.enums import FlagTarget, RoundStage
+from apps.scrutiny.services import flags, responses, rounds
 
-from .factories import answer, code, draft_field, enter, make_case, open_round
+from .factories import code, draft_field, enter, make_case, make_user, open_round
 
 pytestmark = pytest.mark.django_db
 
@@ -25,7 +26,11 @@ def list_rows(user, **kwargs):
 def send_back_and_resubmit(case, officer, filer, explain=True):
     flag = draft_field(case, officer, "CHQ-3[0]", note="Amount reads ₹50,25,000.")[0]
     rounds.send_back(case.pk, officer)
-    answer(flag, filer, ResponseKind.EXPLAINED if explain else ResponseKind.CORRECTED)
+    if explain:
+        responses.explain(case.pk, flag.pk, filer, "The amount is right.")
+    else:
+        responses.record_field_change(case.pk, "CHQ-3[0]", 5205000, 5025000, filer)
+    responses.submit_correction(case.pk, filer)
     enter(case, CaseStatus.UNDER_SCRUTINY)
     return flag
 
@@ -49,6 +54,12 @@ def test_case_never_in_scrutiny_is_not_found(officer, filer):
     draft = Case.objects.create(case_type=CaseType.CHEQUE_BOUNCE, created_by=filer)
     with pytest.raises(NotFound):
         permissions.court_case(draft.pk, officer)
+
+
+def test_filing_side_reads_only_its_own_case(case, filer, officer):
+    assert permissions.filing_case(case.pk, filer) == case
+    with pytest.raises(NotFound):
+        permissions.filing_case(case.pk, make_user())
 
 
 # Scrutiny list (#7.1)
@@ -144,6 +155,33 @@ def test_detail_shows_carried_items_with_their_history(case, officer, filer):
     assert detail["round"]["summary"].startswith("2 rounds · 1 item open since ")
 
 
+# Registration (#7.3, #7.4)
+
+
+def test_registration_list_and_detail(officer, registerer, filer, establishment):
+    # Presented after the cheque's validity (SCR-08a).
+    case = make_case(filer, establishment, cheque_date="2026-01-01", presented="2026-05-02")
+    rounds.forward(case.pk, officer)
+    rows = selectors.registration_rows(selectors.registration_list(registerer))
+    assert (rows[0]["case_id"], rows[0]["courtroom"]["name"]) == (case.pk, "Establishment")
+
+    round_ = open_round(case)
+    detail = selectors.registration_detail(case, round_, registerer)
+    assert detail["scrutiny"]["cleared_by"]["name"] == "Biju B"
+    assert detail["scrutiny"]["round_count"] == 1
+    presented = next(line for line in detail["timeline"] if line["step"] == "PRESENTED")
+    assert (presented["qualifier"], presented["warning"]) == (
+        "beyond 3 months of the cheque date",
+        True,
+    )
+    assert detail["allowed_actions"] == ["start", "register", "send_back", "edit_title"]
+
+
+def test_registration_detail_needs_a_forwarded_case(case, officer):
+    with pytest.raises(NotFound):
+        selectors.registration_detail(case, open_round(case), officer)
+
+
 # History (#7.5)
 
 
@@ -165,12 +203,61 @@ def test_history_tells_the_rounds(case, officer, filer):
     assert "Scrutiny started" in [entry["text"] for entry in filer_view["entries"]]
 
 
-def test_closed_row_follows_the_round_decision(officer_registerer, filer, establishment):
+# Filer correction view (#7.6)
+
+
+def test_corrections_group_items_and_say_what_is_open(case, officer, filer, document):
+    flags.draft(
+        case.pk,
+        officer,
+        target_type=FlagTarget.DOCUMENT,
+        target_ref=str(document.pk),
+        reason_code="BLURRY_UNREADABLE",
+    )
+    draft_field(case, officer, "JUR-10")
+    assert selectors.corrections(case)["open"] is False
+    rounds.send_back(case.pk, officer)
+    case.refresh_from_db()
+    view = selectors.corrections(case)
+    assert (view["open"], view["mode"], view["round"]) == (True, "MARKED", 1)
+    assert [item["target_ref"] for item in view["flags"]] == ["JUR-10"]
+    assert view["flags"][0]["open"] is True
+    assert view["document_issues"][0]["target_ref"] == str(document.pk)
+
+
+def test_corrections_after_registration_send_back(case, officer, registerer):
+    rounds.forward(case.pk, officer)
+    rounds.registration_send_back(case.pk, registerer, "Re-check the affidavit.")
+    case.refresh_from_db()
+    view = selectors.corrections(case)
+    assert (view["mode"], view["comment"]) == ("ALL", "Re-check the affidavit.")
+
+
+def test_timeline_has_no_qualifier_for_a_missing_date(officer, filer, establishment):
+    case = make_case(filer, establishment)
+    CaseEvidence.objects.filter(case=case, evidence_type=EvidenceType.RETURN_MEMO).delete()
+    lines = {
+        line["step"]: line
+        for line in case_selectors.get_registration_timeline(case, None, None, timezone.localdate())
+    }
+    assert (lines["PRESENTED"]["qualifier"], lines["NOTICE_SENT"]["qualifier"]) == (None, None)
+    assert lines["COMPLAINT_FILED"]["qualifier"] == "within 1 month of the cause of action"
+
+
+def test_rows_for_a_registration_send_back_and_a_registration(
+    case, officer, registerer, filer, establishment
+):
+    rounds.forward(case.pk, officer)
+    rounds.registration_send_back(case.pk, registerer, "Re-check the affidavit.")
+    _, rows = list_rows(officer, tab="advocate")
+    assert (rows[0]["stage"], rows[0]["reason"]) == ("SENT_BACK", "Sent back at registration")
+
     registered = make_case(filer, establishment, filing_number="F/EST/2026/00007")
-    rounds.register_at_scrutiny(registered.pk, officer_registerer)
+    rounds.forward(registered.pk, officer)
+    rounds.register(registered.pk, registerer)
     # The row follows the round's decision, not the case status.
     Case.objects.filter(pk=registered.pk).update(status=CaseStatus.UNDER_SCRUTINY)
-    _, rows = list_rows(officer_registerer, tab="closed")
+    _, rows = list_rows(officer, tab="closed")
     assert [(row["stage"], row["reason"]) for row in rows] == [
         ("REGISTERED", f"CC/1/{timezone.now().year}")
     ]

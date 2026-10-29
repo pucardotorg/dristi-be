@@ -14,17 +14,17 @@ from apps.scrutiny.enums import (
     DocumentIssue,
     FlagStatus,
     FlagTarget,
+    ResponseKind,
     RoundDecision,
     RoundStage,
     RoutingReason,
 )
 from apps.scrutiny.models import ScrutinyRound
-from apps.scrutiny.services import flags, rounds
+from apps.scrutiny.services import flags, responses, rounds
 
 from .factories import (
     add_cheque,
     add_courtroom,
-    answer,
     code,
     draft_field,
     enter,
@@ -187,10 +187,20 @@ def test_send_back_raises_drafts_and_opens_scope(case, officer):
     assert scope["required"] == ["JUR-11", "JUR-12"]
 
 
-def test_resubmission_carries_and_resolves(case, officer, filer):
+def test_correction_round_trip(case, officer, filer):
     flag = draft_field(case, officer, "CHQ-3[0]")[0]
     rounds.send_back(case.pk, officer)
-    answer(flag, filer)
+    with pytest.raises(BusinessError) as excinfo:
+        responses.submit_correction(case.pk, filer)
+    assert code(excinfo) == "E09012"
+    with pytest.raises(BusinessError) as excinfo:
+        responses.explain(case.pk, flag.pk, filer, " ")
+    assert (code(excinfo), field(excinfo)) == ("E09011", "note")
+    responses.explain(case.pk, flag.pk, filer, "The amount is right.")
+    responses.submit_correction(case.pk, filer)
+    case.refresh_from_db()
+    assert case.status == CaseStatus.PENDING_SIGN
+
     enter(case, CaseStatus.UNDER_SCRUTINY)
     second = open_round(case)
     assert (second.number, second.routing_reason) == (2, RoutingReason.RESUBMITTED)
@@ -203,6 +213,30 @@ def test_resubmission_carries_and_resolves(case, officer, filer):
     flags.resolve(case.pk, carried.pk, officer)
     flag.refresh_from_db()
     assert flag.status == FlagStatus.RESOLVED
+
+
+def test_field_change_answers_the_section_flag(case, officer, filer):
+    flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="CHQ", note="x")
+    rounds.send_back(case.pk, officer)
+    response = responses.record_field_change(case.pk, "CHQ-3[0]", 5205000, 5025000, filer)
+    assert (response.kind, response.value_after, response.flag.status) == (
+        ResponseKind.CORRECTED,
+        5025000,
+        FlagStatus.RESPONDED,
+    )
+
+
+def test_document_replacement_answers_its_flag(case, officer, filer, document):
+    flags.draft(
+        case.pk,
+        officer,
+        target_type=FlagTarget.DOCUMENT,
+        target_ref=str(document.pk),
+        reason_code=DocumentIssue.PAGE_MISSING,
+    )
+    rounds.send_back(case.pk, officer)
+    response = responses.record_document_replaced(case.pk, document.pk, document.pk, filer)
+    assert response.kind == ResponseKind.REUPLOADED
 
 
 def test_resolve_needs_a_carried_draft(case, officer):
@@ -237,10 +271,11 @@ def test_courtroom_required_when_there_are_several(case, officer, establishment)
     assert (registration.stage, registration.courtroom_id) == (RoundStage.REGISTRATION, first.pk)
 
 
-def test_open_items_travel_with_the_case(case, officer, filer):
+def test_open_items_travel_with_the_case(case, officer, registerer, filer):
     flag = draft_field(case, officer, "CHQ-3[0]")[0]
     rounds.send_back(case.pk, officer)
-    answer(flag, filer)
+    responses.explain(case.pk, flag.pk, filer, "The amount is right.")
+    responses.submit_correction(case.pk, filer)
     enter(case, CaseStatus.UNDER_SCRUTINY)
     draft_field(case, officer, "CHQ-1[0]")  # never sent: withdrawn on forward
     with pytest.raises(BusinessError) as excinfo:
@@ -252,6 +287,13 @@ def test_open_items_travel_with_the_case(case, officer, filer):
 
     registration = open_round(case)
     assert registration.flags.get().target_ref == "CHQ-3[0]"
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.register(case.pk, registerer)
+    assert code(excinfo) == "E09006"
+    rounds.register(case.pk, registerer, acknowledge_open_items=True)
+    case.refresh_from_db()
+    assert case.status == CaseStatus.REGISTERED
+    assert case.case_number == f"CC/1/{timezone.now().year}"
 
 
 def test_register_at_scrutiny(case, officer_registerer):
@@ -271,6 +313,27 @@ def test_registration_type_required_when_there_are_several(case, officer, monkey
         rounds.forward(case.pk, officer)
     assert (code(excinfo), field(excinfo)) == ("E09018", "registration_type")
     assert rounds.forward(case.pk, officer, registration_type="ECR").registration_type == "ECR"
+
+
+def test_registration_send_back_opens_everything(case, officer, registerer, filer):
+    rounds.forward(case.pk, officer)
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.registration_send_back(case.pk, registerer, " ")
+    assert (code(excinfo), field(excinfo)) == ("E09010", "comment")
+    round_ = rounds.registration_send_back(case.pk, registerer, "Re-check the affidavit.")
+    case.refresh_from_db()
+    assert (case.status, round_.comment) == (
+        CaseStatus.PENDING_CORRECTION,
+        "Re-check the affidavit.",
+    )
+    assert ports.correction_scope(case)["mode"] == "ALL"
+    with pytest.raises(BusinessError) as excinfo:
+        responses.submit_correction(case.pk, filer)
+    assert code(excinfo) == "E09012"
+    responses.record_field_change(case.pk, "CHQ-3[0]", 1, 2, filer)
+    responses.submit_correction(case.pk, filer)
+    enter(case, CaseStatus.UNDER_SCRUTINY)
+    assert open_round(case).routing_reason == RoutingReason.RESUBMITTED
 
 
 def test_set_title(case, officer):

@@ -1,7 +1,7 @@
-"""Read models: the scrutiny list, the detail and history (spec 0024 #7).
+"""Read models: the lists, the details, history and the filer's correction view (spec 0024 #7).
 
-The list is split in two: ``scrutiny_list`` returns the filtered, ordered rounds and
-the tab counts, for the view to paginate; ``scrutiny_rows`` turns one page of rounds
+Lists are split in two: ``*_list`` returns the filtered, ordered rounds and
+the tab counts, for the view to paginate; ``*_rows`` turns one page of rounds
 into rows with a fixed number of queries (case columns from one batched
 summary call, flag counts from one aggregate).
 """
@@ -12,8 +12,9 @@ from collections import defaultdict
 from django.db.models import Case as Choice
 from django.db.models import Count, DateTimeField, Exists, F, OuterRef, Q, Subquery, When
 from django.utils import timezone
+from rest_framework.exceptions import NotFound
 
-from apps.cases.models import CaseParticipant
+from apps.cases.models import CaseParticipant, CaseStatus
 from apps.core import services as configuration
 from apps.organizations.models import Organization
 
@@ -35,6 +36,11 @@ STAGE_LABELS = {
     "REGISTERED": "Registered",
 }
 LIST_STAGES = tuple(STAGE_LABELS)
+# ``waiting_days`` ascending is the most recent first.
+REGISTRATION_ORDERING = {
+    "-waiting_days": ("case__filed_at", "case__filing_number"),
+    "waiting_days": ("-case__filed_at", "case__filing_number"),
+}
 RESPONSE_VERBS = {
     ResponseKind.CORRECTED: "corrected",
     ResponseKind.REUPLOADED: "re-uploaded",
@@ -352,7 +358,47 @@ def scrutiny_rows(rounds, today=None):
     return rows
 
 
-# Detail (#7.2)
+def registration_list(user, *, search="", ordering="-waiting_days", establishment_id=None):
+    """Return the open registration rounds for the Case registerer's list (#7.3)."""
+    rounds = ScrutinyRound.objects.filter(stage=RoundStage.REGISTRATION, decision="")
+    if establishment_id:
+        rounds = rounds.filter(establishment_id=establishment_id)
+    if search and search.strip():
+        rounds = _search(rounds, search.strip())
+    order = REGISTRATION_ORDERING.get(ordering, REGISTRATION_ORDERING["-waiting_days"])
+    return rounds.select_related("case").order_by(*order)
+
+
+def registration_rows(rounds, today=None):
+    """Return the list rows for one page of ``registration_list`` rounds."""
+    rounds = list(rounds)
+    today = today or timezone.localdate()
+    summaries = case_selectors.get_case_summaries({round_.case_id for round_ in rounds})
+    stats = _flag_stats([round_.pk for round_ in rounds])
+    rooms = Organization.objects.in_bulk({round_.courtroom_id for round_ in rounds} - {None})
+    rows = []
+    for round_ in rounds:
+        summary = summaries[round_.case_id]
+        room = rooms.get(round_.courtroom_id)
+        submitted = summary["submitted_at"]
+        rows.append(
+            {
+                "case_id": round_.case_id,
+                "case_name": summary["parties"],
+                "filing_number": summary["filing_number"],
+                "advocates": summary["advocates"],
+                "days_since_submitted": (today - submitted).days if submitted else None,
+                "days_since_cleared": (today - _local(round_.created_at)).days,
+                "open_items": stats[round_.pk]["open"],
+                "courtroom": {"id": room.pk, "name": room.name} if room else None,
+                "registration_type": round_.registration_type,
+                "round": round_.number,
+            }
+        )
+    return rows
+
+
+# Details (#7.2, #7.4)
 
 
 def scrutiny_detail(case, round_, user, today=None):
@@ -415,6 +461,74 @@ def scrutiny_detail(case, round_, user, today=None):
     if ports.oath_required(case):
         detail["oaths"] = ports.oaths(case)
     return detail
+
+
+def registration_detail(case, round_, user, today=None):
+    """Return a forwarded case as the Case registerer sees it (#7.4)."""
+    today = today or timezone.localdate()
+    rounds = list(
+        ScrutinyRound.objects.filter(case=case)
+        .select_related("decided_by", "started_by")
+        .order_by("created_at")
+    )
+    scrutiny_rounds = [item for item in rounds if item.stage == RoundStage.SCRUTINY]
+    forwarded = next(
+        (
+            item
+            for item in reversed(scrutiny_rounds)
+            if item.decision == RoundDecision.FORWARDED and item.created_at < round_.created_at
+        ),
+        None,
+    )
+    if round_.stage != RoundStage.REGISTRATION or forwarded is None:
+        raise NotFound("No registration for this case.")
+    entered, cleared = _local(scrutiny_rounds[0].created_at), _local(forwarded.decided_at)
+    flags = _round_flags(round_)
+    return {
+        "case": {"id": case.pk, **_case_block(case)},
+        "summary": case_selectors.get_registration_summary(case),
+        "scrutiny": {
+            "cleared_by": _person(forwarded.decided_by),
+            "round_count": len(scrutiny_rounds),
+            "days_taken": (cleared - entered).days,
+            "rounds": [
+                _round_brief(item) for item in rounds if item.created_at < round_.created_at
+            ],
+        },
+        "timeline": case_selectors.get_registration_timeline(case, entered, cleared, today),
+        "courtroom": _courtroom(round_.courtroom_id),
+        "registration_type": round_.registration_type,
+        "registration_types": _choices(round_)["registration_types"],
+        "open_items": [flag_view(flag) for flag in flags if _is_carried_open(flag)],
+        "allowed_actions": allowed_actions(round_, ports.roles_held(user, round_.establishment_id)),
+        "workflow_version": ports.workflow_version(case),
+    }
+
+
+def _case_block(case):
+    summary = case_selectors.get_case_summary(case)
+    return {
+        "filing_number": summary["filing_number"],
+        "parties": summary["parties"],
+        "submitted_at": summary["submitted_at"],
+        "advocates": summary["advocates"],
+    }
+
+
+def _round_brief(round_):
+    return {
+        "id": round_.pk,
+        "stage": round_.stage,
+        "number": round_.number,
+        "started_by": _person(round_.started_by),
+        "decision": round_.decision,
+        "decided_by": _person(round_.decided_by),
+        "decided_at": round_.decided_at,
+        "item_count": round_.flags.filter(status__in=SENT, auto_marked_by__isnull=True).count()
+        if round_.decision == RoundDecision.SENT_BACK
+        else 0,
+        "open_items_at_decision": round_.open_items_at_decision,
+    }
 
 
 # History (#7.5)
@@ -544,3 +658,59 @@ def _entry(kind, at, text, round_=None):
         "round": round_.number if round_ else None,
         "stage": round_.stage if round_ else None,
     }
+
+
+# Filer correction view (#7.6)
+
+
+def corrections(case):
+    """Return the items of the latest send back, as the filing side corrects them.
+
+    Grouped as the screen groups them: *Flags — advocate fixes* and *Document
+    issues — advocate re-uploads*; for a registration send back, the Case
+    registerer's comment instead. ``open`` says whether the case is still in
+    correction, and per item whether its target may be changed.
+    """
+    round_ = ScrutinyRound.objects.filter(case=case).order_by("-created_at").first()
+    empty = {
+        "open": False,
+        "mode": None,
+        "round": None,
+        "comment": "",
+        "flags": [],
+        "document_issues": [],
+    }
+    if round_ is None or round_.decision != RoundDecision.SENT_BACK:
+        return empty
+    in_correction = case.status == CaseStatus.PENDING_CORRECTION
+    view = {**empty, "open": in_correction, "round": round_.number}
+    if round_.stage == RoundStage.REGISTRATION:
+        return {**view, "mode": "ALL", "comment": round_.comment}
+    scope = (ports.correction_scope(case) or {}) if in_correction else {}
+    scoped = {
+        FlagTarget.FIELD: set(scope.get("fields", [])),
+        FlagTarget.SECTION: set(scope.get("sections", [])),
+        FlagTarget.DOCUMENT: set(scope.get("documents", [])),
+        FlagTarget.OATH: set(scope.get("oaths", [])),
+    }
+    view["mode"] = "MARKED"
+    for flag in _round_flags(round_):
+        if flag.status not in SENT:
+            continue
+        response = _last_response(flag)
+        item = {
+            "id": flag.pk,
+            "target_type": flag.target_type,
+            "target_ref": flag.target_ref,
+            "target_label": flag.target_label,
+            "section_id": flag.section_id,
+            "reason_code": flag.reason_code,
+            "note": flag.note,
+            "status": flag.status,
+            "auto_marked_by": flag.auto_marked_by_id,
+            "response": response_view(response) if response else None,
+            "open": flag.target_ref in scoped[flag.target_type],
+        }
+        group = "document_issues" if flag.target_type == FlagTarget.DOCUMENT else "flags"
+        view[group].append(item)
+    return view

@@ -9,6 +9,7 @@ check when it is taken (``403 E09008``).
 from rest_framework.exceptions import NotFound
 
 from apps.api.errors import BusinessError
+from apps.cases.models import Case
 
 from . import errors, ports
 from .models import ScrutinyRound
@@ -42,3 +43,11 @@ def court_case(case_id, user):
     if latest is None or not court_roles(user, latest.establishment_id):
         raise NotFound("Case not found.")
     return latest.case, latest
+
+
+def filing_case(case_id, user):
+    """Return the case for its filing side — filer, complainant, POA holder, their advocate."""
+    try:
+        return ports.filing_side_case(case_id, user)
+    except Case.DoesNotExist as exc:
+        raise NotFound("Case not found.") from exc

@@ -1,4 +1,4 @@
-"""Scrutiny endpoints (spec 0024 #8, #10 API)."""
+"""Scrutiny, registration and filer-correction endpoints (spec 0024 #8, #10 API)."""
 
 import pytest
 from rest_framework.test import APIClient
@@ -7,7 +7,7 @@ from apps.cases.models import CaseStatus
 from apps.scrutiny import ports
 from apps.scrutiny.enums import FlagStatus, FlagTarget
 
-from .factories import add_courtroom, answer, draft_field, open_round
+from .factories import add_courtroom, draft_field, make_user, open_round
 
 pytestmark = pytest.mark.django_db
 
@@ -30,6 +30,14 @@ def url(case, *parts):
     return "/".join(["/api/v1/scrutiny", str(case.pk), *parts]) + "/"
 
 
+def registration_url(case, *parts):
+    return "/".join(["/api/v1/registration", str(case.pk), *parts]) + "/"
+
+
+def filer_url(case, *parts):
+    return "/".join(["/api/v1/cases", str(case.pk), *parts]) + "/"
+
+
 def version(case):
     case.refresh_from_db()
     return str(ports.workflow_version(case))
@@ -49,8 +57,9 @@ def test_scrutiny_list(case, officer):
 
 
 def test_lists_need_a_court_role(case, filer):
-    response = client_for(filer).get("/api/v1/scrutiny/")
-    assert (response.status_code, error_codes(response)) == (403, {None: ["E09008"]})
+    for path in ("/api/v1/scrutiny/", "/api/v1/registration/"):
+        response = client_for(filer).get(path)
+        assert (response.status_code, error_codes(response)) == (403, {None: ["E09008"]})
 
 
 def test_list_refuses_an_unknown_tab(case, officer):
@@ -189,10 +198,80 @@ def test_start_and_resolve(case, officer, filer):
     flag = draft_field(case, officer, "CHQ-3[0]")[0]
     client = client_for(officer)
     client.post(url(case, "send-back"))
-    answer(flag, filer)
+    client_for(filer).post(
+        filer_url(case, "corrections", str(flag.pk), "explain"), {"note": "Right."}
+    )
+    client_for(filer).post(filer_url(case, "corrections", "submit"))
     enter_scrutiny_again(case, officer)
     response = client.post(url(case, "start"))
     assert (response.status_code, response.json()["started_by"]["name"]) == (200, "Biju B")
     carried = open_round(case).flags.get()
     response = client.post(url(case, "flags", str(carried.pk), "resolve"))
     assert (response.status_code, response.json()["status"]) == (200, FlagStatus.RESOLVED)
+
+
+# Registration
+
+
+def test_registration_list_detail_and_register(case, officer, registerer):
+    client_for(officer).post(url(case, "forward"), {}, format="json")
+    client = client_for(registerer)
+    listed = client.get("/api/v1/registration/").json()
+    assert [row["case_id"] for row in listed["results"]] == [str(case.pk)]
+    detail = client.get(registration_url(case))
+    assert detail.status_code == 200
+    assert detail.json()["allowed_actions"] == ["start", "register", "send_back", "edit_title"]
+    response = client.post(registration_url(case, "register"), {}, format="json")
+    assert (response.status_code, response.json()["case_status"]) == (200, CaseStatus.REGISTERED)
+
+
+def test_registration_detail_of_an_unforwarded_case(case, registerer):
+    response = client_for(registerer).get(registration_url(case))
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ({"comment": " "}, {"comment": ["E09010"]}),
+        ({"comment": "x", "flags": []}, {"flags": ["E09010"]}),
+    ],
+)
+def test_registration_send_back_takes_one_comment(case, officer, registerer, body, expected):
+    client_for(officer).post(url(case, "forward"), {}, format="json")
+    response = client_for(registerer).post(registration_url(case, "send-back"), body, format="json")
+    assert (response.status_code, error_codes(response)) == (400, expected)
+
+
+# The filing side
+
+
+def test_filer_corrects_and_resubmits(case, officer, filer):
+    flag = draft_field(case, officer, "CHQ-3[0]")[0]
+    client_for(officer).post(url(case, "send-back"))
+    client = client_for(filer)
+    view = client.get(filer_url(case, "corrections")).json()
+    assert (view["open"], view["mode"], view["flags"][0]["id"]) == (True, "MARKED", str(flag.pk))
+
+    response = client.post(filer_url(case, "corrections", "submit"))
+    assert (response.status_code, error_codes(response)) == (409, {None: ["E09012"]})
+    explain = filer_url(case, "corrections", str(flag.pk), "explain")
+    response = client.post(explain, {"note": " "})
+    assert error_codes(response) == {"note": ["E09011"]}
+    response = client.post(explain, {"note": "The amount is right."})
+    assert (response.status_code, response.json()["contested"]) == (201, True)
+    response = client.post(filer_url(case, "corrections", "submit"))
+    assert (response.status_code, response.json()["case_status"]) == (200, CaseStatus.PENDING_SIGN)
+    response = client.post(filer_url(case, "corrections", "submit"))
+    assert error_codes(response) == {None: ["E09001"]}
+
+
+def test_filer_history_and_access(case, officer, filer):
+    rounds_started = client_for(officer).post(url(case, "start"))
+    assert rounds_started.status_code == 200
+    response = client_for(filer).get(filer_url(case, "scrutiny-history"))
+    texts = [entry["text"] for entry in response.json()["entries"]]
+    assert "Scrutiny started" in texts
+    stranger = client_for(make_user())
+    for path in (filer_url(case, "corrections"), filer_url(case, "scrutiny-history")):
+        assert stranger.get(path).status_code == 404

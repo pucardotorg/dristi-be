@@ -1,4 +1,4 @@
-"""Scrutiny API views (spec 0024 #8).
+"""Scrutiny, registration and filer-correction API views (spec 0024 #8).
 
 Views stay thin: each finds the case for the caller (``permissions``), hands
 the action to a service or the read to ``selectors``, and renders the result.
@@ -12,6 +12,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.api.errors import BusinessError
 from apps.api.schema import error_responses
@@ -19,11 +20,20 @@ from apps.api.schema import error_responses
 from . import errors, permissions, ports, selectors
 from .enums import RoundStage
 from .serializers import (
+    CorrectionsSerializer,
+    ExplainSerializer,
     FlagCreateSerializer,
+    FlagResponseSerializer,
     FlagSerializer,
     FlagUpdateSerializer,
     HistorySerializer,
     MoveOnSerializer,
+    RegisterSerializer,
+    RegistrationDetailSerializer,
+    RegistrationListQuerySerializer,
+    RegistrationRowSerializer,
+    RegistrationSendBackSerializer,
+    ResubmittedSerializer,
     RoundSerializer,
     ScrutinyDecisionSerializer,
     ScrutinyDetailSerializer,
@@ -32,7 +42,7 @@ from .serializers import (
     TitleResultSerializer,
     TitleSerializer,
 )
-from .services import flags, rounds
+from .services import flags, responses, rounds
 
 UUID_PATTERN = "[0-9a-fA-F-]{36}"
 
@@ -316,3 +326,160 @@ class ScrutinyViewSet(viewsets.GenericViewSet):
         data = _valid(TitleSerializer, request.data)
         rounds.set_title(case_id, request.user, **data)
         return Response(TitleResultSerializer(data).data)
+
+
+@extend_schema(tags=["registration"])
+class RegistrationViewSet(viewsets.GenericViewSet):
+    """The Case registerer's list, detail and decisions (#8.2)."""
+
+    lookup_field = "case_id"
+    lookup_value_regex = UUID_PATTERN
+    serializer_class = RegistrationRowSerializer
+
+    @extend_schema(
+        parameters=[RegistrationListQuerySerializer],
+        responses=error_responses(errors.ROLE_REQUIRED),
+    )
+    def list(self, request):
+        """Forwarded cases waiting to be registered, longest waiting first."""
+        query = _valid(RegistrationListQuerySerializer, request.query_params)
+        permissions.require_court_reader(request.user, query["establishment"])
+        found = selectors.registration_list(
+            request.user,
+            search=query["search"],
+            ordering=query["ordering"],
+            establishment_id=query["establishment"],
+        )
+        page = self.paginate_queryset(found)
+        rows = selectors.registration_rows(page)
+        return self.get_paginated_response(RegistrationRowSerializer(rows, many=True).data)
+
+    @extend_schema(responses=RegistrationDetailSerializer)
+    def retrieve(self, request, case_id=None):
+        """A forwarded case: summary, scrutiny, timeline and open items (#7.4)."""
+        case, round_ = permissions.court_case(case_id, request.user)
+        detail = selectors.registration_detail(case, round_, request.user)
+        return _versioned(RegistrationDetailSerializer(detail).data, detail["workflow_version"])
+
+    @extend_schema(request=None, responses={200: RoundSerializer, **error_responses(*ROUND_ERRORS)})
+    @action(detail=True, methods=["post"])
+    def start(self, request, case_id=None):
+        """Start, or take over, the open registration round."""
+        permissions.court_case(case_id, request.user)
+        round_ = rounds.start(case_id, request.user, RoundStage.REGISTRATION)
+        return Response(RoundSerializer(round_).data)
+
+    @extend_schema(
+        request=RegisterSerializer,
+        parameters=[IF_MATCH],
+        responses={
+            200: ScrutinyDecisionSerializer,
+            **error_responses(
+                *DECISION_ERRORS,
+                errors.REGISTRATION_TYPE_REQUIRED.example(field="registration_type"),
+                errors.OPEN_ITEMS_NOT_ACKNOWLEDGED,
+            ),
+        },
+    )
+    @action(detail=True, methods=["post"])
+    def register(self, request, case_id=None):
+        """Register the case; the type chosen at Forward is kept unless changed (#6.1)."""
+        permissions.court_case(case_id, request.user)
+        data = _valid(RegisterSerializer, request.data)
+        round_ = rounds.register(
+            case_id,
+            request.user,
+            registration_type=data["registration_type"],
+            acknowledge_open_items=data["acknowledge_open_items"],
+            expected_version=expected_version(request),
+        )
+        return _decided(round_)
+
+    @extend_schema(
+        request=RegistrationSendBackSerializer,
+        parameters=[IF_MATCH],
+        responses={
+            200: ScrutinyDecisionSerializer,
+            **error_responses(
+                *DECISION_ERRORS,
+                errors.SEND_BACK_COMMENT_REQUIRED.example(field="comment"),
+                errors.SEND_BACK_COMMENT_REQUIRED.example(field="flags"),
+            ),
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="send-back")
+    def send_back(self, request, case_id=None):
+        """Send the case to the filer with one comment; everything but the oath opens (#6.2)."""
+        permissions.court_case(case_id, request.user)
+        data = _valid(RegistrationSendBackSerializer, request.data)
+        round_ = rounds.registration_send_back(
+            case_id, request.user, data["comment"], expected_version=expected_version(request)
+        )
+        return _decided(round_)
+
+
+# The filing side (#8.3)
+
+
+class CorrectionsView(APIView):
+    """GET /cases/{case_id}/corrections/ — what the latest send back asks for (#7.6)."""
+
+    @extend_schema(responses=CorrectionsSerializer)
+    def get(self, request, case_id):
+        """The raised items, grouped as the screen groups them, or the registerer's comment."""
+        case = permissions.filing_case(case_id, request.user)
+        return Response(CorrectionsSerializer(selectors.corrections(case)).data)
+
+
+class CorrectionExplainView(APIView):
+    """POST /cases/{case_id}/corrections/{flag_id}/explain/ — answer without a change (#5.2)."""
+
+    @extend_schema(
+        request=ExplainSerializer,
+        responses={
+            201: FlagResponseSerializer,
+            **error_responses(
+                errors.ROUND_NOT_OPEN, errors.EXPLANATION_REQUIRED.example(field="note")
+            ),
+        },
+    )
+    def post(self, request, case_id, flag_id):
+        """Explain a raised item; the court sees it as contested."""
+        permissions.filing_case(case_id, request.user)
+        data = _valid(ExplainSerializer, request.data)
+        response = responses.explain(case_id, flag_id, request.user, data["note"])
+        return Response(
+            FlagResponseSerializer(selectors.response_view(response)).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CorrectionSubmitView(APIView):
+    """POST /cases/{case_id}/corrections/submit/ — resubmit the corrected case (#5.3)."""
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: ResubmittedSerializer,
+            **error_responses(errors.ROUND_NOT_OPEN, errors.NOTHING_TO_RESUBMIT),
+        },
+    )
+    def post(self, request, case_id):
+        """Send the case to be signed again; unanswered items travel to re-scrutiny."""
+        permissions.filing_case(case_id, request.user)
+        case = responses.submit_correction(case_id, request.user)
+        return Response(
+            ResubmittedSerializer(
+                {"case_status": case.status, "workflow_version": ports.workflow_version(case)}
+            ).data
+        )
+
+
+class FilerHistoryView(APIView):
+    """GET /cases/{case_id}/scrutiny-history/ — the round timeline, for the filing side (#7.5)."""
+
+    @extend_schema(responses=HistorySerializer)
+    def get(self, request, case_id):
+        """The rounds and items, without court staff names."""
+        case = permissions.filing_case(case_id, request.user)
+        return Response(HistorySerializer(selectors.history(case, for_filer=True)).data)

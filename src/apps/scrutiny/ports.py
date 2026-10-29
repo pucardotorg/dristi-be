@@ -28,6 +28,7 @@ from django.utils import timezone
 from apps.api.errors import define
 from apps.cases.models import Case, CaseDocument, CaseEvidence, CaseStatus
 from apps.cases.services.case_types import EvidenceType, get_config
+from apps.cases.services.filing import get_viewable_case
 from apps.organizations.models import Organization
 
 from .enums import CourtRole, RoundStage
@@ -66,6 +67,11 @@ WORKFLOW_STALE = define(
 def workflow_version(case):
     """Return the case's version for ``If-Match``; 0011 will give its instance version."""
     return int(case.updated_at.timestamp() * 1_000_000)
+
+
+def filing_side_case(case_id, user):
+    """Return the case if ``user`` is on its filing side (``ROLE-01``–``ROLE-05``), or raise NotFound."""
+    return get_viewable_case(case_id, user)
 
 
 def move_case(case, status):

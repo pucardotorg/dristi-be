@@ -1,10 +1,10 @@
 """Stand-ins for the ``apps.cases`` selectors scrutiny reads (spec 0024 #1.1).
 
 ``get_case_summaries``, ``get_filing_view``, ``get_bundle``,
-``plugin.checklist`` and ``plugin.check_facts`` are not exposed by
-``apps.cases`` yet. These build the same shapes from the case's rows, so the
-read models of #7 work now; each is replaced by the cases function of the
-same name when it lands. Writes stay in ``ports``.
+``get_registration_summary``, ``plugin.checklist`` and ``plugin.check_facts``
+are not exposed by ``apps.cases`` yet. These build the same shapes from the
+case's rows, so the read models of #7 work now; each is replaced by the
+cases function of the same name when it lands. Writes stay in ``ports``.
 """
 
 import datetime
@@ -30,6 +30,7 @@ from . import ports
 PARTY_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.ACCUSED)
 # A cheque is valid for three months from its date (RBI; SCR-08a).
 CHEQUE_VALIDITY_MONTHS = 3
+NOTICE_WINDOW_DAYS = 30
 
 CHECKLIST = (
     "Names match across cheque, ID and notice",
@@ -244,4 +245,143 @@ def check_facts(case, today):
         "complainant_cin_or_pan_present": bool(
             institution and (institution.cin or institution.pan)
         ),
+    }
+
+
+def get_registration_summary(case):
+    """Return the *Register case* summary: parties, cheques, dishonour, notice, cause, prayer."""
+    records = _evidence(case)
+    detail = ports.detail(case)
+    jurisdiction = getattr(detail, "jurisdiction_limitation", {}) or {}
+    prayer = getattr(detail, "adr_other_prayer", {}) or {}
+    return {
+        "parties": get_case_summary(case)["parties"],
+        "cheques": [
+            {
+                "amount": record.get(EvidenceType.CHEQUE, {}).get("amount"),
+                "number": record.get(EvidenceType.CHEQUE, {}).get("cheque_number"),
+                "drawn_on": {
+                    "bank": record.get(EvidenceType.CHEQUE, {}).get("bank_name"),
+                    "branch": record.get(EvidenceType.CHEQUE, {}).get("bank_branch"),
+                },
+                "dishonour": {
+                    "presented_on": record.get(EvidenceType.RETURN_MEMO, {}).get(
+                        "presentation_date"
+                    ),
+                    "return_reason": record.get(EvidenceType.RETURN_MEMO, {}).get("return_reason"),
+                },
+                "demand_notice": {
+                    "mode": record.get(EvidenceType.LEGAL_DEMAND_NOTICE, {}).get("mode_of_service"),
+                    "tracking_number": record.get(EvidenceType.LEGAL_DEMAND_NOTICE, {}).get(
+                        "tracking_number"
+                    ),
+                    "replied": record.get(EvidenceType.LEGAL_DEMAND_NOTICE, {}).get(
+                        "accused_replied"
+                    ),
+                },
+            }
+            for record in records
+        ],
+        "cause_of_action": {
+            "jurisdiction": {
+                "bank_branch": jurisdiction.get("payee_bank_branch"),
+                "police_station": jurisdiction.get("bank_police_station"),
+            },
+            "other_complaints_pending": jurisdiction.get("other_complaints_pending"),
+        },
+        "prayer": {
+            "final_relief": prayer.get("final_relief"),
+            "interim_relief": prayer.get("interim_relief"),
+        },
+    }
+
+
+def get_registration_timeline(case, scrutiny_entered_on, cleared_on, today):
+    """Return the *Register case* timeline, one line per step and per cheque.
+
+    The statutory qualifier under a step takes ``warning`` only when the step
+    is outside its window (``SCR-08a``); no warning stops an action.
+    """
+    lines = []
+    jurisdiction = getattr(ports.detail(case), "jurisdiction_limitation", {}) or {}
+    for index, record in enumerate(_evidence(case)):
+        cheque = record.get(EvidenceType.CHEQUE, {})
+        memo = record.get(EvidenceType.RETURN_MEMO, {})
+        notice = record.get(EvidenceType.LEGAL_DEMAND_NOTICE, {})
+        dated, presented = _date(cheque.get("cheque_date")), _date(memo.get("presentation_date"))
+        returned, sent = _date(memo.get("return_date")), _date(notice.get("dispatch_date"))
+        late_presentation = bool(dated and presented and presented > _cheque_valid_until(dated))
+        late_notice = bool(
+            returned and sent and sent > returned + datetime.timedelta(days=NOTICE_WINDOW_DAYS)
+        )
+        lines += [
+            _line("CHEQUE_DATED", dated, index),
+            _line(
+                "PRESENTED",
+                presented,
+                index,
+                _qualifier(
+                    dated and presented,
+                    late_presentation,
+                    "within 3 months of the cheque date",
+                    "beyond 3 months of the cheque date",
+                ),
+                late_presentation,
+            ),
+            _line("RETURNED", returned, index),
+            _line(
+                "NOTICE_SENT",
+                sent,
+                index,
+                _qualifier(
+                    returned and sent,
+                    late_notice,
+                    "within 30 days of the return",
+                    "beyond 30 days of the return",
+                ),
+                late_notice,
+            ),
+            _line("NOTICE_SERVED", _date(notice.get("delivery_date")), index),
+        ]
+    filed, cause = _local_date(case.filed_at), _date(jurisdiction.get("cause_of_action_date"))
+    delayed = ports.delay_applicable(case, filed) if filed else False
+    lines += [
+        _line("CAUSE_OF_ACTION", cause),
+        _line(
+            "COMPLAINT_FILED",
+            filed,
+            None,
+            _qualifier(
+                filed and cause,
+                delayed,
+                "within 1 month of the cause of action",
+                "beyond 1 month of the cause of action",
+            ),
+            delayed,
+        ),
+        _line("SCRUTINY", scrutiny_entered_on),
+        _line(
+            "WAITING",
+            cleared_on,
+            None,
+            cleared_on and f"{(today - cleared_on).days} days since scrutiny cleared it",
+        ),
+    ]
+    return lines
+
+
+def _qualifier(measurable, late, within, beyond):
+    """Return the statutory qualifier, or None when either date it compares is missing."""
+    if not measurable:
+        return None
+    return beyond if late else within
+
+
+def _line(step, on, cheque_index=None, qualifier=None, warning=False):
+    return {
+        "step": step,
+        "date": on,
+        "cheque_index": cheque_index,
+        "qualifier": qualifier,
+        "warning": warning,
     }

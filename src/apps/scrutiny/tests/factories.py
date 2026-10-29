@@ -11,8 +11,8 @@ from apps.cases.models import Case, CaseEvidence, CaseStatus
 from apps.cases.services.case_types import CaseType, EvidenceType
 from apps.organizations.models import Organization, OrganizationType
 from apps.scrutiny import ports
-from apps.scrutiny.enums import FlagStatus, FlagTarget, ResponseKind
-from apps.scrutiny.models import ScrutinyFlagResponse, ScrutinyRound
+from apps.scrutiny.enums import FlagTarget
+from apps.scrutiny.models import ScrutinyRound
 from apps.scrutiny.services import flags
 from apps.users.models import RegistrationStatus
 
@@ -128,17 +128,3 @@ def draft_field(case, user, ref, note="Check this date.", **kwargs):
     return flags.draft(
         case.pk, user, target_type=FlagTarget.FIELD, target_ref=ref, note=note, **kwargs
     )
-
-
-def answer(flag, filer, kind=ResponseKind.EXPLAINED, note="The amount is right."):
-    """Answer a raised flag as the filer would: explained, or corrected (#5.2)."""
-    flag.refresh_from_db()
-    ScrutinyFlagResponse.objects.create(
-        flag=flag,
-        kind=kind,
-        note=note,
-        responded_by=filer,
-        responded_at=timezone.now(),
-    )
-    flag.status = FlagStatus.RESPONDED
-    flag.save()

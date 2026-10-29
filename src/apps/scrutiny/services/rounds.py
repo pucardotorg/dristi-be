@@ -308,6 +308,46 @@ def _acknowledged_open_items(round_, acknowledged):
     return count
 
 
+def register(
+    case_id, actor, *, registration_type="", acknowledge_open_items=False, expected_version=None
+):
+    """Register a forwarded case (#6.1): the type chosen at Forward may be changed, and is final."""
+    with transaction.atomic():
+        round_ = lock_open_round(case_id, RoundStage.REGISTRATION)
+        require_role(actor, round_, CourtRole.CASE_REGISTERER)
+        case = lock_case(case_id, expected_version)
+        type_code, stored_type = _choose_registration_type(
+            round_.establishment_id, registration_type, preselected=round_.registration_type
+        )
+        open_items = _acknowledged_open_items(round_, acknowledge_open_items)
+        round_.registration_type = stored_type
+        _decide(
+            round_,
+            actor,
+            RoundDecision.REGISTERED,
+            open_items_acknowledged=bool(open_items),
+            open_items_at_decision=open_items,
+        )
+        ports.register_case(case, type_code, actor)
+    return round_
+
+
+def registration_send_back(case_id, actor, comment, *, expected_version=None):
+    """Send a forwarded case to the filer with one comment, everything but the oath open (#6.2)."""
+    with transaction.atomic():
+        round_ = lock_open_round(case_id, RoundStage.REGISTRATION)
+        require_role(actor, round_, CourtRole.CASE_REGISTERER)
+        case = lock_case(case_id, expected_version)
+        comment = (comment or "").strip()
+        if not comment:
+            raise BusinessError(errors.SEND_BACK_COMMENT_REQUIRED, field="comment")
+        scope = {"mode": "ALL", "required": _delay_fields(case)}
+        ports.open_for_correction(case, scope, round_.id)
+        _decide(round_, actor, RoundDecision.SENT_BACK, comment=comment)
+        ports.move_case(case, CaseStatus.PENDING_CORRECTION)
+    return round_
+
+
 def set_title(case_id, actor, *, complainant, accused):
     """Change the parties' display names (*Edit case title*, #4.6) at either stage."""
     with transaction.atomic():
