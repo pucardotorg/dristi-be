@@ -39,9 +39,11 @@ from .models import (
 from .serializers import (
     AdvocateCreatedSerializer,
     AdvocateCreateSerializer,
+    CaseAffidavitSerializer,
     CaseDocumentSerializer,
     CaseDocumentUploadSerializer,
     CaseEvidenceSerializer,
+    CaseListItemSerializer,
     CaseParticipantSerializer,
     CasePreviewSerializer,
     CaseSerializer,
@@ -112,10 +114,10 @@ class CaseTypeDetailView(APIView):
 class CaseListView(generics.ListAPIView):
     """GET /cases — the caller's cases. POST /cases — start a draft session."""
 
-    serializer_class = CaseSerializer
+    serializer_class = CaseListItemSerializer
 
     def get_queryset(self):
-        """Return the caller's cases, optionally filtered by status."""
+        """Return the caller's cases, optionally filtered by status, with their list fields."""
         params = self.request.query_params
         if params.get("created_by") not in (None, "me"):
             raise api_errors.INVALID_CHOICE.validation_error(
@@ -131,7 +133,7 @@ class CaseListView(generics.ListAPIView):
                     {"status": [f"Unknown status: {', '.join(unknown)}."]}
                 )
             queryset = queryset.filter(status__in=statuses)
-        return queryset
+        return services.with_list_fields(queryset)
 
     @extend_schema(
         tags=TAGS,
@@ -248,6 +250,27 @@ class CaseDetailsSectionView(APIView):
             raise api_errors.INCORRECT_TYPE.validation_error({"data": ["Expected a JSON object."]})
         case = services.save_details_section(case_id, request.user, section, request.data)
         return Response({"case_id": case.id, "section": section, "data": request.data})
+
+
+@extend_schema(tags=TAGS)
+class CaseAffidavitView(APIView):
+    """PUT /cases/{case_id}/affidavit — replace the case's affidavit."""
+
+    @extend_schema(
+        tags=TAGS,
+        request=CaseAffidavitSerializer,
+        responses={200: CaseAffidavitSerializer, **error_responses(errors.CASE_NOT_EDITABLE)},
+    )
+    def put(self, request, case_id):
+        """Replace the affidavit; the first save on a draft creates the case."""
+        serializer = CaseAffidavitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        case = services.save_affidavit(
+            case_id, request.user, serializer.validated_data["affidavit"]
+        )
+        return Response(
+            CaseAffidavitSerializer({"case_id": case.id, **serializer.validated_data}).data
+        )
 
 
 @extend_schema_view(

@@ -18,7 +18,7 @@ from apps.cases.models import (
     ParticipantRole,
 )
 from apps.files.models import File
-from apps.parties.tests.factories import make_address, make_person
+from apps.parties.tests.factories import make_address, make_institution, make_person
 
 from .conftest import CHEQUE_INFO, error_codes
 
@@ -195,6 +195,53 @@ class TestModelRulesMatchTheApi:
 
         with pytest.raises(ValidationError, match="both a complainant and an accused"):
             participant(ParticipantRole.ACCUSED).full_clean()
+
+    def test_an_institution_needs_its_name_on_the_case(self, case):
+        participant = CaseParticipant(
+            case=case,
+            institution=make_institution(),
+            role=ParticipantRole.COMPLAINANT,
+            ordinal=1,
+            name_at_filing="ABC Pvt Ltd",
+            address=make_address(),
+        )
+
+        with pytest.raises(ValidationError) as exc:
+            participant.full_clean()
+
+        assert set(exc.value.message_dict) == {"entity_name_at_filing"}
+
+    def test_an_individual_cannot_have_institution_details(self, case):
+        participant = CaseParticipant(
+            case=case,
+            person=make_person(),
+            role=ParticipantRole.COMPLAINANT,
+            ordinal=1,
+            name_at_filing="Rajesh Kumar",
+            entity_name_at_filing="ABC Pvt Ltd",
+            address=make_address(),
+        )
+
+        with pytest.raises(ValidationError) as exc:
+            participant.full_clean()
+
+        assert set(exc.value.message_dict) == {"entity_name_at_filing"}
+
+    def test_only_a_complainant_has_a_party_in_person_affidavit(self, case):
+        participant = CaseParticipant(
+            case=case,
+            person=make_person(),
+            role=ParticipantRole.ACCUSED,
+            ordinal=1,
+            name_at_filing="Suresh Patel",
+            party_in_person_affidavit="<p>T</p>",
+            address=make_address(),
+        )
+
+        with pytest.raises(ValidationError) as exc:
+            participant.full_clean()
+
+        assert set(exc.value.message_dict) == {"party_in_person_affidavit"}
 
     def test_details_without_a_case_are_a_field_error_not_a_crash(self):
         with pytest.raises(ValidationError) as exc:

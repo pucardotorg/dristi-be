@@ -69,6 +69,9 @@ class Case(BaseModel, BaseAuditableModel):
     )
     filed_at = models.DateTimeField(null=True, blank=True)
     registered_at = models.DateTimeField(null=True, blank=True)
+    # The sworn affidavit filed with the complaint: rich-text editor output,
+    # stored as sent and sanitized wherever it is rendered.
+    affidavit = models.TextField(null=True, blank=True)
 
     class Meta(BaseModel.Meta):
         """Meta options."""
@@ -116,6 +119,9 @@ DESIGNATION_REQUIRED_MESSAGE = (
     "Enter the designation of the person acting for the accused institution."
 )
 DESIGNATION_NOT_ALLOWED_MESSAGE = "Only for a person acting for an institution."
+INSTITUTION_DETAILS_REQUIRED_MESSAGE = "Required for an institution."
+INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE = "Only for an institution."
+COMPLAINANT_ONLY_MESSAGE = "Only for a complainant."
 PARTY_ROLE_MESSAGE = "Must be a complainant or an accused."
 SAME_CASE_MESSAGE = "Must be a participant of the same case."
 ACTIVE_PARTICIPANT_MESSAGE = "Must be an active participant."
@@ -209,6 +215,11 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         null=True, blank=True, validators=[MaxValueValidator(MAX_AGE)]
     )
     designation_at_filing = models.CharField(max_length=128, null=True, blank=True)
+    # The person's, or the institution's when there is no person.
+    email_at_filing = models.EmailField(max_length=256, null=True, blank=True)
+    # Set exactly when there is an institution: its name as the filer entered
+    # it, which may differ from a reused institution's stored one.
+    entity_name_at_filing = models.CharField(max_length=256, null=True, blank=True)
     # The address for service of notice.
     address = models.ForeignKey(
         "address.Address",
@@ -221,6 +232,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     start_date = models.DateTimeField(default=timezone.now)
     end_date = models.DateTimeField(null=True, blank=True)
     is_party_in_person = models.BooleanField(default=False)
+    # A complainant's request to appear in person: rich-text editor output,
+    # stored as sent and sanitized wherever it is rendered.
+    party_in_person_affidavit = models.TextField(null=True, blank=True)
     has_signed = models.BooleanField(default=False)
     signature_document = models.ForeignKey(
         "files.File",
@@ -277,7 +291,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     def clean(self):
         """Apply the rules the database cannot express (spec 0020 §4.2, §14.1).
 
-        Every role but a witness needs an address for service of notice. While
+        Every role but a witness needs an address for service of notice. An
+        institution's name is recorded exactly when there is one, and only a
+        complainant has a party-in-person affidavit. While
         active, a person or an institution cannot hold one role twice on a
         case, nor be both a complainant and an accused there, nor appear in
         person while an advocate actively represents them. A participant
@@ -292,6 +308,18 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         if self.institution_id and self.role not in INSTITUTION_ROLES:
             errors["institution"] = _rule_error(
                 case_errors.INSTITUTION_NOT_ALLOWED, INSTITUTION_ROLE_MESSAGE
+            )
+        if self.party_in_person_affidavit and self.role != ParticipantRole.COMPLAINANT:
+            errors["party_in_person_affidavit"] = _rule_error(
+                case_errors.FIELD_NOT_APPLICABLE, COMPLAINANT_ONLY_MESSAGE
+            )
+        if self.institution_id and not self.entity_name_at_filing:
+            errors["entity_name_at_filing"] = _rule_error(
+                api_errors.REQUIRED, INSTITUTION_DETAILS_REQUIRED_MESSAGE
+            )
+        elif not self.institution_id and self.entity_name_at_filing:
+            errors["entity_name_at_filing"] = _rule_error(
+                case_errors.FIELD_NOT_APPLICABLE, INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE
             )
         if (
             self.role == ParticipantRole.ACCUSED

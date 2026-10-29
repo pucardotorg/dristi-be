@@ -13,6 +13,7 @@ from apps.parties.models import MAX_AGE, Gender, Institution, Person
 from . import errors
 from .models import (
     ADDRESS_REQUIRED_MESSAGE,
+    COMPLAINANT_ONLY_MESSAGE,
     DESIGNATION_NOT_ALLOWED_MESSAGE,
     DESIGNATION_REQUIRED_MESSAGE,
     INSTITUTION_ROLES,
@@ -105,6 +106,33 @@ class CaseSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = fields
+
+
+class CaseListItemSerializer(CaseSerializer):
+    """A case in GET /cases: its metadata, plus what the Drafts list shows.
+
+    Reads the annotations ``services.with_list_fields`` adds.
+    ``party_title`` is "first complainant vs first accused", by their party
+    names on the case (an institution's name when there is one), and ``null``
+    until both have been added.
+    ``cause_of_action_date`` is ``null`` until the details section holding it
+    is saved.
+    """
+
+    party_title = serializers.SerializerMethodField()
+    cause_of_action_date = serializers.DateField(read_only=True, allow_null=True)
+
+    class Meta(CaseSerializer.Meta):
+        """Meta options."""
+
+        fields = [*CaseSerializer.Meta.fields, "party_title", "cause_of_action_date"]
+        read_only_fields = fields
+
+    def get_party_title(self, case) -> str | None:
+        """First complainant vs first accused; null while either side has no one."""
+        if case.first_complainant_name and case.first_accused_name:
+            return f"{case.first_complainant_name} vs {case.first_accused_name}"
+        return None
 
 
 class CaseDocumentUploadSerializer(serializers.Serializer):
@@ -236,6 +264,16 @@ class CaseTypeDescriptionSerializer(serializers.Serializer):
     evidence_types = EvidenceTypeDescriptionSerializer(many=True)
 
 
+class CaseAffidavitSerializer(serializers.Serializer):
+    """Body and response of PUT /cases/{id}/affidavit: the case's affidavit.
+
+    Rich-text editor output, stored as sent; it replaces what was stored.
+    """
+
+    case_id = serializers.UUIDField(read_only=True)
+    affidavit = serializers.CharField()
+
+
 class DetailsSectionSerializer(serializers.Serializer):
     """Response of PUT /cases/{id}/details/{section}: the section as saved."""
 
@@ -333,6 +371,8 @@ class ParticipantCreateSerializer(PartySerializer):
     institution = InstitutionInputSerializer(required=False)
     designation = serializers.CharField(max_length=128, required=False, allow_null=True)
     is_party_in_person = serializers.BooleanField(default=False)
+    # Complainants only; rich-text editor output.
+    party_in_person_affidavit = serializers.CharField(required=False, allow_null=True)
 
     def validate(self, attrs):
         """Check the fields that only make sense together, for the role being added."""
@@ -365,6 +405,10 @@ class ParticipantCreateSerializer(PartySerializer):
             ]
         if "address" not in attrs:
             problems["address"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
+        if attrs.get("party_in_person_affidavit") and role != ParticipantRole.COMPLAINANT:
+            problems["party_in_person_affidavit"] = [
+                errors.coded(errors.FIELD_NOT_APPLICABLE, COMPLAINANT_ONLY_MESSAGE)
+            ]
         if problems:
             raise serializers.ValidationError(problems)
         return attrs
@@ -528,8 +572,14 @@ class ParticipantUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializ
         min_value=0, max_value=MAX_AGE, required=False, allow_null=True
     )
     designation_at_filing = serializers.CharField(max_length=128, required=False, allow_null=True)
+    email_at_filing = serializers.EmailField(max_length=256, required=False, allow_null=True)
+    # Institutions only. For an institution with no person acting for it,
+    # ``name_at_filing`` and ``entity_name_at_filing`` are kept the same.
+    entity_name_at_filing = serializers.CharField(max_length=256, required=False)
     address = AddressInputSerializer(required=False)
     is_party_in_person = serializers.BooleanField(required=False)
+    # Complainants only; ``null`` clears it.
+    party_in_person_affidavit = serializers.CharField(required=False, allow_null=True)
     additional_details = serializers.DictField(required=False)
     # Witnesses only (spec 0021 §4.3); they change the witness row.
     called_by_participant_id = serializers.UUIDField(required=False)
@@ -581,8 +631,11 @@ class CaseParticipantSerializer(serializers.ModelSerializer):
             "gender_at_filing",
             "age_at_filing",
             "designation_at_filing",
+            "email_at_filing",
+            "entity_name_at_filing",
             "address_id",
             "is_party_in_person",
+            "party_in_person_affidavit",
             "additional_details",
             "witness",
             "has_signed",
@@ -646,6 +699,7 @@ class CasePreviewSerializer(CaseSerializer):
 
         fields = [
             *CaseSerializer.Meta.fields,
+            "affidavit",
             "participants",
             "representations",
             "poa_mandates",

@@ -171,6 +171,25 @@ class TestAddComplainant:
         assert error_codes(response) == {"person.phone_number": ["E00001"]}
         assert not Case.objects.exists()
 
+    def test_a_party_in_person_affidavit_is_kept(self, client, draft):
+        response = add(
+            client,
+            draft,
+            person=PERSON,
+            is_party_in_person=True,
+            party_in_person_affidavit="<p>I request to appear in person.</p>",
+        )
+
+        assert response.status_code == 201
+        assert response.json()["party_in_person_affidavit"] == (
+            "<p>I request to appear in person.</p>"
+        )
+
+    def test_gender_outside_the_list_is_400(self, client, draft):
+        response = add(client, draft, person={**PERSON, "gender": "PREFER_NOT_TO_SAY"})
+
+        assert error_codes(response) == {"person.gender": ["E00005"]}
+
     def test_invalid_pincode_is_400_and_creates_nothing(self, client, draft):
         response = add(
             client, draft, person=PERSON, address={**ADDRESS_DEFAULTS, "pincode": "012345"}
@@ -184,24 +203,35 @@ class TestAddComplainant:
 
 class TestInstitutions:
     def test_an_institution_alone(self, client, draft):
-        response = add(client, draft, institution=INSTITUTION)
+        response = add(
+            client, draft, institution={**INSTITUTION, "email_address": "legal@abc.example"}
+        )
 
         body = response.json()
         assert response.status_code == 201
         assert body["person_id"] is None
         assert body["name_at_filing"] == "ABC Pvt Ltd"
         assert body["phone_number_at_filing"] == "080-22334455"
+        assert body["email_at_filing"] == "legal@abc.example"
+        assert body["entity_name_at_filing"] == "ABC Pvt Ltd"
         institution = Institution.objects.get(pk=body["institution_id"])
         assert str(institution.address_id) == body["address_id"]
 
     def test_a_person_acting_for_an_institution(self, client, draft):
         response = add(
-            client, draft, institution=INSTITUTION, person=PERSON, designation="Director"
+            client,
+            draft,
+            institution={**INSTITUTION, "email_address": "legal@abc.example"},
+            person={**PERSON, "email_address": "rajesh@example.com"},
+            designation="Director",
         )
 
         body = response.json()
         assert response.status_code == 201
         assert body["designation_at_filing"] == "Director"
+        assert body["name_at_filing"] == "Rajesh Kumar"
+        assert body["email_at_filing"] == "rajesh@example.com"
+        assert body["entity_name_at_filing"] == "ABC Pvt Ltd"
         person = Person.objects.get(pk=body["person_id"])
         assert str(person.institution_id) == body["institution_id"]
         assert person.designation == "Director"
@@ -237,6 +267,7 @@ class TestInstitutions:
         body = response.json()
         assert body["institution_id"] == str(existing.pk)
         assert body["name_at_filing"] == "ABC Pvt Ltd"
+        assert body["entity_name_at_filing"] == "ABC Pvt Ltd"
         assert "Stored Name" not in str(body)
         existing.refresh_from_db()
         assert existing.entity_name == "Stored Name Ltd"
@@ -352,6 +383,88 @@ class TestUpdate:
         assert response.json()["name_at_filing"] == "Rajesh S. Kumar"
         assert Person.objects.get(pk=body["person_id"]).name == "Rajesh Kumar"
 
+    def test_party_in_person_affidavit_can_be_changed_and_cleared(self, client, draft):
+        body = add_complainant(client, draft)
+        participant_id = body["case_participant_id"]
+
+        changed = patch(client, participant_id, {"party_in_person_affidavit": "<p>Text.</p>"})
+        cleared = patch(client, participant_id, {"party_in_person_affidavit": None})
+
+        assert changed.json()["party_in_person_affidavit"] == "<p>Text.</p>"
+        assert cleared.json()["party_in_person_affidavit"] is None
+
+    def test_only_a_complainant_has_a_party_in_person_affidavit(self, client, draft):
+        accused = add(
+            client, draft, role="accused", person=PERSON, party_in_person_affidavit="<p>T</p>"
+        )
+        added = add(client, draft, role="accused", person=PERSON).json()
+        changed = patch(
+            client, added["case_participant_id"], {"party_in_person_affidavit": "<p>T</p>"}
+        )
+
+        assert error_codes(accused) == {"party_in_person_affidavit": ["E07023"]}
+        assert error_codes(changed) == {"party_in_person_affidavit": ["E07023"]}
+
+    def test_email_is_changed_on_the_snapshot_only(self, client, draft):
+        body = add_complainant(client, draft, email_address="rajesh@example.com")
+
+        response = patch(
+            client, body["case_participant_id"], {"email_at_filing": "rajesh.k@example.com"}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["email_at_filing"] == "rajesh.k@example.com"
+        assert Person.objects.get(pk=body["person_id"]).email_address == "rajesh@example.com"
+
+    def test_an_individual_has_no_institution_details(self, client, draft):
+        body = add_complainant(client, draft)
+
+        assert body["entity_name_at_filing"] is None
+
+    def test_institution_details_are_changed_on_the_snapshot_only(self, client, draft):
+        body = add(
+            client, draft, institution=INSTITUTION, person=PERSON, designation="Director"
+        ).json()
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {"entity_name_at_filing": "ABC Private Ltd"},
+        )
+
+        assert response.status_code == 200
+        changed = response.json()
+        assert changed["entity_name_at_filing"] == "ABC Private Ltd"
+        assert changed["name_at_filing"] == "Rajesh Kumar"
+        institution = Institution.objects.get(pk=body["institution_id"])
+        assert institution.entity_name == "ABC Pvt Ltd"
+
+    @pytest.mark.parametrize("field", ["name_at_filing", "entity_name_at_filing"])
+    def test_an_institution_alone_keeps_both_names_the_same(self, client, draft, field):
+        body = add(client, draft, institution=INSTITUTION).json()
+
+        response = patch(client, body["case_participant_id"], {field: "ABC Private Ltd"})
+
+        changed = response.json()
+        assert changed["name_at_filing"] == "ABC Private Ltd"
+        assert changed["entity_name_at_filing"] == "ABC Private Ltd"
+
+    @pytest.mark.parametrize(
+        ("change", "field", "code"),
+        [
+            ({"entity_name_at_filing": "ABC Pvt Ltd"}, "entity_name_at_filing", "E07023"),
+            ({"email_at_filing": "not-an-email"}, "email_at_filing", "E00001"),
+        ],
+    )
+    def test_invalid_contact_and_institution_changes_are_400(
+        self, client, draft, change, field, code
+    ):
+        body = add_complainant(client, draft)
+
+        response = patch(client, body["case_participant_id"], change)
+
+        assert error_codes(response) == {field: [code]}
+
     def test_a_new_address_is_a_new_row(self, client, draft):
         body = add_complainant(client, draft)
 
@@ -373,6 +486,7 @@ class TestUpdate:
             {},
             {"phone_number_at_filing": "12345"},
             {"designation_at_filing": "Director"},
+            {"gender_at_filing": "PREFER_NOT_TO_SAY"},
         ],
     )
     def test_invalid_changes_are_400(self, client, draft, change):
@@ -542,6 +656,7 @@ class TestAddWitness:
             ({"what_will_witness_prove": "   "}, "what_will_witness_prove", "E00004"),
             ({"institution": INSTITUTION}, "institution", "E07024"),
             ({"is_party_in_person": True}, "is_party_in_person", "E07024"),
+            ({"party_in_person_affidavit": "<p>T</p>"}, "party_in_person_affidavit", "E07024"),
             ({"called_by_participant_id": None}, "called_by_participant_id", "E00002"),
         ],
     )

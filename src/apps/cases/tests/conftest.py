@@ -135,5 +135,5 @@ DEMAND_NOTICE_INFO = {
     "is_delivered": True,
     "delivery_date": "2024-02-05",
     "accused_replied": False,
-    "payment_status": "No payment",
+    "payment_status": "NO_PAYMENT_MADE",
 }

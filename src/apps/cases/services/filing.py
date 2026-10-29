@@ -187,6 +187,15 @@ def validation_errors(case):
                 f"Complainant #{complainant.ordinal} has no advocate and is not marked "
                 "as party-in-person.",
             )
+        if complainant.is_party_in_person and not complainant.party_in_person_affidavit:
+            error(
+                f"participants.{complainant.id}",
+                f"Complainant #{complainant.ordinal} appears in person but has no "
+                "party-in-person affidavit.",
+            )
+
+    if not case.affidavit:
+        error("affidavit", "The affidavit is required.")
 
     # Vakalatnamas and POA documents belong to the case, not to one
     # representation or mandate (spec 0021 §3.4), so one of each is enough.

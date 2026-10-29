@@ -40,6 +40,9 @@ urlpatterns = [
         views.CaseDocumentListView.as_view(),
         name="case-document-list",
     ),
+    path(
+        "cases/<uuid:case_id>/affidavit/", views.CaseAffidavitView.as_view(), name="case-affidavit"
+    ),
     path("cases/<uuid:case_id>/details/", views.CaseDetailsView.as_view(), name="case-details"),
     path(
         "cases/<uuid:case_id>/details/<str:section>/",

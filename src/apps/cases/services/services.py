@@ -16,7 +16,9 @@ from contextlib import contextmanager
 from django.core.cache import cache, caches
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import CharField, Max, OuterRef, Subquery, Value
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import ErrorDetail, NotFound
@@ -26,8 +28,15 @@ from apps.api.errors import BusinessError
 from apps.files import documents
 
 from .. import errors
-from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
-from .case_types import get_config, schema_errors
+from ..models import (
+    Case,
+    CaseDocument,
+    CaseEvidence,
+    CaseParticipant,
+    CaseStatus,
+    ParticipantRole,
+)
+from .case_types import CASE_TYPES, get_config, schema_errors
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +62,8 @@ SCHEMA_KEYWORD_ERRORS = {
     "type": api_errors.INCORRECT_TYPE,
     "enum": api_errors.INVALID_CHOICE,
     "const": api_errors.INVALID_CHOICE,
+    # Only used for code lists with labels (``case_types._choice``).
+    "oneOf": api_errors.INVALID_CHOICE,
 }
 
 
@@ -73,6 +84,52 @@ def start_draft(user, case_type, court_id=None):
     }
     _draft_cache().set(_get_draft_key(draft["draft_session_id"]), draft, DRAFT_SESSION_TTL_SECONDS)
     return draft
+
+
+def with_list_fields(cases):
+    """Annotate ``cases`` with what the cases list shows beyond the case row.
+
+    ``first_complainant_name`` and ``first_accused_name`` are the party names on
+    the case of the active complainant and accused numbered 1: the
+    institution's when there is one, else the person's;
+    ``cause_of_action_date`` comes from the case type's details. Each is a
+    subquery or join, so a page of cases costs no extra query per row.
+    """
+    dates = [
+        KeyTextTransform(key, field)
+        for field, key in (
+            config.cause_of_action_date_key
+            for config in CASE_TYPES.values()
+            if config.cause_of_action_date_key
+        )
+    ]
+    if not dates:
+        cause_of_action_date = Value(None, output_field=CharField())
+    elif len(dates) == 1:
+        cause_of_action_date = dates[0]
+    else:
+        cause_of_action_date = Coalesce(*dates)
+    return cases.annotate(
+        first_complainant_name=_first_participant_name(ParticipantRole.COMPLAINANT),
+        first_accused_name=_first_participant_name(ParticipantRole.ACCUSED),
+        cause_of_action_date=cause_of_action_date,
+    )
+
+
+def _first_participant_name(role):
+    """Return a subquery for the party name of the first active participant in ``role``.
+
+    A person acting for an institution is not the party, so the institution's
+    name is used when there is one.
+    """
+    first = (
+        CaseParticipant.objects.active()
+        .filter(case=OuterRef("pk"), role=role)
+        .order_by("ordinal")
+        .annotate(party_name=Coalesce("entity_name_at_filing", "name_at_filing"))
+        .values("party_name")[:1]
+    )
+    return Subquery(first)
 
 
 def get_case(case_id, user):
@@ -418,6 +475,20 @@ def remove_evidence(evidence, user):
     with transaction.atomic():
         deactivate(evidence, user)
         touch(evidence.case, user)
+
+
+# Affidavit
+
+
+def save_affidavit(case_or_draft_id, user, affidavit):
+    """Replace the case's affidavit, creating the case on first save."""
+    # Raises 404 before anything is written.
+    get_case_type(case_or_draft_id, user)
+    with editing_or_creating(case_or_draft_id, user) as case:
+        case.affidavit = affidavit
+        case.updated_by = user
+        case.save(update_fields=["affidavit", "updated_by", "updated_at"])
+    return case
 
 
 # Case details (spec 0021 §5.3)

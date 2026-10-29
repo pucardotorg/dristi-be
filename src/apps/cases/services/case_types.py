@@ -53,6 +53,13 @@ class EvidenceType(models.TextChoices):
     LEGAL_DEMAND_NOTICE = "LEGAL_DEMAND_NOTICE", "Legal demand notice"
 
 
+class PaymentStatus(models.TextChoices):
+    """Whether the drawer has paid part of the cheque amount."""
+
+    PART_PAYMENT = "PART_PAYMENT", "Part Payment"
+    NO_PAYMENT_MADE = "NO_PAYMENT_MADE", "No Payment Made"
+
+
 @dataclass(frozen=True)
 class CaseTypeConfig:
     """What one case type accepts.
@@ -71,6 +78,10 @@ class CaseTypeConfig:
     # The completeness check (spec 0021 §6.3) requires at least one of each.
     required_document_types: tuple[str, ...] = ()
     required_evidence_types: tuple[str, ...] = ()
+    # Where the date the cause of action arose is stored, which the cases list
+    # shows: (lookup from a case to a JSON field, key in it); ``None`` when the
+    # case type records none.
+    cause_of_action_date_key: tuple[str, str] | None = None
 
     @property
     def sections(self):
@@ -90,6 +101,11 @@ def _text():
     return {"type": "string", "minLength": 1}
 
 
+def _choice(choices):
+    """One of ``choices``' codes; each option carries its label as ``title``, for clients."""
+    return {"oneOf": [{"const": value, "title": label} for value, label in choices.choices]}
+
+
 def _ifsc():
     return {"type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$"}
 
@@ -99,10 +115,14 @@ def _rich_text():
     return {"type": "string"}
 
 
-def _required_when_true(flag, fields):
-    """Require ``fields`` when the boolean ``flag`` is true."""
+def _required_when(field, value, fields):
+    """Require ``fields`` when ``field`` is ``value``.
+
+    Several rules on one object go in an ``allOf`` list, since an object has
+    only one ``if``.
+    """
     return {
-        "if": {"properties": {flag: {"const": True}}, "required": [flag]},
+        "if": {"properties": {field: {"const": value}}, "required": [field]},
         "then": {"required": fields},
     }
 
@@ -121,10 +141,15 @@ def _object(required, properties, **extra):
 CASE_TYPES = {
     CaseType.CHEQUE_BOUNCE: CaseTypeConfig(
         detail_model="cases.ChequeBounceCase",
+        cause_of_action_date_key=("cheque_bounce__jurisdiction_limitation", "cause_of_action_date"),
         section_schemas={
             # Which court can hear the case, and whether the complaint is in time.
             "jurisdiction_limitation": _object(
-                required=["cheque_deposited_by_payee", "cause_of_action_date"],
+                required=[
+                    "cheque_deposited_by_payee",
+                    "bank_police_station",
+                    "cause_of_action_date",
+                ],
                 properties={
                     # Jurisdiction follows the branch where the cheque was
                     # presented and the complainant holds the account.
@@ -132,26 +157,24 @@ CASE_TYPES = {
                     "payee_ifsc_code": _ifsc(),
                     "payee_bank_name": _text(),
                     "payee_bank_branch": _text(),
+                    # The payee's branch when the payee deposited the cheque,
+                    # otherwise the drawer's.
                     "bank_police_station": _text(),
                     # Another S.138 complaint pending between the same parties.
                     "other_complaints_pending": {"type": "boolean"},
                     "cause_of_action_date": _date(),
                 },
-                **_required_when_true(
+                **_required_when(
                     "cheque_deposited_by_payee",
-                    [
-                        "payee_ifsc_code",
-                        "payee_bank_name",
-                        "payee_bank_branch",
-                        "bank_police_station",
-                    ],
+                    True,
+                    ["payee_ifsc_code", "payee_bank_name", "payee_bank_branch"],
                 ),
             ),
             # Willingness to settle, other details for the court, and the relief sought.
             "adr_other_prayer": _object(
                 required=["final_relief"],
                 properties={
-                    "adr_preference": {"enum": ["YES", "NO", "MAYBE"]},
+                    "adr_preference": {"enum": ["YES", "NO"]},
                     "other_details": _rich_text(),
                     "interim_relief": _rich_text(),
                     "final_relief": _text(),
@@ -234,12 +257,23 @@ CASE_TYPES = {
                     "is_delivered": {"type": "boolean"},
                     # The 15-day payment window runs from this date.
                     "delivery_date": _date(),
+                    # When an undelivered notice came back to the delivery agency.
+                    "return_date": _date(),
+                    "non_delivery_reason": _text(),
                     "accused_replied": {"type": "boolean"},
                     # Payment against the cheque
-                    "payment_status": _text(),
+                    "payment_status": _choice(PaymentStatus),
+                    "part_payment_amount": {"type": "number", "exclusiveMinimum": 0},
                 },
-                # A delivered notice needs its delivery date.
-                **_required_when_true("is_delivered", ["delivery_date"]),
+                allOf=[
+                    # A delivered notice needs its delivery date; an undelivered
+                    # one, when it came back and why.
+                    _required_when("is_delivered", True, ["delivery_date"]),
+                    _required_when("is_delivered", False, ["return_date", "non_delivery_reason"]),
+                    _required_when(
+                        "payment_status", PaymentStatus.PART_PAYMENT.value, ["part_payment_amount"]
+                    ),
+                ],
             ),
         },
     ),
