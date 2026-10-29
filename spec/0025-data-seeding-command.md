@@ -4,7 +4,7 @@
 
 Proposed
 
-> Tracks [#169](https://github.com/pucardotorg/dristi-be/issues/169). Shared for review before implementation.
+> Tracks [#169](https://github.com/pucardotorg/dristi-be/issues/169). Reviewed; review decisions folded into the spec (see Resolved decisions).
 
 ## Context
 
@@ -18,12 +18,12 @@ We already have a proven pattern for one slice of this problem: `apps.locations.
 - Be **idempotent**: re-running the same file(s) makes no further changes and never creates duplicates.
 - **Seed only** — insert rows that are missing. Existing rows are left untouched; updates stay a manual/admin task.
 - Resolve **relationships** by natural key (parent locations, parent organizations, a page's category, an organization's locations).
-- Keep seed data portable so it can live in a separate per-jurisdiction data repo (`<<data-repo>>/gj/locations.toml`, `<<data-repo>>/kl/locations.toml`).
-- Report clearly what was created, what already existed, and what could not be resolved; support `--dry-run`.
+- Keep seed data portable so it can live in a separate per-jurisdiction data repo (`<<data-repo>>/gj/locations.toml`, `<<data-repo>>/kl/locations.toml`), and accept either files or a directory of them.
+- Report clearly what was created, what already existed, and what could not be resolved; support `--dry-run` and listing the seedable models.
 
 ## Non-goals
 
-- Updating or reconciling existing rows (no upsert of changed fields, no deletes). Changing seeded data is done manually in the admin.
+- Updating or reconciling existing rows (insert-only: no upsert of changed fields, no deletes). Changing seeded data is done manually in the admin.
 - A full fixtures/ORM-dump replacement. This is for curated, human-maintained reference data, not arbitrary table dumps.
 - Seeding transactional/domain data (cases, filings, users, payments).
 - A GUI or API for seeding. It is a management command only.
@@ -31,7 +31,7 @@ We already have a proven pattern for one slice of this problem: `apps.locations.
 
 ## Design overview
 
-A single `seed` command dispatches each input TOML file to a **per-model seeder**. The command owns everything generic — file parsing, transactions, idempotency bookkeeping, relationship resolution by code, reporting, `--dry-run`. Each seeder is a small declarative registration that says: which model, which natural key, which fields, and which fields are foreign keys resolved by code. TOML is read with the standard library's `tomllib` (Python 3.11+, which the project requires).
+A single `seed` command dispatches each input TOML file to a **per-model seeder**. The command owns everything generic — path/file parsing, transactions, idempotency bookkeeping, relationship resolution by code, reporting, `--dry-run`, and `--list` (print the registered seedable models). Each seeder is a small declarative registration that says: which model, which natural key, which fields, and which fields are foreign keys resolved by code. TOML is read with the standard library's `tomllib` (Python 3.11+, which the project requires).
 
 ```
 manage.py seed  <file>...  [options]
@@ -103,20 +103,22 @@ Natural keys below are taken from the current models.
 | `locations.Location` | `code` | `parent` → Location.code | — | Self-referential hierarchy; parent must load first (same or earlier file). |
 | `organizations.Organization` | `code` | `parent` → Organization.code | `locations` → Location.code | `code` is uppercase snake_case. |
 | `core.BusinessRule` | `code` | — | — | `code` uppercase snake_case. |
-| `core.Configuration` | `(config_set, config_key)` | — | — | Composite key; both normalized by the model. |
+| `core.Configuration` | `(config_set, config_key)` | — | — | Composite key; both normalized by the model. `config_value` is coerced to its stored type (see below). |
 | `cms.PageCategory` | `slug` | — | — | `name` also unique. |
 | `cms.Page` | `slug` | `category` → PageCategory.slug | — | Slug lowercased by the model. |
 
-"Permissions" from the ticket are **deferred** — see Open Questions; current `users.Role` is a code-level `TextChoices`, not a seedable row set.
+"Permissions" from the ticket are **out of scope** for now (confirmed by @thejeshgn); current `users.Role` is a code-level `TextChoices`, not a seedable row set.
+
+Values from TOML are **coerced to each field's type** before validation (e.g. `Configuration.config_value` to its stored representation), so the file can stay in native TOML types. Coercion reuses the model field's `to_python`/`clean`, and a value that will not coerce is reported as a row error rather than silently stored.
 
 ### 5. Idempotency
 
 For each row the engine computes the natural key and looks up an existing record:
 
 - **Not found** → create it (collecting for a `bulk_create`, or `create()` where a model needs `save()` side effects / `full_clean`).
-- **Found** → by default, count as *unchanged* and skip (insert-only, the seed-only rule). With `--upsert`, update the row's fields to match the file (relationships re-resolved too) and count it as *updated*.
+- **Found** → count as *unchanged* and skip. The engine never writes to an existing row. This is **insert-only**: a field changed in the file after first load will **not** propagate — updates and deletes are done manually in the admin, per the ticket. Reporting surfaces the skip so it is not silently surprising.
 
-Without `--upsert`, re-running a file converges to zero writes; with `--upsert`, re-running is still idempotent because an unchanged row produces no update. A composite key (Configuration) is matched on the tuple.
+Re-running any file therefore converges to zero writes. A composite key (Configuration) is matched on the tuple.
 
 ### 6. Relationship resolution
 
@@ -131,14 +133,15 @@ When multiple files are passed, they are grouped by target model and loaded in e
 ### 8. CLI
 
 ```
-manage.py seed FILE [FILE ...]
-    --upsert         Also update existing rows to match the file.
-                     Default is insert-only (existing rows are skipped).
-    --dry-run        Report what would change without saving.
+manage.py seed PATH [PATH ...]
+    --list           Print the registered seedable models and exit.
+    --dry-run        Report what would be created without saving.
     --strict         Treat any unresolved reference or skipped row as an error
                      (non-zero exit), instead of warning and continuing.
-    -v 2             List every created/updated row and every unresolved reference.
+    -v 2             List every created row and every unresolved reference.
 ```
+
+Each `PATH` is a TOML file **or a directory**; a directory loads every `*.toml` under it, sorted, recursively. This lets a whole jurisdiction be seeded by pointing at one folder.
 
 Examples:
 
@@ -146,18 +149,24 @@ Examples:
 # Single file (as in the ticket)
 python manage.py seed ./data/test/locations.toml
 
-# A jurisdiction from the external data repo, several entities at once
+# A whole jurisdiction from the external data repo (directory)
+python manage.py seed  <<data-repo>>/kl/
+
+# Or several explicit files
 python manage.py seed  <<data-repo>>/kl/locations.toml  <<data-repo>>/kl/organizations.toml
+
+# List what can be seeded
+python manage.py seed --list
 ```
 
 ### 9. Reporting
 
-Per file and as a run total: `created`, `updated` (with `--upsert`), `unchanged` (already present), `skipped` (unresolved references), with a one-line `SUCCESS`/`WARNING` summary mirroring `import_pincodes`. At `-v 2`, each created/updated row's key and each unresolved reference are listed. `--dry-run` prefixes counts with "Dry run: would have…".
+Per file and as a run total: `created`, `unchanged` (already present), `skipped` (unresolved references), with a one-line `SUCCESS`/`WARNING` summary mirroring `import_pincodes`. At `-v 2`, each created row's key and each unresolved reference are listed. `--dry-run` prefixes counts with "Dry run: would have…".
 
 ## Testing
 
-- Unit tests per registered seeder: create-from-empty, re-run-is-noop (idempotency), existing row skipped by default, updated with `--upsert`, FK/M2M resolution by code, unresolved reference handling, composite-key match (Configuration).
-- Engine tests: `[seed]` header parsing, missing-header/empty-rows errors, unknown model error, multi-file load order, `--dry-run` rolls back, `--strict` exit code, transaction rollback on mid-run failure.
+- Unit tests per registered seeder: create-from-empty, re-run-is-noop (idempotency), existing row left untouched (insert-only), FK/M2M resolution by code, unresolved reference handling, composite-key match (Configuration), `config_value` coercion.
+- Engine tests: `[seed]` header parsing, missing-header/empty-rows errors, unknown model error, directory expansion to `*.toml`, multi-file load order, `--list` output, `--dry-run` rolls back, `--strict` exit code, transaction rollback on mid-run failure.
 - A small fixture seed set under `src/data/seed/` used by tests and as living documentation of the file format.
 
 ## Rollout
@@ -167,11 +176,13 @@ Per file and as a run total: `created`, `updated` (with `--upsert`), `unchanged`
 3. `cms.PageCategory`, `cms.Page`.
 4. Document the file format and the external-data-repo layout in `docs/development.md`.
 
-## Open questions
+## Resolved decisions
 
-1. **Single `seed` command vs. per-entity commands.** This spec proposes one self-describing command (matches the ticket's `seed <file>` example). Confirm that is preferred over `seed_locations`, `seed_orgs`, etc.
-2. ~~**TOML and CSV, or TOML only?**~~ **Resolved: TOML only**, per the ticket. CSV is out of scope; `import_pincodes` keeps its own CSV reader for the India Post directory.
-3. **"Permissions" scope.** Are these DB-backed rows to seed, or the code-level `users.Role` choices (not seedable)? Deferred until clarified.
-4. **Config value typing in TOML.** `Configuration.config_value` — stored as-is from TOML (native types) or always coerced? Need the field's current type to finalize.
-5. ~~**Edit preservation vs. pure seed-only.**~~ **Resolved** (@thejeshgn): default is insert-only, with an opt-in `--upsert` flag to also update existing rows. See §5 and §8.
-6. **External data repo** — is it in scope to define its directory layout and wire a default `--from <dir>`, or is that a follow-up?
+All open questions were resolved in review by @thejeshgn:
+
+1. **Single `seed` command** (one self-describing command), with `--list` to show the registered seedable models — preferred over per-entity commands. See §2, §8.
+2. **TOML only**, per the ticket. CSV is out of scope; `import_pincodes` keeps its own CSV reader for the India Post directory.
+3. **Permissions out of scope** for now. See §4.
+4. **`config_value` is coerced** to its stored type; the file stays in native TOML types. See §4.
+5. **Insert-only** — no upsert, no deletes. Updates are manual. See §5.
+6. **A `PATH` may be a directory**, loading every `*.toml` under it. See §8.
