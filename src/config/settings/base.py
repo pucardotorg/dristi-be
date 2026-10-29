@@ -616,6 +616,11 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        "apscheduler.executors.default": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
         "apps.messaging": {
             "handlers": ["console"],
             "level": "INFO",
