@@ -171,6 +171,31 @@ services:
       httpbin:
         condition: service_started
 
+  scheduler:
+    # Enqueues @cron actors on schedule; the worker runs them (spec 0026).
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        REQUIREMENTS_FILE: requirements/local.txt
+    command: ["scheduler"]
+    user: root
+    env_file:
+      - ../.env
+    environment:
+      MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin:8080/post"
+    volumes:
+      - ../src:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rustfs-init:
+        condition: service_completed_successfully
+      httpbin:
+        condition: service_started
+
 volumes:
   postgres_data:
   rustfs_data:

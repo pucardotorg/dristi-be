@@ -159,6 +159,11 @@ from apps.core.tasks import send_welcome_email
 send_welcome_email.send("user@example.com")
 ```
 
+To run a job on a timetable (`@cron`) or once after a delay
+(`send_with_options(delay=...)`), see
+[Scheduled and delayed jobs](../README.md#scheduled-and-delayed-jobs) and
+[spec 0026](../spec/0026-dramatiq-crontab.md).
+
 Monitor the worker logs:
 
 ```bash
