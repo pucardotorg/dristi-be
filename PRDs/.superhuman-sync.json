@@ -6,9 +6,9 @@
     "account-creation-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-Ebr9Pgtqan",
       "title": "Account Creation Handover",
-      "contentHash": "c4ed2c55b275",
-      "pageUpdatedAt": 1792840216.76,
-      "note": "Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v19 (court establishment): REG-23a, REG-23b (re-inserted, cl-e4SVsr-xBQ), §6.1 intro and example bullets (re-inserted), REG-31/35/36/38 cells, 2026-10-19 decision. 2026-10-24: patched in place to v19.1 (status, callout, digital signing wording).",
+      "contentHash": "a561aebe9240",
+      "pageUpdatedAt": 1793244854.066,
+      "note": "Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v19 (court establishment): REG-23a, REG-23b (re-inserted, cl-e4SVsr-xBQ), §6.1 intro and example bullets (re-inserted), REG-31/35/36/38 cells, 2026-10-19 decision. 2026-10-24: patched in place to v19.1 (status, callout, digital signing wording). 2026-10-29: patched in place to v19.2 (status, callout, Q-4 row added to §11 table grid-E3ATru_vvq).",
       "calloutElementId": "cl-023ZWT-x7f"
     },
     "efiling-handover.md": {
