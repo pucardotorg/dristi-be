@@ -16,6 +16,7 @@ from .models import (
     COMPLAINANT_ONLY_MESSAGE,
     DESIGNATION_NOT_ALLOWED_MESSAGE,
     DESIGNATION_REQUIRED_MESSAGE,
+    EMPTY_TEXT_MESSAGE,
     INSTITUTION_ROLES,
     Case,
     CaseDocument,
@@ -25,6 +26,7 @@ from .models import (
     PoaMandate,
     Representation,
     Witness,
+    has_visible_text,
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
 
@@ -46,6 +48,13 @@ class RejectUnknownFieldsMixin:
                 {field: [self.unknown_field_message] for field in unknown}
             )
         return super().validate(attrs)
+
+
+def _require_visible_text(html):
+    """Refuse rich text that renders as nothing; ``None`` (cleared) passes."""
+    if html is not None and not has_visible_text(html):
+        raise api_errors.BLANK.validation_error(EMPTY_TEXT_MESSAGE)
+    return html
 
 
 def _require_each_once(ids):
@@ -273,6 +282,10 @@ class CaseAffidavitSerializer(serializers.Serializer):
     case_id = serializers.UUIDField(read_only=True)
     affidavit = serializers.CharField()
 
+    def validate_affidavit(self, value):
+        """Refuse editor output with no text in it."""
+        return _require_visible_text(value)
+
 
 class DetailsSectionSerializer(serializers.Serializer):
     """Response of PUT /cases/{id}/details/{section}: the section as saved."""
@@ -373,6 +386,10 @@ class ParticipantCreateSerializer(PartySerializer):
     is_party_in_person = serializers.BooleanField(default=False)
     # Complainants only; rich-text editor output.
     party_in_person_affidavit = serializers.CharField(required=False, allow_null=True)
+
+    def validate_party_in_person_affidavit(self, value):
+        """Refuse editor output with no text in it."""
+        return _require_visible_text(value)
 
     def validate(self, attrs):
         """Check the fields that only make sense together, for the role being added."""
@@ -584,6 +601,10 @@ class ParticipantUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializ
     # Witnesses only (spec 0021 §4.3); they change the witness row.
     called_by_participant_id = serializers.UUIDField(required=False)
     what_will_witness_prove = serializers.CharField(required=False)
+
+    def validate_party_in_person_affidavit(self, value):
+        """Refuse editor output with no text in it; ``null`` clears it."""
+        return _require_visible_text(value)
 
     def validate(self, attrs):
         """Require at least one change."""

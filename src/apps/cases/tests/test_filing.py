@@ -148,8 +148,9 @@ class TestAffidavit:
 
         assert Case.objects.get(pk=draft).affidavit == "<p>Corrected.</p>"
 
-    def test_a_blank_affidavit_is_400_and_creates_nothing(self, client, draft):
-        response = put_affidavit(client, draft, "  ")
+    @pytest.mark.parametrize("affidavit", ["  ", "<p><br></p>", "<p>&nbsp;</p>"])
+    def test_an_empty_affidavit_is_400_and_creates_nothing(self, client, draft, affidavit):
+        response = put_affidavit(client, draft, affidavit)
 
         assert error_codes(response) == {"affidavit": ["E00004"]}
         assert not Case.objects.exists()
@@ -396,11 +397,23 @@ class TestValidate:
             }
         ]
 
-    def test_the_case_affidavit_is_required(self, client, draft, pdf):
+    @pytest.mark.parametrize("affidavit", [None, "<p><br></p>"])
+    def test_the_case_affidavit_is_required(self, client, draft, pdf, affidavit):
         make_complete_case(client, draft, pdf)
-        Case.objects.filter(pk=draft).update(affidavit=None)
+        # Stored another way than the API, which refuses empty editor output.
+        Case.objects.filter(pk=draft).update(affidavit=affidavit)
 
         assert fields_of(validate(client, draft)) == {"affidavit"}
+
+    def test_an_empty_party_in_person_affidavit_is_reported(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        CaseParticipant.objects.filter(pk=complainant["case_participant_id"]).update(
+            party_in_person_affidavit="<p><br></p>"
+        )
+
+        assert fields_of(validate(client, draft)) == {
+            f"participants.{complainant['case_participant_id']}"
+        }
 
     def test_a_poa_mandate_needs_a_poa_document(self, client, draft, pdf):
         complainant = make_complete_case(client, draft, pdf)

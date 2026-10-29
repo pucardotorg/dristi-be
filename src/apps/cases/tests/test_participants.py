@@ -185,6 +185,17 @@ class TestAddComplainant:
             "<p>I request to appear in person.</p>"
         )
 
+    def test_an_empty_party_in_person_affidavit_is_400(self, client, draft):
+        response = add(
+            client,
+            draft,
+            person=PERSON,
+            is_party_in_person=True,
+            party_in_person_affidavit="<p><br></p>",
+        )
+
+        assert error_codes(response) == {"party_in_person_affidavit": ["E00004"]}
+
     def test_gender_outside_the_list_is_400(self, client, draft):
         response = add(client, draft, person={**PERSON, "gender": "PREFER_NOT_TO_SAY"})
 
@@ -392,6 +403,8 @@ class TestUpdate:
 
         assert changed.json()["party_in_person_affidavit"] == "<p>Text.</p>"
         assert cleared.json()["party_in_person_affidavit"] is None
+        empty = patch(client, participant_id, {"party_in_person_affidavit": "<p>&nbsp;</p>"})
+        assert error_codes(empty) == {"party_in_person_affidavit": ["E00004"]}
 
     def test_only_a_complainant_has_a_party_in_person_affidavit(self, client, draft):
         accused = add(
@@ -438,6 +451,23 @@ class TestUpdate:
         assert changed["name_at_filing"] == "Rajesh Kumar"
         institution = Institution.objects.get(pk=body["institution_id"])
         assert institution.entity_name == "ABC Pvt Ltd"
+
+    def test_an_institution_alone_refuses_two_different_names(self, client, draft):
+        body = add(client, draft, institution=INSTITUTION).json()
+
+        differ = patch(
+            client,
+            body["case_participant_id"],
+            {"name_at_filing": "ABC Private Ltd", "entity_name_at_filing": "ABC Ltd"},
+        )
+        same = patch(
+            client,
+            body["case_participant_id"],
+            {"name_at_filing": "ABC Private Ltd", "entity_name_at_filing": "ABC Private Ltd"},
+        )
+
+        assert error_codes(differ) == {"entity_name_at_filing": ["E00001"]}
+        assert same.status_code == 200
 
     @pytest.mark.parametrize("field", ["name_at_filing", "entity_name_at_filing"])
     def test_an_institution_alone_keeps_both_names_the_same(self, client, draft, field):

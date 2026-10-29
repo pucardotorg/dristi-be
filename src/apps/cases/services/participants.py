@@ -32,6 +32,7 @@ from ..models import (
     COMPLAINANT_ONLY_MESSAGE,
     DESIGNATION_NOT_ALLOWED_MESSAGE,
     INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE,
+    INSTITUTION_NAMES_DIFFER_MESSAGE,
     INSTITUTION_ROLES,
     CaseParticipant,
     ParticipantRole,
@@ -371,13 +372,16 @@ def update_participant(participant, user, data):
             ]
     elif not participant.person_id:
         # An institution alone is named by the institution's name, so the two
-        # stay the same whichever is changed.
-        for field, other in (
-            ("name_at_filing", "entity_name_at_filing"),
-            ("entity_name_at_filing", "name_at_filing"),
-        ):
-            if field in data and other not in data:
-                data[other] = data[field]
+        # stay the same: one sent sets both, and both sent must agree.
+        if "name_at_filing" in data and "entity_name_at_filing" in data:
+            if data["name_at_filing"] != data["entity_name_at_filing"]:
+                problems["entity_name_at_filing"] = [
+                    errors.coded(api_errors.INVALID, INSTITUTION_NAMES_DIFFER_MESSAGE)
+                ]
+        elif "name_at_filing" in data:
+            data["entity_name_at_filing"] = data["name_at_filing"]
+        elif "entity_name_at_filing" in data:
+            data["name_at_filing"] = data["entity_name_at_filing"]
     if data.get("phone_number_at_filing"):
         # A person's number is a mobile in E.164; an institution's may be a landline.
         validator = phone_number_validator if participant.person_id else contact_number_validator

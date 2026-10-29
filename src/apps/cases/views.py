@@ -252,12 +252,10 @@ class CaseDetailsSectionView(APIView):
         return Response({"case_id": case.id, "section": section, "data": request.data})
 
 
-@extend_schema(tags=TAGS)
 class CaseAffidavitView(APIView):
     """PUT /cases/{case_id}/affidavit — replace the case's affidavit."""
 
     @extend_schema(
-        tags=TAGS,
         request=CaseAffidavitSerializer,
         responses={200: CaseAffidavitSerializer, **error_responses(errors.CASE_NOT_EDITABLE)},
     )

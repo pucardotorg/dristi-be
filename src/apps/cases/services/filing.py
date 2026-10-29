@@ -38,6 +38,7 @@ from ..models import (
     ParticipantRole,
     PoaMandate,
     Representation,
+    has_visible_text,
 )
 from ..serializers import CasePreviewSerializer
 from .case_types import DocumentType, EvidenceType, get_config, schema_errors
@@ -187,14 +188,18 @@ def validation_errors(case):
                 f"Complainant #{complainant.ordinal} has no advocate and is not marked "
                 "as party-in-person.",
             )
-        if complainant.is_party_in_person and not complainant.party_in_person_affidavit:
+        if complainant.is_party_in_person and not has_visible_text(
+            complainant.party_in_person_affidavit
+        ):
             error(
                 f"participants.{complainant.id}",
                 f"Complainant #{complainant.ordinal} appears in person but has no "
                 "party-in-person affidavit.",
             )
 
-    if not case.affidavit:
+    # Writes refuse empty editor output; this also catches what reached the
+    # database another way (the admin, a shell).
+    if not has_visible_text(case.affidavit):
         error("affidavit", "The affidavit is required.")
 
     # Vakalatnamas and POA documents belong to the case, not to one
