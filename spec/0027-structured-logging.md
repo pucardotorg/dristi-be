@@ -347,8 +347,9 @@ Bind the request id **first** and add the user **later**:
 MIDDLEWARE = [
     "apps.core.logs.middleware.RequestIdMiddleware",    # 1st: id + trust boundary + response header
     "django_structlog.middlewares.RequestMiddleware",   # 2nd: binds request_id, ip; logs request_*
+    "corsheaders.middleware.CorsMiddleware",            # 3rd: moved up, before anything that answers early
     "django.middleware.security.SecurityMiddleware",
-    # … WhiteNoise, CORS, Session, Common, Csrf …
+    # … WhiteNoise, Session, Common, Csrf …
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "apps.core.logs.middleware.UserContextMiddleware",  # right after auth: binds user_id
     # … the rest unchanged …
@@ -404,6 +405,17 @@ At the top of the list, every request is covered.
   and `X-Request-ID` is not a safelisted header. `base.py` sets
   `CORS_EXPOSE_HEADERS = ["X-Request-ID"]`, so the id is readable on responses
   that have no `meta`, such as file downloads and HTML error pages.
+- **`CorsMiddleware` moves up, directly after the two request-id
+  middlewares.** It adds CORS headers only to responses that pass back through
+  it. Today it sits after `SecurityMiddleware` and `WhiteNoiseMiddleware`, and
+  both can return a response without calling the rest of the chain: the HTTPS
+  redirect (`SECURE_SSL_REDIRECT` defaults to `True` in `production.py`) and
+  WhiteNoise static files. Those responses carry `X-Request-ID` but no CORS
+  headers, so a browser can't read them. django-cors-headers documents the same
+  rule: place it as high as possible, before any middleware that can generate
+  responses, naming WhiteNoise. It still sits inside `RequestIdMiddleware`, so
+  its preflight responses keep their id. Nothing else depends on its current
+  position.
 
 Turn the trust setting on only after nginx overwrites the header on every
 request (Open question 4).
@@ -671,8 +683,9 @@ formatter can't consume a traceback that has already been turned into dicts:
   the class name (`exc_type.__name__`), so the rule can't be limited to
   database errors by type. It applies to every exception.
 - **Console output prints the full message.** `plain_traceback` formats the
-  live exception, so the first-line rule can't apply to it. `console` is the
-  default only in local and test. Production keeps `LOG_FORMAT=json`.
+  live exception, so the first-line rule can't apply to it. So `console` is
+  for local and test only, and `production.py` refuses it (§10.3). The file
+  handler is always `json` whatever `LOG_FORMAT` says.
 
 #### 6.7 Defaults per environment
 
@@ -680,6 +693,7 @@ formatter can't consume a traceback that has already been turned into dicts:
 | --- | --- | --- | --- |
 | `LOG_REDACTION_MODE` | `deny` (`off` allowed) | `deny` | `deny` (see Open questions); `off` refused |
 | `LOG_DROP_SENSITIVE_EVENTS` | `False` | `False` | `True` |
+| `LOG_FORMAT` | `console` | `console` | `json`; `console` refused |
 
 ### 7. Third-party loggers
 
@@ -1014,7 +1028,7 @@ questions.
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `LOG_LEVEL` | Root and first-party logger level | `INFO` |
-| `LOG_FORMAT` | `json` or `console` for stdout | `console` locally, `json` in prod |
+| `LOG_FORMAT` | `json` or `console` for stdout (`console` is refused in production) | `console` locally, `json` in prod |
 | `LOG_FILE_ENABLED` | Enable the rotating file handler | `False` locally, `True` in prod |
 | `LOG_DIR` | Directory for log files inside the container | `/app/logs` |
 | `LOG_FILE_PREFIX` | Filename prefix | `dristi` |
@@ -1079,8 +1093,10 @@ rebuild" rule:
     (default `True`) and `LOG_DROP_SENSITIVE_EVENTS` (default `True`). A
     deployment that forgets them still gets production behaviour.
   - Next to the existing "Addon guards", raises `ImproperlyConfigured` when
-    `LOG_REDACTION_MODE=off`. This is the same pattern as
-    `CDAC_SMS_VERIFY_SSL`.
+    `LOG_REDACTION_MODE=off` or `LOG_FORMAT` is not `json`. This is the same
+    pattern as `CDAC_SMS_VERIFY_SSL`. `LOG_FORMAT` stays an env read, so a
+    `console` override fails loudly at startup instead of being silently
+    ignored.
 - **`.env.ci`:** sets `LOG_DIR=/tmp/dristi-ci-logs`. The CI deploy check loads
   production settings, where the file handler is on by default, and
   `/app/logs` doesn't exist on the runner.
@@ -1109,9 +1125,11 @@ setting when:
   (`os.makedirs(..., exist_ok=True)`) or isn't writable (`os.access(..., W_OK)`).
   This is checked before `dictConfig` would fail inside the file handler.
 
-**Production guard (`production.py`, `ImproperlyConfigured`):**
+**Production guards (`production.py`, `ImproperlyConfigured`):**
 
 - `LOG_REDACTION_MODE=off`
+- `LOG_FORMAT` other than `json`. Console output can't apply the first-line
+  rule for exception messages (§6.6).
 
 **System checks (`apps/core/logs/checks.py`)** hold soft warnings only. It is
 imported from `CoreConfig.ready()`, like `apps/pdf/checks.py` and
@@ -1285,6 +1303,13 @@ test order.
      not tested here);
    - a cross-origin request from an allowed origin gets
      `Access-Control-Expose-Headers` containing `X-Request-ID`;
+   - with `SECURE_SSL_REDIRECT=True`, a plain-HTTP request from an allowed
+     origin gets the redirect with `Access-Control-Allow-Origin`,
+     `Access-Control-Expose-Headers` and `X-Request-ID`;
+   - in `base.py`'s `MIDDLEWARE`, `CorsMiddleware` comes before
+     `SecurityMiddleware` and `WhiteNoiseMiddleware`. (`test.py` removes
+     WhiteNoise, so the order is asserted on the base list instead of with a
+     static request);
    - a request with `X-Forwarded-For: 1.2.3.4` and `X-Real-IP: 5.6.7.8` binds
      `ip=5.6.7.8`.
 9. **User context:** a view line inside a session-authenticated request carries
@@ -1313,8 +1338,9 @@ test order.
       `LOG_FILE_MAX_BYTES` or `LOG_FILE_BACKUP_COUNT` of `0` or below, and for
       an unwritable `LOG_DIR` when the file handler is on;
     - `LOGGING_CONFIG` points at `configure`, and `LOGGING` is non-empty;
-    - importing production settings with `LOG_REDACTION_MODE=off` raises
-      `ImproperlyConfigured`;
+    - importing production settings with `LOG_REDACTION_MODE=off` or
+      `LOG_FORMAT=console` raises `ImproperlyConfigured`, and with neither set
+      gives `LOG_FORMAT == "json"`;
     - `logs.W001` fires with `DEBUG=False` and the file handler off, and is
       silenced under test settings.
 
@@ -1393,7 +1419,7 @@ before merging.
   In JSON output, no `exc_value` has more than one line unless the mode is
   `off`.
 - `ip` is never taken from a client-supplied `X-Forwarded-For`.
-  Production settings refuse `LOG_REDACTION_MODE=off`.
+  Production settings refuse `LOG_REDACTION_MODE=off` and `LOG_FORMAT=console`.
 - `django.server` access lines never reach a handler, at any level.
 - A malformed propagated `log_context` never stops a task from binding
   `task_id` and `actor`.
