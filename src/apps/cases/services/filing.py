@@ -188,18 +188,45 @@ def validation_errors(case):
                 "as party-in-person.",
             )
 
-    # Vakalatnamas and POA documents belong to the case, not to one
-    # representation or mandate (spec 0021 §3.4), so one of each is enough.
-    uploaded = set(
-        CaseDocument.objects.active().filter(case=case).values_list("document_type", flat=True)
+    documents = list(CaseDocument.objects.active().filter(case=case))
+    uploaded = {document.document_type for document in documents}
+
+    def linked(document_type, link):
+        """Return the ids that active documents of ``document_type`` are linked to by ``link``."""
+        return {
+            getattr(document, link)
+            for document in documents
+            if document.document_type == document_type and getattr(document, link)
+        }
+
+    # Per-party documents must be linked to their party (spec 0021 §6.3).
+    with_identity = linked(DocumentType.IDENTITY_PROOF, "case_participant_id")
+    with_vakalatnama = linked(DocumentType.VAKALATNAMA, "case_participant_id")
+    for complainant in complainants:
+        if complainant.id not in with_identity:
+            error(
+                "documents.IDENTITY_PROOF",
+                f"Complainant #{complainant.ordinal} has no identity proof.",
+            )
+        if complainant.id in represented and complainant.id not in with_vakalatnama:
+            error(
+                "documents.VAKALATNAMA",
+                f"Complainant #{complainant.ordinal} has an advocate but no vakalatnama.",
+            )
+    with_poa_document = linked(DocumentType.POA_DOCUMENT, "case_participant_id")
+    acting_for = (
+        CaseParticipant.objects.active()
+        .filter(case=case, poa_mandates_granted__is_active=True)
+        .distinct()
+        .order_by(*PARTICIPANT_ORDERING)
     )
-    if represented and DocumentType.VAKALATNAMA not in uploaded:
-        error("documents.VAKALATNAMA", "A vakalatnama is required when an advocate is engaged.")
-    if (
-        PoaMandate.objects.active().filter(case=case).exists()
-        and DocumentType.POA_DOCUMENT not in uploaded
-    ):
-        error("documents.POA_DOCUMENT", "A POA document is required when a POA holder acts.")
+    for party in acting_for:
+        if party.id not in with_poa_document:
+            error(
+                "documents.POA_DOCUMENT",
+                f"{party.get_role_display()} #{party.ordinal} acts through a POA holder "
+                "but has no POA document.",
+            )
     for document_type in config.required_document_types:
         if document_type not in uploaded:
             error(
@@ -213,6 +240,20 @@ def validation_errors(case):
         if evidence_type not in present:
             label = EvidenceType(evidence_type).label.lower()
             error(f"evidence.{evidence_type}", f"At least one {label} evidence is required.")
+    # A delivered notice needs its proof of delivery; an undelivered one has none.
+    with_delivery_proof = linked(
+        DocumentType.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE, "case_evidence_id"
+    )
+    for item in evidence:
+        if (
+            item.evidence_type == EvidenceType.LEGAL_DEMAND_NOTICE
+            and item.evidence_info.get("is_delivered") is True
+            and item.id not in with_delivery_proof
+        ):
+            error(
+                "documents.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
+                f"Demand notice #{item.ordinal} was delivered but has no proof of delivery.",
+            )
     # Writes already check these; a schema tightened since then is caught here.
     for item in evidence:
         schema = config.evidence_schemas.get(item.evidence_type)

@@ -43,14 +43,14 @@ class CaseParticipantAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
 class WitnessAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for witnesses."""
 
-    list_display = ("case_participant", "called_by_participant", "created_at")
+    list_display = ("case_participant", "side", "created_at")
+    list_filter = ("side",)
     search_fields = (
         "case_participant__case__id",
         "case_participant__case__filing_number",
         "case_participant__name_at_filing",
-        "called_by_participant__name_at_filing",
     )
-    raw_id_fields = ("case_participant", "called_by_participant")
+    raw_id_fields = ("case_participant",)
     readonly_fields = ("created_at", "updated_at")
 
 
@@ -105,9 +105,9 @@ class RepresentationAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
 class CaseDocumentAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for case documents."""
 
-    list_display = ("case", "document_type", "is_active", "created_at")
+    list_display = ("case", "document_type", "case_participant", "case_evidence", "is_active")
     list_filter = ("document_type", "is_active")
-    raw_id_fields = ("case", "document")
+    raw_id_fields = ("case", "document", "case_participant", "case_evidence")
     readonly_fields = ("id", "created_at", "updated_at")
 
 

@@ -43,6 +43,9 @@ class DocumentType(models.TextChoices):
     VAKALATNAMA = "VAKALATNAMA", "Vakalatnama"
     POA_DOCUMENT = "POA_DOCUMENT", "POA document"
     OTHER_SUPPORTING_DOCUMENT = "OTHER_SUPPORTING_DOCUMENT", "Other supporting document"
+    IDENTITY_PROOF = "IDENTITY_PROOF", "Identity proof"
+    # A loan agreement, invoice or ledger showing the transaction behind the debt.
+    PROOF_OF_TRANSACTION = "PROOF_OF_TRANSACTION", "Proof of transaction"
 
 
 class EvidenceType(models.TextChoices):
@@ -53,14 +56,41 @@ class EvidenceType(models.TextChoices):
     LEGAL_DEMAND_NOTICE = "LEGAL_DEMAND_NOTICE", "Legal demand notice"
 
 
+# The type an evidence item's own scan must be (spec 0020 §11.4).
+EVIDENCE_SCAN_TYPES = {
+    EvidenceType.CHEQUE: DocumentType.BOUNCED_CHEQUE,
+    EvidenceType.RETURN_MEMO: DocumentType.RETURN_MEMO,
+    EvidenceType.LEGAL_DEMAND_NOTICE: DocumentType.LEGAL_DEMAND_NOTICE,
+}
+
+# Documents that belong to one party, with the roles that party may hold. Role
+# codes, not ``ParticipantRole``, which is defined in the models.
+PARTY_DOCUMENT_ROLES = {
+    DocumentType.IDENTITY_PROOF: ("COMPLAINANT",),
+    DocumentType.VAKALATNAMA: ("COMPLAINANT", "ACCUSED"),
+    DocumentType.POA_DOCUMENT: ("COMPLAINANT", "ACCUSED"),
+}
+
+# Documents that belong to one evidence item, with the evidence types it may be:
+# a cheque's scan, or a demand notice's dispatch, delivery or reply papers.
+EVIDENCE_DOCUMENT_TYPES = {
+    DocumentType.BOUNCED_CHEQUE: (EvidenceType.CHEQUE,),
+    DocumentType.RETURN_MEMO: (EvidenceType.RETURN_MEMO,),
+    DocumentType.LEGAL_DEMAND_NOTICE: (EvidenceType.LEGAL_DEMAND_NOTICE,),
+    DocumentType.PROOF_OF_DISPATCH: (EvidenceType.LEGAL_DEMAND_NOTICE,),
+    DocumentType.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE: (EvidenceType.LEGAL_DEMAND_NOTICE,),
+    DocumentType.REPLY_TO_DEMAND_NOTICE: (EvidenceType.LEGAL_DEMAND_NOTICE,),
+}
+
+
 @dataclass(frozen=True)
 class CaseTypeConfig:
     """What one case type accepts.
 
     ``document_types`` are the types uploadable through the case documents
-    endpoint. VAKALATNAMA and POA_DOCUMENT are uploaded there too (spec 0021
-    §3.4): they are linked to the case only, not to the representation or
-    mandate they belong to.
+    endpoint, VAKALATNAMA and POA_DOCUMENT included (spec 0021 §3.4). A
+    document can be linked to the party it belongs to (``PARTY_DOCUMENT_ROLES``)
+    or the evidence item it supports (``EVIDENCE_DOCUMENT_TYPES``).
     """
 
     detail_model: str
@@ -170,7 +200,12 @@ CASE_TYPES = {
             DocumentType.VAKALATNAMA,
             DocumentType.POA_DOCUMENT,
             DocumentType.OTHER_SUPPORTING_DOCUMENT,
+            DocumentType.IDENTITY_PROOF,
+            DocumentType.PROOF_OF_TRANSACTION,
         ),
+        # At least one of each. The per-party and per-notice rules (identity
+        # proof, vakalatnama, POA document, proof of delivery) are in the
+        # completeness check (spec 0021 §6.3).
         required_document_types=(
             DocumentType.BOUNCED_CHEQUE,
             DocumentType.RETURN_MEMO,
@@ -307,6 +342,7 @@ def get_description(case_type):
             {"code": code, "label": DocumentType(code).label} for code in config.document_types
         ],
         "required_document_types": list(config.required_document_types),
+        "required_evidence_types": list(config.required_evidence_types),
         "evidence_types": [
             {"code": code, "label": EvidenceType(code).label, "schema": schema}
             for code, schema in config.evidence_schemas.items()
