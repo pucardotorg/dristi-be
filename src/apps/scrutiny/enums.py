@@ -9,6 +9,13 @@ class Decision(models.TextChoices):
     CHECKS = "CHECKS", "Advisory checks"
 
 
+class CourtRole(models.TextChoices):
+    """The court roles scrutiny and registration need, held per establishment (#2.2)."""
+
+    SCRUTINY_OFFICER = "SCRUTINY_OFFICER", "Scrutiny officer"
+    CASE_REGISTERER = "CASE_REGISTERER", "Case registerer"
+
+
 class RoundStage(models.TextChoices):
     """The workflow state a round belongs to (#3.1)."""
 

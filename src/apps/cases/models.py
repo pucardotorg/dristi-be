@@ -27,6 +27,10 @@ class CaseStatus(models.TextChoices):
     PENDING_SIGN = "PENDING_SIGN", "Pending sign"
     PENDING_PAYMENT = "PENDING_PAYMENT", "Pending payment"
     UNDER_SCRUTINY = "UNDER_SCRUTINY", "Under scrutiny"
+    # Sent back by scrutiny or registration; the filer corrects it (spec 0024 #5).
+    PENDING_CORRECTION = "PENDING_CORRECTION", "Pending correction"
+    # Forwarded by the Scrutiny officer to the Case registerer (spec 0024 #6).
+    PENDING_REGISTRATION = "PENDING_REGISTRATION", "Pending registration"
     REGISTERED = "REGISTERED", "Registered"
 
 

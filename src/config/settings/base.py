@@ -313,6 +313,9 @@ SPECTACULAR_SETTINGS = {
         "PartyEntityTypeEnum": "apps.parties.models.EntityType",
         "ESignEntityTypeEnum": "apps.esign.constants.EntityType",
         "GenderEnum": "apps.parties.models.Gender",
+        "ScrutinyFlagStatusEnum": "apps.scrutiny.enums.FlagStatus",
+        "ScrutinyRoundStageEnum": "apps.scrutiny.enums.RoundStage",
+        "ScrutinyListStageEnum": "apps.scrutiny.selectors.LIST_STAGES",
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
