@@ -1,6 +1,6 @@
 # Dropped ideas
 
-**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue.
+**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom.
 
 Ideas taken out of the PRDs, kept here with their last wording so they can be restored. Each entry says where it came from and what replaced it. The full earlier documents are also in git history: commit `cb97c67` holds both files as they were before.
 
@@ -326,3 +326,16 @@ As they stood in §5.1:
 |---|---|
 | `SHC-06` | The shortcuts a person starts with are the catalogue's order items that carry no variables, worded as the catalogue words them, and a set of longer model orders. |
 | `SHC-07` | Shortcuts belong to the person and follow them across devices. A court-wide shared set is `Q-5`. |
+
+---
+
+## Shortcuts saved per courtroom
+
+**Dropped 2026-10-29.** A shortcut now belongs to one person (`SHC-06` of [`order-generation.md`](order-generation.md)) and carries a scope listing the screens it applies to, so the same feature can be reused on other screens, advocates' included (`SHC-07`).
+
+As they stood in §5.1:
+
+| ID | Requirement |
+|---|---|
+| `SHC-06` | Shortcuts are saved **per courtroom**: everyone drafting orders in a courtroom works from that courtroom's saved set, on any device. |
+| `SHC-07` | **Any order drafter** in the courtroom maintains the courtroom's set: lists, searches, adds, changes and removes its shortcuts (`SHC-05`). There are no personal shortcuts in this version. |
