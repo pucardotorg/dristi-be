@@ -31,7 +31,6 @@ from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
-from apps.api import errors as api_errors
 from apps.api.errors import BusinessError
 from apps.api.schema import error_responses
 
@@ -44,7 +43,6 @@ from .serializers import (
     BatchCreateSerializer,
     BatchSerializer,
     CancelSerializer,
-    DemandCreateSerializer,
     DemandSerializer,
     PaymentCreatedSerializer,
     PaymentCreateSerializer,
@@ -106,17 +104,6 @@ class DemandFilterSerializer(serializers.Serializer):
 
 @extend_schema_view(
     list=extend_schema(parameters=[DemandFilterSerializer]),
-    create=extend_schema(
-        request=DemandCreateSerializer,
-        responses={
-            201: DemandSerializer,
-            **error_responses(
-                errors.QUANTITY_BREAKDOWN_MISMATCH.example(field="items[0].metadata"),
-                errors.DEMAND_TOTAL_ZERO,
-                api_errors.EMPTY.example("This list may not be empty.", field="items"),
-            ),
-        },
-    ),
     cancel=extend_schema(
         request=CancelSerializer,
         responses={
@@ -137,10 +124,13 @@ class DemandFilterSerializer(serializers.Serializer):
 class DemandViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
-    mixins.CreateModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Raise, list, retrieve and cancel demands; pay and list their payments."""
+    """List, retrieve and cancel demands; pay and list their payments.
+
+    There is no create: demands are raised in-process by the raising modules
+    through ``DemandService.raise_demand`` (spec 0017 #13).
+    """
 
     serializer_class = DemandSerializer
     lookup_url_kwarg = "demand_id"
@@ -160,8 +150,6 @@ class DemandViewSet(
     def get_serializer_class(self):
         """Pick the serializer for the action."""
 
-        if self.action == "create":
-            return DemandCreateSerializer
         if self.action in ("cancel", "cancel_item"):
             return CancelSerializer
         if self.action == "payments":
@@ -183,29 +171,6 @@ class DemandViewSet(
     def _demand_response(self, demand, status_code=status.HTTP_200_OK):
         demand = selectors.demands_for(self.request.user).get(pk=demand.pk)
         return Response(DemandSerializer(demand).data, status=status_code)
-
-    def create(self, request, *args, **kwargs):
-        """Raise a demand on a case the caller is involved in."""
-
-        serializer = DemandCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        if not access.can_raise_on_case(request.user, data["case_id"]):
-            raise NotFound()
-
-        demand = DemandService.raise_demand(
-            case=data["case_id"],
-            reference_type=data["reference_type"],
-            reference_id=data["reference_id"],
-            items=data["items"],
-            user_id=request.user.pk,
-            organization_id=data.get("organization_id"),
-            currency=data.get("currency"),
-            due_date=data.get("due_date"),
-            metadata=data.get("metadata"),
-            actor=request.user,
-        )
-        return self._demand_response(demand, status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, *args, **kwargs):

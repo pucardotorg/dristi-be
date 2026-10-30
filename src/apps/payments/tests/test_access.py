@@ -94,10 +94,9 @@ class TestWhoIsInvolved:
         party = make_user("Directed party")
         assert not sees(party, raise_demand(user_id=party.pk))
 
-    def test_anonymous_sees_nothing(self, raise_demand, case_id):
+    def test_anonymous_sees_nothing(self, raise_demand):
         raise_demand()
         assert not access.visible_demands(AnonymousUser()).exists()
-        assert not access.can_raise_on_case(AnonymousUser(), case_id)
 
 
 class TestLeavingTheCase:
@@ -197,16 +196,6 @@ class TestOverTheApi:
             ),
         ):
             assert_error(response, api_errors.NOT_FOUND)
-
-    def test_raising_needs_involvement_in_the_case(self, other_user, case_id):
-        body = {
-            "case_id": str(case_id),
-            "reference_type": "ORDER",
-            "reference_id": "o",
-            "items": [{"charge_type": "COST", "description": "c", "unit_amount": "10.00"}],
-        }
-        response = client_for(other_user).post(reverse("payments-demand-list"), body, format="json")
-        assert_error(response, api_errors.NOT_FOUND)
 
     def test_batch_with_a_demand_on_a_foreign_case_is_rejected(
         self, raise_demand, user, other_user, make_case

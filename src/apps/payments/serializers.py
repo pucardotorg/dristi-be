@@ -14,11 +14,8 @@ from rest_framework import serializers
 from apps.api.serializers import AuditedModelSerializer
 
 from . import conf, errors
-from .enums import ChargeType, PaymentStatus, ReferenceType
+from .enums import PaymentStatus
 from .models import Demand, DemandItem, Payment, PaymentDemandItem
-from .services.demands import quantity_matches_breakdown
-
-MIN_AMOUNT = Decimal("0.01")
 
 
 def duplicate_free(values, error):
@@ -35,55 +32,6 @@ def duplicate_free(values, error):
 # ---------------------------------------------------------------------------
 # Demands
 # ---------------------------------------------------------------------------
-class DemandItemInputSerializer(serializers.Serializer):
-    """One line item of ``POST /payments/demands/``."""
-
-    charge_type = serializers.ChoiceField(choices=ChargeType.choices)
-    reference_type = serializers.ChoiceField(choices=ReferenceType.choices, required=False)
-    reference_id = serializers.CharField(max_length=64, required=False)
-    description = serializers.CharField(max_length=255)
-    quantity = serializers.DecimalField(
-        max_digits=10, decimal_places=2, min_value=MIN_AMOUNT, default=Decimal("1")
-    )
-    unit_amount = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=MIN_AMOUNT)
-    account_head = serializers.CharField(max_length=64, required=False, allow_blank=True)
-    metadata = serializers.DictField(required=False, default=dict)
-
-    def validate(self, attrs):
-        """The breakdown factors must multiply to ``quantity`` (spec 0017 #2.2)."""
-
-        if not quantity_matches_breakdown(attrs["quantity"], attrs.get("metadata") or {}):
-            raise errors.QUANTITY_BREAKDOWN_MISMATCH.validation_error(
-                {"metadata": [errors.QUANTITY_BREAKDOWN_MISMATCH.message]}
-            )
-        return attrs
-
-
-class DemandCreateSerializer(serializers.Serializer):
-    """Body of ``POST /payments/demands/``.
-
-    Balances, status and numbers are never accepted: unknown keys such as
-    ``status`` or ``paid_amount`` are ignored. ``user_id`` is the caller; a
-    demand for another party is raised in-process.
-    """
-
-    case_id = serializers.UUIDField()
-    reference_type = serializers.ChoiceField(choices=ReferenceType.choices)
-    reference_id = serializers.CharField(max_length=64)
-    organization_id = serializers.UUIDField(required=False, allow_null=True, default=None)
-    currency = serializers.CharField(min_length=3, max_length=3, required=False)
-    due_date = serializers.DateTimeField(required=False, allow_null=True, default=None)
-    metadata = serializers.DictField(required=False, default=dict)
-    items = DemandItemInputSerializer(many=True, allow_empty=False)
-
-    def validate_currency(self, value):
-        """An ISO 4217 alphabetic code."""
-
-        if not value.isalpha():
-            raise serializers.ValidationError("Must be an ISO 4217 code.")
-        return value.upper()
-
-
 class DemandItemSerializer(serializers.ModelSerializer):
     """A line item as returned to the payer."""
 

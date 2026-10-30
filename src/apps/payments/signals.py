@@ -15,15 +15,11 @@ called ``DemandService.raise_demand``::
 Receivers must be idempotent: a message can be delivered more than once. Only
 ``SUCCESS`` is ever announced; ``PENDING`` is never paid.
 
-TODO(demand-origin): never identify "your" demand by ``reference_type`` /
-``reference_id`` (or an item's). Any user can raise a demand over REST
-(``POST /payments/demands/``) with whatever references and amounts they like,
-e.g. a 0.01 ``CASE_FILING`` demand for their own filing; a receiver matching on
-references would treat paying it as paying the real filing fee. Harmless while
-no receiver exists. Before the first one is written, decide how demands raised
-over REST are told apart from those raised in-process (match on the stored id
-only, add a server-set ``raised_via`` field, or restrict REST creation) and
-record the decision in spec 0017 #14.
+Every demand is raised in-process (there is no REST create, spec 0017
+"Implementation notes"), so a receiver can trust that a demand it stored the id
+of is its own. Still match on that id, never on ``reference_type`` /
+``reference_id``: references are free text, and if REST creation ever returns
+(see the spec note), a caller could reuse them on a demand of its own.
 """
 
 from django.dispatch import Signal

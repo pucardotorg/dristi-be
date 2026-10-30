@@ -4,15 +4,18 @@ Error tests assert the code and field, never the message (spec 0000 #13).
 """
 
 import uuid
+from datetime import timedelta
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.api import errors as api_errors
 from apps.payments import errors
 from apps.payments.enums import DemandStatus, PaymentStatus
 from apps.payments.models import Demand, Payment
+from apps.payments.providers import registry
 from apps.payments.services import PaymentService
 
 from .helpers import assert_error, item, item_ids
@@ -36,101 +39,16 @@ def strs(ids):
     return [str(i) for i in ids]
 
 
-def demand_body(case_id, **overrides):
-    body = {
-        "case_id": str(case_id),
-        "reference_type": "CASE_FILING",
-        "reference_id": "filing-456",
-        "items": [
-            {
-                "charge_type": "COURT_FEE",
-                "description": "Court Fee",
-                "quantity": "1",
-                "unit_amount": "12.50",
-            },
-            {
-                "charge_type": "PROCESS_COURT_FEE",
-                "description": "Summons — Accused 1",
-                "quantity": "2",
-                "unit_amount": "12.50",
-                "metadata": {
-                    "accused_id": "accused-1",
-                    "quantity_breakdown": {"addresses": 2, "rounds": 1},
-                },
-            },
-        ],
-        "metadata": {"court_id": "court-kl-ekm-01"},
-    }
-    body.update(overrides)
-    return body
-
-
 def pay_body(ids, key="attempt-1", **extra):
     return {"client_request_id": key, "demand_item_ids": strs(ids), **extra}
 
 
-class TestRaiseDemand:
-    def test_created_with_server_computed_fields(self, api, user, case_id):
-        response = api.post(DEMANDS, demand_body(case_id), format="json")
-        assert response.status_code == 201, response.content
-        body = response.json()
-        assert "meta" in body
-        assert body["demand_number"].startswith("DMD-")
-        assert body["status"] == "RAISED"
-        assert body["total_amount"] == body["due_amount"] == "37.50"
-        assert body["paid_amount"] == "0.00"
-        assert body["user_id"] == str(user.pk)
-        assert body["created_by"]["id"] == str(user.pk)
-        assert [i["amount"] for i in body["items"]] == ["12.50", "25.00"]
-        assert body["payment_summary"]["count"] == 0
-
-    def test_client_cannot_set_balances_or_status(self, api, case_id):
-        body = demand_body(
-            case_id,
-            status="PAID",
-            paid_amount="37.50",
-            demand_number="DMD-X",
-            user_id=str(uuid.uuid4()),
-        )
-        body["items"][0].update(status="PAID", paid_amount="12.50", amount="1.00")
-        created = api.post(DEMANDS, body, format="json").json()
-        assert created["status"] == "RAISED"
-        assert created["paid_amount"] == "0.00"
-        assert created["demand_number"] != "DMD-X"
-        assert created["items"][0]["amount"] == "12.50"
-
-    def test_case_id_is_required(self, api, case_id):
-        body = demand_body(case_id)
-        del body["case_id"]
-        assert_error(api.post(DEMANDS, body, format="json"), api_errors.REQUIRED, "case_id")
-
-    def test_empty_items(self, api, case_id):
-        response = api.post(DEMANDS, demand_body(case_id, items=[]), format="json")
-        assert_error(response, api_errors.EMPTY, "items")
-
-    def test_breakdown_mismatch(self, api, case_id):
-        body = demand_body(case_id)
-        body["items"][1]["quantity"] = "3"
-        response = api.post(DEMANDS, body, format="json")
-        assert_error(response, errors.QUANTITY_BREAKDOWN_MISMATCH, "items[1].metadata")
-
-    @pytest.mark.parametrize("field,value", [("quantity", "0"), ("unit_amount", "-1")])
-    def test_non_positive_numbers(self, api, case_id, field, value):
-        body = demand_body(case_id)
-        body["items"][0][field] = value
-        response = api.post(DEMANDS, body, format="json")
-        assert_error(response, api_errors.MIN_VALUE, f"items[0].{field}")
-
-    def test_money_is_never_a_float(self, api, case_id):
-        body = demand_body(case_id)
-        body["items"][0]["unit_amount"] = "12.505"
-        response = api.post(DEMANDS, body, format="json")
-        assert_error(response, api_errors.TOO_MANY_DIGITS, "items[0].unit_amount")
-
-    def test_anonymous_is_refused(self, case_id):
-        response = APIClient().post(DEMANDS, demand_body(case_id), format="json")
-        assert response.status_code == 403
-        assert response.json()["errors"][0]["code"] == api_errors.NOT_AUTHENTICATED.code
+class TestNoRestCreate:
+    def test_demands_cannot_be_raised_over_rest(self, api, case_id):
+        """Demands are raised in-process only (spec 0017 #13)."""
+        body = {"case_id": str(case_id), "reference_type": "ORDER", "reference_id": "o"}
+        assert_error(api.post(DEMANDS, body, format="json"), api_errors.METHOD_NOT_ALLOWED)
+        assert not Demand.objects.exists()
 
 
 class TestListAndRetrieve:
@@ -390,11 +308,22 @@ class TestPaymentEndpoints:
 
     def test_cancel_when_provider_never_saw_it(self, api, raise_demand):
         payment = self.created(api, raise_demand(), outcome="NOT_FOUND")
+        grace = registry.get(payment.provider).not_found_grace
+        Payment.objects.filter(pk=payment.pk).update(
+            initiated_at=timezone.now() - grace - timedelta(seconds=1)
+        )
         response = api.post(
             payment_url(payment, "cancel"), {"reason": "changed mind"}, format="json"
         )
         assert response.status_code == 200, response.content
         assert response.json()["status"] == "CANCELLED"
+
+    def test_cancel_refused_while_not_found_may_still_change(self, api, raise_demand):
+        """The payer may still be on the gateway page (spec 0017 #9.5, #9.8)."""
+        payment = self.created(api, raise_demand(), outcome="NOT_FOUND")
+        assert_error(api.post(payment_url(payment, "cancel"), {}), errors.PAYMENT_OUTCOME_PENDING)
+        payment.refresh_from_db()
+        assert payment.status == PaymentStatus.PENDING
 
     def test_cancel_when_provider_already_failed(self, api, raise_demand):
         payment = self.created(api, raise_demand(), outcome="FAILED")

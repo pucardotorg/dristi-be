@@ -219,6 +219,24 @@ class TestResolvedFlagsStayResolved:
         assert payment.status == PaymentStatus.PENDING
         assert payment.demand.paid_amount == 0
 
+    def test_late_success_after_an_open_stuck_flag_is_flagged_and_logged(self, payment, caplog):
+        """An open STUCK flag must not swallow a later late success."""
+        self.answer(payment, "PENDING")
+        polling.poll_pending_payments(now=at(payment, self.HORIZON + 61))
+        self.answer(payment, "FAILED")
+        polling.poll_pending_payments(now=at(payment, self.HORIZON + 5000))
+        payment.refresh_from_db()
+        assert payment.status == PaymentStatus.FAILED and payment.needs_reconciliation
+
+        self.answer(payment, "SUCCESS", str(payment.amount))
+        PaymentService.refresh_from_provider(payment)
+        flagged, record = self.reconciliation(payment)
+        assert flagged and record["reason"] == "PAYMENT_LATE_SUCCESS"
+        history = payment.metadata["reconciliation_history"]
+        assert [r["reason"] for r in history] == ["PAYMENT_STUCK"]
+        assert "PAYMENT_LATE_SUCCESS" in caplog.text
+        assert payment.status == PaymentStatus.FAILED  # never credited
+
     def test_a_new_problem_is_still_flagged(self, payment, user):
         self.answer(payment, "SUCCESS", "1.00")
         polling.poll_pending_payments(now=at(payment, 61))
