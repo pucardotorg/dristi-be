@@ -59,6 +59,8 @@ _UNSET = object()
 # other keyword (pattern, format, minimum …) is a plain invalid value.
 SCHEMA_KEYWORD_ERRORS = {
     "required": api_errors.REQUIRED,
+    # Text with no visible character (``case_types._text``).
+    "blank": api_errors.BLANK,
     "type": api_errors.INCORRECT_TYPE,
     "enum": api_errors.INVALID_CHOICE,
     "const": api_errors.INVALID_CHOICE,

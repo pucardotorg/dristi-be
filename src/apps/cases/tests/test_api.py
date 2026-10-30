@@ -531,6 +531,16 @@ class TestDetails:
         data["condonation_reason"] = "The complainant was hospitalised."
         assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
 
+    @pytest.mark.parametrize("reason", ["", " ", "\t\n"])
+    def test_a_blank_condonation_reason_does_not_excuse_a_late_filing(self, client, draft, reason):
+        data = {**JURISDICTION, "complaint_filing_date": "2024-03-23", "condonation_reason": reason}
+
+        response = put_section(client, draft, "jurisdiction_limitation", data)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"data.condonation_reason": ["E00004"]}
+        assert Case.objects.count() == 0
+
     def test_complaint_cannot_be_filed_before_the_cause_of_action(self, client, draft):
         data = {**JURISDICTION, "complaint_filing_date": "2024-02-20"}
 
@@ -614,6 +624,7 @@ class TestEvidence:
             {**CHEQUE_INFO, "cheque_date": "15/01/2024"},
             {**CHEQUE_INFO, "cheque_number": "1234567"},
             {**CHEQUE_INFO, "ifsc_code": "SBIN1234"},
+            {**CHEQUE_INFO, "bank_name": "   "},
             {key: value for key, value in CHEQUE_INFO.items() if key != "bank_account_number"},
             {**CHEQUE_INFO, "bank_account_number": "1234"},
             {**CHEQUE_INFO, "bank_account_number": "3001-2345-678"},

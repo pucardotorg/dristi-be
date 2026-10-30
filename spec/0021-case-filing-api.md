@@ -754,8 +754,10 @@ schemas live in code, in the case type registry
 server validates against.
 
 All schemas are strict (`"additionalProperties": false`): an unknown key is a
-400, so a typo is reported rather than silently stored. Required text fields
-must be non-empty. Dates are `YYYY-MM-DD`. Every problem is reported at once,
+400, so a typo is reported rather than silently stored. Text fields must
+contain a non-whitespace character (`"pattern": "\\S"`); an empty or
+whitespace-only value is a 400 with code `E00004` ("This field may not be
+blank.") on that field. Dates are `YYYY-MM-DD`. Every problem is reported at once,
 under `evidence_info`.
 
 A field with a fixed code list is a `oneOf` of `{ "const": code, "title": label }`
@@ -775,8 +777,8 @@ the schema. A value outside the list is a 400 with code `E00005` on that field.
     "amount": { "type": "number", "exclusiveMinimum": 0 },
     "cheque_number": { "type": "string", "pattern": "^[0-9]{6}$" },
     "ifsc_code": { "type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$" },
-    "bank_name": { "type": "string", "minLength": 1 },
-    "bank_branch": { "type": "string", "minLength": 1 },
+    "bank_name": { "type": "string", "pattern": "\\S" },
+    "bank_branch": { "type": "string", "pattern": "\\S" },
     "bank_account_number": { "type": "string", "pattern": "^[0-9]{9,18}$" }
   },
   "additionalProperties": false
@@ -841,11 +843,11 @@ digits with no spaces or separators, sent as a string so leading zeros are kept.
         { "const": "FAX", "title": "Fax" }
       ]
     },
-    "tracking_number": { "type": "string", "minLength": 1 },
+    "tracking_number": { "type": "string", "pattern": "\\S" },
     "is_delivered": { "type": "boolean" },
     "delivery_date": { "type": "string", "format": "date" },
     "return_date": { "type": "string", "format": "date" },
-    "non_delivery_reason": { "type": "string", "minLength": 1 },
+    "non_delivery_reason": { "type": "string", "pattern": "\\S" },
     "accused_replied": { "type": "boolean" },
     "payment_status": {
       "oneOf": [
@@ -960,14 +962,14 @@ strict (`"additionalProperties": false`).
   "properties": {
     "cheque_deposited_by_payee": { "type": "boolean" },
     "payee_ifsc_code": { "type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$" },
-    "payee_bank_name": { "type": "string", "minLength": 1 },
-    "payee_bank_branch": { "type": "string", "minLength": 1 },
-    "payee_bank_police_station": { "type": "string", "minLength": 1 },
-    "drawer_bank_police_station": { "type": "string", "minLength": 1 },
+    "payee_bank_name": { "type": "string", "pattern": "\\S" },
+    "payee_bank_branch": { "type": "string", "pattern": "\\S" },
+    "payee_bank_police_station": { "type": "string", "pattern": "\\S" },
+    "drawer_bank_police_station": { "type": "string", "pattern": "\\S" },
     "other_complaints_pending": { "type": "boolean" },
     "cause_of_action_date": { "type": "string", "format": "date" },
     "complaint_filing_date": { "type": "string", "format": "date" },
-    "condonation_reason": { "type": "string", "minLength": 1 }
+    "condonation_reason": { "type": "string", "pattern": "\\S" }
   },
   "additionalProperties": false,
   "allOf": [
@@ -1015,7 +1017,7 @@ pending between the same parties.
     "adr_preference": { "enum": ["YES", "NO", "MAYBE"] },
     "other_details": { "type": "string" },
     "interim_relief": { "type": "string" },
-    "final_relief": { "type": "string", "minLength": 1 }
+    "final_relief": { "type": "string", "pattern": "\\S" }
   },
   "additionalProperties": false
 }
@@ -1323,7 +1325,7 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 | `E07027` | 400 | The e-sign transaction's signer is not the participant's user account (§8). |
 | `E07028` | 400 | The e-signature was completed before the case entered `PENDING_SIGN` (§8). |
 
-A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
+A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00004` blank text, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
 
 ```
 POST /cases/{case_id}/submit-for-signing

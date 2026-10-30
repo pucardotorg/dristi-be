@@ -21,6 +21,8 @@ import jsonschema
 from django.apps import apps
 from django.db import models
 
+from apps.api import errors as api_errors
+
 
 class CaseType(models.TextChoices):
     """Dispute types."""
@@ -143,8 +145,14 @@ def _date():
     return {"type": "string", "format": "date"}
 
 
+# Matches text with at least one visible character; ``schema_errors`` reports a
+# mismatch as a blank field.
+_NOT_BLANK = r"\S"
+
+
 def _text():
-    return {"type": "string", "minLength": 1}
+    """Free text with at least one visible character, so a blank answer is not one."""
+    return {"type": "string", "pattern": _NOT_BLANK}
 
 
 def _choice(choices):
@@ -411,10 +419,15 @@ def schema_errors(schema, data):
     enforces the same rules).
     """
     validator = jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
-    return [
-        SchemaError(_path(error.absolute_path), error.message, error.validator)
-        for error in validator.iter_errors(data)
-    ]
+    return [_schema_error(error) for error in validator.iter_errors(data)]
+
+
+def _schema_error(error):
+    """Convert a jsonschema error, reporting blank text as such rather than as a regex mismatch."""
+    path = _path(error.absolute_path)
+    if error.validator == "pattern" and error.validator_value == _NOT_BLANK:
+        return SchemaError(path, api_errors.BLANK.message, "blank")
+    return SchemaError(path, error.message, error.validator)
 
 
 def section_errors(config, section, data):
