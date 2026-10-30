@@ -118,7 +118,7 @@ CHEQUE_INFO = {
     "ifsc_code": "SBIN0001234",
     "bank_name": "State Bank of India",
     "bank_branch": "MG Road",
-    "account_number": "30012345678",
+    "bank_account_number": "30012345678",
 }
 
 RETURN_MEMO_INFO = {

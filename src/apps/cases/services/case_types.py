@@ -316,7 +316,7 @@ CASE_TYPES = {
                     "ifsc_code",
                     "bank_name",
                     "bank_branch",
-                    "account_number",
+                    "bank_account_number",
                 ],
                 properties={
                     "cheque_date": _date(),
@@ -327,7 +327,7 @@ CASE_TYPES = {
                     "bank_name": _text(),
                     "bank_branch": _text(),
                     # The drawer's account the cheque is drawn on.
-                    "account_number": {"type": "string", "pattern": "^[0-9]{9,18}$"},
+                    "bank_account_number": {"type": "string", "pattern": "^[0-9]{9,18}$"},
                 },
             ),
             # From the memo the bank issued when the cheque was dishonoured.

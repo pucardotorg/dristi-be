@@ -614,9 +614,9 @@ class TestEvidence:
             {**CHEQUE_INFO, "cheque_date": "15/01/2024"},
             {**CHEQUE_INFO, "cheque_number": "1234567"},
             {**CHEQUE_INFO, "ifsc_code": "SBIN1234"},
-            {key: value for key, value in CHEQUE_INFO.items() if key != "account_number"},
-            {**CHEQUE_INFO, "account_number": "1234"},
-            {**CHEQUE_INFO, "account_number": "3001-2345-678"},
+            {key: value for key, value in CHEQUE_INFO.items() if key != "bank_account_number"},
+            {**CHEQUE_INFO, "bank_account_number": "1234"},
+            {**CHEQUE_INFO, "bank_account_number": "3001-2345-678"},
             {**CHEQUE_INFO, "drawee_bank": "SBI"},  # unknown key
         ],
     )

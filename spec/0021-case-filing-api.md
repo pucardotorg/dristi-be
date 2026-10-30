@@ -670,7 +670,7 @@ demand notice #1.
     "ifsc_code": "SBIN0001234",
     "bank_name": "State Bank of India",
     "bank_branch": "MG Road",
-    "account_number": "30012345678"
+    "bank_account_number": "30012345678"
   }
 }
 ```
@@ -768,7 +768,7 @@ the schema. A value outside the list is a 400 with code `E00005` on that field.
   "type": "object",
   "required": [
     "cheque_date", "amount", "cheque_number", "ifsc_code", "bank_name", "bank_branch",
-    "account_number"
+    "bank_account_number"
   ],
   "properties": {
     "cheque_date": { "type": "string", "format": "date" },
@@ -777,13 +777,13 @@ the schema. A value outside the list is a 400 with code `E00005` on that field.
     "ifsc_code": { "type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$" },
     "bank_name": { "type": "string", "minLength": 1 },
     "bank_branch": { "type": "string", "minLength": 1 },
-    "account_number": { "type": "string", "pattern": "^[0-9]{9,18}$" }
+    "bank_account_number": { "type": "string", "pattern": "^[0-9]{9,18}$" }
   },
   "additionalProperties": false
 }
 ```
 `cheque_number` is the six-digit number, not the full MICR line.
-`account_number` is the drawer's account the cheque is drawn on, 9 to 18
+`bank_account_number` is the drawer's account the cheque is drawn on, 9 to 18
 digits with no spaces or separators, sent as a string so leading zeros are kept.
 
 **`RETURN_MEMO`** (from the memo the bank issued when the cheque was dishonoured):
