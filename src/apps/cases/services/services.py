@@ -36,7 +36,7 @@ from ..models import (
     CaseStatus,
     ParticipantRole,
 )
-from .case_types import CASE_TYPES, get_config, schema_errors
+from .case_types import CASE_TYPES, get_config, schema_errors, section_errors
 
 logger = logging.getLogger(__name__)
 
@@ -392,18 +392,18 @@ def validate_evidence(case_type, evidence_type, evidence_info):
     """Raise a 400 unless ``case_type`` accepts ``evidence_type`` and the info fits its schema."""
     schemas = get_config(case_type).evidence_schemas
     _require_allowed(evidence_type, tuple(schemas), "evidence_type", case_type)
-    _validate_schema(schemas[evidence_type], evidence_info, "evidence_info")
+    _raise_schema_errors(schema_errors(schemas[evidence_type], evidence_info), "evidence_info")
 
 
-def _validate_schema(schema, data, field):
-    """Raise a 400 listing every way ``data``, sent as ``field``, breaks ``schema``.
+def _raise_schema_errors(problems, field):
+    """Raise a 400 listing ``problems``, the ways the data sent as ``field`` breaks its schema.
 
     Each error is reported on the path to the offending value, such as
     ``evidence_info.cheque_number``; one about the object as a whole (a
     missing or unknown key) on ``field`` itself.
     """
     detail = {}
-    for problem in schema_errors(schema, data):
+    for problem in problems:
         code = SCHEMA_KEYWORD_ERRORS.get(problem.keyword, api_errors.INVALID).code
         path = f"{field}.{problem.path}" if problem.path else field
         detail.setdefault(path, []).append(ErrorDetail(problem.message, code=code))
@@ -510,9 +510,9 @@ def get_detail_sections(case):
 def save_details_section(case_or_draft_id, user, section, data):
     """Replace one details section, creating the case on first save."""
     case_type = get_case_type(case_or_draft_id, user)
-    schemas = get_config(case_type).section_schemas
-    _require_allowed(section, tuple(schemas), "section", case_type)
-    _validate_schema(schemas[section], data, "data")
+    config = get_config(case_type)
+    _require_allowed(section, config.sections, "section", case_type)
+    _raise_schema_errors(section_errors(config, section, data), "data")
     with transaction.atomic():
         case = get_or_create_case(case_or_draft_id, user)
         detail = _get_or_create_detail_row(case, user)

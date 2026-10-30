@@ -13,7 +13,9 @@ Adding a document or evidence type: add it to the enum below (the shared
 vocabulary, with its label), then list it under each case type that accepts it.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 
 import jsonschema
 from django.apps import apps
@@ -53,6 +55,47 @@ class EvidenceType(models.TextChoices):
     LEGAL_DEMAND_NOTICE = "LEGAL_DEMAND_NOTICE", "Legal demand notice"
 
 
+class ReturnReason(models.TextChoices):
+    """Why the bank returned the cheque unpaid, from the return memo."""
+
+    FUNDS_INSUFFICIENT = "FUNDS_INSUFFICIENT", "Funds insufficient"
+    EXCEEDS_ARRANGEMENT = "EXCEEDS_ARRANGEMENT", "Exceeds arrangement"
+    ACCOUNT_CLOSED = "ACCOUNT_CLOSED", "Account closed"
+    PAYMENT_STOPPED_BY_DRAWER = "PAYMENT_STOPPED_BY_DRAWER", "Payment stopped by drawer"
+    SIGNATURE_DIFFERS_OR_INCOMPLETE = (
+        "SIGNATURE_DIFFERS_OR_INCOMPLETE",
+        "Drawer's signature differs / incomplete",
+    )
+    AMOUNT_IN_WORDS_AND_FIGURES_DIFFER = (
+        "AMOUNT_IN_WORDS_AND_FIGURES_DIFFER",
+        "Amount in words and figures differ",
+    )
+    REFER_TO_DRAWER = "REFER_TO_DRAWER", "Refer to drawer"
+    POST_DATED_OR_STALE = "POST_DATED_OR_STALE", "Cheque post-dated / stale"
+
+
+class NatureOfDebt(models.TextChoices):
+    """The debt or liability the cheque was given for."""
+
+    LOAN_OR_ADVANCE_REPAYMENT = "LOAN_OR_ADVANCE_REPAYMENT", "Loan / advance repayment"
+    GOODS_SUPPLIED = "GOODS_SUPPLIED", "Payment for goods supplied"
+    SERVICES_RENDERED = "SERVICES_RENDERED", "Payment for services rendered"
+    BUSINESS_OR_TRADE_TRANSACTION = "BUSINESS_OR_TRADE_TRANSACTION", "Business / trade transaction"
+    BORROWED_MONEY_REPAYMENT = "BORROWED_MONEY_REPAYMENT", "Repayment of borrowed money"
+    OTHER_LIABILITY = "OTHER_LIABILITY", "Other liability"
+
+
+class ModeOfService(models.TextChoices):
+    """How the legal demand notice was sent."""
+
+    REGISTERED_POST = "REGISTERED_POST", "Registered post (RPAD)"
+    SPEED_POST = "SPEED_POST", "Speed post"
+    COURIER = "COURIER", "Courier"
+    EMAIL = "EMAIL", "Email"
+    HAND_DELIVERY = "HAND_DELIVERY", "Hand delivery"
+    FAX = "FAX", "Fax"
+
+
 class PaymentStatus(models.TextChoices):
     """Whether the drawer has paid part of the cheque amount."""
 
@@ -75,6 +118,9 @@ class CaseTypeConfig:
     section_schemas: dict[str, dict]
     document_types: tuple[str, ...]
     evidence_schemas: dict[str, dict] = field(default_factory=dict)
+    # Details section -> rules JSON Schema cannot express, called with the
+    # section's data; returns ``SchemaError``s.
+    section_checks: dict[str, Callable[[dict], list]] = field(default_factory=dict)
     # The completeness check (spec 0021 §6.3) requires at least one of each.
     required_document_types: tuple[str, ...] = ()
     required_evidence_types: tuple[str, ...] = ()
@@ -138,6 +184,43 @@ def _object(required, properties, **extra):
     }
 
 
+# A cheque bounce complaint is due within one month of the cause of action
+# (NI Act s.142(b)); one filed later needs a reason for the court to condone the delay.
+LIMITATION_PERIOD_DAYS = 30
+
+
+def _limitation_errors(data):
+    """Check the complaint filing date against the cause of action.
+
+    The complaint cannot be filed before the cause of action arose, and one
+    filed after the limitation period needs a ``condonation_reason``.
+    """
+    try:
+        arose = date.fromisoformat(data["cause_of_action_date"])
+        filed = date.fromisoformat(data["complaint_filing_date"])
+    except (KeyError, TypeError, ValueError):
+        # Missing or malformed: the schema reports it.
+        return []
+    if filed < arose:
+        return [
+            SchemaError(
+                "complaint_filing_date",
+                "The complaint filing date cannot be before the cause of action date.",
+                "minimum",
+            )
+        ]
+    if (filed - arose).days <= LIMITATION_PERIOD_DAYS or "condonation_reason" in data:
+        return []
+    return [
+        SchemaError(
+            "",
+            "'condonation_reason' is a required property: the complaint is filed more "
+            f"than {LIMITATION_PERIOD_DAYS} days after the cause of action.",
+            "required",
+        )
+    ]
+
+
 CASE_TYPES = {
     CaseType.CHEQUE_BOUNCE: CaseTypeConfig(
         detail_model="cases.ChequeBounceCase",
@@ -147,8 +230,8 @@ CASE_TYPES = {
             "jurisdiction_limitation": _object(
                 required=[
                     "cheque_deposited_by_payee",
-                    "bank_police_station",
                     "cause_of_action_date",
+                    "complaint_filing_date",
                 ],
                 properties={
                     # Jurisdiction follows the branch where the cheque was
@@ -157,30 +240,46 @@ CASE_TYPES = {
                     "payee_ifsc_code": _ifsc(),
                     "payee_bank_name": _text(),
                     "payee_bank_branch": _text(),
-                    # The payee's branch when the payee deposited the cheque,
-                    # otherwise the drawer's.
-                    "bank_police_station": _text(),
+                    # Police station of the payee's branch when the payee
+                    # deposited the cheque, otherwise of the drawer's.
+                    "payee_bank_police_station": _text(),
+                    "drawer_bank_police_station": _text(),
                     # Another S.138 complaint pending between the same parties.
                     "other_complaints_pending": {"type": "boolean"},
                     "cause_of_action_date": _date(),
+                    "complaint_filing_date": _date(),
+                    # Why the complaint is late; required when it is filed
+                    # after the limitation period (``_limitation_errors``).
+                    "condonation_reason": _text(),
                 },
-                **_required_when(
-                    "cheque_deposited_by_payee",
-                    True,
-                    ["payee_ifsc_code", "payee_bank_name", "payee_bank_branch"],
-                ),
+                allOf=[
+                    _required_when(
+                        "cheque_deposited_by_payee",
+                        True,
+                        [
+                            "payee_ifsc_code",
+                            "payee_bank_name",
+                            "payee_bank_branch",
+                            "payee_bank_police_station",
+                        ],
+                    ),
+                    _required_when(
+                        "cheque_deposited_by_payee", False, ["drawer_bank_police_station"]
+                    ),
+                ],
             ),
             # Willingness to settle, other details for the court, and the relief sought.
             "adr_other_prayer": _object(
                 required=["final_relief"],
                 properties={
-                    "adr_preference": {"enum": ["YES", "NO"]},
+                    "adr_preference": {"enum": ["YES", "NO", "MAYBE"]},
                     "other_details": _rich_text(),
                     "interim_relief": _rich_text(),
                     "final_relief": _text(),
                 },
             ),
         },
+        section_checks={"jurisdiction_limitation": _limitation_errors},
         document_types=(
             DocumentType.BOUNCED_CHEQUE,
             DocumentType.RETURN_MEMO,
@@ -208,7 +307,7 @@ CASE_TYPES = {
         # One RETURN_MEMO and one LEGAL_DEMAND_NOTICE per cheque, matched to it
         # by ordinal: cheque #1, return memo #1, demand notice #1.
         evidence_schemas={
-            # As written on the cheque leaf, plus the drawer's bank.
+            # As written on the cheque leaf, plus the drawer's bank and account.
             EvidenceType.CHEQUE: _object(
                 required=[
                     "cheque_date",
@@ -217,6 +316,7 @@ CASE_TYPES = {
                     "ifsc_code",
                     "bank_name",
                     "bank_branch",
+                    "account_number",
                 ],
                 properties={
                     "cheque_date": _date(),
@@ -226,6 +326,8 @@ CASE_TYPES = {
                     "ifsc_code": _ifsc(),
                     "bank_name": _text(),
                     "bank_branch": _text(),
+                    # The drawer's account the cheque is drawn on.
+                    "account_number": {"type": "string", "pattern": "^[0-9]{9,18}$"},
                 },
             ),
             # From the memo the bank issued when the cheque was dishonoured.
@@ -234,13 +336,12 @@ CASE_TYPES = {
                 properties={
                     "presentation_date": _date(),
                     "return_date": _date(),
-                    "return_reason": _text(),
+                    "return_reason": _choice(ReturnReason),
                 },
             ),
             EvidenceType.LEGAL_DEMAND_NOTICE: _object(
                 required=[
                     "nature_of_debt",
-                    "cheque_issue_reason",
                     "dispatch_date",
                     "mode_of_service",
                     "is_delivered",
@@ -248,11 +349,10 @@ CASE_TYPES = {
                 ],
                 properties={
                     # Nature of debt
-                    "nature_of_debt": _text(),
-                    "cheque_issue_reason": _text(),
+                    "nature_of_debt": _choice(NatureOfDebt),
                     # Legal demand notice
                     "dispatch_date": _date(),
-                    "mode_of_service": _text(),
+                    "mode_of_service": _choice(ModeOfService),
                     "tracking_number": _text(),
                     "is_delivered": {"type": "boolean"},
                     # The 15-day payment window runs from this date.
@@ -315,6 +415,18 @@ def schema_errors(schema, data):
         SchemaError(_path(error.absolute_path), error.message, error.validator)
         for error in validator.iter_errors(data)
     ]
+
+
+def section_errors(config, section, data):
+    """Return every way ``data`` breaks ``section``'s schema and checks; empty when it fits.
+
+    The checks run only on data that fits the schema's shape (an object).
+    """
+    problems = schema_errors(config.section_schemas[section], data)
+    check = config.section_checks.get(section)
+    if check and isinstance(data, dict):
+        problems += check(data)
+    return problems
 
 
 def _path(parts):

@@ -413,9 +413,10 @@ JURISDICTION = {
     "payee_ifsc_code": "HDFC0000512",
     "payee_bank_name": "HDFC Bank",
     "payee_bank_branch": "Kochi",
-    "bank_police_station": "Ernakulam Central",
+    "payee_bank_police_station": "Ernakulam Central",
     "other_complaints_pending": False,
     "cause_of_action_date": "2024-02-21",
+    "complaint_filing_date": "2024-03-05",
 }
 
 
@@ -457,20 +458,46 @@ class TestDetails:
                 "jurisdiction_limitation",
                 {
                     "cheque_deposited_by_payee": True,
-                    "bank_police_station": "Ernakulam Central",
+                    "payee_bank_police_station": "Ernakulam Central",
                     "cause_of_action_date": "2024-02-21",
+                    "complaint_filing_date": "2024-03-05",
+                },
+            ),
+            # Deposited by the payee, but no police station for the payee's branch.
+            (
+                "jurisdiction_limitation",
+                {
+                    key: value
+                    for key, value in JURISDICTION.items()
+                    if key != "payee_bank_police_station"
                 },
             ),
             # Not deposited by the payee, but no police station for the drawer's branch.
             (
                 "jurisdiction_limitation",
-                {"cheque_deposited_by_payee": False, "cause_of_action_date": "2024-02-21"},
+                {
+                    "cheque_deposited_by_payee": False,
+                    "cause_of_action_date": "2024-02-21",
+                    "complaint_filing_date": "2024-03-05",
+                },
             ),
+            # The old shared key is gone.
+            ("jurisdiction_limitation", {**JURISDICTION, "bank_police_station": "Kochi"}),
+            ("jurisdiction_limitation", {**JURISDICTION, "condonation_reason": ""}),
+            # No filing date.
+            (
+                "jurisdiction_limitation",
+                {
+                    key: value
+                    for key, value in JURISDICTION.items()
+                    if key != "complaint_filing_date"
+                },
+            ),
+            ("jurisdiction_limitation", {**JURISDICTION, "complaint_filing_date": "05/03/2024"}),
             ("jurisdiction_limitation", {**JURISDICTION, "payee_ifsc_code": "HDFC512"}),
             ("jurisdiction_limitation", {**JURISDICTION, "limitation_notes": "typo"}),
             ("adr_other_prayer", {"adr_preference": "YES"}),  # no final relief
             ("adr_other_prayer", {"adr_preference": "SOMETIMES", "final_relief": "Convict"}),
-            ("adr_other_prayer", {"adr_preference": "MAYBE", "final_relief": "Convict"}),
         ],
     )
     def test_invalid_section_is_400_and_creates_nothing(self, client, draft, section, data):
@@ -483,15 +510,54 @@ class TestDetails:
     def test_payee_bank_details_not_needed_when_not_deposited_by_payee(self, client, draft):
         data = {
             "cheque_deposited_by_payee": False,
-            "bank_police_station": "Ernakulam Central",
+            "drawer_bank_police_station": "Ernakulam Central",
             "cause_of_action_date": "2024-02-21",
+            "complaint_filing_date": "2024-03-05",
         }
 
         assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
 
-    def test_adr_other_prayer_round_trip(self, client, draft):
+    def test_condonation_reason_required_when_filed_past_the_limitation_period(self, client, draft):
+        # 31 days after the cause of action (2024 is a leap year).
+        data = {**JURISDICTION, "complaint_filing_date": "2024-03-23"}
+
+        response = put_section(client, draft, "jurisdiction_limitation", data)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"data": ["E00002"]}
+        assert "condonation_reason" in response.json()["errors"][0]["message"]
+        assert Case.objects.count() == 0
+
+        data["condonation_reason"] = "The complainant was hospitalised."
+        assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
+
+    def test_complaint_cannot_be_filed_before_the_cause_of_action(self, client, draft):
+        data = {**JURISDICTION, "complaint_filing_date": "2024-02-20"}
+
+        response = put_section(client, draft, "jurisdiction_limitation", data)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"data.complaint_filing_date": ["E00001"]}
+        assert Case.objects.count() == 0
+
+    @pytest.mark.parametrize(
+        "complaint_filing_date",
+        [
+            "2024-02-21",  # the same day
+            "2024-03-22",  # 30 days after
+        ],
+    )
+    def test_condonation_reason_not_needed_within_the_limitation_period(
+        self, client, draft, complaint_filing_date
+    ):
+        data = {**JURISDICTION, "complaint_filing_date": complaint_filing_date}
+
+        assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
+
+    @pytest.mark.parametrize("adr_preference", ["YES", "NO", "MAYBE"])
+    def test_adr_other_prayer_round_trip(self, client, draft, adr_preference):
         data = {
-            "adr_preference": "NO",
+            "adr_preference": adr_preference,
             "other_details": "",
             "interim_relief": "<p>Interim compensation under Section 143A.</p>",
             "final_relief": "<p>Take cognizance of the offence under Section 138.</p>",
@@ -548,6 +614,9 @@ class TestEvidence:
             {**CHEQUE_INFO, "cheque_date": "15/01/2024"},
             {**CHEQUE_INFO, "cheque_number": "1234567"},
             {**CHEQUE_INFO, "ifsc_code": "SBIN1234"},
+            {key: value for key, value in CHEQUE_INFO.items() if key != "account_number"},
+            {**CHEQUE_INFO, "account_number": "1234"},
+            {**CHEQUE_INFO, "account_number": "3001-2345-678"},
             {**CHEQUE_INFO, "drawee_bank": "SBI"},  # unknown key
         ],
     )
@@ -601,6 +670,9 @@ class TestEvidence:
             {k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"},
             {**DEMAND_NOTICE_INFO, "is_delivered": "yes"},
             {**DEMAND_NOTICE_INFO, "mode_of_service": ""},
+            # Labels, not codes.
+            {**DEMAND_NOTICE_INFO, "mode_of_service": "Registered post (RPAD)"},
+            {**DEMAND_NOTICE_INFO, "nature_of_debt": "Loan"},
             {**DEMAND_NOTICE_INFO, "payment_status": "No payment"},
             # Part payment, but no amount.
             {**DEMAND_NOTICE_INFO, "payment_status": "PART_PAYMENT"},

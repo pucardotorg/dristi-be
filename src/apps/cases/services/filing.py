@@ -41,7 +41,7 @@ from ..models import (
     has_visible_text,
 )
 from ..serializers import CasePreviewSerializer
-from .case_types import DocumentType, EvidenceType, get_config, schema_errors
+from .case_types import DocumentType, EvidenceType, get_config, schema_errors, section_errors
 from .services import (
     PREVIEW_TTL_SECONDS,
     clear_preview_cache,
@@ -236,7 +236,7 @@ def validation_errors(case):
 
     # An unsaved section is still ``{}``, which fails its required fields here.
     for section, data in get_detail_sections(case).items():
-        for problem in schema_errors(config.section_schemas[section], data):
+        for problem in section_errors(config, section, data):
             error(f"details.{section}", str(problem))
     return problems
 

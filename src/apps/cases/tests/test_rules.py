@@ -175,6 +175,22 @@ class TestModelRulesMatchTheApi:
 
         assert "adr_other_prayer" in exc.value.message_dict
 
+    def test_late_filing_needs_a_condonation_reason(self, case):
+        late = {
+            "cheque_deposited_by_payee": False,
+            "drawer_bank_police_station": "Ernakulam Central",
+            "cause_of_action_date": "2024-02-21",
+            "complaint_filing_date": "2024-04-30",
+        }
+        detail = ChequeBounceCase(case=case, jurisdiction_limitation=late)
+
+        with pytest.raises(ValidationError) as exc:
+            detail.full_clean()
+        assert "jurisdiction_limitation" in exc.value.message_dict
+
+        late["condonation_reason"] = "The complainant was hospitalised."
+        detail.full_clean()
+
     def test_empty_sections_are_allowed(self, case):
         ChequeBounceCase(case=case).full_clean()
 

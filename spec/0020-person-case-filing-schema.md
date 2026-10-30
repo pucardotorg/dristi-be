@@ -616,9 +616,11 @@ displayed. The schemas each section is validated against are in spec 0021 §5.3.
   "payee_ifsc_code": "HDFC0000512",
   "payee_bank_name": "HDFC Bank",
   "payee_bank_branch": "Kochi",
-  "bank_police_station": "Ernakulam Central",
+  "payee_bank_police_station": "Ernakulam Central",
   "other_complaints_pending": false,
-  "cause_of_action_date": "2024-02-21"
+  "cause_of_action_date": "2024-02-21",
+  "complaint_filing_date": "2024-04-10",
+  "condonation_reason": "The complainant was hospitalised from 1 to 30 March 2024."
 }
 ```
 
@@ -684,7 +686,8 @@ matched to it by `ordinal`.
   "cheque_number": "456789",
   "ifsc_code": "SBIN0001234",
   "bank_name": "State Bank of India",
-  "bank_branch": "MG Road"
+  "bank_branch": "MG Road",
+  "account_number": "30012345678"
 }
 ```
 
@@ -693,17 +696,16 @@ matched to it by `ordinal`.
 {
   "presentation_date": "2024-01-18",
   "return_date": "2024-01-22",
-  "return_reason": "Funds insufficient"
+  "return_reason": "FUNDS_INSUFFICIENT"
 }
 ```
 
 **For `evidence_type = 'LEGAL_DEMAND_NOTICE'`:**
 ```json
 {
-  "nature_of_debt": "Loan",
-  "cheque_issue_reason": "Repayment of loan",
+  "nature_of_debt": "LOAN_OR_ADVANCE_REPAYMENT",
   "dispatch_date": "2024-02-01",
-  "mode_of_service": "Registered post",
+  "mode_of_service": "REGISTERED_POST",
   "tracking_number": "RR123456789IN",
   "is_delivered": true,
   "delivery_date": "2024-02-05",

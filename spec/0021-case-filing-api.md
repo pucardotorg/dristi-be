@@ -669,7 +669,8 @@ demand notice #1.
     "cheque_number": "456789",
     "ifsc_code": "SBIN0001234",
     "bank_name": "State Bank of India",
-    "bank_branch": "MG Road"
+    "bank_branch": "MG Road",
+    "account_number": "30012345678"
   }
 }
 ```
@@ -682,7 +683,7 @@ demand notice #1.
   "evidence_info": {
     "presentation_date": "2024-01-18",
     "return_date": "2024-01-22",
-    "return_reason": "Funds insufficient"
+    "return_reason": "FUNDS_INSUFFICIENT"
   }
 }
 ```
@@ -693,10 +694,9 @@ demand notice #1.
   "evidence_type": "LEGAL_DEMAND_NOTICE",
   "case_document_id": "uuid",
   "evidence_info": {
-    "nature_of_debt": "Loan",
-    "cheque_issue_reason": "Repayment of loan",
+    "nature_of_debt": "LOAN_OR_ADVANCE_REPAYMENT",
     "dispatch_date": "2024-02-01",
-    "mode_of_service": "Registered post",
+    "mode_of_service": "REGISTERED_POST",
     "tracking_number": "RR123456789IN",
     "is_delivered": true,
     "delivery_date": "2024-02-05",
@@ -762,23 +762,29 @@ A field with a fixed code list is a `oneOf` of `{ "const": code, "title": label 
 options, so clients read both the allowed codes and their display labels from
 the schema. A value outside the list is a 400 with code `E00005` on that field.
 
-**`CHEQUE`** (as written on the cheque leaf, plus the drawer's bank):
+**`CHEQUE`** (as written on the cheque leaf, plus the drawer's bank and account):
 ```json
 {
   "type": "object",
-  "required": ["cheque_date", "amount", "cheque_number", "ifsc_code", "bank_name", "bank_branch"],
+  "required": [
+    "cheque_date", "amount", "cheque_number", "ifsc_code", "bank_name", "bank_branch",
+    "account_number"
+  ],
   "properties": {
     "cheque_date": { "type": "string", "format": "date" },
     "amount": { "type": "number", "exclusiveMinimum": 0 },
     "cheque_number": { "type": "string", "pattern": "^[0-9]{6}$" },
     "ifsc_code": { "type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$" },
     "bank_name": { "type": "string", "minLength": 1 },
-    "bank_branch": { "type": "string", "minLength": 1 }
+    "bank_branch": { "type": "string", "minLength": 1 },
+    "account_number": { "type": "string", "pattern": "^[0-9]{9,18}$" }
   },
   "additionalProperties": false
 }
 ```
 `cheque_number` is the six-digit number, not the full MICR line.
+`account_number` is the drawer's account the cheque is drawn on, 9 to 18
+digits with no spaces or separators, sent as a string so leading zeros are kept.
 
 **`RETURN_MEMO`** (from the memo the bank issued when the cheque was dishonoured):
 ```json
@@ -788,7 +794,18 @@ the schema. A value outside the list is a 400 with code `E00005` on that field.
   "properties": {
     "presentation_date": { "type": "string", "format": "date" },
     "return_date": { "type": "string", "format": "date" },
-    "return_reason": { "type": "string", "minLength": 1 }
+    "return_reason": {
+      "oneOf": [
+        { "const": "FUNDS_INSUFFICIENT", "title": "Funds insufficient" },
+        { "const": "EXCEEDS_ARRANGEMENT", "title": "Exceeds arrangement" },
+        { "const": "ACCOUNT_CLOSED", "title": "Account closed" },
+        { "const": "PAYMENT_STOPPED_BY_DRAWER", "title": "Payment stopped by drawer" },
+        { "const": "SIGNATURE_DIFFERS_OR_INCOMPLETE", "title": "Drawer's signature differs / incomplete" },
+        { "const": "AMOUNT_IN_WORDS_AND_FIGURES_DIFFER", "title": "Amount in words and figures differ" },
+        { "const": "REFER_TO_DRAWER", "title": "Refer to drawer" },
+        { "const": "POST_DATED_OR_STALE", "title": "Cheque post-dated / stale" }
+      ]
+    }
   },
   "additionalProperties": false
 }
@@ -799,14 +816,31 @@ the schema. A value outside the list is a 400 with code `E00005` on that field.
 {
   "type": "object",
   "required": [
-    "nature_of_debt", "cheque_issue_reason", "dispatch_date",
-    "mode_of_service", "is_delivered", "payment_status"
+    "nature_of_debt", "dispatch_date", "mode_of_service",
+    "is_delivered", "payment_status"
   ],
   "properties": {
-    "nature_of_debt": { "type": "string", "minLength": 1 },
-    "cheque_issue_reason": { "type": "string", "minLength": 1 },
+    "nature_of_debt": {
+      "oneOf": [
+        { "const": "LOAN_OR_ADVANCE_REPAYMENT", "title": "Loan / advance repayment" },
+        { "const": "GOODS_SUPPLIED", "title": "Payment for goods supplied" },
+        { "const": "SERVICES_RENDERED", "title": "Payment for services rendered" },
+        { "const": "BUSINESS_OR_TRADE_TRANSACTION", "title": "Business / trade transaction" },
+        { "const": "BORROWED_MONEY_REPAYMENT", "title": "Repayment of borrowed money" },
+        { "const": "OTHER_LIABILITY", "title": "Other liability" }
+      ]
+    },
     "dispatch_date": { "type": "string", "format": "date" },
-    "mode_of_service": { "type": "string", "minLength": 1 },
+    "mode_of_service": {
+      "oneOf": [
+        { "const": "REGISTERED_POST", "title": "Registered post (RPAD)" },
+        { "const": "SPEED_POST", "title": "Speed post" },
+        { "const": "COURIER", "title": "Courier" },
+        { "const": "EMAIL", "title": "Email" },
+        { "const": "HAND_DELIVERY", "title": "Hand delivery" },
+        { "const": "FAX", "title": "Fax" }
+      ]
+    },
     "tracking_number": { "type": "string", "minLength": 1 },
     "is_delivered": { "type": "boolean" },
     "delivery_date": { "type": "string", "format": "date" },
@@ -846,9 +880,9 @@ required instead. `part_payment_amount` is required when `payment_status` is
 on a delivered notice, an amount with `NO_PAYMENT_MADE`) is accepted and stored.
 
 **Not yet enforced:**
-- `return_reason`, `nature_of_debt`, `cheque_issue_reason`, `mode_of_service`
-  and `non_delivery_reason` are dropdowns in the UI but accept any non-empty
-  text until their option lists are agreed; each then becomes an `enum`.
+- `non_delivery_reason` is a dropdown in the UI but accepts any non-empty text
+  until its option list is agreed; it then becomes a code list like
+  `return_reason`, `nature_of_debt` and `mode_of_service`.
 - Date ordering (presentation not before the cheque date, return not before
   presentation, delivery not before dispatch) cannot be expressed in JSON
   Schema, and the first rule spans two evidence rows.
@@ -872,9 +906,11 @@ is not merged with it.
   "payee_ifsc_code": "HDFC0000512",
   "payee_bank_name": "HDFC Bank",
   "payee_bank_branch": "Kochi",
-  "bank_police_station": "Ernakulam Central",
+  "payee_bank_police_station": "Ernakulam Central",
   "other_complaints_pending": false,
-  "cause_of_action_date": "2024-02-21"
+  "cause_of_action_date": "2024-02-21",
+  "complaint_filing_date": "2024-04-10",
+  "condonation_reason": "The complainant was hospitalised from 1 to 30 March 2024."
 }
 ```
 
@@ -920,29 +956,55 @@ strict (`"additionalProperties": false`).
 ```json
 {
   "type": "object",
-  "required": ["cheque_deposited_by_payee", "bank_police_station", "cause_of_action_date"],
+  "required": ["cheque_deposited_by_payee", "cause_of_action_date", "complaint_filing_date"],
   "properties": {
     "cheque_deposited_by_payee": { "type": "boolean" },
     "payee_ifsc_code": { "type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$" },
     "payee_bank_name": { "type": "string", "minLength": 1 },
     "payee_bank_branch": { "type": "string", "minLength": 1 },
-    "bank_police_station": { "type": "string", "minLength": 1 },
+    "payee_bank_police_station": { "type": "string", "minLength": 1 },
+    "drawer_bank_police_station": { "type": "string", "minLength": 1 },
     "other_complaints_pending": { "type": "boolean" },
-    "cause_of_action_date": { "type": "string", "format": "date" }
+    "cause_of_action_date": { "type": "string", "format": "date" },
+    "complaint_filing_date": { "type": "string", "format": "date" },
+    "condonation_reason": { "type": "string", "minLength": 1 }
   },
   "additionalProperties": false,
-  "if": { "properties": { "cheque_deposited_by_payee": { "const": true } }, "required": ["cheque_deposited_by_payee"] },
-  "then": { "required": ["payee_ifsc_code", "payee_bank_name", "payee_bank_branch"] }
+  "allOf": [
+    {
+      "if": { "properties": { "cheque_deposited_by_payee": { "const": true } }, "required": ["cheque_deposited_by_payee"] },
+      "then": { "required": ["payee_ifsc_code", "payee_bank_name", "payee_bank_branch", "payee_bank_police_station"] }
+    },
+    {
+      "if": { "properties": { "cheque_deposited_by_payee": { "const": false } }, "required": ["cheque_deposited_by_payee"] },
+      "then": { "required": ["drawer_bank_police_station"] }
+    }
+  ]
 }
 ```
 Jurisdiction follows the branch where the cheque was presented and the
-complainant holds the account, so the payee's bank details are required when
-the payee deposited the cheque. `bank_police_station` is always required: the
-police station of the payee's branch when the payee deposited the cheque,
-otherwise of the drawer's.
+complainant holds the account, so the payee's bank details and the police
+station of the payee's branch (`payee_bank_police_station`) are required when
+the payee deposited the cheque. Otherwise the police station of the drawer's
+(accused's) branch, `drawer_bank_police_station`, is required instead.
+
+`complaint_filing_date` is the date of filing the complaint as entered on the
+form. It is separate from the case's `filed_at`, which the server sets at
+submission. It must be on or after `cause_of_action_date`; an earlier date is a
+400 with code `E00001` on `data.complaint_filing_date`.
+
+`condonation_reason` is required when `complaint_filing_date` is more than 30
+days after `cause_of_action_date`: the complaint is then outside the limitation
+period (NI Act s.142(b)) and the court must be asked to condone the delay. A
+filing date within 30 days of the cause of action needs no reason (one may
+still be sent). JSON Schema cannot compare or subtract dates, so the schema
+served to clients lists these fields but not these two rules; the server
+applies them on every save and again in the completeness check (§6.3). A missing
+reason is a 400 with code `E00002` on `data`, like other missing required
+fields.
+
 `other_complaints_pending` records whether another Section 138 complaint is
-pending between the same parties. The complaint filing date is not part of the
-section: it is the case's `filed_at`, set at submission.
+pending between the same parties.
 
 `adr_other_prayer` (willingness to settle, other details for the court, and the relief sought):
 ```json
@@ -950,7 +1012,7 @@ section: it is the case's `filed_at`, set at submission.
   "type": "object",
   "required": ["final_relief"],
   "properties": {
-    "adr_preference": { "enum": ["YES", "NO"] },
+    "adr_preference": { "enum": ["YES", "NO", "MAYBE"] },
     "other_details": { "type": "string" },
     "interim_relief": { "type": "string" },
     "final_relief": { "type": "string", "minLength": 1 }
@@ -963,8 +1025,12 @@ output and are stored as sent; they must be sanitized wherever they are
 rendered (preview, PDFs).
 
 **Open questions:**
-- `bank_police_station` is free text; if police stations become master data it
-  should hold the station's id.
+- `payee_bank_police_station` and `drawer_bank_police_station` are free text;
+  if police stations become master data they should hold the station's id.
+- The limitation period is a flat 30 days; counting it as one calendar month
+  (as s.142(b) reads) is an open question.
+- `complaint_filing_date` is entered by the filer and not compared with
+  `filed_at` or with today.
 - Required fields are enforced on every save, so a section cannot be saved
   half-filled. If the client autosaves drafts, required fields may need to move
   to the completeness check (§6.3) instead.
@@ -1210,6 +1276,7 @@ POST /cases/{case_id}/validate
 
 6. **Case Details:**
    - `jurisdiction_limitation` and `adr_other_prayer` JSONs pass their schemas (defined per case type)
+   - `jurisdiction_limitation` has a `complaint_filing_date` on or after `cause_of_action_date`, and a `condonation_reason` when it is more than 30 days after (§5.3)
 
 7. **Affidavit:**
    - The case has an `affidavit` (§5.4); reported on the field `affidavit`.

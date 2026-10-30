@@ -16,7 +16,14 @@ from apps.parties.models import MAX_AGE
 from apps.users.models import ApprovalStatus
 
 from . import errors as case_errors
-from .services.case_types import CaseType, DocumentType, EvidenceType, get_config, schema_errors
+from .services.case_types import (
+    CaseType,
+    DocumentType,
+    EvidenceType,
+    get_config,
+    schema_errors,
+    section_errors,
+)
 
 
 class CaseStatus(models.TextChoices):
@@ -791,12 +798,12 @@ class ChequeBounceCase(BaseModel, BaseAuditableModel):
         super().clean()
         if not self.case_id:
             return
-        schemas = get_config(self.case.case_type).section_schemas
+        config = get_config(self.case.case_type)
         errors = {
             section: [str(problem) for problem in problems]
-            for section, schema in schemas.items()
+            for section in config.sections
             if getattr(self, section)
-            and (problems := schema_errors(schema, getattr(self, section)))
+            and (problems := section_errors(config, section, getattr(self, section)))
         }
         if errors:
             raise ValidationError(errors)

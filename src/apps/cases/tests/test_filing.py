@@ -45,8 +45,9 @@ EVIDENCE = [("RETURN_MEMO", RETURN_MEMO_INFO), ("LEGAL_DEMAND_NOTICE", DEMAND_NO
 
 JURISDICTION = {
     "cheque_deposited_by_payee": False,
-    "bank_police_station": "Ernakulam Central",
+    "drawer_bank_police_station": "Ernakulam Central",
     "cause_of_action_date": "2024-02-20",
+    "complaint_filing_date": "2024-03-05",
 }
 PRAYER = {"final_relief": "Direct the accused to pay the cheque amount."}
 AFFIDAVIT = "<p>I, the complainant, state on oath that the facts above are true.</p>"
@@ -449,6 +450,14 @@ class TestValidate:
         ChequeBounceCase.objects.filter(case_id=draft).update(adr_other_prayer={})
 
         assert fields_of(validate(client, draft)) == {"details.adr_other_prayer"}
+
+    def test_a_late_filing_without_a_condonation_reason_is_reported(self, client, draft, pdf):
+        # Written another way (the admin, a shell, a rule added since saving).
+        make_complete_case(client, draft, pdf)
+        section = {**JURISDICTION, "complaint_filing_date": "2024-04-30"}
+        ChequeBounceCase.objects.filter(case_id=draft).update(jurisdiction_limitation=section)
+
+        assert fields_of(validate(client, draft)) == {"details.jurisdiction_limitation"}
 
     def test_other_users_cases_are_not_found(self, client, client_for, other_user, draft):
         add_complainant(client, draft)
