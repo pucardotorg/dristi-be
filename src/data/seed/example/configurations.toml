@@ -1,0 +1,14 @@
+[seed]
+model = "core.Configuration"
+
+[[rows]]
+config_set = "pdf"
+config_key = "max_records_per_pdf"
+# A native TOML integer; coerced to the stored text value "100".
+config_value = 100
+description = "Maximum number of records rendered into a single PDF."
+
+[[rows]]
+config_set = "gateway.cdac"
+config_key = "timeout_seconds"
+config_value = 30
