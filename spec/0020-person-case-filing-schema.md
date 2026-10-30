@@ -40,7 +40,7 @@ One row per human being the system knows of, whether registered or not. A person
 | `relative_name` | varchar(256) | NULLABLE | Father's / spouse's / guardian's name; required when `relation` is set |
 | `date_of_birth` | date | NULLABLE | Not after today's date in India (IST); `TIME_ZONE` is UTC, so the server's date is not used |
 | `age` | smallint | NULLABLE, CHECK 0–150 | Approximate age, only when the date of birth is unknown ("aged about 45"); cleared whenever `date_of_birth` is set |
-| `gender` | varchar(32) | NULLABLE | One of: MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY |
+| `gender` | varchar(32) | NULLABLE | One of: MALE, FEMALE, OTHER |
 | `institution_id` | uuid | FK → institution, NULLABLE | When acting for an institution (see §3) |
 | `designation` | varchar(128) | NULLABLE | Role within the institution, e.g. Director, Branch Manager, Authorised Signatory |
 | `residential_address_id` | uuid | FK → address, NULLABLE | Current residential address |
@@ -189,11 +189,14 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `gender_at_filing` | varchar(32) | NULLABLE | Frozen snapshot of gender |
 | `age_at_filing` | smallint | NULLABLE | Frozen snapshot of age: from `person.date_of_birth` when known, else `person.age` |
 | `designation_at_filing` | varchar(128) | NULLABLE | The acting person's designation at the institution, e.g. Director; required for an ACCUSED when both `person_id` and `institution_id` are set, optional for a COMPLAINANT |
+| `email_at_filing` | varchar(256) | NULLABLE | Frozen snapshot of email: the person's, or the institution's when there is no person |
+| `entity_name_at_filing` | varchar(256) | NULLABLE | The institution's name as the filer entered it; set exactly when `institution_id` is set. With no person it equals `name_at_filing` |
 | `address_id` | uuid | FK → address, NULLABLE | The address for service of notice; required for every role except WITNESS |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Role-specific data (see §4.3) |
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
 | `end_date` | timestamp | NULLABLE | When participant was removed |
 | `is_party_in_person` | boolean | NOT NULL, default false | Appearing without an advocate |
+| `party_in_person_affidavit` | text | NULLABLE | A complainant's affidavit asking to appear in person (rich text, stored as sent, sanitized wherever rendered); COMPLAINANT only; required by the completeness check when `is_party_in_person` is true |
 | `has_signed` | boolean | NOT NULL, default false | True once they have e-signed, or uploaded a signed copy of, the case filing |
 | `signature_document_id` | uuid | FK → file, nullable, ON DELETE PROTECT | The signed filing the e-sign service stored (spec 0021 §8). When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here |
 | `is_active` | boolean | NOT NULL, default true | Soft delete flag (spec 0006) |
@@ -248,6 +251,8 @@ The `additional_details` JSONB column stores data that varies by role and has no
 
 **What the snapshot is, and why data is frozen (`name_at_filing`, etc.):**
 The `*_at_filing` columns are a frozen copy of the party's details as they stand for this case. Court records must not change with people: if a summons went to a phone number in January and the person changes it in June, the case must still show the January number. The `person` row holds current data; `case_participant` holds the case's copy, and a party write never changes the `person` row (§2.5). Editing a participant edits only its snapshot.
+
+An institution reused by its PAN or CIN keeps the name stored when it was first created, which may have been entered by another filer. `entity_name_at_filing` records the name this filer entered, so the case shows, and the filer can correct, their own value without changing the shared row.
 
 **How a party's person is resolved:**
 - The filer adding themselves (`"self": true`): their own `person`, created from their account at `VERIFIED` the first time. Not allowed for an accused.
@@ -497,6 +502,7 @@ One filing. Holds only what every dispute type shares; type-specific data goes i
 | `court_id` | varchar(64) | NULLABLE | FK to court master data |
 | `filed_at` | timestamp | NULLABLE | When submission completed, NULL while draft |
 | `registered_at` | timestamp | NULLABLE | When court accepted the case |
+| `affidavit` | text | NULLABLE | The sworn affidavit filed with the complaint (rich text, stored as sent, sanitized wherever rendered); required by the completeness check |
 | `created_by` | uuid | FK → app_user, NOT NULL | The filer (from BaseModel) |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
 | `created_at` | timestamp | NOT NULL, auto | From BaseModel |
@@ -610,16 +616,18 @@ displayed. The schemas each section is validated against are in spec 0021 §5.3.
   "payee_ifsc_code": "HDFC0000512",
   "payee_bank_name": "HDFC Bank",
   "payee_bank_branch": "Kochi",
-  "bank_police_station": "Ernakulam Central",
+  "payee_bank_police_station": "Ernakulam Central",
   "other_complaints_pending": false,
-  "cause_of_action_date": "2024-02-21"
+  "cause_of_action_date": "2024-02-21",
+  "complaint_filing_date": "2024-04-10",
+  "condonation_reason": "The complainant was hospitalised from 1 to 30 March 2024."
 }
 ```
 
 **`adr_other_prayer`:**
 ```json
 {
-  "adr_preference": "MAYBE",
+  "adr_preference": "NO",
   "other_details": "",
   "interim_relief": "<p>Direct the Accused to pay interim compensation under Section 143A ...</p>",
   "final_relief": "<p>Take cognizance of the offence committed by the Accused under Section 138 ...</p>"
@@ -678,7 +686,8 @@ matched to it by `ordinal`.
   "cheque_number": "456789",
   "ifsc_code": "SBIN0001234",
   "bank_name": "State Bank of India",
-  "bank_branch": "MG Road"
+  "bank_branch": "MG Road",
+  "bank_account_number": "30012345678"
 }
 ```
 
@@ -687,22 +696,21 @@ matched to it by `ordinal`.
 {
   "presentation_date": "2024-01-18",
   "return_date": "2024-01-22",
-  "return_reason": "Funds insufficient"
+  "return_reason": "FUNDS_INSUFFICIENT"
 }
 ```
 
 **For `evidence_type = 'LEGAL_DEMAND_NOTICE'`:**
 ```json
 {
-  "nature_of_debt": "Loan",
-  "cheque_issue_reason": "Repayment of loan",
+  "nature_of_debt": "LOAN_OR_ADVANCE_REPAYMENT",
   "dispatch_date": "2024-02-01",
-  "mode_of_service": "Registered post",
+  "mode_of_service": "REGISTERED_POST",
   "tracking_number": "RR123456789IN",
   "is_delivered": true,
   "delivery_date": "2024-02-05",
   "accused_replied": false,
-  "payment_status": "No payment"
+  "payment_status": "NO_PAYMENT_MADE"
 }
 ```
 

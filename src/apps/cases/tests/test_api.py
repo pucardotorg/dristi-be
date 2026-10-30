@@ -4,14 +4,27 @@ import dataclasses
 import uuid
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
-from apps.cases.models import JOINABLE_STATUSES, Case, CaseDocument, CaseStatus, CaseType
+from apps.cases.models import (
+    JOINABLE_STATUSES,
+    Case,
+    CaseDocument,
+    CaseParticipant,
+    CaseStatus,
+    CaseType,
+    ChequeBounceCase,
+    ParticipantRole,
+)
 from apps.cases.services import case_types
 from apps.cases.services.case_types import DocumentType
 from apps.files.models import File
 from apps.organizations.models import OrganizationType
 from apps.organizations.tests.factories import make_organization
+from apps.parties.models import Person
+from apps.parties.tests.factories import make_institution
 
 from .conftest import (
     CHEQUE_INFO,
@@ -44,6 +57,18 @@ def add_cheque(client, case_id, **extra):
     return add_evidence(client, case_id, "CHEQUE", CHEQUE_INFO, **extra)
 
 
+def add_party(case, role, name, ordinal=1, **fields):
+    """Create a participant directly; the listing reads only its name, role and order."""
+    return CaseParticipant.objects.create(
+        case=case,
+        person=Person.objects.create(name=name),
+        role=role,
+        ordinal=ordinal,
+        name_at_filing=name,
+        **fields,
+    )
+
+
 class TestCaseTypes:
     def test_list_describes_every_case_type(self, client):
         response = client.get(reverse("case-type-list"))
@@ -63,6 +88,19 @@ class TestCaseTypes:
         ]
         cheque = next(item for item in body["evidence_types"] if item["code"] == "CHEQUE")
         assert "ifsc_code" in cheque["schema"]["required"]
+
+    def test_code_lists_are_published_with_labels(self, client):
+        body = client.get(reverse("case-type-detail", args=["CHEQUE_BOUNCE"])).json()
+
+        notice = next(
+            item for item in body["evidence_types"] if item["code"] == "LEGAL_DEMAND_NOTICE"
+        )
+        assert notice["schema"]["properties"]["payment_status"] == {
+            "oneOf": [
+                {"const": "PART_PAYMENT", "title": "Part Payment"},
+                {"const": "NO_PAYMENT_MADE", "title": "No Payment Made"},
+            ]
+        }
 
     def test_unknown_case_type_is_404(self, client):
         assert client.get(reverse("case-type-detail", args=["CIVIL"])).status_code == 404
@@ -139,6 +177,90 @@ class TestDraftsAndListing:
         response = client.get(reverse("case-list"), {"status": "PENDING_SIGN,UNDER_SCRUTINY"})
 
         assert [case["status"] for case in response.json()["results"]] == ["PENDING_SIGN"]
+
+    def test_list_shows_the_parties_and_cause_of_action_date(self, client, user):
+        case = Case.objects.create(case_type=CaseType.CHEQUE_BOUNCE, created_by=user)
+        add_party(case, ParticipantRole.COMPLAINANT, "Rajesh Kumar")
+        add_party(case, ParticipantRole.COMPLAINANT, "Meena Rao", ordinal=2)
+        add_party(case, ParticipantRole.ACCUSED, "ABC Pvt Ltd")
+        ChequeBounceCase.objects.create(
+            case=case, jurisdiction_limitation={"cause_of_action_date": "2024-02-21"}
+        )
+
+        (listed,) = client.get(reverse("case-list")).json()["results"]
+
+        assert listed["party_title"] == "Rajesh Kumar vs ABC Pvt Ltd"
+        assert listed["cause_of_action_date"] == "2024-02-21"
+
+    def test_party_title_and_date_are_null_until_added(self, client, user):
+        case = Case.objects.create(case_type=CaseType.CHEQUE_BOUNCE, created_by=user)
+        add_party(case, ParticipantRole.COMPLAINANT, "Rajesh Kumar")
+        ChequeBounceCase.objects.create(case=case)
+
+        (listed,) = client.get(reverse("case-list")).json()["results"]
+
+        assert listed["party_title"] is None
+        assert listed["cause_of_action_date"] is None
+
+    def test_party_title_skips_removed_parties(self, client, user):
+        case = Case.objects.create(case_type=CaseType.CHEQUE_BOUNCE, created_by=user)
+        add_party(case, ParticipantRole.COMPLAINANT, "Removed", is_active=False)
+        add_party(case, ParticipantRole.COMPLAINANT, "Rajesh Kumar")
+        add_party(case, ParticipantRole.ACCUSED, "ABC Pvt Ltd")
+
+        (listed,) = client.get(reverse("case-list")).json()["results"]
+
+        assert listed["party_title"] == "Rajesh Kumar vs ABC Pvt Ltd"
+
+    def test_party_title_names_the_institution_not_its_representative(self, client, user):
+        case = Case.objects.create(case_type=CaseType.CHEQUE_BOUNCE, created_by=user)
+        add_party(
+            case,
+            ParticipantRole.COMPLAINANT,
+            "Priya Sharma",
+            institution=make_institution(),
+            entity_name_at_filing="ABC Pvt Ltd",
+        )
+        add_party(case, ParticipantRole.ACCUSED, "Suresh Patel")
+
+        (listed,) = client.get(reverse("case-list")).json()["results"]
+
+        assert listed["party_title"] == "ABC Pvt Ltd vs Suresh Patel"
+
+    def test_list_query_count_does_not_grow_with_cases(
+        self, client, user, django_assert_max_num_queries
+    ):
+        def list_cases():
+            return client.get(reverse("case-list")).json()["results"]
+
+        def add_case():
+            case = Case.objects.create(case_type=CaseType.CHEQUE_BOUNCE, created_by=user)
+            add_party(case, ParticipantRole.COMPLAINANT, "Rajesh Kumar")
+            add_party(case, ParticipantRole.ACCUSED, "ABC Pvt Ltd")
+
+        add_case()
+        with CaptureQueriesContext(connection) as one:
+            list_cases()
+        for _ in range(5):
+            add_case()
+
+        with django_assert_max_num_queries(len(one.captured_queries)):
+            assert len(list_cases()) == 6
+
+    def test_join_lookup_does_not_show_the_parties(self, client, user):
+        case = Case.objects.create(
+            case_type=CaseType.CHEQUE_BOUNCE,
+            created_by=user,
+            status=JOINABLE_STATUSES[0],
+            case_number="CC/1/2024",
+        )
+        add_party(case, ParticipantRole.COMPLAINANT, "Rajesh Kumar")
+        add_party(case, ParticipantRole.ACCUSED, "ABC Pvt Ltd")
+
+        body = client.get(reverse("case-by-number", args=["CC/1/2024"])).json()
+
+        assert "party_title" not in body
+        assert "cause_of_action_date" not in body
 
     def test_list_rejects_unknown_status(self, client):
         assert client.get(reverse("case-list"), {"status": "NOPE"}).status_code == 400
@@ -291,9 +413,10 @@ JURISDICTION = {
     "payee_ifsc_code": "HDFC0000512",
     "payee_bank_name": "HDFC Bank",
     "payee_bank_branch": "Kochi",
-    "bank_police_station": "Ernakulam Central",
+    "payee_bank_police_station": "Ernakulam Central",
     "other_complaints_pending": False,
     "cause_of_action_date": "2024-02-21",
+    "complaint_filing_date": "2024-03-05",
 }
 
 
@@ -333,8 +456,44 @@ class TestDetails:
             # Deposited by the payee, but no payee bank details.
             (
                 "jurisdiction_limitation",
-                {"cheque_deposited_by_payee": True, "cause_of_action_date": "2024-02-21"},
+                {
+                    "cheque_deposited_by_payee": True,
+                    "payee_bank_police_station": "Ernakulam Central",
+                    "cause_of_action_date": "2024-02-21",
+                    "complaint_filing_date": "2024-03-05",
+                },
             ),
+            # Deposited by the payee, but no police station for the payee's branch.
+            (
+                "jurisdiction_limitation",
+                {
+                    key: value
+                    for key, value in JURISDICTION.items()
+                    if key != "payee_bank_police_station"
+                },
+            ),
+            # Not deposited by the payee, but no police station for the drawer's branch.
+            (
+                "jurisdiction_limitation",
+                {
+                    "cheque_deposited_by_payee": False,
+                    "cause_of_action_date": "2024-02-21",
+                    "complaint_filing_date": "2024-03-05",
+                },
+            ),
+            # The old shared key is gone.
+            ("jurisdiction_limitation", {**JURISDICTION, "bank_police_station": "Kochi"}),
+            ("jurisdiction_limitation", {**JURISDICTION, "condonation_reason": ""}),
+            # No filing date.
+            (
+                "jurisdiction_limitation",
+                {
+                    key: value
+                    for key, value in JURISDICTION.items()
+                    if key != "complaint_filing_date"
+                },
+            ),
+            ("jurisdiction_limitation", {**JURISDICTION, "complaint_filing_date": "05/03/2024"}),
             ("jurisdiction_limitation", {**JURISDICTION, "payee_ifsc_code": "HDFC512"}),
             ("jurisdiction_limitation", {**JURISDICTION, "limitation_notes": "typo"}),
             ("adr_other_prayer", {"adr_preference": "YES"}),  # no final relief
@@ -349,13 +508,66 @@ class TestDetails:
         assert Case.objects.count() == 0
 
     def test_payee_bank_details_not_needed_when_not_deposited_by_payee(self, client, draft):
-        data = {"cheque_deposited_by_payee": False, "cause_of_action_date": "2024-02-21"}
+        data = {
+            "cheque_deposited_by_payee": False,
+            "drawer_bank_police_station": "Ernakulam Central",
+            "cause_of_action_date": "2024-02-21",
+            "complaint_filing_date": "2024-03-05",
+        }
 
         assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
 
-    def test_adr_other_prayer_round_trip(self, client, draft):
+    def test_condonation_reason_required_when_filed_past_the_limitation_period(self, client, draft):
+        # 31 days after the cause of action (2024 is a leap year).
+        data = {**JURISDICTION, "complaint_filing_date": "2024-03-23"}
+
+        response = put_section(client, draft, "jurisdiction_limitation", data)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"data": ["E00002"]}
+        assert "condonation_reason" in response.json()["errors"][0]["message"]
+        assert Case.objects.count() == 0
+
+        data["condonation_reason"] = "The complainant was hospitalised."
+        assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
+
+    @pytest.mark.parametrize("reason", ["", " ", "\t\n"])
+    def test_a_blank_condonation_reason_does_not_excuse_a_late_filing(self, client, draft, reason):
+        data = {**JURISDICTION, "complaint_filing_date": "2024-03-23", "condonation_reason": reason}
+
+        response = put_section(client, draft, "jurisdiction_limitation", data)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"data.condonation_reason": ["E00004"]}
+        assert Case.objects.count() == 0
+
+    def test_complaint_cannot_be_filed_before_the_cause_of_action(self, client, draft):
+        data = {**JURISDICTION, "complaint_filing_date": "2024-02-20"}
+
+        response = put_section(client, draft, "jurisdiction_limitation", data)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"data.complaint_filing_date": ["E00001"]}
+        assert Case.objects.count() == 0
+
+    @pytest.mark.parametrize(
+        "complaint_filing_date",
+        [
+            "2024-02-21",  # the same day
+            "2024-03-22",  # 30 days after
+        ],
+    )
+    def test_condonation_reason_not_needed_within_the_limitation_period(
+        self, client, draft, complaint_filing_date
+    ):
+        data = {**JURISDICTION, "complaint_filing_date": complaint_filing_date}
+
+        assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
+
+    @pytest.mark.parametrize("adr_preference", ["YES", "NO", "MAYBE"])
+    def test_adr_other_prayer_round_trip(self, client, draft, adr_preference):
         data = {
-            "adr_preference": "MAYBE",
+            "adr_preference": adr_preference,
             "other_details": "",
             "interim_relief": "<p>Interim compensation under Section 143A.</p>",
             "final_relief": "<p>Take cognizance of the offence under Section 138.</p>",
@@ -412,6 +624,10 @@ class TestEvidence:
             {**CHEQUE_INFO, "cheque_date": "15/01/2024"},
             {**CHEQUE_INFO, "cheque_number": "1234567"},
             {**CHEQUE_INFO, "ifsc_code": "SBIN1234"},
+            {**CHEQUE_INFO, "bank_name": "   "},
+            {key: value for key, value in CHEQUE_INFO.items() if key != "bank_account_number"},
+            {**CHEQUE_INFO, "bank_account_number": "1234"},
+            {**CHEQUE_INFO, "bank_account_number": "3001-2345-678"},
             {**CHEQUE_INFO, "drawee_bank": "SBI"},  # unknown key
         ],
     )
@@ -465,6 +681,13 @@ class TestEvidence:
             {k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"},
             {**DEMAND_NOTICE_INFO, "is_delivered": "yes"},
             {**DEMAND_NOTICE_INFO, "mode_of_service": ""},
+            # Labels, not codes.
+            {**DEMAND_NOTICE_INFO, "mode_of_service": "Registered post (RPAD)"},
+            {**DEMAND_NOTICE_INFO, "nature_of_debt": "Loan"},
+            {**DEMAND_NOTICE_INFO, "payment_status": "No payment"},
+            # Part payment, but no amount.
+            {**DEMAND_NOTICE_INFO, "payment_status": "PART_PAYMENT"},
+            {**DEMAND_NOTICE_INFO, "payment_status": "PART_PAYMENT", "part_payment_amount": 0},
         ],
     )
     def test_invalid_demand_notice_is_400(self, client, draft, evidence_info):
@@ -477,19 +700,56 @@ class TestEvidence:
         assert response.status_code == 400
         assert error_roots(response) == {"evidence_info"}
 
-    def test_undelivered_demand_notice_needs_no_delivery_date(self, client, draft):
+    def test_undelivered_demand_notice_needs_return_date_and_reason_not_delivery_date(
+        self, client, draft
+    ):
         info = {k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"}
+        undelivered = {**info, "is_delivered": False}
 
+        def post(evidence_info):
+            return client.post(
+                reverse("case-evidence-list", args=[draft]),
+                {"evidence_type": "LEGAL_DEMAND_NOTICE", "evidence_info": evidence_info},
+                format="json",
+            )
+
+        missing = post(undelivered)
+        accepted = post(
+            {**undelivered, "return_date": "2024-02-10", "non_delivery_reason": "Unclaimed"}
+        )
+
+        assert missing.status_code == 400
+        # One "required" error per missing key: return_date and non_delivery_reason.
+        assert error_codes(missing) == {"evidence_info": ["E00002", "E00002"]}
+        assert accepted.status_code == 201
+
+    def test_payment_status_outside_the_list_is_an_invalid_choice(self, client, draft):
         response = client.post(
             reverse("case-evidence-list", args=[draft]),
             {
                 "evidence_type": "LEGAL_DEMAND_NOTICE",
-                "evidence_info": {**info, "is_delivered": False},
+                "evidence_info": {**DEMAND_NOTICE_INFO, "payment_status": "No payment"},
             },
             format="json",
         )
 
+        assert error_codes(response) == {"evidence_info.payment_status": ["E00005"]}
+
+    def test_part_payment_is_stored_with_its_amount(self, client, draft):
+        info = {
+            **DEMAND_NOTICE_INFO,
+            "payment_status": "PART_PAYMENT",
+            "part_payment_amount": 10000,
+        }
+
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "LEGAL_DEMAND_NOTICE", "evidence_info": info},
+            format="json",
+        )
+
         assert response.status_code == 201
+        assert response.json()["evidence_info"] == info
 
     def test_invalid_patch_is_400(self, client, draft):
         evidence_id = add_cheque(client, draft).json()["case_evidence_id"]

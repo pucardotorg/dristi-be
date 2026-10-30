@@ -19,12 +19,13 @@ from apps.cases.models import (
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 from apps.files.tests.factories import make_file
-from apps.parties.models import Person
+from apps.parties.models import Institution, Person
 from apps.parties.tests.factories import ADDRESS_DEFAULTS
 
 from .conftest import DEMAND_NOTICE_INFO, RETURN_MEMO_INFO, error_codes
 from .test_api import add_cheque, add_evidence, put_section, upload
 from .test_participants import (
+    INSTITUTION,
     PERSON,
     add,
     add_advocate,
@@ -42,15 +43,34 @@ REQUIRED_DOCUMENTS = ["BOUNCED_CHEQUE", "RETURN_MEMO", "LEGAL_DEMAND_NOTICE", "P
 # Required beside the cheque.
 EVIDENCE = [("RETURN_MEMO", RETURN_MEMO_INFO), ("LEGAL_DEMAND_NOTICE", DEMAND_NOTICE_INFO)]
 
-JURISDICTION = {"cheque_deposited_by_payee": False, "cause_of_action_date": "2024-02-20"}
+JURISDICTION = {
+    "cheque_deposited_by_payee": False,
+    "drawer_bank_police_station": "Ernakulam Central",
+    "cause_of_action_date": "2024-02-20",
+    "complaint_filing_date": "2024-03-05",
+}
 PRAYER = {"final_relief": "Direct the accused to pay the cheque amount."}
+AFFIDAVIT = "<p>I, the complainant, state on oath that the facts above are true.</p>"
+PIP_AFFIDAVIT = "<p>I request permission to appear and argue in person.</p>"
+
+
+def put_affidavit(client, case_id, affidavit=AFFIDAVIT):
+    return client.put(
+        reverse("case-affidavit", args=[case_id]), {"affidavit": affidavit}, format="json"
+    )
 
 
 def make_complete_case(client, case_id, pdf):
     """Fill a draft until it passes the completeness check; return the complainant."""
     for document_type in REQUIRED_DOCUMENTS:
         assert upload(client, case_id, pdf, document_type).status_code == 201
-    complainant = add(client, case_id, person=PERSON, is_party_in_person=True).json()
+    complainant = add(
+        client,
+        case_id,
+        person=PERSON,
+        is_party_in_person=True,
+        party_in_person_affidavit=PIP_AFFIDAVIT,
+    ).json()
     accused = add(client, case_id, "accused", person={**PERSON, "name": "Suresh Patel"})
     assert accused.status_code == 201
     assert add_cheque(client, case_id).status_code == 201
@@ -58,6 +78,7 @@ def make_complete_case(client, case_id, pdf):
         assert add_evidence(client, case_id, evidence_type, evidence_info).status_code == 201
     assert put_section(client, case_id, "jurisdiction_limitation", JURISDICTION).status_code == 200
     assert put_section(client, case_id, "adr_other_prayer", PRAYER).status_code == 200
+    assert put_affidavit(client, case_id).status_code == 200
     return complainant
 
 
@@ -111,6 +132,42 @@ def set_status(case_id, case_status):
     Case.objects.filter(pk=case_id).update(status=case_status)
 
 
+class TestAffidavit:
+    def test_first_put_on_a_draft_creates_the_case_and_the_preview_shows_it(self, client, draft):
+        response = put_affidavit(client, draft)
+
+        assert response.status_code == 200
+        assert response.json()["case_id"] == draft
+        assert response.json()["affidavit"] == AFFIDAVIT
+        preview = client.get(reverse("case-detail", args=[draft])).json()
+        assert preview["affidavit"] == AFFIDAVIT
+
+    def test_a_put_replaces_the_affidavit(self, client, draft):
+        put_affidavit(client, draft)
+
+        put_affidavit(client, draft, "<p>Corrected.</p>")
+
+        assert Case.objects.get(pk=draft).affidavit == "<p>Corrected.</p>"
+
+    @pytest.mark.parametrize("affidavit", ["  ", "<p><br></p>", "<p>&nbsp;</p>"])
+    def test_an_empty_affidavit_is_400_and_creates_nothing(self, client, draft, affidavit):
+        response = put_affidavit(client, draft, affidavit)
+
+        assert error_codes(response) == {"affidavit": ["E00004"]}
+        assert not Case.objects.exists()
+
+    def test_a_submitted_case_cannot_change(self, client, draft):
+        put_affidavit(client, draft)
+        set_status(draft, CaseStatus.PENDING_SIGN)
+
+        assert put_affidavit(client, draft, "<p>Changed.</p>").status_code == 409
+
+    def test_other_users_cases_are_not_found(self, client, client_for, other_user, draft):
+        put_affidavit(client, draft)
+
+        assert put_affidavit(client_for(other_user), draft).status_code == 404
+
+
 class TestPreview:
     def test_assembles_the_whole_filing(self, client, draft, pdf):
         complainant = make_complete_case(client, draft, pdf)
@@ -140,12 +197,26 @@ class TestPreview:
         assert body["poa_mandates"] == []
 
     def test_shows_the_frozen_copy_not_the_person(self, client, draft):
-        complainant = add_complainant(client, draft)
-        Person.objects.filter(pk=complainant["person_id"]).update(name="Renamed Later")
+        complainant = add_complainant(client, draft, email_address="rajesh@example.com")
+        Person.objects.filter(pk=complainant["person_id"]).update(
+            name="Renamed Later", email_address="later@example.com"
+        )
 
         body = client.get(reverse("case-detail", args=[draft])).json()
 
         assert body["participants"][0]["name_at_filing"] == "Rajesh Kumar"
+        assert body["participants"][0]["email_at_filing"] == "rajesh@example.com"
+
+    def test_shows_the_institution_as_entered(self, client, draft):
+        response = add(client, draft, institution=INSTITUTION)
+        Institution.objects.filter(pk=response.json()["institution_id"]).update(
+            entity_name="Renamed Later"
+        )
+
+        body = client.get(reverse("case-detail", args=[draft])).json()
+
+        (participant,) = body["participants"]
+        assert participant["entity_name_at_filing"] == "ABC Pvt Ltd"
 
     def test_removed_rows_are_left_out(self, client, draft):
         complainant = add_complainant(client, draft)
@@ -296,6 +367,7 @@ class TestValidate:
             "evidence.RETURN_MEMO",
             "evidence.LEGAL_DEMAND_NOTICE",
             "details.jurisdiction_limitation",
+            "affidavit",
             *(f"documents.{document_type}" for document_type in REQUIRED_DOCUMENTS),
         }
 
@@ -311,6 +383,38 @@ class TestValidate:
                 "message": "Complainant #2 has no advocate and is not marked as party-in-person.",
             }
         ]
+
+    def test_a_party_in_person_needs_their_affidavit(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        url = reverse("case-participant-detail", args=[complainant["case_participant_id"]])
+        client.patch(url, {"party_in_person_affidavit": None}, format="json")
+
+        body = validate(client, draft)
+
+        assert body["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #1 appears in person but has no party-in-person affidavit.",
+            }
+        ]
+
+    @pytest.mark.parametrize("affidavit", [None, "<p><br></p>"])
+    def test_the_case_affidavit_is_required(self, client, draft, pdf, affidavit):
+        make_complete_case(client, draft, pdf)
+        # Stored another way than the API, which refuses empty editor output.
+        Case.objects.filter(pk=draft).update(affidavit=affidavit)
+
+        assert fields_of(validate(client, draft)) == {"affidavit"}
+
+    def test_an_empty_party_in_person_affidavit_is_reported(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        CaseParticipant.objects.filter(pk=complainant["case_participant_id"]).update(
+            party_in_person_affidavit="<p><br></p>"
+        )
+
+        assert fields_of(validate(client, draft)) == {
+            f"participants.{complainant['case_participant_id']}"
+        }
 
     def test_a_poa_mandate_needs_a_poa_document(self, client, draft, pdf):
         complainant = make_complete_case(client, draft, pdf)
@@ -346,6 +450,14 @@ class TestValidate:
         ChequeBounceCase.objects.filter(case_id=draft).update(adr_other_prayer={})
 
         assert fields_of(validate(client, draft)) == {"details.adr_other_prayer"}
+
+    def test_a_late_filing_without_a_condonation_reason_is_reported(self, client, draft, pdf):
+        # Written another way (the admin, a shell, a rule added since saving).
+        make_complete_case(client, draft, pdf)
+        section = {**JURISDICTION, "complaint_filing_date": "2024-04-30"}
+        ChequeBounceCase.objects.filter(case_id=draft).update(jurisdiction_limitation=section)
+
+        assert fields_of(validate(client, draft)) == {"details.jurisdiction_limitation"}
 
     def test_other_users_cases_are_not_found(self, client, client_for, other_user, draft):
         add_complainant(client, draft)
@@ -448,8 +560,14 @@ class TestSign:
 
     def test_a_document_recorded_for_another_participant_is_refused(self, client, user, draft, pdf):
         first = make_complete_case(client, draft, pdf)
-        second = add(client, draft, person={**PERSON, "name": "Anil Rao"}, is_party_in_person=True)
-        submit(client, draft, "signing")
+        second = add(
+            client,
+            draft,
+            person={**PERSON, "name": "Anil Rao"},
+            is_party_in_person=True,
+            party_in_person_affidavit=PIP_AFFIDAVIT,
+        )
+        assert submit(client, draft, "signing").status_code == 200
         document_id = signed_document(user, draft)
         sign(client, draft, first["case_participant_id"], document_id)
 

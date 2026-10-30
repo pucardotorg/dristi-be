@@ -93,7 +93,9 @@ Query Parameters:
       "filed_at": null,
       "registered_at": null,
       "created_at": "2024-03-10T14:22:00Z",
-      "updated_at": "2024-03-12T09:15:00Z"
+      "updated_at": "2024-03-12T09:15:00Z",
+      "party_title": "Rajesh Kumar vs ABC Pvt Ltd",
+      "cause_of_action_date": "2024-02-21"
     }
   ],
   "meta": {
@@ -107,6 +109,19 @@ Query Parameters:
 `count` is the total across pages; `next` and `previous` are the URLs of the
 neighbouring pages (with the same filters), or `null`. `meta` is the standard
 response envelope (spec 0000 §8), not pagination data.
+
+Two fields serve the Drafts list, and appear only here, not in
+`GET /cases/by-number` (which any user may call):
+- `party_title`: "first complainant vs first accused", by the party names
+  recorded on the case of the active participants numbered 1: the institution's
+  (`entity_name_at_filing`) when there is one, else the person's
+  (`name_at_filing`). `null` until the case has both a complainant and an accused.
+- `cause_of_action_date`: from the case type's details (`CHEQUE_BOUNCE`:
+  `jurisdiction_limitation.cause_of_action_date`), for the limitation deadline.
+  `null` until that section is saved.
+
+Both are read with subqueries in the list query, so a page costs a fixed
+number of queries however many cases it holds.
 
 **Note:**
 This endpoint lists only cases that have been created in the database (i.e., have at least one saved data entry). Draft sessions (created via `POST /cases` but not yet populated with data) are not included in this listing because they exist only in cache, not in the `cases` table.
@@ -399,8 +414,11 @@ Exactly one of `person` or `self` describes the individual, and either may be le
   "gender_at_filing": "MALE",
   "age_at_filing": 39,
   "designation_at_filing": null,
+  "email_at_filing": null,
+  "entity_name_at_filing": null,
   "address_id": "uuid",
   "is_party_in_person": false,
+  "party_in_person_affidavit": null,
   "additional_details": {},
   "is_active": true,
   "created_at": "2024-03-15T12:00:00Z"
@@ -429,7 +447,7 @@ Exactly one of `person` or `self` describes the individual, and either may be le
 
 6. **Create the participant:**
    - `role = 'COMPLAINANT'`, the next free `ordinal` for this role on this case
-   - snapshot: `name_at_filing` (the person's name, or the institution's when there is no person), `phone_number_at_filing`, `gender_at_filing`, `age_at_filing` (from the date of birth when known, else the stated age), `designation_at_filing`
+   - snapshot: `name_at_filing` (the person's name, or the institution's when there is no person), `phone_number_at_filing` and `email_at_filing` (the person's, or the institution's when there is no person), `gender_at_filing`, `age_at_filing` (from the date of birth when known, else the stated age), `designation_at_filing`, and, when an institution is given, `entity_name_at_filing` as sent (not the stored name of a reused institution)
    - `address_id` from step 5, `start_date = now()`
 
 7. **Touch the case** (`updated_at`), and clear the preview cache.
@@ -444,8 +462,11 @@ Updates only the participant's own data. The `person` and `institution` rows are
   "gender_at_filing": "MALE",
   "age_at_filing": 40,
   "designation_at_filing": "Managing Director",
+  "email_at_filing": "rajesh@example.com",
+  "entity_name_at_filing": "ABC Private Ltd",
   "address": { "line1": "456 New Street", "city": "Bengaluru", "pincode": "560002", "district": "...", "state": "...", "police_station": "..." },
   "is_party_in_person": true,
+  "party_in_person_affidavit": "<p>I request permission to appear and argue in person ...</p>",
   "additional_details": {},
   "called_by_participant_id": "uuid",
   "what_will_witness_prove": "..."
@@ -457,6 +478,9 @@ Updates only the participant's own data. The `person` and `institution` rows are
 - `role`, `person` and `institution` cannot be changed; remove the participant and add it again instead.
 - Setting `is_party_in_person` to true is refused while the participant has an active advocate.
 - `designation_at_filing` is accepted only for a person acting for an institution.
+- `entity_name_at_filing` is accepted only when the participant has an institution (`E07023` otherwise).
+- `party_in_person_affidavit` (rich text) is accepted only for a complainant (`E07023` otherwise), here and when the complainant is added; `null` clears it. It is stored whether or not the complainant is party-in-person, and required by the completeness check (§6.3) only when they are. For an institution with no person acting for it, `name_at_filing` and `entity_name_at_filing` are the same value: changing one changes the other.
+- The institution's PAN and CIN cannot be changed here.
 
 **DELETE `/case-participants/{case_participant_id}`:**
 Soft delete: sets `is_active = false`, `end_date = now()`. Then, in the same transaction:
@@ -645,7 +669,8 @@ demand notice #1.
     "cheque_number": "456789",
     "ifsc_code": "SBIN0001234",
     "bank_name": "State Bank of India",
-    "bank_branch": "MG Road"
+    "bank_branch": "MG Road",
+    "bank_account_number": "30012345678"
   }
 }
 ```
@@ -658,7 +683,7 @@ demand notice #1.
   "evidence_info": {
     "presentation_date": "2024-01-18",
     "return_date": "2024-01-22",
-    "return_reason": "Funds insufficient"
+    "return_reason": "FUNDS_INSUFFICIENT"
   }
 }
 ```
@@ -669,15 +694,14 @@ demand notice #1.
   "evidence_type": "LEGAL_DEMAND_NOTICE",
   "case_document_id": "uuid",
   "evidence_info": {
-    "nature_of_debt": "Loan",
-    "cheque_issue_reason": "Repayment of loan",
+    "nature_of_debt": "LOAN_OR_ADVANCE_REPAYMENT",
     "dispatch_date": "2024-02-01",
-    "mode_of_service": "Registered post",
+    "mode_of_service": "REGISTERED_POST",
     "tracking_number": "RR123456789IN",
     "is_delivered": true,
     "delivery_date": "2024-02-05",
     "accused_replied": false,
-    "payment_status": "No payment"
+    "payment_status": "NO_PAYMENT_MADE"
   }
 }
 ```
@@ -730,27 +754,39 @@ schemas live in code, in the case type registry
 server validates against.
 
 All schemas are strict (`"additionalProperties": false`): an unknown key is a
-400, so a typo is reported rather than silently stored. Required text fields
-must be non-empty. Dates are `YYYY-MM-DD`. Every problem is reported at once,
+400, so a typo is reported rather than silently stored. Text fields must
+contain a non-whitespace character (`"pattern": "\\S"`); an empty or
+whitespace-only value is a 400 with code `E00004` ("This field may not be
+blank.") on that field. Dates are `YYYY-MM-DD`. Every problem is reported at once,
 under `evidence_info`.
 
-**`CHEQUE`** (as written on the cheque leaf, plus the drawer's bank):
+A field with a fixed code list is a `oneOf` of `{ "const": code, "title": label }`
+options, so clients read both the allowed codes and their display labels from
+the schema. A value outside the list is a 400 with code `E00005` on that field.
+
+**`CHEQUE`** (as written on the cheque leaf, plus the drawer's bank and account):
 ```json
 {
   "type": "object",
-  "required": ["cheque_date", "amount", "cheque_number", "ifsc_code", "bank_name", "bank_branch"],
+  "required": [
+    "cheque_date", "amount", "cheque_number", "ifsc_code", "bank_name", "bank_branch",
+    "bank_account_number"
+  ],
   "properties": {
     "cheque_date": { "type": "string", "format": "date" },
     "amount": { "type": "number", "exclusiveMinimum": 0 },
     "cheque_number": { "type": "string", "pattern": "^[0-9]{6}$" },
     "ifsc_code": { "type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$" },
-    "bank_name": { "type": "string", "minLength": 1 },
-    "bank_branch": { "type": "string", "minLength": 1 }
+    "bank_name": { "type": "string", "pattern": "\\S" },
+    "bank_branch": { "type": "string", "pattern": "\\S" },
+    "bank_account_number": { "type": "string", "pattern": "^[0-9]{9,18}$" }
   },
   "additionalProperties": false
 }
 ```
 `cheque_number` is the six-digit number, not the full MICR line.
+`bank_account_number` is the drawer's account the cheque is drawn on, 9 to 18
+digits with no spaces or separators, sent as a string so leading zeros are kept.
 
 **`RETURN_MEMO`** (from the memo the bank issued when the cheque was dishonoured):
 ```json
@@ -760,7 +796,18 @@ under `evidence_info`.
   "properties": {
     "presentation_date": { "type": "string", "format": "date" },
     "return_date": { "type": "string", "format": "date" },
-    "return_reason": { "type": "string", "minLength": 1 }
+    "return_reason": {
+      "oneOf": [
+        { "const": "FUNDS_INSUFFICIENT", "title": "Funds insufficient" },
+        { "const": "EXCEEDS_ARRANGEMENT", "title": "Exceeds arrangement" },
+        { "const": "ACCOUNT_CLOSED", "title": "Account closed" },
+        { "const": "PAYMENT_STOPPED_BY_DRAWER", "title": "Payment stopped by drawer" },
+        { "const": "SIGNATURE_DIFFERS_OR_INCOMPLETE", "title": "Drawer's signature differs / incomplete" },
+        { "const": "AMOUNT_IN_WORDS_AND_FIGURES_DIFFER", "title": "Amount in words and figures differ" },
+        { "const": "REFER_TO_DRAWER", "title": "Refer to drawer" },
+        { "const": "POST_DATED_OR_STALE", "title": "Cheque post-dated / stale" }
+      ]
+    }
   },
   "additionalProperties": false
 }
@@ -771,32 +818,73 @@ under `evidence_info`.
 {
   "type": "object",
   "required": [
-    "nature_of_debt", "cheque_issue_reason", "dispatch_date",
-    "mode_of_service", "is_delivered", "payment_status"
+    "nature_of_debt", "dispatch_date", "mode_of_service",
+    "is_delivered", "payment_status"
   ],
   "properties": {
-    "nature_of_debt": { "type": "string", "minLength": 1 },
-    "cheque_issue_reason": { "type": "string", "minLength": 1 },
+    "nature_of_debt": {
+      "oneOf": [
+        { "const": "LOAN_OR_ADVANCE_REPAYMENT", "title": "Loan / advance repayment" },
+        { "const": "GOODS_SUPPLIED", "title": "Payment for goods supplied" },
+        { "const": "SERVICES_RENDERED", "title": "Payment for services rendered" },
+        { "const": "BUSINESS_OR_TRADE_TRANSACTION", "title": "Business / trade transaction" },
+        { "const": "BORROWED_MONEY_REPAYMENT", "title": "Repayment of borrowed money" },
+        { "const": "OTHER_LIABILITY", "title": "Other liability" }
+      ]
+    },
     "dispatch_date": { "type": "string", "format": "date" },
-    "mode_of_service": { "type": "string", "minLength": 1 },
-    "tracking_number": { "type": "string", "minLength": 1 },
+    "mode_of_service": {
+      "oneOf": [
+        { "const": "REGISTERED_POST", "title": "Registered post (RPAD)" },
+        { "const": "SPEED_POST", "title": "Speed post" },
+        { "const": "COURIER", "title": "Courier" },
+        { "const": "EMAIL", "title": "Email" },
+        { "const": "HAND_DELIVERY", "title": "Hand delivery" },
+        { "const": "FAX", "title": "Fax" }
+      ]
+    },
+    "tracking_number": { "type": "string", "pattern": "\\S" },
     "is_delivered": { "type": "boolean" },
     "delivery_date": { "type": "string", "format": "date" },
+    "return_date": { "type": "string", "format": "date" },
+    "non_delivery_reason": { "type": "string", "pattern": "\\S" },
     "accused_replied": { "type": "boolean" },
-    "payment_status": { "type": "string", "minLength": 1 }
+    "payment_status": {
+      "oneOf": [
+        { "const": "PART_PAYMENT", "title": "Part Payment" },
+        { "const": "NO_PAYMENT_MADE", "title": "No Payment Made" }
+      ]
+    },
+    "part_payment_amount": { "type": "number", "exclusiveMinimum": 0 }
   },
   "additionalProperties": false,
-  "if": { "properties": { "is_delivered": { "const": true } }, "required": ["is_delivered"] },
-  "then": { "required": ["delivery_date"] }
+  "allOf": [
+    {
+      "if": { "properties": { "is_delivered": { "const": true } }, "required": ["is_delivered"] },
+      "then": { "required": ["delivery_date"] }
+    },
+    {
+      "if": { "properties": { "is_delivered": { "const": false } }, "required": ["is_delivered"] },
+      "then": { "required": ["return_date", "non_delivery_reason"] }
+    },
+    {
+      "if": { "properties": { "payment_status": { "const": "PART_PAYMENT" } }, "required": ["payment_status"] },
+      "then": { "required": ["part_payment_amount"] }
+    }
+  ]
 }
 ```
 `delivery_date` is required when `is_delivered` is true; the 15-day payment
-window runs from it.
+window runs from it. When the notice was not delivered, `return_date` (when it
+came back to the delivery agency undelivered) and `non_delivery_reason` are
+required instead. `part_payment_amount` is required when `payment_status` is
+`PART_PAYMENT`. A field sent when its condition does not hold (a `return_date`
+on a delivered notice, an amount with `NO_PAYMENT_MADE`) is accepted and stored.
 
 **Not yet enforced:**
-- `return_reason`, `nature_of_debt`, `cheque_issue_reason`, `mode_of_service`
-  and `payment_status` are dropdowns in the UI but accept any non-empty text
-  until their option lists are agreed; each then becomes an `enum`.
+- `non_delivery_reason` is a dropdown in the UI but accepts any non-empty text
+  until its option list is agreed; it then becomes a code list like
+  `return_reason`, `nature_of_debt` and `mode_of_service`.
 - Date ordering (presentation not before the cheque date, return not before
   presentation, delivery not before dispatch) cannot be expressed in JSON
   Schema, and the first rule spans two evidence rows.
@@ -820,16 +908,18 @@ is not merged with it.
   "payee_ifsc_code": "HDFC0000512",
   "payee_bank_name": "HDFC Bank",
   "payee_bank_branch": "Kochi",
-  "bank_police_station": "Ernakulam Central",
+  "payee_bank_police_station": "Ernakulam Central",
   "other_complaints_pending": false,
-  "cause_of_action_date": "2024-02-21"
+  "cause_of_action_date": "2024-02-21",
+  "complaint_filing_date": "2024-04-10",
+  "condonation_reason": "The complainant was hospitalised from 1 to 30 March 2024."
 }
 ```
 
 **PUT Request Body (Section 4: ADR, Other Details & Prayer):**
 ```json
 {
-  "adr_preference": "MAYBE",
+  "adr_preference": "NO",
   "other_details": "",
   "interim_relief": "<p>Direct the Accused to pay interim compensation under Section 143A ...</p>",
   "final_relief": "<p>Take cognizance of the offence committed by the Accused under Section 138 ...</p>"
@@ -868,27 +958,55 @@ strict (`"additionalProperties": false`).
 ```json
 {
   "type": "object",
-  "required": ["cheque_deposited_by_payee", "cause_of_action_date"],
+  "required": ["cheque_deposited_by_payee", "cause_of_action_date", "complaint_filing_date"],
   "properties": {
     "cheque_deposited_by_payee": { "type": "boolean" },
     "payee_ifsc_code": { "type": "string", "pattern": "^[A-Z]{4}0[A-Z0-9]{6}$" },
-    "payee_bank_name": { "type": "string", "minLength": 1 },
-    "payee_bank_branch": { "type": "string", "minLength": 1 },
-    "bank_police_station": { "type": "string", "minLength": 1 },
+    "payee_bank_name": { "type": "string", "pattern": "\\S" },
+    "payee_bank_branch": { "type": "string", "pattern": "\\S" },
+    "payee_bank_police_station": { "type": "string", "pattern": "\\S" },
+    "drawer_bank_police_station": { "type": "string", "pattern": "\\S" },
     "other_complaints_pending": { "type": "boolean" },
-    "cause_of_action_date": { "type": "string", "format": "date" }
+    "cause_of_action_date": { "type": "string", "format": "date" },
+    "complaint_filing_date": { "type": "string", "format": "date" },
+    "condonation_reason": { "type": "string", "pattern": "\\S" }
   },
   "additionalProperties": false,
-  "if": { "properties": { "cheque_deposited_by_payee": { "const": true } }, "required": ["cheque_deposited_by_payee"] },
-  "then": { "required": ["payee_ifsc_code", "payee_bank_name", "payee_bank_branch", "bank_police_station"] }
+  "allOf": [
+    {
+      "if": { "properties": { "cheque_deposited_by_payee": { "const": true } }, "required": ["cheque_deposited_by_payee"] },
+      "then": { "required": ["payee_ifsc_code", "payee_bank_name", "payee_bank_branch", "payee_bank_police_station"] }
+    },
+    {
+      "if": { "properties": { "cheque_deposited_by_payee": { "const": false } }, "required": ["cheque_deposited_by_payee"] },
+      "then": { "required": ["drawer_bank_police_station"] }
+    }
+  ]
 }
 ```
 Jurisdiction follows the branch where the cheque was presented and the
-complainant holds the account, so the payee's bank details and that branch's
-police station are required when the payee deposited the cheque.
+complainant holds the account, so the payee's bank details and the police
+station of the payee's branch (`payee_bank_police_station`) are required when
+the payee deposited the cheque. Otherwise the police station of the drawer's
+(accused's) branch, `drawer_bank_police_station`, is required instead.
+
+`complaint_filing_date` is the date of filing the complaint as entered on the
+form. It is separate from the case's `filed_at`, which the server sets at
+submission. It must be on or after `cause_of_action_date`; an earlier date is a
+400 with code `E00001` on `data.complaint_filing_date`.
+
+`condonation_reason` is required when `complaint_filing_date` is more than 30
+days after `cause_of_action_date`: the complaint is then outside the limitation
+period (NI Act s.142(b)) and the court must be asked to condone the delay. A
+filing date within 30 days of the cause of action needs no reason (one may
+still be sent). JSON Schema cannot compare or subtract dates, so the schema
+served to clients lists these fields but not these two rules; the server
+applies them on every save and again in the completeness check (§6.3). A missing
+reason is a 400 with code `E00002` on `data`, like other missing required
+fields.
+
 `other_complaints_pending` records whether another Section 138 complaint is
-pending between the same parties. The complaint filing date is not part of the
-section: it is the case's `filed_at`, set at submission.
+pending between the same parties.
 
 `adr_other_prayer` (willingness to settle, other details for the court, and the relief sought):
 ```json
@@ -899,7 +1017,7 @@ section: it is the case's `filed_at`, set at submission.
     "adr_preference": { "enum": ["YES", "NO", "MAYBE"] },
     "other_details": { "type": "string" },
     "interim_relief": { "type": "string" },
-    "final_relief": { "type": "string", "minLength": 1 }
+    "final_relief": { "type": "string", "pattern": "\\S" }
   },
   "additionalProperties": false
 }
@@ -909,8 +1027,12 @@ output and are stored as sent; they must be sanitized wherever they are
 rendered (preview, PDFs).
 
 **Open questions:**
-- `bank_police_station` is free text; if police stations become master data it
-  should hold the station's id.
+- `payee_bank_police_station` and `drawer_bank_police_station` are free text;
+  if police stations become master data they should hold the station's id.
+- The limitation period is a flat 30 days; counting it as one calendar month
+  (as s.142(b) reads) is an open question.
+- `complaint_filing_date` is entered by the filer and not compared with
+  `filed_at` or with today.
 - Required fields are enforced on every save, so a section cannot be saved
   half-filled. If the client autosaves drafts, required fields may need to move
   to the completeness check (§6.3) instead.
@@ -927,7 +1049,33 @@ Returns all sections for the case type:
 }
 ```
 
-### 5.4 Promoted Columns: Open Design Question
+### 5.4 Affidavit
+
+```
+PUT /cases/{case_id_or_draft_session_id}/affidavit
+```
+
+The sworn affidavit filed with the complaint (its own screen in the filing
+flow). It is a column on the case, not a details section. The body replaces
+what was stored:
+
+```json
+{ "affidavit": "<p>I, the complainant, state on oath ...</p>" }
+```
+
+**Response (200 OK):**
+```json
+{ "case_id": "uuid", "affidavit": "<p>I, the complainant, state on oath ...</p>" }
+```
+
+As with the details sections, the first save on a draft session creates the
+case; a blank affidavit is a 400 (`E00004`) and creates nothing; a submitted
+case is a 409. The text is rich-text editor output, stored as sent and
+sanitized wherever it is rendered. It is returned in the preview
+(`GET /cases/{id}`, `affidavit`) and required by the completeness check
+(§6.3).
+
+### 5.5 Promoted Columns: Open Design Question
 
 Spec 0017 §9.4 notes that `cheque_bounce_case` currently has promoted columns:
 - `bank_account_number`
@@ -1055,6 +1203,7 @@ Every write endpoint (POST/PATCH/DELETE on documents, participants, evidence, de
 ```python
 from django.core.cache import cache
 
+
 def clear_case_preview_cache(case_id):
     cache.delete(f"case:{case_id}:preview")
 ```
@@ -1108,6 +1257,7 @@ POST /cases/{case_id}/validate
    - Each complainant either:
      - Has an active `representation` row, OR
      - `is_party_in_person = true`
+   - A complainant with `is_party_in_person = true` has a `party_in_person_affidavit`.
    - When the case has any active `representation`, it has at least one active `VAKALATNAMA` case document. Vakalatnamas are case documents, not linked to a representation (§3.4), so this is checked per case, not per advocate.
 
 3. **POA Mandates:**
@@ -1128,6 +1278,10 @@ POST /cases/{case_id}/validate
 
 6. **Case Details:**
    - `jurisdiction_limitation` and `adr_other_prayer` JSONs pass their schemas (defined per case type)
+   - `jurisdiction_limitation` has a `complaint_filing_date` on or after `cause_of_action_date`, and a `condonation_reason` when it is more than 30 days after (§5.3)
+
+7. **Affidavit:**
+   - The case has an `affidavit` (§5.4); reported on the field `affidavit`.
 
 **When to call:**
 Client calls this before attempting to submit for signing. Invalid cases cannot advance to `PENDING_SIGN`.
@@ -1171,7 +1325,7 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 | `E07027` | 400 | The e-sign transaction's signer is not the participant's user account (§8). |
 | `E07028` | 400 | The e-signature was completed before the case entered `PENDING_SIGN` (§8). |
 
-A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
+A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00004` blank text, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
 
 ```
 POST /cases/{case_id}/submit-for-signing
@@ -1337,10 +1491,16 @@ Implemented in `apps.cases.services.filing.get_viewable_case`:
 ```python
 viewable = (
     Q(created_by=user)
-    | Q(participants__person__user=user, participants__is_active=True,
-        participants__role__in=FILING_SIDE_ROLES)
-    | Q(representations__advocate__user=user, representations__is_active=True,
-        representations__case_participant__role__in=FILING_SIDE_ROLES)
+    | Q(
+        participants__person__user=user,
+        participants__is_active=True,
+        participants__role__in=FILING_SIDE_ROLES,
+    )
+    | Q(
+        representations__advocate__user=user,
+        representations__is_active=True,
+        representations__case_participant__role__in=FILING_SIDE_ROLES,
+    )
 )
 ```
 
@@ -1380,8 +1540,9 @@ Pincode format is enforced (6 digits, not starting with 0):
 ```python
 import re
 
+
 def validate_pincode(pincode):
-    if not re.match(r'^[1-9][0-9]{5}$', pincode):
+    if not re.match(r"^[1-9][0-9]{5}$", pincode):
         raise ValidationError("Pincode must be 6 digits and not start with 0")
 ```
 
@@ -1393,9 +1554,10 @@ Use JSON Schema validation:
 from jsonschema import validate, ValidationError as JSONSchemaError
 
 EVIDENCE_SCHEMAS = {
-    "CHEQUE": { ... },  # from §5.2
-    "RETURN_MEMO": { ... },
+    "CHEQUE": {...},  # from §5.2
+    "RETURN_MEMO": {...},
 }
+
 
 def validate_evidence_info(evidence_type, evidence_info):
     schema = EVIDENCE_SCHEMAS.get(evidence_type)
@@ -1432,15 +1594,17 @@ If the case was modified after that timestamp, return:
 The preview endpoint (`GET /cases/{id}`) joins across many tables. Use `select_related` and `prefetch_related`:
 
 ```python
-case = Case.objects.select_related(
-    'cheque_bounce_case'
-).prefetch_related(
-    Prefetch('case_participant_set', queryset=CaseParticipant.objects.filter(is_active=True)),
-    'representation_set__advocate',
-    'poa_mandate_set',
-    'case_evidence_set',
-    'case_document_set__document'
-).get(pk=case_id)
+case = (
+    Case.objects.select_related("cheque_bounce_case")
+    .prefetch_related(
+        Prefetch("case_participant_set", queryset=CaseParticipant.objects.filter(is_active=True)),
+        "representation_set__advocate",
+        "poa_mandate_set",
+        "case_evidence_set",
+        "case_document_set__document",
+    )
+    .get(pk=case_id)
+)
 ```
 
 ### 11.2 Pagination for Evidence and Documents
@@ -1540,6 +1704,7 @@ CREATE INDEX ON representation (advocate_id, is_active);
 | GET | `/cases/{id}/evidence?evidence_type=` | List evidence |
 | PUT | `/cases/{id_or_draft}/details/{section}` | Update case details (creates case if first action) |
 | GET | `/cases/{id}/details` | Get all case details |
+| PUT | `/cases/{id_or_draft}/affidavit` | Replace the case's affidavit (creates case if first action) |
 | POST | `/cases/{id}/submit-for-signing` | Advance to signing |
 | POST | `/cases/{id}/participants/{id}/sign` | Record signature |
 

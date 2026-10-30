@@ -38,9 +38,10 @@ from ..models import (
     ParticipantRole,
     PoaMandate,
     Representation,
+    has_visible_text,
 )
 from ..serializers import CasePreviewSerializer
-from .case_types import DocumentType, EvidenceType, get_config, schema_errors
+from .case_types import DocumentType, EvidenceType, get_config, schema_errors, section_errors
 from .services import (
     PREVIEW_TTL_SECONDS,
     clear_preview_cache,
@@ -187,6 +188,19 @@ def validation_errors(case):
                 f"Complainant #{complainant.ordinal} has no advocate and is not marked "
                 "as party-in-person.",
             )
+        if complainant.is_party_in_person and not has_visible_text(
+            complainant.party_in_person_affidavit
+        ):
+            error(
+                f"participants.{complainant.id}",
+                f"Complainant #{complainant.ordinal} appears in person but has no "
+                "party-in-person affidavit.",
+            )
+
+    # Writes refuse empty editor output; this also catches what reached the
+    # database another way (the admin, a shell).
+    if not has_visible_text(case.affidavit):
+        error("affidavit", "The affidavit is required.")
 
     # Vakalatnamas and POA documents belong to the case, not to one
     # representation or mandate (spec 0021 §3.4), so one of each is enough.
@@ -222,7 +236,7 @@ def validation_errors(case):
 
     # An unsaved section is still ``{}``, which fails its required fields here.
     for section, data in get_detail_sections(case).items():
-        for problem in schema_errors(config.section_schemas[section], data):
+        for problem in section_errors(config, section, data):
             error(f"details.{section}", str(problem))
     return problems
 

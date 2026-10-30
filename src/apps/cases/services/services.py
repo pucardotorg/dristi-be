@@ -16,7 +16,9 @@ from contextlib import contextmanager
 from django.core.cache import cache, caches
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import CharField, Max, OuterRef, Subquery, Value
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import ErrorDetail, NotFound
@@ -26,8 +28,15 @@ from apps.api.errors import BusinessError
 from apps.files import documents
 
 from .. import errors
-from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
-from .case_types import get_config, schema_errors
+from ..models import (
+    Case,
+    CaseDocument,
+    CaseEvidence,
+    CaseParticipant,
+    CaseStatus,
+    ParticipantRole,
+)
+from .case_types import CASE_TYPES, get_config, schema_errors, section_errors
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +59,13 @@ _UNSET = object()
 # other keyword (pattern, format, minimum …) is a plain invalid value.
 SCHEMA_KEYWORD_ERRORS = {
     "required": api_errors.REQUIRED,
+    # Text with no visible character (``case_types._text``).
+    "blank": api_errors.BLANK,
     "type": api_errors.INCORRECT_TYPE,
     "enum": api_errors.INVALID_CHOICE,
     "const": api_errors.INVALID_CHOICE,
+    # Only used for code lists with labels (``case_types._choice``).
+    "oneOf": api_errors.INVALID_CHOICE,
 }
 
 
@@ -73,6 +86,52 @@ def start_draft(user, case_type, court_id=None):
     }
     _draft_cache().set(_get_draft_key(draft["draft_session_id"]), draft, DRAFT_SESSION_TTL_SECONDS)
     return draft
+
+
+def with_list_fields(cases):
+    """Annotate ``cases`` with what the cases list shows beyond the case row.
+
+    ``first_complainant_name`` and ``first_accused_name`` are the party names on
+    the case of the active complainant and accused numbered 1: the
+    institution's when there is one, else the person's;
+    ``cause_of_action_date`` comes from the case type's details. Each is a
+    subquery or join, so a page of cases costs no extra query per row.
+    """
+    dates = [
+        KeyTextTransform(key, field)
+        for field, key in (
+            config.cause_of_action_date_key
+            for config in CASE_TYPES.values()
+            if config.cause_of_action_date_key
+        )
+    ]
+    if not dates:
+        cause_of_action_date = Value(None, output_field=CharField())
+    elif len(dates) == 1:
+        cause_of_action_date = dates[0]
+    else:
+        cause_of_action_date = Coalesce(*dates)
+    return cases.annotate(
+        first_complainant_name=_first_participant_name(ParticipantRole.COMPLAINANT),
+        first_accused_name=_first_participant_name(ParticipantRole.ACCUSED),
+        cause_of_action_date=cause_of_action_date,
+    )
+
+
+def _first_participant_name(role):
+    """Return a subquery for the party name of the first active participant in ``role``.
+
+    A person acting for an institution is not the party, so the institution's
+    name is used when there is one.
+    """
+    first = (
+        CaseParticipant.objects.active()
+        .filter(case=OuterRef("pk"), role=role)
+        .order_by("ordinal")
+        .annotate(party_name=Coalesce("entity_name_at_filing", "name_at_filing"))
+        .values("party_name")[:1]
+    )
+    return Subquery(first)
 
 
 def get_case(case_id, user):
@@ -335,18 +394,18 @@ def validate_evidence(case_type, evidence_type, evidence_info):
     """Raise a 400 unless ``case_type`` accepts ``evidence_type`` and the info fits its schema."""
     schemas = get_config(case_type).evidence_schemas
     _require_allowed(evidence_type, tuple(schemas), "evidence_type", case_type)
-    _validate_schema(schemas[evidence_type], evidence_info, "evidence_info")
+    _raise_schema_errors(schema_errors(schemas[evidence_type], evidence_info), "evidence_info")
 
 
-def _validate_schema(schema, data, field):
-    """Raise a 400 listing every way ``data``, sent as ``field``, breaks ``schema``.
+def _raise_schema_errors(problems, field):
+    """Raise a 400 listing ``problems``, the ways the data sent as ``field`` breaks its schema.
 
     Each error is reported on the path to the offending value, such as
     ``evidence_info.cheque_number``; one about the object as a whole (a
     missing or unknown key) on ``field`` itself.
     """
     detail = {}
-    for problem in schema_errors(schema, data):
+    for problem in problems:
         code = SCHEMA_KEYWORD_ERRORS.get(problem.keyword, api_errors.INVALID).code
         path = f"{field}.{problem.path}" if problem.path else field
         detail.setdefault(path, []).append(ErrorDetail(problem.message, code=code))
@@ -420,6 +479,20 @@ def remove_evidence(evidence, user):
         touch(evidence.case, user)
 
 
+# Affidavit
+
+
+def save_affidavit(case_or_draft_id, user, affidavit):
+    """Replace the case's affidavit, creating the case on first save."""
+    # Raises 404 before anything is written.
+    get_case_type(case_or_draft_id, user)
+    with editing_or_creating(case_or_draft_id, user) as case:
+        case.affidavit = affidavit
+        case.updated_by = user
+        case.save(update_fields=["affidavit", "updated_by", "updated_at"])
+    return case
+
+
 # Case details (spec 0021 §5.3)
 
 
@@ -439,9 +512,9 @@ def get_detail_sections(case):
 def save_details_section(case_or_draft_id, user, section, data):
     """Replace one details section, creating the case on first save."""
     case_type = get_case_type(case_or_draft_id, user)
-    schemas = get_config(case_type).section_schemas
-    _require_allowed(section, tuple(schemas), "section", case_type)
-    _validate_schema(schemas[section], data, "data")
+    config = get_config(case_type)
+    _require_allowed(section, config.sections, "section", case_type)
+    _raise_schema_errors(section_errors(config, section, data), "data")
     with transaction.atomic():
         case = get_or_create_case(case_or_draft_id, user)
         detail = _get_or_create_detail_row(case, user)
