@@ -68,53 +68,53 @@
     "case-lifecycle-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-oci-tqnIPh",
       "title": "Case Lifecycle Handover",
-      "contentHash": "6d105c90f153",
-      "pageUpdatedAt": 1793360661.908,
-      "calloutElementId": "cl-G-FhZA79xv",
+      "contentHash": "265a5f96fa25",
+      "pageUpdatedAt": 1793361206.37,
+      "calloutElementId": "cl-IUH_IOrV8b",
       "sections": [
         {
           "key": "# Case Lifecycle",
-          "elementId": "cl-x_VrLENx9n",
-          "hash": "9da08eddc391"
+          "elementId": "cl-MnjsMGCYyI",
+          "hash": "33ed25ff6ca7"
         },
         {
           "key": "## 1. Context",
-          "elementId": "cl-fCOTvfza5T",
-          "hash": "26e11dbec0a3"
+          "elementId": "cl-KBAz3KsizV",
+          "hash": "40db096cb522"
         },
         {
           "key": "## 2. Triggers",
-          "elementId": "cl-nSDhC_NSPt",
-          "hash": "68caf5e408be"
+          "elementId": "cl-0x8FtLBPDo",
+          "hash": "e4707e312ca6"
         },
         {
           "key": "## 3. Primary Stages",
-          "elementId": "cl-JTbjVvkfK-",
-          "hash": "5d4c3ed60918"
+          "elementId": "cl-_5dsLR3Il5",
+          "hash": "bd88c940284d"
         },
         {
           "key": "## 4. Secondary Stages",
-          "elementId": "cl--J-ZC4jjO_",
-          "hash": "905815c2ff7d"
+          "elementId": "cl-6adXqselSb",
+          "hash": "b34fc7204ff3"
         },
         {
           "key": "## 5. Case Outcome",
-          "elementId": "cl-7BNQu88chu",
+          "elementId": "cl-Iq3WNcJksG",
           "hash": "d957d1e529ae"
         },
         {
           "key": "## 6. Tracking and Analysis",
-          "elementId": "cl-Osjsmiyh8y",
-          "hash": "ae0ad241ee08"
+          "elementId": "cl-cFVf2iKI88",
+          "hash": "eccd3f215617"
         },
         {
           "key": "## 7. Open Questions",
-          "elementId": "cl-dpPeFV86vf",
-          "hash": "9692faff9148"
+          "elementId": "cl-TSWsgI_EY1",
+          "hash": "c2a665f04d39"
         },
         {
           "key": "## References",
-          "elementId": "cl-9CGqSwItGV",
+          "elementId": "cl-C5W8Sh0EMm",
           "hash": "4046b6a6d5d3"
         }
       ],
