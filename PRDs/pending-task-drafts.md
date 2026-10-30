@@ -1,6 +1,6 @@
 # Pending task drafts
 
-**Status:** 2026-10-25 — §4–§7 (four court-side tasks) and §8 (three notifications) from [`process-handover.md`](process-handover.md) written to the master **Pending tasks (Court Side)** and **Notifications** tables on Coda (PRDs label `process-handover`). Coda is now the source of truth for them; nothing is waiting to be written. 2026-10-20 — the three order-generation tasks (§1–§3) written to the master **Pending tasks (Court Side)** table on Coda (PRDs label `order-generation`), and shown in §15 of [`order-generation.md`](order-generation.md). Coda is now the source of truth for them; this file is kept only as the record of the drafts. Nothing is waiting to be written.
+**Status:** 2026-10-30 — §9 added: Sign documents, from [`document-submission.md`](document-submission.md); not yet written to Coda. 2026-10-25 — §4–§7 (four court-side tasks) and §8 (three notifications) from [`process-handover.md`](process-handover.md) written to the master **Pending tasks (Court Side)** and **Notifications** tables on Coda (PRDs label `process-handover`). Coda is now the source of truth for them; nothing is waiting to be written. 2026-10-20 — the three order-generation tasks (§1–§3) written to the master **Pending tasks (Court Side)** table on Coda (PRDs label `order-generation`), and shown in §15 of [`order-generation.md`](order-generation.md). Coda is now the source of truth for them; this file is kept only as the record of the drafts. Nothing is waiting to be written.
 
 Pending tasks drafted from other PRDs, held here until they are all written to the
 pending tasks page on Coda together. **Not synced.** Each uses the attributes of §2 of
@@ -191,3 +191,28 @@ Not pending tasks: three notifications for the master **Notifications** table, P
 - Whether *steps due* goes once per process or once per round, so that a round of several
   processes does not send several messages.
 
+
+---
+
+## 9. Sign documents
+
+Source: `DSB-18`, `DSB-24` of [`document-submission.md`](document-submission.md). Not yet
+written to Coda.
+
+| # | Attribute | Value |
+|---|---|---|
+| 1 | Task Name | `Sign documents — {case name}` *(proposed)* |
+| 2 | Due Date | +0 Days |
+| 3 | Creation Trigger | A clerk sends a document submission for signing (`DSB-18`). |
+| 4 | Closure Trigger | **Completed** when any one of the advocates signs it. |
+| 5 | Users | Every advocate the clerk works for who is on the case |
+| 6 | Category | Sign |
+| 7 | Link to Workflow | Opens the submission for signing |
+| 8 | Status | Open · Completed · Expired · Archived, as §3 of the pending tasks handover |
+| 9 | Case | The case the documents are submitted in |
+| 10 | Visibility | Only Users |
+| 11 | Creation Date | When the task was created |
+| 12 | Action Label | `Sign` *(proposed)* |
+
+**Open:** what closes the task if the submission is deleted or declined
+([`document-submission.md`](document-submission.md) `Q-5`).

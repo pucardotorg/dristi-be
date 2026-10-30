@@ -1,11 +1,12 @@
 # Document Submission
 
-**Status:** v5 — 2026-10-22; **draft, not complete**; added how a document's title is formed, by source (`DSB-23`). v4 — 2026-10-22; Filed by and Litigant removed from the flow, with `DSB-16`, `DSB-17` and `DSB-21` (numbers not reused); signing rewritten (`DSB-18`): an advocate or party-in-person signs their own submission, a clerk sends it to the advocates they work for and any one of them signs, a court member signs their own; each document shows its **source** (`DSB-22`). v3 — 2026-10-22; a party-in-person counts as an advocate for Filed by and signing; a court member's submission has no Filed by or Litigant (`DSB-21`); the court has no evidence series of its own (`DSB-13`). v2 — 2026-10-22; Filed by and Litigant dropdowns, signed by the advocate in Filed by (`DSB-16`–`DSB-18`); no payment (`DSB-19`); provisional ID format `DOC-n` (`DSB-15`); Application added as a document type in the filter (`DSB-11`); open questions closed; **any document in the case file** can be marked as evidence, not only submitted documents (`DSB-12`, `DSB-20`). v1 — 2026-10-22; first version: submitting documents (types, multiple documents, signing), statuses, the Documents tab, and marking evidence with prosecution and defence numbers.
+**Status:** v6 — 2026-10-30; **marking evidence moved to its own PRD**, [`evidence-marking.md`](evidence-marking.md) (`DSB-12`–`DSB-15`, `DSB-20` keep their numbers); Marked as evidence is no longer a submission status, since any document can be marked. A clerk's send for signing raises a **Sign documents** pending task for the advocates (`DSB-24`). New open questions `Q-1`–`Q-8`. v5 — 2026-10-22; **draft, not complete**; added how a document's title is formed, by source (`DSB-23`). v4 — 2026-10-22; Filed by and Litigant removed from the flow, with `DSB-16`, `DSB-17` and `DSB-21` (numbers not reused); signing rewritten (`DSB-18`): an advocate or party-in-person signs their own submission, a clerk sends it to the advocates they work for and any one of them signs, a court member signs their own; each document shows its **source** (`DSB-22`). v3 — 2026-10-22; a party-in-person counts as an advocate for Filed by and signing; a court member's submission has no Filed by or Litigant (`DSB-21`); the court has no evidence series of its own (`DSB-13`). v2 — 2026-10-22; Filed by and Litigant dropdowns, signed by the advocate in Filed by (`DSB-16`–`DSB-18`); no payment (`DSB-19`); provisional ID format `DOC-n` (`DSB-15`); Application added as a document type in the filter (`DSB-11`); open questions closed; **any document in the case file** can be marked as evidence, not only submitted documents (`DSB-12`, `DSB-20`). v1 — 2026-10-22; first version: submitting documents (types, multiple documents, signing), statuses, the Documents tab, and marking evidence with prosecution and defence numbers.
 **Audience:** developers and agents building document submission and the case's Documents tab
 
 Requirement IDs: `DSB-*` — use in tickets, commits, test names. Roles are owned by
 [`court-roles.md`](court-roles.md); the rest of the case view by
-[`view-case-handover.md`](view-case-handover.md).
+[`view-case-handover.md`](view-case-handover.md); marking a document as evidence by
+[`evidence-marking.md`](evidence-marking.md).
 
 ---
 
@@ -19,6 +20,7 @@ Opened from **Make filings → Submit documents** on a case.
 | `DSB-02` | One submission carries **multiple documents**, added the same way as Supporting documents on an application ([`application-lifecycle.md`](application-lifecycle.md)): add as many as needed, one entry per document. |
 | `DSB-03` | Before it is submitted, the submission goes through **signing**. Submitting happens only once it is signed. |
 | `DSB-18` | **Who signs.** An advocate submitting documents signs them; a party-in-person counts as an advocate. A clerk cannot sign: they **send for signing**, and the submission goes to every advocate the clerk works for ([`office-management-handover.md`](office-management-handover.md)) who is on the case. Any one of them signs it. A member of the court signs their own submission. |
+| `DSB-24` | Sending for signing raises a **Sign documents** pending task for those advocates. It closes when any one of them signs. |
 | `DSB-19` | Submitting documents involves **no payment**. |
 | `DSB-04` | Anyone with case access can submit documents, and so can **any member of the court**. |
 
@@ -29,7 +31,6 @@ Opened from **Make filings → Submit documents** on a case.
 | Draft | Being prepared; not yet sent for signature |
 | Pending signature | Waiting to be signed |
 | Submitted | Signed and on the case record |
-| Marked as evidence | Marked by the court, with an evidence number (§4) |
 
 | ID | Requirement |
 | --- | --- |
@@ -54,10 +55,18 @@ Opened from **Make filings → Submit documents** on a case.
 
 # 4. Marking evidence
 
-| ID | Requirement |
-| --- | --- |
-| `DSB-12` | **Any document in the case file** can be **marked as evidence** — whatever its type or source (filing, application, submitted document, deposition) — by a member of the court with the **Evidence marker** role. |
-| `DSB-20` | Marking is available from the **case file** ([`view-case-handover.md`](view-case-handover.md) `DET-12`) and from the Documents tab. |
-| `DSB-13` | When marking, they choose **P** (prosecution) or **D** (defence). The court has no evidence series of its own: documents the court produces are marked P or D too. |
-| `DSB-14` | The evidence number is allotted at marking, in sequence per side within the case: P1, P2 … and D1, D2 …. |
-| `DSB-15` | Every document on the case record is allotted a **provisional ID** when it enters the record: `DOC-` and a number in sequence within the case — DOC-1, DOC-2 …. It stays on the document after it is marked; the evidence number is shown in its place. |
+Any document in the case file can be marked as evidence, a submitted document included.
+Owned by [`evidence-marking.md`](evidence-marking.md).
+
+# 5. Open questions
+
+| ID | Question | Blocking |
+| --- | --- | --- |
+| `Q-1` | **Document types.** DRISTI 1.0 offers Affidavits, Memos, Objections and Others to filers, and Miscellaneous to the court only; it has no Evidence type. Are Objections, Others and a court-only Miscellaneous kept alongside Affidavit, Memo and Evidence (`DSB-01`)? | Yes |
+| `Q-2` | **Fields per document.** Besides title, type and file, DRISTI 1.0 asks for a mandatory **reason for filing**. Is it kept? Which file formats and size limit apply? DRISTI 1.0: PDF, JPG, JPEG, PNG, 10 MB per file. | Yes |
+| `Q-3` | **Who signs a clerk's submission.** `DSB-18` lets any advocate the clerk works for sign; an application is signed only by the advocate named in Raised by (`ALC-28`). Should the two match? | No |
+| `Q-4` | **Litigants and PoA holders.** `DSB-04` lets anyone with case access submit. How does a represented litigant or a PoA holder sign their submission — or do they submit at all? | Yes |
+| `Q-5` | **Drafts.** Can the filer delete a Draft or a Pending signature submission? What happens when the advocate declines to sign? | No |
+| `Q-6` | **When it is offered.** Can documents be submitted before registration, or after the case is disposed of? DRISTI 1.0 offers it only between registration and disposal. | No |
+| `Q-7` | **Mandatory submissions.** Does a document submitted here close a task raised by the Mandatory submissions and responses order item, or does that always go through a Production of Documents application? | No |
+| `Q-8` | **Notifications.** Is the other side notified when a document is Submitted? Is a document filed in error withdrawn in any way, now that Mark as Void is removed (`view-case-handover.md` v1.9)? | No |
