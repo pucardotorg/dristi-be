@@ -118,7 +118,7 @@
           "hash": "4046b6a6d5d3"
         }
       ],
-      "note": "2026-10-30: rebuilt to v2 (only a resolved, unanchored comment thread on the page)."
+      "note": "2026-10-30: rebuilt to v2, then reverted at the owner's request to the 2026-10-04 text and rebuilt again."
     },
     "pending-tasks-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-brLkhW_t8M",
