@@ -1,7 +1,7 @@
 # Pending Tasks — Developer Handover
 
-**Status:** v2 — 2026-10-30; **the task list** (§4, new): every pending task is a row in the master **Pending tasks** tables on Coda, shown here as live views; each PRD owns its own rows. Open question `Q-1` added: the Category values for court-side tasks. v1 — 2026-09-14.
-**Audience:** developers building the pending tasks module
+Status: v1 — 2026-09-14
+Audience: developers building the pending tasks module
 
 ---
 
@@ -50,34 +50,9 @@ when a due date moves.
 
 ---
 
-## 4. The task list
+## 4. Open questions
 
-Every pending task is a row in the master **Pending tasks** tables on Coda — one for the
-court side, one for the citizen side — with the attributes in §2 as columns. Those
-tables are the source of truth for which tasks exist. Each row is tagged with the PRD
-that owns it, and that PRD describes the flow the task belongs to.
-
-### Court side
-
-```superhuman-view
-name: Pending tasks (Court Side) — all
-tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-KztrhvteSD
-```
-
-### Citizen side
-
-```superhuman-view
-name: Pending tasks (Citizen-Side) — all
-tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-FICRZ0qIR4
-```
-
----
-
-## 5. Open questions
-
-| # | Question | Blocking? |
-|---|---|---|
-| `Q-1` | §2 gives Category values for citizen-side tasks only (Pay, Sign, File/Submit, Others). What are the values for court-side tasks? Most court-side rows have none today. | No |
+None currently.
 
 > **Note for developers — batch operations.** The UI will allow users to select multiple
 > signing or payment tasks and complete them in one action (one OTP, one transaction).
