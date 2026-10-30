@@ -671,7 +671,13 @@ class PaymentService:
                 raise BusinessError(errors.PAYMENT_OUTCOME_PENDING)
             if status.outcome == ProviderOutcome.PENDING:
                 raise BusinessError(errors.PAYMENT_OUTCOME_PENDING)
-            # NOT_FOUND or FAILED: the provider will not collect; cancel.
+            # An early NOT_FOUND is not final: the payer may still be on the
+            # gateway page and submit after we cancel (spec 0017 #9.5).
+            if status.outcome == ProviderOutcome.NOT_FOUND and not cls._not_found_is_final(
+                [payment]
+            ):
+                raise BusinessError(errors.PAYMENT_OUTCOME_PENDING)
+            # FAILED, or NOT_FOUND past the grace: the provider will not collect; cancel.
 
         return cls.cancel_payment(payment, reason=reason, actor=actor)
 
@@ -766,10 +772,12 @@ class PaymentService:
     ) -> list[Payment]:
         """Mark ``payments`` for an operator; never credits (spec 0017 #9.5).
 
-        Idempotent, because a pending payment is polled again and again: a
-        payment already flagged keeps its first record, and one whose flag for
-        the same ``reason`` an operator resolved is not flagged again. A new
-        reason flags it afresh. Returns the payments actually flagged.
+        Idempotent, because a pending payment is polled again and again: each
+        ``reason`` is flagged at most once per payment, whether or not an
+        operator has resolved it. A new reason flags the payment afresh even
+        while an earlier flag is open (a STUCK payment can still report a late
+        success), and the earlier record moves to ``reconciliation_history``.
+        Returns the payments actually flagged.
         """
 
         detail = {"reason": reason, "flagged_at": timezone.now().isoformat()}
@@ -782,12 +790,14 @@ class PaymentService:
         flagged = []
         for p in payments:
             previous = p.metadata.get("reconciliation") or {}
-            if p.needs_reconciliation or (
-                previous.get("reason") == reason and previous.get("resolved_at")
-            ):
+            history = list(p.metadata.get("reconciliation_history") or [])
+            if reason in {record.get("reason") for record in (previous, *history)}:
                 continue
+            metadata = {**p.metadata, "reconciliation": detail}
+            if previous:
+                metadata["reconciliation_history"] = [*history, previous]
             p.needs_reconciliation = True
-            p.metadata = {**p.metadata, "reconciliation": detail}
+            p.metadata = metadata
             p.save(update_fields=["needs_reconciliation", "metadata", "updated_at"])
             flagged.append(p)
         return flagged

@@ -69,11 +69,3 @@ def visible_payments(user, queryset: QuerySet | None = None) -> QuerySet:
 
     queryset = Payment.objects.all() if queryset is None else queryset
     return queryset.filter(demand__in=visible_demands(user).values("pk"))
-
-
-def can_raise_on_case(user, case_id) -> bool:
-    """Whether ``user`` may raise a demand on ``case_id`` over REST."""
-
-    if user is None or not user.is_authenticated or not case_id:
-        return False
-    return involved_case_ids(user).filter(pk=case_id).exists()

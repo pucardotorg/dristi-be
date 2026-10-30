@@ -59,11 +59,16 @@ class DependencyDirectionTests(SimpleTestCase):
 
 @pytest.mark.django_db
 def test_every_payments_code_is_declared_on_an_endpoint():
-    """Every E06 code appears as an example on at least one operation (spec 0017 #12.5)."""
+    """Every E06 code appears as an example on at least one operation (spec 0017 #12.5).
+
+    Codes only ``DemandService.raise_demand`` raises never reach the API: there
+    is no REST create (spec 0017 #13).
+    """
 
     schema = SchemaGenerator().get_schema(request=None, public=True)
     text = str(schema["paths"])
     codes = [error.code for error in all_errors() if error.domain == "payments"]
     assert len(codes) == 22
-    missing = [code for code in codes if code not in text]
+    in_process_only = {"E06007", "E06008"}
+    missing = [code for code in codes if code not in text and code not in in_process_only]
     assert missing == []
