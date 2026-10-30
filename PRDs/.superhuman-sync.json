@@ -123,52 +123,37 @@
     "pending-tasks-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-brLkhW_t8M",
       "title": "Pending Tasks Handover",
-      "contentHash": "4dd035311445",
-      "pageUpdatedAt": 1793360768.928,
-      "calloutElementId": "cl-6fPpK1biol",
+      "contentHash": "6ef1d259a9b4",
+      "pageUpdatedAt": 1793361341.629,
+      "calloutElementId": "cl-KnBdD20uG4",
       "sections": [
         {
           "key": "# Pending Tasks — Developer Handover",
-          "elementId": "cl-K66xEsksek",
-          "hash": "e2ae132da950"
+          "elementId": "cl-tEjrxzjR5d",
+          "hash": "484d16b102b7"
         },
         {
           "key": "## 1. What a pending task is",
-          "elementId": "cl-03JhfFV2Rb",
+          "elementId": "cl-zUofCWfkud",
           "hash": "e899759177d8"
         },
         {
           "key": "## 2. Attributes of a pending task",
-          "elementId": "cl-3M5bq4hWKJ",
+          "elementId": "cl-MhgXChX7Rr",
           "hash": "c644ce4f7988"
         },
         {
           "key": "## 3. Status lifecycle",
-          "elementId": "cl-EFdILJSGMD",
+          "elementId": "cl-nVfinVpH7K",
           "hash": "216108652893"
         },
         {
-          "key": "## 4. The task list",
-          "elementId": "cl-yRh2zhlFhc",
-          "hash": "a074c5dea676"
-        },
-        {
-          "key": "### Citizen side",
-          "elementId": "cl-rwdQd9fwlr",
-          "hash": "4dfebe529e53"
-        },
-        {
-          "key": "8",
-          "elementId": "edl--Ytgxag9n_",
-          "hash": "cb3f91d54eee"
-        },
-        {
-          "key": "## 5. Open questions",
-          "elementId": "cl-TdHZeZ1ksh",
-          "hash": "a4cee735ac80"
+          "key": "## 4. Open questions",
+          "elementId": "cl-lPkmCH4eqy",
+          "hash": "082fc039d852"
         }
       ],
-      "note": "2026-10-30: rebuilt to v2 (no comments on the page); two live views of the master Pending tasks tables in §4."
+      "note": "2026-10-30: rebuilt to v2, then reverted at the owner's request to the 2026-09-14 text and rebuilt again (live views removed)."
     },
     "view-case-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
