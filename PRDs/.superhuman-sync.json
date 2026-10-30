@@ -14,10 +14,10 @@
     "efiling-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing Handover",
-      "contentHash": "310ce6124b57",
-      "pageUpdatedAt": 1792839560.201,
+      "contentHash": "a7e9952476ad",
+      "pageUpdatedAt": 1793342616.084,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling-handover\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match)."
+      "note": "Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling-handover\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match). 2026-10-30: patched in place to v50 (§11 note replaced by cl-m468m1p6tY; PRY-5 cell in grid-UGBc7eKxqI; §16.4 row 2.3 in grid-CZmW9VMuDl; §16.9 page-5 bullet; batch 19 block cl-_STdzi6lOi; Status block and callout prepended)."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -193,8 +193,8 @@
     "order-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
       "title": "Order Generation",
-      "contentHash": "62237bcd5757",
-      "pageUpdatedAt": 1792921963.923,
+      "contentHash": "226c79a51107",
+      "pageUpdatedAt": 1793342755.516,
       "calloutElementId": "eca-DluhcPwJvd",
       "sections": [
         {
@@ -298,7 +298,7 @@
           "hash": "9e1da0487ee1"
         }
       ],
-      "note": "Patched in place 2026-10-25 to v8.3 (status, callout, DFT-05 cell in Table 133). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. `sections` from the 2026-10-20 rebuild; not refreshed."
+      "note": "Patched in place 2026-10-25 to v8.3 (status, callout, DFT-05 cell in Table 133). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW. `sections` from the 2026-10-20 rebuild; not refreshed. 2026-10-30: patched in place to v8.4 (status, callout, ORD-19 in grid-J51l49lNv2, SHC table grid-8XQN1D_NeS: SHC-02 deleted, SHC-06a/07/08 rows; new ID cells are plain text, not monospace)."
     },
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
@@ -1508,9 +1508,9 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "556584e407af",
-      "pageUpdatedAt": 1792503826.93,
-      "note": "Created 2026-10-20. Callout is a short Last synced line. `sections` not recorded."
+      "contentHash": "d988980f7c72",
+      "pageUpdatedAt": 1793342740.187,
+      "note": "Created 2026-10-20. Callout is a short Last synced line. `sections` not recorded. 2026-10-30: 'Shortcuts saved per courtroom' section appended at the end; status and callout updated."
     },
     "office-management-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-lxUEhfnjuv",
