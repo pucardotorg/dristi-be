@@ -86,6 +86,25 @@ the India Post CSV in `src/data/pincodes/`, then run
 which also creates the states and districts (see
 [src/data/pincodes/README.md](src/data/pincodes/README.md)).
 
+## Scheduled jobs
+
+No scheduler is bundled with the Docker setup, so periodic commands must be run
+from cron (or whatever scheduler the deployment uses).
+
+| Command | How often | Why |
+| --- | --- | --- |
+| `python manage.py payments_poll_pending` | Every 5 minutes | Resolves payments whose provider callback never arrived (spec 0017 #9.7). Each payment backs off on its own (`PAYMENT_STATUS_POLL_*`), so running it often is cheap. |
+
+Example crontab entries:
+
+```bash
+# Development: run the pass inside the web container
+*/5 * * * * docker compose -f /path/to/dristi-be/docker/docker-compose.yml exec -T web python manage.py payments_poll_pending
+
+# Production: hand the pass to the Dramatiq worker instead of running it inline
+*/5 * * * * docker compose -f /path/to/dristi-be/docker/docker-compose.prod.yml exec -T web python manage.py payments_poll_pending --enqueue
+```
+
 ## Pre-commit hooks
 
 The repo uses [pre-commit](https://pre-commit.com/) to run Ruff (lint with auto-fix, then format) automatically on every `git commit`. The hooks are defined in [.pre-commit-config.yaml](.pre-commit-config.yaml).
@@ -225,18 +244,6 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `PDF_SIGNATURE_CONTAINER_BYTES` | Signature container reserved by `prepare_for_signing`; must exceed the largest ESP PKCS#7 | `16384` |
 | `PDF_SIGNATURE_HASH_ALGORITHM` | ByteRange digest algorithm (`SHA256`, `SHA384`, `SHA512`); must match the ESP request | `SHA256` |
 | `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives | `10485760` |
-
-## Services included
-
-The Docker Compose stack includes:
-
-- **PostgreSQL 16** - Primary database
-- **Redis 7** - Cache and message broker for Dramatiq
-- **Rustfs** - S3-compatible object storage for media files
-- **MailHog** - Email testing (catches all outgoing emails)
-- **Adminer** - Database management UI
-- **Dramatiq Dashboard** - Background job monitoring
-- **httpbin** - HTTP testing service (for dummy SMS backend)
 | `ESIGN_PROVIDER` | Dotted path of the active eSign provider. The mock provider needs no C-DAC credentials and is the local/CI default. | `addon.cdac_esign.provider.CDACESignProvider` |
 | `ESIGN_ENABLED` | Kill switch; initiation returns 503 when disabled | `True` |
 | `ESIGN_TRANSACTION_TTL` | Seconds a transaction waits for the ESP callback | `900` |
@@ -264,9 +271,28 @@ The Docker Compose stack includes:
 | `CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE` | Verify the response XMLDSig; rejected as `False` in production | `True` |
 | `CDAC_ESIGN_ALLOW_SHA1_RESPONSE` | Also accept RSA-SHA1 / SHA-1 response signatures. C-DAC signs eSign 2.1 responses with SHA-1, so it must be `True` for them to verify | `False` |
 | `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
-| `PDF_SIGNATURE_HASH_ALGORITHM` | Digest the PDF service computes over the signing ByteRange | `SHA256` |
-| `PDF_SIGNATURE_CONTAINER_BYTES` | Bytes reserved for the PKCS#7 signature container | `16384` |
-| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted for in-process signing | `20971520` |
+| `PAYMENT_DEFAULT_PROVIDER` | Name (a key of the `PAYMENT_PROVIDERS` setting) of the provider new payments are started with; empty leaves payments `INITIATED` for an operator. Payments in flight keep their own provider. | `mock` locally, empty in production until a gateway addon ships |
+| `PAYMENT_DEFAULT_CURRENCY` | Currency a demand is raised in when none is given | `INR` |
+| `PAYMENT_UI_REDIRECT_URL` | Server-side redirect target of the provider callback; `https://` in production | `https://app.example.com/payments/return` |
+| `PAYMENT_CALLBACK_THROTTLE_RATE` | Per-IP throttle for the public callback; blank disables it | `60/min` |
+| `PAYMENT_CALLBACK_MAX_BODY_BYTES` | Largest callback body accepted | `65536` |
+| `PAYMENT_STATUS_POLL_INTERVAL_SECONDS` | First status-poll interval for a pending payment; doubles each poll | `300` |
+| `PAYMENT_STATUS_POLL_MAX_INTERVAL_SECONDS` | Cap of the doubling poll interval | `21600` |
+| `PAYMENT_STATUS_POLL_BATCH_SIZE` | Provider transactions checked per poller run | `200` |
+| `PAYMENT_BATCH_MAX_DEMANDS` | Most demands one cross-demand payment may cover | `50` |
+| `PAYMENT_MOCK_CALLBACK_BASE_URL` | API origin the mock provider's form posts back to (local only) | `http://localhost:8000` |
+
+## Services included
+
+The Docker Compose stack includes:
+
+- **PostgreSQL 16** - Primary database
+- **Redis 7** - Cache and message broker for Dramatiq
+- **Rustfs** - S3-compatible object storage for media files
+- **MailHog** - Email testing (catches all outgoing emails)
+- **Adminer** - Database management UI
+- **Dramatiq Dashboard** - Background job monitoring
+- **httpbin** - HTTP testing service (for dummy SMS backend)
 
 ## Docker dependency profiles
 

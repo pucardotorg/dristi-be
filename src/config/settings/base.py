@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "apps.address",
     "apps.parties",
     "apps.cases",
+    "apps.payments",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
@@ -312,6 +313,9 @@ SPECTACULAR_SETTINGS = {
         "PartyEntityTypeEnum": "apps.parties.models.EntityType",
         "ESignEntityTypeEnum": "apps.esign.constants.EntityType",
         "GenderEnum": "apps.parties.models.Gender",
+        "DemandStatusEnum": "apps.payments.enums.DemandStatus",
+        "DemandItemStatusEnum": "apps.payments.enums.DemandItemStatus",
+        "PaymentStatusEnum": "apps.payments.enums.PaymentStatus",
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
@@ -527,6 +531,33 @@ ESIGN_SYSTEM_ACTOR_ID = env("ESIGN_SYSTEM_ACTOR_ID", default="system")
 # Optional map of EntityType value -> dotted path of an authorizer callable
 # owned by the module that owns that entity (spec 0015 #6.1).
 ESIGN_ENTITY_AUTHORIZERS = {}
+
+
+# ---------------------------------------------------------------------------
+# Payments (spec 0017)
+# ---------------------------------------------------------------------------
+# Provider name -> dotted path, resolved lazily. A provider addon (e.g. e-GRAS,
+# spec 0022) is added here and selected with PAYMENT_DEFAULT_PROVIDER; payments
+# already in flight keep routing to the provider that started them.
+PAYMENT_PROVIDERS = {"mock": "apps.payments.providers.mock.MockPaymentProvider"}
+# Provider for NEW payments only. Empty: payments stay INITIATED for an
+# operator or internal service to confirm.
+PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="")
+PAYMENT_DEFAULT_CURRENCY = env("PAYMENT_DEFAULT_CURRENCY", default="INR")
+# Where the provider callback sends the browser. Server-side only: taking it
+# from the request would make the public callback an open redirect.
+PAYMENT_UI_REDIRECT_URL = env("PAYMENT_UI_REDIRECT_URL", default="")
+PAYMENT_CALLBACK_THROTTLE_RATE = env("PAYMENT_CALLBACK_THROTTLE_RATE", default="60/min")
+PAYMENT_CALLBACK_MAX_BODY_BYTES = env.int("PAYMENT_CALLBACK_MAX_BODY_BYTES", default=65536)
+PAYMENT_STATUS_POLL_INTERVAL_SECONDS = env.int("PAYMENT_STATUS_POLL_INTERVAL_SECONDS", default=300)
+PAYMENT_STATUS_POLL_MAX_INTERVAL_SECONDS = env.int(
+    "PAYMENT_STATUS_POLL_MAX_INTERVAL_SECONDS", default=21600
+)
+PAYMENT_STATUS_POLL_BATCH_SIZE = env.int("PAYMENT_STATUS_POLL_BATCH_SIZE", default=200)
+PAYMENT_BATCH_MAX_DEMANDS = env.int("PAYMENT_BATCH_MAX_DEMANDS", default=50)
+# Origin the mock provider's form posts back to (the API's own origin); empty
+# posts to a relative path. Unused by real providers.
+PAYMENT_MOCK_CALLBACK_BASE_URL = env("PAYMENT_MOCK_CALLBACK_BASE_URL", default="")
 
 
 # ---------------------------------------------------------------------------
