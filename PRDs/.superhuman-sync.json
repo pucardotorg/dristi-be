@@ -68,14 +68,107 @@
     "case-lifecycle-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-oci-tqnIPh",
       "title": "Case Lifecycle Handover",
-      "contentHash": "265a5f96fa25",
-      "pageUpdatedAt": 1789468915.138
+      "contentHash": "6d105c90f153",
+      "pageUpdatedAt": 1793360661.908,
+      "calloutElementId": "cl-G-FhZA79xv",
+      "sections": [
+        {
+          "key": "# Case Lifecycle",
+          "elementId": "cl-x_VrLENx9n",
+          "hash": "9da08eddc391"
+        },
+        {
+          "key": "## 1. Context",
+          "elementId": "cl-fCOTvfza5T",
+          "hash": "26e11dbec0a3"
+        },
+        {
+          "key": "## 2. Triggers",
+          "elementId": "cl-nSDhC_NSPt",
+          "hash": "68caf5e408be"
+        },
+        {
+          "key": "## 3. Primary Stages",
+          "elementId": "cl-JTbjVvkfK-",
+          "hash": "5d4c3ed60918"
+        },
+        {
+          "key": "## 4. Secondary Stages",
+          "elementId": "cl--J-ZC4jjO_",
+          "hash": "905815c2ff7d"
+        },
+        {
+          "key": "## 5. Case Outcome",
+          "elementId": "cl-7BNQu88chu",
+          "hash": "d957d1e529ae"
+        },
+        {
+          "key": "## 6. Tracking and Analysis",
+          "elementId": "cl-Osjsmiyh8y",
+          "hash": "ae0ad241ee08"
+        },
+        {
+          "key": "## 7. Open Questions",
+          "elementId": "cl-dpPeFV86vf",
+          "hash": "9692faff9148"
+        },
+        {
+          "key": "## References",
+          "elementId": "cl-9CGqSwItGV",
+          "hash": "4046b6a6d5d3"
+        }
+      ],
+      "note": "2026-10-30: rebuilt to v2 (only a resolved, unanchored comment thread on the page)."
     },
     "pending-tasks-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-brLkhW_t8M",
       "title": "Pending Tasks Handover",
-      "contentHash": "6ef1d259a9b4",
-      "pageUpdatedAt": 1789456825.959
+      "contentHash": "4dd035311445",
+      "pageUpdatedAt": 1793360768.928,
+      "calloutElementId": "cl-6fPpK1biol",
+      "sections": [
+        {
+          "key": "# Pending Tasks — Developer Handover",
+          "elementId": "cl-K66xEsksek",
+          "hash": "e2ae132da950"
+        },
+        {
+          "key": "## 1. What a pending task is",
+          "elementId": "cl-03JhfFV2Rb",
+          "hash": "e899759177d8"
+        },
+        {
+          "key": "## 2. Attributes of a pending task",
+          "elementId": "cl-3M5bq4hWKJ",
+          "hash": "c644ce4f7988"
+        },
+        {
+          "key": "## 3. Status lifecycle",
+          "elementId": "cl-EFdILJSGMD",
+          "hash": "216108652893"
+        },
+        {
+          "key": "## 4. The task list",
+          "elementId": "cl-yRh2zhlFhc",
+          "hash": "a074c5dea676"
+        },
+        {
+          "key": "### Citizen side",
+          "elementId": "cl-rwdQd9fwlr",
+          "hash": "4dfebe529e53"
+        },
+        {
+          "key": "8",
+          "elementId": "edl--Ytgxag9n_",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## 5. Open questions",
+          "elementId": "cl-TdHZeZ1ksh",
+          "hash": "a4cee735ac80"
+        }
+      ],
+      "note": "2026-10-30: rebuilt to v2 (no comments on the page); two live views of the master Pending tasks tables in §4."
     },
     "view-case-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
@@ -1408,8 +1501,8 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "e15b3ca12e99",
-      "pageUpdatedAt": 1792923010.051,
+      "contentHash": "b64f0aee40d0",
+      "pageUpdatedAt": 1793360456.481,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -1433,7 +1526,7 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "Patched in place 2026-10-25 to v10.2: status, callout, RLE-09 row added to Table 143, roles in Table 221 (rows reused to keep order: Envelope receiver, Process signer, Process dispatcher, Process reporter, Evidence marker, A-Diary editor; A-Diary signer row added), state tables 146/147/150 cells, new §4 Open questions block. Single-marker cells carry a trailing ' *​*' so markdown converts. `sections` not refreshed. Patched 2026-10-25 to v10.3: status, callout, Bench clerk / Reader and Post officer cells in Tables 146/147/150."
+      "note": "Patched in place 2026-10-25 to v10.2: status, callout, RLE-09 row added to Table 143, roles in Table 221 (rows reused to keep order: Envelope receiver, Process signer, Process dispatcher, Process reporter, Evidence marker, A-Diary editor; A-Diary signer row added), state tables 146/147/150 cells, new §4 Open questions block. Single-marker cells carry a trailing ' *​*' so markdown converts. `sections` not refreshed. Patched 2026-10-25 to v10.3: status, callout, Bench clerk / Reader and Post officer cells in Tables 146/147/150. 2026-10-30: patched in place to v10.4 (status, callout, Evidence marker row in Table 221 grid-BoifyQdN_8). `sections` hashes not refreshed."
     },
     "scrutiny-registration-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
@@ -1570,36 +1663,42 @@
     "document-submission.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-A_B7aTjEeJ",
       "title": "Document Submission",
-      "contentHash": "9e5af92f90e8",
-      "pageUpdatedAt": 1792686494.977,
+      "contentHash": "ee27ab491535",
+      "pageUpdatedAt": 1793360559.761,
       "calloutElementId": "cl-EB0O_W8ymk",
       "sections": [
         {
           "key": "# Document Submission",
           "elementId": "cl-HzRiRKvUiR",
-          "hash": "16e052b49b0a"
+          "hash": "dd99a94510b8"
         },
         {
           "key": "# 1. Submitting documents",
-          "elementId": "cl-NgIAqE1P0v",
-          "hash": "38a3ff2fb79d"
+          "elementId": "cl-fPDV_ROb54",
+          "hash": "55b435c6333a"
         },
         {
           "key": "# 2. Statuses",
-          "elementId": "cl-ICaeCYMko7",
-          "hash": "4be5f6c4cf82"
+          "elementId": "cl-mLQE6O5yEy",
+          "hash": "a7319e6cb476"
         },
         {
           "key": "# 3. Documents tab",
-          "elementId": "cl-9QYqUQKvtt",
+          "elementId": "cl-2bPrmPb7ti",
           "hash": "e266a56dbda6"
         },
         {
           "key": "# 4. Marking evidence",
-          "elementId": "cl-K02Qu4HXxY",
-          "hash": "1626eee34f9a"
+          "elementId": "cl-ILZ9cPjdjS",
+          "hash": "c5e69683a2a0"
+        },
+        {
+          "key": "# 5. Open questions",
+          "elementId": "cl-9mPUKRAwF5",
+          "hash": "a1f6f5b38935"
         }
-      ]
+      ],
+      "note": "2026-10-30: v6 — §1–§4 replaced and §5 added (no comments on the page); header patched in place."
     },
     "signing-methods.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
@@ -1672,6 +1771,110 @@
           "key": "# 4. The Excel format",
           "elementId": "cl-UZiRGu77Bn",
           "hash": "00ce141e31d3"
+        }
+      ]
+    },
+    "evidence-marking.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-uJ7EU__l31",
+      "title": "Evidence Marking",
+      "contentHash": "c827c875c66d",
+      "pageUpdatedAt": 1793360826.15,
+      "calloutElementId": "cl-902vBH8kU1",
+      "sections": [
+        {
+          "key": "# Evidence Marking",
+          "elementId": "cl-QLSMELQtXe",
+          "hash": "a84042d0f722"
+        },
+        {
+          "key": "# 1. Marking a document",
+          "elementId": "cl-qkewC54TTn",
+          "hash": "8387baf5972c"
+        },
+        {
+          "key": "# 2. Numbers",
+          "elementId": "cl-bXF15Jnmd7",
+          "hash": "f2c679539543"
+        },
+        {
+          "key": "# 3. Linked records",
+          "elementId": "cl-XpZhEYTDMH",
+          "hash": "ded8c0acfcef"
+        },
+        {
+          "key": "# 4. Open questions",
+          "elementId": "cl-lCwlKol0IN",
+          "hash": "ee3f46689fb7"
+        }
+      ]
+    },
+    "cause-list-generation.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-1hS7eP_meC",
+      "title": "Cause List Generation",
+      "contentHash": "716e91d2bcb6",
+      "pageUpdatedAt": 1793360829.917,
+      "calloutElementId": "cl-F3EnmA4_Ed",
+      "sections": [
+        {
+          "key": "# Cause List Generation",
+          "elementId": "cl-1BpdGlYCex",
+          "hash": "e46b02cb0dee"
+        }
+      ]
+    },
+    "landing-page.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-t8yAVm_QV-",
+      "title": "Website and Landing Page",
+      "contentHash": "edac938ed515",
+      "pageUpdatedAt": 1793360833.872,
+      "calloutElementId": "cl-xEcl5IA6un",
+      "sections": [
+        {
+          "key": "# Website and Landing Page",
+          "elementId": "cl-Ge8T7ivkVE",
+          "hash": "540193a2c831"
+        }
+      ]
+    },
+    "bail-bond.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-N4gJvdJ1QK",
+      "title": "Bail Bond",
+      "contentHash": "f587f135738d",
+      "pageUpdatedAt": 1793360838.619,
+      "calloutElementId": "cl-kP0o5pffx-",
+      "sections": [
+        {
+          "key": "# Bail Bond",
+          "elementId": "cl-q1Vqq6D0lx",
+          "hash": "dd2fe5dd2740"
+        }
+      ]
+    },
+    "payment-logic.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-690VkCoSSB",
+      "title": "Payment Logic",
+      "contentHash": "2c29a6d2f728",
+      "pageUpdatedAt": 1793360843.183,
+      "calloutElementId": "cl-N8Oug4EJ6b",
+      "sections": [
+        {
+          "key": "# Payment Logic",
+          "elementId": "cl-aQNFEk3wYS",
+          "hash": "b0c24262f63d"
+        }
+      ]
+    },
+    "cis-integration.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-eBrQVdOTYN",
+      "title": "CIS Integration",
+      "contentHash": "a601999eece2",
+      "pageUpdatedAt": 1793360847.193,
+      "calloutElementId": "cl-TulhviP9Yb",
+      "sections": [
+        {
+          "key": "# CIS Integration",
+          "elementId": "cl-ofHEbQpazs",
+          "hash": "585526392c21"
         }
       ]
     }
