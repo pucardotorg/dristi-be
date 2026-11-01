@@ -101,8 +101,10 @@ def explain(case_id, flag_id, actor, note):
 def submit_correction(case_id, actor):
     """Send the corrected case on to be signed again (#5.3).
 
-    Needs at least one answered flag, or for a registration send back at least
-    one change (``E09012``). Unanswered flags travel to re-scrutiny as they are.
+    ``apps.cases`` clears every earlier signature, so all signers sign the
+    corrected filing (``LIFE-13``). Needs at least one answered flag, or for a
+    registration send back at least one change (``E09012``). Unanswered flags
+    travel to re-scrutiny as they are.
     """
     with transaction.atomic():
         case, round_ = _correction_round(case_id)
@@ -113,5 +115,5 @@ def submit_correction(case_id, actor):
             answered = ScrutinyFlagResponse.objects.filter(flag__round=round_).exists()
         if not answered:
             raise BusinessError(errors.NOTHING_TO_RESUBMIT)
-        ports.move_case(case, CaseStatus.PENDING_SIGN)
+        ports.send_to_signing(case)
     return case

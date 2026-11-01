@@ -179,6 +179,7 @@ Rules:
 | `selectors.oath_required(case_id)`, `selectors.oaths(case_id)` | whether the state requires an oath; each oath with complainant, recorded by, recorded at, and the round it was recorded in (`SCR-14`, `OTH-2`) |
 | `selectors.paper_upload_reason(case_id)` | the reason given for not e-signing and when (`SCR-15`, `SIG-10`) |
 | `services.open_for_correction(case_id, scope, round_id)` / `close_correction(case_id)` | correction scope (#5) |
+| `filing.return_to_signing(case)` | *Submit correction* (#5.3): moves the corrected case from `PENDING_CORRECTION` to `PENDING_SIGN` and clears every signature in one step (`LIFE-13`, `SIG-07`); scrutiny decides when, cases owns how |
 | `services.register_case(case_id, registration_type, actor)` | records the final registration type, assigns the case number from that type's series and `registered_at`; dispatches `CASE_REGISTERED` |
 | `services.set_case_title(case_id, complainant, accused, actor)` | *Edit case title* |
 | `services.set_court(case_id, courtroom_id, actor)` | the courtroom the Scrutiny officer chose (`SCR-16`); cases stores, scrutiny decides |
@@ -676,7 +677,7 @@ about flags):
 
 1. The case is in `pending_correction` and its latest round was sent back at Scrutiny or at Registration.
 2. At least one flag has a response, or, for `mode = ALL`, at least one change (`409 E09012`). Unanswered flags may remain; they travel to re-scrutiny as unanswered.
-3. Complete *Correct defects*; `move_case(case, "submit_correction")` → `pending_signature`.
+3. Complete *Correct defects*; `apps.cases.services.filing.return_to_signing(case)` → `pending_signature`. Cases clears every signature in the same step (`has_signed = false`, `signature_document_id = null`), so no earlier signature counts for the corrected filing and an e-signature completed before this step is refused (`E07028`, spec 0021 §8). Scrutiny only decides when; it never touches signing state. Until 0011 lands, the call goes through `ports.send_to_signing`.
 
 What follows is the engine's ([`0011`](0011-case-workflows.md) #10.2): every
 signatory signs again as at filing (`LIFE-13`, `SIG-07`), then `ALL_SIGNED`

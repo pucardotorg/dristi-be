@@ -28,7 +28,7 @@ from django.utils import timezone
 from apps.api.errors import define
 from apps.cases.models import Case, CaseDocument, CaseEvidence, CaseStatus
 from apps.cases.services.case_types import EvidenceType, get_config
-from apps.cases.services.filing import get_viewable_case
+from apps.cases.services.filing import get_viewable_case, return_to_signing
 from apps.organizations.models import Organization
 
 from .enums import CourtRole, RoundStage
@@ -78,6 +78,11 @@ def move_case(case, status):
     """Move the locked ``case`` to ``status``."""
     case.status = status
     case.save()
+
+
+def send_to_signing(case):
+    """Send the locked, corrected ``case`` to be signed again; cases clears the signatures."""
+    return_to_signing(case)
 
 
 # Court establishment and courtrooms (#2.5)

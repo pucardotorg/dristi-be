@@ -5,10 +5,11 @@ import uuid
 
 import pytest
 from django.utils import timezone
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 
 from apps.api.errors import BusinessError
-from apps.cases.models import Case, CaseEvidence, CaseStatus
+from apps.cases.models import Case, CaseEvidence, CaseParticipant, CaseStatus, ParticipantRole
+from apps.cases.services import filing
 from apps.cases.services.case_types import CaseType, EvidenceType
 from apps.scrutiny import ports
 from apps.scrutiny.enums import (
@@ -35,6 +36,7 @@ from .factories import (
     open_round,
     set_cause_of_action,
 )
+from .test_selectors import add_party
 
 pytestmark = pytest.mark.django_db
 
@@ -215,6 +217,21 @@ def test_correction_round_trip(case, officer, filer):
     flags.resolve(case.pk, carried.pk, officer)
     flag.refresh_from_db()
     assert flag.status == FlagStatus.RESOLVED
+
+
+def test_correction_clears_the_signatures(case, officer, filer):
+    signer = add_party(case, ParticipantRole.COMPLAINANT, "Signer", 1)
+    CaseParticipant.objects.filter(pk=signer.pk).update(has_signed=True)
+    flag = draft_field(case, officer, "CHQ-3[0]")[0]
+    rounds.send_back(case.pk, officer)
+    responses.explain(case.pk, flag.pk, filer, "The amount is right.")
+    responses.submit_correction(case.pk, filer)
+
+    signer.refresh_from_db()
+    assert (signer.has_signed, signer.signature_document_id) == (False, None)
+    with pytest.raises(ValidationError) as excinfo:
+        filing.submit_for_payment(case.pk, filer)
+    assert excinfo.value.detail[f"participants.{signer.pk}"][0].code == "E07006"
 
 
 def test_field_change_answers_the_section_flag(case, officer, filer):

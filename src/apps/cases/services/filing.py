@@ -7,6 +7,11 @@ precondition:
     PENDING_SIGN      --submit-for-payment--> PENDING_PAYMENT   (every signer has signed)
     PENDING_PAYMENT   --submit-for-scrutiny-> UNDER_SCRUTINY    (filed_at is set)
 
+    PENDING_CORRECTION --return-to-signing--> PENDING_SIGN      (signatures cleared)
+
+Scrutiny calls ``return_to_signing`` when the filer submits a correction, so
+the corrected case is signed again from scratch.
+
 The transitions live here rather than in the workflow service (spec 0021 §7,
 option a). Leaving ``DRAFT_IN_PROGRESS`` freezes the filing: every write in
 ``services`` and ``participants`` is refused from then on.
@@ -358,12 +363,51 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
     return participant
 
 
-def _check_signature(case, participant, esign, signature_document_id):
-    """Refuse an e-signature that is not this participant's signature of this filing.
+def return_to_signing(case):
+    """Send the locked, corrected ``case`` back to PENDING_SIGN with no signatures.
 
-    The case only moves forward and enters PENDING_SIGN once, so its first
-    history row in that status is when it was submitted for signing.
+    Any edit invalidates all signatures (spec 0024 ``LIFE-13``, ``SIG-07``), so
+    the case is never back in PENDING_SIGN with an earlier signature still
+    counted. The old e-sign transactions are kept; only the participants stop
+    counting them. A plain ``save()``, so the new entry is kept in the case's
+    history and ``_check_signature`` dates signatures from it.
     """
+    if case.status != CaseStatus.PENDING_CORRECTION:
+        raise BusinessError(
+            errors.INVALID_STATUS_TRANSITION,
+            f"Only a case in {CaseStatus.PENDING_CORRECTION} can return to "
+            f"{CaseStatus.PENDING_SIGN}; this one is {case.status}.",
+        )
+    CaseParticipant.objects.filter(case=case, has_signed=True).update(
+        has_signed=False, signature_document=None, updated_at=timezone.now()
+    )
+    case.status = CaseStatus.PENDING_SIGN
+    case.save()
+    clear_preview_cache(case.pk)
+
+
+def _submitted_for_signing_at(case):
+    """Return when ``case`` last entered PENDING_SIGN, or None.
+
+    A corrected case enters it again, so this is the first PENDING_SIGN
+    history row after the last row in any other status. Rows are ordered by
+    ``history_id``, the insertion order: consecutive saves can share a
+    ``history_date`` on a coarse clock.
+    """
+    left = (
+        case.history.exclude(status=CaseStatus.PENDING_SIGN)
+        .order_by("-history_id")
+        .values_list("history_id", flat=True)
+        .first()
+    )
+    entries = case.history.filter(status=CaseStatus.PENDING_SIGN)
+    if left is not None:
+        entries = entries.filter(history_id__gt=left)
+    return entries.order_by("history_id").values_list("history_date", flat=True).first()
+
+
+def _check_signature(case, participant, esign, signature_document_id):
+    """Refuse an e-signature that is not this participant's signature of this filing."""
     if (
         CaseParticipant.objects.filter(signature_document_id=signature_document_id)
         .exclude(pk=participant.pk)
@@ -377,12 +421,7 @@ def _check_signature(case, participant, esign, signature_document_id):
         raise errors.SIGNED_BY_SOMEONE_ELSE.validation_error(
             {"signature_document_id": [errors.SIGNED_BY_SOMEONE_ELSE.message]}
         )
-    submitted_at = (
-        case.history.filter(status=CaseStatus.PENDING_SIGN)
-        .order_by("history_date")
-        .values_list("history_date", flat=True)
-        .first()
-    )
+    submitted_at = _submitted_for_signing_at(case)
     if esign.completed_at is None or submitted_at is None or esign.completed_at < submitted_at:
         raise errors.SIGNED_BEFORE_SUBMISSION.validation_error(
             {"signature_document_id": [errors.SIGNED_BEFORE_SUBMISSION.message]}

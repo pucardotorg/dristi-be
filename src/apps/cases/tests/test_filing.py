@@ -8,6 +8,7 @@ from django.contrib.auth.models import Permission
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.api.errors import BusinessError
 from apps.cases.models import (
     Case,
     CaseEvidence,
@@ -17,6 +18,7 @@ from apps.cases.models import (
     ParticipantRole,
     Representation,
 )
+from apps.cases.services.filing import return_to_signing
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 from apps.files.tests.factories import make_file
@@ -491,6 +493,30 @@ class TestSign:
 
         assert response.status_code == 400
         assert error_codes(response) == {"signature_document_id": ["E07028"]}
+
+    def test_a_case_sent_back_to_signing_is_signed_again(self, client, user, draft, pending):
+        participant_id = pending["case_participant_id"]
+        sign(client, draft, participant_id, signed_document(user, draft))
+        unused = signed_document(
+            user, draft, completed_at=timezone.now() - timezone.timedelta(seconds=1)
+        )
+        case = Case.objects.get(pk=draft)
+        with pytest.raises(BusinessError) as excinfo:
+            return_to_signing(case)
+        assert excinfo.value.error.code == "E07004"
+        case.status = CaseStatus.PENDING_CORRECTION
+        case.save()
+        return_to_signing(case)
+        assert Case.objects.get(pk=draft).status == CaseStatus.PENDING_SIGN
+        participant = CaseParticipant.objects.get(pk=participant_id)
+        assert (participant.has_signed, participant.signature_document_id) == (False, None)
+        # A save while still pending signature is not a new submission.
+        case.save()
+
+        response = sign(client, draft, participant_id, unused)
+        assert error_codes(response) == {"signature_document_id": ["E07028"]}
+        response = sign(client, draft, participant_id, signed_document(user, draft))
+        assert response.status_code == 200
 
     def test_the_accused_does_not_sign(self, client, user, draft, pending):
         accused = CaseParticipant.objects.get(case_id=draft, role=ParticipantRole.ACCUSED)
