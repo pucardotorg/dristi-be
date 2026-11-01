@@ -59,15 +59,13 @@ from .services import (
 # Preview (spec 0021 §6.1, §6.2)
 
 
-def get_viewable_case(case_id, user):
-    """Return a case ``user`` may preview, or raise ``NotFound`` (spec 0021 §9.6).
+def _filing_side(user):
+    """Match the cases ``user`` is on the filing side of.
 
-    The filer, an active complainant or POA holder who is the user, an active
-    advocate of a complainant, and staff holding ``cases.view_case`` may.
-    Anyone else, the accused and witnesses included, is told the case does
-    not exist.
+    The filer, an active complainant or POA holder who is the user, or an
+    active advocate of a complainant.
     """
-    viewable = (
+    return (
         Q(created_by=user)
         | Q(
             participants__person__user=user,
@@ -80,13 +78,33 @@ def get_viewable_case(case_id, user):
             representations__case_participant__role__in=FILING_SIDE_ROLES,
         )
     )
-    found = (
-        Case.objects.all() if user.has_perm("cases.view_case") else Case.objects.filter(viewable)
-    )
+
+
+def _find_case(found, case_id):
     case = found.filter(pk=case_id).distinct().first()
     if case is None:
         raise NotFound("Case not found.")
     return case
+
+
+def get_viewable_case(case_id, user):
+    """Return a case ``user`` may preview, or raise ``NotFound`` (spec 0021 §9.6).
+
+    The filing side and staff holding ``cases.view_case`` may. Anyone else,
+    the accused and witnesses included, is told the case does not exist.
+    """
+    if user.has_perm("cases.view_case"):
+        return _find_case(Case.objects.all(), case_id)
+    return _find_case(Case.objects.filter(_filing_side(user)), case_id)
+
+
+def get_filing_side_case(case_id, user):
+    """Return a case ``user`` may act on as its filing side, or raise ``NotFound``.
+
+    As ``get_viewable_case`` without the staff ``cases.view_case`` reading
+    access: viewing a case is no right to answer for its filer.
+    """
+    return _find_case(Case.objects.filter(_filing_side(user)), case_id)
 
 
 def get_preview(case_id, user):

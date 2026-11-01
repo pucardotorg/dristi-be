@@ -1,6 +1,7 @@
 """Scrutiny, registration and filer-correction endpoints (spec 0024 #8, #10 API)."""
 
 import pytest
+from django.contrib.auth.models import Permission
 from rest_framework.test import APIClient
 
 from apps.cases.models import CaseStatus
@@ -275,6 +276,23 @@ def test_filer_history_and_access(case, officer, filer):
     stranger = client_for(make_user())
     for path in (filer_url(case, "corrections"), filer_url(case, "scrutiny-history")):
         assert stranger.get(path).status_code == 404
+
+
+def test_case_viewers_cannot_act_for_the_filer(case, officer):
+    flag = draft_field(case, officer, "CHQ-3[0]")[0]
+    client_for(officer).post(url(case, "send-back"))
+    viewer = make_user()
+    viewer.user_permissions.add(Permission.objects.get(codename="view_case"))
+    client = client_for(viewer)
+    assert client.get(filer_url(case, "corrections")).status_code == 200
+    explain = filer_url(case, "corrections", str(flag.pk), "explain")
+    for response in (
+        client.post(explain, {"note": "The amount is right."}),
+        client.post(filer_url(case, "corrections", "submit")),
+    ):
+        assert (response.status_code, error_codes(response)) == (404, {None: ["E00105"]})
+    case.refresh_from_db()
+    assert case.status == CaseStatus.PENDING_CORRECTION
 
 
 def test_unreadable_if_match_is_stale(case, officer):

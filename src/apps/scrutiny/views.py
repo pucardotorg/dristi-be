@@ -445,7 +445,7 @@ class CorrectionExplainView(APIView):
     )
     def post(self, request, case_id, flag_id):
         """Explain a raised item; the court sees it as contested."""
-        permissions.filing_case(case_id, request.user)
+        permissions.filing_case_for_action(case_id, request.user)
         data = _valid(ExplainSerializer, request.data)
         response = responses.explain(case_id, flag_id, request.user, data["note"])
         return Response(
@@ -466,7 +466,7 @@ class CorrectionSubmitView(APIView):
     )
     def post(self, request, case_id):
         """Send the case to be signed again; unanswered items travel to re-scrutiny."""
-        permissions.filing_case(case_id, request.user)
+        permissions.filing_case_for_action(case_id, request.user)
         case = responses.submit_correction(case_id, request.user)
         return Response(
             ResubmittedSerializer(

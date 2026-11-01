@@ -45,5 +45,13 @@ def court_case(case_id, user):
 
 
 def filing_case(case_id, user):
-    """Return the case for its filing side — filer, complainant, POA holder, their advocate."""
+    """Return the case for its filing side — filer, complainant, POA holder, their advocate.
+
+    For reads: staff holding ``cases.view_case`` may read it too.
+    """
     return ports.filing_side_case(case_id, user)
+
+
+def filing_case_for_action(case_id, user):
+    """Return the case for its filing side to act on; viewing staff are told it does not exist."""
+    return ports.filing_side_case_for_action(case_id, user)

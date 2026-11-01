@@ -937,7 +937,7 @@ auto-marked dates.
 
 * **Court roles.** Every action needs a role held at the case's court establishment (#2.2, `RLE-02c`): `SCRUTINY_OFFICER` for scrutiny actions; `CASE_REGISTERER` for registration; both for Register at Scrutiny; Forward for a `SCRUTINY_OFFICER` who does not hold `CASE_REGISTERER` (`SCR-06`, `SCR-08`, `SCR-11`). Checked server-side on every request (`RLE-04`); never by staff title (`RLE-08`).
 * **Reading.** Holders of the establishment's roles see its cases before a courtroom is chosen (`RLE-06`).
-* **Filing side** — the e-filing scope predicates (`ROLE-01`–`ROLE-05`): corrections, explain, submit, history. A clerk may do all of these (`ROLE-08` restricts only signing).
+* **Filing side** — the e-filing scope predicates (`ROLE-01`–`ROLE-05`): corrections, explain, submit, history. A clerk may do all of these (`ROLE-08` restricts only signing). Staff holding `cases.view_case` may read corrections and history, but explain and submit are for the filing side only: to anyone else they answer `404 E00105`.
 * Anyone else: `404 E00105`. Staff of another establishment: `404 E00105`. Missing role: `403 E09008`.
 
 #### 8.5 Error codes

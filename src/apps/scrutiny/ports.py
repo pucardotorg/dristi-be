@@ -28,7 +28,11 @@ from django.utils import timezone
 from apps.api.errors import define
 from apps.cases.models import Case, CaseDocument, CaseEvidence, CaseStatus
 from apps.cases.services.case_types import EvidenceType, get_config
-from apps.cases.services.filing import get_viewable_case, return_to_signing
+from apps.cases.services.filing import (
+    get_filing_side_case,
+    get_viewable_case,
+    return_to_signing,
+)
 from apps.organizations.models import Organization
 
 from .enums import CourtRole, RoundStage
@@ -70,8 +74,16 @@ def workflow_version(case):
 
 
 def filing_side_case(case_id, user):
-    """Return the case if ``user`` is on its filing side (``ROLE-01``–``ROLE-05``), or raise NotFound."""
+    """Return the case if ``user`` may read it as its filing side, or raise NotFound.
+
+    Staff holding ``cases.view_case`` may read it too.
+    """
     return get_viewable_case(case_id, user)
+
+
+def filing_side_case_for_action(case_id, user):
+    """Return the case if ``user`` is on its filing side (``ROLE-01``–``ROLE-05``), or raise NotFound."""
+    return get_filing_side_case(case_id, user)
 
 
 def move_case(case, status):
