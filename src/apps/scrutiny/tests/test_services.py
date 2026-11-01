@@ -1,9 +1,11 @@
 """Rounds, flags, decisions and responses through the services (spec 0024 #3–#6, #10)."""
 
 import datetime
+import uuid
 
 import pytest
 from django.utils import timezone
+from rest_framework.exceptions import NotFound
 
 from apps.api.errors import BusinessError
 from apps.cases.models import Case, CaseEvidence, CaseStatus
@@ -359,3 +361,130 @@ def test_date_chain_passes_through_missing_dates(case, officer):
     )
     refs = [flag.target_ref for flag in draft_field(case, officer, "CHQ-1[1]")]
     assert refs == ["CHQ-1[1]", "JUR-9", "JUR-10"]
+
+
+# Refusals and quiet paths
+
+
+def test_document_issue_rides_only_on_a_field_flag(case, officer, document):
+    with pytest.raises(BusinessError) as excinfo:
+        flags.draft(
+            case.pk,
+            officer,
+            target_type=FlagTarget.SECTION,
+            target_ref="CHQ",
+            note="x",
+            document_issue={"document_id": document.pk, "reason_code": DocumentIssue.PAGE_MISSING},
+        )
+    assert (code(excinfo), field(excinfo)) == ("E09003", "document_issue")
+
+
+def test_generated_document_is_not_flaggable(case, officer, document, monkeypatch):
+    monkeypatch.setattr(ports, "is_generated", lambda document: True)
+    with pytest.raises(BusinessError) as excinfo:
+        flags.draft(
+            case.pk,
+            officer,
+            target_type=FlagTarget.DOCUMENT,
+            target_ref=str(document.pk),
+            reason_code=DocumentIssue.PAGE_MISSING,
+        )
+    assert (code(excinfo), field(excinfo)) == ("E09013", "target_ref")
+
+
+def test_oath_flag_where_the_state_requires_one(case, officer, monkeypatch):
+    monkeypatch.setattr(ports, "oath_required", lambda case: True)
+    monkeypatch.setattr(ports, "oaths", lambda case: [{"id": "O1", "complainant": "Prateek"}])
+    flag = flags.draft(case.pk, officer, target_type=FlagTarget.OATH, target_ref="O1", note="x")[0]
+    assert flag.target_label == "Oath of Prateek"
+    with pytest.raises(BusinessError) as excinfo:
+        flags.draft(case.pk, officer, target_type=FlagTarget.OATH, target_ref="O2", note="x")
+    assert code(excinfo) == "E09003"
+
+
+def test_auto_mark_skips_a_date_already_flagged(case, officer):
+    own = draft_field(case, officer, "CHQ-9[0]", note="Return date?")[0]
+    created = draft_field(case, officer, "CHQ-8[0]")
+    assert "CHQ-9[0]" not in [flag.target_ref for flag in created]
+    own.refresh_from_db()
+    assert own.auto_marked_by is None
+
+
+def test_edit_changes_a_documents_reason(case, officer, document):
+    flag = flags.draft(
+        case.pk,
+        officer,
+        target_type=FlagTarget.DOCUMENT,
+        target_ref=str(document.pk),
+        reason_code=DocumentIssue.PAGE_MISSING,
+    )[0]
+    edited = flags.edit(case.pk, flag.pk, officer, reason_code=DocumentIssue.BLURRY_UNREADABLE)
+    assert edited.reason_code == DocumentIssue.BLURRY_UNREADABLE
+
+
+def test_unknown_flag_is_not_found(case, officer):
+    with pytest.raises(NotFound):
+        flags.withdraw(case.pk, uuid.uuid4(), officer)
+
+
+def test_changes_outside_correction_are_ignored(case, filer, document):
+    assert responses.record_field_change(case.pk, "CHQ-3[0]", 1, 2, filer) is None
+    assert responses.record_field_change(uuid.uuid4(), "CHQ-3[0]", 1, 2, filer) is None
+    assert responses.record_document_replaced(case.pk, document.pk, document.pk, filer) is None
+
+
+def test_changes_to_unflagged_targets_are_not_answers(case, officer, filer, document):
+    draft_field(case, officer, "CHQ-3[0]")
+    rounds.send_back(case.pk, officer)
+    assert responses.record_field_change(case.pk, "LDN-1[0]", 1, 2, filer) is None
+    assert responses.record_document_replaced(case.pk, document.pk, document.pk, filer) is None
+
+
+def test_explain_needs_a_known_case_and_flag(case, officer, filer):
+    with pytest.raises(NotFound):
+        responses.explain(uuid.uuid4(), uuid.uuid4(), filer, "Right.")
+    draft_field(case, officer, "CHQ-3[0]")
+    rounds.send_back(case.pk, officer)
+    with pytest.raises(NotFound):
+        responses.explain(case.pk, uuid.uuid4(), filer, "Right.")
+
+
+def test_no_round_for_a_case_in_no_stage(filer, establishment):
+    case = Case.objects.create(
+        case_type=CaseType.CHEQUE_BOUNCE, created_by=filer, court=establishment
+    )
+    assert rounds.open_round(case) is None
+
+
+def test_carried_dates_keep_their_chain(case, officer, filer):
+    source = draft_field(case, officer, "CHQ-9[0]")[0]
+    rounds.send_back(case.pk, officer)
+    responses.explain(case.pk, source.pk, filer, "The date is right.")
+    responses.submit_correction(case.pk, filer)
+    enter(case, CaseStatus.UNDER_SCRUTINY)
+    carried = {flag.target_ref: flag for flag in open_round(case).flags.all()}
+    assert carried["LDN-2[0]"].auto_marked_by == carried["CHQ-9[0]"]
+
+
+def test_forward_needs_the_scrutiny_officer_role(case, registerer):
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.forward(case.pk, registerer)
+    assert code(excinfo) == "E09008"
+
+
+def test_title_needs_an_open_round(case, officer):
+    draft_field(case, officer, "CHQ-3[0]")
+    rounds.send_back(case.pk, officer)
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.set_title(case.pk, officer, complainant="A", accused="B")
+    assert code(excinfo) == "E09001"
+
+
+def test_plugin_edges(case):
+    assert ports.oaths(case) == []
+    assert ports.split_ref("not a ref") is None
+    assert ports.downstream(case, "not a ref", ports.fields(case)) == []
+    row = ports.detail(case)
+    row.jurisdiction_limitation = {}
+    row.save()
+    assert ports.delay_applicable(case) is False

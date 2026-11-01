@@ -275,3 +275,29 @@ def test_filer_history_and_access(case, officer, filer):
     stranger = client_for(make_user())
     for path in (filer_url(case, "corrections"), filer_url(case, "scrutiny-history")):
         assert stranger.get(path).status_code == 404
+
+
+def test_unreadable_if_match_is_stale(case, officer):
+    draft_field(case, officer, "CHQ-3[0]")
+    response = client_for(officer).post(url(case, "send-back"), HTTP_IF_MATCH="abc")
+    assert (response.status_code, error_codes(response)) == (412, {None: ["E08005"]})
+
+
+def test_court_history(case, officer):
+    response = client_for(officer).get(url(case, "history"))
+    assert response.status_code == 200
+    assert response.json()["entries"][0]["kind"] == "FILED"
+
+
+def test_registration_start_and_send_back(case, officer, registerer):
+    client_for(officer).post(url(case, "forward"), {}, format="json")
+    client = client_for(registerer)
+    response = client.post(registration_url(case, "start"))
+    assert (response.status_code, response.json()["started_by"]["name"]) == (200, "Magistrate")
+    response = client.post(
+        registration_url(case, "send-back"), {"comment": "Re-check the affidavit."}, format="json"
+    )
+    assert (response.status_code, response.json()["case_status"]) == (
+        200,
+        CaseStatus.PENDING_CORRECTION,
+    )

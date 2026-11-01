@@ -1,19 +1,42 @@
 """Read models and read access (spec 0024 #7, #8.4, #10)."""
 
+import uuid
+
 import pytest
+from django.contrib.auth.models import AnonymousUser
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
 from apps.api.errors import BusinessError
-from apps.cases.models import Case, CaseEvidence, CaseStatus
+from apps.cases.models import (
+    Case,
+    CaseEvidence,
+    CaseParticipant,
+    CaseStatus,
+    ParticipantRole,
+    Representation,
+)
 from apps.cases.services.case_types import EvidenceType
-from apps.scrutiny import case_selectors, permissions, selectors
-from apps.scrutiny.enums import FlagTarget, RoundStage
+from apps.organizations.models import Organization, OrganizationType
+from apps.parties.models import Person
+from apps.parties.tests.factories import make_address
+from apps.scrutiny import case_selectors, permissions, ports, selectors
+from apps.scrutiny.enums import CourtRole, FlagStatus, FlagTarget, RoundStage, RoutingReason
+from apps.scrutiny.models import ScrutinyFlag, ScrutinyRound
 from apps.scrutiny.services import flags, responses, rounds
+from apps.users.models import AdvocateProfile, ApprovalStatus
 
-from .factories import code, draft_field, enter, make_case, make_user, open_round
+from .factories import (
+    add_courtroom,
+    code,
+    draft_field,
+    enter,
+    make_case,
+    make_user,
+    open_round,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -33,6 +56,17 @@ def send_back_and_resubmit(case, officer, filer, explain=True):
     responses.submit_correction(case.pk, filer)
     enter(case, CaseStatus.UNDER_SCRUTINY)
     return flag
+
+
+def add_party(case, role, name, ordinal):
+    return CaseParticipant.objects.create(
+        case=case,
+        person=Person.objects.create(name=name),
+        role=role,
+        ordinal=ordinal,
+        name_at_filing=name,
+        address=make_address(),
+    )
 
 
 # Access (#8.4)
@@ -261,3 +295,131 @@ def test_rows_for_a_registration_send_back_and_a_registration(
     assert [(row["stage"], row["reason"]) for row in rows] == [
         ("REGISTERED", f"CC/1/{timezone.now().year}")
     ]
+
+
+# Edges of the read models
+
+
+def test_actions_need_an_open_round_and_the_stage_role(case, officer, registerer):
+    round_ = open_round(case)
+    assert selectors.allowed_actions(round_, {CourtRole.CASE_REGISTERER}) == []
+    rounds.forward(case.pk, officer)
+    round_.refresh_from_db()
+    assert selectors.allowed_actions(round_, {CourtRole.SCRUTINY_OFFICER}) == []
+    registration = open_round(case)
+    assert selectors.allowed_actions(registration, {CourtRole.SCRUTINY_OFFICER}) == []
+
+
+def test_lists_filter_by_establishment(case, officer, registerer, filer, establishment):
+    elsewhere = Organization.objects.create(
+        code="OTHER", name="Other court", organization_type=OrganizationType.MAGISTRATE_COURT
+    )
+    make_case(filer, elsewhere, filing_number="F/OTH/2026/00001")
+    _, rows = list_rows(officer, establishment_id=establishment.pk)
+    assert [row["case_id"] for row in rows] == [case.pk]
+
+    rounds.forward(case.pk, officer)
+    found = selectors.registration_list(
+        registerer, establishment_id=establishment.pk, search="00001"
+    )
+    assert [round_.case_id for round_ in found] == [case.pk]
+    assert not selectors.registration_list(registerer, establishment_id=elsewhere.pk)
+
+
+def test_rescrutiny_after_a_registration_send_back_has_no_reason(case, officer, registerer, filer):
+    rounds.forward(case.pk, officer)
+    rounds.registration_send_back(case.pk, registerer, "Re-check the affidavit.")
+    responses.record_field_change(case.pk, "CHQ-3[0]", 1, 2, filer)
+    responses.submit_correction(case.pk, filer)
+    enter(case, CaseStatus.UNDER_SCRUTINY)
+    _, rows = list_rows(officer)
+    assert (rows[0]["stage"], rows[0]["reason"]) == ("AWAITING_RESCRUTINY", "")
+
+
+def test_detail_lists_oaths_where_the_state_requires_them(case, officer, monkeypatch):
+    oath = {"id": "O1", "complainant": "Prateek"}
+    monkeypatch.setattr(ports, "oath_required", lambda case: True)
+    monkeypatch.setattr(ports, "oaths", lambda case: [oath])
+    assert selectors.scrutiny_detail(case, open_round(case), officer)["oaths"] == [oath]
+
+
+def test_list_names_parties_title_and_advocate(case, officer):
+    first = add_party(case, ParticipantRole.COMPLAINANT, "Prateek", 1)
+    add_party(case, ParticipantRole.COMPLAINANT, "Asha", 2)
+    add_party(case, ParticipantRole.ACCUSED, "Deepak", 1)
+    advocate = AdvocateProfile.objects.create(
+        user=make_user(name="Meera Nair"),
+        bar_registration_id="KL/1/2020",
+        approval_status=ApprovalStatus.ACCEPTED,
+    )
+    Representation.objects.create(case=case, advocate=advocate, case_participant=first)
+    summary = case_selectors.get_case_summaries([case.pk])[case.pk]
+    assert (summary["parties"], summary["advocate"]) == (
+        "Prateek and others v. Deepak",
+        "Adv. Meera Nair",
+    )
+    rounds.set_title(case.pk, officer, complainant="Prateek Agrawal", accused="")
+    summary = case_selectors.get_case_summaries([case.pk])[case.pk]
+    assert summary["parties"] == "Prateek Agrawal v. Deepak"
+
+
+def test_history_names_the_routing_reason(case):
+    ScrutinyRound.objects.filter(case=case).delete()
+    rounds.open_round(case, routing_reason=RoutingReason.RANDOM_CHECK)
+    entries = selectors.history(case)["entries"]
+    assert entries[1]["text"] == "Routed to scrutiny · Random check"
+
+
+def test_history_says_an_item_was_resolved(case, officer, filer):
+    send_back_and_resubmit(case, officer, filer)
+    flags.resolve(case.pk, open_round(case).flags.get().pk, officer)
+    sent_back = next(e for e in selectors.history(case)["entries"] if e["kind"] == "SENT_BACK")
+    assert sent_back["items"][0]["state"].startswith("resolved ")
+
+
+def test_history_through_registration(case, officer, registerer, filer, establishment):
+    rounds.forward(case.pk, officer)
+    rounds.registration_send_back(case.pk, registerer, "Re-check the affidavit.")
+    responses.record_field_change(case.pk, "CHQ-3[0]", 1, 2, filer)
+    responses.submit_correction(case.pk, filer)
+    enter(case, CaseStatus.UNDER_SCRUTINY)
+    room = add_courtroom(establishment, "Courtroom 1")
+    rounds.forward(case.pk, officer, courtroom_id=room.pk)
+    rounds.register(case.pk, registerer)
+    case.refresh_from_db()
+    entries = selectors.history(case)["entries"]
+    returned = next(e for e in entries if e["kind"] == "SENT_BACK_AT_REGISTRATION")
+    assert returned["comment"] == "Re-check the affidavit."
+    assert [e["text"] for e in entries if e["kind"] in ("FORWARDED", "REGISTERED")] == [
+        "Forwarded · Establishment",
+        "Forwarded · Courtroom 1",
+        f"Registered · CC/1/{timezone.now().year}",
+    ]
+
+
+def test_corrections_show_only_items_sent_to_the_filer(case, officer):
+    withdrawn = draft_field(case, officer, "CHQ-3[0]")[0]
+    flags.withdraw(case.pk, withdrawn.pk, officer)
+    draft_field(case, officer, "JUR-10")
+    round_ = rounds.send_back(case.pk, officer)
+    # Send back raises every draft; one can only be added after it by hand, in the admin.
+    ScrutinyFlag.objects.create(
+        round=round_,
+        target_type=FlagTarget.SECTION,
+        target_ref="LDN",
+        target_label="Notice",
+        section_id="LDN",
+        note="Court's own note.",
+        status=FlagStatus.DRAFT,
+    )
+    case.refresh_from_db()
+    assert [item["target_ref"] for item in selectors.corrections(case)["flags"]] == ["JUR-10"]
+
+
+def test_anonymous_holds_no_court_role(case):
+    assert permissions.court_roles(AnonymousUser(), None) == frozenset()
+
+
+def test_unknown_case_is_not_found_for_the_filing_side(filer):
+    with pytest.raises(NotFound):
+        permissions.filing_case(uuid.uuid4(), filer)

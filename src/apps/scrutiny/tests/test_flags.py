@@ -217,3 +217,19 @@ def test_status_change_is_in_history(round_, officer):
     flag.resolved_by, flag.resolved_at = officer, timezone.now()
     flag.save()
     assert list(flag.history.values_list("status", flat=True)) == ["RESOLVED", "RAISED", "DRAFT"]
+
+
+def test_flag_cannot_point_at_itself(round_):
+    flag = make_flag(round_)
+    flag.auto_marked_by = flag
+    flag.linked_flag = flag
+    with pytest.raises(ValidationError) as excinfo:
+        flag.save()
+    assert {"auto_marked_by", "linked_flag"} <= error_fields(excinfo)
+
+
+def test_linked_flag_of_another_round(round_, officer):
+    field = make_flag(round_)
+    with pytest.raises(ValidationError) as excinfo:
+        document(next_round(round_, officer), linked_flag=field)
+    assert "linked_flag" in error_fields(excinfo)

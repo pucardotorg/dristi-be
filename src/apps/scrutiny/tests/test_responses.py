@@ -154,3 +154,7 @@ def test_responder_cannot_be_deleted(field_flag, filer):
     respond(field_flag, filer)
     with pytest.raises(ProtectedError):
         filer.delete()
+
+
+def test_str_names_the_kind_and_flag(field_flag, filer):
+    assert str(respond(field_flag, filer)) == f"Corrected · {field_flag}"

@@ -203,3 +203,7 @@ def test_open_registration_round_carries_court(case):
         registration_type="ECC",
     )
     assert round_.is_open
+
+
+def test_str_names_the_stage_and_number(case):
+    assert str(make_round(case)).endswith(" · Scrutiny round 1")
