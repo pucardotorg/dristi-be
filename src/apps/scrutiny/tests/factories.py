@@ -8,6 +8,7 @@ from django.contrib.auth.models import Group
 from django.utils import timezone
 
 from apps.cases.models import Case, CaseEvidence, CaseStatus
+from apps.cases.services import services as case_services
 from apps.cases.services.case_types import CaseType, EvidenceType
 from apps.organizations.models import Organization, OrganizationType
 from apps.scrutiny import ports
@@ -122,6 +123,16 @@ def code(excinfo):
 def field(excinfo):
     detail = excinfo.value.detail
     return next(iter(detail)) if isinstance(detail, dict) else None
+
+
+def correct_amount(case, filer, amount=5025000):
+    """Change the first cheque's amount as the filer would, through ``apps.cases`` (#5.2)."""
+    cheque = CaseEvidence.objects.active().get(
+        case=case, evidence_type=EvidenceType.CHEQUE, ordinal=1
+    )
+    return case_services.update_evidence(
+        cheque, filer, evidence_info={**cheque.evidence_info, "amount": amount}
+    )
 
 
 def draft_field(case, user, ref, note="Check this date.", **kwargs):

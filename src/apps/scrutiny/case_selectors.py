@@ -31,6 +31,13 @@ PARTY_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.ACCUSED)
 # A cheque is valid for three months from its date (RBI; SCR-08a).
 CHEQUE_VALIDITY_MONTHS = 3
 NOTICE_WINDOW_DAYS = 30
+# The return memo facts the rule needs to check a cheque's dishonour, and what
+# the officer is told is missing when a cheque has none.
+DISHONOUR_FACTS = {
+    "presented_on": "date of presentation",
+    "returned_on": "date of return",
+    "return_reason": "return reason",
+}
 
 CHECKLIST = (
     "Names match across cheque, ID and notice",
@@ -194,25 +201,39 @@ def _cheque_valid_until(cheque_date):
     return ports.add_months(cheque_date, CHEQUE_VALIDITY_MONTHS) - datetime.timedelta(days=1)
 
 
-def check_facts(case, today):
-    """Return the ``CHECKS`` rule input (#2.4): legal facts computed here, never by the rule."""
-    records = _evidence(case)
+def _cheque_facts(records):
+    """Return each cheque's facts, leaving out the ones the filing does not have."""
     cheques = []
     for index, record in enumerate(records):
         cheque = record.get(EvidenceType.CHEQUE, {})
         memo = record.get(EvidenceType.RETURN_MEMO, {})
         cheque_date = _date(cheque.get("cheque_date"))
-        cheques.append(
-            {
-                "index": index,
-                "cheque_date": cheque.get("cheque_date"),
-                "presented_on": memo.get("presentation_date"),
-                "valid_until": cheque_date and _cheque_valid_until(cheque_date).isoformat(),
-                "returned_on": memo.get("return_date"),
-                "amount": cheque.get("amount"),
-                "return_reason": memo.get("return_reason"),
-            }
-        )
+        facts = {
+            "index": index,
+            "cheque_date": cheque.get("cheque_date"),
+            "presented_on": memo.get("presentation_date"),
+            "valid_until": cheque_date and _cheque_valid_until(cheque_date).isoformat(),
+            "returned_on": memo.get("return_date"),
+            "amount": cheque.get("amount"),
+            "return_reason": memo.get("return_reason"),
+        }
+        cheques.append({key: value for key, value in facts.items() if value is not None})
+    return cheques
+
+
+def _missing_dishonour(cheque):
+    return [label for key, label in DISHONOUR_FACTS.items() if key not in cheque]
+
+
+def check_facts(case, today):
+    """Return the ``CHECKS`` rule input (#2.4): legal facts computed here, never by the rule.
+
+    A cheque without its dishonour details cannot be checked, so it is left
+    out; ``missing_facts_alerts`` tells the officer instead of the whole check
+    failing on the contract.
+    """
+    records = _evidence(case)
+    cheques = [cheque for cheque in _cheque_facts(records) if not _missing_dishonour(cheque)]
     notice = records[0].get(EvidenceType.LEGAL_DEMAND_NOTICE, {}) if records else {}
     uploaded = set(
         CaseDocument.objects.active().filter(case=case).values_list("document_type", flat=True)
@@ -229,7 +250,7 @@ def check_facts(case, today):
     return {
         "case_type": case.case_type,
         "today": today.isoformat(),
-        "cheques": [{k: v for k, v in cheque.items() if v is not None} for cheque in cheques],
+        "cheques": cheques,
         "notice": {
             "dispatched_on": notice.get("dispatch_date"),
             "served_on": notice.get("delivery_date"),
@@ -246,6 +267,34 @@ def check_facts(case, today):
             institution and (institution.cin or institution.pan)
         ),
     }
+
+
+def missing_facts_alerts(case):
+    """Return a ``DISHONOUR_DETAILS_MISSING`` alert for each cheque the checks had to skip.
+
+    Raised here rather than by the rule, which never sees such a cheque. It
+    sits under the cheque's presentation and return dates, which the officer
+    can flag (#2.4, #3.2).
+    """
+    alerts = []
+    for cheque in _cheque_facts(_evidence(case)):
+        missing = _missing_dishonour(cheque)
+        if not missing:
+            continue
+        index = cheque["index"]
+        listed = " and ".join(
+            [", ".join(missing[:-1]), missing[-1]] if len(missing) > 1 else missing
+        )
+        alerts.append(
+            {
+                "code": "DISHONOUR_DETAILS_MISSING",
+                "severity": "WARNING",
+                "field_refs": [f"CHQ-8[{index}]", f"CHQ-9[{index}]"],
+                "message": f"Cheque {index + 1} is missing its {listed}; "
+                "the checks on its dishonour were skipped.",
+            }
+        )
+    return alerts
 
 
 def get_registration_summary(case):

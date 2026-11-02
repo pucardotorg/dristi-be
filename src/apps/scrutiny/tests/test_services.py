@@ -10,7 +10,8 @@ from rest_framework.exceptions import NotFound, ValidationError
 from apps.api.errors import BusinessError
 from apps.cases.models import Case, CaseEvidence, CaseParticipant, CaseStatus, ParticipantRole
 from apps.cases.services import filing
-from apps.cases.services.case_types import CaseType, EvidenceType
+from apps.cases.services import services as case_services
+from apps.cases.services.case_types import CaseType, EvidenceType, get_config
 from apps.scrutiny import ports
 from apps.scrutiny.enums import (
     CourtRole,
@@ -22,13 +23,14 @@ from apps.scrutiny.enums import (
     RoundStage,
     RoutingReason,
 )
-from apps.scrutiny.models import ScrutinyRound
+from apps.scrutiny.models import ScrutinyFlagResponse, ScrutinyRound
 from apps.scrutiny.services import flags, responses, rounds
 
 from .factories import (
     add_cheque,
     add_courtroom,
     code,
+    correct_amount,
     draft_field,
     enter,
     field,
@@ -236,13 +238,47 @@ def test_correction_clears_the_signatures(case, officer, filer):
 
 def test_field_change_answers_the_section_flag(case, officer, filer):
     flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="CHQ", note="x")
-    rounds.send_back(case.pk, officer)
-    response = responses.record_field_change(case.pk, "CHQ-3[0]", 5205000, 5025000, filer)
+    round_ = rounds.send_back(case.pk, officer)
+    correct_amount(case, filer)
+    response = ScrutinyFlagResponse.objects.get(flag__round=round_)
     assert (response.kind, response.value_after, response.flag.status) == (
         ResponseKind.CORRECTED,
         5025000,
         FlagStatus.RESPONDED,
     )
+
+
+def test_a_section_change_answers_the_section_flag(case, officer, filer):
+    flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="PRY", note="x")
+    round_ = rounds.send_back(case.pk, officer)
+    case_services.save_details_section(
+        case.pk, filer, "adr_other_prayer", {"final_relief": "Pay the cheque amount."}
+    )
+    response = ScrutinyFlagResponse.objects.get(flag__round=round_)
+    assert (response.kind, response.value_after, response.flag.status) == (
+        ResponseKind.CORRECTED,
+        "Pay the cheque amount.",
+        FlagStatus.RESPONDED,
+    )
+
+
+def test_a_refused_change_answers_nothing(case, officer, filer):
+    draft_field(case, officer, "CHQ-1[0]")
+    round_ = rounds.send_back(case.pk, officer)
+    with pytest.raises(BusinessError) as excinfo:
+        correct_amount(case, filer)
+    assert (code(excinfo), field(excinfo)) == ("E07029", "evidence_info.amount")
+    assert not ScrutinyFlagResponse.objects.filter(flag__round=round_).exists()
+
+
+def test_field_catalogue_matches_the_case_type():
+    """Every value scrutiny reads is one a write in apps.cases maps back to the same ref."""
+    config = get_config(CaseType.CHEQUE_BOUNCE)
+    for field_id, (_label, evidence_type, key) in ports._EVIDENCE_FIELDS.items():
+        if key is not None:
+            assert config.correction_fields[(evidence_type, key)] == field_id
+    assert config.correction_fields[("jurisdiction_limitation", "cause_of_action_date")] == "JUR-9"
+    assert set(config.correction_sections.values()) == set(ports.SECTIONS)
 
 
 def test_document_replacement_answers_its_flag(case, officer, filer, document):
@@ -349,7 +385,7 @@ def test_registration_send_back_opens_everything(case, officer, registerer, file
     with pytest.raises(BusinessError) as excinfo:
         responses.submit_correction(case.pk, filer)
     assert code(excinfo) == "E09012"
-    responses.record_field_change(case.pk, "CHQ-3[0]", 1, 2, filer)
+    correct_amount(case, filer, 2)
     responses.submit_correction(case.pk, filer)
     enter(case, CaseStatus.UNDER_SCRUTINY)
     assert open_round(case).routing_reason == RoutingReason.RESUBMITTED
@@ -366,8 +402,9 @@ def test_delay_is_measured_against_today(case):
 
 
 def test_date_chain_passes_through_missing_dates(case, officer):
-    # No return memo or notice for cheque 2: its presentation, return and notice dates
-    # do not exist, but the jurisdiction dates after them are still marked.
+    # No return memo or notice for cheque 2: its memo dates are there, empty, to be
+    # flagged as missing; its notice dates do not exist, but the jurisdiction dates
+    # after them are still marked.
     CaseEvidence.objects.create(
         case=case,
         evidence_type=EvidenceType.CHEQUE,
@@ -377,7 +414,7 @@ def test_date_chain_passes_through_missing_dates(case, officer):
         ).evidence_info,
     )
     refs = [flag.target_ref for flag in draft_field(case, officer, "CHQ-1[1]")]
-    assert refs == ["CHQ-1[1]", "JUR-9", "JUR-10"]
+    assert refs == ["CHQ-1[1]", "CHQ-8[1]", "CHQ-9[1]", "JUR-9", "JUR-10"]
 
 
 # Refusals and quiet paths
@@ -445,15 +482,16 @@ def test_unknown_flag_is_not_found(case, officer):
 
 
 def test_changes_outside_correction_are_ignored(case, filer, document):
-    assert responses.record_field_change(case.pk, "CHQ-3[0]", 1, 2, filer) is None
-    assert responses.record_field_change(uuid.uuid4(), "CHQ-3[0]", 1, 2, filer) is None
+    assert responses.record_field_change(case.pk, "CHQ-3[0]", "CHQ", 1, 2, filer) is None
+    assert responses.record_field_change(uuid.uuid4(), "CHQ-3[0]", "CHQ", 1, 2, filer) is None
     assert responses.record_document_replaced(case.pk, document.pk, document.pk, filer) is None
 
 
 def test_changes_to_unflagged_targets_are_not_answers(case, officer, filer, document):
     draft_field(case, officer, "CHQ-3[0]")
     rounds.send_back(case.pk, officer)
-    assert responses.record_field_change(case.pk, "LDN-1[0]", 1, 2, filer) is None
+    assert responses.record_field_change(case.pk, "LDN-1[0]", "LDN", 1, 2, filer) is None
+    assert responses.record_field_change(case.pk, None, "LDN", None, None, filer) is None
     assert responses.record_document_replaced(case.pk, document.pk, document.pk, filer) is None
 
 

@@ -31,6 +31,7 @@ from apps.users.models import AdvocateProfile, ApprovalStatus
 from .factories import (
     add_courtroom,
     code,
+    correct_amount,
     draft_field,
     enter,
     make_case,
@@ -52,7 +53,7 @@ def send_back_and_resubmit(case, officer, filer, explain=True):
     if explain:
         responses.explain(case.pk, flag.pk, filer, "The amount is right.")
     else:
-        responses.record_field_change(case.pk, "CHQ-3[0]", 5205000, 5025000, filer)
+        correct_amount(case, filer)
     responses.submit_correction(case.pk, filer)
     enter(case, CaseStatus.UNDER_SCRUTINY)
     return flag
@@ -267,6 +268,37 @@ def test_corrections_after_registration_send_back(case, officer, registerer):
     assert (view["mode"], view["comment"]) == ("ALL", "Re-check the affidavit.")
 
 
+def test_cheque_without_its_return_memo_is_flaggable_not_a_broken_check(case, officer):
+    CaseEvidence.objects.create(
+        case=case,
+        evidence_type=EvidenceType.CHEQUE,
+        ordinal=2,
+        evidence_info={"cheque_date": "2026-05-01", "amount": 100},
+    )
+    detail = selectors.scrutiny_detail(case, open_round(case), officer)
+    missing = [alert for alert in detail["alerts"] if alert["code"] == "DISHONOUR_DETAILS_MISSING"]
+    assert [(alert["field_refs"], alert["message"]) for alert in missing] == [
+        (
+            ["CHQ-8[1]", "CHQ-9[1]"],
+            "Cheque 2 is missing its date of presentation, date of return and return reason; "
+            "the checks on its dishonour were skipped.",
+        )
+    ]
+    assert "CHECKS_UNAVAILABLE" not in [alert["code"] for alert in detail["alerts"]]
+    facts = case_selectors.check_facts(case, timezone.localdate())
+    assert [cheque["index"] for cheque in facts["cheques"]] == [0]
+    cheque = next(section for section in detail["sections"] if section["id"] == "CHQ")
+    second = next(group for group in cheque["groups"] if group["title"] == "Cheque 2")
+    assert [(field["ref"], field["value"]) for field in second["fields"]] == [
+        ("CHQ-1[1]", "2026-05-01"),
+        ("CHQ-3[1]", 100),
+        ("CHQ-8[1]", None),
+        ("CHQ-9[1]", None),
+    ]
+    flag = draft_field(case, officer, "CHQ-8[1]", note="No return memo for cheque 2.")[0]
+    assert (flag.target_label, flag.value_at_flag) == ("Date of presentation", None)
+
+
 def test_timeline_has_no_qualifier_for_a_missing_date(officer, filer, establishment):
     case = make_case(filer, establishment)
     CaseEvidence.objects.filter(case=case, evidence_type=EvidenceType.RETURN_MEMO).delete()
@@ -329,7 +361,7 @@ def test_lists_filter_by_establishment(case, officer, registerer, filer, establi
 def test_rescrutiny_after_a_registration_send_back_has_no_reason(case, officer, registerer, filer):
     rounds.forward(case.pk, officer)
     rounds.registration_send_back(case.pk, registerer, "Re-check the affidavit.")
-    responses.record_field_change(case.pk, "CHQ-3[0]", 1, 2, filer)
+    correct_amount(case, filer, 2)
     responses.submit_correction(case.pk, filer)
     enter(case, CaseStatus.UNDER_SCRUTINY)
     _, rows = list_rows(officer)
@@ -380,7 +412,7 @@ def test_history_says_an_item_was_resolved(case, officer, filer):
 def test_history_through_registration(case, officer, registerer, filer, establishment):
     rounds.forward(case.pk, officer)
     rounds.registration_send_back(case.pk, registerer, "Re-check the affidavit.")
-    responses.record_field_change(case.pk, "CHQ-3[0]", 1, 2, filer)
+    correct_amount(case, filer, 2)
     responses.submit_correction(case.pk, filer)
     enter(case, CaseStatus.UNDER_SCRUTINY)
     room = add_courtroom(establishment, "Courtroom 1")

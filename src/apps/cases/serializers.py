@@ -130,6 +130,14 @@ class CaseDocumentUploadSerializer(serializers.Serializer):
         return upload
 
 
+class CaseDocumentReplaceSerializer(serializers.Serializer):
+    """Multipart body of POST /case-documents/{id}/replace; the new file keeps the old one's type."""
+
+    file = UploadField()
+
+    validate_file = CaseDocumentUploadSerializer.validate_file
+
+
 class CaseDocumentSerializer(serializers.ModelSerializer):
     """A case document with its file's metadata."""
 

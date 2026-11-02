@@ -440,7 +440,8 @@ def scrutiny_detail(case, round_, user, today=None):
         "sections": sections,
         "bundle": bundle,
         "checklist": case_selectors.checklist(case),
-        "alerts": evaluate_checks(establishment, case_selectors.check_facts(case, today)),
+        "alerts": case_selectors.missing_facts_alerts(case)
+        + evaluate_checks(establishment, case_selectors.check_facts(case, today)),
         **_choices(round_),
         "flags": {
             "draft": [

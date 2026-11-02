@@ -11,5 +11,5 @@ class ScrutinyConfig(AppConfig):
     verbose_name = "Scrutiny"
 
     def ready(self):
-        """Connect the receivers that open rounds."""
+        """Connect the receivers that open rounds and record the filer's corrections."""
         from . import receivers  # noqa: F401

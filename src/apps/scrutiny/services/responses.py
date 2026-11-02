@@ -32,7 +32,11 @@ def _correction_round(case_id, quiet=False):
         if quiet:
             return None, None
         raise BusinessError(errors.ROUND_NOT_OPEN, "This case is not open for correction.")
-    return case, ScrutinyRound.objects.filter(case=case).order_by("-created_at").first()
+    round_ = ScrutinyRound.objects.filter(case=case).order_by("-created_at").first()
+    if round_ is None and quiet:
+        # Put in correction by something other than a send back (an admin, a shell).
+        return None, None
+    return case, round_
 
 
 def _respond(flag, actor, kind, **fields):
@@ -44,21 +48,22 @@ def _respond(flag, actor, kind, **fields):
     return response
 
 
-def record_field_change(case_id, field_ref, old, new, actor):
-    """Record a correction of ``field_ref`` against its raised flag, or the section flag holding it.
+def record_field_change(case_id, field_ref, section, old, new, actor):
+    """Record a correction of ``field_ref`` against its raised flag, or the flag on ``section``.
 
-    Receiver of ``case_field_changed``. A change outside correction is ignored.
+    Receiver of ``case_field_changed``. ``field_ref`` is None for a change with
+    no field of its own (a party, an item added or removed), which only a
+    section flag answers. A change outside correction is ignored.
     """
     with transaction.atomic():
         case, round_ = _correction_round(case_id, quiet=True)
         if case is None:
             return None
-        ports.mark_correction_changed(case)
         open_flags = round_.flags.filter(status__in=UNRESOLVED)
-        flag = open_flags.filter(target_type=FlagTarget.FIELD, target_ref=field_ref).first()
-        parts = ports.split_ref(field_ref)
-        if flag is None and parts is not None:
-            section = parts[0].split("-")[0]
+        flag = None
+        if field_ref is not None:
+            flag = open_flags.filter(target_type=FlagTarget.FIELD, target_ref=field_ref).first()
+        if flag is None and section:
             flag = open_flags.filter(target_type=FlagTarget.SECTION, target_ref=section).first()
         if flag is None:
             return None
@@ -74,7 +79,6 @@ def record_document_replaced(case_id, old_document_id, new_document_id, actor):
         case, round_ = _correction_round(case_id, quiet=True)
         if case is None:
             return None
-        ports.mark_correction_changed(case)
         flag = (
             round_.flags.filter(status__in=UNRESOLVED)
             .filter(target_type=FlagTarget.DOCUMENT, target_ref=str(old_document_id))

@@ -13,9 +13,9 @@ is replaced here, and only here, when the real one lands:
 * Roles — Django groups named after the role. Each deployment has one court
   establishment (``RLE-00``), so the establishment is not checked.
 * Cases contract — the cheque-bounce field catalogue and date chain below, the
-  correction scope and case title kept in the detail row's
-  ``additional_details``, courtrooms as the establishment's child
-  organizations, one registration type and no oath.
+  case title kept in the detail row's ``additional_details``, courtrooms as
+  the establishment's child organizations, one registration type and no oath.
+  The correction scope is ``apps.cases.services.correction``'s.
 """
 
 import calendar
@@ -27,6 +27,7 @@ from django.utils import timezone
 
 from apps.api.errors import define
 from apps.cases.models import Case, CaseDocument, CaseEvidence, CaseStatus
+from apps.cases.services import correction
 from apps.cases.services.case_types import EvidenceType, get_config
 from apps.cases.services.filing import (
     get_filing_side_case,
@@ -213,6 +214,7 @@ _EVIDENCE_FIELDS = {
     "LDN-6": ("Delivery of demand notice", EvidenceType.LEGAL_DEMAND_NOTICE, "delivery_date"),
     "LDN-7": ("Return of demand notice", EvidenceType.LEGAL_DEMAND_NOTICE, None),
 }
+_MEMO_FIELDS = ("CHQ-8", "CHQ-9")
 DELAY_FIELDS = ("JUR-11", "JUR-12")
 
 # Each date and the dates that must follow it (VAL-01/02). LDN-6 applies to a
@@ -265,6 +267,15 @@ def fields(case, today=None):
             section = field_id[:3]
             value = info.get(key) if key else None
             catalogue[ref] = Field(ref, label, section, value, item.case_document_id)
+    # A cheque filed without its return memo keeps the memo's dates, empty, so
+    # the officer can flag them as missing.
+    for item in evidence:
+        if item.evidence_type != EvidenceType.CHEQUE:
+            continue
+        for field_id in _MEMO_FIELDS:
+            ref = f"{field_id}[{item.ordinal - 1}]"
+            if ref not in catalogue:
+                catalogue[ref] = Field(ref, _EVIDENCE_FIELDS[field_id][0], "CHQ")
     jurisdiction = getattr(detail(case), "jurisdiction_limitation", {}) or {}
     catalogue["JUR-9"] = Field(
         "JUR-9", "Cause of action", "JUR", jurisdiction.get("cause_of_action_date")
@@ -332,37 +343,14 @@ def add_months(day, months):
     )
 
 
-# Correction scope and title, kept on the detail row until apps.cases owns them (#5.1, #4.6)
+# Correction scope (#5.1): cases stores it and checks every write against it
 
-_CORRECTION_KEY = "correction"
-
-
-def open_for_correction(case, scope, round_id):
-    """Store what the filer may change while the case is in correction."""
-    row = detail(case)
-    row.additional_details[_CORRECTION_KEY] = {**scope, "round_id": str(round_id)}
-    row.save(update_fields=["additional_details", "updated_at"])
+open_for_correction = correction.open_for_correction
+close_correction = correction.close_correction
+correction_scope = correction.get_scope
 
 
-def close_correction(case):
-    """Clear the correction scope."""
-    row = detail(case)
-    if row.additional_details.pop(_CORRECTION_KEY, None) is not None:
-        row.save(update_fields=["additional_details", "updated_at"])
-
-
-def correction_scope(case):
-    """Return the stored correction scope, or None."""
-    return detail(case).additional_details.get(_CORRECTION_KEY)
-
-
-def mark_correction_changed(case):
-    """Record that the filer changed something during correction."""
-    row = detail(case)
-    scope = row.additional_details.get(_CORRECTION_KEY)
-    if scope is not None and not scope.get("changed"):
-        scope["changed"] = True
-        row.save(update_fields=["additional_details", "updated_at"])
+# Case title (#4.6), kept on the detail row until apps.cases owns it
 
 
 def set_case_title(case, complainant, accused, actor):

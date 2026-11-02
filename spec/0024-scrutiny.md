@@ -157,7 +157,7 @@ Rules:
 
 * Scrutiny learns that a case entered `scrutiny` or `registration` from [`0011`](0011-case-workflows.md) `state_entered`. It never polls.
 * Scrutiny learns that the filer changed a field or replaced a document from the `case_field_changed` and `case_document_replaced` signals that `apps.cases` sends. Cases never calls scrutiny.
-* Correction scope is stored on the case by `apps.cases.services.open_for_correction()`; the filing endpoints of [`0021`](0021-case-filing-api.md) check it there.
+* Correction scope is stored on the case by `apps.cases.services.correction.open_for_correction()`; the filing endpoints of [`0021`](0021-case-filing-api.md) check it there (0021 §7).
 * The case number is assigned by `apps.cases.services.register_case()`; scrutiny calls it.
 * An isolation test asserts the import rules.
 
@@ -178,7 +178,7 @@ Rules:
 | `selectors.registration_types(establishment_id)` | the state's registration types (`SCR-13`) |
 | `selectors.oath_required(case_id)`, `selectors.oaths(case_id)` | whether the state requires an oath; each oath with complainant, recorded by, recorded at, and the round it was recorded in (`SCR-14`, `OTH-2`) |
 | `selectors.paper_upload_reason(case_id)` | the reason given for not e-signing and when (`SCR-15`, `SIG-10`) |
-| `services.open_for_correction(case_id, scope, round_id)` / `close_correction(case_id)` | correction scope (#5) |
+| `correction.open_for_correction(case, scope, round_id)` / `close_correction(case)` / `get_scope(case)` | correction scope (#5) |
 | `filing.return_to_signing(case)` | *Submit correction* (#5.3): moves the corrected case from `PENDING_CORRECTION` to `PENDING_SIGN` and clears every signature in one step (`LIFE-13`, `SIG-07`); scrutiny decides when, cases owns how |
 | `services.register_case(case_id, registration_type, actor)` | records the final registration type, assigns the case number from that type's series and `registered_at`; dispatches `CASE_REGISTERED` |
 | `services.set_case_title(case_id, complainant, accused, actor)` | *Edit case title* |
@@ -321,6 +321,12 @@ rule's schemas by 0019 and again by this module.
 `severity` ∈ `INFO`, `WARNING`. An alert is shown as a warning line under its
 field and in the *What to check* panel; the officer decides whether to mark the
 field (`SCR-02`, `SCR-05a`). No alert blocks an action.
+
+A cheque filed without its dishonour details (no return memo, or a memo
+missing its presentation date, return date or reason) cannot be checked, so it
+is left out of the input rather than breaking the contract for the whole case.
+Code adds a `DISHONOUR_DETAILS_MISSING` warning for it under `CHQ-8[i]` and
+`CHQ-9[i]`; those fields are shown empty and can be flagged as missing.
 
 The checks the national default ships with:
 
@@ -662,12 +668,16 @@ Registration opens everything except the oath (`REF-02`, `OTH-5`). While the
 case is in `pending_correction`, the filing endpoints accept writes only inside
 the scope and refuse the rest with the cases module's own
 `FIELD_NOT_OPEN_FOR_CORRECTION` error. A flagged document may be replaced; an
-unflagged one may not.
+unflagged one may not. The case type translates each write into these refs
+(0021 §7): a value with no field id of its own, a party, and adding or removing
+an item need their whole section open. A document is replaced through
+`POST /case-documents/{id}/replace` (0021 §3.3a).
 
 #### 5.2 Responses
 
-* Each write by the filer to an open field sends `case_field_changed(case_id, field_ref, old, new, actor)`. The receiver records a `CORRECTED` response on the matching raised flag (or the section flag that contains it) and moves the flag to `RESPONDED`.
+* Each write by the filer to an open field sends `case_field_changed(case_id, field_ref, section, old, new, actor)`. The receiver records a `CORRECTED` response on the matching raised field flag, or else on the flag on `section`, and moves the flag to `RESPONDED`. `field_ref` is null for a change with no field of its own, which only a section flag answers.
 * Replacing a flagged document sends `case_document_replaced(case_id, old_document_id, new_document_id, actor)` → `REUPLOADED`.
+* Both are sent inside the write's transaction, so a response is recorded or rolled back with the write. Cases marks the scope `changed` on every accepted write, which is what lets a `mode = ALL` correction be resubmitted (#5.3).
 * The filer may answer a flag without changing anything: `POST /cases/{case_id}/corrections/{flag_id}/explain/` with a `note` → `EXPLAINED`.
 
 #### 5.3 Resubmission

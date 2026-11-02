@@ -2,11 +2,14 @@
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from apps.cases.models import CaseStatus
+from apps.cases.models import CaseEvidence, CaseStatus
+from apps.cases.services.case_types import EvidenceType
 from apps.scrutiny import ports
-from apps.scrutiny.enums import FlagStatus, FlagTarget
+from apps.scrutiny.enums import DocumentIssue, FlagStatus, FlagTarget, ResponseKind
+from apps.scrutiny.services import flags
 
 from .factories import add_courtroom, draft_field, make_user, open_round
 
@@ -265,6 +268,83 @@ def test_filer_corrects_and_resubmits(case, officer, filer):
     assert (response.status_code, response.json()["case_status"]) == (200, CaseStatus.PENDING_SIGN)
     response = client.post(filer_url(case, "corrections", "submit"))
     assert error_codes(response) == {None: ["E09001"]}
+
+
+def test_filer_corrects_through_the_filing_endpoints(case, officer, filer, document, settings):
+    """The whole round trip: send back, correct and re-upload in apps.cases, resubmit (#5)."""
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "files": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+    }
+    cheque = CaseEvidence.objects.get(case=case, evidence_type=EvidenceType.CHEQUE)
+    CaseEvidence.objects.filter(pk=cheque.pk).update(case_document=document)
+    field_flag = draft_field(case, officer, "CHQ-3[0]")[0]
+    document_flag = flags.draft(
+        case.pk,
+        officer,
+        target_type=FlagTarget.DOCUMENT,
+        target_ref=str(document.pk),
+        reason_code=DocumentIssue.PAGE_MISSING,
+    )[0]
+    client_for(officer).post(url(case, "send-back"))
+    client = client_for(filer)
+    evidence_url = f"/api/v1/case-evidence/{cheque.pk}/"
+
+    response = client.patch(
+        evidence_url,
+        {"evidence_info": {**cheque.evidence_info, "cheque_number": "654321"}},
+        format="json",
+    )
+    assert (response.status_code, error_codes(response)) == (
+        409,
+        {"evidence_info.cheque_number": ["E07029"]},
+    )
+    response = client.patch(
+        evidence_url, {"evidence_info": {**cheque.evidence_info, "amount": 5025000}}, format="json"
+    )
+    assert response.status_code == 200
+    upload = SimpleUploadedFile("affidavit.pdf", b"%PDF-1.4 fake", "application/pdf")
+    response = client.post(f"/api/v1/case-documents/{document.pk}/replace/", {"file": upload})
+    assert response.status_code == 201
+    new_document_id = response.json()["case_document_id"]
+
+    field_flag.refresh_from_db()
+    document_flag.refresh_from_db()
+    assert (field_flag.status, document_flag.status) == (FlagStatus.RESPONDED,) * 2
+    corrected, reuploaded = field_flag.responses.get(), document_flag.responses.get()
+    assert (corrected.kind, corrected.value_after) == (ResponseKind.CORRECTED, 5025000)
+    assert (reuploaded.kind, str(reuploaded.document_id)) == (
+        ResponseKind.REUPLOADED,
+        new_document_id,
+    )
+    cheque.refresh_from_db()
+    assert str(cheque.case_document_id) == new_document_id
+
+    response = client.post(filer_url(case, "corrections", "submit"))
+    assert (response.status_code, response.json()["case_status"]) == (200, CaseStatus.PENDING_SIGN)
+    response = client.patch(
+        evidence_url, {"evidence_info": {**cheque.evidence_info, "amount": 1}}, format="json"
+    )
+    assert (response.status_code, error_codes(response)) == (409, {None: ["E07001"]})
+
+
+def test_filer_corrects_anything_after_a_registration_send_back(case, officer, registerer, filer):
+    client_for(officer).post(url(case, "forward"), {}, format="json")
+    client_for(registerer).post(
+        registration_url(case, "send-back"), {"comment": "Re-check the prayer."}, format="json"
+    )
+    client = client_for(filer)
+    response = client.post(filer_url(case, "corrections", "submit"))
+    assert (response.status_code, error_codes(response)) == (409, {None: ["E09012"]})
+
+    response = client.put(
+        filer_url(case, "details", "adr_other_prayer"),
+        {"final_relief": "Pay ₹50,25,000."},
+        format="json",
+    )
+    assert response.status_code == 200
+    response = client.post(filer_url(case, "corrections", "submit"))
+    assert (response.status_code, response.json()["case_status"]) == (200, CaseStatus.PENDING_SIGN)
 
 
 def test_filer_history_and_access(case, officer, filer):
