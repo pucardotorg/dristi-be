@@ -7,7 +7,7 @@ precondition:
     PENDING_SIGN      --submit-for-payment--> PENDING_PAYMENT   (every signer has signed)
     PENDING_PAYMENT   --submit-for-scrutiny-> UNDER_SCRUTINY    (filed_at is set)
 
-    PENDING_CORRECTION --return-to-signing--> PENDING_SIGN      (signatures cleared)
+    PENDING_CORRECTION --return-to-signing--> PENDING_SIGN      (complete; signatures cleared)
 
 Scrutiny calls ``return_to_signing`` when the filer submits a correction, so
 the corrected case is signed again from scratch.
@@ -389,6 +389,9 @@ def return_to_signing(case):
     counted. The old e-sign transactions are kept; only the participants stop
     counting them. A plain ``save()``, so the new entry is kept in the case's
     history and ``_check_signature`` dates signatures from it.
+
+    Correction can remove parties, evidence and documents, so the corrected
+    filing must pass the completeness check again, as at ``submit_for_signing``.
     """
     if case.status != CaseStatus.PENDING_CORRECTION:
         raise BusinessError(
@@ -396,6 +399,9 @@ def return_to_signing(case):
             f"Only a case in {CaseStatus.PENDING_CORRECTION} can return to "
             f"{CaseStatus.PENDING_SIGN}; this one is {case.status}.",
         )
+    problems = validation_errors(case)
+    if problems:
+        _raise_not_ready(errors.FILING_INCOMPLETE, problems)
     CaseParticipant.objects.filter(case=case, has_signed=True).update(
         has_signed=False, signature_document=None, updated_at=timezone.now()
     )

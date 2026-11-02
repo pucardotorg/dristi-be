@@ -7,6 +7,7 @@ import pytest
 from django.contrib.auth.models import Permission
 from django.urls import reverse
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
 from apps.api.errors import BusinessError
 from apps.cases.models import (
@@ -517,6 +518,21 @@ class TestSign:
         assert error_codes(response) == {"signature_document_id": ["E07028"]}
         response = sign(client, draft, participant_id, signed_document(user, draft))
         assert response.status_code == 200
+
+    def test_an_incomplete_correction_is_not_sent_to_signing(self, client, user, draft, pending):
+        participant_id = pending["case_participant_id"]
+        sign(client, draft, participant_id, signed_document(user, draft))
+        CaseEvidence.objects.filter(case_id=draft, evidence_type="CHEQUE").update(is_active=False)
+        case = Case.objects.get(pk=draft)
+        case.status = CaseStatus.PENDING_CORRECTION
+        case.save()
+
+        with pytest.raises(ValidationError) as excinfo:
+            return_to_signing(case)
+
+        assert excinfo.value.detail["evidence.CHEQUE"][0].code == "E07005"
+        assert Case.objects.get(pk=draft).status == CaseStatus.PENDING_CORRECTION
+        assert CaseParticipant.objects.get(pk=participant_id).has_signed is True
 
     def test_the_accused_does_not_sign(self, client, user, draft, pending):
         accused = CaseParticipant.objects.get(case_id=draft, role=ParticipantRole.ACCUSED)

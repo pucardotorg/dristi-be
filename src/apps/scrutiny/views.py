@@ -461,7 +461,11 @@ class CorrectionSubmitView(APIView):
         request=None,
         responses={
             200: ResubmittedSerializer,
-            **error_responses(errors.ROUND_NOT_OPEN, errors.NOTHING_TO_RESUBMIT),
+            **error_responses(
+                errors.ROUND_NOT_OPEN,
+                errors.NOTHING_TO_RESUBMIT,
+                ports.FILING_INCOMPLETE.example(field="evidence.CHEQUE"),
+            ),
         },
     )
     def post(self, request, case_id):

@@ -1169,7 +1169,7 @@ Anything else is refused with `409 Conflict` and `E07029`, on the request field 
 | `E07002` | 400 | A document type, evidence type or details section this case's type does not accept (`field` names which). |
 | `E07003` | 400 | `case_document_id` is not an active document of the same case. |
 | `E07004` | 409 | The case is not in the status this step starts from (§7, §8). |
-| `E07005` | 400 | Submit for signing: the filing is incomplete. One error per gap, on its part of the filing (`participants.accused`, `documents.VAKALATNAMA` …), as `POST /validate` lists them (§6.3). |
+| `E07005` | 400 | Submit for signing, or a correction returned to signing (§7): the filing is incomplete. One error per gap, on its part of the filing (`participants.accused`, `documents.VAKALATNAMA` …), as `POST /validate` lists them (§6.3). |
 | `E07006` | 400 | Submit for payment: a signer has not signed. One error per signer, on `participants.<id>`. |
 | `E07007` | 409 | The participant has already signed (§8). |
 | `E07008` | 400 | Only complainants and POA holders sign the filing (§8). |
@@ -1210,7 +1210,7 @@ Each transition validates preconditions and updates `cases.status`:
 - `submit-for-signing`: Requires validation to pass (§6.3)
 - `submit-for-payment`: Requires all participants to have `has_signed = true`
 - `submit-for-scrutiny`: Requires payment confirmation
-- `return_to_signing(case)` (a service, not an endpoint; scrutiny calls it when the filer submits a correction, spec 0024 #5.3): requires `PENDING_CORRECTION` (`E07004` otherwise) and moves the case to `PENDING_SIGN` with every signature cleared (§8)
+- `return_to_signing(case)` (a service, not an endpoint; scrutiny calls it when the filer submits a correction, spec 0024 #5.3): requires `PENDING_CORRECTION` (`E07004` otherwise) and validation to pass again (§6.3, `E07005`), since correction can remove parties, evidence and documents; then moves the case to `PENDING_SIGN` with every signature cleared (§8)
 
 **(b) Delegate to workflow service:**
 Call the existing workflow service (spec 0011) with a transition event. The workflow service owns status changes and enforces state machine rules.

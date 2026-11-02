@@ -9,7 +9,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 
 from apps.api.errors import BusinessError
 from apps.cases.models import Case, CaseEvidence, CaseParticipant, CaseStatus, ParticipantRole
-from apps.cases.services import filing
+from apps.cases.services import filing, participants
 from apps.cases.services import services as case_services
 from apps.cases.services.case_types import CaseType, EvidenceType, get_config
 from apps.scrutiny import ports
@@ -38,7 +38,6 @@ from .factories import (
     open_round,
     set_cause_of_action,
 )
-from .test_selectors import add_party
 
 pytestmark = pytest.mark.django_db
 
@@ -222,7 +221,7 @@ def test_correction_round_trip(case, officer, filer):
 
 
 def test_correction_clears_the_signatures(case, officer, filer):
-    signer = add_party(case, ParticipantRole.COMPLAINANT, "Signer", 1)
+    signer = CaseParticipant.objects.get(case=case, role=ParticipantRole.COMPLAINANT)
     CaseParticipant.objects.filter(pk=signer.pk).update(has_signed=True)
     flag = draft_field(case, officer, "CHQ-3[0]")[0]
     rounds.send_back(case.pk, officer)
@@ -389,6 +388,35 @@ def test_registration_send_back_opens_everything(case, officer, registerer, file
     responses.submit_correction(case.pk, filer)
     enter(case, CaseStatus.UNDER_SCRUTINY)
     assert open_round(case).routing_reason == RoutingReason.RESUBMITTED
+
+
+def test_an_incomplete_correction_is_not_resubmitted(case, officer, registerer, filer):
+    signer = CaseParticipant.objects.get(case=case, role=ParticipantRole.COMPLAINANT)
+    CaseParticipant.objects.filter(pk=signer.pk).update(has_signed=True)
+    rounds.forward(case.pk, officer)
+    rounds.registration_send_back(case.pk, registerer, "Re-check the evidence.")
+    for evidence in CaseEvidence.objects.active().filter(case=case):
+        case_services.remove_evidence(evidence, filer)
+
+    with pytest.raises(ValidationError) as excinfo:
+        responses.submit_correction(case.pk, filer)
+    assert excinfo.value.detail["evidence.CHEQUE"][0].code == "E07005"
+    case.refresh_from_db()
+    signer.refresh_from_db()
+    assert (case.status, signer.has_signed) == (CaseStatus.PENDING_CORRECTION, True)
+
+
+def test_removing_the_only_complainant_is_not_resubmitted(case, officer, filer):
+    flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="LIT", note="x")
+    rounds.send_back(case.pk, officer)
+    complainant = CaseParticipant.objects.get(case=case, role=ParticipantRole.COMPLAINANT)
+    participants.remove_participant(complainant, filer)
+    flag = ScrutinyRound.objects.get(case=case, decision=RoundDecision.SENT_BACK).flags.get()
+    responses.explain(case.pk, flag.pk, filer, "Removed the complainant.")
+
+    with pytest.raises(ValidationError) as excinfo:
+        responses.submit_correction(case.pk, filer)
+    assert excinfo.value.detail["participants.complainants"][0].code == "E07005"
 
 
 def test_set_title(case, officer):

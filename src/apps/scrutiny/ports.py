@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from django.utils import timezone
 
 from apps.api.errors import define
+from apps.cases import errors as case_errors
 from apps.cases.models import Case, CaseDocument, CaseEvidence, CaseStatus
 from apps.cases.services import correction
 from apps.cases.services.case_types import EvidenceType, get_config
@@ -93,8 +94,15 @@ def move_case(case, status):
     case.save()
 
 
+# Refused by ``send_to_signing`` while the corrected filing is incomplete (spec 0021 §6.3).
+FILING_INCOMPLETE = case_errors.FILING_INCOMPLETE
+
+
 def send_to_signing(case):
-    """Send the locked, corrected ``case`` to be signed again; cases clears the signatures."""
+    """Send the locked, corrected ``case`` to be signed again; cases clears the signatures.
+
+    Refused with ``FILING_INCOMPLETE`` if the correction left the filing incomplete.
+    """
     return_to_signing(case)
 
 

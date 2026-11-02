@@ -687,6 +687,7 @@ about flags):
 
 1. The case is in `pending_correction` and its latest round was sent back at Scrutiny or at Registration.
 2. At least one flag has a response, or, for `mode = ALL`, at least one change (`409 E09012`). Unanswered flags may remain; they travel to re-scrutiny as unanswered.
+   The corrected filing must also pass the completeness check of spec 0021 §6.3 (`400 E07005`, one error per gap), because correction can remove parties, evidence and documents. `return_to_signing` runs it before anything changes, so a refused submission keeps the case in `pending_correction` with its signatures as they were.
 3. Complete *Correct defects*; `apps.cases.services.filing.return_to_signing(case)` → `pending_signature`. Cases clears every signature in the same step (`has_signed = false`, `signature_document_id = null`), so no earlier signature counts for the corrected filing and an e-signature completed before this step is refused (`E07028`, spec 0021 §8). Scrutiny only decides when; it never touches signing state. Until 0011 lands, the call goes through `ports.send_to_signing`.
 
 What follows is the engine's ([`0011`](0011-case-workflows.md) #10.2): every
@@ -969,6 +970,7 @@ Domain prefix `09` in `apps.api.errors.DOMAINS`, recorded in
 | `E09010` | `SEND_BACK_COMMENT_REQUIRED` | 400 | registration send back without a comment, or with flags |
 | `E09011` | `EXPLANATION_REQUIRED` | 400 | `EXPLAINED` without a note |
 | `E09012` | `NOTHING_TO_RESUBMIT` | 409 | resubmission with no response and no change |
+| `E07005` | `FILING_INCOMPLETE` (spec 0021) | 400 | resubmission of a corrected filing that fails the completeness check |
 | `E09013` | `GENERATED_DOCUMENT_NOT_FLAGGABLE` | 400 | flagging the synopsis or complaint PDF |
 | `E09014` | `CHECKS_NOT_BOUND` | 500 | logged, never returned: no binding resolves for `CHECKS`, or the bound rule is missing or inactive (#2.4) |
 | `E09015` | `CHECKS_EVALUATION_FAILED` | 500 | logged, never returned: the checks rule failed or broke its contract (#2.4) |

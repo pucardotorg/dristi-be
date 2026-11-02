@@ -171,7 +171,7 @@ def test_detail_marks_flagged_fields_and_actions(case, officer, officer_register
         5205000,
         flag.pk,
     )
-    assert detail["bundle"][0]["document_id"] == document.pk
+    assert document.pk in {item["document_id"] for item in detail["bundle"]}
     assert [item["id"] for item in detail["flags"]["draft"]] == [flag.pk]
     assert isinstance(detail["alerts"], list)
     assert "oaths" not in detail
@@ -376,6 +376,7 @@ def test_detail_lists_oaths_where_the_state_requires_them(case, officer, monkeyp
 
 
 def test_list_names_parties_title_and_advocate(case, officer):
+    CaseParticipant.objects.filter(case=case).delete()
     first = add_party(case, ParticipantRole.COMPLAINANT, "Prateek", 1)
     add_party(case, ParticipantRole.COMPLAINANT, "Asha", 2)
     add_party(case, ParticipantRole.ACCUSED, "Deepak", 1)

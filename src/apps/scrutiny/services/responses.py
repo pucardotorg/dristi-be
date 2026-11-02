@@ -107,8 +107,9 @@ def submit_correction(case_id, actor):
 
     ``apps.cases`` clears every earlier signature, so all signers sign the
     corrected filing (``LIFE-13``). Needs at least one answered flag, or for a
-    registration send back at least one change (``E09012``). Unanswered flags
-    travel to re-scrutiny as they are.
+    registration send back at least one change (``E09012``), and a filing that
+    is still complete (``E07005``). Unanswered flags travel to re-scrutiny as
+    they are.
     """
     with transaction.atomic():
         case, round_ = _correction_round(case_id)

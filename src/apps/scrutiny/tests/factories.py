@@ -7,10 +7,20 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.utils import timezone
 
-from apps.cases.models import Case, CaseEvidence, CaseStatus
+from apps.cases.models import (
+    Case,
+    CaseDocument,
+    CaseEvidence,
+    CaseParticipant,
+    CaseStatus,
+    ParticipantRole,
+)
 from apps.cases.services import services as case_services
-from apps.cases.services.case_types import CaseType, EvidenceType
+from apps.cases.services.case_types import CaseType, EvidenceType, get_config
+from apps.files.tests.factories import make_file
 from apps.organizations.models import Organization, OrganizationType
+from apps.parties.models import Person
+from apps.parties.tests.factories import make_address
 from apps.scrutiny import ports
 from apps.scrutiny.enums import FlagTarget
 from apps.scrutiny.models import ScrutinyRound
@@ -96,8 +106,32 @@ def enter(case, status):
     case.save()
 
 
+def complete_filing(case, filer):
+    """Add the parties, documents and prayer a case needs to pass the completeness check."""
+    for role, name in [
+        (ParticipantRole.COMPLAINANT, "Complainant"),
+        (ParticipantRole.ACCUSED, "Accused"),
+    ]:
+        CaseParticipant.objects.create(
+            case=case,
+            person=Person.objects.create(name=name),
+            role=role,
+            ordinal=1,
+            name_at_filing=name,
+            address=make_address(),
+            is_party_in_person=role == ParticipantRole.COMPLAINANT,
+        )
+    for document_type in get_config(case.case_type).required_document_types:
+        CaseDocument.objects.create(
+            case=case, document=make_file(user=filer), document_type=document_type
+        )
+    row = ports.detail(case)
+    row.adr_other_prayer = {"final_relief": "Direct the accused to pay the cheque amount."}
+    row.save()
+
+
 def make_case(filer, establishment, filing_number=None, **cheque):
-    """Return a paid case with one cheque, just entered scrutiny."""
+    """Return a complete, paid case with one cheque, just entered scrutiny."""
     case = Case.objects.create(
         case_type=CaseType.CHEQUE_BOUNCE,
         created_by=filer,
@@ -107,6 +141,7 @@ def make_case(filer, establishment, filing_number=None, **cheque):
         filed_at=timezone.now(),
     )
     add_cheque(case, 1, **cheque)
+    complete_filing(case, filer)
     set_cause_of_action(case, timezone.localdate().isoformat())
     enter(case, CaseStatus.UNDER_SCRUTINY)
     return case
