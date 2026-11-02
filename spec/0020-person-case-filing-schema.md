@@ -122,6 +122,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 | `email_address` | varchar(256) | NULLABLE | Main contact email |
 | `pan` | varchar(10) | NULLABLE, UNIQUE | Permanent Account Number, e.g. `AAACA1234A`; uppercase, `^[A-Z]{5}[0-9]{4}[A-Z]$` |
 | `cin` | varchar(21) | NULLABLE, UNIQUE | Corporate Identification Number, companies only, e.g. `U72200KA2010PTC052651`; uppercase, `^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$` |
+| `pan_cin_skip_declared` | boolean | NOT NULL, default false | The filer declared they will give neither a PAN nor a CIN (the UI's skip checkbox). Then both are null; otherwise at least one is set |
 | `address_id` | uuid | FK → address, NULLABLE, ON DELETE PROTECT | Registered office: where notices to the institution are served |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
@@ -132,6 +133,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 - `CHECK (entity_type IN (...))` — values from §3.3
 - `CHECK` on the `pan` and `cin` patterns when not null; both are stored uppercase with spaces removed
 - `UNIQUE (pan)` and `UNIQUE (cin)` where not null
+- `CHECK`: `pan_cin_skip_declared` with both `pan` and `cin` null, or not declared with at least one of them set
 - Index on `entity_name` — lookup when naming a party at filing
 
 ### 3.3 Entity Types (enum)
@@ -155,6 +157,9 @@ They identify an entity better than its spelled name, so they are how an institu
 - The existing row's stored details (name, contact, address) are **not** returned: they may have been entered by another filer, possibly the other side.
 - The existing row is not changed. The participant snapshot uses the name sent in this request (§4.4), even if it differs from the stored name, since the PAN or CIN is the better identifier.
 - With no PAN or CIN, a new institution is always created.
+
+**Why a skip declaration:**
+A filer may choose not to give the PAN or CIN, and the form records that as an explicit choice. So an institution always has a PAN, a CIN (or both), or `pan_cin_skip_declared = true`, never none of them (`E00002` on `pan`); and the declaration cannot come with a PAN or CIN, which it contradicts (`E00001` on `pan_cin_skip_declared`). The rule is checked on every save, and before matching, since a matched row is linked without being saved. An institution declared this way has nothing to be matched by, so it is never reused.
 
 **Why an institution has its own address:**
 A company or firm named as a party is served at its registered office, which need not be the address of whoever signs for it, so it is recorded on the institution rather than reached through a linked person. Like every address, it is an immutable row (§7): a move is a new row and the FK is repointed.

@@ -220,11 +220,38 @@ class TestInstitution:
         institution.refresh_from_db()
         assert institution.contact_number is None
 
-    def test_pan_and_cin_are_optional(self):
-        institution = make_institution()
+    def test_pan_and_cin_may_both_be_left_out_with_the_declaration(self):
+        institution = make_institution(pan_cin_skip_declared=True)
 
         assert institution.pan is None
         assert institution.cin is None
+
+    def test_a_pan_a_cin_or_the_declaration_is_required(self):
+        with pytest.raises(ValidationError) as exc:
+            make_institution(pan_cin_skip_declared=False)
+
+        assert exc.value.error_dict["pan"][0].code == "E00002"
+
+    def test_the_database_refuses_none_of_the_three(self):
+        institution = make_institution(pan="AAACA1234A")
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Institution.objects.filter(pk=institution.pk).update(pan=None)
+
+    def test_the_database_refuses_the_declaration_with_a_pan(self):
+        institution = make_institution(pan="AAACA1234A")
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Institution.objects.filter(pk=institution.pk).update(pan_cin_skip_declared=True)
+
+    @pytest.mark.parametrize(
+        "identifier", [{"pan": "AAACA1234A"}, {"cin": "U72200KA2010PTC052651"}]
+    )
+    def test_the_declaration_cannot_come_with_a_pan_or_cin(self, identifier):
+        with pytest.raises(ValidationError) as exc:
+            make_institution(pan_cin_skip_declared=True, **identifier)
+
+        assert exc.value.error_dict["pan_cin_skip_declared"][0].code == "E00001"
 
     def test_pan_and_cin_are_stored_uppercase_without_spaces(self):
         institution = make_institution(pan=" aaaca 1234 a ", cin="u72200 ka2010 ptc052651")

@@ -185,6 +185,37 @@ class TestAddComplainant:
 
 
 class TestInstitutions:
+    NO_IDENTIFIER = {k: v for k, v in INSTITUTION.items() if k != "pan"}
+
+    def test_the_filer_may_declare_they_give_no_pan_or_cin(self, client, draft):
+        response = add(
+            client, draft, institution={**self.NO_IDENTIFIER, "pan_cin_skip_declared": True}
+        )
+
+        assert response.status_code == 201, response.json()
+        institution = Institution.objects.get(pk=response.json()["institution_id"])
+        assert (institution.pan, institution.cin, institution.pan_cin_skip_declared) == (
+            None,
+            None,
+            True,
+        )
+
+    def test_a_pan_a_cin_or_the_declaration_is_required(self, client, draft):
+        response = add(client, draft, institution=self.NO_IDENTIFIER)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"institution.pan": ["E00002"]}
+        assert not Institution.objects.exists()
+
+    def test_the_declaration_with_a_pan_is_refused_even_when_the_pan_exists(self, client, draft):
+        """A match is reused without being saved, so the rule is checked before matching."""
+        make_institution(pan="AAACA1234A")
+
+        response = add(client, draft, institution={**INSTITUTION, "pan_cin_skip_declared": True})
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"institution.pan_cin_skip_declared": ["E00001"]}
+
     def test_an_institution_alone(self, client, draft):
         response = add(client, draft, institution=INSTITUTION)
 

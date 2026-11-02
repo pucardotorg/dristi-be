@@ -13,7 +13,7 @@ class InstitutionAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for institutions."""
 
     list_display = ("entity_name", "entity_type", "pan", "cin", "contact_number", "created_at")
-    list_filter = ("entity_type",)
+    list_filter = ("entity_type", "pan_cin_skip_declared")
     search_fields = ("entity_name", "pan", "cin", "contact_number", "email_address")
     readonly_fields = ("id", "created_at", "updated_at")
     raw_id_fields = ("address",)

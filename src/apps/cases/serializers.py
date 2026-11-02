@@ -345,6 +345,8 @@ class InstitutionInputSerializer(serializers.ModelSerializer):
     PAN and CIN are not checked for uniqueness: an existing institution with
     either is reused rather than refused (spec 0020 §3.4). Their format is
     checked by the model, after spaces are removed and letters uppercased.
+    One of them, or ``pan_cin_skip_declared``, is required, and the
+    declaration cannot come with either (``parties.models.pan_cin_errors``).
     """
 
     pan = serializers.CharField(required=False, allow_null=True, allow_blank=True)
@@ -354,7 +356,15 @@ class InstitutionInputSerializer(serializers.ModelSerializer):
         """Meta options."""
 
         model = Institution
-        fields = ["entity_type", "entity_name", "pan", "cin", "contact_number", "email_address"]
+        fields = [
+            "entity_type",
+            "entity_name",
+            "pan",
+            "cin",
+            "pan_cin_skip_declared",
+            "contact_number",
+            "email_address",
+        ]
 
 
 class PartySerializer(serializers.Serializer):

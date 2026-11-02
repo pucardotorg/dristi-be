@@ -410,6 +410,7 @@ POST /cases/{case_id_or_draft_session_id}/complainants
     "entity_name": "ABC Pvt Ltd",
     "pan": "AAACA1234A",
     "cin": "U72200KA2010PTC052651",
+    "pan_cin_skip_declared": false,
     "contact_number": "080-22334455",
     "email_address": "legal@abc.example"
   },
@@ -459,6 +460,7 @@ Exactly one of `person` or `self` describes the individual, and either may be le
    - `district` and `state` are pre-filled by the client from the pincode location (spec 0007, spec 0020); the API stores what it is sent.
 4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created, with the request's address as its registered office. A reused institution's stored details are not returned or changed.
    - A `pan` and a `cin` that belong to two different institutions are refused (400).
+   - At least one of `pan`, `cin` or `"pan_cin_skip_declared": true` is required (`E00002` on `institution.pan`); the declaration with a `pan` or `cin` is refused (`E00001` on `institution.pan_cin_skip_declared`). The same applies to `institution` in PATCH (re-link).
    - The same institution cannot be both complainant and accused, nor hold one role twice, on one case.
 
 5. **Write the address** through the address service (spec 0020 §7): an identical address reuses its row. District and state are not looked up here; the client pre-fills them from `GET /pincodes/{pincode}`. A newly created person also gets this address as their `correspondence_address`; an existing person's addresses are unchanged. The address is required for complainants. When the filer adds themselves without an address, it will come from their profile once profiles carry one; until then it must be sent.

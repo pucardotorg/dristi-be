@@ -12,7 +12,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 
-from .models import Institution, Person, VerificationLevel, normalize_identifier
+from .models import Institution, Person, VerificationLevel, normalize_identifier, pan_cin_errors
 
 
 def get_or_create_self_person(user):
@@ -63,6 +63,9 @@ def get_or_create_institution(user, fields, *, address=None):
     # checked once, by the model, if a new institution is created.
     pan = normalize_identifier(fields.get("pan"))
     cin = normalize_identifier(fields.get("cin"))
+    # Checked before matching too: a match is returned without saving it.
+    if problems := pan_cin_errors(pan, cin, fields.get("pan_cin_skip_declared", False)):
+        raise ValidationError(problems)
 
     found = _find_institution(pan, cin)
     if found is not None:
