@@ -580,6 +580,16 @@ PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=20971520)
 
 
 # ---------------------------------------------------------------------------
+# Scrutiny (apps.scrutiny, spec 0024)
+# ---------------------------------------------------------------------------
+# The one court establishment this deployment scrutinises and registers for
+# (RLE-00). Court roles are Django groups until per-court role assignments
+# exist, so they count only here: unset, nobody holds a court role and every
+# scrutiny and registration endpoint is closed.
+SCRUTINY_ESTABLISHMENT_ID = env("SCRUTINY_ESTABLISHMENT_ID", default="")
+
+
+# ---------------------------------------------------------------------------
 # Email
 # ---------------------------------------------------------------------------
 EMAIL_CONFIG = env.email_url("EMAIL_URL", default="consolemail://")

@@ -43,6 +43,7 @@ pytestmark = pytest.mark.django_db
 
 
 def list_rows(user, **kwargs):
+    kwargs.setdefault("establishment_id", ports.configured_establishment())
     found = selectors.scrutiny_list(user, **kwargs)
     return found["counts"], selectors.scrutiny_rows(found["rounds"])
 
@@ -148,7 +149,9 @@ def test_rows_take_a_fixed_number_of_queries(officer, filer, establishment):
     def queries_for(count):
         for number in range(count):
             make_case(filer, establishment, filing_number=f"F/Q/{count}/{number}")
-        found = selectors.scrutiny_list(officer, search=f"F/Q/{count}/")["rounds"]
+        found = selectors.scrutiny_list(
+            officer, establishment_id=establishment.pk, search=f"F/Q/{count}/"
+        )["rounds"]
         with CaptureQueriesContext(connection) as context:
             rows = selectors.scrutiny_rows(found)
         assert len(rows) == count
@@ -197,7 +200,9 @@ def test_registration_list_and_detail(officer, registerer, filer, establishment)
     # Presented after the cheque's validity (SCR-08a).
     case = make_case(filer, establishment, cheque_date="2026-01-01", presented="2026-05-02")
     rounds.forward(case.pk, officer)
-    rows = selectors.registration_rows(selectors.registration_list(registerer))
+    rows = selectors.registration_rows(
+        selectors.registration_list(registerer, establishment_id=establishment.pk)
+    )
     assert (rows[0]["case_id"], rows[0]["courtroom"]["name"]) == (case.pk, "Establishment")
 
     round_ = open_round(case)

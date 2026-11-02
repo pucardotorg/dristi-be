@@ -32,9 +32,20 @@ def filer():
 
 
 @pytest.fixture
-def establishment():
-    return Organization.objects.create(
+def establishment(settings):
+    """The establishment the deployment serves (``SCRUTINY_ESTABLISHMENT_ID``)."""
+    court = Organization.objects.create(
         code="EST", name="Establishment", organization_type=OrganizationType.MAGISTRATE_COURT
+    )
+    settings.SCRUTINY_ESTABLISHMENT_ID = str(court.pk)
+    return court
+
+
+@pytest.fixture
+def other_establishment():
+    """A second court in the same deployment, which it does not serve."""
+    return Organization.objects.create(
+        code="OTHER", name="Other court", organization_type=OrganizationType.MAGISTRATE_COURT
     )
 
 

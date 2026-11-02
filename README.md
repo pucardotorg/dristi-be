@@ -175,6 +175,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `PINCODE_API_URL` | India Post Pincode API endpoint; `{pincode}` is substituted | `https://api.postalpincode.in/pincode/{pincode}` |
 | `PINCODE_API_TIMEOUT` | Pincode API connect/read timeout in seconds; on timeout the lookup returns 503 | `5` |
 | `PINCODE_API_CACHE_SECONDS` | How long a successful pincode lookup is cached | `604800` |
+| `SCRUTINY_ESTABLISHMENT_ID` | Organization id of the one court establishment this deployment scrutinises and registers for. Court roles count only there; empty closes every scrutiny and registration endpoint. | `3f2b…-uuid` |
 | `CDAC_SMS_URL` | CDAC gateway endpoint (required when the CDAC backend is active) | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
 | `CDAC_SMS_USERNAME` | CDAC username | `dristi` |
 | `CDAC_SMS_PASSWORD` | CDAC password; hashed (SHA-1) before transmission, never sent in plaintext | secret |

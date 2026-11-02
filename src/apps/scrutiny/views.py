@@ -145,13 +145,13 @@ class ScrutinyViewSet(viewsets.GenericViewSet):
     def list(self, request):
         """Filings of the establishment, by tab: with registry, with advocate, closed."""
         query = _valid(ScrutinyListQuerySerializer, request.query_params)
-        permissions.require_court_reader(request.user, query["establishment"])
+        establishment_id = permissions.require_court_reader(request.user, query["establishment"])
         found = selectors.scrutiny_list(
             request.user,
             tab=query["tab"],
             claimed=query["claimed"],
             search=query["search"],
-            establishment_id=query["establishment"],
+            establishment_id=establishment_id,
         )
         page = self.paginate_queryset(found["rounds"])
         self.paginator.counts = found["counts"]
@@ -343,12 +343,12 @@ class RegistrationViewSet(viewsets.GenericViewSet):
     def list(self, request):
         """Forwarded cases waiting to be registered, longest waiting first."""
         query = _valid(RegistrationListQuerySerializer, request.query_params)
-        permissions.require_court_reader(request.user, query["establishment"])
+        establishment_id = permissions.require_court_reader(request.user, query["establishment"])
         found = selectors.registration_list(
             request.user,
             search=query["search"],
             ordering=query["ordering"],
-            establishment_id=query["establishment"],
+            establishment_id=establishment_id,
         )
         page = self.paginate_queryset(found)
         rows = selectors.registration_rows(page)

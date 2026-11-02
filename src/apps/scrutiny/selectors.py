@@ -222,8 +222,8 @@ def _tab_filter(tab, closed_since):
     return moved_on & Q(waiting_from__gte=closed_since)
 
 
-def scrutiny_list(user, *, tab="registry", claimed="anyone", search="", establishment_id=None):
-    """Return ``{"counts", "rounds"}`` for the scrutiny officer's list (#7.1).
+def scrutiny_list(user, *, establishment_id, tab="registry", claimed="anyone", search=""):
+    """Return ``{"counts", "rounds"}`` for the scrutiny officer's list (#7.1), of one establishment.
 
     One row per case, from its latest round: *with registry* while its
     scrutiny round is open, *with advocate* once sent back, *closed* once
@@ -243,8 +243,7 @@ def scrutiny_list(user, *, tab="registry", claimed="anyone", search="", establis
             output_field=DateTimeField(),
         )
     )
-    if establishment_id:
-        rounds = rounds.filter(establishment_id=establishment_id)
+    rounds = rounds.filter(establishment_id=establishment_id)
     if claimed == "me":
         rounds = rounds.filter(started_by=user)
     elif claimed == "unassigned":
@@ -358,11 +357,11 @@ def scrutiny_rows(rounds, today=None):
     return rows
 
 
-def registration_list(user, *, search="", ordering="-waiting_days", establishment_id=None):
-    """Return the open registration rounds for the Case registerer's list (#7.3)."""
-    rounds = ScrutinyRound.objects.filter(stage=RoundStage.REGISTRATION, decision="")
-    if establishment_id:
-        rounds = rounds.filter(establishment_id=establishment_id)
+def registration_list(user, *, establishment_id, search="", ordering="-waiting_days"):
+    """Return the open registration rounds of one establishment for the Case registerer (#7.3)."""
+    rounds = ScrutinyRound.objects.filter(
+        stage=RoundStage.REGISTRATION, decision="", establishment_id=establishment_id
+    )
     if search and search.strip():
         rounds = _search(rounds, search.strip())
     order = REGISTRATION_ORDERING.get(ordering, REGISTRATION_ORDERING["-waiting_days"])

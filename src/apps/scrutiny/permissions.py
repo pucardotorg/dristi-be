@@ -22,9 +22,15 @@ def court_roles(user, establishment_id):
 
 
 def require_court_reader(user, establishment_id=None):
-    """Refuse a list to anyone holding no court role (``E09008``)."""
+    """Return the establishment a list is of, refusing anyone holding no court role there (``E09008``).
+
+    Without one, the list is of the establishment the deployment serves; an
+    establishment where the caller holds no role is refused, not emptied.
+    """
+    establishment_id = establishment_id or ports.configured_establishment()
     if not court_roles(user, establishment_id):
         raise BusinessError(errors.ROLE_REQUIRED)
+    return establishment_id
 
 
 def court_case(case_id, user):

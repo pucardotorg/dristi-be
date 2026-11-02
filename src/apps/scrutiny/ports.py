@@ -10,8 +10,10 @@ is replaced here, and only here, when the real one lands:
   status (``receivers``), not on ``state_entered``.
 * Tasks — none yet: a case is on a list while its round is open, and *start*
   is the claim.
-* Roles — Django groups named after the role. Each deployment has one court
-  establishment (``RLE-00``), so the establishment is not checked.
+* Roles — Django groups named after the role. A group is held across the
+  deployment, so roles count only at the one establishment
+  ``SCRUTINY_ESTABLISHMENT_ID`` names (``RLE-00``) and nowhere else; unset,
+  nobody holds a court role.
 * Cases contract — the cheque-bounce field catalogue and date chain below, the
   case title kept in the detail row's ``additional_details``, courtrooms as
   the establishment's child organizations, one registration type and no oath.
@@ -21,8 +23,10 @@ is replaced here, and only here, when the real one lands:
 import calendar
 import datetime
 import re
+import uuid
 from dataclasses import dataclass
 
+from django.conf import settings
 from django.utils import timezone
 
 from apps.api.errors import define
@@ -42,8 +46,19 @@ from .enums import CourtRole, RoundStage
 # Roles
 
 
+def configured_establishment():
+    """Return the id of the establishment this deployment serves, or None if unset or malformed."""
+    try:
+        return uuid.UUID(str(settings.SCRUTINY_ESTABLISHMENT_ID))
+    except ValueError:
+        return None
+
+
 def roles_held(user, establishment_id):
-    """Return the court roles ``user`` holds at the establishment."""
+    """Return the court roles ``user`` holds at the establishment; none at any other."""
+    configured = configured_establishment()
+    if configured is None or establishment_id is None or str(establishment_id) != str(configured):
+        return frozenset()
     names = user.groups.filter(name__in=CourtRole.values).values_list("name", flat=True)
     return frozenset(CourtRole(name) for name in names)
 
