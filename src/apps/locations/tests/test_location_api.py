@@ -7,6 +7,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.api import errors
 from apps.locations.tests.factories import make_hierarchy, make_state
 from apps.users.models import User
 
@@ -219,6 +220,44 @@ class LocationAncestorsTests(LocationAPITestCase):
         response = self.client.get(reverse("location-by-code-ancestors", args=["NOPE"]))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def ancestors_urls(self, location):
+        """Return the by-id and by-code ancestors URLs of ``location``."""
+        return [
+            reverse("location-ancestors", args=[location.pk]),
+            reverse("location-by-code-ancestors", args=[location.code]),
+        ]
+
+    def test_invalid_is_active_is_rejected_on_both_routes(self):
+        for url in self.ancestors_urls(self.patna):
+            for value in ("1", "ture", "yes"):
+                with self.subTest(url=url, value=value):
+                    response = self.client.get(url, {"is_active": value})
+
+                    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                    self.assertEqual(
+                        [
+                            {"code": e["code"], "field": e.get("field")}
+                            for e in response.json()["errors"]
+                        ],
+                        [{"code": errors.INVALID.code, "field": "is_active"}],
+                    )
+
+    def test_is_active_true_needs_an_active_location_on_both_routes(self):
+        for url in self.ancestors_urls(self.patna):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url, {"is_active": "true"}).status_code, 200)
+        for url in self.ancestors_urls(self.goa):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url, {"is_active": "true"}).status_code, 404)
+
+    def test_is_active_false_needs_an_inactive_location_on_both_routes(self):
+        for url in self.ancestors_urls(self.patna):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url, {"is_active": "false"}).status_code, 404)
+        for url in self.ancestors_urls(self.goa):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url, {"is_active": "false"}).status_code, 200)
 
 
 class LocationWriteMethodTests(LocationAPITestCase):

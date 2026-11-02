@@ -1,0 +1,309 @@
+<title>Process Lifecycle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one vertical spine of numbered stages; branches sit side by side inside a stage; reference tables follow. */
+:root{
+  --bg:#f6f7f5; --panel:#ffffff; --fg:#1c2422; --muted:#5b6662; --line:#d5dbd8;
+  --accent:#2c5a86; --accent-soft:#e6eef6;
+  --sys:#1f6f5c; --sys-soft:#e1f1ec; --man:#8a5a12; --man-soft:#f7ecd9;
+  --warn:#a33a2c; --warn-soft:#f7e3df;
+  --f-display:"Source Serif 4", Georgia, serif;
+  --f-body:"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141917; --panel:#1c2320; --fg:#e4ebe8; --muted:#9aa6a1; --line:#33403b;
+  --accent:#8db6de; --accent-soft:#1f2e3b;
+  --sys:#6fcfb3; --sys-soft:#17302a; --man:#e2b26a; --man-soft:#33291a;
+  --warn:#f09a8b; --warn-soft:#3a201c; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#141917; --panel:#1c2320; --fg:#e4ebe8; --muted:#9aa6a1; --line:#33403b;
+  --accent:#8db6de; --accent-soft:#1f2e3b;
+  --sys:#6fcfb3; --sys-soft:#17302a; --man:#e2b26a; --man-soft:#33291a;
+  --warn:#f09a8b; --warn-soft:#3a201c; color-scheme:dark;}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--f-body);margin:0;padding:32px 16px 56px}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:40px}
+h1,h2{font-family:var(--f-display);font-weight:600;text-wrap:balance;margin:0}
+h1{font-size:2rem;line-height:1.15}
+h2{font-size:1.35rem}
+p{margin:0}
+.lede{color:var(--muted);max-width:66ch;margin-top:8px}
+.id{font:500 .72rem var(--f-mono);color:var(--accent);white-space:nowrap}
+header{display:flex;flex-direction:column;gap:6px}
+.eyebrow{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.85rem;color:var(--muted);margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;font-weight:600;letter-spacing:.02em;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.chip.sys{background:var(--sys-soft);color:var(--sys)}
+.chip.man{background:var(--man-soft);color:var(--man)}
+.chip.st{background:var(--accent-soft);color:var(--accent)}
+.chip.neg{background:var(--warn-soft);color:var(--warn)}
+.chip.task{background:transparent;color:var(--fg);border:1px dashed var(--muted)}
+.tasks{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:.85rem;color:var(--muted)}
+
+/* spine */
+.spine{display:flex;flex-direction:column}
+.stage{display:grid;grid-template-columns:44px minmax(0,1fr);gap:0 16px}
+.rail{display:flex;flex-direction:column;align-items:center}
+.num{width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--bg);display:grid;place-items:center;font:600 .9rem var(--f-body);flex:none}
+.rail::after{content:"";flex:1;width:2px;background:var(--line);margin-block:6px}
+.stage:last-child .rail::after{display:none}
+.body{padding-bottom:28px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.body h3{font:600 1.05rem var(--f-body);margin:4px 0 0}
+.who{font-size:.85rem;color:var(--muted)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.card h4{margin:0;font:600 .92rem var(--f-body);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.card p,.card li{font-size:.88rem}
+.card ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.state{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted)}
+.state b{color:var(--fg);font-weight:600}
+.gate{font-size:.85rem;border-left:3px solid var(--warn);padding:4px 0 4px 10px;color:var(--fg)}
+.fan{font:500 .8rem/1.7 var(--f-mono);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;white-space:pre;color:var(--fg)}
+.aside{background:var(--accent-soft);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.aside p{font-size:.88rem}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:.86rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.75rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td.c,th.c{text-align:center}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent)}
+.none{color:var(--line)}
+section{display:flex;flex-direction:column;gap:12px}
+.open{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.open li{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;font-size:.9rem}
+.foot{font-size:.8rem;color:var(--muted)}
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">DRISTI · Process handover v10 · 2026-10-01</span>
+  <h1>Process lifecycle</h1>
+  <p class="lede">How a notice, summons, warrant, proclamation, attachment or custom process moves from the judge's order to a recorded outcome. Everything after step 2 runs separately for each process.</p>
+  <div class="legend">
+    <span><span class="chip sys">System</span> done by the system</span>
+    <span><span class="chip man">Manual</span> done by a person</span>
+    <span><span class="chip st">Status</span> process status after the step</span>
+    <span><span class="chip task">Task</span> citizen pending task created at this step</span>
+  </div>
+</header>
+
+<div class="spine">
+
+  <div class="stage">
+    <div class="rail"><span class="num">1</span></div>
+    <div class="body">
+      <h3>Judge issues the order</h3>
+      <p class="who">Judge, on the order screen · <span class="id">PRC-01, PRC-03</span></p>
+      <div class="row">
+        <div class="card">
+          <h4>Judge enters, per recipient</h4>
+          <ul>
+            <li>The recipient. A company and each person in charge are separate options <span class="id">PRC-02</span></li>
+            <li>One or more channels, from those configured for the deployment <span class="id">PRC-04</span></li>
+            <li>For a police channel, the police station</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>System fills in <span class="chip sys">System</span></h4>
+          <ul>
+            <li>Party taking steps: accused → complainant; complainant → accused; witness → their side <span class="id">AUT-02</span></li>
+            <li>Police station, from the recipient's address and the police-station master <span class="id">AUT-04, PRC-08</span></li>
+            <li>If it can't tell (e.g. a court witness), the judge chooses <span class="id">AUT-03</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="rail"><span class="num">2</span></div>
+    <div class="body">
+      <h3>One process per recipient, per channel, per address</h3>
+      <p class="who">System · <span class="id">PRC-02, §3</span></p>
+<div class="fan">Summons order
+├── Accused A   · RPAD · home address        → process 1
+├── Accused A   · RPAD · office address      → process 2
+├── Accused A   · SMS  · mobile              → process 3
+└── Accused B   · Police (NSTEP) · station   → process 4</div>
+      <p class="who">Each process has its own fee, envelope, signature and status. From here on, nothing waits on another process.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="rail"><span class="num">3</span></div>
+    <div class="body">
+      <h3>Prerequisites, as pending tasks on the party taking steps</h3>
+      <p class="who">Party taking steps; court staff record the envelope · <span class="id">§7, §8</span></p>
+      <div class="row">
+        <div class="card">
+          <h4>Court fee</h4>
+          <p>Flat fee per process type. Drawn from the case's single pool of court fee already paid; only the balance is asked for. Excess stays in the pool.</p>
+          <span class="id">FEE-01, FEE-04–FEE-07</span>
+        </div>
+        <div class="card">
+          <h4>Channel fee</h4>
+          <p>e-Post only, from a fee service. Not at launch.</p>
+          <span class="id">FEE-02, FEE-03</span>
+        </div>
+        <div class="card">
+          <h4>Envelope <span class="chip man">Manual</span></h4>
+          <p>RPAD and Police (RPAD) only. One envelope per process, handed in at the counter; court staff record receipt.</p>
+          <span class="id">STP-01–STP-03</span>
+        </div>
+      </div>
+      <p class="gate">The process can't be signed until its own fees are paid and its own envelope is received. If the expiry date passes first, it expires unsent.</p>
+      <div class="tasks">Pending tasks: <span class="chip task">Pay process fee</span> <span class="chip task">Hand in envelope</span> citizen side, party taking steps</div>
+      <div class="state">Status: <span class="chip st">Pending</span></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="rail"><span class="num">4</span></div>
+    <div class="body">
+      <h3>Sign</h3>
+      <p class="who">Signer set by process type · <span class="id">SGN-01–SGN-04</span></p>
+      <div class="row">
+        <div class="card">
+          <h4>Magistrate</h4>
+          <p>Warrant</p>
+        </div>
+        <div class="card">
+          <h4>CMO</h4>
+          <p>Notice, summons, custom process. Proclamation and attachment to be confirmed (Q-11).</p>
+        </div>
+      </div>
+      <p class="who">Each process is signed separately, even when several are selected and signed in one click. Signing does not send.</p>
+      <p class="who">A warrant does not print the hearing date. It carries a QR code and a line telling the reader to scan it for the latest hearing date. <span class="id">PRC-06</span></p>
+      <p class="who">Court side: listed at Pending sign for the signer — a list by status, not a pending task.</p>
+      <div class="state">Status: <b>Signed, awaiting send</b></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="rail"><span class="num">5</span></div>
+    <div class="body">
+      <h3>Send</h3>
+      <p class="who">System or a person, set per channel · <span class="id">DSP-01–DSP-03</span></p>
+      <div class="row">
+        <div class="card">
+          <h4><span class="chip sys">System</span> sent on signing</h4>
+          <p>SMS, Email, Police (NSTEP), Police (iCOPS)</p>
+        </div>
+        <div class="card">
+          <h4><span class="chip man">Manual</span> marked sent</h4>
+          <p>CMO: RPAD, Police (RPAD). Post Officer: e-Post.</p>
+        </div>
+      </div>
+      <p class="who">Court side, manual channels: listed at Signed for the CMO or Post Officer.</p>
+      <div class="state">Status: <span class="chip st">Sent</span></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="rail"><span class="num">6</span></div>
+    <div class="body">
+      <h3>Update status</h3>
+      <p class="who">A separate step from send, and set separately per channel · <span class="id">DSP-01, DSP-08, DSP-09</span></p>
+      <div class="row">
+        <div class="card">
+          <h4><span class="chip sys">System</span> reported back</h4>
+          <p>SMS gateway receipt · Email (Q-9) · NSTEP via CIS poll · iCOPS callback</p>
+        </div>
+        <div class="card">
+          <h4><span class="chip man">Manual</span> recorded</h4>
+          <p>CMO from the acknowledgement card or the station's report; Post Officer for e-Post.</p>
+        </div>
+      </div>
+      <p class="who">Every outcome carries a comment and an optional file. A negative outcome also needs a reason from the state's list.</p>
+      <p class="who">Court side, manual channels: listed at Sent until the outcome is recorded.</p>
+      <div class="state" style="flex-wrap:wrap">Outcome:
+        <span class="chip st">Delivered / Executed</span>
+        <span class="chip neg">Not delivered / Not executed</span>
+        <span class="chip neg">Failed</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="rail"><span class="num">7</span></div>
+    <div class="body">
+      <h3>Process closes</h3>
+      <p class="who">On its outcome, or on the expiry date, whichever comes first · <span class="id">DSP-06, EXP-01–EXP-03</span></p>
+      <div class="aside">
+        <p><b>At any point before an outcome</b></p>
+        <p><span class="chip neg">Expired</span> The expiry date passed. Open pending tasks close with it.</p>
+        <p><span class="chip neg">Recalled</span> Warrant recalled or bail granted: every process for that recipient in the round is recalled. Where one was already sent by hand, the CMO records that the recall was communicated <span class="id">PIA-01</span></p>
+        <p><b>Hearing date changes:</b> nothing happens to the warrant. It prints no date, so nothing on it is wrong; the QR code shows the new date. No new document, signature or dispatch. <span class="id">PIA-02</span></p>
+        <p><b>Not delivered</b> never creates a new process. A new attempt needs a new order and a new round. <span class="id">DSP-07</span></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section>
+  <h2>Pending tasks</h2>
+  <p class="lede" style="margin:0">Pending tasks are citizen-side only. Court-side work — sign, mark sent, record outcome, record a recall — is a list of processes on the Sign process screen, segregated by status. <span class="id">SGN-02</span></p>
+  <div class="tbl"><table>
+    <thead><tr><th>Task</th><th>Who</th><th>Opens when</th><th>Closes when</th></tr></thead>
+    <tbody>
+      <tr><td>Pay process fee</td><td>Party taking steps, and their side</td><td>The round leaves a balance due after the pool <span class="id">FEE-06</span></td><td>Paid, or the processes expire</td></tr>
+      <tr><td>Hand in envelope</td><td>Party taking steps, and their side</td><td>An RPAD or Police (RPAD) process is created, one per process <span class="id">STP-01</span></td><td>Court staff record receipt, not the party <span class="id">STP-02</span>; or the process expires</td></tr>
+    </tbody>
+  </table></div>
+  <p class="foot">Due date on both is the process's expiry date, which is still open (Q-6).</p>
+</section>
+
+<section>
+  <h2>Channels</h2>
+  <p class="lede" style="margin:0">Which channels a court sees is configured per deployment. Kerala runs Police (iCOPS) in place of Police (NSTEP).</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Channel</th><th>Goes to</th><th>Send</th><th>Update status</th></tr></thead>
+    <tbody>
+      <tr><td>SMS</td><td>Recipient's mobile</td><td><span class="chip sys">System</span></td><td><span class="chip sys">System</span> gateway receipt</td></tr>
+      <tr><td>Email</td><td>Recipient's email</td><td><span class="chip sys">System</span></td><td>To be decided (Q-9)</td></tr>
+      <tr><td>RPAD</td><td>Recipient's postal address</td><td><span class="chip man">Manual</span> CMO</td><td><span class="chip man">Manual</span> CMO, from acknowledgement card</td></tr>
+      <tr><td>e-Post</td><td>Recipient's postal address</td><td><span class="chip man">Manual</span> Post Officer</td><td><span class="chip man">Manual</span> Post Officer</td></tr>
+      <tr><td>Police (RPAD)</td><td>Police station's postal address</td><td><span class="chip man">Manual</span> CMO</td><td><span class="chip man">Manual</span> CMO, from station's report</td></tr>
+      <tr><td>Police (NSTEP)</td><td>Police station, via CIS</td><td><span class="chip sys">System</span> end-of-day batch</td><td><span class="chip sys">System</span> polls CIS</td></tr>
+      <tr><td>Police (iCOPS)</td><td>Police station, Kerala</td><td><span class="chip sys">System</span></td><td><span class="chip sys">System</span> iCOPS calls back</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Which process can use which channel</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Process</th><th class="c">SMS</th><th class="c">Email</th><th class="c">RPAD</th><th class="c">e-Post</th><th class="c">Police (RPAD)</th><th class="c">Police (NSTEP)</th><th class="c">Police (iCOPS)</th></tr></thead>
+    <tbody>
+      <tr><td>Notice</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c none">—</td><td class="c none">—</td><td class="c none">—</td></tr>
+      <tr><td>Summons</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+      <tr><td>Warrant</td><td class="c none">—</td><td class="c none">—</td><td class="c none">—</td><td class="c none">—</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+      <tr><td>Proclamation</td><td class="c none">—</td><td class="c none">—</td><td class="c none">—</td><td class="c none">—</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+      <tr><td>Attachment</td><td class="c none">—</td><td class="c none">—</td><td class="c none">—</td><td class="c none">—</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+      <tr><td>Custom process</td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td><td class="c"><span class="dot"></span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="foot">A default, not yet confirmed (Q-1). A deployment only shows the channels configured for it.</p>
+</section>
+
+<section>
+  <h2>Still open</h2>
+  <ul class="open">
+    <li><span class="id">Q-1</span><span>Confirm the process-by-channel table above.</span></li>
+    <li><span class="id">Q-4</span><span>Whether a summons, notice or custom process also uses the QR code instead of a printed date.</span></li>
+    <li><span class="id">Q-6</span><span>What sets a process's expiry date.</span></li>
+    <li><span class="id">Q-9</span><span>What counts as Delivered for Email.</span></li>
+    <li><span class="id">Q-11</span><span>Who signs proclamation and attachment: CMO or Magistrate.</span></li>
+    <li><span class="id">Q-13</span><span>Whether court fee and channel fee are one payment or two.</span></li>
+    <li><span class="id">Q-14</span><span>What the warrant's QR code opens, and whether a police officer can see the date without logging in.</span></li>
+  </ul>
+  <p class="foot">Source: handovers/process-handover.md, v10, as of 2026-10-01. Requirement IDs link each box to the handover.</p>
+</section>
+</div>
