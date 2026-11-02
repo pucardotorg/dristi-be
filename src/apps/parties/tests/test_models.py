@@ -372,23 +372,24 @@ class TestInstitutionAddress:
 
 @pytest.mark.django_db
 class TestDisabilityStatus:
-    def test_defaults_to_none(self):
-        assert make_person().disability_status == "NONE"
+    def test_defaults_to_false(self):
+        assert make_person().disability_status is False
 
-    @pytest.mark.parametrize("missing", [None, "", "   "])
-    def test_missing_value_is_stored_as_none(self, missing):
+    @pytest.mark.parametrize("missing", [None, ""])
+    def test_missing_value_is_stored_as_false(self, missing):
         person = make_person(disability_status=missing)
 
-        assert Person.objects.get(pk=person.pk).disability_status == "NONE"
+        assert Person.objects.get(pk=person.pk).disability_status is False
 
-    def test_a_given_status_is_kept(self):
-        person = make_person(disability_status="VISUAL")
+    def test_true_is_kept(self):
+        person = make_person(disability_status=True)
 
-        assert Person.objects.get(pk=person.pk).disability_status == "VISUAL"
+        assert Person.objects.get(pk=person.pk).disability_status is True
 
-    def test_unknown_status_is_rejected(self):
+    @pytest.mark.parametrize("value", ["VISUAL", "maybe"])
+    def test_a_non_boolean_is_rejected(self, value):
         with pytest.raises(ValidationError) as exc:
-            Person(name="Ravi", disability_status="BLIND").full_clean()
+            Person(name="Ravi", disability_status=value).full_clean()
 
         assert "disability_status" in exc.value.message_dict
 

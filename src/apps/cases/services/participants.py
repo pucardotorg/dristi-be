@@ -31,8 +31,8 @@ from ..models import (
     PoaMandate,
     Representation,
     Witness,
+    police_station_error,
 )
-from ..serializers import police_station_error
 from .services import (
     deactivate,
     editing,
@@ -42,6 +42,7 @@ from .services import (
     get_active_case_item,
     get_case_type,
     next_ordinal,
+    unlink,
     validated_save,
 )
 
@@ -50,6 +51,11 @@ from .services import (
 MANDATE_FIELD_NAMES = {"represented_participant": "represented_participant_ids"}
 # Likewise for a representation created for its advocate.
 REPRESENTATION_FIELD_NAMES = {"case_participant": "client_participant_ids"}
+
+INSTITUTION_SWITCH_MESSAGE = (
+    "Only for an institution. To switch between an individual and an institution, "
+    "remove the participant and add it again."
+)
 
 
 def _save_address(fields, user):
@@ -95,7 +101,7 @@ def add_witness(case_or_draft_id, user, data):
         witness = Witness(
             case_participant=participant,
             side=data["side"],
-            what_will_witness_prove=data["what_will_witness_prove"],
+            what_will_witness_prove=data.get("what_will_witness_prove", ""),
             additional_details=data["additional_details"],
             created_by=user,
             updated_by=user,
@@ -231,6 +237,10 @@ def _create_participant(case, user, role, data):
         ordinal=next_ordinal(CaseParticipant.objects.active().filter(case=case, role=role)),
         address=address,
         is_party_in_person=data["is_party_in_person"],
+        # Yes unless the filer says otherwise; recorded for an accused only.
+        resides_within_jurisdiction=data.get(
+            "resides_within_jurisdiction", True if role == ParticipantRole.ACCUSED else None
+        ),
         additional_details=data["additional_details"],
         created_by=user,
         updated_by=user,
@@ -274,9 +284,12 @@ def update_participant(participant, user, data):
     is stored as its own row and the participant repointed; the old row stays.
     A witness's side, statement and ``additional_details`` are on its
     ``Witness`` row. Accused and witness addresses need a police station.
+    ``institution`` re-links an institution participant (``_relink_institution``);
+    switching between an individual and an institution is a remove and re-add.
     """
     ensure_editable(participant.case)
     data = dict(data)
+    institution_fields = data.pop("institution", None)
     is_witness = participant.role == ParticipantRole.WITNESS
     witness_fields = {
         field: data.pop(field) for field in ("side", "what_will_witness_prove") if field in data
@@ -295,6 +308,10 @@ def update_participant(participant, user, data):
         problems["is_party_in_person"] = [
             errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for a complainant or an accused.")
         ]
+    if participant.role != ParticipantRole.ACCUSED and "resides_within_jurisdiction" in data:
+        problems["resides_within_jurisdiction"] = [
+            errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")
+        ]
     if data.get("is_party_in_person") and participant.representations.active().exists():
         problems["is_party_in_person"] = [
             errors.coded(errors.PARTY_IN_PERSON, models.PARTY_HAS_ADVOCATES_MESSAGE)
@@ -305,9 +322,11 @@ def update_participant(participant, user, data):
         problems["designation_at_filing"] = [
             errors.coded(errors.FIELD_NOT_APPLICABLE, DESIGNATION_NOT_ALLOWED_MESSAGE)
         ]
-    if participant.role in (ParticipantRole.ACCUSED, ParticipantRole.WITNESS) and (
-        problem := police_station_error(data)
-    ):
+    if institution_fields is not None and not participant.institution_id:
+        problems["institution"] = [
+            errors.coded(errors.FIELD_NOT_APPLICABLE, INSTITUTION_SWITCH_MESSAGE)
+        ]
+    if problem := police_station_error(participant.role, data.get("address")):
         problems["address"] = problem
     if data.get("phone_number_at_filing"):
         # A person's number is a mobile in E.164; an institution's may be a landline.
@@ -320,8 +339,12 @@ def update_participant(participant, user, data):
         raise serializers.ValidationError(problems)
 
     with editing(participant.case, user):
+        # Read again under the case lock: a concurrent removal is not undone.
+        participant = get_participant(participant.pk, user)
         if "address" in data:
             participant.address = _save_address(data.pop("address"), user)
+        if institution_fields is not None:
+            _relink_institution(participant, user, institution_fields, data)
         for field, value in data.items():
             setattr(participant, field, value)
         participant.updated_by = user
@@ -329,6 +352,27 @@ def update_participant(participant, user, data):
         if witness_fields:
             _update_witness(participant, user, witness_fields)
     return participant
+
+
+def _relink_institution(participant, user, fields, data):
+    """Point ``participant`` at the institution ``fields`` names, resolved as on create.
+
+    An existing institution with the PAN or CIN is linked, otherwise a new one
+    is created with the participant's address as its registered office.
+    Neither the old nor the matched institution is changed, and nor is the
+    person acting for it: other cases may share them. The participant keeps
+    its id, so its advocates, mandates and documents stay linked.
+
+    An institution alone is shown by the name and number sent, as on create,
+    unless the same request sets ``name_at_filing`` or ``phone_number_at_filing``.
+    """
+    with errors_under("institution"):
+        participant.institution = get_or_create_institution(
+            user, fields, address=participant.address
+        )
+    if participant.person_id is None:
+        for field, value in _snapshot(None, {"institution": fields}).items():
+            data.setdefault(field, value)
 
 
 def _update_witness(participant, user, fields):
@@ -350,17 +394,19 @@ def remove_participant(participant, user):
     """
     ensure_editable(participant.case)
     with editing(participant.case, user):
-        _remove(participant, user, timezone.now())
+        # Read again under the case lock, so a second removal finds nothing.
+        _remove(get_participant(participant.pk, user), user, timezone.now())
 
 
 def _remove(participant, user, now):
-    """Remove ``participant`` and end what depended on them, within the caller's transaction."""
-    # clean() holds the removal rules, so it is run on the row as removed.
-    participant.is_active = False
-    with errors_under(as_whole=True):
-        participant.full_clean()
+    """Remove ``participant`` and end what depended on them, within the caller's transaction.
+
+    Documents linked to them (an identity proof, a vakalatnama) stay on the
+    case, unlinked, as when a document's evidence is removed.
+    """
     deactivate(participant, user, end_date=now)
     _renumber(participant.case_id, participant.role, user)
+    unlink(participant.documents.active(), "case_participant", user)
 
     for representation in participant.representations.active():
         deactivate(representation, user, to_date=now)

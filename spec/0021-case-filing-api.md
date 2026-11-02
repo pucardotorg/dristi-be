@@ -183,7 +183,7 @@ POST /cases/{case_id_or_draft_session_id}/documents
 - `file`: The uploaded file (PDF, image)
 - `document_type`: One of the enum values (see §3.4)
 - `case_participant_id` (optional): whose document it is, for an identity proof, vakalatnama or POA document (§3.4)
-- `case_evidence_id` (optional): the evidence item it supports, such as a demand notice's proof of delivery (§3.4)
+- `case_evidence_id` (optional): the evidence item it supports, such as a demand notice's proof of delivery (§3.4). An evidence item's own scan is not linked here: link it from the evidence (`case_document_id`, §5.1)
 - `is_digital` (optional, boolean): the file was born digital, not scanned
 - `display_name` (optional): the uploader's name for the document, e.g. for an "Other document"
 
@@ -259,7 +259,31 @@ GET /cases/{case_id}/documents?document_type={type}
 
 Used for in-step previews and completeness checks.
 
-### 3.3 Delete Document
+### 3.3 Change or Delete Document
+
+```
+PATCH /case-documents/{case_document_id}
+```
+
+Changes a document's links and details without uploading the file again, for
+example to link an identity proof uploaded before its complainant was saved,
+or to correct an "Other document"'s name. Any of these may be sent:
+
+```json
+{
+  "case_participant_id": "uuid",
+  "case_evidence_id": null,
+  "is_digital": true,
+  "display_name": "Bank statement, March"
+}
+```
+
+- A field left out is kept; `null` removes a link or a detail. A blank `display_name` removes it too, and a name is trimmed.
+- The links are checked exactly as on upload (§3.1 errors: `E07030`, `E07016`, `E07010`, `E07029`, `E07031`).
+- The file and `document_type` cannot change (`E07024` on the field); upload a new document instead.
+- An empty body is refused (`E00002`). Only drafts can be changed (`E07001`, §7).
+
+**Response (200 OK):** the document, as in §3.1.
 
 ```
 DELETE /case-documents/{case_document_id}
@@ -460,14 +484,16 @@ Updates only the participant's own data. The `person` and `institution` rows are
   "is_party_in_person": true,
   "additional_details": {},
   "side": "ACCUSED",
-  "what_will_witness_prove": "..."
+  "what_will_witness_prove": "...",
+  "institution": { "entity_type": "PRIVATE_LIMITED_COMPANY", "entity_name": "ABC Pvt Ltd", "pan": "AAACA1234A", "cin": null, "contact_number": "080-22334455" }
 }
 ```
 
 - A changed address is written through the address service and `address_id` is repointed; the old address row is kept.
 - `side` and `what_will_witness_prove` apply only to witnesses (§4.3) and update the `witness` row.
 - A changed accused or witness address needs a `police_station` (`E00002` on `address.police_station`).
-- `role`, `person` and `institution` cannot be changed; remove the participant and add it again instead.
+- `institution` **re-links** a participant that already has an institution, for example after a mistyped PAN or CIN. It is resolved exactly as on create (step 4): an existing institution with the `pan` or `cin` is linked, otherwise a new one is created with the participant's (possibly just changed) address as its registered office. Neither institution row, nor the person acting for it, is changed. The participant keeps its id and ordinal, so its representations, mandates and linked documents stay in place. For an institution with no person, `name_at_filing` and `phone_number_at_filing` are taken from the `institution` sent, as on create, unless the same request sets them. The role checks apply to the new institution (`E07013`, `E07014` on `institution`).
+- `role` and `person` cannot be changed, and an individual cannot become an institution or the reverse (`E07023` on `institution`); remove the participant and add it again instead.
 - Setting `is_party_in_person` to true is refused while the participant has an active advocate.
 - `designation_at_filing` is accepted only for a person acting for an institution, or a witness.
 
@@ -475,7 +501,8 @@ Updates only the participant's own data. The `person` and `institution` rows are
 Soft delete: sets `is_active = false`, `end_date = now()`. Then, in the same transaction:
 - the remaining active participants of that role are **renumbered** 1…n, so ordinals stay gap-free (spec 0020 §4.4);
 - the participant's active representations end (`is_active = false`, `to_date = now()`), and so do the mandates in which they are the represented party; removing a POA holder revokes all their mandates;
-- a POA holder left with no active mandate is removed too.
+- a POA holder left with no active mandate is removed too;
+- documents linked to the participant (an identity proof, a vakalatnama) are unlinked, and stay on the case.
 
 Witnesses are not tied to a party (§4.3), so removing a party leaves them in place.
 
@@ -492,6 +519,7 @@ Same contract as complainants (§4.1), but `role = 'ACCUSED'`.
 2. The accused is always a **new** `person` at `ASSERTED`; they are named by the complainant, not self-identifying.
 3. An institution may be accused, with or without a person acting for it, exactly as for a complainant.
 4. A person acting for an accused institution needs a `designation`: the officer is liable through that role. Clearing it later with PATCH is refused (`E00002`).
+5. `resides_within_jurisdiction` (boolean, optional, default `true`) records the filer's answer to "Does the accused reside within the jurisdiction of this court?" (BNSS s.225; the court decides jurisdiction on the facts). It can be changed with PATCH. It is accepted only for an accused (`E07023` for any other role), and is `null` for every other role.
 
 ### 4.3 Witnesses
 
@@ -515,10 +543,10 @@ POST /cases/{case_id_or_draft_session_id}/witnesses
 - Same steps as §4.1, with `role = 'WITNESS'`, plus a `witness` row (spec 0020 §4.5) holding `side`, `what_will_witness_prove` and `additional_details`.
 - `side` is required: `COMPLAINANT` (the complainant's witness) or `ACCUSED` (the accused's witness).
 - `designation` is optional (the witness's job title) and is kept as `designation_at_filing`.
-- `what_will_witness_prove` is required.
+- `what_will_witness_prove` is optional; left out or blank, it is stored empty.
 - A witness is always an individual: `institution` is not accepted. `"self": true` is. `is_party_in_person` does not apply to a witness and is refused.
 - The address is optional for witnesses; when given, it needs a `police_station`.
-- A complainant or accused may also be a witness. The same person may be a witness more than once on a case (a witness recalled by the other side is a new participant, spec 0020 §4.5.3), but not twice for the same side while active (`E07017`).
+- A complainant or accused may also be a witness. The same person may be a witness more than once on a case (a witness recalled by the other side is a new participant, spec 0020 §4.5.3), but not twice for the same side while active (`E07032`).
 - `additional_details` is stored on the `witness` row; the participant's own `additional_details` stays `{}`. On PATCH, a witness's `additional_details` likewise changes the `witness` row.
 
 **Response (201 Created):** the participant, as in §4.1, with a `witness` block (`null` for every other role, here and in `GET /cases/{id}/participants`):
@@ -567,7 +595,7 @@ GET /advocates?search={name or bar registration number}
 It returns approved advocates only, as `{id, name, bar_registration_id}` (no
 contact details), paginated, matching the text case-insensitively anywhere in the
 profile name, the account name or the bar registration number. `search` needs at
-least 3 characters (`E00007`). It needs a complete registration and is
+least 2 characters (`E00007`). It needs a complete registration and is
 rate-limited per user (`ADVOCATE_SEARCH_THROTTLE_RATE`, default `60/min`; `429`
 beyond it). `POST /advocates` remains the advocate registration endpoint.
 
@@ -741,10 +769,10 @@ demand notice #1.
 New case types add new `evidence_type` values and their schemas, not new endpoints or tables. This replaces type-specific calls like `POST /cheque_bounce`.
 
 **PATCH:**
-Updates `evidence_info`, `case_document_id`, or both; at least one must be sent. `case_document_id` links a document uploaded after the evidence was entered (spec 0020 §11.4), and `null` unlinks it; leaving it out keeps the current link. The document must be an active document of the same case. Changing `evidence_type` is not allowed; delete and recreate instead.
+Updates `evidence_info`, `case_document_id`, or both; at least one must be sent (`E00002`), and nothing else (`E07024`). `case_document_id` links a document uploaded after the evidence was entered (spec 0020 §11.4), and `null` unlinks it; leaving it out keeps the current link. The document must be an active document of the same case (`E07003`, also for an unknown id), of the evidence's scan type (`E07029`). This is the only way a scan is linked: the document side does not record it (spec 0020 §9.3). Changing `evidence_type` is not allowed; delete and recreate instead.
 
 **DELETE:**
-Soft delete: sets `is_active = false`.
+Soft delete: sets `is_active = false`. Documents linked to it (a notice's dispatch, delivery or reply papers) are unlinked, and stay on the case.
 
 **GET:**
 Lists evidence, optionally filtered by `evidence_type`.
@@ -1187,8 +1215,9 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 | `E07012` | 400 | Only a complainant or an accused may be an institution. |
 | `E07013` | 400 | The person or institution already holds this role on the case. |
 | `E07014` | 400 | The person or institution would be both a complainant and an accused, or the advocate would represent both. |
+| `E07015` | — | Retired (a witness was called by a party, now by a side). Never reused. |
 | `E07016` | 400 | The participant does not have the role this needs (a complainant or an accused; a witness; a POA holder). |
-| `E07017` | 400 | The person is already a witness for this side. |
+| `E07017` | — | Retired ("already a witness called by this party"), replaced by `E07032`. Never reused. |
 | `E07018` | 400 | A party cannot act for themselves (a POA holder for themselves, an advocate for themselves). |
 | `E07019` | 400 | The filer cannot name themselves as accused. |
 | `E07020` | 400 | The POA holder or advocate already acts for this party. |
@@ -1201,8 +1230,9 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 | `E07027` | 400 | The e-sign transaction's signer is not the participant's user account (§8). |
 | `E07028` | 400 | The e-signature was completed before the case entered `PENDING_SIGN` (§8). |
 | `E07029` | 400 | A document's type does not fit what it is linked to: an evidence scan of another type (a proof of dispatch as a cheque's scan), or a document linked to evidence of the wrong type (§3, §5). |
-| `E07030` | 400 | This document type cannot be linked there (a cheque scan to a participant, an "other document" to evidence). |
+| `E07030` | 400 | This document type cannot be linked there (a cheque scan to a participant or to evidence: a scan is linked from its evidence; an "other document" to evidence). |
 | `E07031` | 400 | The linked evidence is not an active evidence item of this case. |
+| `E07032` | 400 | The person is already a witness for this side. |
 
 A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
 
@@ -1387,6 +1417,11 @@ A missing address for service of notice, a missing designation for a person
 acting for an accused institution, or a party
 write naming no one is `E00002` (required) on that field. Format errors (a
 phone number, a PAN, a pincode) keep the common field codes.
+
+Request bodies are JSON (`application/json`), except a document upload, which
+is multipart because it carries the file. Any other body is refused with
+`415`: a form body reads a boolean that was left out as false (or null), so a
+PATCH would change fields it never sent.
 
 ### 10.1 Document Type Validation
 

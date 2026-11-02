@@ -53,6 +53,15 @@ class WitnessAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     raw_id_fields = ("case_participant",)
     readonly_fields = ("created_at", "updated_at")
 
+    def get_readonly_fields(self, request, obj=None):
+        """Lock ``case_participant`` once the row exists.
+
+        It is the primary key, so changing it would make Django overwrite the
+        witness row of the participant chosen instead of this one.
+        """
+        fields = super().get_readonly_fields(request, obj)
+        return (*fields, "case_participant") if obj is not None else fields
+
 
 @admin.register(PoaMandate)
 class PoaMandateAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
@@ -107,6 +116,8 @@ class CaseDocumentAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
 
     list_display = ("case", "document_type", "case_participant", "case_evidence", "is_active")
     list_filter = ("document_type", "is_active")
+    # The links are nullable, so the admin's own select_related leaves them out.
+    list_select_related = ("case", "case_participant", "case_evidence")
     raw_id_fields = ("case", "document", "case_participant", "case_evidence")
     readonly_fields = ("id", "created_at", "updated_at")
 

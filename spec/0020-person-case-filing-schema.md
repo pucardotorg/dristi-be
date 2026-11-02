@@ -45,7 +45,7 @@ One row per human being the system knows of, whether registered or not. A person
 | `designation` | varchar(128) | NULLABLE | Role within the institution, e.g. Director, Branch Manager, Authorised Signatory |
 | `residential_address_id` | uuid | FK → address, NULLABLE | Current residential address |
 | `correspondence_address_id` | uuid | FK → address, NULLABLE | Current mailing address |
-| `disability_status` | varchar(16) | NOT NULL, default NONE | NONE, VISUAL, HEARING, MOBILITY, COGNITIVE, OTHER; a missing or blank value is stored as NONE |
+| `disability_status` | boolean | NOT NULL, default false | Whether the person is differently abled; a missing value is stored as false |
 | `verification_level` | varchar(16) | NOT NULL, default ASSERTED | See §2.3 |
 | `user_id` | uuid | FK → app_user, NULLABLE, UNIQUE | NULL until they register |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
@@ -76,8 +76,8 @@ Identity verification is a spectrum. The `verification_level` field records how 
 **Why `age` alongside `date_of_birth`:**
 - The exact date of birth of an accused or witness is often unknown, while the complaint still states an approximate age ("aged about 45"). `age` records that. When the date of birth is known it is the only source of truth: `age` is cleared on save, and today's age is computed from the date of birth (`Person.current_age`, which the API returns as `age`). Storing both would let the stored age go stale at the next birthday and contradict the date of birth. Because any age changes over time, `case_participant.age_at_filing` freezes the age that was true on the filing date (§4).
 
-**Why `disability_status` defaults to `NONE`:**
-- Every person has a value, so queries and forms never need to treat a missing status separately. A missing or blank value is stored as `NONE`, and the column also has a database default, so a row inserted outside Django gets it too.
+**Why `disability_status` is a boolean, defaulting to false:**
+- The filing form asks only whether the person is differently abled, not the kind of disability, so a true or false is all that is recorded. Every person has a value, so queries and forms never need to treat a missing status separately. A missing value is stored as false, and the column also has a database default, so a row inserted outside Django gets it too. Earlier values were converted: `NONE` to false, any kind of disability (`VISUAL`, `HEARING`, `MOBILITY`, `COGNITIVE`, `OTHER`) to true.
 
 **Why `phone_number` is any E.164 number, not an Indian mobile:**
 - A party may live abroad, or be reachable only on a landline. Unlike a `User`'s login number (spec 0005), this number is only for contacting the person, so any country is accepted. The model validator and a `CHECK` constraint use the same pattern, `^\+[1-9][0-9]{6,14}$`.
@@ -194,6 +194,7 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
 | `end_date` | timestamp | NULLABLE | When participant was removed |
 | `is_party_in_person` | boolean | NOT NULL, default false | Appearing without an advocate |
+| `resides_within_jurisdiction` | boolean | NULLABLE; NOT NULL and default true for an accused, NULL for every other role (CHECK) | The filer's answer to "Does the accused reside within the jurisdiction of this court?" (BNSS s.225). A column, not `additional_details`, because scrutiny acts on it: an accused outside jurisdiction means process is postponed for inquiry |
 | `has_signed` | boolean | NOT NULL, default false | True once they have e-signed, or uploaded a signed copy of, the case filing |
 | `signature_document_id` | uuid | FK → file, nullable, ON DELETE PROTECT | The signed filing the e-sign service stored (spec 0021 §8). When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here |
 | `is_active` | boolean | NOT NULL, default true | Soft delete flag (spec 0006) |
@@ -282,7 +283,7 @@ Witness-specific data, one row per witness. Every witness is also a `case_partic
 |-------|------|-------------|-------|
 | `case_participant_id` | uuid | PK, FK → case_participant, ON DELETE CASCADE | The witness's participant row (role = 'WITNESS') |
 | `side` | varchar(16) | NOT NULL, CHECK in (`COMPLAINANT`, `ACCUSED`) | Whose witness: the complainant's or the accused's. The case is the witness participant's `case_id` |
-| `what_will_witness_prove` | text | NOT NULL | What the witness's evidence will establish |
+| `what_will_witness_prove` | text | NOT NULL, default '' | What the witness's evidence will establish; optional, empty when not given |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Anything else about the witness |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
@@ -296,7 +297,7 @@ Witness-specific data, one row per witness. Every witness is also a `case_partic
 #### 4.5.3 Design Decisions
 
 **Why a separate table:**
-`side` and `what_will_witness_prove` apply only to witnesses. As columns on `case_participant` they would be empty for every other role; in `additional_details` they could not be a checked or required field. A table of their own keeps both enforced by the database.
+`side` and `what_will_witness_prove` apply only to witnesses. As columns on `case_participant` they would be empty for every other role; in `additional_details` `side` could not be a checked, required field. A table of their own keeps it enforced by the database.
 
 **Why `side`, not the calling party:**
 A witness is called by a side of the case, not by one complainant or accused. Recording the side is what the filing forms ask, and it does not tie the witness to a party who may later be removed or renumbered. A witness re-called by the other side is a new participant with its own `witness` row and the other side. A witness may also have a designation (their job title), kept as `case_participant.designation_at_filing`.
@@ -410,7 +411,7 @@ A single recorded address. Rows are **immutable snapshots**: once written, never
 | `pincode` | varchar(6) | NOT NULL | Indian postal code |
 | `district` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
 | `state` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
-| `police_station` | varchar(255) | NOT NULL, may be blank | Police station with jurisdiction over the address, needed for service of notice. Required for accused and witness addresses; complainant and POA holder addresses may leave it blank |
+| `police_station` | varchar(255) | NOT NULL, may be blank | Police station with jurisdiction over the address, needed for service of notice. Required for accused and witness addresses, as stored (a value of only invisible characters is blank), and enforced on the participant for every writer, the admin included; complainant and POA holder addresses may leave it blank |
 | `hash` | varchar(64) | NOT NULL, UNIQUE | SHA-256 of the canonical form, see §7.4 |
 | `created_at` | timestamp | NOT NULL, default now() | Creation timestamp only, no `updated_at` |
 | `created_by` | uuid | FK → app_user, NULLABLE, ON DELETE PROTECT | Who first recorded the address; no `updated_by` |
@@ -537,7 +538,7 @@ Documents filed as part of the case itself. A classification layer over the docu
 | `document_id` | uuid | FK → document, NOT NULL, ON DELETE PROTECT | From file storage service (spec 0014) |
 | `document_type` | varchar(64) | NOT NULL | See §9.3 |
 | `case_participant_id` | uuid | FK → case_participant, NULLABLE, ON DELETE SET NULL | Whose document: an identity proof, vakalatnama or POA document (§9.3) |
-| `case_evidence_id` | uuid | FK → case_evidence, NULLABLE, ON DELETE SET NULL | The evidence item it supports: a cheque's scan, a demand notice's dispatch, delivery or reply papers (§9.3) |
+| `case_evidence_id` | uuid | FK → case_evidence, NULLABLE, ON DELETE SET NULL | The evidence item it supports: a demand notice's dispatch, delivery or reply papers (§9.3). An evidence item's own scan is linked from the evidence (`case_evidence.case_document_id`, §11) |
 | `is_active` | boolean | NOT NULL, default true | Soft delete — documents get replaced during scrutiny |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Type-specific metadata; `is_digital` (born digital, not a scan) and `display_name` (the uploader's name for it) when sent |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
@@ -576,11 +577,9 @@ New case types add new enums without altering the table structure.
 |---|---|---|
 | `IDENTITY_PROOF` | COMPLAINANT | — |
 | `VAKALATNAMA`, `POA_DOCUMENT` | COMPLAINANT or ACCUSED (the party represented) | — |
-| `BOUNCED_CHEQUE` | — | CHEQUE |
-| `RETURN_MEMO` | — | RETURN_MEMO |
-| `LEGAL_DEMAND_NOTICE`, `PROOF_OF_DISPATCH`, `PROOF_OF_DELIVERY_OF_DEMAND_NOTICE`, `REPLY_TO_DEMAND_NOTICE` | — | LEGAL_DEMAND_NOTICE |
+| `PROOF_OF_DISPATCH`, `PROOF_OF_DELIVERY_OF_DEMAND_NOTICE`, `REPLY_TO_DEMAND_NOTICE` | — | LEGAL_DEMAND_NOTICE |
 
-Any other link is refused (`E07030`), as is a participant of the wrong role (`E07016`) or on another case (`E07010`), and evidence of the wrong type (`E07029`) or on another case (`E07031`). The completeness check counts a per-party or per-notice document only when it is linked (spec 0021 §6.3). A vakalatnama is still linked to the party, not to one `representation`; a POA document to the represented party, not to one `poa_mandate`.
+An evidence item's own scan (`BOUNCED_CHEQUE`, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE`) is not linked here but from the evidence, `case_evidence.case_document_id` (§11), so it is recorded in one place and two links can never disagree. Any other link is refused (`E07030`), before the file is stored; so is a participant of the wrong role (`E07016`), or one that is unknown, on another case or removed (`E07010`), and evidence of the wrong type (`E07029`), or unknown, on another case or removed (`E07031`). Removing a participant or an evidence item unlinks the documents linked to it; they stay on the case. The completeness check counts a per-party or per-notice document only when it is linked (spec 0021 §6.3). A vakalatnama is still linked to the party, not to one `representation`; a POA document to the represented party, not to one `poa_mandate`.
 
 ### 9.4 Design Decisions
 

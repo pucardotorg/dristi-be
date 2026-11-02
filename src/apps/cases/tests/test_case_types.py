@@ -43,6 +43,6 @@ def test_document_link_rules_use_known_codes():
         assert set(evidence_types) <= set(EvidenceType.values)
 
 
-def test_each_evidence_scan_type_may_be_linked_to_its_evidence():
-    for evidence_type, document_type in EVIDENCE_SCAN_TYPES.items():
-        assert evidence_type in EVIDENCE_DOCUMENT_TYPES[document_type]
+def test_an_evidence_scan_is_linked_from_the_evidence_only():
+    """A scan in both tables could be recorded on two links that disagree."""
+    assert not set(EVIDENCE_SCAN_TYPES.values()) & set(EVIDENCE_DOCUMENT_TYPES)

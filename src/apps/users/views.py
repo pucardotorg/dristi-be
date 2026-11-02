@@ -586,7 +586,7 @@ class PowerOfAttorneyRegistrationView(BaseRegistrationCompletionView):
 
 
 # Shortest search text accepted, so a search cannot list every advocate.
-ADVOCATE_SEARCH_MIN_LENGTH = 3
+ADVOCATE_SEARCH_MIN_LENGTH = 2
 
 
 class AdvocateSearchThrottle(UserRateThrottle):
@@ -615,7 +615,8 @@ class AdvocateSearchThrottle(UserRateThrottle):
         responses=error_responses(
             api_errors.MIN_LENGTH.example(
                 f"Enter at least {ADVOCATE_SEARCH_MIN_LENGTH} characters.", field="search"
-            )
+            ),
+            api_errors.INVALID.example("Enter valid text.", field="search"),
         ),
     ),
     post=extend_schema(request={"multipart/form-data": ADVOCATE_REGISTRATION_FORM}),
@@ -636,27 +637,40 @@ class AdvocateRegistrationView(generics.ListAPIView, BaseRegistrationCompletionV
     serializer_class = AdvocateRegistrationSerializer
     parser_classes = [MultiPartParser, FormParser]
 
+    @property
+    def is_search(self):
+        """Return whether this request is a search.
+
+        HEAD is answered by ``get`` too (Django's ``View.setup``), so it must
+        get the search's permissions, throttle and serializer, not the
+        registration's.
+        """
+        return self.request.method in ("GET", "HEAD")
+
     def get_permissions(self):
         """Search needs a complete registration; registering only a session."""
-        if self.request.method == "GET":
+        if self.is_search:
             return [permission() for permission in api_settings.DEFAULT_PERMISSION_CLASSES]
         return super().get_permissions()
 
     def get_throttles(self):
         """Rate-limit searches only."""
-        if self.request.method == "GET":
+        if self.is_search:
             return [AdvocateSearchThrottle()]
         return super().get_throttles()
 
     def get_serializer_class(self):
-        """Return the search result for GET; POST uses ``serializer_class`` directly."""
-        if self.request.method == "GET":
+        """Return the search result for a search; POST uses ``serializer_class`` directly."""
+        if self.is_search:
             return AdvocateSearchResultSerializer
         return super().get_serializer_class()
 
     def get_queryset(self):
         """Return approved advocates whose name or bar number contains ``search``."""
         search = self.request.query_params.get("search", "").strip()
+        if "\x00" in search:
+            # PostgreSQL text cannot hold it; the query would fail with a 500.
+            raise api_errors.INVALID.validation_error({"search": ["Enter valid text."]})
         if len(search) < ADVOCATE_SEARCH_MIN_LENGTH:
             raise api_errors.MIN_LENGTH.validation_error(
                 {"search": [f"Enter at least {ADVOCATE_SEARCH_MIN_LENGTH} characters."]}

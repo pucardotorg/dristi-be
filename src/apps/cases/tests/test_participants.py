@@ -3,6 +3,8 @@
 import uuid
 
 import pytest
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 
 from apps.cases.models import (
@@ -397,6 +399,106 @@ class TestUpdate:
         assert error_codes(response) == {"is_party_in_person": ["E07022"]}
 
 
+class TestInstitutionRelink:
+    CORRECTED = {**INSTITUTION, "pan": "AAACB5678B", "entity_name": "ABC Private Ltd"}
+
+    def test_a_corrected_pan_links_a_new_institution_and_keeps_the_participant(
+        self, client, make_user, draft
+    ):
+        body = add(client, draft, institution=INSTITUTION).json()
+        advocate = AdvocateProfile.objects.create(
+            user=make_user(),
+            bar_registration_id="KA/3/2020",
+            approval_status=ApprovalStatus.ACCEPTED,
+        )
+        representation = Representation.objects.create(
+            case_id=draft, advocate=advocate, case_participant_id=body["case_participant_id"]
+        )
+
+        response = patch(client, body["case_participant_id"], {"institution": self.CORRECTED})
+
+        relinked = response.json()
+        assert response.status_code == 200
+        assert relinked["case_participant_id"] == body["case_participant_id"]
+        assert relinked["ordinal"] == body["ordinal"]
+        assert relinked["institution_id"] != body["institution_id"]
+        assert relinked["name_at_filing"] == "ABC Private Ltd"
+        new = Institution.objects.get(pk=relinked["institution_id"])
+        assert (new.pan, str(new.address_id)) == ("AAACB5678B", body["address_id"])
+        old = Institution.objects.get(pk=body["institution_id"])
+        assert (old.pan, old.entity_name) == ("AAACA1234A", "ABC Pvt Ltd")
+        representation.refresh_from_db()
+        assert representation.is_active is True
+
+    def test_an_existing_pan_is_linked_without_changing_it(self, client, draft):
+        existing = make_institution(pan="AAACB5678B", entity_name="Stored Name Ltd")
+        body = add(client, draft, institution=INSTITUTION).json()
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {"institution": {**self.CORRECTED, "pan": "aaacb 5678 b"}},
+        )
+
+        assert response.json()["institution_id"] == str(existing.pk)
+        existing.refresh_from_db()
+        assert existing.entity_name == "Stored Name Ltd"
+
+    def test_a_name_sent_with_it_wins(self, client, draft):
+        body = add(client, draft, institution=INSTITUTION).json()
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {"institution": self.CORRECTED, "name_at_filing": "ABC (India) Pvt Ltd"},
+        )
+
+        assert response.json()["name_at_filing"] == "ABC (India) Pvt Ltd"
+
+    def test_a_person_acting_for_it_keeps_their_snapshot_and_row(self, client, draft):
+        body = add(
+            client, draft, institution=INSTITUTION, person=PERSON, designation="Director"
+        ).json()
+
+        response = patch(client, body["case_participant_id"], {"institution": self.CORRECTED})
+
+        relinked = response.json()
+        assert relinked["name_at_filing"] == "Rajesh Kumar"
+        assert relinked["designation_at_filing"] == "Director"
+        person = Person.objects.get(pk=body["person_id"])
+        assert str(person.institution_id) == body["institution_id"]
+
+    def test_an_individual_cannot_become_an_institution(self, client, draft):
+        body = add_complainant(client, draft)
+
+        response = patch(client, body["case_participant_id"], {"institution": INSTITUTION})
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"institution": ["E07023"]}
+        assert not Institution.objects.exists()
+
+    def test_the_other_sides_institution_is_refused_and_nothing_changes(self, client, draft):
+        body = add(client, draft, institution=INSTITUTION).json()
+        add(client, draft, role="accused", institution=self.CORRECTED)
+
+        response = patch(client, body["case_participant_id"], {"institution": self.CORRECTED})
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"institution": ["E07014"]}
+        participant = CaseParticipant.objects.get(pk=body["case_participant_id"])
+        assert str(participant.institution_id) == body["institution_id"]
+
+    def test_invalid_pan_is_400(self, client, draft):
+        body = add(client, draft, institution=INSTITUTION).json()
+
+        response = patch(
+            client, body["case_participant_id"], {"institution": {**INSTITUTION, "pan": "NOTAPAN"}}
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"institution.pan": ["E00001"]}
+
+
 class TestRemove:
     def test_remove_is_soft_and_renumbers_the_role(self, client, draft):
         first, second, third = (add_complainant(client, draft, name=n) for n in "ABC")
@@ -484,6 +586,18 @@ def add_witness(client, case_id, side="COMPLAINANT", **body):
 
 
 class TestAddWitness:
+    def test_the_participant_row_cannot_make_a_second_witness_for_a_side(self, client, draft):
+        """Changing a witness's person (in the admin) is checked as adding one is."""
+        first = add_witness(client, draft).json()
+        second = add_witness(client, draft, person={**PERSON, "name": "Other"}).json()
+        participant = CaseParticipant.objects.get(pk=second["case_participant_id"])
+        participant.person_id = first["person_id"]
+
+        with pytest.raises(ValidationError) as exc:
+            participant.full_clean()
+
+        assert exc.value.error_dict["person"][0].code == "E07032"
+
     def test_creates_a_participant_and_a_witness_row_without_an_address(self, client, draft):
         response = add_witness(client, draft, additional_details={"lang": "kn"})
 
@@ -517,7 +631,19 @@ class TestAddWitness:
         again = add_witness(client, draft, "COMPLAINANT", self=True, person=None)
 
         assert again.status_code == 400
-        assert error_codes(again) == {"side": ["E07017"]}
+        assert error_codes(again) == {"side": ["E07032"]}
+
+    @pytest.mark.parametrize("statement", [None, "", "   "])
+    def test_what_the_witness_will_prove_is_optional(self, client, draft, statement):
+        body = {} if statement is None else {"what_will_witness_prove": statement}
+        response = client.post(
+            reverse("case-witness-list", args=[draft]),
+            {"person": {**PERSON, "name": "Meena Rao"}, "side": "COMPLAINANT", **body},
+            format="json",
+        )
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["witness"]["what_will_witness_prove"] == ""
 
     def test_a_witness_may_have_a_designation(self, client, draft):
         response = add_witness(client, draft, designation="Branch manager")
@@ -536,7 +662,6 @@ class TestAddWitness:
     @pytest.mark.parametrize(
         "change, field, code",
         [
-            ({"what_will_witness_prove": "   "}, "what_will_witness_prove", "E00004"),
             ({"institution": INSTITUTION}, "institution", "E07024"),
             ({"is_party_in_person": True}, "is_party_in_person", "E07024"),
             ({"side": None}, "side", "E00002"),
@@ -1168,7 +1293,13 @@ class TestPoliceStation:
         assert response.status_code == 201, response.json()
 
     @pytest.mark.parametrize(
-        "address", [NO_POLICE_STATION, {**ADDRESS_DEFAULTS, "police_station": " "}]
+        "address",
+        [
+            NO_POLICE_STATION,
+            {**ADDRESS_DEFAULTS, "police_station": " "},
+            # Invisible characters only, which the address stores as blank.
+            {**ADDRESS_DEFAULTS, "police_station": "\u200b\ufeff"},
+        ],
     )
     def test_an_accused_address_needs_it(self, client, draft, address):
         add_complainant(client, draft)
@@ -1189,15 +1320,113 @@ class TestPoliceStation:
         assert response.status_code == 400
         assert error_codes(response) == {"address.police_station": ["E00002"]}
 
+    def test_the_model_refuses_an_accused_without_one(self, client, draft):
+        """The admin runs ``full_clean``, so it cannot make such an accused either."""
+        complainant = add(client, draft, person=PERSON, address=NO_POLICE_STATION).json()
+        participant = CaseParticipant.objects.get(pk=complainant["case_participant_id"])
+        participant.role = ParticipantRole.ACCUSED
+        participant.resides_within_jurisdiction = True
+
+        with pytest.raises(ValidationError) as exc:
+            participant.full_clean()
+
+        assert exc.value.error_dict["address"][0].code == "E00002"
+
 
 class TestDisabilityStatus:
     def test_a_person_may_state_a_disability(self, client, draft):
-        body = add_complainant(client, draft, disability_status="VISUAL")
+        body = add_complainant(client, draft, disability_status=True)
 
-        assert Person.objects.get(pk=body["person_id"]).disability_status == "VISUAL"
+        assert Person.objects.get(pk=body["person_id"]).disability_status is True
 
-    def test_an_unknown_value_is_400(self, client, draft):
+    def test_it_defaults_to_false(self, client, draft):
+        body = add_complainant(client, draft)
+
+        assert Person.objects.get(pk=body["person_id"]).disability_status is False
+
+    def test_a_non_boolean_is_400(self, client, draft):
         response = add(client, draft, person={**PERSON, "disability_status": "SOMETIMES"})
 
         assert response.status_code == 400
-        assert error_codes(response) == {"person.disability_status": ["E00005"]}
+        assert error_codes(response) == {"person.disability_status": ["E00001"]}
+
+
+class TestJsonOnly:
+    """A form body reads a boolean left out as false, so these endpoints take JSON only."""
+
+    def test_a_form_body_is_refused(self, client, draft):
+        url = reverse("case-complainant-list", args=[draft])
+
+        response = client.post(url, {"person.name": "Rajesh"}, format="multipart")
+
+        assert response.status_code == 415
+
+    def test_a_form_patch_is_refused_and_changes_nothing(self, client, draft):
+        add_complainant(client, draft)
+        accused = add(client, draft, "accused", person={**PERSON, "name": "Suresh"}).json()
+        url = reverse("case-participant-detail", args=[accused["case_participant_id"]])
+
+        response = client.patch(url, {"name_at_filing": "S. Kumar"}, format="multipart")
+
+        assert response.status_code == 415
+        participant = CaseParticipant.objects.get(pk=accused["case_participant_id"])
+        assert participant.resides_within_jurisdiction is True
+
+
+class TestResidesWithinJurisdiction:
+    """ "Does the accused reside within the jurisdiction of this court?" Yes by default."""
+
+    def add_accused(self, client, draft, **body):
+        add_complainant(client, draft)
+        return add(client, draft, "accused", person={**PERSON, "name": "Suresh"}, **body)
+
+    def test_an_accused_defaults_to_yes(self, client, draft):
+        response = self.add_accused(client, draft)
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["resides_within_jurisdiction"] is True
+
+    def test_an_accused_may_reside_outside(self, client, draft):
+        response = self.add_accused(client, draft, resides_within_jurisdiction=False)
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["resides_within_jurisdiction"] is False
+
+    def test_the_answer_can_be_changed(self, client, draft):
+        accused = self.add_accused(client, draft).json()
+
+        response = patch(
+            client, accused["case_participant_id"], {"resides_within_jurisdiction": False}
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["resides_within_jurisdiction"] is False
+
+    def test_it_is_empty_for_other_roles(self, client, draft):
+        complainant = add_complainant(client, draft)
+
+        assert complainant["resides_within_jurisdiction"] is None
+
+    def test_a_complainant_may_not_send_it(self, client, draft):
+        response = add(client, draft, person=PERSON, resides_within_jurisdiction=True)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"resides_within_jurisdiction": ["E07023"]}
+
+    def test_it_cannot_be_set_on_a_complainant_later(self, client, draft):
+        complainant = add_complainant(client, draft)
+
+        response = patch(
+            client, complainant["case_participant_id"], {"resides_within_jurisdiction": True}
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"resides_within_jurisdiction": ["E07023"]}
+
+    def test_the_database_refuses_it_for_other_roles(self, client, draft):
+        complainant = add_complainant(client, draft)
+        participant = CaseParticipant.objects.get(pk=complainant["case_participant_id"])
+        participant.resides_within_jurisdiction = True
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            participant.save()

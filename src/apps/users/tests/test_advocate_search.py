@@ -85,12 +85,20 @@ class TestAdvocateSearch:
             }
         ]
 
-    @pytest.mark.parametrize("text", ["", "ab", "  a  "])
+    @pytest.mark.parametrize("text", ["", "a", "  a  "])
     def test_too_short_a_search_is_400(self, client, text):
         response = search(client, text)
 
         assert response.status_code == 400
         assert codes(response) == {"search": "E00007"}
+
+    def test_two_characters_are_enough(self, client):
+        make_advocate(name="Om Prakash", bar="KA/7/2020")
+
+        response = search(client, "om")
+
+        assert response.status_code == 200
+        assert [row["name"] for row in response.json()["results"]] == ["Om Prakash"]
 
     def test_needs_a_complete_registration(self):
         api = APIClient()
@@ -109,3 +117,32 @@ class TestAdvocateSearch:
         statuses = [search(client, "priya").status_code for _ in range(3)]
 
         assert statuses == [200, 200, 429]
+
+    def test_head_needs_a_complete_registration_too(self):
+        """Django answers HEAD with ``get``; it must not fall back to registration's checks."""
+        make_advocate()
+        api = APIClient()
+        api.force_authenticate(make_user(registration_status=RegistrationStatus.PENDING_PROFILE))
+
+        response = api.head(reverse("advocate-create"), {"search": "priya"})
+
+        assert response.status_code == 403
+
+    def test_head_is_rate_limited_with_get(self, client, settings):
+        settings.ADVOCATE_SEARCH_THROTTLE_RATE = "2/min"
+        cache.clear()
+        make_advocate()
+
+        statuses = [
+            client.head(reverse("advocate-create"), {"search": "priya"}).status_code,
+            search(client, "priya").status_code,
+            search(client, "priya").status_code,
+        ]
+
+        assert statuses == [200, 200, 429]
+
+    def test_a_nul_character_is_400(self, client):
+        response = search(client, "ab\x00")
+
+        assert response.status_code == 400
+        assert codes(response) == {"search": "E00001"}

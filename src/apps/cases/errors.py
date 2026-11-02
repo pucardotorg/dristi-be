@@ -52,9 +52,15 @@ INSTITUTION_NOT_ALLOWED = define(
 ROLE_ALREADY_HELD = define("E07013", "This party already holds this role on this case.")
 # Also for an advocate: "An advocate cannot represent both a complainant and an accused."
 BOTH_SIDES = define("E07014", "A party cannot be both a complainant and an accused on a case.")
+# Retired with witnesses called by a party (now by a side); kept so the number
+# is never reused (spec 0000 §9.2).
+CALLS_ACTIVE_WITNESS = define(
+    "E07015", "Cannot be removed while an active witness is called by them."
+)
 # The message names the role needed: "Must be a POA holder." …
 WRONG_ROLE = define("E07016", "Must be a complainant or an accused.")
-WITNESS_ALREADY_CALLED = define("E07017", "This person is already a witness for this side.")
+# Retired, as E07015: replaced by WITNESS_ALREADY_ON_SIDE.
+WITNESS_ALREADY_CALLED = define("E07017", "This person is already a witness called by this party.")
 SELF_REPRESENTATION = define("E07018", "A party cannot act for themselves.")
 SELF_AS_ACCUSED = define("E07019", "You cannot name yourself as accused.")
 ALREADY_ACTING = define("E07020", "This holder or advocate already acts for this party.")
@@ -82,3 +88,6 @@ SIGNED_BEFORE_SUBMISSION = define(
 DOCUMENT_TYPE_MISMATCH = define("E07029", "This document's type does not fit what it is linked to.")
 DOCUMENT_LINK_NOT_ALLOWED = define("E07030", "This document type cannot be linked here.")
 EVIDENCE_NOT_ON_CASE = define("E07031", "No active evidence with this id on this case.")
+
+# Witnesses (spec 0020 §4.5)
+WITNESS_ALREADY_ON_SIDE = define("E07032", "This person is already a witness for this side.")

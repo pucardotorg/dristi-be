@@ -72,7 +72,10 @@ class AddressManager(models.Manager):
         if unknown:
             raise ValueError(f"Not address fields: {sorted(unknown)}")
 
-        values = {field: normalize_field(field, fields.get(field, "")) for field in CONTENT_FIELDS}
+        # ``None`` is read as blank, so a required field is reported, not hashed.
+        values = {
+            field: normalize_field(field, fields.get(field) or "") for field in CONTENT_FIELDS
+        }
         candidate = self.model(created_by=created_by, **values)
         candidate.full_clean(exclude=["hash"], validate_unique=False)
 
@@ -203,13 +206,17 @@ class Address(models.Model):
 
         The hash needs every content field, so the check is skipped while any
         is missing or excluded: ``full_clean`` excludes fields that already
-        failed, and reports those errors instead.
+        failed, and reports those errors instead. A blank police station is a
+        value, not a missing field: it may be left out.
         """
         super().validate_unique(exclude=exclude)
         if not self._state.adding or set(CONTENT_FIELDS) & set(exclude or ()):
             return
         self._normalize()
-        if any(value in (None, "") for value in self._content().values()):
+        if any(
+            value is None or (value == "" and not self._meta.get_field(field).blank)
+            for field, value in self._content().items()
+        ):
             return
         if Address.objects.filter(hash=address_hash(self._content())).exists():
             raise ValidationError({NON_FIELD_ERRORS: ["This address already exists."]})

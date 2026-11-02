@@ -71,12 +71,11 @@ PARTY_DOCUMENT_ROLES = {
     DocumentType.POA_DOCUMENT: ("COMPLAINANT", "ACCUSED"),
 }
 
-# Documents that belong to one evidence item, with the evidence types it may be:
-# a cheque's scan, or a demand notice's dispatch, delivery or reply papers.
+# Documents that support one evidence item, with the evidence types it may be:
+# a demand notice's dispatch, delivery or reply papers. An evidence item's own
+# scan is linked the other way, by ``case_evidence.case_document``
+# (``EVIDENCE_SCAN_TYPES``), so it is recorded in one place only.
 EVIDENCE_DOCUMENT_TYPES = {
-    DocumentType.BOUNCED_CHEQUE: (EvidenceType.CHEQUE,),
-    DocumentType.RETURN_MEMO: (EvidenceType.RETURN_MEMO,),
-    DocumentType.LEGAL_DEMAND_NOTICE: (EvidenceType.LEGAL_DEMAND_NOTICE,),
     DocumentType.PROOF_OF_DISPATCH: (EvidenceType.LEGAL_DEMAND_NOTICE,),
     DocumentType.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE: (EvidenceType.LEGAL_DEMAND_NOTICE,),
     DocumentType.REPLY_TO_DEMAND_NOTICE: (EvidenceType.LEGAL_DEMAND_NOTICE,),
@@ -90,7 +89,8 @@ class CaseTypeConfig:
     ``document_types`` are the types uploadable through the case documents
     endpoint, VAKALATNAMA and POA_DOCUMENT included (spec 0021 §3.4). A
     document can be linked to the party it belongs to (``PARTY_DOCUMENT_ROLES``)
-    or the evidence item it supports (``EVIDENCE_DOCUMENT_TYPES``).
+    or the evidence item it supports (``EVIDENCE_DOCUMENT_TYPES``), or be an
+    evidence item's own scan (``EVIDENCE_SCAN_TYPES``).
     """
 
     detail_model: str

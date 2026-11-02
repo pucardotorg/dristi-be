@@ -29,8 +29,8 @@ from apps.api.errors import BusinessError
 from apps.files import documents
 
 from .. import errors
-from ..models import Case, CaseDocument, CaseEvidence, CaseStatus, scan_type_message
-from .case_types import EVIDENCE_SCAN_TYPES, get_config, schema_errors
+from ..models import Case, CaseDocument, CaseEvidence, CaseStatus, link_type_errors
+from .case_types import get_config, schema_errors
 
 logger = logging.getLogger(__name__)
 
@@ -63,33 +63,45 @@ SCHEMA_KEYWORD_ERRORS = {
 
 
 @contextmanager
-def errors_under(field=None, *, as_whole=False, renamed=None):
+def errors_under(field=None, *, renamed=None):
     """Turn a model ``ValidationError`` into a 400, nested under ``field`` when given.
 
     Every message keeps the code the model gave it: a case rule's API code, or
-    Django's own. ``as_whole`` reports every message as a non-field error, for
-    a request with no body (a DELETE), where the model's field names would mean
-    nothing. ``renamed`` maps model field names to the request's.
+    Django's own. ``renamed`` maps model field names to the request's.
     """
     renamed = {NON_FIELD_ERRORS: api_settings.NON_FIELD_ERRORS_KEY, **(renamed or {})}
     try:
         yield
     except DjangoValidationError as exc:
         detail = get_error_detail(exc)
-        if isinstance(detail, dict) and not as_whole:
+        if isinstance(detail, dict):
             detail = {renamed.get(key, key): messages for key, messages in detail.items()}
         else:
-            if isinstance(detail, dict):
-                detail = [message for messages in detail.values() for message in messages]
             detail = {api_settings.NON_FIELD_ERRORS_KEY: detail}
         raise serializers.ValidationError({field: detail} if field else detail) from exc
 
 
-def validated_save(row, **errors_under_kwargs):
-    """Save ``row`` once ``full_clean`` passes; its errors become a 400 as in ``errors_under``."""
+def validated_save(row, update_fields=None, **errors_under_kwargs):
+    """Save ``row`` once ``full_clean`` passes; its errors become a 400 as in ``errors_under``.
+
+    ``update_fields`` limits the write to the fields a change touched, so a
+    concurrent change to the others is not overwritten.
+    """
     with errors_under(**errors_under_kwargs):
         row.full_clean()
-    row.save()
+    row.save(update_fields=update_fields)
+
+
+def unlink(rows, field, user):
+    """Clear ``field`` on each of ``rows``, as ``user``.
+
+    For links to a row that has just been removed. One save per row, not
+    ``update()``, so each unlink is kept in history.
+    """
+    for row in rows:
+        setattr(row, field, None)
+        row.updated_by = user
+        row.save(update_fields=[field, "updated_by", "updated_at"])
 
 
 # Draft sessions and case resolution
@@ -334,17 +346,25 @@ def add_document(
 
     ``case_participant_id`` and ``case_evidence_id`` link the document to the
     party it belongs to or the evidence item it supports; ``CaseDocument.clean``
-    checks they fit its type. ``is_digital`` and ``display_name`` are kept in
+    checks they fit its type. A link the type can never have is refused before
+    the file is stored. ``is_digital`` and ``display_name`` are kept in
     ``additional_details``.
     """
     case_type = get_case_type(case_or_draft_id, user)
     allowed = get_config(case_type).document_types
     _require_allowed(document_type, allowed, "document_type", case_type)
-    details = {}
-    if is_digital is not None:
-        details["is_digital"] = is_digital
-    if display_name and display_name.strip():
-        details["display_name"] = display_name.strip()
+    links = [
+        field
+        for field, value in (
+            ("case_participant", case_participant_id),
+            ("case_evidence", case_evidence_id),
+        )
+        if value
+    ]
+    if problems := link_type_errors(document_type, links):
+        with errors_under(renamed=DOCUMENT_FIELD_NAMES):
+            raise DjangoValidationError(problems)
+    details = _with_details({}, is_digital=is_digital, display_name=display_name)
     file_id = _store_file(upload, user, case_type)
     try:
         with transaction.atomic():
@@ -367,22 +387,64 @@ def add_document(
         raise
 
 
+def update_document(case_document_id, user, changes):
+    """Change a case document's links and details; its file and type cannot change.
+
+    ``changes`` is a validated ``CaseDocumentUpdateSerializer`` body: a field
+    left out is kept, ``None`` removes a link or a detail. ``CaseDocument.clean``
+    checks the links fit the type, as on upload. This is how a document
+    uploaded before its party or evidence was saved is linked to it, without
+    uploading the file again.
+
+    The row is read again under the case lock, and only the changed fields are
+    written, so a concurrent removal or change is not undone.
+    """
+    case = get_active_case_item(CaseDocument, case_document_id, user).case
+    with editing(case, user):
+        document = get_active_case_item(CaseDocument, case_document_id, user)
+        fields = ["updated_by", "updated_at"]
+        for field in DOCUMENT_FIELD_NAMES.values():
+            if field in changes:
+                setattr(document, field, changes[field])
+                fields.append(field.removesuffix("_id"))
+        details = {key: changes[key] for key in ("is_digital", "display_name") if key in changes}
+        if details:
+            document.additional_details = _with_details(document.additional_details, **details)
+            fields.append("additional_details")
+        document.updated_by = user
+        validated_save(document, update_fields=fields, renamed=DOCUMENT_FIELD_NAMES)
+    return document
+
+
+def _with_details(details, **values):
+    """Return ``details`` with ``is_digital`` / ``display_name`` set to ``values``.
+
+    A display name is trimmed; ``None`` or a blank name removes the key.
+    """
+    details = dict(details)
+    for key, value in values.items():
+        if isinstance(value, str):
+            value = value.strip()
+        if value is None or value == "":
+            details.pop(key, None)
+        else:
+            details[key] = value
+    return details
+
+
 def remove_document(case_document_id, user):
     """Soft-delete a case document. The stored file is kept.
 
     Evidence that pointed at it is unlinked, so no evidence keeps showing a
-    document that is no longer part of the case.
+    document that is no longer part of the case. The case is locked first, as
+    every other write does, so this cannot interleave with a change to the
+    same document.
     """
-    with transaction.atomic():
+    case = get_active_case_item(CaseDocument, case_document_id, user).case
+    with editing(case, user):
         document = get_active_case_item(CaseDocument, case_document_id, user)
-        ensure_editable(document.case)
         deactivate(document, user)
-        # One save per row, not update(), so each unlink is kept in history.
-        for evidence in document.evidence.active():
-            evidence.case_document = None
-            evidence.updated_by = user
-            evidence.save(update_fields=["case_document", "updated_by", "updated_at"])
-        touch(document.case, user)
+        unlink(document.evidence.active(), "case_document", user)
 
 
 def _store_file(upload, user, case_type):
@@ -421,32 +483,20 @@ def _validate_schema(schema, data, field):
         raise serializers.ValidationError(detail)
 
 
-def _require_case_document(case, case_document_id, evidence_type):
-    """Check ``case_document_id`` can be the scan of ``evidence_type`` evidence on ``case``.
-
-    Raises ``DOCUMENT_NOT_ON_CASE`` unless it is an active document of the
-    case, and ``DOCUMENT_TYPE_MISMATCH`` unless it is of the evidence's scan
-    type: a cheque's scan must be a bounced cheque, not a proof of dispatch.
-    """
-    document = CaseDocument.objects.active().filter(pk=case_document_id, case=case).first()
-    if document is None:
-        raise BusinessError(errors.DOCUMENT_NOT_ON_CASE, field="case_document_id")
-    scan_type = EVIDENCE_SCAN_TYPES.get(evidence_type)
-    if scan_type and document.document_type != scan_type:
-        raise BusinessError(
-            errors.DOCUMENT_TYPE_MISMATCH, scan_type_message(scan_type), field="case_document_id"
-        )
+# Evidence's model fields, by the names the API gives them.
+EVIDENCE_FIELD_NAMES = {"case_document": "case_document_id"}
 
 
 def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_document_id=None):
-    """Add evidence with the next ordinal for its type, creating the case on first save."""
+    """Add evidence with the next ordinal for its type, creating the case on first save.
+
+    ``CaseEvidence.clean`` checks a linked document is an active document of
+    the case, of this evidence's scan type: a cheque's must be a bounced cheque.
+    """
     validate_evidence(get_case_type(case_or_draft_id, user), evidence_type, evidence_info)
     # The case lock serialises ordinal assignment.
     with editing_or_creating(case_or_draft_id, user) as case:
-        if case_document_id is not None:
-            _require_case_document(case, case_document_id, evidence_type)
-
-        evidence = CaseEvidence.objects.create(
+        evidence = CaseEvidence(
             case=case,
             case_document_id=case_document_id,
             evidence_type=evidence_type,
@@ -457,6 +507,7 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
             created_by=user,
             updated_by=user,
         )
+        validated_save(evidence, renamed=EVIDENCE_FIELD_NAMES)
     return evidence
 
 
@@ -473,29 +524,29 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
     linked to it (spec 0020 §11.4).
     """
     ensure_editable(evidence.case)
-    fields = ["updated_by", "updated_at"]
     if evidence_info is not _UNSET:
         validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
-        evidence.evidence_info = evidence_info
-        fields.append("evidence_info")
-    if case_document_id is not _UNSET:
-        if case_document_id is not None:
-            _require_case_document(evidence.case, case_document_id, evidence.evidence_type)
-        evidence.case_document_id = case_document_id
-        fields.append("case_document")
-    evidence.updated_by = user
-    with transaction.atomic():
-        evidence.save(update_fields=fields)
-        touch(evidence.case, user)
+    with editing(evidence.case, user):
+        evidence = get_active_case_item(CaseEvidence, evidence.pk, user)
+        fields = ["updated_by", "updated_at"]
+        if evidence_info is not _UNSET:
+            evidence.evidence_info = evidence_info
+            fields.append("evidence_info")
+        if case_document_id is not _UNSET:
+            evidence.case_document_id = case_document_id
+            fields.append("case_document")
+        evidence.updated_by = user
+        validated_save(evidence, update_fields=fields, renamed=EVIDENCE_FIELD_NAMES)
     return evidence
 
 
 def remove_evidence(evidence, user):
-    """Soft-delete evidence."""
+    """Soft-delete evidence; documents that supported it are unlinked, as on removing a document."""
     ensure_editable(evidence.case)
-    with transaction.atomic():
+    with editing(evidence.case, user):
+        evidence = get_active_case_item(CaseEvidence, evidence.pk, user)
         deactivate(evidence, user)
-        touch(evidence.case, user)
+        unlink(evidence.documents.active(), "case_evidence", user)
 
 
 # Case details (spec 0021 §5.3)

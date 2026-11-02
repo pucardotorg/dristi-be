@@ -109,17 +109,6 @@ class Relation(models.TextChoices):
     WARD_OF = "WARD_OF", "Ward of"
 
 
-class DisabilityStatus(models.TextChoices):
-    """Supported disability statuses. ``NONE`` is the default when none is given."""
-
-    NONE = "NONE", "None"
-    VISUAL = "VISUAL", "Visual"
-    HEARING = "HEARING", "Hearing"
-    MOBILITY = "MOBILITY", "Mobility"
-    COGNITIVE = "COGNITIVE", "Cognitive"
-    OTHER = "OTHER", "Other"
-
-
 class VerificationLevel(models.TextChoices):
     """How we know a person is who they claim to be (spec 0020 §2.3)."""
 
@@ -269,13 +258,9 @@ class Person(BaseModel, BaseAuditableModel):
         blank=True,
         related_name="+",
     )
-    disability_status = models.CharField(
-        max_length=16,
-        choices=DisabilityStatus.choices,
-        default=DisabilityStatus.NONE,
-        # Also the column default, so a row inserted outside Django gets NONE too.
-        db_default=DisabilityStatus.NONE,
-    )
+    # Whether the person is differently abled. Also the column default, so a
+    # row inserted outside Django is False too.
+    disability_status = models.BooleanField(default=False, db_default=False)
     verification_level = models.CharField(
         max_length=16,
         choices=VerificationLevel.choices,
@@ -322,8 +307,8 @@ class Person(BaseModel, BaseAuditableModel):
         """
         self.name = _strip(self.name)
         # Not given (None or blank) means no disability.
-        if not _blank_to_none(self.disability_status):
-            self.disability_status = DisabilityStatus.NONE
+        if self.disability_status in (None, ""):
+            self.disability_status = False
         self.phone_number = _blank_to_none(self.phone_number)
         self.relative_name = _blank_to_none(self.relative_name)
         # A known date of birth replaces an approximate age.

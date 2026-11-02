@@ -38,9 +38,16 @@ from ..models import (
     ParticipantRole,
     PoaMandate,
     Representation,
+    scan_type_message,
 )
 from ..serializers import CasePreviewSerializer
-from .case_types import DocumentType, EvidenceType, get_config, schema_errors
+from .case_types import (
+    EVIDENCE_SCAN_TYPES,
+    DocumentType,
+    EvidenceType,
+    get_config,
+    schema_errors,
+)
 from .services import (
     PREVIEW_TTL_SECONDS,
     clear_preview_cache,
@@ -188,7 +195,11 @@ def validation_errors(case):
                 "as party-in-person.",
             )
 
-    documents = list(CaseDocument.objects.active().filter(case=case))
+    documents = list(
+        CaseDocument.objects.active()
+        .filter(case=case)
+        .only("id", "document_type", "case_participant_id", "case_evidence_id")
+    )
     uploaded = {document.document_type for document in documents}
 
     def linked(document_type, link):
@@ -216,8 +227,11 @@ def validation_errors(case):
     with_poa_document = linked(DocumentType.POA_DOCUMENT, "case_participant_id")
     acting_for = (
         CaseParticipant.objects.active()
-        .filter(case=case, poa_mandates_granted__is_active=True)
-        .distinct()
+        .filter(
+            case=case,
+            pk__in=PoaMandate.objects.active().filter(case=case).values("represented_participant"),
+        )
+        .only("id", "role", "ordinal")
         .order_by(*PARTICIPANT_ORDERING)
     )
     for party in acting_for:
@@ -254,8 +268,20 @@ def validation_errors(case):
                 "documents.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
                 f"Demand notice #{item.ordinal} was delivered but has no proof of delivery.",
             )
-    # Writes already check these; a schema tightened since then is caught here.
+    # Writes already check these; a rule tightened since then is caught here.
+    document_types = {document.id: document.document_type for document in documents}
     for item in evidence:
+        scan_type = EVIDENCE_SCAN_TYPES.get(item.evidence_type)
+        if (
+            item.case_document_id
+            and scan_type
+            and document_types.get(item.case_document_id) != scan_type
+        ):
+            label = EvidenceType(item.evidence_type).label
+            error(
+                f"evidence.{item.evidence_type}",
+                f"{label} #{item.ordinal}: {scan_type_message(scan_type)}",
+            )
         schema = config.evidence_schemas.get(item.evidence_type)
         for problem in schema_errors(schema, item.evidence_info) if schema else []:
             label = EvidenceType(item.evidence_type).label

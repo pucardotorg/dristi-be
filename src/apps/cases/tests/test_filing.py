@@ -447,6 +447,16 @@ class TestValidate:
 
         assert fields_of(validate(client, draft)) == {"details.adr_other_prayer"}
 
+    def test_a_scan_of_the_wrong_type_is_reported(self, client, draft, pdf):
+        """Linked before the rule existed, or through a path that skipped it."""
+        make_complete_case(client, draft, pdf)
+        dispatch = upload(client, draft, pdf, "PROOF_OF_DISPATCH").json()
+        CaseEvidence.objects.filter(case_id=draft, evidence_type="CHEQUE").update(
+            case_document_id=dispatch["case_document_id"]
+        )
+
+        assert fields_of(validate(client, draft)) == {"evidence.CHEQUE"}
+
     def test_other_users_cases_are_not_found(self, client, client_for, other_user, draft):
         add_complainant(client, draft)
 
