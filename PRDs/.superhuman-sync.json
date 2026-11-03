@@ -7,17 +7,17 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-Ebr9Pgtqan",
       "title": "Account Creation",
       "contentHash": "a561aebe9240",
-      "pageUpdatedAt": 1793680979.497,
-      "note": "Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v19 (court establishment): REG-23a, REG-23b (re-inserted, cl-e4SVsr-xBQ), §6.1 intro and example bullets (re-inserted), REG-31/35/36/38 cells, 2026-10-19 decision. 2026-10-24: patched in place to v19.1 (status, callout, digital signing wording). 2026-10-29: patched in place to v19.2 (status, callout, Q-4 row added to §11 table grid-E3ATru_vvq).",
+      "pageUpdatedAt": 1793681312.025,
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v19 (court establishment): REG-23a, REG-23b (re-inserted, cl-e4SVsr-xBQ), §6.1 intro and example bullets (re-inserted), REG-31/35/36/38 cells, 2026-10-19 decision. 2026-10-24: patched in place to v19.1 (status, callout, digital signing wording). 2026-10-29: patched in place to v19.2 (status, callout, Q-4 row added to §11 table grid-E3ATru_vvq).",
       "calloutElementId": "cl-023ZWT-x7f"
     },
     "efiling.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing",
       "contentHash": "a7e9952476ad",
-      "pageUpdatedAt": 1793680984.334,
+      "pageUpdatedAt": 1793681316.547,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match). 2026-10-30: patched in place to v50 (§11 note replaced by cl-m468m1p6tY; PRY-5 cell in grid-UGBc7eKxqI; §16.4 row 2.3 in grid-CZmW9VMuDl; §16.9 page-5 bullet; batch 19 block cl-_STdzi6lOi; Status block and callout prepended)."
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match). 2026-10-30: patched in place to v50 (§11 note replaced by cl-m468m1p6tY; PRY-5 cell in grid-UGBc7eKxqI; §16.4 row 2.3 in grid-CZmW9VMuDl; §16.9 page-5 bullet; batch 19 block cl-_STdzi6lOi; Status block and callout prepended)."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -61,9 +61,9 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WxtSmHU5wu",
       "title": "Join a Case",
       "contentHash": "f091bd2da604",
-      "pageUpdatedAt": 1793680989.715,
+      "pageUpdatedAt": 1793681320.755,
       "calloutElementId": "cl-_KL_8kabnW",
-      "note": "Force-rebuilt 2026-10-14 at the owner's request (local wins); the unrecorded 2026-10-06 page edit and all page comments were discarded. Live views recreated: Court Side table-7SpA4aFqK0, Citizen-Side table-XWc8kp4Y5A, Notifications table-6VFhpFf1Lu, Events table-1FusHbDJ7v. `sections` not recorded (Coda explodes chunks into native blocks). Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed."
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Force-rebuilt 2026-10-14 at the owner's request (local wins); the unrecorded 2026-10-06 page edit and all page comments were discarded. Live views recreated: Court Side table-7SpA4aFqK0, Citizen-Side table-XWc8kp4Y5A, Notifications table-6VFhpFf1Lu, Events table-1FusHbDJ7v. `sections` not recorded (Coda explodes chunks into native blocks). Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed."
     },
     "case-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-oci-tqnIPh",
@@ -124,7 +124,7 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-brLkhW_t8M",
       "title": "Pending Tasks",
       "contentHash": "6ef1d259a9b4",
-      "pageUpdatedAt": 1793681014.184,
+      "pageUpdatedAt": 1793681347.377,
       "calloutElementId": "cl-KnBdD20uG4",
       "sections": [
         {
@@ -153,13 +153,13 @@
           "hash": "082fc039d852"
         }
       ],
-      "note": "2026-10-30: rebuilt to v2, then reverted at the owner's request to the 2026-09-14 text and rebuilt again (live views removed)."
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. 2026-10-30: rebuilt to v2, then reverted at the owner's request to the 2026-09-14 text and rebuilt again (live views removed)."
     },
     "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
       "title": "View Case",
       "contentHash": "df0ee6ed33e9",
-      "pageUpdatedAt": 1793681009.045,
+      "pageUpdatedAt": 1793681335.564,
       "calloutElementId": "eca-cluFlrCGVO",
       "sections": [
         {
@@ -243,7 +243,7 @@
           "hash": "2ce404e69b82"
         }
       ],
-      "note": "Patched in place 2026-10-22 to v1.9: status, callout, DET-12 cell, registry notes and Court Evidence exhibit row, DOC-02/04/05 cells, §10.1 heading and §10.2–10.6 removed, §10 intro inserted. `sections` stale."
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Patched in place 2026-10-22 to v1.9: status, callout, DET-12 cell, registry notes and Court Evidence exhibit row, DOC-02/04/05 cells, §10.1 heading and §10.2–10.6 removed, §10 intro inserted. `sections` stale."
     },
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
@@ -1517,7 +1517,7 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
       "title": "Scrutiny and Registration",
       "contentHash": "06b31c0b4d27",
-      "pageUpdatedAt": 1793681004.952,
+      "pageUpdatedAt": 1793681329.621,
       "calloutElementId": "cl-x8-19XCI0n",
       "sections": [
         {
@@ -1541,7 +1541,7 @@
           "elementId": "cl-9t1Ux3TNnf"
         }
       ],
-      "note": "Patched in place 2026-10-25 to v3.5 (status, callout, heading, SCR-09, SCR-10, PRD language note). Live views: Court Side table-OvYXzrn9IN, Citizen-Side table-i0Uw4lusP4, Notifications table-eqtvnthi7I, Events table-H3lq7d-M7W. sections hold the first block of each chunk only; no per-chunk hashes."
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Patched in place 2026-10-25 to v3.5 (status, callout, heading, SCR-09, SCR-10, PRD language note). Live views: Court Side table-OvYXzrn9IN, Citizen-Side table-i0Uw4lusP4, Notifications table-eqtvnthi7I, Events table-H3lq7d-M7W. sections hold the first block of each chunk only; no per-chunk hashes."
     },
     "a-diary.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-pKkyj_LFi4",
@@ -1594,7 +1594,7 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-lxUEhfnjuv",
       "title": "Office Management",
       "contentHash": "99685d969371",
-      "pageUpdatedAt": 1793681017.616,
+      "pageUpdatedAt": 1793681324.32,
       "calloutElementId": "eca-zJsZcK9_hd",
       "sections": [
         {
@@ -1643,7 +1643,7 @@
           "hash": "1bf07ef2f477"
         }
       ],
-      "note": "Created 2026-10-21. Each markdown chunk was split by Superhuman into several blocks; elementId is the chunk's heading block."
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Created 2026-10-21. Each markdown chunk was split by Superhuman into several blocks; elementId is the chunk's heading block."
     },
     "document-submission.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-A_B7aTjEeJ",
@@ -1689,7 +1689,7 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
       "title": "Signing Methods",
       "contentHash": "ba271892c2fd",
-      "pageUpdatedAt": 1792839609.337,
+      "pageUpdatedAt": 1793681344.013,
       "calloutElementId": "cl-T3V--SS-ky",
       "sections": [
         {
@@ -1723,13 +1723,13 @@
           "hash": "e9d097904b74"
         }
       ],
-      "note": "Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block."
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block."
     },
     "bulk-filing.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
       "title": "Bulk Filing",
       "contentHash": "bb775b36dcea",
-      "pageUpdatedAt": 1792846347.399,
+      "pageUpdatedAt": 1793681340.266,
       "calloutElementId": "cl-IwwclcUBOf",
       "sections": [
         {
@@ -1757,7 +1757,8 @@
           "elementId": "cl-UZiRGu77Bn",
           "hash": "00ce141e31d3"
         }
-      ]
+      ],
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up."
     },
     "evidence-marking.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-uJ7EU__l31",
