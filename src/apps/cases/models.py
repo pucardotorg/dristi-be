@@ -184,6 +184,10 @@ PARTY_ROLE_MESSAGE = "Must be a complainant or an accused."
 RESIDES_WITHIN_JURISDICTION_MESSAGE = (
     "Whether the party resides within the court's jurisdiction is recorded for an accused only."
 )
+CONTACT_UNKNOWN_MESSAGE = (
+    "Declare the accused's contact details unknown only for an accused with no phone "
+    "number or email."
+)
 SAME_CASE_MESSAGE = "Must be a participant of the same case."
 ACTIVE_PARTICIPANT_MESSAGE = "Must be an active participant."
 PARTICIPANT_LINK_MESSAGE = "This document type does not belong to a participant."
@@ -310,6 +314,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     # A complainant's request to appear in person: rich-text editor output,
     # stored as sent and sanitized wherever it is rendered.
     party_in_person_affidavit = models.TextField(null=True, blank=True)
+    # The filer's declaration that they do not know the accused's phone number
+    # or email (PRD ACC-6/7), made instead of giving one. Accused only.
+    contact_details_unknown_declared = models.BooleanField(default=False)
     has_signed = models.BooleanField(default=False)
     signature_document = models.ForeignKey(
         "files.File",
@@ -358,6 +365,14 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 violation_error_message=RESIDES_WITHIN_JURISDICTION_MESSAGE,
             ),
             models.CheckConstraint(
+                check=Q(contact_details_unknown_declared=False)
+                | Q(role=ParticipantRole.ACCUSED)
+                & (Q(phone_number_at_filing__isnull=True) | Q(phone_number_at_filing=""))
+                & (Q(email_at_filing__isnull=True) | Q(email_at_filing="")),
+                name="cases_case_participant_contact_unknown_accused_only",
+                violation_error_message=CONTACT_UNKNOWN_MESSAGE,
+            ),
+            models.CheckConstraint(
                 check=Q(role__in=ParticipantRole.values),
                 name="cases_case_participant_role_valid",
                 violation_error_message=ROLE_VALID_MESSAGE,
@@ -398,6 +413,14 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             and not self.address.police_station
         ):
             errors["address"] = _rule_error(api_errors.REQUIRED, POLICE_STATION_REQUIRED_MESSAGE)
+        if self.contact_details_unknown_declared and (
+            self.role != ParticipantRole.ACCUSED
+            or self.phone_number_at_filing
+            or self.email_at_filing
+        ):
+            errors["contact_details_unknown_declared"] = _rule_error(
+                api_errors.INVALID, CONTACT_UNKNOWN_MESSAGE
+            )
         if self.institution_id and self.role not in INSTITUTION_ROLES:
             errors["institution"] = _rule_error(
                 case_errors.INSTITUTION_NOT_ALLOWED, INSTITUTION_ROLE_MESSAGE

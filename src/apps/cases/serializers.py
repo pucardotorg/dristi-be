@@ -183,13 +183,14 @@ class CaseDocumentUploadSerializer(serializers.Serializer):
     display_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
     def validate_file(self, upload):
-        """Accept a real PDF, JPEG or PNG within the size limit.
+        """Accept a real PDF, JPEG, PNG, WebP or HEIC file within the size limit.
 
         Uses the project's shared check: the declared type and the file name
         are hints, the content's leading bytes decide, so a renamed or
-        mislabelled file is refused.
+        mislabelled file is refused. WebP and HEIC are what phone cameras
+        save, so case documents take them; other uploads do not.
         """
-        error = documents.document_error(upload)
+        error = documents.document_error(upload, documents.CASE_DOCUMENT_FORMATS)
         if error:
             raise serializers.ValidationError(error)
         return upload
@@ -418,6 +419,9 @@ class InstitutionInputSerializer(serializers.ModelSerializer):
         ]
 
 
+PERMANENT_ADDRESS_MESSAGE = "Only for an individual complainant or a POA holder."
+
+
 class PartySerializer(serializers.Serializer):
     """Base body of a party write.
 
@@ -451,9 +455,13 @@ class ParticipantCreateSerializer(PartySerializer):
 
     institution = InstitutionInputSerializer(required=False)
     designation = serializers.CharField(max_length=128, required=False, allow_null=True)
+    # An individual complainant's, when it differs from ``address``.
+    permanent_address = AddressInputSerializer(required=False)
     is_party_in_person = serializers.BooleanField(default=False)
     # Accused only; yes when left out.
     resides_within_jurisdiction = serializers.BooleanField(required=False)
+    # Accused only: the filer does not know their phone number or email.
+    contact_details_unknown_declared = serializers.BooleanField(required=False)
     # Complainants only; rich-text editor output.
     party_in_person_affidavit = serializers.CharField(required=False, allow_null=True)
 
@@ -490,10 +498,17 @@ class ParticipantCreateSerializer(PartySerializer):
             problems["designation"] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, DESIGNATION_NOT_ALLOWED_MESSAGE)
             ]
-        if "resides_within_jurisdiction" in attrs and role != ParticipantRole.ACCUSED:
-            problems["resides_within_jurisdiction"] = [
-                errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")
+        if "permanent_address" in attrs and (
+            role != ParticipantRole.COMPLAINANT or "institution" in attrs or not has_individual
+        ):
+            problems["permanent_address"] = [
+                errors.coded(errors.FIELD_NOT_APPLICABLE, PERMANENT_ADDRESS_MESSAGE)
             ]
+        for field in ("resides_within_jurisdiction", "contact_details_unknown_declared"):
+            if field in attrs and role != ParticipantRole.ACCUSED:
+                problems[field] = [
+                    errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")
+                ]
         if "address" not in attrs:
             problems["address"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
         elif problem := police_station_error(role, attrs["address"]):
@@ -559,6 +574,8 @@ class PoaHolderCreateSerializer(IndividualPartySerializer):
     represented_participant_ids = serializers.ListField(
         child=serializers.UUIDField(), allow_empty=False
     )
+    # The holder's, when it differs from ``address``.
+    permanent_address = AddressInputSerializer(required=False)
 
     def validate_represented_participant_ids(self, value):
         """Require each represented party once."""
@@ -680,6 +697,7 @@ class ParticipantUpdateSerializer(PartialUpdateSerializer):
     address = AddressInputSerializer(required=False)
     is_party_in_person = serializers.BooleanField(required=False)
     resides_within_jurisdiction = serializers.BooleanField(required=False)
+    contact_details_unknown_declared = serializers.BooleanField(required=False)
     # Complainants only; ``null`` clears it.
     party_in_person_affidavit = serializers.CharField(required=False, allow_null=True)
     additional_details = serializers.DictField(required=False)
@@ -737,6 +755,7 @@ class CaseParticipantSerializer(serializers.ModelSerializer):
             "address_id",
             "is_party_in_person",
             "resides_within_jurisdiction",
+            "contact_details_unknown_declared",
             "party_in_person_affidavit",
             "additional_details",
             "witness",

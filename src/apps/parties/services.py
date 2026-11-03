@@ -35,36 +35,42 @@ def get_or_create_self_person(user):
     return person
 
 
-def create_asserted_person(user, fields, *, institution=None, designation=None, address=None):
+def create_asserted_person(
+    user, fields, *, institution=None, designation=None, address=None, permanent_address=None
+):
     """Create a person ``user`` has named, at ``ASSERTED``, with no attempt to match.
 
-    ``address``, when given, becomes their correspondence address.
+    ``address``, when given, becomes their correspondence address, and
+    ``permanent_address`` their permanent one (the same row when they match).
     """
     return Person.objects.create(
         **fields,
         institution=institution,
         designation=designation if institution else None,
         correspondence_address=address,
+        permanent_address=permanent_address,
         verification_level=VerificationLevel.ASSERTED,
         created_by=user,
         updated_by=user,
     )
 
 
-def get_or_create_institution(user, fields, *, address=None):
+def get_or_create_institution(user, fields, *, address=None, require_identifier=False):
     """Return the institution with the PAN or CIN in ``fields``, or create one.
 
     A match is returned as is: none of ``fields`` is applied to it. A new
     institution gets ``address`` as its registered office. A PAN and a CIN
     belonging to two different institutions are refused, since either could
-    be the one meant.
+    be the one meant. ``require_identifier`` refuses an institution with no
+    PAN, no CIN and no skip declaration: a complainant's (spec 0020 §3.4).
     """
     # Normalized as the model stores them, so they match. Their format is
     # checked once, by the model, if a new institution is created.
     pan = normalize_identifier(fields.get("pan"))
     cin = normalize_identifier(fields.get("cin"))
     # Checked before matching too: a match is returned without saving it.
-    if problems := pan_cin_errors(pan, cin, fields.get("pan_cin_skip_declared", False)):
+    skip_declared = fields.get("pan_cin_skip_declared", False)
+    if problems := pan_cin_errors(pan, cin, skip_declared, required=require_identifier):
         raise ValidationError(problems)
 
     found = _find_institution(pan, cin)

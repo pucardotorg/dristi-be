@@ -4,6 +4,7 @@ import dataclasses
 import uuid
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -392,6 +393,25 @@ class TestDocuments:
         assert response.status_code == 400
         assert error_codes(response) == {"file": ["E00001"]}
 
+    @pytest.mark.parametrize(
+        ("name", "content", "content_type"),
+        [
+            ("cheque.webp", b"RIFF\x10\x00\x00\x00WEBPVP8 x", "image/webp"),
+            ("cheque.heic", b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00", "image/heic"),
+        ],
+    )
+    def test_a_phone_photo_is_accepted(self, client, draft, name, content, content_type):
+        response = client.post(
+            reverse("case-document-list", args=[draft]),
+            {
+                "file": SimpleUploadedFile(name, content, content_type=content_type),
+                "document_type": "BOUNCED_CHEQUE",
+            },
+            format="multipart",
+        )
+
+        assert response.status_code == 201, response.json()
+
     def test_unknown_id_is_404_and_stores_no_file(self, client, pdf):
         assert upload(client, uuid.uuid4(), pdf).status_code == 404
         assert File.objects.count() == 0
@@ -635,7 +655,6 @@ class TestEvidence:
             {**CHEQUE_INFO, "cheque_number": "1234567"},
             {**CHEQUE_INFO, "ifsc_code": "SBIN1234"},
             {**CHEQUE_INFO, "bank_name": "   "},
-            {key: value for key, value in CHEQUE_INFO.items() if key != "bank_account_number"},
             {**CHEQUE_INFO, "bank_account_number": "1234"},
             {**CHEQUE_INFO, "bank_account_number": "3001-2345-678"},
             {**CHEQUE_INFO, "drawee_bank": "SBI"},  # unknown key
@@ -651,6 +670,17 @@ class TestEvidence:
         assert response.status_code == 400
         assert error_roots(response) == {"evidence_info"}
         assert Case.objects.count() == 0
+
+    def test_the_bank_account_number_is_optional(self, client, draft):
+        info = {key: value for key, value in CHEQUE_INFO.items() if key != "bank_account_number"}
+
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "CHEQUE", "evidence_info": info},
+            format="json",
+        )
+
+        assert response.status_code == 201, response.json()
 
     def test_invalid_value_error_names_its_field(self, client, draft):
         response = client.post(
@@ -725,7 +755,7 @@ class TestEvidence:
 
         missing = post(undelivered)
         accepted = post(
-            {**undelivered, "return_date": "2024-02-10", "non_delivery_reason": "Unclaimed"}
+            {**undelivered, "return_date": "2024-02-10", "non_delivery_reason": "UNCLAIMED"}
         )
 
         assert missing.status_code == 400
@@ -744,6 +774,24 @@ class TestEvidence:
         )
 
         assert error_codes(response) == {"evidence_info.payment_status": ["E00005"]}
+
+    def test_non_delivery_reason_outside_the_list_is_an_invalid_choice(self, client, draft):
+        info = {k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"}
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {
+                "evidence_type": "LEGAL_DEMAND_NOTICE",
+                "evidence_info": {
+                    **info,
+                    "is_delivered": False,
+                    "return_date": "2024-02-10",
+                    "non_delivery_reason": "Left without instructions",
+                },
+            },
+            format="json",
+        )
+
+        assert error_codes(response) == {"evidence_info.non_delivery_reason": ["E00005"]}
 
     def test_part_payment_is_stored_with_its_amount(self, client, draft):
         info = {

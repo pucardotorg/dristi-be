@@ -533,7 +533,7 @@ class TestValidate:
             **DEMAND_NOTICE_INFO,
             "is_delivered": False,
             "return_date": "2024-02-10",
-            "non_delivery_reason": "Addressee not found",
+            "non_delivery_reason": "ADDRESSEE_NOT_AVAILABLE",
         }
         undelivered.pop("delivery_date")
         response = client.patch(

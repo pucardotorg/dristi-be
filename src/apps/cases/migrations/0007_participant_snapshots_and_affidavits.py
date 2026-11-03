@@ -3,26 +3,6 @@
 from django.db import migrations, models
 
 
-def fill_snapshots(apps, schema_editor):
-    """Fill the new snapshot columns of existing participants from their person and institution.
-
-    What the filer typed was not kept for them, so the stored rows are the best
-    record there is. The email is the person's when there is one, as for a new
-    participant.
-    """
-    CaseParticipant = apps.get_model("cases", "CaseParticipant")
-    participants = CaseParticipant.objects.select_related("person", "institution")
-    for participant in participants.iterator():
-        person, institution = participant.person, participant.institution
-        if person is not None:
-            participant.email_at_filing = person.email_address
-        elif institution is not None:
-            participant.email_at_filing = institution.email_address
-        if institution is not None:
-            participant.entity_name_at_filing = institution.entity_name
-        participant.save(update_fields=["email_at_filing", "entity_name_at_filing"])
-
-
 class Migration(migrations.Migration):
     dependencies = [
         ("cases", "0006_witness_side_document_links_jurisdiction"),
@@ -69,5 +49,38 @@ class Migration(migrations.Migration):
             name="party_in_person_affidavit",
             field=models.TextField(blank=True, null=True),
         ),
-        migrations.RunPython(fill_snapshots, migrations.RunPython.noop),
+        migrations.AddField(
+            model_name="caseparticipant",
+            name="contact_details_unknown_declared",
+            field=models.BooleanField(default=False),
+        ),
+        migrations.AddField(
+            model_name="historicalcaseparticipant",
+            name="contact_details_unknown_declared",
+            field=models.BooleanField(default=False),
+        ),
+        migrations.AddConstraint(
+            model_name="caseparticipant",
+            constraint=models.CheckConstraint(
+                check=models.Q(
+                    ("contact_details_unknown_declared", False),
+                    models.Q(
+                        ("role", "ACCUSED"),
+                        models.Q(
+                            ("phone_number_at_filing__isnull", True),
+                            ("phone_number_at_filing", ""),
+                            _connector="OR",
+                        ),
+                        models.Q(
+                            ("email_at_filing__isnull", True),
+                            ("email_at_filing", ""),
+                            _connector="OR",
+                        ),
+                    ),
+                    _connector="OR",
+                ),
+                name="cases_case_participant_contact_unknown_accused_only",
+                violation_error_message="Declare the accused's contact details unknown only for an accused with no phone number or email.",
+            ),
+        ),
     ]

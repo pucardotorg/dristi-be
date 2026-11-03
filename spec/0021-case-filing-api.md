@@ -241,7 +241,7 @@ POST /cases/{case_id_or_draft_session_id}/documents
 If document upload is the first action, the case must exist before we can link the document to it. This ensures atomicity: document upload → case creation → document linking all succeed or all fail together.
 
 **Error Responses:**
-- `400 Bad Request`: Unknown `document_type`, or the file fails the shared `apps.files` check: it must be a PDF, JPEG or PNG whose content matches its type (leading bytes), with a matching extension, within the size limit. The declared content type and the file name are only hints, so a renamed or mislabelled file is refused.
+- `400 Bad Request`: Unknown `document_type`, or the file fails the shared `apps.files` check: it must be a PDF, JPEG, PNG, WebP or HEIC/HEIF (phone photos) whose content matches its type (leading bytes), with a matching extension, within the size limit (`FILE_MAX_SIZE_BYTES`, 15 MB by default). Other uploads in the system (registration, requests) take PDF, JPEG and PNG only. The declared content type and the file name are only hints, so a renamed or mislabelled file is refused.
 - `400 Bad Request`: a link that does not fit: a type that cannot be linked there (`E07030`), a participant of the wrong role (`E07016`) or not on the case (`E07010`), evidence of the wrong type (`E07029`) or not on the case (`E07031`)
 - `409 Conflict` (`E07001`): the case has been submitted (§7)
 - `404 Not Found`: Neither case nor draft session exists for the provided ID
@@ -437,6 +437,8 @@ POST /cases/{case_id_or_draft_session_id}/complainants
 
 Exactly one of `person` or `self` describes the individual, and either may be left out when `institution` is given. `designation` is accepted only when both an individual and an institution are given; it is optional for a complainant and required for an accused (spec 0020 §4.2). `date_of_birth` and `age` are both optional.
 
+`permanent_address` (an address, optional) is accepted only for an individual complainant (`E07023` otherwise): send it when the permanent address differs from `address`. Left out, the person's permanent address is the same address row as `address`. It is saved on the person, the filer's own included (`"self": true`), not on the participant; PATCH does not change it.
+
 **Response (201 Created):**
 ```json
 {
@@ -478,7 +480,7 @@ Exactly one of `person` or `self` describes the individual, and either may be le
    - `district` and `state` are pre-filled by the client from the pincode location (spec 0007, spec 0020); the API stores what it is sent.
 4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created, with the request's address as its registered office. A reused institution's stored details are not returned or changed.
    - A `pan` and a `cin` that belong to two different institutions are refused (400).
-   - At least one of `pan`, `cin` or `"pan_cin_skip_declared": true` is required (`E00002` on `institution.pan`); the declaration with a `pan` or `cin` is refused (`E00001` on `institution.pan_cin_skip_declared`). The same applies to `institution` in PATCH (re-link).
+   - For a **complainant** institution, at least one of `pan`, `cin` or `"pan_cin_skip_declared": true` is required (`E00002` on `institution.pan`); an accused institution needs none of them. For any institution, the declaration with a `pan` or `cin` is refused (`E00001` on `institution.pan_cin_skip_declared`). The same applies to `institution` in PATCH (re-link).
    - The same institution cannot be both complainant and accused, nor hold one role twice, on one case.
 
 5. **Write the address** through the address service (spec 0020 §7): an identical address reuses its row. District and state are not looked up here; the client pre-fills them from `GET /pincodes/{pincode}`. A newly created person also gets this address as their `correspondence_address`; an existing person's addresses are unchanged. The address is required for complainants. When the filer adds themselves without an address, it will come from their profile once profiles carry one; until then it must be sent.
@@ -519,6 +521,7 @@ Updates only the participant's own data. The `person` and `institution` rows are
 - `role` and `person` cannot be changed, and an individual cannot become an institution or the reverse (`E07023` on `institution`); remove the participant and add it again instead.
 - Setting `is_party_in_person` to true is refused while the participant has an active advocate.
 - `designation_at_filing` is accepted only for a person acting for an institution, or a witness.
+- `contact_details_unknown_declared` is accepted only for an accused (`E07023` otherwise), and only while it has no phone number or email (`E00001`).
 - `entity_name_at_filing` is accepted only when the participant has an institution (`E07023` otherwise).
 - `party_in_person_affidavit` (rich text) is accepted only for a complainant (`E07023` otherwise), here and when the complainant is added; `null` clears it. It is stored whether or not the complainant is party-in-person, and required by the completeness check (§6.3) only when they are. For an institution with no person acting for it, `name_at_filing` and `entity_name_at_filing` are the same value: changing one changes the other.
 
@@ -545,6 +548,7 @@ Same contract as complainants (§4.1), but `role = 'ACCUSED'`.
 3. An institution may be accused, with or without a person acting for it, exactly as for a complainant.
 4. A person acting for an accused institution needs a `designation`: the officer is liable through that role. Clearing it later with PATCH is refused (`E00002`).
 5. `resides_within_jurisdiction` (boolean, optional, default `true`) records the filer's answer to "Does the accused reside within the jurisdiction of this court?" (BNSS s.225; the court decides jurisdiction on the facts). It can be changed with PATCH. It is accepted only for an accused (`E07023` for any other role), and is `null` for every other role.
+6. `contact_details_unknown_declared` (boolean, optional, default `false`) records the filer's declaration that they do not know the accused's phone number or email (PRD ACC-6/7). It is accepted only for an accused (`E07023` otherwise), and only while the accused has no phone number or email (`E00001` on the field otherwise). It can be changed with PATCH; clear it in the same PATCH that adds a phone number or email.
 
 ### 4.3 Witnesses
 
@@ -676,7 +680,7 @@ DELETE /poa-mandates/{poa_mandate_id}
 
 **Validation** (spec 0020 §5), before anything is written:
 - Each represented participant is an active COMPLAINANT or ACCUSED on this case, and is not the holder's own person.
-- A POA holder is always an individual: `institution` is not accepted. The address is required.
+- A POA holder is always an individual: `institution` is not accepted. The address is required. `permanent_address` works as for a complainant (§4.1): left out, it is the same row as `address`.
 
 **Transaction Steps:**
 1. Get or create the case (same as §3.1, step 1).
@@ -711,9 +715,9 @@ is found through it, and evidence on a case the caller did not create returns
 On POST, `evidence_type` is sent in the request body only, never as a query
 parameter. The `evidence_type` query parameter exists on GET, as a filter.
 
-For cheque bounce, each cheque has one `RETURN_MEMO` and one
-`LEGAL_DEMAND_NOTICE`, matched to it by `ordinal`: cheque #1, return memo #1,
-demand notice #1.
+For cheque bounce, each cheque has one `RETURN_MEMO`, matched to it by
+`ordinal`: cheque #1, return memo #1. A `LEGAL_DEMAND_NOTICE` is not tied to
+any cheque; one notice may cover several cheques, and nothing links them.
 
 **POST Request Body (Cheque):**
 ```json
@@ -826,8 +830,7 @@ the schema. A value outside the list is a 400 with code `E00005` on that field.
 {
   "type": "object",
   "required": [
-    "cheque_date", "amount", "cheque_number", "ifsc_code", "bank_name", "bank_branch",
-    "bank_account_number"
+    "cheque_date", "amount", "cheque_number", "ifsc_code", "bank_name", "bank_branch"
   ],
   "properties": {
     "cheque_date": { "type": "string", "format": "date" },
@@ -841,6 +844,8 @@ the schema. A value outside the list is a 400 with code `E00005` on that field.
   "additionalProperties": false
 }
 ```
+`bank_account_number` (PRD CHQ-7a) is optional until the form asks for it; when
+sent it must be 9 to 18 digits.
 `cheque_number` is the six-digit number, not the full MICR line.
 `bank_account_number` is the drawer's account the cheque is drawn on, 9 to 18
 digits with no spaces or separators, sent as a string so leading zeros are kept.
@@ -904,7 +909,17 @@ digits with no spaces or separators, sent as a string so leading zeros are kept.
     "is_delivered": { "type": "boolean" },
     "delivery_date": { "type": "string", "format": "date" },
     "return_date": { "type": "string", "format": "date" },
-    "non_delivery_reason": { "type": "string", "pattern": "\\S" },
+    "non_delivery_reason": {
+      "oneOf": [
+        { "const": "ADDRESSEE_NOT_AVAILABLE", "title": "Addressee not available" },
+        { "const": "REFUSED", "title": "Refused to accept" },
+        { "const": "ADDRESS_INCOMPLETE_OR_INCORRECT", "title": "Address incomplete / incorrect" },
+        { "const": "LEFT_WITHOUT_INSTRUCTIONS", "title": "Left without instructions" },
+        { "const": "UNCLAIMED", "title": "Unclaimed" },
+        { "const": "LOST_IN_TRANSIT", "title": "Item lost in transit" },
+        { "const": "OTHER", "title": "Other" }
+      ]
+    },
     "accused_replied": { "type": "boolean" },
     "payment_status": {
       "oneOf": [
@@ -939,9 +954,6 @@ required instead. `part_payment_amount` is required when `payment_status` is
 on a delivered notice, an amount with `NO_PAYMENT_MADE`) is accepted and stored.
 
 **Not yet enforced:**
-- `non_delivery_reason` is a dropdown in the UI but accepts any non-empty text
-  until its option list is agreed; it then becomes a code list like
-  `return_reason`, `nature_of_debt` and `mode_of_service`.
 - Date ordering (presentation not before the cheque date, return not before
   presentation, delivery not before dispatch) cannot be expressed in JSON
   Schema, and the first rule spans two evidence rows.

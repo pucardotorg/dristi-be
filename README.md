@@ -202,9 +202,9 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `S3_BUCKET` | S3 bucket for media uploads | `dristi-media` |
 | `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
 | `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
-| `FILE_MAX_SIZE_BYTES` | Largest single file `apps.files` will accept | `10485760` |
+| `FILE_MAX_SIZE_BYTES` | Largest single file `apps.files` will accept (15 MB) | `15728640` |
 | `FILE_MAX_COUNT_PER_UPLOAD` | Most files allowed in one `upload_file` call | `10` |
-| `FILE_MAX_READ_BYTES` | Largest file `get_file_content()` will open into memory. Defaults to `FILE_MAX_SIZE_BYTES`. | `10485760` |
+| `FILE_MAX_READ_BYTES` | Largest file `get_file_content()` will open into memory. Defaults to `FILE_MAX_SIZE_BYTES`. | `15728640` |
 | `FILE_SYSTEM_USER_ID` | System account (email, mobile number or pk) that background uploads such as generated PDFs are attributed to | `system@dristi.internal` |
 | `PDF_EXTERNAL_API_TIMEOUT_SECONDS` | Connect/read timeout for external API and localization calls made by PDF mappings | `10` |
 | `PDF_EXTERNAL_API_MAX_RETRIES` | In-call retries for external API / localization / image fetches on timeouts and 5xx | `2` |
@@ -225,7 +225,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `PDF_TASK_TIME_LIMIT_MS` | Dramatiq time limit for PDF actors in milliseconds | `600000` |
 | `PDF_SIGNATURE_CONTAINER_BYTES` | Signature container reserved by `prepare_for_signing`; must exceed the largest ESP PKCS#7 | `16384` |
 | `PDF_SIGNATURE_HASH_ALGORITHM` | ByteRange digest algorithm (`SHA256`, `SHA384`, `SHA512`); must match the ESP request | `SHA256` |
-| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives | `10485760` |
+| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives. Defaults to `FILE_MAX_SIZE_BYTES`. | `15728640` |
 
 ## Services included
 

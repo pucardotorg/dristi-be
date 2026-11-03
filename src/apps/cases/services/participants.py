@@ -55,17 +55,23 @@ MANDATE_FIELD_NAMES = {"represented_participant": "represented_participant_ids"}
 # Likewise for a representation created for its advocate.
 REPRESENTATION_FIELD_NAMES = {"case_participant": "client_participant_ids"}
 
+# The parties whose person row records a permanent address (an individual only).
+PERMANENT_ADDRESS_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.POA_HOLDER)
+
 INSTITUTION_SWITCH_MESSAGE = (
     "Only for an institution. To switch between an individual and an institution, "
     "remove the participant and add it again."
 )
 
 
-def _save_address(fields, user):
-    """Return the stored address for ``fields``, reusing an identical row; ``None`` if none."""
+def _save_address(fields, user, field="address"):
+    """Return the stored address for ``fields``, reusing an identical row; ``None`` if none.
+
+    Errors are reported under ``field``, the name the request sent it as.
+    """
     if fields is None:
         return None
-    with errors_under("address"):
+    with errors_under(field):
         address, _ = Address.objects.get_or_create_address(created_by=user, **fields)
     return address
 
@@ -216,12 +222,30 @@ def _create_participant(case, user, role, data):
     institution = None
     if "institution" in data:
         with errors_under("institution"):
-            institution = get_or_create_institution(user, data["institution"], address=address)
+            institution = get_or_create_institution(
+                user,
+                data["institution"],
+                address=address,
+                require_identifier=role == ParticipantRole.COMPLAINANT,
+            )
+
+    # An individual complainant or POA holder has a permanent address: the
+    # one sent when it differs from ``address``, else ``address`` itself.
+    permanent_address = None
+    if role in PERMANENT_ADDRESS_ROLES and institution is None:
+        permanent_address = _save_address(data.get("permanent_address"), user, "permanent_address")
+        permanent_address = permanent_address or address
 
     person = None
     if data["is_self"]:
         with errors_under("self"):
             person = get_or_create_self_person(user)
+        if permanent_address is not None and person.permanent_address_id != permanent_address.pk:
+            # The one change a filing makes to the filer's own person row: the
+            # permanent address they just gave (spec 0020 §2.5).
+            person.permanent_address = permanent_address
+            person.updated_by = user
+            person.save(update_fields=["permanent_address", "updated_by", "updated_at"])
     elif "person" in data:
         with errors_under("person"):
             person = create_asserted_person(
@@ -230,6 +254,7 @@ def _create_participant(case, user, role, data):
                 institution=institution,
                 designation=data.get("designation"),
                 address=address,
+                permanent_address=permanent_address,
             )
 
     participant = CaseParticipant(
@@ -245,6 +270,7 @@ def _create_participant(case, user, role, data):
             "resides_within_jurisdiction", True if role == ParticipantRole.ACCUSED else None
         ),
         party_in_person_affidavit=data.get("party_in_person_affidavit"),
+        contact_details_unknown_declared=data.get("contact_details_unknown_declared", False),
         additional_details=data["additional_details"],
         created_by=user,
         updated_by=user,
@@ -319,10 +345,9 @@ def update_participant(participant, user, data):
         problems["is_party_in_person"] = [
             errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for a complainant or an accused.")
         ]
-    if participant.role != ParticipantRole.ACCUSED and "resides_within_jurisdiction" in data:
-        problems["resides_within_jurisdiction"] = [
-            errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")
-        ]
+    for field in ("resides_within_jurisdiction", "contact_details_unknown_declared"):
+        if participant.role != ParticipantRole.ACCUSED and field in data:
+            problems[field] = [errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")]
     if participant.role != ParticipantRole.COMPLAINANT and "party_in_person_affidavit" in data:
         problems["party_in_person_affidavit"] = [
             errors.coded(errors.FIELD_NOT_APPLICABLE, COMPLAINANT_ONLY_MESSAGE)
@@ -400,7 +425,10 @@ def _relink_institution(participant, user, fields, data):
     """
     with errors_under("institution"):
         participant.institution = get_or_create_institution(
-            user, fields, address=participant.address
+            user,
+            fields,
+            address=participant.address,
+            require_identifier=participant.role == ParticipantRole.COMPLAINANT,
         )
     if participant.person_id is None:
         for field, value in _snapshot(None, {"institution": fields}).items():

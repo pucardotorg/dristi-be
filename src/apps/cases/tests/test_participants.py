@@ -237,6 +237,20 @@ class TestInstitutions:
         assert error_codes(response) == {"institution.pan": ["E00002"]}
         assert not Institution.objects.exists()
 
+    def test_an_accused_institution_needs_no_pan_cin_or_declaration(self, client, draft):
+        """The accused's form asks for neither (PRD LIT-18a is the complainant's)."""
+        add_complainant(client, draft)
+
+        response = add(client, draft, role="accused", institution=self.NO_IDENTIFIER)
+
+        assert response.status_code == 201, response.json()
+        institution = Institution.objects.get(pk=response.json()["institution_id"])
+        assert (institution.pan, institution.cin, institution.pan_cin_skip_declared) == (
+            None,
+            None,
+            False,
+        )
+
     def test_the_declaration_with_a_pan_is_refused_even_when_the_pan_exists(self, client, draft):
         """A match is reused without being saved, so the rule is checked before matching."""
         make_institution(pan="AAACA1234A")
@@ -576,6 +590,29 @@ class TestUpdate:
 
 class TestInstitutionRelink:
     CORRECTED = {**INSTITUTION, "pan": "AAACB5678B", "entity_name": "ABC Private Ltd"}
+
+    def test_an_accused_institution_relinks_without_a_pan_or_cin(self, client, draft):
+        add_complainant(client, draft)
+        accused = add(client, draft, role="accused", institution=INSTITUTION).json()
+        renamed = {k: v for k, v in INSTITUTION.items() if k != "pan"}
+
+        response = patch(
+            client,
+            accused["case_participant_id"],
+            {"institution": {**renamed, "entity_name": "XYZ Traders"}},
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution_id"] != accused["institution_id"]
+
+    def test_a_complainant_institution_still_needs_one_when_relinked(self, client, draft):
+        body = add(client, draft, institution=INSTITUTION).json()
+        renamed = {k: v for k, v in INSTITUTION.items() if k != "pan"}
+
+        response = patch(client, body["case_participant_id"], {"institution": renamed})
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"institution.pan": ["E00002"]}
 
     def test_a_corrected_pan_links_a_new_institution_and_keeps_the_participant(
         self, client, make_user, draft
@@ -1447,6 +1484,129 @@ class TestRepresentationAccess:
 
 
 NO_POLICE_STATION = {k: v for k, v in ADDRESS_DEFAULTS.items() if k != "police_station"}
+
+
+class TestContactDetailsUnknown:
+    """The filer may declare they do not know the accused's phone number or email."""
+
+    def add_accused(self, client, draft, person=None, **body):
+        add_complainant(client, draft)
+        return add(client, draft, "accused", person=person or {"name": "Suresh"}, **body)
+
+    def test_an_accused_with_no_contact_may_be_declared(self, client, draft):
+        response = self.add_accused(client, draft, contact_details_unknown_declared=True)
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["contact_details_unknown_declared"] is True
+
+    def test_it_is_false_unless_declared(self, client, draft):
+        response = self.add_accused(client, draft)
+
+        assert response.json()["contact_details_unknown_declared"] is False
+
+    def test_it_cannot_come_with_a_phone_number(self, client, draft):
+        response = self.add_accused(
+            client,
+            draft,
+            person={"name": "Suresh", "phone_number": "+919876500000"},
+            contact_details_unknown_declared=True,
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"contact_details_unknown_declared": ["E00001"]}
+
+    def test_a_complainant_may_not_send_it(self, client, draft):
+        response = add(client, draft, person=PERSON, contact_details_unknown_declared=True)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"contact_details_unknown_declared": ["E07023"]}
+
+    def test_it_can_be_declared_later(self, client, draft):
+        accused = self.add_accused(client, draft).json()
+
+        response = patch(
+            client, accused["case_participant_id"], {"contact_details_unknown_declared": True}
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["contact_details_unknown_declared"] is True
+
+    def test_the_database_refuses_it_for_other_roles(self, client, draft):
+        complainant = add_complainant(client, draft)
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            CaseParticipant.objects.filter(pk=complainant["case_participant_id"]).update(
+                contact_details_unknown_declared=True
+            )
+
+
+class TestPermanentAddress:
+    """The person's permanent address: the residential one unless a different one is sent."""
+
+    ELSEWHERE = {**ADDRESS_DEFAULTS, "line1": "7 Temple Street", "pincode": "560004"}
+
+    def person_of(self, body):
+        return Person.objects.get(pk=body["person_id"])
+
+    def test_the_same_address_is_the_same_row(self, client, draft):
+        person = self.person_of(add_complainant(client, draft))
+
+        assert person.permanent_address_id == person.correspondence_address_id
+        assert person.permanent_address_id is not None
+
+    def test_a_different_address_is_its_own_row(self, client, draft):
+        response = add(client, draft, person=PERSON, permanent_address=self.ELSEWHERE)
+
+        assert response.status_code == 201, response.json()
+        person = self.person_of(response.json())
+        assert person.permanent_address_id != person.correspondence_address_id
+        assert person.permanent_address.line1 == "7 Temple Street"
+
+    def test_a_self_filer_gets_it_on_their_own_person(self, client, user, draft):
+        response = add(client, draft, self=True, permanent_address=self.ELSEWHERE)
+
+        assert response.status_code == 201, response.json()
+        assert Person.objects.get(user=user).permanent_address.line1 == "7 Temple Street"
+
+    def test_a_poa_holder_has_one(self, client, draft):
+        complainant = add_complainant(client, draft)
+
+        response = add_poa_holder(
+            client, draft, [complainant["case_participant_id"]], permanent_address=self.ELSEWHERE
+        )
+
+        assert response.status_code == 201, response.json()
+        holder = CaseParticipant.objects.get(pk=response.json()["case_participant_id"])
+        assert holder.person.permanent_address.line1 == "7 Temple Street"
+
+    def test_an_invalid_one_is_reported_under_its_own_name(self, client, draft):
+        response = add(
+            client, draft, person=PERSON, permanent_address={**self.ELSEWHERE, "pincode": "12"}
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"permanent_address.pincode": ["E00001"]}
+
+    @pytest.mark.parametrize(
+        ("role", "body"),
+        [
+            ("accused", {"person": {**PERSON, "name": "Suresh"}}),
+            ("complainant", {"institution": INSTITUTION}),
+        ],
+    )
+    def test_only_an_individual_complainant_sends_one(self, client, draft, role, body):
+        add_complainant(client, draft, name="First")
+
+        response = add(client, draft, role, permanent_address=self.ELSEWHERE, **body)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"permanent_address": ["E07023"]}
+
+    def test_a_witness_cannot_send_one(self, client, draft):
+        response = add_witness(client, draft, permanent_address=self.ELSEWHERE)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"permanent_address": ["E07024"]}
 
 
 class TestPoliceStation:

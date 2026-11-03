@@ -47,12 +47,14 @@ PAN_CIN_REQUIRED_MESSAGE = "Enter a PAN or a CIN, or declare that neither is giv
 PAN_CIN_SKIP_CONFLICT_MESSAGE = "Leave the PAN and CIN out when declaring that neither is given."
 
 
-def pan_cin_errors(pan, cin, skip_declared):
+def pan_cin_errors(pan, cin, skip_declared, *, required=False):
     """Return ``{field: error}`` when a PAN, a CIN and the skip declaration do not fit together.
 
-    An institution has a PAN, a CIN (or both), or the filer's declaration that
-    they will give neither, never none of them; and the declaration cannot come
-    with a PAN or CIN, which it contradicts. ``pan`` and ``cin`` are stored values.
+    The declaration cannot come with a PAN or CIN, which it contradicts: that
+    holds for every institution. Only a complainant institution must have one
+    of the three (``required``; PRD LIT-18a): an accused's form asks for no
+    PAN or CIN, and one institution can be complainant in one case and accused
+    in another. ``pan`` and ``cin`` are stored values.
     """
     if skip_declared and (pan or cin):
         return {
@@ -60,7 +62,7 @@ def pan_cin_errors(pan, cin, skip_declared):
                 PAN_CIN_SKIP_CONFLICT_MESSAGE, code=api_errors.INVALID.code
             )
         }
-    if not (skip_declared or pan or cin):
+    if required and not (skip_declared or pan or cin):
         return {"pan": ValidationError(PAN_CIN_REQUIRED_MESSAGE, code=api_errors.REQUIRED.code)}
     return {}
 
@@ -209,10 +211,9 @@ class Institution(BaseModel, BaseAuditableModel):
             # ``clean`` reports the same rule on its field; this guards writes
             # that skip ``save``, such as ``update()`` and ``bulk_create``.
             models.CheckConstraint(
-                check=Q(pan_cin_skip_declared=True, pan__isnull=True, cin__isnull=True)
-                | Q(pan_cin_skip_declared=False) & (Q(pan__isnull=False) | Q(cin__isnull=False)),
-                name="parties_institution_pan_cin_or_skip_declared",
-                violation_error_message=PAN_CIN_REQUIRED_MESSAGE,
+                check=Q(pan_cin_skip_declared=False) | Q(pan__isnull=True, cin__isnull=True),
+                name="parties_institution_skip_declared_without_pan_cin",
+                violation_error_message=PAN_CIN_SKIP_CONFLICT_MESSAGE,
             ),
         ]
 
@@ -235,7 +236,11 @@ class Institution(BaseModel, BaseAuditableModel):
         super().clean_fields(exclude=exclude)
 
     def clean(self):
-        """Require a PAN, a CIN or the skip declaration, and not the declaration with either."""
+        """Refuse the skip declaration with a PAN or CIN.
+
+        Whether one of the three is required depends on the party's role, so
+        the party write checks that (``get_or_create_institution``).
+        """
         super().clean()
         if problems := pan_cin_errors(self.pan, self.cin, self.pan_cin_skip_declared):
             raise ValidationError(problems)

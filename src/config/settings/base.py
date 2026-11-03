@@ -208,7 +208,7 @@ if all([S3_API_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY]):
 # S3-compatible bucket above once S3_* is configured.
 STORAGES["files"] = STORAGES["default"]
 
-FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=10 * 1024 * 1024)
+FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=15 * 1024 * 1024)
 FILE_MAX_COUNT_PER_UPLOAD = env.int("FILE_MAX_COUNT_PER_UPLOAD", default=10)
 FILE_MAX_READ_BYTES = env.int("FILE_MAX_READ_BYTES", default=FILE_MAX_SIZE_BYTES)
 # User that background/system uploads are attributed to (spec 0014 #10): the

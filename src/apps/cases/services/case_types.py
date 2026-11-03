@@ -127,6 +127,21 @@ class ModeOfService(models.TextChoices):
     FAX = "FAX", "Fax"
 
 
+class NonDeliveryReason(models.TextChoices):
+    """Why the legal demand notice came back undelivered."""
+
+    ADDRESSEE_NOT_AVAILABLE = "ADDRESSEE_NOT_AVAILABLE", "Addressee not available"
+    REFUSED = "REFUSED", "Refused to accept"
+    ADDRESS_INCOMPLETE_OR_INCORRECT = (
+        "ADDRESS_INCOMPLETE_OR_INCORRECT",
+        "Address incomplete / incorrect",
+    )
+    LEFT_WITHOUT_INSTRUCTIONS = "LEFT_WITHOUT_INSTRUCTIONS", "Left without instructions"
+    UNCLAIMED = "UNCLAIMED", "Unclaimed"
+    LOST_IN_TRANSIT = "LOST_IN_TRANSIT", "Item lost in transit"
+    OTHER = "OTHER", "Other"
+
+
 class PaymentStatus(models.TextChoices):
     """Whether the drawer has paid part of the cheque amount."""
 
@@ -347,8 +362,9 @@ CASE_TYPES = {
             EvidenceType.RETURN_MEMO,
             EvidenceType.LEGAL_DEMAND_NOTICE,
         ),
-        # One RETURN_MEMO and one LEGAL_DEMAND_NOTICE per cheque, matched to it
-        # by ordinal: cheque #1, return memo #1, demand notice #1.
+        # One RETURN_MEMO per cheque, matched to it by ordinal: cheque #1, return
+        # memo #1. A LEGAL_DEMAND_NOTICE is not tied to any cheque: one notice
+        # may cover several cheques, and the count need not match.
         evidence_schemas={
             # As written on the cheque leaf, plus the drawer's bank and account.
             EvidenceType.CHEQUE: _object(
@@ -359,7 +375,6 @@ CASE_TYPES = {
                     "ifsc_code",
                     "bank_name",
                     "bank_branch",
-                    "bank_account_number",
                 ],
                 properties={
                     "cheque_date": _date(),
@@ -369,7 +384,8 @@ CASE_TYPES = {
                     "ifsc_code": _ifsc(),
                     "bank_name": _text(),
                     "bank_branch": _text(),
-                    # The drawer's account the cheque is drawn on.
+                    # The drawer's account the cheque is drawn on. Optional until
+                    # the form asks for it (PRD CHQ-7a).
                     "bank_account_number": {"type": "string", "pattern": "^[0-9]{9,18}$"},
                 },
             ),
@@ -402,7 +418,7 @@ CASE_TYPES = {
                     "delivery_date": _date(),
                     # When an undelivered notice came back to the delivery agency.
                     "return_date": _date(),
-                    "non_delivery_reason": _text(),
+                    "non_delivery_reason": _choice(NonDeliveryReason),
                     "accused_replied": {"type": "boolean"},
                     # Payment against the cheque
                     "payment_status": _choice(PaymentStatus),

@@ -102,7 +102,8 @@ Identity verification is a spectrum. The `verification_level` field records how 
 The current schema permits duplicate persons with the same name and no phone number. Matching logic is implemented at the application layer, and is deliberately narrow:
 - The only `person` a party write reuses is the **filer's own**: when the filer adds themselves (`"self": true`, spec 0021 §4.1), their `person` is fetched by `user_id`, or created from their account at `VERIFIED` if they have none yet. A client never sends another person's id, so a filer cannot attach, or read back, someone else's record.
 - Every other party gets a **new** row at `ASSERTED`, with no attempt to match by name or phone.
-- An existing `person` row is never changed by a party write; the case keeps its own values in the participant snapshot (§4.4).
+- An existing `person` row is never changed by a party write; the case keeps its own values in the participant snapshot (§4.4). One exception: an individual complainant's or POA holder's write sets the person's `permanent_address`, also when the person is the filer (`"self": true`).
+- `permanent_address` is the same address row as `correspondence_address` (the request's `address`) unless the write sends a different `permanent_address`, which is then stored as its own row. Only an individual complainant or POA holder has one.
 - Duplicate asserted records resolve when the person registers and claims their row (a separate flow, not part of case filing).
 
 ## 3. Legal Entities: The `institution` Table
@@ -122,7 +123,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 | `email_address` | varchar(256) | NULLABLE | Main contact email |
 | `pan` | varchar(10) | NULLABLE, UNIQUE | Permanent Account Number, e.g. `AAACA1234A`; uppercase, `^[A-Z]{5}[0-9]{4}[A-Z]$` |
 | `cin` | varchar(21) | NULLABLE, UNIQUE | Corporate Identification Number, companies only, e.g. `U72200KA2010PTC052651`; uppercase, `^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$` |
-| `pan_cin_skip_declared` | boolean | NOT NULL, default false | The filer declared they will give neither a PAN nor a CIN (the UI's skip checkbox). Then both are null; otherwise at least one is set |
+| `pan_cin_skip_declared` | boolean | NOT NULL, default false | The filer declared they will give neither a PAN nor a CIN (the complainant form's skip checkbox). Then both are null |
 | `address_id` | uuid | FK → address, NULLABLE, ON DELETE PROTECT | Registered office: where notices to the institution are served |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
@@ -133,7 +134,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 - `CHECK (entity_type IN (...))` — values from §3.3
 - `CHECK` on the `pan` and `cin` patterns when not null; both are stored uppercase with spaces removed
 - `UNIQUE (pan)` and `UNIQUE (cin)` where not null
-- `CHECK`: `pan_cin_skip_declared` with both `pan` and `cin` null, or not declared with at least one of them set
+- `CHECK`: when `pan_cin_skip_declared` is true, `pan` and `cin` are both null
 - Index on `entity_name` — lookup when naming a party at filing
 
 ### 3.3 Entity Types (enum)
@@ -159,7 +160,7 @@ They identify an entity better than its spelled name, so they are how an institu
 - With no PAN or CIN, a new institution is always created.
 
 **Why a skip declaration:**
-A filer may choose not to give the PAN or CIN, and the form records that as an explicit choice. So an institution always has a PAN, a CIN (or both), or `pan_cin_skip_declared = true`, never none of them (`E00002` on `pan`); and the declaration cannot come with a PAN or CIN, which it contradicts (`E00001` on `pan_cin_skip_declared`). The rule is checked on every save, and before matching, since a matched row is linked without being saved. An institution declared this way has nothing to be matched by, so it is never reused.
+A filer may choose not to give a complainant institution's PAN or CIN, and the form records that as an explicit choice (PRD LIT-18a). So a **complainant** institution has a PAN, a CIN (or both), or `pan_cin_skip_declared = true`, never none of them (`E00002` on `pan`). This is checked by the party write, not the table: the accused's form asks for no PAN or CIN, and one institution can be the complainant in one case and the accused in another. On every institution the declaration cannot come with a PAN or CIN, which it contradicts (`E00001` on `pan_cin_skip_declared`; a `CHECK` too). Both rules are checked before matching, since a matched row is linked without being saved. An institution declared this way has nothing to be matched by, so it is never reused.
 
 **Why an institution has its own address:**
 A company or firm named as a party is served at its registered office, which need not be the address of whoever signs for it, so it is recorded on the institution rather than reached through a linked person. Like every address, it is an immutable row (§7): a move is a new row and the FK is repointed.
@@ -202,6 +203,7 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `end_date` | timestamp | NULLABLE | When participant was removed |
 | `is_party_in_person` | boolean | NOT NULL, default false | Appearing without an advocate |
 | `resides_within_jurisdiction` | boolean | NULLABLE; NOT NULL and default true for an accused, NULL for every other role (CHECK) | The filer's answer to "Does the accused reside within the jurisdiction of this court?" (BNSS s.225). A column, not `additional_details`, because scrutiny acts on it: an accused outside jurisdiction means process is postponed for inquiry |
+| `contact_details_unknown_declared` | boolean | NOT NULL, default false; true only for an accused with no `phone_number_at_filing` or `email_at_filing` (CHECK) | The filer's declaration that they do not know the accused's phone number or email (PRD ACC-6/7), made instead of giving one |
 | `party_in_person_affidavit` | text | NULLABLE | A complainant's affidavit asking to appear in person (rich text, stored as sent, sanitized wherever rendered); COMPLAINANT only; required by the completeness check when `is_party_in_person` is true |
 | `has_signed` | boolean | NOT NULL, default false | True once they have e-signed, or uploaded a signed copy of, the case filing |
 | `signature_document_id` | uuid | FK → file, nullable, ON DELETE PROTECT | The signed filing the e-sign service stored (spec 0021 §8). When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here |
@@ -693,8 +695,9 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 ### 11.3 Evidence Info Structure by Type
 
 The schemas each type is validated against are in spec 0021 §5.2. For cheque
-bounce, each cheque has one `RETURN_MEMO` and one `LEGAL_DEMAND_NOTICE`,
-matched to it by `ordinal`.
+bounce, each cheque has one `RETURN_MEMO`, matched to it by `ordinal`. A
+`LEGAL_DEMAND_NOTICE` is not tied to any cheque: one notice may cover several
+cheques, so their counts need not match, and nothing links them.
 
 **For `evidence_type = 'CHEQUE'`:**
 ```json

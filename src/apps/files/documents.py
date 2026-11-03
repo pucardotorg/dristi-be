@@ -15,33 +15,86 @@ from .models import FileType
 logger = logging.getLogger(__name__)
 
 # Accepted content types: the FileType each is stored as, the file extensions
-# it may carry, and the leading bytes its content must start with.
+# it may carry, and the signatures its content may match. A signature is the
+# bytes the content starts with, or ``(offset, bytes)`` pairs that must all match.
 ACCEPTED_FORMATS = {
     "application/pdf": (FileType.PDF, {".pdf"}, (b"%PDF-",)),
     "image/jpeg": (FileType.IMAGE, {".jpg", ".jpeg"}, (b"\xff\xd8\xff",)),
     "image/png": (FileType.IMAGE, {".png"}, (b"\x89PNG\r\n\x1a\n",)),
 }
 
-SIGNATURE_LENGTH = max(len(sig) for *_, sigs in ACCEPTED_FORMATS.values() for sig in sigs)
+# HEIF brands a phone camera writes (an ISO box: size, then "ftyp" and the brand).
+_HEIF_SIGNATURES = tuple(
+    ((4, b"ftyp" + brand),) for brand in (b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1")
+)
+
+# Photo formats phones save in, for callers that accept them (case documents).
+# Kept out of ACCEPTED_FORMATS: nothing renders them yet, so other uploads,
+# which may be put into generated PDFs, do not take them.
+PHONE_IMAGE_FORMATS = {
+    "image/webp": (FileType.IMAGE, {".webp"}, (((0, b"RIFF"), (8, b"WEBP")),)),
+    "image/heic": (FileType.IMAGE, {".heic", ".heif"}, _HEIF_SIGNATURES),
+    "image/heif": (FileType.IMAGE, {".heic", ".heif"}, _HEIF_SIGNATURES),
+}
+
+CASE_DOCUMENT_FORMATS = {**ACCEPTED_FORMATS, **PHONE_IMAGE_FORMATS}
+
+# What the formats are called in an error message.
+_FORMAT_NAMES = {
+    "application/pdf": "PDF",
+    "image/jpeg": "JPEG",
+    "image/png": "PNG",
+    "image/webp": "WebP",
+    "image/heic": "HEIC",
+    "image/heif": "HEIC",
+}
+
+
+def _parts(signature):
+    """Return ``signature`` as ``(offset, bytes)`` pairs."""
+    return ((0, signature),) if isinstance(signature, bytes) else signature
+
+
+SIGNATURE_LENGTH = max(
+    offset + len(part)
+    for *_, signatures in CASE_DOCUMENT_FORMATS.values()
+    for signature in signatures
+    for offset, part in _parts(signature)
+)
+
+
+def _matches(head, signatures):
+    """Return whether ``head`` matches any of ``signatures``."""
+    return any(
+        all(head[offset : offset + len(part)] == part for offset, part in _parts(signature))
+        for signature in signatures
+    )
+
+
+def _names(formats):
+    """Return "PDF, JPEG or PNG" for ``formats``."""
+    names = list(dict.fromkeys(_FORMAT_NAMES[content_type] for content_type in formats))
+    return f"{', '.join(names[:-1])} or {names[-1]}" if len(names) > 1 else names[0]
 
 
 def file_type_for(upload):
     """Return the FileType an upload is stored as, or ``None`` if it is not accepted."""
-    accepted = ACCEPTED_FORMATS.get(_content_type(upload))
+    accepted = CASE_DOCUMENT_FORMATS.get(_content_type(upload))
     return accepted[0] if accepted else None
 
 
-def document_error(upload):
+def document_error(upload, formats=ACCEPTED_FORMATS):
     """Return why an upload is refused, or ``None`` if it is acceptable.
 
     The declared type and the file name are client-supplied hints; the
-    content's leading bytes decide.
+    content's leading bytes decide. ``formats`` are the formats the caller
+    accepts: ``ACCEPTED_FORMATS``, or ``CASE_DOCUMENT_FORMATS``.
     """
     content_type = _content_type(upload)
-    if content_type not in ACCEPTED_FORMATS:
-        return f"unsupported type {content_type!r}; upload a PDF, JPEG or PNG file."
+    if content_type not in formats:
+        return f"unsupported type {content_type!r}; upload a {_names(formats)} file."
 
-    _, extensions, signatures = ACCEPTED_FORMATS[content_type]
+    _, extensions, signatures = formats[content_type]
     extension = os.path.splitext(getattr(upload, "name", "") or "")[1].lower()
     if extension not in extensions:
         return "the file extension does not match its type."
@@ -53,7 +106,7 @@ def document_error(upload):
     upload.seek(0)
     head = upload.read(SIGNATURE_LENGTH)
     upload.seek(0)
-    if not head.startswith(signatures):
+    if not _matches(head, signatures):
         return "the file content does not match its type."
 
     return None
