@@ -93,14 +93,8 @@ class ReturnReason(models.TextChoices):
     EXCEEDS_ARRANGEMENT = "EXCEEDS_ARRANGEMENT", "Exceeds arrangement"
     ACCOUNT_CLOSED = "ACCOUNT_CLOSED", "Account closed"
     PAYMENT_STOPPED_BY_DRAWER = "PAYMENT_STOPPED_BY_DRAWER", "Payment stopped by drawer"
-    SIGNATURE_DIFFERS_OR_INCOMPLETE = (
-        "SIGNATURE_DIFFERS_OR_INCOMPLETE",
-        "Drawer's signature differs / incomplete",
-    )
-    AMOUNT_IN_WORDS_AND_FIGURES_DIFFER = (
-        "AMOUNT_IN_WORDS_AND_FIGURES_DIFFER",
-        "Amount in words and figures differ",
-    )
+    SIGNATURE_DIFFERS = "SIGNATURE_DIFFERS", "Drawer's signature differs / incomplete"
+    AMOUNT_MISMATCH = "AMOUNT_MISMATCH", "Amount in words and figures differ"
     REFER_TO_DRAWER = "REFER_TO_DRAWER", "Refer to drawer"
     POST_DATED_OR_STALE = "POST_DATED_OR_STALE", "Cheque post-dated / stale"
 
@@ -297,8 +291,17 @@ CASE_TYPES = {
                     # deposited the cheque, otherwise of the drawer's.
                     "payee_bank_police_station": _text(),
                     "drawer_bank_police_station": _text(),
-                    # Another S.138 complaint pending between the same parties.
+                    # Another S.138 complaint pending between the same parties,
+                    # and each one's court and case number (PRD JUR-7/8).
                     "other_complaints_pending": {"type": "boolean"},
+                    "other_complaints": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": _object(
+                            required=["court", "case_number"],
+                            properties={"court": _text(), "case_number": _text()},
+                        ),
+                    },
                     "cause_of_action_date": _date(),
                     "complaint_filing_date": _date(),
                     # Why the complaint is late; required when it is filed
@@ -319,6 +322,7 @@ CASE_TYPES = {
                     _required_when(
                         "cheque_deposited_by_payee", False, ["drawer_bank_police_station"]
                     ),
+                    _required_when("other_complaints_pending", True, ["other_complaints"]),
                 ],
             ),
             # Willingness to settle, other details for the court, and the relief sought.

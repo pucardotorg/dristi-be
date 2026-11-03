@@ -864,8 +864,8 @@ digits with no spaces or separators, sent as a string so leading zeros are kept.
         { "const": "EXCEEDS_ARRANGEMENT", "title": "Exceeds arrangement" },
         { "const": "ACCOUNT_CLOSED", "title": "Account closed" },
         { "const": "PAYMENT_STOPPED_BY_DRAWER", "title": "Payment stopped by drawer" },
-        { "const": "SIGNATURE_DIFFERS_OR_INCOMPLETE", "title": "Drawer's signature differs / incomplete" },
-        { "const": "AMOUNT_IN_WORDS_AND_FIGURES_DIFFER", "title": "Amount in words and figures differ" },
+        { "const": "SIGNATURE_DIFFERS", "title": "Drawer's signature differs / incomplete" },
+        { "const": "AMOUNT_MISMATCH", "title": "Amount in words and figures differ" },
         { "const": "REFER_TO_DRAWER", "title": "Refer to drawer" },
         { "const": "POST_DATED_OR_STALE", "title": "Cheque post-dated / stale" }
       ]
@@ -978,7 +978,8 @@ is not merged with it.
   "payee_bank_name": "HDFC Bank",
   "payee_bank_branch": "Kochi",
   "payee_bank_police_station": "Ernakulam Central",
-  "other_complaints_pending": false,
+  "other_complaints_pending": true,
+  "other_complaints": [{ "court": "JMFC-II, Kochi", "case_number": "CC/482/2025" }],
   "cause_of_action_date": "2024-02-21",
   "complaint_filing_date": "2024-04-10",
   "condonation_reason": "The complainant was hospitalised from 1 to 30 March 2024."
@@ -1036,6 +1037,19 @@ strict (`"additionalProperties": false`).
     "payee_bank_police_station": { "type": "string", "pattern": "\\S" },
     "drawer_bank_police_station": { "type": "string", "pattern": "\\S" },
     "other_complaints_pending": { "type": "boolean" },
+    "other_complaints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["court", "case_number"],
+        "properties": {
+          "court": { "type": "string", "pattern": "\\S" },
+          "case_number": { "type": "string", "pattern": "\\S" }
+        },
+        "additionalProperties": false
+      }
+    },
     "cause_of_action_date": { "type": "string", "format": "date" },
     "complaint_filing_date": { "type": "string", "format": "date" },
     "condonation_reason": { "type": "string", "pattern": "\\S" }
@@ -1049,6 +1063,10 @@ strict (`"additionalProperties": false`).
     {
       "if": { "properties": { "cheque_deposited_by_payee": { "const": false } }, "required": ["cheque_deposited_by_payee"] },
       "then": { "required": ["drawer_bank_police_station"] }
+    },
+    {
+      "if": { "properties": { "other_complaints_pending": { "const": true } }, "required": ["other_complaints_pending"] },
+      "then": { "required": ["other_complaints"] }
     }
   ]
 }
@@ -1058,6 +1076,10 @@ complainant holds the account, so the payee's bank details and the police
 station of the payee's branch (`payee_bank_police_station`) are required when
 the payee deposited the cheque. Otherwise the police station of the drawer's
 (accused's) branch, `drawer_bank_police_station`, is required instead.
+
+`other_complaints` lists each other S.138 complaint pending between the same
+parties, with its `court` and `case_number` (PRD JUR-7/8), both required. It is
+required, with at least one entry, when `other_complaints_pending` is true.
 
 `complaint_filing_date` is the date of filing the complaint as entered on the
 form. It is separate from the case's `filed_at`, which the server sets at

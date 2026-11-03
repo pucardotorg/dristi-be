@@ -547,6 +547,41 @@ class TestDetails:
 
         assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
 
+    def test_other_pending_complaints_are_listed_with_court_and_case_number(self, client, draft):
+        data = {
+            **JURISDICTION,
+            "other_complaints_pending": True,
+            "other_complaints": [
+                {"court": "JMFC-II, Kochi", "case_number": "CC/482/2025"},
+                {"court": "JMFC-I, Kollam", "case_number": "CC/77/2024"},
+            ],
+        }
+
+        response = put_section(client, draft, "jurisdiction_limitation", data)
+
+        assert response.status_code == 200, response.json()
+        saved = ChequeBounceCase.objects.get(case_id=draft).jurisdiction_limitation
+        assert saved["other_complaints"] == data["other_complaints"]
+
+    @pytest.mark.parametrize(
+        ("change", "field"),
+        [
+            ({"other_complaints_pending": True}, "data"),
+            ({"other_complaints_pending": True, "other_complaints": []}, "data.other_complaints"),
+            (
+                {"other_complaints_pending": True, "other_complaints": [{"court": "JMFC-II"}]},
+                "data.other_complaints[0]",
+            ),
+        ],
+    )
+    def test_a_pending_complaint_needs_its_court_and_case_number(
+        self, client, draft, change, field
+    ):
+        response = put_section(client, draft, "jurisdiction_limitation", {**JURISDICTION, **change})
+
+        assert response.status_code == 400
+        assert set(error_codes(response)) == {field}
+
     def test_condonation_reason_required_when_filed_past_the_limitation_period(self, client, draft):
         # 31 days after the cause of action (2024 is a leap year).
         data = {**JURISDICTION, "complaint_filing_date": "2024-03-23"}
