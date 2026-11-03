@@ -8,7 +8,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dristi -d dristi"]
       interval: 5s
@@ -18,7 +18,7 @@ services:
   redis:
     image: docker.io/redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -28,18 +28,18 @@ services:
   mailhog:
     image: docker.io/mailhog/mailhog:latest
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
   httpbin:
     image: mccutchen/go-httpbin:2.25.0
     ports:
-      - "8888:8080"
+      - "127.0.0.1:8888:8080"
 
   dramatiq-dashboard:
     image: ghcr.io/thejeshgn/dramatiq-dashboard-docker:latest
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       REDIS_URL: "${DRAMATIQ_BROKER_URL}"
     depends_on:
@@ -51,7 +51,7 @@ services:
     image: adminer
     restart: always
     ports:
-      - 9090:8080
+      - "127.0.0.1:9090:8080"
 
   rustfs_perms:
     image: alpine:latest
@@ -68,8 +68,8 @@ services:
         condition: service_completed_successfully
     user: "10001:10001"
     ports:
-      - "9000:9000" # S3-compatible API
-      - "9001:9001" # Web console
+      - "127.0.0.1:9000:9000" # S3-compatible API
+      - "127.0.0.1:9001:9001" # Web console
     volumes:
       - ./rustfs_volumes/data:/data
       - ./rustfs_volumes/logs:/var/log/rustfs
@@ -134,7 +134,7 @@ services:
     environment:
       MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin:8080/post"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ../src:/app
     depends_on:
@@ -172,7 +172,7 @@ services:
         condition: service_started
 
   scheduler:
-    # Enqueues @cron actors on schedule; the worker runs them (spec 0026).
+    # Enqueues @cron actors on schedule; the worker runs them.
     build:
       context: ..
       dockerfile: docker/Dockerfile
