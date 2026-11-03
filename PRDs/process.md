@@ -1,6 +1,6 @@
 # Process — Notice, Summons, Warrant, Proclamation, Attachment
 
-**Status:** v14.2 — 2026-10-25; **§10.1 splits Pending into Pending steps, Pending signature and Signed**: Pending steps holds a process until every step it needs is done — fee balance paid, envelope received, or both, in any order; a process that needs neither starts at Pending signature. Where the system sends on signing, the process passes through Signed straight to Sent, and both are recorded (`SGN-04`, `SGN-02`). v14.1 — 2026-10-25; **Errored is not terminal**: a Process dispatcher may resend the same process (`DSP-11`, §10.1). v14 — 2026-10-25; **three process roles, each held per process type and channel** ([`court-roles.md`](court-roles.md)): a **Process signer** signs, a **Process dispatcher** marks sent and records a recall, a **Process reporter** records the outcome (§A4, `SGN-01`, `DSP-03`, `PIA-01`, §6.2). Warrant signer is gone — a warrant is signed by whoever holds Process signer for warrants. The Post Officer no longer appears here; e-Post is dispatched and reported by those roles. The dispatcher either marks a process sent (manual send) or clicks Send, which triggers the system calls (system send); where the status update is by the system, the system is the reporter (§A4, `DSP-03`). Sign-and-send in one click needs both Process signer and Process dispatcher (`DSP-02`). Removed the references to the Sign process screen design (§A4, §9). Status **Failed** renamed **Errored** (§10.1). **A process expires, by default, at midnight at the end of the day before its hearing** (`EXP-01`); `Q-6` resolved. `PIA-02` (warrant on a hearing-date change) removed: what happens to any live process when its hearing moves is `Q-4`. **A hearing-date change moves an unsigned process's expiry; a signed process's expiry stays** (`EXP-01a`). **Recall is process by process** — a Process dispatcher recalls one or more processes with no outcome yet, sent or not — before sending it is in effect a cancellation; a screen may suggest all of the recipient's, but the dispatcher chooses (`PIA-01`); it is no longer a pending task. **§13 cut to the channels available**; fees and roles are configuration owned by the fee master, the e-filing handover and court-roles; §13.1 is a table of available channels per state — Kerala, Gujarat, Punjab & Haryana — each At launch, Post-launch or Never; filled 2026-10-25: SMS, RPAD, Police (RPAD) and By hand at launch everywhere; Email and e-Post post-launch; Police (iCOPS) Kerala only, at launch; Police (NSTEP) Gujarat and Punjab & Haryana, at launch (`Q-5` resolved). New **§13.2 Court fee per process type**, per state: Kerala ₹2 for notice, summons and warrant, ₹0 for proclamation, attachment and custom process; Gujarat and Punjab & Haryana to be confirmed (`Q-12`). Open questions: `Q-1`, `Q-2`, `Q-7`, `Q-8`, `Q-14` resolved; `Q-4` narrowed; `Q-11` moved to [`court-roles.md`](court-roles.md); `Q-13` removed — it returns with the channel-fee requirement. Newspaper publication of a proclamation is recorded Executed, not tracked (`DSP-10`). Resolved open questions removed; open questions now also carry items yet to be done — new `Q-16` (the PDF template per process type); `Q-15` now records that the police-station master data is yet to be received. Part A (A2–A5) rewritten to the latest requirements. `Q-4` closed: nothing else is done to a signed process when the hearing moves (`EXP-01a`). Linked records gains **Notifications** and **Events** views; three notifications drafted in `pending-task-drafts.md` §8 — steps due, outcome recorded, recalled; none for Errored or Expired. Court-side tasks and notifications written to the master tables 2026-10-25; events: Reissued removed, envelope event renamed *Envelope for {Process Type} received*, Issued details include custom process. Custom templates a court creates itself are out of scope for launch (§6.1). Who a process type may name as recipient is backend configuration, not set from the UI (§2). §4 adds who signs to what varies between processes. **By hand has a destination** — the recipient's postal address, like every other postal channel — and fans out per address; it differs only in how it is sent and its outcome recorded (§6.2, `PRC-05`, §A5). **The police-station master covers every state**, since a police channel can send to a station in any state (`PRC-08`); whether we will have that data is `Q-15`. The note on SP/Commissioner offices (`SG-09`) is removed. With more than one accused, none is pre-selected (`AUT-05`). The police station is pre-filled only from one already held against the address, from e-filing or an earlier round, otherwise blank — the system does not work it out from the address (`AUT-04`, `PRC-08`). For SMS and Email, what counts as Delivered is left to implementation (§6.2); `Q-9` closed. The police return portal (`SG-10`) is a way for the executing officer to update status as Process reporter, not a new channel (§6.2). Custom process may also go By hand (§6.3). `FEE-01` reworded: the court fee is flat per process type and may be zero for some. The court fee and channel fee may go through different payment gateways, making them two payments (`FEE-06`, `Q-13`). New role **Envelope receiver** records receipt of the RPAD and Police (RPAD) envelope, in place of "court staff" (`STP-02`, §A4). §6.2 defines System (the step happens digitally, such as an API call) and Manual (a person records something that happened offline). **Each manual step of a process has a court-side pending task** for the holders of that step's role; how staff lists are built is for the implementer (`SGN-02`); a Court Side view is under Linked records and the tasks are drafted in `pending-task-drafts.md`. v13 — 2026-10-25; **the process workflow is separate from the order's** — the order triggers it, loosely coupled, and starts each process with one process type, recipient, channel and address, plus the police station on a police channel (§A2, `PRC-01`); A1 and §1 no longer say the court does not deliver. v12 — 2026-10-19; order items' variables are no longer locked or optional, and order items carry no template text (see [`dropped-ideas.md`](dropped-ideas.md)); links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v11 — 2026-10-18; **court-side work is named by role** ([`court-roles.md`](court-roles.md)): a warrant is signed by a **Warrant signer**, every other process by a **Process signer** (`SGN-01`); marking sent, recording the outcome and recording a recall are done by a **Process dispatcher** (§6.2, `DSP-03`, `PIA-01`); the channels and police station are order data. The CMO and Magistrate no longer hold permissions here. v10 — 2026-09-30; 2026-10-15: **new By hand channel** (§6.2) — no envelope, no destination; the CMO marks it sent and records the outcome. Warrant may take it; **a proclamation takes By hand only**, and a screen may record it Sent and Executed once the signed copy is downloaded (`DSP-10`); `Q-2` resolved for affixation. **System send is still its own step** — whether a screen sends on signing is a UI choice (`DSP-02`). 2026-10-12: **recipient vs addressee clarified** (§2) — the recipient is the person the process names and never changes; a warrant, proclamation or attachment is *addressed* to the police; "addressee" no longer used for the person named (`SGN-01`, `DSP-04`, `PIA-01`, `Q-2`). **police is now a channel, not a flag.** The channels are
+**Status:** v14.3 — 2026-11-03; **new §3.1 and §3.2 list a process's attributes** — what it starts with (process type, recipient, channel, destination, police station on a police channel, hearing, party directed to take steps, order and round, expiry date) and what it gathers over its life (status, status history, steps, signature, outcome details), each linked to its requirement. None of the start attributes changes, except that the hearing's date may move (`EXP-01a`). "Address" is now "destination". A2 and `PRC-01` point to §3.1. **The hearing need not be set in the same order** — a process takes the hearing the order sets, if it sets one, otherwise the case's existing next hearing (`PRC-06`). **A new destination may be added on the order screen** (`PRC-05`, `AUT-08`), and is saved to the recipient's record so later rounds offer it. **A hearing-date change changes nothing on the process**, apart from an unsigned process's expiry; a screen looks up the case's latest hearing date where it needs it (`PRC-06`). The warrant's QR code for the latest hearing date is removed from `PRC-06`. **New §15 Future enhancements**: working out the police station from the PIN code, if a PIN-code-to-police-station API or dataset is found; `PRC-08` and `AUT-04` now say "at launch". Also in §15: excluding from pre-selection addresses where we know delivery is not taking place (`AUT-07`). The channels pre-selected per process type move from `AUT-08` into the §6.3 table, marked Default; `AUT-08` no longer restates `PRC-05`. **A template is set per channel too** — by process type, recipient and channel — though one template is created for all channels and used on each unless a channel's own is specified (new `TPL-02`, `TPL-01`, `SGN-01`, §A2). `SGN-04` rewritten in plain language, with RPAD and SMS as the example of why sign and send are separate stages. The note on Gujarat's warrant signer (`SG-04`) is removed from §9. `DSP-11` now says when a process is Errored: a system send that fails, for example on a technical issue. **Only an unsent process expires** — a sent process stays open until its outcome is recorded or it is recalled (`EXP-02`, `DSP-06`, `SGN-02`, §10.1, §4, §A3). **§13.2 Court fee per process type is removed**, with `Q-12`; the fee per process type will have its own document. v14.2 — 2026-10-25; **§10.1 splits Pending into Pending steps, Pending signature and Signed**: Pending steps holds a process until every step it needs is done — fee balance paid, envelope received, or both, in any order; a process that needs neither starts at Pending signature. Where the system sends on signing, the process passes through Signed straight to Sent, and both are recorded (`SGN-04`, `SGN-02`). v14.1 — 2026-10-25; **Errored is not terminal**: a Process dispatcher may resend the same process (`DSP-11`, §10.1). v14 — 2026-10-25; **three process roles, each held per process type and channel** ([`court-roles.md`](court-roles.md)): a **Process signer** signs, a **Process dispatcher** marks sent and records a recall, a **Process reporter** records the outcome (§A4, `SGN-01`, `DSP-03`, `PIA-01`, §6.2). Warrant signer is gone — a warrant is signed by whoever holds Process signer for warrants. The Post Officer no longer appears here; e-Post is dispatched and reported by those roles. The dispatcher either marks a process sent (manual send) or clicks Send, which triggers the system calls (system send); where the status update is by the system, the system is the reporter (§A4, `DSP-03`). Sign-and-send in one click needs both Process signer and Process dispatcher (`DSP-02`). Removed the references to the Sign process screen design (§A4, §9). Status **Failed** renamed **Errored** (§10.1). **A process expires, by default, at midnight at the end of the day before its hearing** (`EXP-01`); `Q-6` resolved. `PIA-02` (warrant on a hearing-date change) removed: what happens to any live process when its hearing moves is `Q-4`. **A hearing-date change moves an unsigned process's expiry; a signed process's expiry stays** (`EXP-01a`). **Recall is process by process** — a Process dispatcher recalls one or more processes with no outcome yet, sent or not — before sending it is in effect a cancellation; a screen may suggest all of the recipient's, but the dispatcher chooses (`PIA-01`); it is no longer a pending task. **§13 cut to the channels available**; fees and roles are configuration owned by the fee master, the e-filing handover and court-roles; §13.1 is a table of available channels per state — Kerala, Gujarat, Punjab & Haryana — each At launch, Post-launch or Never; filled 2026-10-25: SMS, RPAD, Police (RPAD) and By hand at launch everywhere; Email and e-Post post-launch; Police (iCOPS) Kerala only, at launch; Police (NSTEP) Gujarat and Punjab & Haryana, at launch (`Q-5` resolved). New **§13.2 Court fee per process type**, per state: Kerala ₹2 for notice, summons and warrant, ₹0 for proclamation, attachment and custom process; Gujarat and Punjab & Haryana to be confirmed (`Q-12`). Open questions: `Q-1`, `Q-2`, `Q-7`, `Q-8`, `Q-14` resolved; `Q-4` narrowed; `Q-11` moved to [`court-roles.md`](court-roles.md); `Q-13` removed — it returns with the channel-fee requirement. Newspaper publication of a proclamation is recorded Executed, not tracked (`DSP-10`). Resolved open questions removed; open questions now also carry items yet to be done — new `Q-16` (the PDF template per process type); `Q-15` now records that the police-station master data is yet to be received. Part A (A2–A5) rewritten to the latest requirements. `Q-4` closed: nothing else is done to a signed process when the hearing moves (`EXP-01a`). Linked records gains **Notifications** and **Events** views; three notifications drafted in `pending-task-drafts.md` §8 — steps due, outcome recorded, recalled; none for Errored or Expired. Court-side tasks and notifications written to the master tables 2026-10-25; events: Reissued removed, envelope event renamed *Envelope for {Process Type} received*, Issued details include custom process. Custom templates a court creates itself are out of scope for launch (§6.1). Who a process type may name as recipient is backend configuration, not set from the UI (§2). §4 adds who signs to what varies between processes. **By hand has a destination** — the recipient's postal address, like every other postal channel — and fans out per address; it differs only in how it is sent and its outcome recorded (§6.2, `PRC-05`, §A5). **The police-station master covers every state**, since a police channel can send to a station in any state (`PRC-08`); whether we will have that data is `Q-15`. The note on SP/Commissioner offices (`SG-09`) is removed. With more than one accused, none is pre-selected (`AUT-05`). The police station is pre-filled only from one already held against the address, from e-filing or an earlier round, otherwise blank — the system does not work it out from the address (`AUT-04`, `PRC-08`). For SMS and Email, what counts as Delivered is left to implementation (§6.2); `Q-9` closed. The police return portal (`SG-10`) is a way for the executing officer to update status as Process reporter, not a new channel (§6.2). Custom process may also go By hand (§6.3). `FEE-01` reworded: the court fee is flat per process type and may be zero for some. The court fee and channel fee may go through different payment gateways, making them two payments (`FEE-06`, `Q-13`). New role **Envelope receiver** records receipt of the RPAD and Police (RPAD) envelope, in place of "court staff" (`STP-02`, §A4). §6.2 defines System (the step happens digitally, such as an API call) and Manual (a person records something that happened offline). **Each manual step of a process has a court-side pending task** for the holders of that step's role; how staff lists are built is for the implementer (`SGN-02`); a Court Side view is under Linked records and the tasks are drafted in `pending-task-drafts.md`. v13 — 2026-10-25; **the process workflow is separate from the order's** — the order triggers it, loosely coupled, and starts each process with one process type, recipient, channel and address, plus the police station on a police channel (§A2, `PRC-01`); A1 and §1 no longer say the court does not deliver. v12 — 2026-10-19; order items' variables are no longer locked or optional, and order items carry no template text (see [`dropped-ideas.md`](dropped-ideas.md)); links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v11 — 2026-10-18; **court-side work is named by role** ([`court-roles.md`](court-roles.md)): a warrant is signed by a **Warrant signer**, every other process by a **Process signer** (`SGN-01`); marking sent, recording the outcome and recording a recall are done by a **Process dispatcher** (§6.2, `DSP-03`, `PIA-01`); the channels and police station are order data. The CMO and Magistrate no longer hold permissions here. v10 — 2026-09-30; 2026-10-15: **new By hand channel** (§6.2) — no envelope, no destination; the CMO marks it sent and records the outcome. Warrant may take it; **a proclamation takes By hand only**, and a screen may record it Sent and Executed once the signed copy is downloaded (`DSP-10`); `Q-2` resolved for affixation. **System send is still its own step** — whether a screen sends on signing is a UI choice (`DSP-02`). 2026-10-12: **recipient vs addressee clarified** (§2) — the recipient is the person the process names and never changes; a warrant, proclamation or attachment is *addressed* to the police; "addressee" no longer used for the person named (`SGN-01`, `DSP-04`, `PIA-01`, `Q-2`). **police is now a channel, not a flag.** The channels are
 SMS, Email, RPAD, e-Post, Police (RPAD), Police (NSTEP) and Police (iCOPS) (§6.2); which
 are available is configured per deployment (`PRC-04`) — Kerala runs Police (iCOPS) in
 place of Police (NSTEP). **Send and update status are two separate steps**, each set per
@@ -60,19 +60,10 @@ The process has its own workflow, separate from the order's workflow. An order i
 triggers it, but the coupling is loose: the order supplies the inputs and starts the
 process workflow, and the process then runs on its own.
 
-A process is one process type, to one recipient, on one channel, at one address (§3).
-Each process workflow is started with exactly one of each:
-
-1. **The process type** — notice, summons, warrant, proclamation, attachment or custom
-   process.
-2. **The recipient** — the accused, the witness, whoever the process names.
-3. **The channel** — one of SMS, Email, RPAD, e-Post, Police (RPAD), Police (NSTEP),
-   Police (iCOPS) or By hand. Which channels are available is configured per deployment
-   (§13.1).
-4. **The address** — the destination on that channel, from the recipient's record.
-5. **The police station** — for a police channel only.
-
-It also carries the hearing (`PRC-06`) and the party directed to take steps (`PRC-07`).
+A process is one process type, to one recipient, on one channel, at one destination
+(§3). What each process starts with — process type, recipient, channel, destination,
+police station on a police channel, hearing, party directed to take steps, order and
+round, and expiry date — is listed in §3.1; what it gathers over its life is in §3.2.
 
 The order is where these are entered, today on the order screen. One order may pick
 several recipients, several channels per recipient, and a recipient may have several
@@ -85,7 +76,7 @@ warrant may also go By hand. A proclamation is published, not sent: it is printe
 affixed, so it goes By hand only. Which process type takes which channel is in §6.3.
 
 **The document** — the final PDF of the process that users see — is set by the process
-type and the recipient, and is the same on every channel (`TPL-01`).
+type, the recipient and the channel. One template is created for all channels, and is used on each unless a channel's own is specified (`TPL-01`, `TPL-02`).
 
 ## A3. The lifecycle, start to finish
 
@@ -115,8 +106,8 @@ the receiving system reports it (system channel) (§10)
         │
         ▼
 The process closes on its outcome. Before that, it may be Recalled by a
-Process dispatcher, sent or not (§12), or it expires — by default at midnight
-at the end of the day before the hearing (§11)
+Process dispatcher, sent or not (§12). If it has not been sent by the expiry date —
+by default midnight at the end of the day before the hearing — it expires (§11)
 ```
 
 ## A4. Who does the manual work
@@ -236,6 +227,39 @@ A **round** is all the processes triggered by the same order. A person may have 
 rounds over the life of a case, and several processes within one round. How the register
 is displayed on the case is owned by [`view-case.md`](view-case.md) §7.
 
+### 3.1 What a process starts with
+
+Every process is started with each of these, set by the order that triggers it.
+
+| Attribute | Where it comes from | Requirement |
+|---|---|---|
+| Process type | The order item — notice, summons, warrant, proclamation, attachment or custom process | §2 |
+| Recipient | The order — the person the process names | §2, `PRC-02` |
+| Channel | The order — one of the channels in §6.2 | `PRC-03`, `PRC-04` |
+| Destination | The recipient's record, or a new one added on the order — one mobile number, email address or postal address, of the kind the channel uses | `PRC-05` |
+| Police station | The order — police channels only | `PRC-03`, `AUT-04` |
+| Hearing | The hearing set in the same order, if it sets one; otherwise the case's existing next hearing | `PRC-06` |
+| Party directed to take steps | Worked out by the system, or chosen on the order | `PRC-07`, `AUT-02`, `AUT-03` |
+| Order and round | The order that triggered it, and the round it belongs to | §3 |
+| Expiry date | Worked out from the hearing's date | `EXP-01` |
+
+None of these changes once the process has started. The one exception is the hearing's
+date, which may move: if it moves before the process is signed, the expiry date moves with
+it (`EXP-01a`).
+
+### 3.2 What a process gathers over its life
+
+| Attribute | What it holds | Requirement |
+|---|---|---|
+| Status | The current status, from the vocabulary in §10.1 | `DSP-05` |
+| Status history | Every status change, each with its status, status date and remark | `DSP-04` |
+| Steps | Each step this process needs before signing — court fee balance, envelope — and whether it is done | `FEE-08`, `STP-03` |
+| Signature | The signature, its timestamp and audit record | `SGN-03` |
+| Outcome details | A comment, an optional file, and a reason where the outcome is negative | `DSP-08`, `DSP-09` |
+
+Signed, Sent, Recalled and every other stage are statuses, not attributes of their own;
+each is recorded in the status history.
+
 ---
 
 ## 4. The flow
@@ -273,9 +297,9 @@ status, reason (if negative), a comment and an optional file — when the
 acknowledgement or report returns. Set per channel, independently of send
         │
         ▼
-This process reaches its own outcome and closes on it, or on the expiry
-date, whichever comes first — independently of every other process fanned
-out from the same recipient
+This process reaches its own outcome and closes on it — or, if it has not
+been sent by the expiry date, expires — independently of every other
+process fanned out from the same recipient
 ```
 
 The spine is the same for every process type and every channel. What varies: who signs —
@@ -289,14 +313,14 @@ action (§12).
 
 | ID | Requirement |
 |---|---|
-| `PRC-01` | Issuing an order of a Process-category type triggers the process workflow. The process workflow is separate from the order's workflow: the order is only its trigger. Each process is started with one process type, one recipient, one channel and one address, plus the police station on a police channel, the hearing and the party directed to take steps (§A2); the order starts one per combination it selects (`PRC-02`). |
+| `PRC-01` | Issuing an order of a Process-category type triggers the process workflow. The process workflow is separate from the order's workflow: the order is only its trigger. Each process is started with the attributes in §3.1; the order starts one per combination it selects (`PRC-02`). |
 | `PRC-02` | One process is created per recipient, per selected channel, per address (§3). Where the drawer is a company, the company and every person in charge are each a separate recipient, shown as separate options in the recipient dropdown on the order screen (`PRC-03`), and each fanning out the same way. |
 | `PRC-03` | An **Order data filler** enters, per recipient, on the order screen ([`court-roles.md`](court-roles.md)): the recipient, and the delivery channels. For a police channel — Police (RPAD), Police (NSTEP) or Police (iCOPS) — the police station is also entered. At least one channel is required. Several channels may be selected for the same recipient, each becoming its own process, used simultaneously. |
 | `PRC-04` | Which channels are available is configured per deployment (§13). The channels offered are those available in the deployment and permitted for the process type (§6.3). |
-| `PRC-05` | Each process's destination is taken from the recipient's own record — a mobile number, an email address, or one postal address — or, on a police channel, from the entered police station. Where a recipient's record holds more than one address of the kind a selected channel uses, one process is created per address (`PRC-02`). A channel cannot be selected where the record holds no destination of that kind. |
-| `PRC-06` | The process is associated with the hearing set in the same order. A warrant does not print that hearing's date: it carries a QR code and a line of text telling the reader to scan it for the latest hearing date; the QR code opens a screen built to show it. Screens may show the hearing's current date rather than the date at issue. |
+| `PRC-05` | Each process's destination is taken from the recipient's own record — a mobile number, an email address, or one postal address — or, on a police channel, from the entered police station. An Order data filler may also add a new destination on the order screen. Where a recipient has more than one address of the kind a selected channel uses, one process is created per address (`PRC-02`). A channel cannot be selected where the recipient has no destination of that kind and none is added. An added destination is saved to the recipient's record, so later rounds offer it. `[OWNER]` |
+| `PRC-06` | The process is associated with a hearing: the one set in the same order, where the order sets a new hearing date; otherwise the case's existing next hearing. A change to the case's hearing date changes nothing on the process itself, apart from the expiry date of an unsigned process (`EXP-01a`). A screen that needs the latest hearing date looks it up from the case the process was issued in, and may show it in place of the date at issue. |
 | `PRC-07` | The party directed to take steps is worked out by the system wherever it can (`AUT-02`), and is named in the order. That party bears the fees (§7) and the envelope obligation (§8). |
-| `PRC-08` | A police-station master is required. It is the list the police station on a police channel is chosen from (`AUT-04`); it does not work out a station from an address. It covers every state, not only the deployment's own: a recipient may live anywhere, and a police channel can send to a police station in any state, provided that station is in the master (see `Q-15`). |
+| `PRC-08` | A police-station master is required. It is the list the police station on a police channel is chosen from (`AUT-04`); at launch, it does not work out a station from an address (§15). It covers every state, not only the deployment's own: a recipient may live anywhere, and a police channel can send to a police station in any state, provided that station is in the master (see `Q-15`). |
 
 ### 5.1 What the system fills in
 
@@ -309,11 +333,11 @@ the pop-up that opens when a Process-category order item is selected.
 | `AUT-01` | Wherever a value on the order screen can be worked out from the case, the system fills it in or pre-selects it. It is only shown as an open choice when the system cannot work it out. |
 | `AUT-02` | The party directed to take steps is worked out from the recipient: for the accused, the complainant; for the complainant, the accused; for a witness associated with one side, that side. |
 | `AUT-03` | Where the system cannot work out the party directed to take steps — for example, a witness added by the court — it is shown as a choice on the order screen. |
-| `AUT-04` | On a police channel, the police station is pre-filled where one is already held against the recipient's address — entered at e-filing or in an earlier round. Where none is held, it is left blank and chosen from the police-station master (`PRC-08`). The system does not work out a station from the address. |
+| `AUT-04` | On a police channel, the police station is pre-filled where one is already held against the recipient's address — entered at e-filing or in an earlier round. Where none is held, it is left blank and chosen from the police-station master (`PRC-08`). At launch, the system does not work out a station from the address (§15). |
 | `AUT-05` | **Until the accused has joined the case**, the pop-up pre-selects the accused as the recipient where there is exactly one. Where there is more than one accused, none is pre-selected; the recipient is chosen manually, since a screen may allow only one accused per order item. |
 | `AUT-06` | **Once the accused has joined the case**, the pop-up pre-selects the witness where exactly one witness has not yet been examined. Otherwise no recipient is pre-selected and the choice is left open. |
-| `AUT-07` | Every address on a selected recipient's record is pre-selected, before and after the accused has joined. |
-| `AUT-08` | Channels are pre-selected by process type: SMS, Email and RPAD for notice and summons; Police (NSTEP) for warrant and attachment — Police (iCOPS) in a deployment that runs it in place of Police (NSTEP) (`PRC-04`); By hand for proclamation. Channels are chosen once for every recipient selected; a recipient whose record holds no destination of a channel's kind gets no process on it, and the pop-up says so beside them (`PRC-05`). |
+| `AUT-07` | Every address on a selected recipient's record is pre-selected, before and after the accused has joined. As a future enhancement, addresses where we know delivery is not taking place — for example, the address is incorrect — will be excluded (§15). |
+| `AUT-08` | Channels are pre-selected by process type, as marked Default in §6.3. |
 | `AUT-09` | The pop-up may select several recipients for the same process at once. This is a convenience of the screen only: each recipient still resolves to one process per channel, per address (`PRC-02`, §3). |
 
 Further fill-in and pre-selection rules are added to this section as they are defined.
@@ -326,10 +350,10 @@ Further fill-in and pre-selection rules are added to this section as they are de
 
 | ID | Requirement |
 |---|---|
-| `TPL-01` | The process document — the final PDF users see — has its template set by the process type and the recipient. The same template is used on every channel. |
+| `TPL-01` | The process document — the final PDF users see — has its template set by the process type, the recipient and the channel, so that each channel can have its own template. |
+| `TPL-02` | One template is created per process type and recipient, for all channels. Unless a separate template is specified for a channel, that template is used on every channel. |
 
-Different templates per channel may be added later. That is not in scope for this
-version. Nor are **custom templates** — templates a court creates itself, beyond the fixed
+**Custom templates** — templates a court creates itself, beyond the fixed
 PDF templates, deciding who each goes to: they are out of scope for launch.
 
 ### 6.2 The channels
@@ -373,12 +397,16 @@ A new delivery mechanism is added as a new channel row.
 
 | Process type | SMS | Email | RPAD | e-Post | Police (RPAD) | Police (NSTEP) | Police (iCOPS) | By hand |
 |---|---|---|---|---|---|---|---|---|
-| Notice | ● | ● | ● | ● | | | | |
-| Summons | ● | ● | ● | ● | ● | ● | ● | |
-| Warrant | | | | | ● | ● | ● | ● |
-| Proclamation | | | | | | | | ● |
-| Attachment | | | | | ● | ● | ● | |
+| Notice | ● Default | ● Default | ● Default | ● | | | | |
+| Summons | ● Default | ● Default | ● Default | ● | ● | ● | ● | |
+| Warrant | | | | | ● | ● Default | ● Default | ● |
+| Proclamation | | | | | | | | ● Default |
+| Attachment | | | | | ● | ● Default | ● Default | |
 | Custom process | ● | ● | ● | ● | ● | ● | ● | ● |
+
+● allowed. **Default** — selected by default in the issue-process pop-up (`AUT-08`). A
+deployment runs Police (NSTEP) or Police (iCOPS), not both, so only one of the two is
+selected by default.
 
 Warrant and attachment are addressed to the police, so they take police channels; a
 warrant may also go By hand. A proclamation is printed and affixed, so it takes By hand
@@ -396,7 +424,7 @@ There are two fees:
 
 | ID | Requirement |
 |---|---|
-| `FEE-01` | The court fee is a flat amount per process type, set in the fee master. For some process types it may be zero (`Q-12`). |
+| `FEE-01` | The court fee is a flat amount per process type, set in the fee master. For some process types it may be zero. |
 | `FEE-02` | A channel fee applies to e-Post only. It is not in the launch scope. |
 | `FEE-03` | The channel fee for an e-Post process is supplied by a fee service, treated as a black box: the system asks it for the fee and uses the amount returned. How it calculates the fee is outside this document. |
 | `FEE-04` | Court fee paid on a case — at filing or in earlier rounds — is held as a single pool. A process draws from the pool, whatever channel or address the money was originally collected for. What is collected at filing is owned by [`efiling.md`](efiling.md). |
@@ -427,17 +455,13 @@ the system.
 
 | ID | Requirement |
 |---|---|
-| `SGN-01` | A process is signed by a **Process signer** who holds that role for its process type and channel ([`court-roles.md`](court-roles.md)). Which staff sign which process types is set there, per state — a warrant may be signed by different people from a summons. Every process for the same recipient, whatever its channel or address (§3), carries the same content — it doesn't vary by channel (`TPL-01`). |
-| `SGN-02` | Each manual step of a process — receive the envelope (`STP-02`), sign, send (`DSP-03`), record the outcome (`DSP-03`) — has a court-side **pending task** ([`pending-tasks.md`](pending-tasks.md)) for the holders of that step's role for the process's type and channel ([`court-roles.md`](court-roles.md)), open from when the step is due until it is done. Where the system does a step, no task is created. Doing a step closes its task and creates the next, in the same transaction; expiry closes any open task (`EXP-02`). A process's sign task is created once its fee (§7) and envelope (§8) prerequisites are met — when it leaves Pending steps for Pending signature (§10.1). How the court staff's lists of processes are built is for the implementer. |
+| `SGN-01` | A process is signed by a **Process signer** who holds that role for its process type and channel ([`court-roles.md`](court-roles.md)). Which staff sign which process types is set there, per state — a warrant may be signed by different people from a summons. Every process for the same recipient on the same channel, whatever its address (§3), carries the same content (`TPL-01`). |
+| `SGN-02` | Each manual step of a process — receive the envelope (`STP-02`), sign, send (`DSP-03`), record the outcome (`DSP-03`) — has a court-side **pending task** ([`pending-tasks.md`](pending-tasks.md)) for the holders of that step's role for the process's type and channel ([`court-roles.md`](court-roles.md)), open from when the step is due until it is done. Where the system does a step, no task is created. Doing a step closes its task and creates the next, in the same transaction; expiry of an unsent process closes any open task on it (`EXP-02`). A process's sign task is created once its fee (§7) and envelope (§8) prerequisites are met — when it leaves Pending steps for Pending signature (§10.1). How the court staff's lists of processes are built is for the implementer. |
 | `SGN-03` | Each process is signed separately, with its own signature, timestamp and audit record, even where its content is identical to another process's. Several processes may be selected and signed in one action on screen; each is still signed separately underneath. |
-| `SGN-04` | Signing does not dispatch the process. It moves the process to a distinct **Signed** status — signed, awaiting send — which is a separate backend stage from both Pending signature and Sent (§10), with its own timestamp. A screen may act on sign and send together in one click; the two stages are still recorded separately underneath. Where the system sends on signing — a system-send channel, signed by someone who also holds Process dispatcher (`DSP-02`) — the process passes through Signed straight to Sent, and both are recorded. |
+| `SGN-04` | Signing and sending are two separate stages, each recorded with its own timestamp: signing moves the process to **Signed** (signed, not yet sent), and sending moves it to **Sent** (§10.1). They stay separate so that the flow is the same on every channel. On some channels they are two separate acts — for RPAD, the signed copy is printed, put in the envelope and posted, and only then marked sent. On others, nothing stands between them — for SMS, the system can send the signed document as soon as it is signed. So whether a screen signs and sends in one click is a UI decision, open only to someone who holds both Process signer and Process dispatcher (`DSP-02`). Either way, the process passes through Signed to Sent, and both are recorded. |
 
 Pending task attributes — name, users, visibility, triggers — are owned by
 [`pending-tasks.md`](pending-tasks.md).
-
-SARAS 2.0's concept note for Gujarat routes warrant-signing to the Presiding Officer
-(`SG-04` in `saras-2.0-gap-register.md`); under `SGN-01`, that is whoever holds Process
-signer for warrants there.
 
 ---
 
@@ -450,12 +474,12 @@ signer for warrants there.
 | `DSP-03` | A **Process dispatcher** sends a process. Where the channel's send is manual, they mark it sent once the document has actually left in that form. Where the send is by the system, they click Send, and the system carries out the send (`DSP-02`). Where a channel's status update is manual, a **Process reporter** records the outcome when the acknowledgement, tracking update or report comes back; where it is by the system, the system is the reporter. Each person must hold that role for the process's type and channel ([`court-roles.md`](court-roles.md)); the dispatcher and reporter may be different people. |
 | `DSP-04` | Every process carries its own status, status date and remark, independent of every other process — including another process for the same recipient (§3). There is no status that spans several processes. |
 | `DSP-05` | A process's status moves through the vocabulary in §10.1 only. |
-| `DSP-06` | A process is closed when it reaches a terminal status, or when the expiry date passes (§11). |
+| `DSP-06` | A process is closed when it reaches a terminal status. A process not yet sent is also closed when its expiry date passes (`EXP-02`). |
 | `DSP-07` | A process's non-delivery does not create a new process. A fresh process requires a fresh order, which starts a new round. |
 | `DSP-08` | Setting a process to a terminal outcome status carries the status itself (§10.1), a free-text comment, and an optional supporting file upload. This applies whether the status arrives through a person's manual entry or through an automatic webhook/poll report. |
 | `DSP-09` | Where the status set is negative — Not delivered or Not executed — an additional **reason** field is required, chosen from a dropdown. The reason list is a state-configurable master, not a fixed enum in this document. |
 | `DSP-10` | A proclamation By hand is signed, then sent, then Executed — three stages, each recorded separately. Since all that happens physically is that the signed copy is printed and affixed, a screen may record Sent and Executed together once the signed copy is downloaded. However a proclamation is published — affixed, or in a newspaper — it is recorded Executed; publication in a newspaper is not tracked separately. |
-| `DSP-11` | An Errored process may be resent by a **Process dispatcher**, as the same process — not a new one, and with no new order. It goes back to Sent. |
+| `DSP-11` | A process is **Errored** when the system tries to send it and the send fails — for example, a technical issue on our side or the receiving system's, the receiving system rejecting it, or an invalid mobile number. This arises only on a channel whose send is by the system (§6.2); where a person sends, a failure at the destination is Not delivered. An Errored process may be resent by a **Process dispatcher**, as the same process — not a new one, and with no new order. It goes back to Sent. |
 
 ### 10.1 Process status vocabulary
 
@@ -468,7 +492,7 @@ signer for warrants there.
 | Delivered | yes | Reached its destination. Depending on the channel: for SMS and Email, whatever is decided at implementation (§6.2); an acknowledgement card signed and returned; a Process reporter's recorded outcome for e-Post; a service/execution report from the station; a Process reporter's recorded outcome for By hand. |
 | Not delivered | yes | The attempt reached the destination and failed — refused, addressee not found, returned undelivered. The reason is recorded as the remark. |
 | Errored | no | Could not be carried at all — invalid number, the receiving system rejected it. Distinct from Not delivered, where an attempt was made at the destination. The same process may be resent (`DSP-11`). |
-| Expired | yes | The expiry date passed with no outcome recorded. |
+| Expired | yes | The expiry date passed before the process was sent (`EXP-02`). |
 | Recalled | yes | The process was recalled by a Process dispatcher before an outcome was reached (`PIA-01`). |
 
 For warrant, proclamation and attachment, **Delivered** is labelled *Executed* and **Not
@@ -482,7 +506,7 @@ delivered** is labelled *Not executed*. The underlying status is the same.
 |---|---|
 | `EXP-01` | Every process carries an expiry date. By default it is midnight at the end of the day before its hearing (`PRC-06`) — that is, 00:00 IST on the hearing date. |
 | `EXP-01a` | If the hearing date changes before a process is signed, its expiry date moves with it (`EXP-01`). Once a process is signed, its expiry date does not change, and nothing else is done to it. |
-| `EXP-02` | When the expiry date passes, the system closes every pending task open on the process, and, if it has no outcome yet, marks it Expired and closes it. |
+| `EXP-02` | When the expiry date passes, a process that has not been sent — Pending steps, Pending signature, Signed or Errored — is marked Expired and closed, and every pending task open on it is closed. A process that has been sent does not expire: it stays open until its outcome is recorded or it is recalled (`PIA-01`). |
 | `EXP-03` | A process that expires before it is signed, or that is Signed but expires before it is sent, is never dispatched. |
 
 ---
@@ -517,20 +541,6 @@ Each channel's send and status update are set as System or Manual in §6.2.
 | Police (NSTEP) | Never — Police (iCOPS) in its place | At launch | At launch |
 | Police (iCOPS) | At launch | Never — iCOPS is Kerala's | Never — iCOPS is Kerala's |
 | By hand | At launch | At launch | At launch |
-
-### 13.2 Court fee per process type
-
-The flat court fee per process type (`FEE-01`), per state, as entered in the fee master. A
-fee may be zero — a state that collects nothing more at the process stage sets it to zero.
-
-| Process type | Kerala | Gujarat | Punjab & Haryana |
-|---|---|---|---|
-| Notice | ₹2 | To be confirmed | To be confirmed |
-| Summons | ₹2 | To be confirmed | To be confirmed |
-| Warrant | ₹2 | To be confirmed | To be confirmed |
-| Proclamation | ₹0 | To be confirmed | To be confirmed |
-| Attachment | ₹0 | To be confirmed | To be confirmed |
-| Custom process | ₹0 | To be confirmed | To be confirmed |
 
 What is collected at filing is owned by [`efiling.md`](efiling.md). Who
 holds which role is in [`court-roles.md`](court-roles.md) §3.
@@ -587,6 +597,18 @@ filter: PRDs.Contains("process")
 
 | # | Question | Blocking? |
 |---|---|---|
-| `Q-12` | What is the court fee for each process type in Gujarat and in Punjab & Haryana (§13.2)? Kerala's is set. | No |
 | `Q-15` | The police-station master data for all the states (`PRC-08`) is yet to be received. | No |
 | `Q-16` | What is the format of each process type — the PDF template for notice, summons, warrant, proclamation, attachment and custom process (`TPL-01`)? | Yes |
+
+---
+
+## 15. Future enhancements
+
+Not at launch. Recorded so they are designed for, not built.
+
+- **Police station from the PIN code.** If an API or dataset is found that maps PIN codes
+  to police stations, the system works out the police station from the recipient's
+  address on a police channel, in place of leaving it blank (`AUT-04`, `PRC-08`).
+- **Exclude addresses where delivery is not taking place.** Ways to stop pre-selecting an
+  address where we know delivery is not taking place — for example, an earlier process
+  came back because the address is incorrect (`AUT-07`).
