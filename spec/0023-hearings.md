@@ -45,8 +45,10 @@ The PRDs fix how hearings and orders meet:
 * The order screen is opened **on a hearing** the court has called. That
   order belongs to the hearing (`ORD-05`), and the hearing's summary is that
   order's text (`HRG-11`).
-* The next date is part of the **order data**, entered on the order or on the
-  cause list as the court chooses (`PLC-04`). It is held provisionally from the
+* The next date is part of the **order data**: one value per order, entered by
+  a next hearing setter on the order or on the cause list, where it can be
+  entered only once the hearing has started, except in a bulk action (`PLC-04`,
+  `PLC-05`). It is held provisionally from the
   moment it is set, counted in every day's load, and becomes a scheduled
   hearing only when the order is **triggered** — signed and its order data
   complete (`NXT-10`–`NXT-15`, `CMP-04`, `PUB-07`).
@@ -94,7 +96,7 @@ scheduled, and the case module decides.
 
 * Drafting, signing or publishing orders. Owned by the orders module (`order-generation.md`).
 * Applications, including Advance / Prepone and Postpone, their expiry and their objections. Owned by the applications module.
-* Case stages and case outcomes. Owned by `apps.cases` (`case-lifecycle-handover.md`).
+* Case stages and case outcomes. Owned by `apps.cases` (`case-lifecycle.md`).
 * Evidence recording, plea recording, depositions, witness examination screens (the ⚙ section workflows).
 * The A-Diary register.
 * Processes (summons, warrant, notice) and their delivery.
@@ -199,6 +201,7 @@ selector. The roles this module checks:
 | --- | --- |
 | **Hearing controller** | start, end and pass over hearings, singly or in bulk (`HRG-00`, `HRG-07`); reorder the board |
 | **Next hearing setter** | court-side moves, single and bulk (#8); cancel `LISTED_IN_ERROR`; calendar entries (#9.2). Proposed: court-roles.md names no role for these yet (#12, question 11) |
+| **Order data filler** | mark attendance (#6.5): attendance is order data (`ROL-02`, `court-roles.md` §2) |
 
 Reading is not a role: any court staff of the courtroom sees its hearings
 (`RLE-06`).
@@ -763,7 +766,7 @@ apps.cases.services.record_hearing_scheduled(
 
 The case module decides whether the purpose starts a stage, and ignores it when
 the case is in Post-Judgement, Post-Disposal or the Long Pending Register
-(`case-lifecycle-handover.md` §3). Hearings carry no stage mapping: the purpose
+(`case-lifecycle.md` §3). Hearings carry no stage mapping: the purpose
 code is the only thing passed.
 
 The call is made after commit. A failure in the case module is logged at
@@ -1069,13 +1072,19 @@ orders (#7) and court-side moves (#8); nothing else writes a hearing.
 | `purpose` | repeatable purpose code |
 | `stage` | repeatable stage key, resolved through the cases selector |
 | `advocate` | repeatable advocate id, from the advocates on the day's list (`CLS-07`) |
-| `has_order` | `none`, `draft` or `recorded`, from `order_id` and the orders module's status (`CLS-07`) |
+| `has_order` | repeatable: `NONE`, or the order's status — `DRAFTING`, `AWAITING_SIGNATURE`, `ORDER_DATA_TO_FILL`, `TRIGGERED` — from `order_id` and the orders module's status; an order sent for signing matches both of its statuses (`CLS-07`, `CLS-08`) |
 | `case` | UUID |
 | `search` | case number, title, party or advocate name (`search_case_ids`) |
 | `not_reached` | `true`: `ABANDONED` hearings not yet moved or cancelled (#5) |
 | `changed_since` | timestamp; hearings moved or confirmed since, for the "Recently scheduled" tab |
 | `ordering` | default `status_order,sequence`; also `sequence`, `hearing_date`, `case_number`, `purpose` |
-| `page`, `page_size` | `HearingPagination(PageNumberPagination)`, `page_size_query_param`, max 100 |
+| `page`, `page_size` | `HearingPagination(PageNumberPagination)`, `page_size_query_param`, max 100; for one court's board on one `date`, max config `hearings.board_max_hearings` (`CLS-13`) |
+
+The cause list fetches a whole day in one request: one `court`, one `date`,
+`page_size = board_max_hearings` (`CLS-13`). When `count` is within the limit,
+search, filters, grouping and paging run in the browser on the list already
+loaded. A day over the limit is loaded in pages, and search and filters are
+sent to the server with the parameters above.
 
 #### 10.4 Other read endpoints
 
@@ -1289,6 +1298,7 @@ read boundary ([`0018`](0018-configuration-store.md)):
 | `adjournment_warning_threshold` | `2` | §346 BNSS (#11.3) |
 | `stale_hold_days` | `7` | #7.4 |
 | `bulk_max_hearings` | `500` | #8.3 |
+| `board_max_hearings` | `500` | #10.3; a whole day's board in one request, set above a normal day (`CLS-13`) |
 | `bulk_preview_minutes` | `10` | #8.3 |
 | `business_date_override` | — | non-production only; system check (#4) |
 
@@ -1321,7 +1331,7 @@ No new environment variables. Nothing here is a secret.
 * **Midnight sweep:** `SCHEDULED`, `IN_PROGRESS` and `PASSED_OVER` hearings of the day become `ABANDONED` with `abandoned_at`; an open `IN_PROGRESS` period is added to `heard_duration`; heard hearings untouched.
 * **Selectors and signals:** batched case calls (assert query and call counts for a page of 50); every signal sent once, on commit, never on rollback.
 * **Isolation:** `apps.cases` does not import `apps.hearings`; `apps.hearings` does not import `apps.orders` or `apps.applications`.
-* **API:** success paths, permissions, `meta` envelope, pagination, filters (including `advocate` and `has_order`), read-only fields, `ETag`/`304` on `/current/`. Error tests assert `code` and `field`, never the message ([`0000`](0000-api-coding-spec.md) #13); every code in #10.6 is covered and declared in the schema.
+* **API:** success paths, permissions, `meta` envelope, pagination, filters (including `advocate`, and `has_order` by order status with an order sent for signing matching both of its statuses), a whole day's board in one page up to `board_max_hearings`, read-only fields, `ETag`/`304` on `/current/`. Error tests assert `code` and `field`, never the message ([`0000`](0000-api-coding-spec.md) #13); every code in #10.6 is covered and declared in the schema.
 
 Quality checks before committing:
 
@@ -1370,7 +1380,7 @@ cd src && python manage.py check
 4. Where does court membership and its roles live — `apps.organizations` (proposed) or `apps.users`? (A staff account may hold roles in several courtrooms, `RLE-02a`.)
 5. Should a court-side bulk move above some size need the magistrate's confirmation, or is a next hearing setter's action with audit enough?
 6. Which scheduler triggers periodic actors in production: cron calling a management command, or `periodiq`?
-7. What does a warrant's QR code open, and can it show the hearing's current date without a login (`process-handover.md` `Q-14`)? If so, this module needs a public, signed read of one hearing's date.
+7. What does a warrant's QR code open, and can it show the hearing's current date without a login (`process.md` `Q-14`)? If so, this module needs a public, signed read of one hearing's date.
 8. When a hearing is held by video (§530 BNSS), which VC provider issues links, and per hearing or per court?
 9. Should the midnight sweep's abandoned hearings be reported to the court the next morning?
 10. Do other case types need a different trial target, adjournment threshold or set of purposes, and should those then be keyed by case type?
