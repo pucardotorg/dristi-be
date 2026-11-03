@@ -271,8 +271,8 @@
     "order-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
       "title": "Order Generation",
-      "contentHash": "04d07d8d40eb",
-      "pageUpdatedAt": 1793679396.761,
+      "contentHash": "dd551d2937b5",
+      "pageUpdatedAt": 1793679674.099,
       "calloutElementId": "eca-DluhcPwJvd",
       "sections": [
         {
@@ -376,7 +376,7 @@
           "hash": "9e1da0487ee1"
         }
       ],
-      "note": "2026-11-03: patched in place to v8.6 (status, callout, §1/§6/§5.2 text; changed tables replaced whole — 1.1, out of scope, §3, §4, §5, 5.1, 5.2+5.3, 6.1, §7, §8, §9, 10.1, §11, §13, §14+14.1–14.3; §16 Enhancements and §17 Open questions added). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW, untouched. `sections` not refreshed."
+      "note": "2026-11-03: patched in place to v8.6 (status, callout, §1/§6/§5.2 text; changed tables replaced whole — 1.1, out of scope, §3, §4, §5, 5.1, 5.2+5.3, 6.1, §7, §8, §9, 10.1, §11, §13, §14+14.1–14.3; §16 Enhancements and §17 Open questions added). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW, untouched. `sections` not refreshed. 2026-11-03 later: TXT-03 cell in grid-nro-qgW8LW and status patched."
     },
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
@@ -1486,8 +1486,8 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "580b27ad2e8b",
-      "pageUpdatedAt": 1793679471.698,
+      "contentHash": "3ae6469ad2f8",
+      "pageUpdatedAt": 1793679702.395,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -1511,7 +1511,7 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "2026-11-03: patched in place to v10.7 (status, callout; tables §1, §2, §3.1–§3.3 replaced whole). `sections` not refreshed."
+      "note": "2026-11-03: patched in place to v10.7 (status, callout; tables §1, §2, §3.1–§3.3 replaced whole). `sections` not refreshed. 2026-11-03 later: Next hearing setter cell in grid-H_HKcFYmuM and status patched."
     },
     "scrutiny-registration-handover.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
