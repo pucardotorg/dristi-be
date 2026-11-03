@@ -6,6 +6,10 @@ django-environ>=0.11.0
 django-health-check[redis]>=3.17.0
 django-dramatiq>=0.11.0
 dramatiq[redis,watch]>=1.15.0
+# Scheduler (spec 0026). 1.1+ requires Django >= 5.2.17; lift the cap with
+# the Django upgrade. APScheduler 4 has an incompatible API.
+dramatiq-crontab[redis]>=1.0.12,<1.1
+apscheduler>=3.11,<4
 jinja2>=3.1.0
 jsonschema[format-nongpl]>=4.20.0
 rule-engine>=5.0,<6

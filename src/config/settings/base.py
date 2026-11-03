@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "corsheaders",
     "django_dramatiq",
+    "dramatiq_crontab",
     "health_check",
     "simple_history",
     "cachalot",
@@ -438,6 +439,11 @@ DRAMATIQ_BROKER = {
 
 DRAMATIQ_TASKS_DATABASE = "default"
 
+# Scheduler lock (spec 0026): only the instance holding it fires schedules.
+DRAMATIQ_CRONTAB = {
+    "REDIS_URL": env("DRAMATIQ_BROKER_URL", default="redis://localhost:6379/2"),
+}
+
 
 # ---------------------------------------------------------------------------
 # Messaging
@@ -606,6 +612,11 @@ LOGGING = {
             "propagate": False,
         },
         "cachalot": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apscheduler.executors.default": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
