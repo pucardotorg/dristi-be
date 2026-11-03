@@ -1,6 +1,6 @@
 # Dropped ideas
 
-**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom.
+**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`).
 
 Ideas taken out of the PRDs, kept here with their last wording so they can be restored. Each entry says where it came from and what replaced it. The full earlier documents are also in git history: commit `cb97c67` holds both files as they were before.
 
@@ -339,3 +339,17 @@ As they stood in §5.1:
 |---|---|
 | `SHC-06` | Shortcuts are saved **per courtroom**: everyone drafting orders in a courtroom works from that courtroom's saved set, on any device. |
 | `SHC-07` | **Any order drafter** in the courtroom maintains the courtroom's set: lists, searches, adds, changes and removes its shortcuts (`SHC-05`). There are no personal shortcuts in this version. |
+
+---
+
+## Where the next hearing is entered (`nextHearingEntry`)
+
+**Dropped 2026-11-03.** The next hearing setter role already decides who enters the next hearing, and each person already chooses whether the cause list shows the *Next hearing* column. A next hearing setter can now enter it in the order or on the cause list, and both edit the same value (`PLC-04`, `PLC-05` of [`order-generation.md`](order-generation.md)).
+
+As it stood in §9 of order-generation.md:
+
+| ID | Requirement |
+|---|---|
+| `PLC-04` | Each court chooses **where the next hearing is entered**, and with it **who enters it**. The setting is `nextHearingEntry`, with two values. **On the cause list** (default): the next hearing is entered on the day's cause list, in a *Next hearing* column beside each case, by the person working the cause list during the hearing. The order screen shows it read only. **In the order**: the next hearing is entered on the order screen, at the foot of the order (`PLC-02`), by the person working on the order. The cause list has no *Next hearing* column. Either way the person needs the **next hearing setter** role (`ROL-03`), and the next hearing is entered in one place only, never both. |
+
+§9's intro read: "Attendance and the next hearing are always on the order. Whether the next hearing is entered in the order or on the cause list is a court setting, because courts divide this work differently." `SND-03` read: "…**whichever way the court enters it** (`PLC-04`). Where it is entered on the cause list, the order shows it read only, so it has to be entered there first."
