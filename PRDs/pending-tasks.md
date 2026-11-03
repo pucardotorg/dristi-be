@@ -1,6 +1,6 @@
-# Pending Tasks — Developer Handover
+# Pending Tasks
 
-Status: v1 — 2026-09-14
+Status: v1.1 — 2026-11-03; title no longer ends in "Developer Handover"; file renamed to `pending-tasks.md`. v1 — 2026-09-14
 Audience: developers building the pending tasks module
 
 ---

@@ -1,6 +1,6 @@
-# Signing Methods — Developer & Agent Handover
+# Signing Methods
 
-**Status:** v2 — 2026-10-24; **digital signing and e-sign are different terms** (§1):
+**Status:** v2.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover". v2 — 2026-10-24; **digital signing and e-sign are different terms** (§1):
 digital signing covers mobile OTP, DSC and Aadhaar e-sign; e-sign means Aadhaar-based
 e-signing only, and batch signing is a way of doing it. **Not specific to e-filing**:
 each method is described by how many documents one signing transaction covers, which is

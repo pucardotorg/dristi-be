@@ -1,6 +1,6 @@
-# Join a Case — Developer & Agent Handover
+# Join a Case
 
-**Status:** v7 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-10-06; added a placeholder for the vakalatnama payment logic. v5 — 2026-10-06; a mobile number entered for a party is confirmed by that party at their first sign-in before the case links to their account (JOIN-64). v4 — 2026-10-06; PoA holders can join for the complainant side and for several parties at once (one authorization document and one mobile number per party); flow outcome is Success. v3 — 2026-09-17; §12 Linked records now carries live views of all four
+**Status:** v7.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `join-a-case.md`. v7 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-10-06; added a placeholder for the vakalatnama payment logic. v5 — 2026-10-06; a mobile number entered for a party is confirmed by that party at their first sign-in before the case links to their account (JOIN-64). v4 — 2026-10-06; PoA holders can join for the complainant side and for several parties at once (one authorization document and one mobile number per party); flow outcome is Success. v3 — 2026-09-17; §12 Linked records now carries live views of all four
 master tables (pending tasks court and citizen side, notifications, events), so anything
 tagged later appears automatically. v2 — §12 Events added; later sections renumbered. v1 — all open questions resolved;
 no approval flows in V1 (replacement deferred, all joins immediate)
