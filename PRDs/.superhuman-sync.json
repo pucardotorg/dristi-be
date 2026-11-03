@@ -256,11 +256,87 @@
     "process.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
       "title": "Process",
-      "contentHash": "31ed41348f9f",
-      "pageUpdatedAt": 1793680994.113,
-      "calloutElementId": "cl-uH3Q8ik_zE",
-      "note": "Patched in place 2026-10-25 for v14.1/v14.2 (Status line, callout, §10.1 status rows, SGN-02, SGN-04, new DSP-11 row); no rebuild. Four table cells written as plain text because a single formatting mark is stored literally: DSP-11 row (ID and text), Errored and Recalled meanings in §10.1. Live views: Court Side table-ilvtulVkUa, Citizen-Side table-yags5uzkEd, Notifications table-_0U81wDVwy, Events table-7vAo-OTf67. The Status paragraph is split into two blocks at 'v12 —' to stay under 10,000 chars. `sections` not recorded.",
-      "sections": []
+      "contentHash": "09870c2568a7",
+      "pageUpdatedAt": 1793707417.354,
+      "calloutElementId": "cl-XtYa7aTzg5",
+      "note": "Rebuilt 2026-11-03 for v14.3 (page had no comments). Markdown chunks split into many blocks on insert; sections record each chunk's first block. Live views filter on PRDs.Contains(\"process-handover\"), not the directive's \"process\": the master tables' PRDs tag was never renamed after the file rename. Views: Court Side table-uvv-IGiTDG, Citizen-Side table-QdkW0UnZCs, Notifications table-5v-9Iil4il, Events table-aUiExyPtHo.",
+      "sections": [
+        {
+          "key": "# Process — Notice, Summons, Warrant, Proclamation, Attachment",
+          "elementId": "cl-4TRASDntaA",
+          "hash": "49f4748f3e09"
+        },
+        {
+          "key": "v12 — 2026-10-19; order items' variables are no longer locked or optional, and order items carry no template text (see [`dropped-ideas.md`](dropped-ideas.md)); links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v11 — 2026-10-18; **court-side work is named by role** ([`court-roles.md`](court-roles.md)): a warrant is signed by a **Warrant signer**, every other process by a **Process signer** (`SGN-01`); marking sent, recording the outcome and recording a recall are done by a **Process dispatcher** (§6.2, `DSP-03`, `PIA-01`); the channels and police station are order data. The CMO and Magistrate no longer hold permissions here. v10 — 2026-09-30; 2026-10-15: **new By hand channel** (§6.2) — no envelope, no destination; the CMO marks it sent and records the outcome. Warrant may take it; **a proclamation takes By hand only**, and a screen may record it Sent and Executed once the signed copy is downloaded (`DSP-10`); `Q-2` resolved for affixation. **System send is still its own step** — whether a screen sends on signing is a UI choice (`DSP-02`). 2026-10-12: **recipient vs addressee clarified** (§2) — the recipient is the person the process names and never changes; a warrant, proclamation or attachment is *addressed* to the police; \"addressee\" no longer used for the person named (`SGN-01`, `DSP-04`, `PIA-01`, `Q-2`). **police is now a channel, not a flag.** The channels are",
+          "elementId": "cl-VZ6ctc-pH1",
+          "hash": "4c6663e1361a"
+        },
+        {
+          "key": "## A5. The channels, in plain terms",
+          "elementId": "cl-ZGazZHidAv",
+          "hash": "131f27a2a503"
+        },
+        {
+          "key": "## 5. Trigger and channel selection",
+          "elementId": "cl-U58nTIHaJN",
+          "hash": "d8c301ec7ae7"
+        },
+        {
+          "key": "## 6. Delivery channels",
+          "elementId": "cl-iO7fWzweaM",
+          "hash": "911e71b400b8"
+        },
+        {
+          "key": "## 9. Signing",
+          "elementId": "cl-cCx1cyL-XZ",
+          "hash": "fc3083d3c23e"
+        },
+        {
+          "key": "## 12. Post-issue actions",
+          "elementId": "cl-mUFC-W4AwP",
+          "hash": "dc4b9fa29c1e"
+        },
+        {
+          "key": "view: Pending tasks (Court Side) — Process",
+          "elementId": "table-uvv-IGiTDG",
+          "hash": "a136db2efb80"
+        },
+        {
+          "key": "The four court-side tasks (`SGN-02`): Receive envelope, Sign, Send and Record outcome.",
+          "elementId": "cl-UxWL3j0-pt",
+          "hash": "022350005a84"
+        },
+        {
+          "key": "view: Pending tasks (Citizen-Side) — Process",
+          "elementId": "table-QdkW0UnZCs",
+          "hash": "af49e9bba4ac"
+        },
+        {
+          "key": "### Notifications",
+          "elementId": "cl-xbp1gQcTon",
+          "hash": "65ac5c2cf5a5"
+        },
+        {
+          "key": "view: Notifications — Process",
+          "elementId": "table-5v-9Iil4il",
+          "hash": "a69276f07c37"
+        },
+        {
+          "key": "Three process notifications — steps due, outcome recorded, recalled. Errored and Expired",
+          "elementId": "cl-6lTOlTF7jh",
+          "hash": "7e6edf5121d4"
+        },
+        {
+          "key": "view: Events — Process",
+          "elementId": "table-aUiExyPtHo",
+          "hash": "adfd83328823"
+        },
+        {
+          "key": "---",
+          "elementId": "edl-ekgTVq4K_F",
+          "hash": "6ceb4ed05e19"
+        }
+      ]
     },
     "dashboards-proposal.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-RwijzgVqck",
