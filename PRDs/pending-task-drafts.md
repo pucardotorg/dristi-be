@@ -1,10 +1,10 @@
 # Pending task drafts
 
-**Status:** 2026-10-30 — §9 added: Sign documents, from [`document-submission.md`](document-submission.md); not yet written to Coda. 2026-10-25 — §4–§7 (four court-side tasks) and §8 (three notifications) from [`process-handover.md`](process-handover.md) written to the master **Pending tasks (Court Side)** and **Notifications** tables on Coda (PRDs label `process-handover`). Coda is now the source of truth for them; nothing is waiting to be written. 2026-10-20 — the three order-generation tasks (§1–§3) written to the master **Pending tasks (Court Side)** table on Coda (PRDs label `order-generation`), and shown in §15 of [`order-generation.md`](order-generation.md). Coda is now the source of truth for them; this file is kept only as the record of the drafts. Nothing is waiting to be written.
+**Status:** 2026-10-30 — §9 added: Sign documents, from [`document-submission.md`](document-submission.md); not yet written to Coda. 2026-10-25 — §4–§7 (four court-side tasks) and §8 (three notifications) from [`process.md`](process.md) written to the master **Pending tasks (Court Side)** and **Notifications** tables on Coda (PRDs label `process`). Coda is now the source of truth for them; nothing is waiting to be written. 2026-10-20 — the three order-generation tasks (§1–§3) written to the master **Pending tasks (Court Side)** table on Coda (PRDs label `order-generation`), and shown in §15 of [`order-generation.md`](order-generation.md). Coda is now the source of truth for them; this file is kept only as the record of the drafts. Nothing is waiting to be written.
 
 Pending tasks drafted from other PRDs, held here until they are all written to the
 pending tasks page on Coda together. **Not synced.** Each uses the attributes of §2 of
-[`pending-tasks-handover.md`](pending-tasks-handover.md). *(proposed)* marks wording that
+[`pending-tasks.md`](pending-tasks.md). *(proposed)* marks wording that
 nobody has confirmed yet.
 
 ---
@@ -85,7 +85,7 @@ Source: `SND-07`, `SND-08` of [`order-generation.md`](order-generation.md). Crea
 
 ## 4. Receive envelope
 
-Source: `STP-02` of [`process-handover.md`](process-handover.md). One task per process.
+Source: `STP-02` of [`process.md`](process.md). One task per process.
 
 | # | Attribute | Value |
 |---|---|---|
@@ -106,7 +106,7 @@ Source: `STP-02` of [`process-handover.md`](process-handover.md). One task per p
 
 ## 5. Sign process
 
-Source: `SGN-02` of [`process-handover.md`](process-handover.md). One task per process.
+Source: `SGN-02` of [`process.md`](process.md). One task per process.
 
 | # | Attribute | Value |
 |---|---|---|
@@ -130,7 +130,7 @@ Several processes can be selected and signed in one action, each still signed se
 
 ## 6. Send process
 
-Source: `DSP-03` of [`process-handover.md`](process-handover.md). One task per process.
+Source: `DSP-03` of [`process.md`](process.md). One task per process.
 
 | # | Attribute | Value |
 |---|---|---|
@@ -151,7 +151,7 @@ Source: `DSP-03` of [`process-handover.md`](process-handover.md). One task per p
 
 ## 7. Record outcome
 
-Source: `DSP-03` of [`process-handover.md`](process-handover.md). One task per process.
+Source: `DSP-03` of [`process.md`](process.md). One task per process.
 
 | # | Attribute | Value |
 |---|---|---|
@@ -170,7 +170,7 @@ Source: `DSP-03` of [`process-handover.md`](process-handover.md). One task per p
 
 **Open, for §4–§7:**
 - Court-side categories: §2 of the pending tasks handover defines only the citizen-side ones.
-- Due dates: none is set. The process has its own expiry — by default midnight at the end of the day before the hearing (`process-handover.md` `EXP-01`).
+- Due dates: none is set. The process has its own expiry — by default midnight at the end of the day before the hearing (`process.md` `EXP-01`).
 - Volume: in Gujarat, at 1,000+ cases a day, these tasks could run to thousands open at once.
 
 ---
@@ -178,7 +178,7 @@ Source: `DSP-03` of [`process-handover.md`](process-handover.md). One task per p
 ## 8. Notifications from the process handover
 
 Not pending tasks: three notifications for the master **Notifications** table, PRDs label
-`process-handover`, each with **Live** = No and **State** blank. Columns as in that table.
+`process`, each with **Live** = No and **State** blank. Columns as in that table.
 *(proposed)* marks wording nobody has confirmed. Errored and Expired send no notification.
 
 | Trigger | Content | Recipients | Channels | Notes |

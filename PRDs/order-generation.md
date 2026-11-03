@@ -147,13 +147,13 @@ What is out of scope, and where it belongs:
 | Out of scope | Owner |
 |---|---|
 | The order items themselves — variables, categories, hearing associations, combination restrictions, workflow trigger order | [`order-template-catalogue.md`](order-template-catalogue.md) |
-| What each order's workflow does once triggered | A document per workflow; process orders are in [`process-handover.md`](process-handover.md) |
+| What each order's workflow does once triggered | A document per workflow; process orders are in [`process.md`](process.md) |
 | Which roles exist and what each allows | [`court-roles.md`](court-roles.md) |
 | Taking an application on file, and the application's own lifecycle | [`application-lifecycle.md`](application-lifecycle.md) |
 | Generating the cause list — which matters are listed on a day, and in what sequence. The cause list screen and its hearing controls are in §10. | Not yet written; listing dates are in [`scheduling-product.md`](../scheduling/scheduling-product.md) |
-| Case stages the order moves | [`case-lifecycle-handover.md`](case-lifecycle-handover.md) |
+| Case stages the order moves | [`case-lifecycle.md`](case-lifecycle.md) |
 | Order and application number formats | [`case-numbers.md`](case-numbers.md) |
-| Pending task attributes and visibility | [`pending-tasks-handover.md`](pending-tasks-handover.md) |
+| Pending task attributes and visibility | [`pending-tasks.md`](pending-tasks.md) |
 | The A-Diary register (Kerala) — its entries, editing and signing | [`a-diary.md`](a-diary.md) |
 
 | ID | Requirement |
@@ -231,7 +231,7 @@ number of them, and sees the controls for every role they hold.
 | `ORD-11` | The header states which matter this is: cause title, case number, case stage, and — in a hearing — the listing's item number on the day's board and what the matter was listed for. It carries the side panel's switch and, in a hearing, the **Next case** button (§10). |
 | `ORD-12` | The screen has two views, switched above the page: **Order** and **Order data**. |
 | `ORD-13` | **Order** shows the order as one page, as it will print: the court's heading at the top, the signature block at the foot, and the order text between them. The heading and signature block are rendered from the record and are never typed. The page is the same rendering the signed PDF uses; the two never disagree about what the document says. |
-| `ORD-15` | Beside the page, in the Order view, a **side panel** carries the case in three tabs. **Case file** — the same case file as the case's Case File section ([`view-case-handover.md`](view-case-handover.md) §6). **Case history** — the case history ([`view-case-handover.md`](view-case-handover.md) §12), with the case's last order highlighted and a filter to show only orders. **Data flags** — not yet defined; things like attendance history. The side panel can be put away to give the page the width. |
+| `ORD-15` | Beside the page, in the Order view, a **side panel** carries the case in three tabs. **Case file** — the same case file as the case's Case File section ([`view-case.md`](view-case.md) §6). **Case history** — the case history ([`view-case.md`](view-case.md) §12), with the case's last order highlighted and a filter to show only orders. **Data flags** — not yet defined; things like attendance history. The side panel can be put away to give the page the width. |
 | `ORD-16` | A filed document opens in the side panel itself, readable beside the order, and returns to the list. |
 | `ORD-17` | Any document in the case file can be **linked to the order**, if the order's type allows it (`OTY-06`). |
 | `ORD-18` | In the **Order data** view, the order text is shown read only beside the order data (§6), so whoever fills the data can see what the order says. The side panel is not shown in this view. |
@@ -533,7 +533,7 @@ Drafting ──▶ sent for signing ────┤      (signer)           ├�
 | `PUB-02` | The signed order joins the case record and becomes visible to the parties on the case. |
 | `PUB-03` | **Each order item's workflow is triggered when the order is triggered (`CMP-04`), and never before.** An order carrying three order items triggers three workflows, each reading the values stored against its own order item (`VAR-07`). The sequence they are triggered in is configuration — the *Workflow trigger order* section of [`order-template-catalogue.md`](order-template-catalogue.md) — because a hearing-date change has to land before the workflows that use the new date, and a case-closing order after everything else. |
 | `PUB-04` | Every order has one **diary entry**. It is named per state: *A-Diary text* in Kerala, *Roznama* in Gujarat, *Summary* in Punjab & Haryana. It is **its own text**, separate from the order text. An option, *The [diary entry] and order text are the same*, is **checked by default**: the entry is then the order text in full, including its attendance and next hearing lines. Unchecking it lets the order data filler type a different text. The option and the separate text are part of the **Order data** view. The entry is **kept in full and never shortened**. Whether a screen shortens it while showing it is left to that screen. In Kerala the entry and this text stay in sync: editing the entry in the A-Diary changes this text, not the order text (`ADY-09`). The A-Diary register, its editing and its signing are owned by [`a-diary.md`](a-diary.md). |
-| `PUB-05` | Case stage changes are not workflows. A listener reads order events and moves the stage; stage rules are owned by [`case-lifecycle-handover.md`](case-lifecycle-handover.md). |
+| `PUB-05` | Case stage changes are not workflows. A listener reads order events and moves the stage; stage rules are owned by [`case-lifecycle.md`](case-lifecycle.md). |
 | `PUB-06` | A signed order cannot be edited or withdrawn. The court may pass a later order correcting it; the system records **no link** between the two, and neither order is marked as superseding or superseded. |
 | `PUB-07` | The next hearing in the order data is **announced when the order is triggered** and becomes the scheduled hearing then. Before that it is held provisionally (§9.3). |
 
@@ -580,7 +580,7 @@ This document creates three court-side pending tasks: **Draft order** (`DFT-05`)
 order** and **Fill order data**, created together when the order is sent for signing and
 worked in parallel (`SND-07`, `SND-08`). They are a live view of the master Pending Tasks
 list, which is the single source of truth and the place to edit them. Task attributes and
-the status lifecycle are in [`pending-tasks-handover.md`](pending-tasks-handover.md).
+the status lifecycle are in [`pending-tasks.md`](pending-tasks.md).
 
 ```superhuman-view
 name: Pending tasks (Court Side) — Order generation

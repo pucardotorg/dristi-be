@@ -82,13 +82,13 @@ The *Locked / Optional* column, by order item:
 | 26. Dismiss application | `[Party Name]` | Locked |
 | 26. Dismiss application | `[Filing Date]` | Locked |
 
-Under *9. Issue of summons · 10. Issue of warrants · 20. Issue of proclamation · 21. Issue of attachment*, the note on channels read: "Channels, addresses and police station are not in the template. They are inputs the process workflow needs, asked for as part of the order item (`ITM-11` of order-generation.md); their rules are owned by process-handover.md."
+Under *9. Issue of summons · 10. Issue of warrants · 20. Issue of proclamation · 21. Issue of attachment*, the note on channels read: "Channels, addresses and police station are not in the template. They are inputs the process workflow needs, asked for as part of the order item (`ITM-11` of order-generation.md); their rules are owned by process.md."
 
 ### From order-generation.md
 
 | ID | Requirement as it was |
 |---|---|
-| `ITM-11` | An order item may need input beyond its template variables, where the workflow it triggers needs it — the delivery channels per recipient for a process order (`PRC-03` of [`process-handover.md`](process-handover.md)). That input is asked for as part of the order item; its fields are owned by the workflow's own document. |
+| `ITM-11` | An order item may need input beyond its template variables, where the workflow it triggers needs it — the delivery channels per recipient for a process order (`PRC-03` of [`process.md`](process.md)). That input is asked for as part of the order item; its fields are owned by the workflow's own document. |
 | `VAR-05` | **Locked variables are mandatory.** The order data cannot be marked complete while any order item has a locked variable or a required workflow input unanswered (`CMP-02`). |
 | `VAR-06` | An optional or conditional variable may be left unanswered. |
 | `CMP-02` | The order data cannot be marked complete while: an order item has a locked variable or required workflow input unanswered (`VAR-05`); the next hearing is not settled; or an accepted application that moves the hearing has no next hearing date (`APL-10`). The screen names what is missing and where to set it. |
@@ -158,7 +158,7 @@ Not in V1:
 
 > Channels, addresses and police station are not in the template. They are fields of the
 > order item like any other; their rules are owned by
-> [`process-handover.md`](process-handover.md).
+> [`process.md`](process.md).
 
 **11. Withdrawal of case — note under the table:**
 

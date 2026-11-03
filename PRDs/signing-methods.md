@@ -30,7 +30,7 @@ This document owns **which methods exist, how each is switched on, and how many
 documents each signs in one transaction**. It applies wherever the system signs. Who
 signs, which documents are signed, and on which page of a document the signature sits
 belong to the module doing the signing — for e-filing,
-[`efiling-handover.md`](efiling-handover.md) §18.
+[`efiling.md`](efiling.md) §18.
 
 Marks: `[DERIVED]` inferred, confirm before building · `[OWNER]` owner decision.
 

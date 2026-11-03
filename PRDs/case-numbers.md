@@ -12,7 +12,7 @@ Earlier drafts: 2026-09-09, 2026-09-15.
 Format, timing and generator all differ by state, so each state has its own table. **Generated
 by** is either DRISTI or CIS. `?` means not known yet. Where a state registers a case as one
 of several types, the type is chosen at Scrutiny and Registration —
-[`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) `SCR-13`.
+[`scrutiny-registration.md`](scrutiny-registration.md) `SCR-13`.
 
 ---
 

@@ -21,7 +21,7 @@ this way is **office access**.
 | `OFC-02` | **[OWNER]** The person added must be a **registered DRISTI user** whose account is an **advocate** or a **clerk**. Litigants, PoA holders and court staff cannot be added. A person who is not registered cannot be added or invited in this version (future enhancement, §7). |
 | `OFC-03` | **[OWNER]** Office access is given **per case**. A person in the office — clerk or advocate — sees **only the cases shared with them**, and no other case of the advocate. Working for an advocate does not by itself give access to that advocate's cases. |
 | `OFC-04` | An advocate can share only **their own cases**: cases where they are on the vakalatnama, and **drafts** where they are an advocate (e-filing `FIL-05`). A case the advocate holds through someone else's office access cannot be shared onward. |
-| `OFC-05` | Office access does not put the person on the vakalatnama or on the case record. An advocate who must act on the record is added to the case through a vakalatnama ([Join a Case](join-a-case-handover.md)), not through office management. |
+| `OFC-05` | Office access does not put the person on the vakalatnama or on the case record. An advocate who must act on the record is added to the case through a vakalatnama ([Join a Case](join-a-case.md)), not through office management. |
 | `OFC-06` | A person with office access has the rights on the case set out in [`people-and-case-access.md`](../../docs/people-and-case-access.md) (rows 12–13): the same as the advocate, except they **cannot e-sign**. They cannot add or remove anyone's access to the case. |
 | `OFC-07` | **[OWNER]** Access is given **immediately**. The person does not accept an invitation; the shared cases appear in their Your cases list at once. (Acceptance is a future enhancement, §7.) |
 | `OFC-08` | **[OWNER]** The person is notified **by SMS and in-app** when they are added to an office and when they are given more cases. Wording in §6. |
@@ -93,7 +93,7 @@ added there appears on the People tab with that case.
 
 | ID | Requirement |
 | --- | --- |
-| `OFC-40` | When an advocate finishes joining a case ([Join a Case](join-a-case-handover.md), success step, `JOIN-57`), they can give people office access to that case. |
+| `OFC-40` | When an advocate finishes joining a case ([Join a Case](join-a-case.md), success step, `JOIN-57`), they can give people office access to that case. |
 | `OFC-41` | People in the office on **All cases** already have access to the case by this point (`OFC-25`). The step lists them as already added. |
 | `OFC-42` | The advocate can add others from their office or search for anyone else (`OFC-20`, `OFC-21`). The person is given this case as a specific case: someone new joins the office on Specific cases with this case. |
 | `OFC-43` | The step is optional; leaving it gives no one access. |
@@ -141,7 +141,7 @@ Not in this version. Recorded so they are designed for, not built.
   person to accept, and the advocate is told in-app when they accept or decline.
 - **Adding people who are not yet registered.** The advocate enters a mobile number that
   has no DRISTI account; the person is sent a link by SMS, registers as an advocate or
-  clerk ([account creation](account-creation-handover.md)), and receives the shared
+  clerk ([account creation](account-creation.md)), and receives the shared
   access when their account is ready.
 
 ---

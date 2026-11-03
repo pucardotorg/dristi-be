@@ -17,7 +17,7 @@ the accused to the one unexamined witness once the accused has joined. **A warra
 prints its returnable date** — it carries a QR code that opens the latest hearing date, so a
 hearing-date change needs no replacement warrant (`PRC-06`, `PIA-02`; `PIA-03` removed). New
 **Linked records** section: the module's two citizen-side pending tasks, held in the Pending
-Tasks master table and tagged `process-handover` there. **Court-side work is not a pending
+Tasks master table and tagged `process` there. **Court-side work is not a pending
 task** — it is a list of processes, segregated by status (`SGN-02`). `STP-03`
 now gates each process on its own single envelope, not the round's. Each process is signed
 separately, even where content is identical (`SGN-03`). **The signer is set by process type** — CMO
@@ -34,7 +34,7 @@ one per addressee, per channel, per address, §3 — carried forward unchanged);
 police as one flag per process); v5 (recipient chosen per channel); v4–v2 (e-Post
 manual/Post Officer; status-update fields; `Q-3` resolved); v1 — 2026-09-16 (first
 draft). Still defines the channel list and the per-process status vocabulary, which
-`SVC-15` of `view-case-handover.md` records as a gap.
+`SVC-15` of `view-case.md` records as a gap.
 
 **Referenced by ID, from outside this document — do not renumber these sections:**
 `PRC-03` (`order-generation.md`), `SGN-01` at §9, `DSP-02` at §10, `EXP-01`/`EXP-02` at
@@ -202,7 +202,7 @@ Order items, their variables and the dropdown behaviour are owned by
 
 While a process is live, the case carries the matching **secondary stage** — Notice,
 Summons, Warrant, Proclamation or Attachment. Stage rules are owned by
-[`case-lifecycle-handover.md`](case-lifecycle-handover.md).
+[`case-lifecycle.md`](case-lifecycle.md).
 
 The **recipient** never changes — it's the person the process names: who a summons is
 for, who a warrant is against. The recipient is not always the addressee. A summons or
@@ -234,7 +234,7 @@ same content (`TPL-01`), but each is signed separately (`SGN-03`).
 
 A **round** is all the processes triggered by the same order. A person may have several
 rounds over the life of a case, and several processes within one round. How the register
-is displayed on the case is owned by [`view-case-handover.md`](view-case-handover.md) §7.
+is displayed on the case is owned by [`view-case.md`](view-case.md) §7.
 
 ---
 
@@ -399,7 +399,7 @@ There are two fees:
 | `FEE-01` | The court fee is a flat amount per process type, set in the fee master. For some process types it may be zero (`Q-12`). |
 | `FEE-02` | A channel fee applies to e-Post only. It is not in the launch scope. |
 | `FEE-03` | The channel fee for an e-Post process is supplied by a fee service, treated as a black box: the system asks it for the fee and uses the amount returned. How it calculates the fee is outside this document. |
-| `FEE-04` | Court fee paid on a case — at filing or in earlier rounds — is held as a single pool. A process draws from the pool, whatever channel or address the money was originally collected for. What is collected at filing is owned by [`efiling-handover.md`](efiling-handover.md). |
+| `FEE-04` | Court fee paid on a case — at filing or in earlier rounds — is held as a single pool. A process draws from the pool, whatever channel or address the money was originally collected for. What is collected at filing is owned by [`efiling.md`](efiling.md). |
 | `FEE-05` | On trigger, the system calculates the court fee for the round — every process in it (§3) — and deducts what is already in the pool. For each e-Post process, it gets the channel fee from the fee service (`FEE-03`). |
 | `FEE-06` | Where a balance is due, the system creates a payment pending task on the party directed to take steps. Where nothing is due, the payment step is skipped. |
 | `FEE-07` | Where the pool holds more than the round's court fee, the remainder stays in the pool for later rounds. Nothing is refunded. |
@@ -428,12 +428,12 @@ the system.
 | ID | Requirement |
 |---|---|
 | `SGN-01` | A process is signed by a **Process signer** who holds that role for its process type and channel ([`court-roles.md`](court-roles.md)). Which staff sign which process types is set there, per state — a warrant may be signed by different people from a summons. Every process for the same recipient, whatever its channel or address (§3), carries the same content — it doesn't vary by channel (`TPL-01`). |
-| `SGN-02` | Each manual step of a process — receive the envelope (`STP-02`), sign, send (`DSP-03`), record the outcome (`DSP-03`) — has a court-side **pending task** ([`pending-tasks-handover.md`](pending-tasks-handover.md)) for the holders of that step's role for the process's type and channel ([`court-roles.md`](court-roles.md)), open from when the step is due until it is done. Where the system does a step, no task is created. Doing a step closes its task and creates the next, in the same transaction; expiry closes any open task (`EXP-02`). A process's sign task is created once its fee (§7) and envelope (§8) prerequisites are met — when it leaves Pending steps for Pending signature (§10.1). How the court staff's lists of processes are built is for the implementer. |
+| `SGN-02` | Each manual step of a process — receive the envelope (`STP-02`), sign, send (`DSP-03`), record the outcome (`DSP-03`) — has a court-side **pending task** ([`pending-tasks.md`](pending-tasks.md)) for the holders of that step's role for the process's type and channel ([`court-roles.md`](court-roles.md)), open from when the step is due until it is done. Where the system does a step, no task is created. Doing a step closes its task and creates the next, in the same transaction; expiry closes any open task (`EXP-02`). A process's sign task is created once its fee (§7) and envelope (§8) prerequisites are met — when it leaves Pending steps for Pending signature (§10.1). How the court staff's lists of processes are built is for the implementer. |
 | `SGN-03` | Each process is signed separately, with its own signature, timestamp and audit record, even where its content is identical to another process's. Several processes may be selected and signed in one action on screen; each is still signed separately underneath. |
 | `SGN-04` | Signing does not dispatch the process. It moves the process to a distinct **Signed** status — signed, awaiting send — which is a separate backend stage from both Pending signature and Sent (§10), with its own timestamp. A screen may act on sign and send together in one click; the two stages are still recorded separately underneath. Where the system sends on signing — a system-send channel, signed by someone who also holds Process dispatcher (`DSP-02`) — the process passes through Signed straight to Sent, and both are recorded. |
 
 Pending task attributes — name, users, visibility, triggers — are owned by
-[`pending-tasks-handover.md`](pending-tasks-handover.md).
+[`pending-tasks.md`](pending-tasks.md).
 
 SARAS 2.0's concept note for Gujarat routes warrant-signing to the Presiding Officer
 (`SG-04` in `saras-2.0-gap-register.md`); under `SGN-01`, that is whoever holds Process
@@ -532,7 +532,7 @@ fee may be zero — a state that collects nothing more at the process stage sets
 | Attachment | ₹0 | To be confirmed | To be confirmed |
 | Custom process | ₹0 | To be confirmed | To be confirmed |
 
-What is collected at filing is owned by [`efiling-handover.md`](efiling-handover.md). Who
+What is collected at filing is owned by [`efiling.md`](efiling.md). Who
 holds which role is in [`court-roles.md`](court-roles.md) §3.
 
 ---
@@ -541,7 +541,7 @@ holds which role is in [`court-roles.md`](court-roles.md) §3.
 
 Live views of the master tables, filtered to this document. Each master table is the
 single source of truth and the place to edit its rows; anything tagged
-`process-handover` there appears here automatically. A downloaded copy of this
+`process` there appears here automatically. A downloaded copy of this
 document is a snapshot.
 
 ### Pending tasks (Court Side)
@@ -549,7 +549,7 @@ document is a snapshot.
 ```superhuman-view
 name: Pending tasks (Court Side) — Process
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-KztrhvteSD
-filter: PRDs.Contains("process-handover")
+filter: PRDs.Contains("process")
 ```
 
 The four court-side tasks (`SGN-02`): Receive envelope, Sign, Send and Record outcome.
@@ -559,7 +559,7 @@ The four court-side tasks (`SGN-02`): Receive envelope, Sign, Send and Record ou
 ```superhuman-view
 name: Pending tasks (Citizen-Side) — Process
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-FICRZ0qIR4
-filter: PRDs.Contains("process-handover")
+filter: PRDs.Contains("process")
 ```
 
 ### Notifications
@@ -567,7 +567,7 @@ filter: PRDs.Contains("process-handover")
 ```superhuman-view
 name: Notifications — Process
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-xnftvTkudd/tables/grid-3FTjQhdfYv
-filter: PRDs.Contains("process-handover")
+filter: PRDs.Contains("process")
 ```
 
 Three process notifications — steps due, outcome recorded, recalled. Errored and Expired
@@ -578,7 +578,7 @@ send no notification.
 ```superhuman-view
 name: Events — Process
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-2x28DoUtbn/tables/grid-GPg4dKS-s9
-filter: PRDs.Contains("process-handover")
+filter: PRDs.Contains("process")
 ```
 
 ---

@@ -7,7 +7,7 @@ Every fee the system collects, by state: what is charged, how it is calculated, 
 is collected, where the money goes, and what happens on resubmission, excess and refund.
 
 Not written yet. Payment rules live today in
-[`efiling-handover.md`](efiling-handover.md) §19 (filing fees and upfront process
-payments), [`process-handover.md`](process-handover.md) §7 (process fees),
+[`efiling.md`](efiling.md) §19 (filing fees and upfront process
+payments), [`process.md`](process.md) §7 (process fees),
 [`application-lifecycle.md`](application-lifecycle.md) (application fees) and
-[`join-a-case-handover.md`](join-a-case-handover.md) (vakalatnama).
+[`join-a-case.md`](join-a-case.md) (vakalatnama).

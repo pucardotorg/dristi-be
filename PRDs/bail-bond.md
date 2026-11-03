@@ -9,4 +9,4 @@ and tracked on the case.
 Not written yet. Related today: the Bail application in
 [`application-lifecycle.md`](application-lifecycle.md), the Acceptance of bail and Bail
 order items in [`order-template-catalogue.md`](order-template-catalogue.md), and the
-bail actions in [`view-case-handover.md`](view-case-handover.md) `Q-4`.
+bail actions in [`view-case.md`](view-case.md) `Q-4`.

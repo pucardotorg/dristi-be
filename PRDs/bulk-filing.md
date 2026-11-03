@@ -12,7 +12,7 @@ template). Replaces `bulk-filing-problem-statement.md` and the multi-sheet forma
 | Source | Provides |
 | --- | --- |
 | Owner decisions, 2026-10-24 | Everything in this document, marked **[OWNER]** where it is a decision |
-| [`efiling-handover.md`](efiling-handover.md) | Every field, validation, document, fee and signing rule a case carries. Field IDs (`ACC-13`, `CHQ-9`, `DCM-12`) are that handover's |
+| [`efiling.md`](efiling.md) | Every field, validation, document, fee and signing rule a case carries. Field IDs (`ACC-13`, `CHQ-9`, `DCM-12`) are that handover's |
 | [`signing-methods.md`](signing-methods.md) | The signing methods and batch signing |
 | Bulk filing prototype, `Pucar-Dristi-2.0` `main`, `apps/dristi-app/src/app/filings/bulk/` | The batch screens |
 
@@ -97,7 +97,7 @@ A batch moves through six steps, in order.
 ## 4.3 Columns
 
 `N` is the instance number (§4.2). Each column takes its field's type, format, list values
-and conditions from the [e-filing handover](efiling-handover.md); the template's row 2
+and conditions from the [e-filing handover](efiling.md); the template's row 2
 states them for the filer. A group's required columns apply only when the group is present
 (`BLK-28`).
 

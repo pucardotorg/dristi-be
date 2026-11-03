@@ -5,7 +5,7 @@
 
 Requirement IDs: `DSB-*` — use in tickets, commits, test names. Roles are owned by
 [`court-roles.md`](court-roles.md); the rest of the case view by
-[`view-case-handover.md`](view-case-handover.md); marking a document as evidence by
+[`view-case.md`](view-case.md); marking a document as evidence by
 [`evidence-marking.md`](evidence-marking.md).
 
 ---
@@ -19,7 +19,7 @@ Opened from **Make filings → Submit documents** on a case.
 | `DSB-01` | **Document type** is a dropdown of three types: **Affidavit**, **Memo**, **Evidence**. |
 | `DSB-02` | One submission carries **multiple documents**, added the same way as Supporting documents on an application ([`application-lifecycle.md`](application-lifecycle.md)): add as many as needed, one entry per document. |
 | `DSB-03` | Before it is submitted, the submission goes through **signing**. Submitting happens only once it is signed. |
-| `DSB-18` | **Who signs.** An advocate submitting documents signs them; a party-in-person counts as an advocate. A clerk cannot sign: they **send for signing**, and the submission goes to every advocate the clerk works for ([`office-management-handover.md`](office-management-handover.md)) who is on the case. Any one of them signs it. A member of the court signs their own submission. |
+| `DSB-18` | **Who signs.** An advocate submitting documents signs them; a party-in-person counts as an advocate. A clerk cannot sign: they **send for signing**, and the submission goes to every advocate the clerk works for ([`office-management.md`](office-management.md)) who is on the case. Any one of them signs it. A member of the court signs their own submission. |
 | `DSB-24` | Sending for signing raises a **Sign documents** pending task for those advocates. It closes when any one of them signs. |
 | `DSB-19` | Submitting documents involves **no payment**. |
 | `DSB-04` | Anyone with case access can submit documents, and so can **any member of the court**. |
@@ -69,4 +69,4 @@ Owned by [`evidence-marking.md`](evidence-marking.md).
 | `Q-5` | **Drafts.** Can the filer delete a Draft or a Pending signature submission? What happens when the advocate declines to sign? | No |
 | `Q-6` | **When it is offered.** Can documents be submitted before registration, or after the case is disposed of? DRISTI 1.0 offers it only between registration and disposal. | No |
 | `Q-7` | **Mandatory submissions.** Does a document submitted here close a task raised by the Mandatory submissions and responses order item, or does that always go through a Production of Documents application? | No |
-| `Q-8` | **Notifications.** Is the other side notified when a document is Submitted? Is a document filed in error withdrawn in any way, now that Mark as Void is removed (`view-case-handover.md` v1.9)? | No |
+| `Q-8` | **Notifications.** Is the other side notified when a document is Submitted? Is a document filed in error withdrawn in any way, now that Mark as Void is removed (`view-case.md` v1.9)? | No |

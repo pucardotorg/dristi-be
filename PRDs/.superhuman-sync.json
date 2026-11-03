@@ -3,21 +3,21 @@
   "parentPageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu",
   "parentPageTitle": "PRDs",
   "files": {
-    "account-creation-handover.md": {
+    "account-creation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-Ebr9Pgtqan",
-      "title": "Account Creation Handover",
+      "title": "Account Creation",
       "contentHash": "a561aebe9240",
-      "pageUpdatedAt": 1793244854.066,
+      "pageUpdatedAt": 1793680979.497,
       "note": "Patched in place 2026-10-19 to v17 (status, callout, REG-23a/23b, REG-31 cell, Q-3 row removed). `sections` not recorded. Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed. Patched in place 2026-10-19 to v19 (court establishment): REG-23a, REG-23b (re-inserted, cl-e4SVsr-xBQ), §6.1 intro and example bullets (re-inserted), REG-31/35/36/38 cells, 2026-10-19 decision. 2026-10-24: patched in place to v19.1 (status, callout, digital signing wording). 2026-10-29: patched in place to v19.2 (status, callout, Q-4 row added to §11 table grid-E3ATru_vvq).",
       "calloutElementId": "cl-023ZWT-x7f"
     },
-    "efiling-handover.md": {
+    "efiling.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
-      "title": "E-Filing Handover",
+      "title": "E-Filing",
       "contentHash": "a7e9952476ad",
-      "pageUpdatedAt": 1793342616.084,
+      "pageUpdatedAt": 1793680984.334,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling-handover\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match). 2026-10-30: patched in place to v50 (§11 note replaced by cl-m468m1p6tY; PRY-5 cell in grid-UGBc7eKxqI; §16.4 row 2.3 in grid-CZmW9VMuDl; §16.9 page-5 bullet; batch 19 block cl-_STdzi6lOi; Status block and callout prepended)."
+      "note": "Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match). 2026-10-30: patched in place to v50 (§11 note replaced by cl-m468m1p6tY; PRY-5 cell in grid-UGBc7eKxqI; §16.4 row 2.3 in grid-CZmW9VMuDl; §16.9 page-5 bullet; batch 19 block cl-_STdzi6lOi; Status block and callout prepended)."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -57,19 +57,19 @@
       "note": "Force-rebuilt 2026-10-20 (no comments on the page) after templates and locked/optional were dropped; page renamed \"Order Item Catalogue\". Callout is a short Last synced line. `sections` not recorded. Patched in place 2026-10-14 (Not in V1 intro, removed app-drift paragraph, generic accept/reject sentence, callout date). '#### General variables' renders as a plain paragraph. `sections` not recorded. 2026-10-24: page updatedAt was 25 s after the recorded value (own sync write; Status block still showed entry 20); patched in place to (21): rows 4 and Case management updated, #4 variable rows rewritten in place to the new order, note paragraph added after the #4 table, status and callout.",
       "sections": []
     },
-    "join-a-case-handover.md": {
+    "join-a-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WxtSmHU5wu",
-      "title": "Join a Case Handover",
+      "title": "Join a Case",
       "contentHash": "f091bd2da604",
-      "pageUpdatedAt": 1792400085.119,
+      "pageUpdatedAt": 1793680989.715,
       "calloutElementId": "cl-_KL_8kabnW",
       "note": "Force-rebuilt 2026-10-14 at the owner's request (local wins); the unrecorded 2026-10-06 page edit and all page comments were discarded. Live views recreated: Court Side table-7SpA4aFqK0, Citizen-Side table-XWc8kp4Y5A, Notifications table-6VFhpFf1Lu, Events table-1FusHbDJ7v. `sections` not recorded (Coda explodes chunks into native blocks). Patched in place 2026-10-19 (split links + status); link-URL changes in body text done by re-inserting the block (replace_element_text misplaces edits after links), so those blocks have new IDs; `sections` not refreshed."
     },
-    "case-lifecycle-handover.md": {
+    "case-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-oci-tqnIPh",
-      "title": "Case Lifecycle Handover",
+      "title": "Case Lifecycle",
       "contentHash": "265a5f96fa25",
-      "pageUpdatedAt": 1793361206.37,
+      "pageUpdatedAt": 1793680999.155,
       "calloutElementId": "cl-IUH_IOrV8b",
       "sections": [
         {
@@ -120,11 +120,11 @@
       ],
       "note": "2026-10-30: rebuilt to v2, then reverted at the owner's request to the 2026-10-04 text and rebuilt again."
     },
-    "pending-tasks-handover.md": {
+    "pending-tasks.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-brLkhW_t8M",
-      "title": "Pending Tasks Handover",
+      "title": "Pending Tasks",
       "contentHash": "6ef1d259a9b4",
-      "pageUpdatedAt": 1793361341.629,
+      "pageUpdatedAt": 1793681014.184,
       "calloutElementId": "cl-KnBdD20uG4",
       "sections": [
         {
@@ -155,11 +155,11 @@
       ],
       "note": "2026-10-30: rebuilt to v2, then reverted at the owner's request to the 2026-09-14 text and rebuilt again (live views removed)."
     },
-    "view-case-handover.md": {
+    "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
-      "title": "View Case Handover",
+      "title": "View Case",
       "contentHash": "df0ee6ed33e9",
-      "pageUpdatedAt": 1792686345.082,
+      "pageUpdatedAt": 1793681009.045,
       "calloutElementId": "eca-cluFlrCGVO",
       "sections": [
         {
@@ -253,11 +253,11 @@
       "calloutElementId": "cl-i7saWBgj1-",
       "note": "Patched in place 2026-10-24 (v8: registration-type tabs; changed blocks re-inserted, so new IDs). `sections` not refreshed. Earlier in-place patches 2026-10-19/20 likewise."
     },
-    "process-handover.md": {
+    "process.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
-      "title": "Process Handover",
+      "title": "Process",
       "contentHash": "31ed41348f9f",
-      "pageUpdatedAt": 1792927635.311,
+      "pageUpdatedAt": 1793680994.113,
       "calloutElementId": "cl-uH3Q8ik_zE",
       "note": "Patched in place 2026-10-25 for v14.1/v14.2 (Status line, callout, §10.1 status rows, SGN-02, SGN-04, new DSP-11 row); no rebuild. Four table cells written as plain text because a single formatting mark is stored literally: DSP-11 row (ID and text), Errored and Recalled meanings in §10.1. Live views: Court Side table-ilvtulVkUa, Citizen-Side table-yags5uzkEd, Notifications table-_0U81wDVwy, Events table-7vAo-OTf67. The Status paragraph is split into two blocks at 'v12 —' to stay under 10,000 chars. `sections` not recorded.",
       "sections": []
@@ -1513,11 +1513,11 @@
       ],
       "note": "2026-11-03: patched in place to v10.7 (status, callout; tables §1, §2, §3.1–§3.3 replaced whole). `sections` not refreshed. 2026-11-03 later: Next hearing setter cell in grid-H_HKcFYmuM and status patched."
     },
-    "scrutiny-registration-handover.md": {
+    "scrutiny-registration.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
-      "title": "Scrutiny and Registration Handover",
+      "title": "Scrutiny and Registration",
       "contentHash": "06b31c0b4d27",
-      "pageUpdatedAt": 1792922029.822,
+      "pageUpdatedAt": 1793681004.952,
       "calloutElementId": "cl-x8-19XCI0n",
       "sections": [
         {
@@ -1590,11 +1590,11 @@
       "pageUpdatedAt": 1793679500.864,
       "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded."
     },
-    "office-management-handover.md": {
+    "office-management.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-lxUEhfnjuv",
-      "title": "Office Management Handover",
+      "title": "Office Management",
       "contentHash": "99685d969371",
-      "pageUpdatedAt": 1792550169.657,
+      "pageUpdatedAt": 1793681017.616,
       "calloutElementId": "eca-zJsZcK9_hd",
       "sections": [
         {

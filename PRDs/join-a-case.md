@@ -36,8 +36,8 @@ for PoA holders and advocates.
 - Ongoing case access management (advocate replacement, PoA changes, office management)
   — covered in `../docs/people-and-case-access.md`
 - Account creation — mentioned as a prerequisite (§3) but specified elsewhere
-  (`../handovers/account-creation-handover.md`)
-- E-filing — `efiling-handover.md`
+  (`../handovers/account-creation.md`)
+- E-filing — `efiling.md`
 - Post-join actions (filing, bail applications, case viewing)
 
 **Who uses Join a Case:**
@@ -79,7 +79,7 @@ not change anything in the user-facing flow.
 
 `JOIN-06` — After the onboarding journey, the user signs in or creates an account.
 If they do not already have an account, they are taken through the account creation
-process first (see `../handovers/account-creation-handover.md`).
+process first (see `../handovers/account-creation.md`).
 
 After sign-in, the join flow opens with the case details already loaded and the access
 code already verified (both embedded in the summons URL).
@@ -510,7 +510,7 @@ pre-made.
 
 Live views of the master tables, filtered to this document. Each master table is the
 single source of truth and the place to edit its rows; anything tagged
-`join-a-case-handover` there appears here automatically. A section showing nothing
+`join-a-case` there appears here automatically. A section showing nothing
 means nothing is tagged for it yet. A downloaded copy of this document is a snapshot.
 
 ### Pending tasks (Court Side)
@@ -518,7 +518,7 @@ means nothing is tagged for it yet. A downloaded copy of this document is a snap
 ```superhuman-view
 name: Pending tasks (Court Side) — Join a Case
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-KztrhvteSD
-filter: PRDs.Contains("join-a-case-handover")
+filter: PRDs.Contains("join-a-case")
 ```
 
 ### Pending tasks (Citizen-Side)
@@ -526,7 +526,7 @@ filter: PRDs.Contains("join-a-case-handover")
 ```superhuman-view
 name: Pending tasks (Citizen-Side) — Join a Case
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-FICRZ0qIR4
-filter: PRDs.Contains("join-a-case-handover")
+filter: PRDs.Contains("join-a-case")
 ```
 
 ### Notifications
@@ -534,7 +534,7 @@ filter: PRDs.Contains("join-a-case-handover")
 ```superhuman-view
 name: Notifications — Join a Case
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-xnftvTkudd/tables/grid-3FTjQhdfYv
-filter: PRDs.Contains("join-a-case-handover")
+filter: PRDs.Contains("join-a-case")
 ```
 
 ### Events
@@ -542,7 +542,7 @@ filter: PRDs.Contains("join-a-case-handover")
 ```superhuman-view
 name: Events — Join a Case
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-2x28DoUtbn/tables/grid-GPg4dKS-s9
-filter: PRDs.Contains("join-a-case-handover")
+filter: PRDs.Contains("join-a-case")
 ```
 
 ---

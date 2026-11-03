@@ -11,7 +11,7 @@ v8 — 2026-09-27; `REG-34`'s unexplained "reasonable — confirm" dropped ·
 §6.1 courtroom mapping generalised (no longer names Gujarat/a specific courtroom count,
 states the 1:1-formally/differs-in-practice pattern for any employee role) · §7 accused
 onboarding trimmed to the account-creation claim only, onboarding-journey detail now
-points to `join-a-case-handover.md` §2c · **OTP rate limiting removed** (`REG-50`,
+points to `join-a-case.md` §2c · **OTP rate limiting removed** (`REG-50`,
 old §9) — not the owner's call to make here; later sections renumbered (old §10–13 →
 §9–12).
 v7 — 2026-09-27; §3 entry flow's step table and `REG-55/56/57` table merged
@@ -35,7 +35,7 @@ added
 | --- | --- | --- |
 | 1 | `Account Creation.pdf` | User types, flows, requirements, context |
 | 2 — interaction reference | Dristi app prototype: `Pucar-Dristi-2.0`, `apps/dristi-app`, routes `/join`, `/welcome` | Screen behaviour: sign-in, registration, accused onboarding |
-| 3 — cross-reference | `efiling-handover.md` §18 | Account creation at signing (implicit creation path) |
+| 3 — cross-reference | `efiling.md` §18 | Account creation at signing (implicit creation path) |
 | — | Owner decisions, 2026-09-03 | Recorded inline as **[OWNER]**; log in §10 |
 | — | Owner decisions, 2026-09-07 | Entry flow, password reminder; log in §10 |
 
@@ -303,7 +303,7 @@ via a summons is the **same** as for a litigant (phone + OTP + name + terms, §4
 
 The onboarding journey itself — case papers, choices (settle vs contest), hearing date,
 where to get help, joining the case — is specified separately in
-`join-a-case-handover.md` §2c. It wraps around the same registration steps covered here.
+`join-a-case.md` §2c. It wraps around the same registration steps covered here.
 
 ---
 
@@ -327,7 +327,7 @@ No other complexity requirements (no mandatory uppercase/special characters).
 
 Live views of the master tables, filtered to this document. Each master table is the
 single source of truth and the place to edit its rows; anything tagged
-`account-creation-handover` there appears here automatically. A section showing nothing
+`account-creation` there appears here automatically. A section showing nothing
 means nothing is tagged for it yet. A downloaded copy of this document is a snapshot.
 
 ### Pending tasks (Court Side)
@@ -335,7 +335,7 @@ means nothing is tagged for it yet. A downloaded copy of this document is a snap
 ```superhuman-view
 name: Pending tasks (Court Side) — Account Creation
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-KztrhvteSD
-filter: PRDs.Contains("account-creation-handover")
+filter: PRDs.Contains("account-creation")
 ```
 
 ### Pending tasks (Citizen-Side)
@@ -343,7 +343,7 @@ filter: PRDs.Contains("account-creation-handover")
 ```superhuman-view
 name: Pending tasks (Citizen-Side) — Account Creation
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-FICRZ0qIR4
-filter: PRDs.Contains("account-creation-handover")
+filter: PRDs.Contains("account-creation")
 ```
 
 ### Notifications
@@ -351,7 +351,7 @@ filter: PRDs.Contains("account-creation-handover")
 ```superhuman-view
 name: Notifications — Account Creation
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-xnftvTkudd/tables/grid-3FTjQhdfYv
-filter: PRDs.Contains("account-creation-handover")
+filter: PRDs.Contains("account-creation")
 ```
 
 Notification copy itself is still pending the application-wide notifications master file
@@ -362,7 +362,7 @@ Notification copy itself is still pending the application-wide notifications mas
 ```superhuman-view
 name: Events — Account Creation
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-2x28DoUtbn/tables/grid-GPg4dKS-s9
-filter: PRDs.Contains("account-creation-handover")
+filter: PRDs.Contains("account-creation")
 ```
 
 ---

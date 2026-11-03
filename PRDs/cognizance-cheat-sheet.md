@@ -28,7 +28,7 @@ cognizance, in one screen, without opening the case file.
 A new **Take Cognizance** option under the Actions area of the Magistrate's Home Screen.
 
 Its tabs depend on how many registration types the state has
-([`scrutiny-registration-handover.md`](scrutiny-registration-handover.md) `SCR-13`).
+([`scrutiny-registration.md`](scrutiny-registration.md) `SCR-13`).
 
 **One registration type** (Kerala, Punjab & Haryana) — two tabs, split by delay:
 
@@ -84,7 +84,7 @@ month** from the date of cause of action.
 
 The fields visible on a case in the Cognizance tab. Every field is read from the filing;
 the `Source` column gives the filing field ID from
-`efiling-handover.md`.
+`efiling.md`.
 
 ### Every tab
 

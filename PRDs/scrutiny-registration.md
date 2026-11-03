@@ -1,10 +1,10 @@
 # Scrutiny and Registration — Developer & Agent Handover
 
-**Status:** v3.5 — 2026-10-25; **how the scrutiny and registration lists are built is for the implementer** (`SCR-09`); the pending tasks stay, and a case is on a list exactly while its task is open. No longer says the lists *are* the pending tasks mechanism or forbids a second stage-query (`SCR-10`). v3.4 — 2026-10-24; wording: `SCR-15` says "not signing digitally", not "not e-signing" — e-sign means Aadhaar-based e-signing only ([`efiling-handover.md`](efiling-handover.md) §18). v3.3 — 2026-10-19; **cases go to the court establishment first** (§4): the Scrutiny officer and Case registerer roles are held per court establishment, not per courtroom, and the Scrutiny officer **chooses the courtroom** when forwarding or registering (`SCR-16`, new). Automatic courtroom allocation is removed; a later version will suggest a courtroom. Two questions open (`Q-1`, `Q-2`, §4). v3.2 — 2026-10-19; **oath review** (`SCR-14`, new): each oath is listed with whose it is and when it was recorded, plays in the centre panel, is flagged on its own, and shows when it carried over from an earlier round; **paper upload reason** shown to the scrutiny officer (`SCR-15`, new). Oath now at [`efiling-handover.md`](efiling-handover.md) §18.2. v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling-handover.md`](efiling-handover.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
+**Status:** v3.5 — 2026-10-25; **how the scrutiny and registration lists are built is for the implementer** (`SCR-09`); the pending tasks stay, and a case is on a list exactly while its task is open. No longer says the lists *are* the pending tasks mechanism or forbids a second stage-query (`SCR-10`). v3.4 — 2026-10-24; wording: `SCR-15` says "not signing digitally", not "not e-signing" — e-sign means Aadhaar-based e-signing only ([`efiling.md`](efiling.md) §18). v3.3 — 2026-10-19; **cases go to the court establishment first** (§4): the Scrutiny officer and Case registerer roles are held per court establishment, not per courtroom, and the Scrutiny officer **chooses the courtroom** when forwarding or registering (`SCR-16`, new). Automatic courtroom allocation is removed; a later version will suggest a courtroom. Two questions open (`Q-1`, `Q-2`, §4). v3.2 — 2026-10-19; **oath review** (`SCR-14`, new): each oath is listed with whose it is and when it was recorded, plays in the centre panel, is flagged on its own, and shows when it carried over from an earlier round; **paper upload reason** shown to the scrutiny officer (`SCR-15`, new). Oath now at [`efiling.md`](efiling.md) §18.2. v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling.md`](efiling.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
 court-side rows of its role matrix and lifecycle, and the scrutiny and registration
 entries of its decisions log and glossary). Requirement IDs unchanged. Changes to these
 sections before this date are in the Status line of
-[`efiling-handover.md`](efiling-handover.md) (v11, v16, v30–v32, v37, v38).
+[`efiling.md`](efiling.md) (v11, v16, v30–v32, v37, v38).
 **Date:** 2026-10-19
 **Audience:** developers and agents building scrutiny, registration and the correction
 cycle (front end and backend)
@@ -13,7 +13,7 @@ cycle (front end and backend)
 
 | Precedence | Source | Provides |
 | --- | --- | --- |
-| 1 | [`efiling-handover.md`](efiling-handover.md) | Every field, its ID and its validation; the filing lifecycle; signing and payment |
+| 1 | [`efiling.md`](efiling.md) | Every field, its ID and its validation; the filing lifecycle; signing and payment |
 | 2 | `efiling-reference/E-filing, Scrutiny and Registration.pdf` | Roles, workflow states, functional requirements |
 | — | [`court-roles.md`](court-roles.md) | What the Scrutiny officer and Case registerer roles allow |
 | — | Owner decisions | Recorded inline as **[OWNER]**; log in §9 |
@@ -35,7 +35,7 @@ reaches Cognisance: routing the case to a courtroom, scrutiny, registration, sen
 and what a send-back opens for editing.
 
 The filer's side of a correction cycle — correcting, re-signing, paying any increase —
-uses the e-filing steps unchanged: [`efiling-handover.md`](efiling-handover.md) §4
+uses the e-filing steps unchanged: [`efiling.md`](efiling.md) §4
 (`LIFE-12`, `LIFE-13`), §18 (`SIG-07`), §19.4.
 
 Out: everything from Cognisance onward; case number formats and generation
@@ -47,7 +47,7 @@ Out: everything from Cognisance onward; case number formats and generation
 
 Court roles: **Scrutiny officer** · **Case registerer** — what each allows is owned by
 [`court-roles.md`](court-roles.md); a staff account may hold both. Filer roles, scope
-predicates and filer permissions are in [`efiling-handover.md`](efiling-handover.md) §3.
+predicates and filer permissions are in [`efiling.md`](efiling.md) §3.
 
 | Action | Scrutiny officer | Case registerer |
 | --- | :---: | :---: |
@@ -65,7 +65,7 @@ predicates and filer permissions are in [`efiling-handover.md`](efiling-handover
 
 A case enters Scrutiny when payment completes. From Pending Correction the filer corrects,
 re-signs and, if more is owed, pays, and the case returns to Scrutiny — those stages are
-in [`efiling-handover.md`](efiling-handover.md) §4.
+in [`efiling.md`](efiling.md) §4.
 
 | Initial stage | Action | New stage |
 | --- | --- | --- |
@@ -132,14 +132,14 @@ implementer. The court-side tasks, as a live view of the master Pending Tasks li
 ```superhuman-view
 name: Pending tasks (Court Side) — Scrutiny and Registration
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-KztrhvteSD
-filter: PRDs.Contains("scrutiny-registration-handover")
+filter: PRDs.Contains("scrutiny-registration")
 ```
 
 Both are assigned to the holders of the court establishment's **Scrutiny officer** and
 **Case registerer** roles respectively (§4), due **+0 days**, visible to **Only Users** (the
 assignees; any one of them can act, [`court-roles.md`](court-roles.md) `RLE-05`). Neither carries a
 Category — the Category values are citizen-side only. Task attributes and the status
-lifecycle are in `pending-tasks-handover.md`.
+lifecycle are in `pending-tasks.md`.
 
 `SCR-10` The action that changes a case — sending back, forwarding, registering,
 resubmitting — also **creates and closes these tasks, in the same transaction**. Tasks
@@ -148,7 +148,7 @@ never move the case. The filer side works the same way:
 ```superhuman-view
 name: Pending tasks (Citizen-Side) — Scrutiny and Registration
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-PQWgeMeH-g/tables/grid-FICRZ0qIR4
-filter: PRDs.Contains("scrutiny-registration-handover")
+filter: PRDs.Contains("scrutiny-registration")
 ```
 
 Both tables are the single source of truth and the place to edit these tasks. A
@@ -170,7 +170,7 @@ comment against it. They can also **mark an entire section** as an error with a 
 `SCR-03` A **Scrutiny officer** can **flag any document as an error**, which permits the
 filer to re-upload it on send-back.
 
-`SCR-14` **Oath videos**, where the state requires an oath ([`efiling-handover.md`](efiling-handover.md)
+`SCR-14` **Oath videos**, where the state requires an oath ([`efiling.md`](efiling.md)
 §18.2):
 - Each oath is listed on its own, labelled with the complainant it is for and the person
   who recorded it — the complainant, their PoA holder or an Institution's authorised
@@ -183,7 +183,7 @@ filer to re-upload it on send-back.
 
 `SCR-15` **Paper upload reason.** Where the case was signed by uploading a physically
 signed copy, the scrutiny officer sees the reason given for not signing digitally and when it was
-given (`SIG-10`, [`efiling-handover.md`](efiling-handover.md) §18).
+given (`SIG-10`, [`efiling.md`](efiling.md) §18).
 
 ## Interlinked date auto-marking
 
@@ -203,7 +203,7 @@ where it was not at filing.
 ## Presentation outside validity
 
 `SCR-05a` Where a cheque was presented after its validity (`CHQ-11`,
-[`efiling-handover.md`](efiling-handover.md) §9), the scrutiny interface shows a
+[`efiling.md`](efiling.md) §9), the scrutiny interface shows a
 **warning line under that cheque's date of presentation** in the case fields —
 *"Presented after validity — valid until [last valid day]"* — the same treatment as the
 interface's other per-field warnings. It is information, not a flag: the Scrutiny officer
@@ -298,7 +298,7 @@ onward is identical either way; this module's scope ends there.
 
 # 8. Editability on send-back
 
-**Date chain** (`VAL-01/02`, field IDs as in [`efiling-handover.md`](efiling-handover.md)
+**Date chain** (`VAL-01/02`, field IDs as in [`efiling.md`](efiling.md)
 §9–§11) — implement as an explicit dependency graph (`REF-03` walks it):
 
 ```
@@ -324,7 +324,7 @@ CHQ-1 date on cheque
 
 `REF-04` is evaluated **against the clock at refiling**, never cached — a correction
 cycle sitting for weeks silently attracts the DCA (and its fee →
-[`efiling-handover.md`](efiling-handover.md) `LIFE-12`, §19.4).
+[`efiling.md`](efiling.md) `LIFE-12`, §19.4).
 
 ---
 
@@ -337,7 +337,7 @@ the place to edit it.
 ```superhuman-view
 name: Notifications — Scrutiny and Registration
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-xnftvTkudd/tables/grid-3FTjQhdfYv
-filter: PRDs.Contains("scrutiny-registration-handover")
+filter: PRDs.Contains("scrutiny-registration")
 ```
 
 The case-timeline events this module raises, from the master Events/Case Updates table:
@@ -345,7 +345,7 @@ The case-timeline events this module raises, from the master Events/Case Updates
 ```superhuman-view
 name: Events — Scrutiny and Registration
 tableUri: superhuman://docs/KtL_rwN6Qw/pages/section-2x28DoUtbn/tables/grid-GPg4dKS-s9
-filter: PRDs.Contains("scrutiny-registration-handover")
+filter: PRDs.Contains("scrutiny-registration")
 ```
 
 A downloaded copy of this document is a snapshot of both.

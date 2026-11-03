@@ -198,7 +198,7 @@ No variables.
 | Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | On a police channel | From the person's address (`AUT-04`) | |
 
 The rules for channels, addresses and police station are owned by
-[`process-handover.md`](process-handover.md).
+[`process.md`](process.md).
 
 ### 11. Withdrawal of case
 

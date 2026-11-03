@@ -5,7 +5,7 @@
 
 Requirement IDs: `DSB-*` (carried over from document submission) and `EVM-*` — use in
 tickets, commits, test names. Roles are owned by [`court-roles.md`](court-roles.md); the
-case file and Documents tab by [`view-case-handover.md`](view-case-handover.md) and
+case file and Documents tab by [`view-case.md`](view-case.md) and
 [`document-submission.md`](document-submission.md).
 
 ---
@@ -15,7 +15,7 @@ case file and Documents tab by [`view-case-handover.md`](view-case-handover.md) 
 | ID | Requirement |
 | --- | --- |
 | `DSB-12` | **Any document in the case file** can be **marked as evidence** — whatever its type or source (filing, application, submitted document, deposition) — by a member of the court with the **Evidence marker** role. |
-| `DSB-20` | Marking is available from the **case file** ([`view-case-handover.md`](view-case-handover.md) `DET-12`) and from the Documents tab. |
+| `DSB-20` | Marking is available from the **case file** ([`view-case.md`](view-case.md) `DET-12`) and from the Documents tab. |
 | `DSB-13` | When marking, they choose **P** (prosecution) or **D** (defence). The court has no evidence series of its own: documents the court produces are marked P or D too. |
 
 # 2. Numbers
@@ -39,4 +39,4 @@ case file and Documents tab by [`view-case-handover.md`](view-case-handover.md) 
 | `Q-1` | Is marking signed? DRISTI 1.0 stamps an evidence seal on the document (court, marked as, case number, marked through), which the magistrate signs; other staff send it to the magistrate's signing queue. | Yes |
 | `Q-2` | Is **marked through** recorded — the witness or party through whom the document was marked (PW-1, DW-1 …)? DRISTI 1.0 requires it. Is the hearing it was marked in recorded? | No |
 | `Q-3` | Can a marking be undone or corrected — wrong side, wrong document? | No |
-| `Q-4` | Where does a marked document sit in the case file: does it move under the evidence headings ([`view-case-handover.md`](view-case-handover.md) §6.2), or stay where it was filed? | No |
+| `Q-4` | Where does a marked document sit in the case file: does it move under the evidence headings ([`view-case.md`](view-case.md) §6.2), or stay where it was filed? | No |
