@@ -259,7 +259,7 @@
       "contentHash": "09870c2568a7",
       "pageUpdatedAt": 1793707417.354,
       "calloutElementId": "cl-XtYa7aTzg5",
-      "note": "Rebuilt 2026-11-03 for v14.3 (page had no comments). Markdown chunks split into many blocks on insert; sections record each chunk's first block. Live views filter on PRDs.Contains(\"process-handover\"), not the directive's \"process\": the master tables' PRDs tag was never renamed after the file rename. Views: Court Side table-uvv-IGiTDG, Citizen-Side table-QdkW0UnZCs, Notifications table-5v-9Iil4il, Events table-aUiExyPtHo.",
+      "note": "Rebuilt 2026-11-03 for v14.3 (page had no comments). Markdown chunks split into many blocks on insert; sections record each chunk's first block. Views: Court Side table-uvv-IGiTDG, Citizen-Side table-QdkW0UnZCs, Notifications table-5v-9Iil4il, Events table-aUiExyPtHo. 2026-11-03: master-table PRDs tags renamed from '-handover' names to file stems (process, efiling, account-creation, join-a-case, scrutiny-registration); views on those five pages now filter on the new tags.",
       "sections": [
         {
           "key": "# Process — Notice, Summons, Warrant, Proclamation, Attachment",
