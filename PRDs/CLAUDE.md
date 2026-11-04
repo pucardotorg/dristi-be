@@ -144,6 +144,7 @@ here.
 | `office-management.md` | `OFC` |
 | `order-generation.md` | `APL` `ATT` `CLS` `CMP` `DFT` `ENH` `HRG` `ITM` `NXT` `ORD` `PLC` `PND` `PUB` `ROL` `SGN` `SHC` `SND` `TIT` `TXT` `VAR` |
 | `order-types.md` | `DEN` `OTY` `RZN` `RZT` `SHW` |
+| `payment-logic.md` | `PMT` |
 | `process.md` | `AUT` `DSP` `EXP` `FEE` `PIA` `PRC` `SGN` `STP` `TPL` |
 | `scrutiny-registration.md` | `SCR` `REF` |
 | `signing-methods.md` | `SGM` |

@@ -1,6 +1,6 @@
 # Dropped ideas
 
-**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`).
+**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`).
 
 Ideas taken out of the PRDs, kept here with their last wording so they can be restored. Each entry says where it came from and what replaced it. The full earlier documents are also in git history: commit `cb97c67` holds both files as they were before.
 
@@ -353,3 +353,17 @@ As it stood in §9 of order-generation.md:
 | `PLC-04` | Each court chooses **where the next hearing is entered**, and with it **who enters it**. The setting is `nextHearingEntry`, with two values. **On the cause list** (default): the next hearing is entered on the day's cause list, in a *Next hearing* column beside each case, by the person working the cause list during the hearing. The order screen shows it read only. **In the order**: the next hearing is entered on the order screen, at the foot of the order (`PLC-02`), by the person working on the order. The cause list has no *Next hearing* column. Either way the person needs the **next hearing setter** role (`ROL-03`), and the next hearing is entered in one place only, never both. |
 
 §9's intro read: "Attendance and the next hearing are always on the order. Whether the next hearing is entered in the order or on the cause list is a court setting, because courts divide this work differently." `SND-03` read: "…**whichever way the court enters it** (`PLC-04`). Where it is entered on the cause list, the order shows it read only, so it has to be entered there first."
+
+---
+
+## Cap on upfront channel-fee rounds (`PMT-12`)
+
+**Dropped 2026-11-04.** It was not an owner decision: it was read into the e-filing decisions log (batch 5, "round by round"). The filer's channel-fee rounds now follow only the state's range ([`payment-logic.md`](payment-logic.md) `PMT-10`, `PMT-11`; [`efiling.md`](efiling.md) `PAY-15`).
+
+As it stood in §2 of payment-logic.md:
+
+| ID | Requirement |
+|---|---|
+| `PMT-12` | `[DERIVED]` For a process, the channel-fee rounds paid upfront cannot exceed the court-fee rounds paid upfront ([`efiling.md`](efiling.md) `PAY-15`). |
+
+`PAY-15` of efiling.md also read: "The fee is charged per selected address, per round — no more rounds than those whose court fee they are paying upfront." Before 2026-11-04 it read: "So delivery rounds run **1 … summons rounds prepaid**."

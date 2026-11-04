@@ -1,6 +1,6 @@
 # E-Filing
 
-**Status:** v50.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `efiling.md`. v50 — 2026-10-30; **jurisdiction bank details are asked once for the case** (§11, §20.2): the bank block (`JUR-1…5` / `JUR-6a`) no longer repeats per cheque; the complaint PDF prints one block (§16.4, §16.9). The ADR question (`PRY-5`) is now **Yes/No/Maybe** (§12, §20.2). v49 — 2026-10-24; **digital signing and e-sign are different terms** (§18, §23): digital signing covers every method — mobile OTP, DSC, Aadhaar e-sign; e-sign means Aadhaar-based e-signing only. Mode choice, the upload fallback, clerk rights, mobile verification and the signing SMS now say digital signing. §1, §3, §4, §18, §21, §23. v48 — 2026-10-24; **where the signature is placed follows the signing method** (`SIG-09`, §18.1): on every document — the complaint on its affidavit page, each attached file on its last page — if the method allows it; otherwise once. The methods themselves move to a new PRD, [`signing-methods.md`](signing-methods.md). Replaces Simple / Multi-page. §1, §16.7, §18, §20.2. v47 — 2026-10-24; **two new SMS to all users on the complainant side**: payment pending (the filer exits or the session expires before paying) and case filed (payment completed, case goes to scrutiny); rows added to the master Notifications table, draft. §20.1, §20.2. v46 — 2026-10-19; **the oath moves into Signing** as §18.2 (was §14a; `OTH` IDs unchanged), signing SMS is now §18.3; the scrutiny officer plays and flags each oath separately (`OTH-4` → `SCR-14`) and sees the reason for a paper upload (`SIG-10` → `SCR-15`). §5, §14b, §16.8, §18, §20.2. v45 — 2026-10-19; **the PoA holder records the oath** for a complainant who signs through them (`OTH-3`, `SIG-08`, `SIG-11`); **Record oath** added to the §3 permission matrix — complainant, PoA holder or Institution representative, never advocate or clerk; a leftover paragraph offering oath upload is removed from §14a (it contradicted `OTH-1`). §3, §14a, §18, §20.2. v44 — 2026-10-19; **the oath is recorded, never uploaded** (§14a, `OTH-1`); **signing SMS** (§18.2, `SIG-11`, new) — e-sign and upload, each with and without the oath, held in the master Notifications table (the two oath rows are new); in upload mode each party confirms the OTP and records the oath **on their own device** (phone or computer with a camera), through the link (`SIG-05`). §14a, §18, §20.2. v43 — 2026-10-19; **the signature is affixed Simple or Multi-page** (`SIG-09`, §18.1) — how it appears on the document, not how signing is done; Simple affixes it once for the entire case file; upload of a physically signed copy is a fallback reached from e-sign and **must be justified** with a reason (`SIG-10`); every signatory's mobile number is verified — by the SMS link or login in e-sign, by a separate phone OTP in upload mode (`SIG-05`). Multi-page to follow. §18, §20.2. v42 — 2026-10-19; **the oath moves to signing** (§14a, rewritten): no longer a form section; each complainant records it at their e-sign or OTP confirmation (`OTH-3`, `SIG-08`), only where the state requires it (`oathRequired`, `OTH-2`, `Q-6`); shown to the scrutiny officer (`OTH-4`); not re-recorded on correction unless flagged as an error (`OTH-5`, `SIG-07`). Affidavit is now form section 10, with its own sidebar heading. §5, §14a, §14b, §16.8, §18, §20.2, §21. v41 — 2026-10-19; **payment calculation is per state and not finalised** (§19): the upfront mechanism stays; every fee head, amount, slab, cap, rate and remittance account in §19 is a Kerala illustration, to be built as per-state configuration (`Q-5`, new). §19, §10 (DCA fee), §20.2, §21, §23. v40 — 2026-10-19; **pending tasks follow actions** (§20.1): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v39 — 2026-10-19; **split into two documents** — scrutiny, registration and editability on send-back (old §20.1–§20.4, the court-side columns of the §3 matrix and rows of the §4 lifecycle, and their decisions-log and glossary entries) move to [`scrutiny-registration.md`](scrutiny-registration.md); requirement IDs unchanged. §20 now holds this module's pending tasks, notifications, events and decisions log. The answered Q-2 to Q-4 rows are removed from §21. v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
+**Status:** v50.10 — 2026-11-04; `PAY-15` no longer caps channel-fee rounds at the court-fee rounds paid upfront (see [`dropped-ideas.md`](dropped-ideas.md)). v50.9 — 2026-11-04; `PAY-15`: the upfront channel fee's rounds and default are the state's, per process type, in [`payment-logic.md`](payment-logic.md) — expected optional everywhere — no longer a fixed opt-in default. v50.8 — 2026-11-04; **§19.2.3 E-post is now Channel fee**: no channel fee is collected at launch (`PAY-14`); once a channel with a fee is available, paying it upfront is opt-in, per selected address and round, up to the rounds whose court fee is paid upfront, with the amount from the fee service (`PAY-15`, `[OWNER]`). The ₹100 placeholder and "delivery is by e-post" are removed; `Q-1` no longer waits on the e-post charge. v50.7 — 2026-11-04; **every process is charged per address** (`PAY-12`, now `[OWNER]`): the filer selects addresses for each process paid upfront, not only summons. v50.6 — 2026-11-04; **`PAY-12` is no longer specific to summons and e-post**: any process the state charges per address (Kerala: summons) takes address selection, and its court fee and any channel fee are charged per selected address, per round. v50.5 — 2026-11-04; `PAY-10` reworded in plain language, with Kerala's summons as the example; meaning unchanged. v50.4 — 2026-11-04; **`PAY-11` takes default rounds from the state's table** in [`payment-logic.md`](payment-logic.md); a default that depends on the case, such as Kerala's notice on Delay Condonation, is still evaluated when the bill is drawn. v50.3 — 2026-11-04; **`PAY-10` follows the state's range of rounds payable upfront**: a mandatory summons round applies only where the range's minimum is 1 or more; with a minimum of 0 the filer may opt out entirely. v50.2 — 2026-11-04; **fee figures move to [`payment-logic.md`](payment-logic.md)** (§19): the Kerala case-filing fee table, remittance accounts, process court fee and upfront rounds table are removed and linked; the Parties-in-Person rule is now `PMT-02` there. Upfront process payment may be off in a state, and then §19.2 does not apply (`PMT-06`); `PAY-10` applies where summons is offered upfront. §19.2.1 is now "Rounds". `Q-5` removed — the payment PRD carries those questions. v50.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `efiling.md`. v50 — 2026-10-30; **jurisdiction bank details are asked once for the case** (§11, §20.2): the bank block (`JUR-1…5` / `JUR-6a`) no longer repeats per cheque; the complaint PDF prints one block (§16.4, §16.9). The ADR question (`PRY-5`) is now **Yes/No/Maybe** (§12, §20.2). v49 — 2026-10-24; **digital signing and e-sign are different terms** (§18, §23): digital signing covers every method — mobile OTP, DSC, Aadhaar e-sign; e-sign means Aadhaar-based e-signing only. Mode choice, the upload fallback, clerk rights, mobile verification and the signing SMS now say digital signing. §1, §3, §4, §18, §21, §23. v48 — 2026-10-24; **where the signature is placed follows the signing method** (`SIG-09`, §18.1): on every document — the complaint on its affidavit page, each attached file on its last page — if the method allows it; otherwise once. The methods themselves move to a new PRD, [`signing-methods.md`](signing-methods.md). Replaces Simple / Multi-page. §1, §16.7, §18, §20.2. v47 — 2026-10-24; **two new SMS to all users on the complainant side**: payment pending (the filer exits or the session expires before paying) and case filed (payment completed, case goes to scrutiny); rows added to the master Notifications table, draft. §20.1, §20.2. v46 — 2026-10-19; **the oath moves into Signing** as §18.2 (was §14a; `OTH` IDs unchanged), signing SMS is now §18.3; the scrutiny officer plays and flags each oath separately (`OTH-4` → `SCR-14`) and sees the reason for a paper upload (`SIG-10` → `SCR-15`). §5, §14b, §16.8, §18, §20.2. v45 — 2026-10-19; **the PoA holder records the oath** for a complainant who signs through them (`OTH-3`, `SIG-08`, `SIG-11`); **Record oath** added to the §3 permission matrix — complainant, PoA holder or Institution representative, never advocate or clerk; a leftover paragraph offering oath upload is removed from §14a (it contradicted `OTH-1`). §3, §14a, §18, §20.2. v44 — 2026-10-19; **the oath is recorded, never uploaded** (§14a, `OTH-1`); **signing SMS** (§18.2, `SIG-11`, new) — e-sign and upload, each with and without the oath, held in the master Notifications table (the two oath rows are new); in upload mode each party confirms the OTP and records the oath **on their own device** (phone or computer with a camera), through the link (`SIG-05`). §14a, §18, §20.2. v43 — 2026-10-19; **the signature is affixed Simple or Multi-page** (`SIG-09`, §18.1) — how it appears on the document, not how signing is done; Simple affixes it once for the entire case file; upload of a physically signed copy is a fallback reached from e-sign and **must be justified** with a reason (`SIG-10`); every signatory's mobile number is verified — by the SMS link or login in e-sign, by a separate phone OTP in upload mode (`SIG-05`). Multi-page to follow. §18, §20.2. v42 — 2026-10-19; **the oath moves to signing** (§14a, rewritten): no longer a form section; each complainant records it at their e-sign or OTP confirmation (`OTH-3`, `SIG-08`), only where the state requires it (`oathRequired`, `OTH-2`, `Q-6`); shown to the scrutiny officer (`OTH-4`); not re-recorded on correction unless flagged as an error (`OTH-5`, `SIG-07`). Affidavit is now form section 10, with its own sidebar heading. §5, §14a, §14b, §16.8, §18, §20.2, §21. v41 — 2026-10-19; **payment calculation is per state and not finalised** (§19): the upfront mechanism stays; every fee head, amount, slab, cap, rate and remittance account in §19 is a Kerala illustration, to be built as per-state configuration (`Q-5`, new). §19, §10 (DCA fee), §20.2, §21, §23. v40 — 2026-10-19; **pending tasks follow actions** (§20.1): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v39 — 2026-10-19; **split into two documents** — scrutiny, registration and editability on send-back (old §20.1–§20.4, the court-side columns of the §3 matrix and rows of the §4 lifecycle, and their decisions-log and glossary entries) move to [`scrutiny-registration.md`](scrutiny-registration.md); requirement IDs unchanged. §20 now holds this module's pending tasks, notifications, events and decisions log. The answered Q-2 to Q-4 rows are removed from §21. v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
 case can be registered at Scrutiny now follows from roles (`SCR-11`, §20.3a): a person who
 holds both the Scrutiny officer and Case registerer roles in the courtroom can register
 the case straight from Scrutiny, or forward it; anyone else forwards it to Registration.
@@ -1138,76 +1138,68 @@ table names the digital signing rows "e-sign"; they cover every digital signing 
 
 # 19. Payment — `PAY`
 
-**The mechanism is settled; the calculation is not.** Payment is taken **upfront**, as
-described here: filing fees and upfront process payments are paid before the case goes to
-Scrutiny. **How the amount is calculated is not finalised and differs per state.** Every
-fee head, amount, slab, cap, rate and remittance account in §19.1 and §19.2 is an
-**illustration based on Kerala**, not a requirement — build the calculation as per-state
-configuration, and do not hard-code any figure in this section (`Q-5`).
-
-Global: **Parties in Person are never counted as advocates.**
+Payment is taken **upfront**: filing fees and upfront process payments are paid before
+the case goes to Scrutiny. This section sets out how. What is charged — every fee head,
+amount, condition, cap, slab, process rate and remittance account, per state — is owned
+by [`payment-logic.md`](payment-logic.md), including the rule that Parties in Person are
+never counted as advocates (`PMT-02`).
 
 ## 19.1 Case filing fees
 
-| Head | Amount (INR) | Applies when |
-| --- | --- | --- |
-| Court Fee | 12.5 | ≥ 1 advocate in the case |
-| Legal Benefit Fee | 12.5 | ≥ 1 advocate in the case |
-| Advocate Welfare Fund | 100 per advocate, computed per complainant, **cap 300 per complainant** **[OWNER]** | ≥ 1 advocate |
-| Stipend Stamp | 25 per advocate, computed per complainant, **cap 75 per complainant** **[OWNER]** | ≥ 1 advocate |
-| Advocate Clerk Welfare Fund | 20 | ≥ 1 advocate in the case |
-| Delay Condonation Application Fee | 20 | DCA attached |
-| Complaint Fee | slab: ≤50k → 250 · 50k–2L → 500 · 2L–5L → 750 · 5L–10L → 1,000 · 10L–20L → 2,000 · 20L–50L → 5,000 · >50L → 10,000 | always; **[OWNER]** with multiple cheques the slab is applied to the **sum of all cheque amounts** |
-
-Remittance accounts: Advocate Welfare Fund and Stipend Stamp go to TSB a/c
-799010100175123 · head 8031-00-102-94-07-00-00-N-V · type 01 · head ID 56685; the
-source leaves the other heads' account mapping blank `[GAP]`.
+The fee heads and amounts for each state are in [`payment-logic.md`](payment-logic.md) §3.
 
 ## 19.2 Upfront process payments
+
+Whether upfront process payment is on in a state, which process types it offers, their
+rounds, defaults and what is charged are in [`payment-logic.md`](payment-logic.md) §2 and
+§3. Where it is off, this section does not apply and the step is not shown (`PMT-06`).
 
 Everything in this section is decided **per accused, independently**. What is chosen
 for one accused says nothing about the others; a case with three accused makes the
 choice three times, and the bill states each one separately.
 
-### 19.2.1 Court fee per process
+### 19.2.1 Rounds
 
-A small court fee of **INR 12.50** applies to every round of every process.
+`PAY-10` For each accused, the filer chooses how many rounds of each process to pay for
+upfront. The number must be within the state's rounds payable upfront
+([`payment-logic.md`](payment-logic.md) §3). If the lowest allowed is 0, the filer can
+skip that process. If it is 1 or more, the filer must pay for at least that many, for
+every accused. For example, Kerala allows 1–4 summons rounds, so each accused needs at
+least one.
 
-| Process | Rounds collectable upfront | Default | Charged |
-| --- | --- | --- | --- |
-| Summons | 1–4 | **1 — mandatory**, cannot be declined | 12.50 × rounds × **selected addresses** |
-| Warrants | 0–4 | 1 | 12.50 × rounds |
-| Notice | 0–1 | **1 when Delay Condonation applies**, else 0 | 12.50 × rounds |
-
-`PAY-10` One round of summons is mandatory **for each accused**. An accused cannot be
-left at zero summons rounds; a case with three accused therefore carries at least three.
-
-`PAY-11` The notice default follows the Delay Condonation section: when the DCA applies
-the round is opted in, when it does not it is not. Like `REF-04` ([`scrutiny-registration.md`](scrutiny-registration.md) §8), this is evaluated
-**against the clock at the time the bill is drawn**, not cached from an earlier draft —
-a filing that attracts the DCA during a correction cycle attracts the notice round with
-it. The filer may still decline it.
+`PAY-11` The default rounds for each process type are the state's
+([`payment-logic.md`](payment-logic.md) §3). A default may depend on the case — for
+example, Kerala's notice defaults to 1 round when Delay Condonation applies, otherwise 0.
+Like `REF-04` ([`scrutiny-registration.md`](scrutiny-registration.md) §8), such a default
+is evaluated **against the clock at the time the bill is drawn**, not cached from an
+earlier draft — a filing that attracts the DCA during a correction cycle attracts the
+notice round with it. The filer may still change a default, within `PAY-10`.
 
 ### 19.2.2 Addresses
 
-`PAY-12` The filer selects which of **that accused's** addresses summons is served at;
-at least one. The summons court fee and the e-post fee are each charged once per
-selected address, per round.
+`PAY-12` **[OWNER]** Every process is charged per address. For each process paid
+upfront, the filer selects which of **that accused's** addresses it goes to, at least
+one. Its court fee and any channel fee are each charged once per selected address, per
+round.
 
 `PAY-13` The payment screen must state the multiplication on every line — rate ×
 addresses × rounds — even where a factor is 1, so the filer can see what adding an
 address or a round would cost before doing it.
 
-### 19.2.3 E-post
+### 19.2.3 Channel fee
 
-`PAY-14` Delivery is by **e-post**; there is no channel to choose. **INR 100** per
-address per round stands in until the real charge is supplied (`Q-1`). It is the post
-office's charge, not the court's, and is billed apart from the court fees.
+A channel fee is what a delivery channel charges, apart from the court fee. Only e-Post
+has one, and e-Post comes after launch ([`process.md`](process.md) `FEE-02`, §13.1).
 
-`PAY-15` E-post is opted in and out **separately from the summons court fee**, round by
-round: an accused whose summons is prepaid for three rounds may prepay delivery for
-one, two or three of them. The exception is the mandatory first round, whose e-post is
-collected with it (batch 3). So delivery rounds run **1 … summons rounds prepaid**.
+`PAY-14` No channel fee is collected at launch.
+
+`PAY-15` **[OWNER]** Once a channel with a fee is available, the filer may pay its
+channel fee upfront, separately from the court fee. The rounds they may choose and the
+default are the state's, per process type ([`payment-logic.md`](payment-logic.md) §3);
+it is expected to be optional everywhere (`PMT-11`). The fee is charged per selected
+address, per round. The amount comes from the fee service
+([`process.md`](process.md) `FEE-03`). A channel fee not paid upfront is charged when
+the court issues the process (`FEE-05`, `FEE-06`).
 
 ### 19.2.4 What prepayment buys
 
@@ -1378,8 +1370,7 @@ Items pending delivery:
 
 | # | Item | Blocks |
 | --- | --- | --- |
-| Q-1 | Pending references (owner will supply later): **MDMS sheet**, notifications master file, Event List (Coda), "PUCAR Integrations", the e-post charge (§19.2 `PAY-14`) | MDMS dropdowns, §19, §20.1 |
-| Q-5 | **Payment calculation per state**: fee heads, amounts, slabs, caps, process rates and remittance accounts for each state. §19 carries Kerala's as an illustration only | The fee figures in §19; not the upfront payment mechanism |
+| Q-1 | Pending references (owner will supply later): **MDMS sheet**, notifications master file, Event List (Coda), "PUCAR Integrations" | MDMS dropdowns, §19, §20.1 |
 | Q-6 | **Which states require the oath** (`oathRequired`, `OTH-2`) | Turning the oath on for any state; not the oath step itself |
 
 **Left to engineering at integration time** (owner): payment failure/timeout/
