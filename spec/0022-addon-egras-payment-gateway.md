@@ -556,13 +556,13 @@ class EGRASPaymentProvider(PaymentProvider):
     """Collect payments into government heads of account through e-GRAS."""
 
     name = "egras"
-    pending_horizon = ...   # EGRAS_PENDING_HORIZON, #6.4
-    not_found_grace = ...   # EGRAS_NOT_FOUND_GRACE, #6.4
+    pending_horizon = ...  # EGRAS_PENDING_HORIZON, #6.4
+    not_found_grace = ...  # EGRAS_NOT_FOUND_GRACE, #6.4
 
-    def list_options(self) -> list[PaymentOption]: ...         # EGRAS_BANK_OPTIONS, #4.6
-    def initiate(self, request) -> ProviderInitiation: ...     # #4, no network call
-    def fetch_status(self, *, provider_payment_id) -> ProviderStatus: ...   # #6
-    def parse_callback(self, payload) -> ProviderCallback: ... # #5, trusted=False
+    def list_options(self) -> list[PaymentOption]: ...  # EGRAS_BANK_OPTIONS, #4.6
+    def initiate(self, request) -> ProviderInitiation: ...  # #4, no network call
+    def fetch_status(self, *, provider_payment_id) -> ProviderStatus: ...  # #6
+    def parse_callback(self, payload) -> ProviderCallback: ...  # #5, trusted=False
 ```
 
 `initiate` makes **no network call**: it only builds form fields. It can
@@ -576,7 +576,7 @@ PAYMENT_PROVIDERS = {
     "mock": "apps.payments.providers.mock.MockPaymentProvider",
     "egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider",
 }
-PAYMENT_DEFAULT_PROVIDER = "egras"      # only change needed to go live
+PAYMENT_DEFAULT_PROVIDER = "egras"  # only change needed to go live
 ```
 
 Recommended per-environment default: `mock` in `config.settings.local` and
