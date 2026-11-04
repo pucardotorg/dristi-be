@@ -1,0 +1,22 @@
+[seed]
+model = "locations.Location"
+
+# A referent (the country) is defined before the rows that point at it.
+[[rows]]
+code = "IN"
+name = "India"
+short_name = "IN"
+location_type = "country"
+
+[[rows]]
+code = "IN_KL"
+name = "Kerala"
+short_name = "KL"
+location_type = "state"
+parent = "IN"
+
+[[rows]]
+code = "IN_KL_ERN"
+name = "Ernakulam"
+location_type = "district"
+parent = "IN_KL"
