@@ -15,9 +15,9 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing",
       "contentHash": "a7e9952476ad",
-      "pageUpdatedAt": 1793681316.547,
+      "pageUpdatedAt": 1793796942.072,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match). 2026-10-30: patched in place to v50 (§11 note replaced by cl-m468m1p6tY; PRY-5 cell in grid-UGBc7eKxqI; §16.4 row 2.3 in grid-CZmW9VMuDl; §16.9 page-5 bullet; batch 19 block cl-_STdzi6lOi; Status block and callout prepended)."
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match). 2026-10-30: patched in place to v50 (§11 note replaced by cl-m468m1p6tY; PRY-5 cell in grid-UGBc7eKxqI; §16.4 row 2.3 in grid-CZmW9VMuDl; §16.9 page-5 bullet; batch 19 block cl-_STdzi6lOi; Status block and callout prepended). 2026-11-04: patched in place to v50.10 — §19 rewritten (fee figures now link to payment-logic; grids grid-KUHUyNtILD and grid-cH4_y371AG deleted; PAY-10–12, PAY-14, PAY-15 blocks replaced by insert-then-delete), Status block and callout prepended, Q-1 cell edited and Q-5 row deleted in grid-UpCdPcmE4h. contentHash still left as before: the file-name link renames are still not on the page."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -1662,9 +1662,9 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "922d6844ca4e",
-      "pageUpdatedAt": 1793679500.864,
-      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded."
+      "contentHash": "e5ec543f5e93",
+      "pageUpdatedAt": 1793796960.458,
+      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded."
     },
     "office-management.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-lxUEhfnjuv",
@@ -1915,14 +1915,19 @@
     "payment-logic.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-690VkCoSSB",
       "title": "Payment Logic",
-      "contentHash": "2c29a6d2f728",
-      "pageUpdatedAt": 1793360843.183,
+      "contentHash": "a4e8ce0f5a41",
+      "pageUpdatedAt": 1793796757.26,
       "calloutElementId": "cl-N8Oug4EJ6b",
       "sections": [
         {
           "key": "# Payment Logic",
-          "elementId": "cl-aQNFEk3wYS",
-          "hash": "b0c24262f63d"
+          "elementId": "cl-2TEVGygvLY",
+          "hash": "4209835dc751"
+        },
+        {
+          "key": "### 3.1 Kerala",
+          "elementId": "cl-dXn3_eq1nl",
+          "hash": "9b523e7d4a9c"
         }
       ]
     },
