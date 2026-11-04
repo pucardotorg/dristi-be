@@ -26,8 +26,8 @@ by language-aware endpoints.
   to add or withdraw a language.
 - Per-language capability metadata (`supports`: UI, translation, OCR, …).
 - One default (fallback) language, enforced at the database level.
-- A public, read-only, unpaginated API listing active languages, filterable by
-  capability.
+- A public, read-only, paginated API listing active languages, filterable by
+  capability (pagination per spec 0000 section 11).
 - A single resolver, `apps.core.languages.resolve_request_language`, that maps
   a request (`lang` query parameter, `Accept-Language` header) to a `Language`.
 - Follow the repository API conventions (`spec/0000-api-coding-spec.md`).
@@ -139,7 +139,7 @@ Register `Language` in `apps.core.admin` (`LanguageAdmin`):
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/languages/` | List of active supported languages (unpaginated). |
+| GET | `/api/v1/languages/` | List of active supported languages (paginated). |
 
 Notes:
 
@@ -157,10 +157,11 @@ Notes:
   app): restricts the list to languages that declare that capability
   (`supports__contains`). An invalid value fails validation with `E00005`
   (`field: "supports"`); no new error code is needed.
-- Unpaginated: the set is small and clients need all of it to build a picker.
-  The action/view is listed in `unpaginated_actions` (or the view is a plain
-  list view returning the whole set) so the schema documents
-  `{"data": [...], "meta": ...}`.
+- Paginated with the project standard (spec 0000 section 11): DRF page-number
+  pagination via `APIListMixin`, the shared `PAGE_SIZE` (20) and `?page=N`.
+  The response uses the standard shape `{"count", "next", "previous",
+  "results", "meta"}`; the small size of the language set is not a justified
+  exception to the pagination standard.
 
 ### 5. Language resolution
 
@@ -213,7 +214,10 @@ languages by `code`, receive them already ordered, and only see active ones.
 
 ```json
 {
-  "data": [
+  "count": 3,
+  "next": null,
+  "previous": null,
+  "results": [
     {"code": "en", "name": "English", "native_name": "English", "is_default": true, "supports": ["ui"]},
     {"code": "ml", "name": "Malayalam", "native_name": "മലയാളം", "is_default": false, "supports": ["ui"]},
     {"code": "hi", "name": "Hindi", "native_name": "हिन्दी", "is_default": false, "supports": ["ui"]}
@@ -285,7 +289,10 @@ Add model and API tests covering at least:
 1. `Language`: code validator accepts `en`, `ml`, `en-in`, rejects `EN_IN`, `e`, `en-`, `en\n`; code is lowercased on save; only one default allowed; default cannot be inactive or deleted.
 2. `supports` accepts only known `LanguageSupport` values, rejects duplicates
    and non-list input, and is normalised to enum order on save.
-3. `GET /api/v1/languages/` is public, unpaginated (`data` + `meta`), returns only active languages in `sort_order`, and exposes exactly `code`, `name`, `native_name`, `is_default`, `supports`.
+3. `GET /api/v1/languages/` is public, paginated with the standard shape
+   (`count`, `next`, `previous`, `results` + `meta`), returns only active
+   languages in `sort_order`, and exposes exactly `code`, `name`,
+   `native_name`, `is_default`, `supports`.
 4. `?supports=ui` returns only languages declaring `ui`; `?supports=bogus`
    returns `400` with code `E00005` and field `supports`.
 5. Resolution order: `lang` beats `Accept-Language`; `Accept-Language` beats the default; `q` values are honoured; `en-IN` matches `en`; unknown or malformed `Accept-Language` falls back to the default without error.
