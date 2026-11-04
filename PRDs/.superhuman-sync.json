@@ -1944,6 +1944,20 @@
           "hash": "585526392c21"
         }
       ]
+    },
+    "case-file.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WBYZ9C_w-f",
+      "title": "Case File",
+      "contentHash": "985ec7090369",
+      "pageUpdatedAt": 1793798207.909,
+      "calloutElementId": "cl-I3IpwuxKBN",
+      "sections": [
+        {
+          "key": "# Case File",
+          "elementId": "cl-GSkCgbIWO9",
+          "hash": "985ec7090369"
+        }
+      ]
     }
   },
   "prdsTableUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu/tables/grid-3QCTt30e1H"
