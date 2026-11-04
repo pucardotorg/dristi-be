@@ -287,6 +287,48 @@ class TestApplyProviderStatus:
         [payment] = reload([payment])
         assert payment.status == PaymentStatus.FAILED and not payment.needs_reconciliation
 
+    def test_success_with_a_reconciliation_code_confirms_and_flags(
+        self, raise_demand, user, fake_provider
+    ):
+        """A provider anomaly (e.g. a duplicate collection) is credited once and flagged."""
+        [payment] = pending(raise_demand, user, fake_provider)
+        PaymentService.apply_provider_status(
+            [payment],
+            status(
+                payment.provider_payment_id,
+                "SUCCESS",
+                "37.50",
+                reconciliation_code="FAKE_DUPLICATE",
+                metadata={"cin": "C1"},
+            ),
+        )
+        [payment] = reload([payment])
+        assert payment.status == PaymentStatus.SUCCESS
+        assert payment.demand.paid_amount == Decimal("37.50")
+        assert payment.needs_reconciliation
+        assert payment.metadata["reconciliation"]["reason"] == "PAYMENT_PROVIDER_FLAGGED"
+        assert payment.metadata["reconciliation"]["provider_code"] == "FAKE_DUPLICATE"
+        assert payment.metadata["provider"]["cin"] == "C1"  # the confirmation is kept
+
+    def test_reconciliation_code_flags_an_already_successful_payment(
+        self, raise_demand, user, fake_provider
+    ):
+        """A duplicate seen after the credit is still flagged, never credited twice."""
+        [payment] = pending(raise_demand, user, fake_provider)
+        verdict = status(payment.provider_payment_id, "SUCCESS", "37.50")
+        PaymentService.apply_provider_status([payment], verdict)
+        flagged = status(
+            payment.provider_payment_id, "SUCCESS", "37.50", reconciliation_code="FAKE_DUPLICATE"
+        )
+        PaymentService.apply_provider_status([payment], flagged)
+        PaymentService.apply_provider_status([payment], flagged)
+        [payment] = reload([payment])
+        assert payment.status == PaymentStatus.SUCCESS
+        assert payment.demand.paid_amount == Decimal("37.50")
+        assert payment.needs_reconciliation
+        assert payment.metadata["reconciliation"]["reason"] == "PAYMENT_PROVIDER_FLAGGED"
+        assert "reconciliation_history" not in payment.metadata  # flagged once
+
     def test_batch_amount_is_the_sum_of_the_batch(self, raise_demand, user, fake_provider):
         payments = pending(raise_demand, user, fake_provider, n=3)
         assert len({p.provider_payment_id for p in payments}) == 1

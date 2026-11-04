@@ -708,54 +708,80 @@ class PaymentService:
             )
             if not locked:
                 return []
-            outcome = status.outcome
+            applied = cls._apply_locked(locked, status)
+            if status.reconciliation_code:
+                applied = cls._flag_provider_anomaly(locked, status)
+            return applied
 
-            if all(p.is_open for p in locked):
-                if outcome == ProviderOutcome.SUCCESS:
-                    expected = sum((p.amount for p in locked), ZERO)
-                    # Only a reported amount equal to the batch sum is credited; a
-                    # success that reports no amount cannot be checked (spec 0017 #9.5).
-                    if status.amount is None or Decimal(status.amount) != expected:
-                        if cls._flag(locked, "PAYMENT_AMOUNT_MISMATCH", status):
-                            logger.error(
-                                "PAYMENT_AMOUNT_MISMATCH: provider %s reported %s for %s, "
-                                "expected %s",
-                                locked[0].provider,
-                                status.amount,
-                                status.provider_payment_id,
-                                expected,
-                            )
-                        return locked
-                    return cls.confirm_payment(
-                        locked[0],
-                        provider_reference=status.provider_reference,
-                        metadata=status.metadata,
-                    )
-                if outcome == ProviderOutcome.FAILED:
-                    return cls.fail_payment(
-                        locked[0],
-                        failure_code=status.failure_code or FAILURE_PROVIDER_FAILED,
-                        failure_message=status.failure_message,
-                    )
-                if outcome == ProviderOutcome.NOT_FOUND and cls._not_found_is_final(locked):
-                    return cls.fail_payment(
-                        locked[0],
-                        failure_code=FAILURE_NOT_FOUND_AT_PROVIDER,
-                        failure_message="The payment provider has no record of this payment.",
-                    )
-                return locked
+    @classmethod
+    def _apply_locked(cls, locked: list[Payment], status: ProviderStatus) -> list[Payment]:
+        """The table of spec 0017 #9.5, on payments already locked by the caller."""
 
-            if outcome == ProviderOutcome.SUCCESS and any(
-                p.status in (PaymentStatus.FAILED, PaymentStatus.CANCELLED) for p in locked
-            ):
-                if cls._flag(locked, "PAYMENT_LATE_SUCCESS", status):
-                    logger.error(
-                        "PAYMENT_LATE_SUCCESS: provider %s reported success for terminal "
-                        "payment %s",
-                        locked[0].provider,
-                        status.provider_payment_id,
-                    )
+        outcome = status.outcome
+        if all(p.is_open for p in locked):
+            if outcome == ProviderOutcome.SUCCESS:
+                expected = sum((p.amount for p in locked), ZERO)
+                # Only a reported amount equal to the batch sum is credited; a
+                # success that reports no amount cannot be checked (spec 0017 #9.5).
+                if status.amount is None or Decimal(status.amount) != expected:
+                    if cls._flag(locked, "PAYMENT_AMOUNT_MISMATCH", status):
+                        logger.error(
+                            "PAYMENT_AMOUNT_MISMATCH: provider %s reported %s for %s, expected %s",
+                            locked[0].provider,
+                            status.amount,
+                            status.provider_payment_id,
+                            expected,
+                        )
+                    return locked
+                return cls.confirm_payment(
+                    locked[0],
+                    provider_reference=status.provider_reference,
+                    metadata=status.metadata,
+                )
+            if outcome == ProviderOutcome.FAILED:
+                return cls.fail_payment(
+                    locked[0],
+                    failure_code=status.failure_code or FAILURE_PROVIDER_FAILED,
+                    failure_message=status.failure_message,
+                )
+            if outcome == ProviderOutcome.NOT_FOUND and cls._not_found_is_final(locked):
+                return cls.fail_payment(
+                    locked[0],
+                    failure_code=FAILURE_NOT_FOUND_AT_PROVIDER,
+                    failure_message="The payment provider has no record of this payment.",
+                )
             return locked
+
+        if outcome == ProviderOutcome.SUCCESS and any(
+            p.status in (PaymentStatus.FAILED, PaymentStatus.CANCELLED) for p in locked
+        ):
+            if cls._flag(locked, "PAYMENT_LATE_SUCCESS", status):
+                logger.error(
+                    "PAYMENT_LATE_SUCCESS: provider %s reported success for terminal payment %s",
+                    locked[0].provider,
+                    status.provider_payment_id,
+                )
+        return locked
+
+    @classmethod
+    def _flag_provider_anomaly(cls, locked: list[Payment], status: ProviderStatus) -> list[Payment]:
+        """Flag what the provider asked an operator to review; the outcome stands.
+
+        Re-read first: applying the outcome may have confirmed or failed these
+        rows, and flagging the stale copies would overwrite that metadata.
+        """
+
+        fresh = list(
+            Payment.objects.select_for_update().filter(pk__in=[p.pk for p in locked]).order_by("pk")
+        )
+        if cls._flag(fresh, "PAYMENT_PROVIDER_FLAGGED", status):
+            logger.error(
+                "PAYMENT_PROVIDER_FLAGGED: provider %s flagged %s for review: %s",
+                fresh[0].provider,
+                status.provider_payment_id,
+                status.reconciliation_code,
+            )
+        return fresh
 
     @staticmethod
     def _not_found_is_final(payments: list[Payment]) -> bool:
@@ -787,6 +813,8 @@ class PaymentService:
                 amount=None if status.amount is None else str(status.amount),
                 provider_reference=status.provider_reference,
             )
+            if status.reconciliation_code:
+                detail["provider_code"] = status.reconciliation_code
         flagged = []
         for p in payments:
             previous = p.metadata.get("reconciliation") or {}

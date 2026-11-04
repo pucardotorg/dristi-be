@@ -67,7 +67,9 @@ class EGRASConfig:
     office_name: str = ""
     user_id: str = "guest"
     scheme_map: dict = field(default_factory=dict)
-    max_schemes: int = 4
+    # One head until NIC confirms the field names of the second and later heads
+    # (spec 0022 #16 Q-3); see ``constants.scheme_name_field``.
+    max_schemes: int = 1
     bank_options: tuple[BankOption, ...] = ()
     default_bank: str = ""
     application_prefix: str = "DR"
@@ -218,7 +220,7 @@ def resolve_config() -> EGRASConfig:
         office_name=get("EGRAS_OFFICE_NAME", ""),
         user_id=get("EGRAS_USER_ID", "") or "guest",
         scheme_map=dict(get("EGRAS_SCHEME_MAP", {}) or {}),
-        max_schemes=int(get("EGRAS_MAX_SCHEMES", 4)),
+        max_schemes=int(get("EGRAS_MAX_SCHEMES", 1)),
         bank_options=_bank_options(get("EGRAS_BANK_OPTIONS", ())),
         default_bank=get("EGRAS_DEFAULT_BANK", ""),
         application_prefix=get("EGRAS_APPLICATION_PREFIX", "") or "DR",

@@ -306,6 +306,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CDAC_ESIGN_ALLOW_SHA1_RESPONSE` | Also accept RSA-SHA1 / SHA-1 response signatures. C-DAC signs eSign 2.1 responses with SHA-1, so it must be `True` for them to verify | `False` |
 | `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
 | `PAYMENT_DEFAULT_PROVIDER` | Name (a key of the `PAYMENT_PROVIDERS` setting) of the provider new payments are started with; empty leaves payments `INITIATED` for an operator. Payments in flight keep their own provider. | `mock` locally, empty in production until a gateway addon ships |
+| `PAYMENT_REGISTERED_PROVIDERS` | Comma-separated provider names kept registered besides the default, so payments still pending at a provider that is no longer the default keep resolving through its callback and poller | empty; `egras` while switching away from e-GRAS |
 | `PAYMENT_DEFAULT_CURRENCY` | Currency a demand is raised in when none is given | `INR` |
 | `PAYMENT_UI_REDIRECT_URL` | Server-side redirect target of the provider callback; `https://` in production | `https://app.example.com/payments/return` |
 | `PAYMENT_CALLBACK_THROTTLE_RATE` | Per-IP throttle for the public callback; blank disables it | `60/min` |
@@ -337,7 +338,14 @@ in `PAYMENT_PROVIDERS` for you. The addon's system checks require every value
 below only when `"egras"` is a registered provider, so a deployment that is not
 yet onboarded with NIC leaves `PAYMENT_DEFAULT_PROVIDER` empty — no provider is
 registered, the checks stay silent, and the app boots normally. Local and CI
-need no e-GRAS codes. Removing the `EGRAS_*` block and the `INSTALLED_APPS`
+need no e-GRAS codes.
+
+To stop new e-GRAS payments, or to move to another gateway, change
+`PAYMENT_DEFAULT_PROVIDER` but set `PAYMENT_REGISTERED_PROVIDERS=egras` until
+`python manage.py payments_provider_usage egras` shows nothing pending (at most
+`EGRAS_PENDING_HORIZON` days). Unregistering e-GRAS earlier strands those
+payments: their callbacks return 404 and the poller cannot verify them.
+`EGRAS_ENABLED=False` is the quicker kill switch and keeps verification running. Removing the `EGRAS_*` block and the `INSTALLED_APPS`
 entry removes the integration entirely.
 
 | Variable | Purpose | Example |
@@ -351,7 +359,7 @@ entry removes the integration entirely.
 | `EGRAS_OFFICE_NAME` | 8-character office name; defaults to `DTO+STO+DDO` | `0102DDO1` |
 | `EGRAS_USER_ID` | e-GRAS user id | `guest` |
 | `EGRAS_SCHEME_MAP` | JSON: `account_head` or `charge_type` → 17-character scheme code `NNNN-NN-NNN-NN-NN` | `{"COURT_FEE": "0030-01-501-01-00"}` |
-| `EGRAS_MAX_SCHEMES` | Government-charge scheme slots per transaction | `4` |
+| `EGRAS_MAX_SCHEMES` | Government-charge scheme slots per transaction. Keep `1` until NIC confirms the field names of the second and later heads (spec 0022 Q-3); up to `4` once confirmed | `1` |
 | `EGRAS_BANK_OPTIONS` | JSON list of `{code, label, group}` bank/UPI choices issued by NIC | `[{"code": "SBI", "label": "State Bank of India", "group": "NET_BANKING"}]` |
 | `EGRAS_DEFAULT_BANK` | Bank code used when the client sends none; must be one of the options | `SBI` |
 | `EGRAS_APPLICATION_PREFIX` | ≤ 2 alphanumeric characters prefixing the application number | `DR` |

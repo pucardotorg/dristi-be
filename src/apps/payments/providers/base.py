@@ -102,6 +102,9 @@ class ProviderStatus:
     failure_code: str  # provider's internal code, e.g. "EGRAS_PAYMENT_FAILED"
     failure_message: str  # safe, user-presentable
     metadata: dict  # non-sensitive
+    # Provider's internal code for an anomaly an operator must review, e.g. a
+    # duplicate collection; the outcome is still applied and the payment flagged.
+    reconciliation_code: str = ""
 
 
 @dataclass(frozen=True)

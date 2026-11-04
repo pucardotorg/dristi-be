@@ -165,3 +165,40 @@ def test_failure_status_fails_the_payment(egras, raise_demand, user):
     payment.refresh_from_db()
     assert payment.status == PaymentStatus.FAILED
     assert payment.failure_code == constants.EGRAS_PAYMENT_FAILED
+
+
+def two_successes():
+    return (
+        b"<ArrayOfGrnDetails>"
+        + grn_xml(grn="111", cin="CIN1")
+        + grn_xml(grn="222", cin="CIN2")
+        + b"</ArrayOfGrnDetails>"
+    )
+
+
+def test_double_payment_is_credited_once_and_flagged(egras, raise_demand, user):
+    """Two successful GRNs for one application number: one credit, one operator flag."""
+    payment = pay(raise_demand(), user=user).payment
+
+    with mock_verify(two_successes()):
+        assert redirect_status(callback(payment.provider_payment_id)) == PaymentStatus.SUCCESS
+
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.SUCCESS
+    assert payment.demand.paid_amount == Decimal("100.00")
+    assert payment.needs_reconciliation
+    assert payment.metadata["reconciliation"]["provider_code"] == "EGRAS_MULTIPLE_SUCCESS"
+    assert payment.metadata["provider"]["success_grns"] == ["111", "222"]
+
+
+def test_double_payment_seen_after_confirmation_is_flagged(egras, raise_demand, user):
+    payment = pay(raise_demand(), user=user).payment
+    with mock_verify(grn_xml(grn="111")):
+        callback(payment.provider_payment_id)
+
+    with mock_verify(two_successes()):
+        assert redirect_status(callback(payment.provider_payment_id)) == PaymentStatus.SUCCESS
+
+    payment.refresh_from_db()
+    assert payment.demand.paid_amount == Decimal("100.00")
+    assert payment.needs_reconciliation

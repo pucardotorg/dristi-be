@@ -109,10 +109,15 @@ apps.payments                -- never imports -->  addon.*
 config.settings.base         -- references -->     "addon.egras_payment_gateway.provider.EGRASPaymentProvider"
 ```
 
-The addon imports only the contract: `PaymentProvider`, its dataclasses and
-its exception types. It never imports `apps.payments` models, services,
-selectors, tasks or errors, and never receives a model instance, so it cannot
-write a balance even by accident.
+The addon imports the contract — `PaymentProvider`, its dataclasses and its
+exception types from `apps.payments.providers.base` — plus three read-only
+helpers used by its configuration and system checks: `apps.payments.conf`
+(is `"egras"` registered?), `apps.payments.checks.is_production_settings` and
+the `apps.payments.enums.ChargeType` labels (the unmapped-charge warning). It
+never imports `apps.payments` models, services, selectors, tasks, views,
+serializers, signals, the provider registry or the mock, and never receives a
+model instance, so it cannot write a balance even by accident.
+`tests/test_isolation.py` enforces exactly this list.
 
 Django registration:
 
@@ -260,7 +265,7 @@ are out of scope (#14).
 | `STO` | `EGRAS_STO` | 2 digits |
 | `DDO` | `EGRAS_DDO` | 4 characters |
 | `Deptcode` | `EGRAS_DEPT_CODE` | 3 characters |
-| `Officename` | `EGRAS_OFFICE_NAME`, else `DTO + STO + DDO` | 8 characters |
+| `Officename` | `EGRAS_OFFICE_NAME`, else `DTO + STO + DDO` | ≤ 8 characters (the derived value is 8; the NIC v3.6 sample posts 5) |
 | `USERID` | `EGRAS_USER_ID` | default `guest` |
 | `ChallanYear` | financial year of `initiated_at` in IST (#4.5) | 4 digits, e.g. `2627` |
 | `Applicationnumber` | `provider_payment_id` (#4.4) | ≤ 20, `[A-Za-z0-9 /-]` |
@@ -275,13 +280,16 @@ are out of scope (#14).
 | `Remarks` | `EGRAS_REMARKS_TEMPLATE` (#4.7) | ≤ 200, `[A-Za-z0-9 /,#-]` |
 | `TotalAmount` | sum of scheme amounts | integer rupees |
 | `SCHEMECOUNT` | number of schemes | 1 … `EGRAS_MAX_SCHEMES` |
-| `SCHEMENAME{n}` / `FEEAMOUNT{n}` | #4.3 | 17-char scheme code / integer |
+| `SCHEMENAME`, `SCHEMENAME2`… / `FEEAMOUNT1`, `FEEAMOUNT2`… | #4.3 | 17-char scheme code / integer |
 | `UURL` | `EGRAS_RETURN_URL` | absolute `https://` URL of the callback endpoint (0017 #9.6) |
 
 `VALID_UPTO`, `CSC_ID` and `CSC_Amount` are not sent: they belong to manual and
-CSC modes, which are out of scope. The exact name of the first scheme field is
-confirmed during NIC onboarding (#16, Q-3); it is a constant in
-`constants.py`, not a setting.
+CSC modes, which are out of scope. The first scheme posts as `SCHEMENAME` (no
+suffix) with `FEEAMOUNT1`, following the NIC v3.6 sample request. The names of
+the second and later schemes have no NIC sample and are assumed to be
+`SCHEMENAME2`/`FEEAMOUNT2`…; until NIC confirms them (#16, Q-3)
+`EGRAS_MAX_SCHEMES` defaults to `1`. The names are constants in
+`constants.py`, not settings.
 
 ### 4.3 Schemes (heads of account)
 
@@ -291,7 +299,6 @@ the request's `ChargeLine`s into `SCHEMENAME`/`FEEAMOUNT` pairs:
 ```text
 for each ChargeLine:
     scheme = EGRAS_SCHEME_MAP[line.account_head]      if present
-          or line.account_head                         if it is itself a valid scheme code
           or EGRAS_SCHEME_MAP[line.charge_type]        if present
           or ProviderPermanentError(EGRAS_SCHEME_UNMAPPED)
 
@@ -303,10 +310,15 @@ TotalAmount = sum of scheme amounts == request.amount
 ```
 
 - A valid scheme code is 17 characters in the `NNNN-NN-NNN-NN-NN` shape
-  (`^\d{4}-\d{2}-\d{3}-\d{2}-\d{2}$`).
+  (`^\d{4}-\d{2}-\d{3}-\d{2}-\d{2}$`); every `EGRAS_SCHEME_MAP` value is
+  checked at startup (#9.3).
 - `EGRAS_SCHEME_MAP` keys may be `account_head` values or `charge_type` values;
   `account_head` is looked up first because it is the fee master's own
   snapshot. The map is state configuration, never code.
+- An `account_head` is **never** used as a literal scheme code, even when it
+  has the scheme shape. It is data on a demand, not operator configuration;
+  honouring it directly would let whoever raises a demand choose which head of
+  account the treasury credits. Only codes in `EGRAS_SCHEME_MAP` are sent.
 - **There is no default scheme.** Crediting money to a wrong head of account is
   worse than refusing the payment, so an unmapped charge is a permanent,
   operator-visible configuration error.
@@ -315,9 +327,13 @@ TotalAmount = sum of scheme amounts == request.amount
   a head fails with `EGRAS_FRACTIONAL_AMOUNT`. Rounding a court fee is a fee
   master decision owned by the raising module, not a transport decision
   (#16, Q-1).
-- Only government-charge schemes are used. `EGRAS_MAX_SCHEMES` defaults to the
-  government-charge slot count (`4`); service-charge slots (payments to
-  non-government accounts) are out of scope.
+- Only government-charge schemes are used; service-charge slots (payments to
+  non-government accounts) are out of scope. e-GRAS offers four
+  government-charge slots, but `EGRAS_MAX_SCHEMES` defaults to `1` until NIC
+  confirms the field names of the second and later schemes (#4.2, Q-3); a
+  payment spanning more heads fails with `EGRAS_TOO_MANY_SCHEMES` rather than
+  posting unconfirmed fields to the treasury. Raise it to at most `4` once
+  confirmed.
 - A batch across several demands produces one scheme set for the whole e-GRAS
   transaction. The per-demand breakup stays in `apps.payments`
   (`PaymentDemandItem`), which is what each case's receipt is built from.
@@ -495,6 +511,7 @@ TLS:       1.2+, certificate verification on (EGRAS_VERIFY_SSL)
 | --- | --- | --- |
 | `Successfull` / `Success` | `GRN` and `CIN` non-empty, `Amount` an integer | `SUCCESS` |
 | `Successfull` / `Success` | `GRN` or `CIN` missing | `PENDING` (`EGRAS_SUCCESS_INCOMPLETE`) |
+| more than one successful record | a double payment for one `Applicationnumber` | `SUCCESS` from the first, `reconciliation_code = EGRAS_MULTIPLE_SUCCESS`, every GRN in `metadata["success_grns"]` |
 | `Failure` | — | `FAILED` (`EGRAS_PAYMENT_FAILED`) |
 | `Pending` | — | `PENDING` |
 | `Not Found` | — | `NOT_FOUND` |
@@ -504,6 +521,14 @@ TLS:       1.2+, certificate verification on (EGRAS_VERIFY_SSL)
 - `ProviderStatus.amount` is `Decimal(Amount)`; `provider_reference` is `GRN`;
   `paid_at` is `Bankdate` at IST midnight when parsable, else `None`;
   `metadata` carries `cin`, `bank_date` and, from the callback hint, `bankcode`.
+- `GetGrnDetails_identity` returns an `ArrayOfGrnDetails`. Each record is
+  mapped on its own (fields are never mixed across records); a `SUCCESS` record
+  wins, and a `FAILED` record never outranks one that is `PENDING` or
+  `NOT_FOUND`, so money that is in or on its way is never marked failed. A
+  double payment is credited once by `apps.payments`, which flags every payment
+  of the transaction `needs_reconciliation` (`PAYMENT_PROVIDER_FLAGGED`) —
+  also when the second GRN shows up after the first was already credited
+  ([0017](0017-orders-management.md) #9.5).
 - Unknown vocabulary maps to `PENDING`, never `FAILED`
   ([0017](0017-orders-management.md) #9.2 rule 5): e-GRAS explicitly asks
   departments to re-check any unrecognised status.
@@ -565,16 +590,20 @@ production.
 The generic procedure is 0017 #9.8. For e-GRAS specifically:
 
 ```text
-1. Register the new provider in PAYMENT_PROVIDERS; keep "egras".
+1. Register the new provider in PAYMENT_PROVIDERS; keep "egras" registered
+   (in the environment-driven settings: PAYMENT_REGISTERED_PROVIDERS=egras).
 2. Point PAYMENT_DEFAULT_PROVIDER at it.        -> new payments use it immediately
 3. Wait until `manage.py payments_provider_usage egras` shows no PENDING payment
    — at most EGRAS_PENDING_HORIZON.
-4. Remove "egras" from PAYMENT_PROVIDERS, the INSTALLED_APPS entry and the
-   EGRAS_* block, and delete src/addon/egras_payment_gateway/.
+4. Remove "egras" from PAYMENT_PROVIDERS / PAYMENT_REGISTERED_PROVIDERS, the
+   INSTALLED_APPS entry and the EGRAS_* block, and delete
+   src/addon/egras_payment_gateway/.
 ```
 
 Between steps 2 and 3, e-GRAS callbacks and polls still resolve through the
-registered e-GRAS provider. Historic payments keep `provider="egras"` and their
+registered e-GRAS provider. Registration is deliberately independent of the
+default: dropping "egras" before step 3 would make its callbacks `404` and
+leave its pending payments unverifiable by the poller. Historic payments keep `provider="egras"` and their
 GRN in `provider_reference`; they never need the addon again. `EGRAS_ENABLED =
 False` is the emergency variant of step 2: new e-GRAS payments are refused
 while verification keeps working for those in flight.
@@ -616,10 +645,10 @@ EGRAS_DEPT_CODE = env("EGRAS_DEPT_CODE", default="")
 | `EGRAS_DTO` | yes | `""` | 2 digits |
 | `EGRAS_STO` | yes | `""` | 2 digits |
 | `EGRAS_DDO` | yes | `""` | 4 characters |
-| `EGRAS_OFFICE_NAME` | no | `DTO+STO+DDO` | override only if NIC issues a different value |
+| `EGRAS_OFFICE_NAME` | no | `DTO+STO+DDO` | ≤ 8 characters; override only if NIC issues a different value |
 | `EGRAS_USER_ID` | no | `guest` | |
 | `EGRAS_SCHEME_MAP` | yes | `{}` | JSON: `account_head` or `charge_type` → 17-char scheme code |
-| `EGRAS_MAX_SCHEMES` | no | `4` | government-charge scheme slots |
+| `EGRAS_MAX_SCHEMES` | no | `1` | government-charge scheme slots; `1` until NIC confirms multi-scheme field names (Q-3), at most `4` |
 | `EGRAS_BANK_OPTIONS` | yes | `[]` | JSON list of `{code, label, group}` issued by NIC |
 | `EGRAS_DEFAULT_BANK` | no | `""` | must be one of the option codes |
 | `EGRAS_APPLICATION_PREFIX` | no | `DR` | ≤ 2 characters, alphanumeric |
@@ -651,7 +680,7 @@ when `"egras"` is in `PAYMENT_PROVIDERS`:
   `https://` URLs, and `EGRAS_RETURN_URL` ends with the generic callback path
   for `egras`;
 - `EGRAS_DTO`, `EGRAS_STO`, `EGRAS_DDO`, `EGRAS_DEPT_CODE` have the required
-  lengths, and the office name is 8 characters;
+  lengths, and the office name is at most 8 characters;
 - every `EGRAS_SCHEME_MAP` value is a valid 17-character scheme code;
 - `EGRAS_BANK_OPTIONS` parses, codes are unique, and `EGRAS_DEFAULT_BANK` (if
   set) is among them;
@@ -696,6 +725,7 @@ providers therefore never changes the API's codes.
 | `EGRAS_PAYMENT_FAILED` | `ProviderStatus(FAILED)` | `FAILED` with this `failure_code` |
 | `EGRAS_SUCCESS_INCOMPLETE` | `ProviderStatus(PENDING)` | unchanged; logged |
 | `EGRAS_UNKNOWN_STATUS` | `ProviderStatus(PENDING)` | unchanged; logged at warning |
+| `EGRAS_MULTIPLE_SUCCESS` | `ProviderStatus(SUCCESS, reconciliation_code=…)` | `SUCCESS`, credited once; `needs_reconciliation`, reason `PAYMENT_PROVIDER_FLAGGED` |
 
 The raw e-GRAS `Status` text goes to the log line, never to `failure_message`,
 which stays a safe, generic sentence.
@@ -744,8 +774,9 @@ egras_status=Successfull outcome=SUCCESS grn=1231234 amount=775 latency_ms=412
 ## 13. Testing
 
 **Unit (no network)**
-- schemes: map by `account_head`, by valid-format `account_head`, by
-  `charge_type`; precedence; unmapped; grouping and summing; whole-rupee pass
+- schemes: map by `account_head`, by `charge_type`; precedence; a
+  scheme-shaped `account_head` missing from the map is unmapped, never used
+  literally; unmapped; grouping and summing; whole-rupee pass
   (`12.50 + 12.50`) and fail (`12.50`); too many schemes; deterministic order.
 - request builder: every field and its source; `Officename` derivation and
   override; `ChallanYear` across 31 March / 1 April in IST; application number
@@ -761,8 +792,9 @@ egras_status=Successfull outcome=SUCCESS grn=1231234 amount=775 latency_ms=412
   `trusted` always `False`.
 - verification client: SOAP envelope, identity lookup only, TLS settings,
   timeout, non-2xx, malformed XML, entity expansion rejected.
-- status mapper: every row of #6.3, including the empty "try later" response
-  and unknown vocabulary → `PENDING`.
+- status mapper: every row of #6.3, including the empty "try later" response,
+  unknown vocabulary → `PENDING` and two successes → `EGRAS_MULTIPLE_SUCCESS`.
+- default `EGRAS_MAX_SCHEMES` refuses a second head.
 - failure codes: every row of #10 raises the stated exception class with the
   stated code.
 - config/checks: defaults, each check failure mode, silence when the addon is
@@ -780,10 +812,14 @@ egras_status=Successfull outcome=SUCCESS grn=1231234 amount=775 latency_ms=412
   `provider_options.bank`. Assertions on `code` and `field`, never message.
 - abandonment → `Not Found` past grace → `FAILED`, items payable again.
 - `Failure` → `FAILED` with `EGRAS_PAYMENT_FAILED`.
+- double payment → credited once and flagged, whether seen before or after
+  the first credit.
+- production settings keep `egras` registered through
+  `PAYMENT_REGISTERED_PROVIDERS` after the default is cleared.
 
 **Isolation**
 - no module under `apps.payments` imports `addon.*` or mentions `egras`;
-- the addon imports only `apps.payments.providers.base` and has no
+- the addon imports only the surface listed in #1 and has no
   `errors.py`, `urls.py`, `models.py` or `admin.py`;
 - removing `"egras"` from settings leaves `apps.payments` working on the mock.
 
@@ -813,7 +849,7 @@ cd src && python manage.py check
 
 - [ ] e-GRAS ships as `src/addon/egras_payment_gateway/` with no models, migrations, URLs, admin or `errors.py`.
 - [ ] e-GRAS is selected purely by `PAYMENT_PROVIDERS` / `PAYMENT_DEFAULT_PROVIDER`; no caller changes.
-- [ ] The addon imports only `apps.payments.providers.base`; no module under `apps.payments` imports `addon.*` or mentions e-GRAS.
+- [ ] The addon imports only the contract and the read-only helpers listed in #1; no module under `apps.payments` imports `addon.*` or mentions e-GRAS.
 - [ ] Deleting the addon plus its settings leaves `apps.payments` working on the mock provider.
 - [ ] `initiate` makes no network call and is deterministic for the same request.
 - [ ] Form fields match #4.2; schemes are grouped per #4.3 with no default scheme and no rounding.
@@ -825,6 +861,8 @@ cd src && python manage.py check
 - [ ] `pending_horizon` ≥ 8 days; `not_found_grace` configurable.
 - [ ] Every failure is raised as the exception class in #10; e-GRAS codes never appear in an API `errors` array.
 - [ ] Batches produce one e-GRAS transaction and one verification for all their payments.
+- [ ] A double payment is credited once and flagged `needs_reconciliation`.
+- [ ] e-GRAS can stay registered for in-flight payments without being the default.
 - [ ] GRN lands in `provider_reference`, CIN in `metadata["provider"]`.
 - [ ] `manage.py check` fails on invalid e-GRAS configuration and is silent when the addon is not registered.
 - [ ] Payer contact data never appears unmasked in logs.
@@ -843,9 +881,11 @@ cd src && python manage.py check
    does any single payment ever need more than four heads (a full filing bill
    has seven fee heads)? If so, is splitting into several e-GRAS transactions
    acceptable, given that a batch must succeed or fail as one?
-3. **First scheme field name.** NIC's sample posts the first scheme as
-   `SCHEMENAME` while the field list names it `SCHEMENAME1`; confirm during
-   onboarding.
+3. **Scheme field names.** NIC's sample posts the first scheme as
+   `SCHEMENAME` while the field list names it `SCHEMENAME1`; the code follows
+   the sample. There is no sample for a second scheme (`SCHEMENAME2` is
+   assumed). Confirm both during onboarding; until then `EGRAS_MAX_SCHEMES`
+   stays `1`.
 4. **Office codes.** Does one DDO collect for every court in a deployment, or
    does each court/establishment need its own DTO/STO/DDO (ties to 0017 Q-3)?
 5. **`Not Found` grace.** Confirm with NIC that a GRN always exists once the

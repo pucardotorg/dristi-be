@@ -21,7 +21,7 @@ class ConfigDefaultsTests(SimpleTestCase):
         config = EGRASConfig()
 
         self.assertEqual(config.user_id, "guest")
-        self.assertEqual(config.max_schemes, 4)
+        self.assertEqual(config.max_schemes, 1)  # until NIC confirms SCHEMENAME2…
         self.assertEqual(config.application_prefix, "DR")
         self.assertEqual(config.remarks_template, "Dristi {demand_numbers}")
         self.assertEqual(config.payer_fallback_city, "NA")

@@ -139,10 +139,11 @@ def map_grn_records(
 
     Each record is classified on its own (fields are never mixed across records).
     A ``SUCCESS`` record always wins; more than one success for the same
-    application number is a double payment, credited once and flagged for
-    reconciliation. Otherwise the highest-priority outcome is chosen, so a
-    FAILED record never overrides a sibling that is in or still pending. When no
-    record carries an outcome, the lookup is transient ("try later").
+    application number is a double payment: it carries ``reconciliation_code``
+    so ``apps.payments`` credits it once and flags it for an operator.
+    Otherwise the highest-priority outcome is chosen, so a FAILED record never
+    overrides a sibling that is in or still pending. When no record carries an
+    outcome, the lookup is transient ("try later").
     """
 
     statuses = [
@@ -168,7 +169,8 @@ def map_grn_records(
         chosen = successes[0]
         return replace(
             chosen,
-            metadata={**chosen.metadata, "needs_reconciliation": True, "success_grns": grns},
+            metadata={**chosen.metadata, "success_grns": grns},
+            reconciliation_code=constants.EGRAS_MULTIPLE_SUCCESS,
         )
 
     return max(statuses, key=lambda status: _OUTCOME_PRIORITY[status.outcome])

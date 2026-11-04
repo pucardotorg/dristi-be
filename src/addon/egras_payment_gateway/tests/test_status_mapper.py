@@ -116,5 +116,8 @@ class MultiRecordTests(SimpleTestCase):
         s2 = details(Status="Successfull", GRN="222", CIN="CIN2", Amount="100")
         status = records_mapped([s1, s2])
         self.assertEqual(status.outcome, ProviderOutcome.SUCCESS)
-        self.assertTrue(status.metadata["needs_reconciliation"])
+        self.assertEqual(status.reconciliation_code, constants.EGRAS_MULTIPLE_SUCCESS)
         self.assertEqual(status.metadata["success_grns"], ["111", "222"])
+
+    def test_a_single_success_needs_no_reconciliation(self):
+        self.assertEqual(records_mapped([details()]).reconciliation_code, "")

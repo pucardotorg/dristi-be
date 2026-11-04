@@ -98,22 +98,31 @@ class BuildRequestTests(SimpleTestCase):
         self.assertNotIn("SCHEMENAME1", form)
         self.assertIn("FEEAMOUNT1", form)
 
-    def test_second_scheme_name_is_suffixed(self):
-        """A second head posts as ``SCHEMENAME2`` / ``FEEAMOUNT2``."""
-        request = make_request(
+    def two_head_request(self):
+        return make_request(
             [
                 make_line("10", charge_type="COURT_FEE"),
                 make_line("15", charge_type="PROCESS_COURT_FEE"),
             ],
             amount=Decimal("25"),
         )
-        config = make_config(
-            scheme_map={
-                "COURT_FEE": "0030-01-501-01-00",
-                "PROCESS_COURT_FEE": "0099-09-909-09-09",
-            }
-        )
-        form = build_request(request, config).form_fields
+
+    TWO_HEAD_MAP = {
+        "COURT_FEE": "0030-01-501-01-00",
+        "PROCESS_COURT_FEE": "0099-09-909-09-09",
+    }
+
+    def test_default_refuses_a_second_head(self):
+        """Multi-scheme field names are unconfirmed (Q-3): one head unless opted in."""
+        config = make_config(scheme_map=self.TWO_HEAD_MAP)
+        with self.assertRaises(ProviderPermanentError) as caught:
+            build_request(self.two_head_request(), config)
+        self.assertEqual(caught.exception.code, constants.EGRAS_TOO_MANY_SCHEMES)
+
+    def test_second_scheme_name_is_suffixed(self):
+        """Opted in, a second head posts as ``SCHEMENAME2`` / ``FEEAMOUNT2``."""
+        config = make_config(scheme_map=self.TWO_HEAD_MAP, max_schemes=4)
+        form = build_request(self.two_head_request(), config).form_fields
         self.assertEqual(form["SCHEMECOUNT"], "2")
         self.assertIn("SCHEMENAME", form)
         self.assertIn("SCHEMENAME2", form)
@@ -131,7 +140,8 @@ class BuildRequestTests(SimpleTestCase):
             scheme_map={
                 "COURT_FEE": "0030-01-501-01-00",
                 "PROCESS_COURT_FEE": "0099-09-909-09-09",
-            }
+            },
+            max_schemes=4,
         )
         form = build_request(request, config).form_fields
         fees = sum(int(form[constants.fee_amount_field(i)]) for i in (1, 2))

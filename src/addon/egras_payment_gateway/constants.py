@@ -48,7 +48,7 @@ PTYPE_NET_BANKING = "N"
 # notes say ``SCHEMENAME1``; the working sample is authoritative, so the first
 # scheme name carries no suffix. The multi-scheme suffix pattern
 # (``SCHEMENAME2…`` vs ``SCHEMENAME1…``) has no sample and must be confirmed
-# with NIC — the first iteration is single-scheme (SCHEMECOUNT=1).
+# with NIC — so EGRAS_MAX_SCHEMES defaults to 1 (SCHEMECOUNT=1) until it is.
 SCHEME_NAME_FIELD = "SCHEMENAME"
 FEE_AMOUNT_FIELD = "FEEAMOUNT"
 FIRST_SCHEME_INDEX = 1
@@ -142,6 +142,9 @@ EGRAS_VERIFY_EMPTY = "EGRAS_VERIFY_EMPTY"
 EGRAS_PAYMENT_FAILED = "EGRAS_PAYMENT_FAILED"
 EGRAS_SUCCESS_INCOMPLETE = "EGRAS_SUCCESS_INCOMPLETE"
 EGRAS_UNKNOWN_STATUS = "EGRAS_UNKNOWN_STATUS"
+# ``ProviderStatus.reconciliation_code`` when one Applicationnumber has more
+# than one successful GRN (a double payment): credited once, flagged.
+EGRAS_MULTIPLE_SUCCESS = "EGRAS_MULTIPLE_SUCCESS"
 
 # Safe, user-presentable message kept on ``ProviderStatus.failure_message``; the
 # raw e-GRAS ``Status`` text only ever goes to the log line (spec 0022 #10).
@@ -155,6 +158,4 @@ EVENT_REQUEST_BUILT = "EGRAS_REQUEST_BUILT"
 EVENT_CALLBACK_RECEIVED = "EGRAS_CALLBACK_RECEIVED"
 EVENT_VERIFY_REQUEST = "EGRAS_VERIFY_REQUEST"
 EVENT_VERIFY_RESPONSE = "EGRAS_VERIFY_RESPONSE"
-# More than one successful GRN for one Applicationnumber (e.g. a double payment):
-# credited once, flagged for reconciliation by apps.payments.
-EVENT_MULTIPLE_SUCCESS = "EGRAS_MULTIPLE_SUCCESS"
+EVENT_MULTIPLE_SUCCESS = EGRAS_MULTIPLE_SUCCESS

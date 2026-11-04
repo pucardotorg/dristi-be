@@ -550,6 +550,12 @@ PAYMENT_PROVIDERS = {"mock": "apps.payments.providers.mock.MockPaymentProvider"}
 # Provider for NEW payments only. Empty: payments stay INITIATED for an
 # operator or internal service to confirm.
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="")
+# Names registered besides the default, read by the environment modules. A
+# provider stays here while payments are pending at it, so their callbacks and
+# polls still resolve after the default is cleared or moved (spec 0022 #8).
+PAYMENT_REGISTERED_PROVIDERS = [
+    name.strip() for name in env.list("PAYMENT_REGISTERED_PROVIDERS", default=[]) if name.strip()
+]
 PAYMENT_DEFAULT_CURRENCY = env("PAYMENT_DEFAULT_CURRENCY", default="INR")
 # Where the provider callback sends the browser. Server-side only: taking it
 # from the request would make the public callback an open redirect.
@@ -611,7 +617,8 @@ EGRAS_OFFICE_NAME = env("EGRAS_OFFICE_NAME", default="")
 EGRAS_USER_ID = env("EGRAS_USER_ID", default="guest")
 # JSON object: account_head or charge_type -> 17-character scheme code.
 EGRAS_SCHEME_MAP = env.json("EGRAS_SCHEME_MAP", default={})
-EGRAS_MAX_SCHEMES = env.int("EGRAS_MAX_SCHEMES", default=4)
+# 1 until NIC confirms the SCHEMENAME2… field names (spec 0022 #16, Q-3).
+EGRAS_MAX_SCHEMES = env.int("EGRAS_MAX_SCHEMES", default=1)
 # JSON list of {code, label, group} issued by NIC.
 EGRAS_BANK_OPTIONS = env.json("EGRAS_BANK_OPTIONS", default=[])
 EGRAS_DEFAULT_BANK = env("EGRAS_DEFAULT_BANK", default="")

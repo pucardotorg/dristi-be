@@ -15,6 +15,7 @@ from .base import (  # noqa: E402,F401
     INSTALLED_APPS,
     MESSAGING_BACKENDS,
     MIDDLEWARE,
+    PAYMENT_REGISTERED_PROVIDERS,
     REST_FRAMEWORK,
     STORAGES,
     env,
@@ -55,10 +56,11 @@ ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockES
 
 # Pay through the mock provider locally so no gateway credentials are required.
 # Opt into the e-GRAS addon for local testing by setting
-# PAYMENT_DEFAULT_PROVIDER=egras in .env (and the EGRAS_* block); that registers
-# egras here and the addon's system checks then require a full EGRAS_* config.
+# PAYMENT_DEFAULT_PROVIDER=egras in .env (and the EGRAS_* block), or keep it
+# registered after switching back with PAYMENT_REGISTERED_PROVIDERS=egras; the
+# addon's system checks then require a full EGRAS_* config.
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="mock")
-if PAYMENT_DEFAULT_PROVIDER == "egras":
+if "egras" in (PAYMENT_DEFAULT_PROVIDER, *PAYMENT_REGISTERED_PROVIDERS):
     PAYMENT_PROVIDERS = {
         "mock": "apps.payments.providers.mock.MockPaymentProvider",
         "egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider",

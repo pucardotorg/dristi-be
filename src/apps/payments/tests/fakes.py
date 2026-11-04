@@ -32,6 +32,7 @@ def status(provider_payment_id, outcome=ProviderOutcome.SUCCESS, amount=None, **
         failure_code=extra.pop("failure_code", "FAKE_FAILED" if outcome == "FAILED" else ""),
         failure_message=extra.pop("failure_message", ""),
         metadata=extra.pop("metadata", {}),
+        reconciliation_code=extra.pop("reconciliation_code", ""),
     )
 
 

@@ -721,6 +721,7 @@ class ProviderStatus:
     failure_code: str  # provider's internal code, e.g. "EGRAS_PAYMENT_FAILED"
     failure_message: str  # safe, user-presentable
     metadata: dict  # non-sensitive
+    reconciliation_code: str = ""  # provider's code for an anomaly to review, e.g. a duplicate
 
 
 @dataclass(frozen=True)
@@ -826,8 +827,10 @@ a `ProviderStatus`. Callback, poll and cancel all go through it, under
 | `SUCCESS` | `SUCCESS` | no-op (replay) |
 | `FAILED`/`CANCELLED` | `SUCCESS` | no credit; `needs_reconciliation = True`; `PAYMENT_LATE_SUCCESS` logged at error |
 | any terminal | anything else | no-op |
+| any | any, with `reconciliation_code` set | the row above applies, then `needs_reconciliation = True`; `PAYMENT_PROVIDER_FLAGGED` logged at error with the provider's code |
 
 * "Amount" is the sum of `Payment.amount` across every payment sharing the `provider_payment_id`, i.e. the whole batch.
+* `reconciliation_code` is how a provider reports something an operator must see without changing the outcome — e-GRAS uses it for two successful GRNs on one transaction ([`0022`](0022-addon-egras-payment-gateway.md) #6.3). The outcome is applied as usual (a duplicate success is credited once), and the payments are flagged even when they were already `SUCCESS`. The provider's code is stored as `provider_code` in `metadata.reconciliation`.
 * A late success or a mismatch means money may have moved without a credit. It is never silently dropped and never auto-credited; an operator resolves it through an admin action that calls `PaymentService`.
 
 #### 9.6 Callback endpoint
@@ -854,7 +857,7 @@ a `ProviderStatus`. Callback, poll and cancel all go through it, under
 #### 9.8 Cancellation, replacement and the mock
 
 * **Cancelling a `PENDING` payment** first calls `fetch_status`. `FAILED`, or `NOT_FOUND` older than the provider's `not_found_grace` → cancel proceeds. `PENDING`, or `NOT_FOUND` within the grace → `409 E06012` (the bank may still debit; an early `NOT_FOUND` is not final, #9.5). `SUCCESS` → the payment is confirmed instead and `409 E06013` is returned. This closes the commonest late-success path.
-* **Replacing a provider** needs no code: register the new one in `PAYMENT_PROVIDERS`, point `PAYMENT_DEFAULT_PROVIDER` at it, wait until `manage.py payments_provider_usage <old>` reports no `PENDING` payments (at most the old provider's `pending_horizon`), then remove the old entry and its addon. Historic payments keep their `provider` and `provider_reference` forever.
+* **Replacing a provider** needs no code: register the new one in `PAYMENT_PROVIDERS`, point `PAYMENT_DEFAULT_PROVIDER` at it while keeping the old one registered (the environment-driven settings take extra names in `PAYMENT_REGISTERED_PROVIDERS`, so registration never depends on being the default), wait until `manage.py payments_provider_usage <old>` reports no `PENDING` payments (at most the old provider's `pending_horizon`), then remove the old entry and its addon. Historic payments keep their `provider` and `provider_reference` forever.
 * **`MockPaymentProvider`** is the local/test default. It returns a `REDIRECT_FORM` that posts straight to the callback endpoint with the outcome taken from `provider_options["outcome"]` (`SUCCESS`, `FAILED`, `PENDING`, `NOT_FOUND`) and `trusted=True`, so the full browser flow runs without any gateway. A system check rejects it in production.
 
 ### 10. Immutability
@@ -1205,6 +1208,7 @@ Read in `config.settings.base` from environment variables, documented in
 | --- | --- | --- |
 | `PAYMENT_PROVIDERS` | `{"mock": "apps.payments.providers.mock.MockPaymentProvider"}` | name → dotted path (#9.3) |
 | `PAYMENT_DEFAULT_PROVIDER` | `mock` local/test, `""` otherwise | provider for **new** payments only |
+| `PAYMENT_REGISTERED_PROVIDERS` | `[]` | names the environment-driven `local`/`production` settings register besides the default, so a provider stays reachable for its in-flight payments (#9.8) |
 | `PAYMENT_DEFAULT_CURRENCY` | `INR` | |
 | `PAYMENT_UI_REDIRECT_URL` | `""` | where the callback sends the browser; `https://` required in production |
 | `PAYMENT_CALLBACK_THROTTLE_RATE` | `60/min` | per IP |

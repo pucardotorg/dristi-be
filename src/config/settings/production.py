@@ -3,7 +3,12 @@
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F401,F403
-from .base import CDAC_SMS_USE_DEFAULT_NUMBER, CDAC_SMS_VERIFY_SSL, env  # noqa: F401
+from .base import (  # noqa: F401
+    CDAC_SMS_USE_DEFAULT_NUMBER,
+    CDAC_SMS_VERIFY_SSL,
+    PAYMENT_REGISTERED_PROVIDERS,
+    env,
+)
 
 # In production, rely on environment variables injected by Docker / secrets manager.
 # Do NOT read .env files by default.
@@ -44,12 +49,25 @@ if not CDAC_SMS_VERIFY_SSL:
 # ---------------------------------------------------------------------------
 # The mock provider is never registered in production (a system check enforces
 # it). A provider is a settings change (spec 0017 #9), so the gateway is enabled
-# from the environment: set PAYMENT_DEFAULT_PROVIDER=egras to register e-GRAS and
-# turn on its system checks (which then require the EGRAS_* block). Until a
-# deployment is onboarded with NIC, leave PAYMENT_DEFAULT_PROVIDER empty — no
-# provider is registered, the addon's checks stay silent, and the web container
-# boots so the rest of the app runs.
+# from the environment: PAYMENT_DEFAULT_PROVIDER=egras registers e-GRAS for new
+# payments and turns on its system checks (which then require the EGRAS_*
+# block). To stop new payments, clear the default but keep egras in
+# PAYMENT_REGISTERED_PROVIDERS until `payments_provider_usage egras` shows none
+# pending, so in-flight payments still verify (spec 0022 #8). Until a deployment
+# is onboarded with NIC, leave both empty — no provider is registered, the
+# addon's checks stay silent, and the web container boots.
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="")
-PAYMENT_PROVIDERS = {}
-if PAYMENT_DEFAULT_PROVIDER == "egras":
-    PAYMENT_PROVIDERS = {"egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider"}
+_AVAILABLE_PAYMENT_PROVIDERS = {
+    "egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider",
+}
+_unknown_providers = set(PAYMENT_REGISTERED_PROVIDERS) - set(_AVAILABLE_PAYMENT_PROVIDERS)
+if _unknown_providers:
+    raise ImproperlyConfigured(
+        f"PAYMENT_REGISTERED_PROVIDERS names unknown providers: {sorted(_unknown_providers)}."
+    )
+# An unknown default is left out here and reported by the payments.E003 check.
+PAYMENT_PROVIDERS = {
+    name: path
+    for name, path in _AVAILABLE_PAYMENT_PROVIDERS.items()
+    if name == PAYMENT_DEFAULT_PROVIDER or name in PAYMENT_REGISTERED_PROVIDERS
+}
