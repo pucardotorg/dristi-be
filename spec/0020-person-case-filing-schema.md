@@ -811,7 +811,7 @@ Implement via `CHECK` constraints and triggers:
 - **Spec 0006**: Active flag pattern for soft deletes
 - **Spec 0008**: Organization model
 - **Spec 0014**: File storage service for document management
-- **All India Pincode Directory** (source for `import_pincodes`): https://www.data.gov.in/catalog/all-india-pincode-directory
+- **All India Pincode Directory** (source for the pincode seed data): https://www.data.gov.in/catalog/all-india-pincode-directory
 
 ## 16. Future Enhancements
 
