@@ -214,9 +214,9 @@ languages by `code`, receive them already ordered, and only see active ones.
 ```json
 {
   "data": [
-    {"code": "en", "name": "English", "native_name": "English", "is_default": true, "supports": ["ui", "translation", "ocr"]},
-    {"code": "ml", "name": "Malayalam", "native_name": "മലയാളം", "is_default": false, "supports": ["ui", "translation"]},
-    {"code": "hi", "name": "Hindi", "native_name": "हिन्दी", "is_default": false, "supports": ["translation"]}
+    {"code": "en", "name": "English", "native_name": "English", "is_default": true, "supports": ["ui"]},
+    {"code": "ml", "name": "Malayalam", "native_name": "മലയാളം", "is_default": false, "supports": ["ui"]},
+    {"code": "hi", "name": "Hindi", "native_name": "हिन्दी", "is_default": false, "supports": ["ui"]}
   ],
   "meta": {
     "timestamp": "2026-10-13T12:30:00+05:30",
@@ -269,9 +269,12 @@ any feature-app prefix.
 
 | `code` | `name` | `native_name` | `is_default` | `sort_order` | `is_active` | `supports` |
 |---|---|---|---|---|---|---|
-| `en` | English | English | yes | 0 | yes | `["ui", "translation", "ocr"]` |
-| `ml` | Malayalam | മലയാളം | no | 10 | yes | `["ui", "translation"]` |
-| `hi` | Hindi | हिन्दी | no | 20 | yes | `["translation"]` |
+| `en` | English | English | yes | 0 | yes | `["ui"]` |
+| `ml` | Malayalam | മലയാളം | no | 10 | yes | `["ui"]` |
+| `hi` | Hindi | हिन्दी | no | 20 | yes | `["ui"]` |
+
+All seeded languages declare only `ui` at first; `translation` and `ocr` are
+added later from admin as those capabilities actually ship for a language.
 
 Seeding uses `update_or_create(code=...)` so it is idempotent.
 
