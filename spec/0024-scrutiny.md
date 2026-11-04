@@ -913,6 +913,10 @@ POST /api/v1/scrutiny/{case_id}/flags/
 too (*Save both*). The response lists every flag created, including
 auto-marked dates.
 
+![Scrutiny queue, open and start sequence](../docs/sequence-diagrams/0024-scrutiny/queue-open-and-start.svg)
+
+![Scrutiny flag and decide sequence](../docs/sequence-diagrams/0024-scrutiny/flag-and-decide.svg)
+
 #### 8.2 Registration
 
 | Method | Path | Purpose |
@@ -923,6 +927,8 @@ auto-marked dates.
 | POST | `/registration/{case_id}/register/` | #6.1 |
 | POST | `/registration/{case_id}/send-back/` | #6.2 |
 
+![Registration sequence](../docs/sequence-diagrams/0024-scrutiny/registration.svg)
+
 #### 8.3 Filer side
 
 | Method | Path | Purpose |
@@ -931,6 +937,8 @@ auto-marked dates.
 | POST | `/cases/{case_id}/corrections/{flag_id}/explain/` | #5.2 |
 | POST | `/cases/{case_id}/corrections/submit/` | #5.3 |
 | GET | `/cases/{case_id}/scrutiny-history/` | #7.5, filer view |
+
+![Correct and resubmit sequence](../docs/sequence-diagrams/0024-scrutiny/correct-and-resubmit.svg)
 
 #### 8.4 Permissions
 
