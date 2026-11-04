@@ -8,6 +8,8 @@ Revision 2 adds multi-language support (sections 2.1, 2.4–2.5, 5–9, 11–12)
 Revision 3 moves the `Language` model, its API, error codes and language
 resolution from `apps.cms` to `apps.core`, so other apps can localise content
 without depending on cms.
+Revision 4 adds `Language.supports`: the set of capabilities (UI, translation,
+OCR, …) each language has.
 
 ## Context
 
@@ -122,6 +124,26 @@ imports cms.
 | `is_default` | `BooleanField(default=False)` | The fallback language. Exactly one row is the default. |
 | `sort_order` | `PositiveSmallIntegerField(default=0)` | Display order in the languages API. |
 | `is_active` | `BooleanField(default=True)` | From `BaseActivatableModel`. Inactive languages are hidden from the API and cannot be requested. |
+| `supports` | `JSONField(default=list)` | Array of `LanguageSupport` enum values naming the capabilities this language has (see below). Empty means content-only. |
+
+`LanguageSupport` choices (`models.TextChoices` on `Language`, v1):
+
+- `UI = "ui"` — the web/mobile UI is translated into this language.
+- `TRANSLATION = "translation"` — content/document translation is available in this language.
+- `OCR = "ocr"` — scanned-document OCR works for this language's script.
+
+`supports` is stored as a `JSONField` list of enum strings (for example
+`["ui", "ocr"]`), not a Postgres `ArrayField`: the test suite runs on SQLite
+(`config.settings.test`) and `ArrayField` is Postgres-only, whereas a JSON
+array behaves identically on both databases and filters with
+`supports__contains=<value>`. The enum is deliberately a code-level
+`TextChoices` (not rows): capabilities are features of the product, so adding
+one is a code change anyway; languages remain admin-managed rows.
+
+`supports` is capability metadata for clients and other features (a UI
+switcher lists `ui` languages, an OCR pipeline checks `ocr`). It does **not**
+gate CMS language resolution — that is driven by `is_active` (section 6.1);
+admins keep the two consistent.
 
 Model `Meta`:
 
@@ -132,6 +154,10 @@ Model `Meta`:
 Validation and behaviour:
 
 - `code` is lowercased in `clean()` and `save()` (as `Page.slug` is), so `en-IN` and `en-in` cannot coexist.
+- `supports` must be a list of distinct valid `LanguageSupport` values;
+  `clean()` rejects unknown values and non-list input, and normalises to enum
+  order (deduped) on save, so `["ocr", "ui", "ui"]` is stored as
+  `["ui", "ocr"]`.
 - The default language cannot be deactivated or deleted; deleting it is blocked
   with `on_delete=PROTECT` from translations (section 2.4) and a model check.
 - `Language.objects.get_default()` returns the default row; it is a
@@ -246,9 +272,12 @@ Register `Language` in `apps.core.admin`, and `Page` and `PageCategory` in
 
 `LanguageAdmin`:
 
-- list display: `code`, `name`, `native_name`, `is_default`, `is_active`, `sort_order`
+- list display: `code`, `name`, `native_name`, `supports`, `is_default`, `is_active`, `sort_order`
 - list editable: `sort_order`, `is_active`
+- list filter: `is_active`, and a `supports` filter (capability membership via `supports__contains`)
 - search fields: `code`, `name`, `native_name`
+- `supports` is edited with a `MultipleChoiceField` + `CheckboxSelectMultiple`
+  in the admin form (choices from `LanguageSupport`), mapped to the JSON list
 - read-only audit fields from `BaseModel`
 - deactivating or un-defaulting the only default language is rejected with a form error
 
@@ -360,6 +389,11 @@ endpoints, with the `E10001` example attached via `error_responses(...)`.
 #### 6.3 Languages list behavior
 
 - Returns active languages only, ordered by `sort_order`, then `code`.
+- Optional `?supports=<capability>` filter (validated with a DRF `ChoiceField`
+  over `LanguageSupport` via a filter serializer, as in the organizations
+  app): restricts the list to languages that declare that capability
+  (`supports__contains`). An invalid value fails validation with `E00005`
+  (`field: "supports"`); no new error code is needed.
 - Unpaginated: the set is small and clients need all of it to build a picker.
   The action/view is listed in `unpaginated_actions` (or the view is a plain
   list view returning the whole set) so the schema documents
@@ -375,6 +409,7 @@ Fields:
 - `name`
 - `native_name`
 - `is_default`
+- `supports`
 
 Read-only. `id`, `sort_order` and `is_active` are not exposed: clients address
 languages by `code`, receive them already ordered, and only see active ones.
@@ -425,9 +460,9 @@ and receive default-language (English) content when they send no language.
 ```json
 {
   "data": [
-    {"code": "en", "name": "English", "native_name": "English", "is_default": true},
-    {"code": "ml", "name": "Malayalam", "native_name": "മലയാളം", "is_default": false},
-    {"code": "hi", "name": "Hindi", "native_name": "हिन्दी", "is_default": false}
+    {"code": "en", "name": "English", "native_name": "English", "is_default": true, "supports": ["ui", "translation", "ocr"]},
+    {"code": "ml", "name": "Malayalam", "native_name": "മലയാളം", "is_default": false, "supports": ["ui", "translation"]},
+    {"code": "hi", "name": "Hindi", "native_name": "हिन्दी", "is_default": false, "supports": ["translation"]}
   ],
   "meta": {
     "timestamp": "2026-10-13T12:30:00+05:30",
@@ -579,11 +614,11 @@ and must not be edited. Revision 2/3 adds:
 
 #### 11.1 Seed languages
 
-| `code` | `name` | `native_name` | `is_default` | `sort_order` | `is_active` |
-|---|---|---|---|---|---|
-| `en` | English | English | yes | 0 | yes |
-| `ml` | Malayalam | മലയാളം | no | 10 | yes |
-| `hi` | Hindi | हिन्दी | no | 20 | yes |
+| `code` | `name` | `native_name` | `is_default` | `sort_order` | `is_active` | `supports` |
+|---|---|---|---|---|---|---|
+| `en` | English | English | yes | 0 | yes | `["ui", "translation", "ocr"]` |
+| `ml` | Malayalam | മലയാളം | no | 10 | yes | `["ui", "translation"]` |
+| `hi` | Hindi | हिन्दी | no | 20 | yes | `["translation"]` |
 
 Seeding uses `update_or_create(code=...)` so it is idempotent.
 
@@ -629,7 +664,11 @@ Add API and model tests covering at least:
 Language support:
 
 8. `Language`: code validator accepts `en`, `ml`, `en-in`, rejects `EN_IN`, `e`, `en-`, `en\n`; code is lowercased on save; only one default allowed; default cannot be inactive.
-9. `GET /api/v1/languages/` is public, unpaginated (`data` + `meta`), returns only active languages in `sort_order`, and exposes exactly `code`, `name`, `native_name`, `is_default`.
+9. `GET /api/v1/languages/` is public, unpaginated (`data` + `meta`), returns only active languages in `sort_order`, and exposes exactly `code`, `name`, `native_name`, `is_default`, `supports`.
+9a. `supports` accepts only known `LanguageSupport` values, rejects duplicates
+   and non-list input, and is normalised to enum order on save.
+9b. `?supports=ui` returns only languages declaring `ui`; `?supports=bogus`
+   returns `400` with code `E00005` and field `supports`.
 10. Resolution order: `lang` beats `Accept-Language`; `Accept-Language` beats the default; `q` values are honoured; `en-IN` matches `en`; unknown or malformed `Accept-Language` falls back to the default without error.
 11. `?lang=xx` and `?lang=<inactive code>` return `400` with code `E10001` and field `lang` on both page endpoints.
 12. Fallback: a page without a translation in the requested language is served in the default language with `language` set accordingly; category names fall back to `PageCategory.name`.
@@ -673,6 +712,8 @@ Language support:
 
 - Should category be represented as a dedicated model (`PageCategory`) only, or also support free-text tags later?
 - Should we add publish state/scheduling (`is_published`, `published_at`) in v1, or keep all pages visible?
+- Should CMS resolution prefer languages with `translation` in `supports` over
+  merely `is_active` ones? For now `supports` is informational only.
 - Should the list endpoint offer a strict mode (for example `?fallback=false`)
   that returns only pages translated into the requested language?
 - Should `hi` be active from day one, or seeded inactive until content is translated?
