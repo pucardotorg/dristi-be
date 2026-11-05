@@ -8,24 +8,126 @@ acted on, and its roles never combine with the configured court's (``SCR-11``).
 
 import pytest
 from django.core.checks import run_checks
+from django.urls import reverse
 
 from apps.api.errors import BusinessError
 from apps.cases.models import CaseStatus
+from apps.cases.services import filing
 from apps.scrutiny import permissions, ports, selectors
 from apps.scrutiny.enums import CourtRole, RoundStage
 from apps.scrutiny.models import ScrutinyRound
 from apps.scrutiny.services import rounds
 from apps.scrutiny.system_checks import check_establishment_exists, check_establishment_setting
 
-from .factories import code, draft_field, make_case
+from .factories import add_courtroom, code, draft_field, enter, make_case, make_paid_case
 from .test_api import client_for, error_codes, registration_url, url
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def other_case(filer, other_establishment):
-    return make_case(filer, other_establishment, filing_number="F/OTH/2026/00001")
+def other_case(filer, establishment, other_establishment):
+    """A case whose round sits at a court this deployment does not serve.
+
+    Submission always routes to the configured establishment, so the round is
+    moved there by hand, as a second deployment's own case would be.
+    """
+    other = make_case(filer, other_establishment, filing_number="F/OTH/2026/00001")
+    ScrutinyRound.objects.filter(case=other).update(establishment_id=other_establishment.pk)
+    return other
+
+
+# Routing (#2.5): a paid case goes to the configured establishment, whatever court the filer gave
+
+
+def submit(case, user):
+    return client_for(user).post(reverse("case-submit-for-scrutiny", args=[case.pk]))
+
+
+@pytest.fixture
+def courtroom(establishment):
+    return add_courtroom(establishment, "Courtroom 1")
+
+
+@pytest.mark.parametrize("filed_in", ["none", "establishment", "courtroom", "other court"])
+def test_submission_routes_to_the_configured_establishment(
+    filer, officer, establishment, courtroom, other_establishment, filed_in
+):
+    court = {
+        "none": None,
+        "establishment": establishment,
+        "courtroom": courtroom,
+        "other court": other_establishment,
+    }[filed_in]
+    case = make_paid_case(filer, court)
+
+    response = submit(case, filer)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == CaseStatus.UNDER_SCRUTINY
+    round_ = ScrutinyRound.objects.get(case=case)
+    assert (round_.stage, round_.establishment_id, round_.courtroom_id) == (
+        RoundStage.SCRUTINY,
+        establishment.pk,
+        None,
+    )
+    # The officer finds it, reads it and can act on it.
+    assert permissions.court_case(case.pk, officer) == (case, round_)
+    listed = client_for(officer).get("/api/v1/scrutiny/").json()
+    assert [row["case_id"] for row in listed["results"]] == [str(case.pk)]
+    assert client_for(officer).get(url(case)).status_code == 200
+
+
+@pytest.mark.parametrize("filed_in", ["none", "other court"])
+def test_misfiled_case_can_be_forwarded_to_a_courtroom_here(
+    filer, officer, establishment, courtroom, other_establishment, filed_in
+):
+    case = make_paid_case(filer, None if filed_in == "none" else other_establishment)
+    assert submit(case, filer).status_code == 200
+
+    rounds.forward(case.pk, officer, courtroom_id=courtroom.pk)
+
+    case.refresh_from_db()
+    assert (case.status, case.court_id) == (CaseStatus.PENDING_REGISTRATION, courtroom.pk)
+    registration = ScrutinyRound.objects.get(case=case, decision="")
+    assert registration.establishment_id == establishment.pk
+
+
+@pytest.mark.parametrize("value", ["", "not-a-uuid"])
+def test_submission_refused_without_a_configured_establishment(
+    filer, establishment, settings, value
+):
+    case = make_paid_case(filer, establishment)
+    settings.SCRUTINY_ESTABLISHMENT_ID = value
+
+    response = submit(case, filer)
+
+    assert (response.status_code, error_codes(response)) == (503, {None: ["E09019"]})
+    case.refresh_from_db()
+    assert case.status == CaseStatus.PENDING_PAYMENT
+    assert not ScrutinyRound.objects.filter(case=case).exists()
+
+
+def test_service_refuses_and_rolls_back_without_an_establishment(filer, establishment, settings):
+    case = make_paid_case(filer, establishment)
+    settings.SCRUTINY_ESTABLISHMENT_ID = ""
+
+    with pytest.raises(BusinessError) as excinfo:
+        filing.submit_for_scrutiny(case.pk, filer)
+
+    assert code(excinfo) == "E09019"
+    case.refresh_from_db()
+    assert case.status == CaseStatus.PENDING_PAYMENT
+
+
+def test_a_case_back_in_scrutiny_keeps_its_establishment(case, officer, establishment, settings):
+    draft_field(case, officer, "CHQ-3[0]")
+    rounds.send_back(case.pk, officer)
+    settings.SCRUTINY_ESTABLISHMENT_ID = ""
+
+    enter(case, CaseStatus.UNDER_SCRUTINY)
+
+    assert ScrutinyRound.objects.get(case=case, decision="").establishment_id == establishment.pk
 
 
 # Roles

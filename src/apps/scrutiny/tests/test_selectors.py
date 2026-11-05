@@ -351,7 +351,9 @@ def test_lists_filter_by_establishment(case, officer, registerer, filer, establi
     elsewhere = Organization.objects.create(
         code="OTHER", name="Other court", organization_type=OrganizationType.MAGISTRATE_COURT
     )
-    make_case(filer, elsewhere, filing_number="F/OTH/2026/00001")
+    other = make_case(filer, elsewhere, filing_number="F/OTH/2026/00001")
+    # Submission routes to the configured establishment; this round belongs to another court.
+    ScrutinyRound.objects.filter(case=other).update(establishment_id=elsewhere.pk)
     _, rows = list_rows(officer, establishment_id=establishment.pk)
     assert [row["case_id"] for row in rows] == [case.pk]
 

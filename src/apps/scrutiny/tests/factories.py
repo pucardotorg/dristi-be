@@ -130,12 +130,15 @@ def complete_filing(case, filer):
     row.save()
 
 
-def make_case(filer, establishment, filing_number=None, **cheque):
-    """Return a complete, paid case with one cheque, just entered scrutiny."""
+def make_paid_case(filer, court, filing_number=None, **cheque):
+    """Return a complete case with one cheque, paid and not yet submitted for scrutiny.
+
+    ``court`` is the filer's ``court_id``: an establishment, a courtroom, another court or None.
+    """
     case = Case.objects.create(
         case_type=CaseType.CHEQUE_BOUNCE,
         created_by=filer,
-        court=establishment,
+        court=court,
         status=CaseStatus.PENDING_PAYMENT,
         filing_number=filing_number,
         filed_at=timezone.now(),
@@ -143,6 +146,12 @@ def make_case(filer, establishment, filing_number=None, **cheque):
     add_cheque(case, 1, **cheque)
     complete_filing(case, filer)
     set_cause_of_action(case, timezone.localdate().isoformat())
+    return case
+
+
+def make_case(filer, establishment, filing_number=None, **cheque):
+    """Return a complete, paid case with one cheque, just entered scrutiny."""
+    case = make_paid_case(filer, establishment, filing_number, **cheque)
     enter(case, CaseStatus.UNDER_SCRUTINY)
     return case
 

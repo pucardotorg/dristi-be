@@ -369,6 +369,13 @@ belongs to that establishment and has **no courtroom**. Its *Scrutinise case*
 task goes to the establishment's `SCRUTINY_OFFICER` holders, due `+0`,
 visible to Only Users (`SCR-09`).
 
+The establishment is the one `SCRUTINY_ESTABLISHMENT_ID` names, never the
+`court_id` the filer gave the draft: that may be missing, a courtroom or another
+court, and is ignored until the courtroom is chosen. Where no establishment is
+configured, the submission is refused (`503 E09019`) and the case stays in
+`PENDING_PAYMENT`, rather than entering scrutiny with no round that anyone can
+see. A case returning to a stage keeps the establishment of its previous round.
+
 The Scrutiny officer chooses the courtroom, from the establishment's
 courtrooms, as part of **Forward for registration** or **Register at Scrutiny**
 (`SCR-16`, #4.4). Nothing is pre-selected. Where the establishment has one
@@ -977,6 +984,7 @@ Domain prefix `09` in `apps.api.errors.DOMAINS`, recorded in
 | `E09016` | `OATH_NOT_REQUIRED` | 400 | flagging an oath where the state requires none (`OTH-2`) |
 | `E09017` | `COURTROOM_REQUIRED` | 400 | Forward or Register without a courtroom, or with one not in the establishment (`SCR-16`); `field = courtroom_id` |
 | `E09018` | `REGISTRATION_TYPE_REQUIRED` | 400 | Forward or Register without a registration type where the state has several, or with an unknown one (`SCR-13`); `field = registration_type` |
+| `E09019` | `SCRUTINY_NOT_CONFIGURED` | 503 | a case enters scrutiny or registration with no establishment configured (#2.5); the submission is rolled back |
 
 Workflow errors (`E08xxx`) from [`0011`](0011-case-workflows.md) pass through
 unchanged — a stale version is `412 E08005`.

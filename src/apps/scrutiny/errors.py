@@ -42,6 +42,12 @@ COURTROOM_REQUIRED = define("E09017", "Choose a courtroom of this court establis
 # Reported on registration_type: missing where the state has several, or unknown (SCR-13).
 REGISTRATION_TYPE_REQUIRED = define("E09018", "Choose one of this state's registration types.")
 
+# Routing (#2.5): SCRUTINY_ESTABLISHMENT_ID is unset or malformed, so a case
+# entering scrutiny or registration has nowhere to go; the move is refused.
+SCRUTINY_NOT_CONFIGURED = define(
+    "E09019", "Scrutiny is not available: no court establishment is configured.", status=503
+)
+
 # Correction (#5)
 EXPLANATION_REQUIRED = define("E09011", "An explanation needs a note.")
 NOTHING_TO_RESUBMIT = define(

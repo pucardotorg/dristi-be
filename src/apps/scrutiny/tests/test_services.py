@@ -56,13 +56,6 @@ def test_entering_scrutiny_opens_round_one(case, establishment):
     assert ScrutinyRound.objects.filter(case=case).count() == 1
 
 
-def test_case_without_court_gets_no_round(filer):
-    case = Case.objects.create(
-        case_type=CaseType.CHEQUE_BOUNCE, created_by=filer, status=CaseStatus.UNDER_SCRUTINY
-    )
-    assert not ScrutinyRound.objects.filter(case=case).exists()
-
-
 def test_start_records_first_starter_only(case, officer):
     other = make_user(CourtRole.SCRUTINY_OFFICER)
     rounds.start(case.pk, officer, RoundStage.SCRUTINY)

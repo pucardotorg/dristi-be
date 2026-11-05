@@ -37,7 +37,11 @@ def open_round(case, visit_id=None, routing_reason=""):
     ``RESUBMITTED``; a registration round keeps the courtroom and type chosen
     at Forward. Every unresolved flag of the previous round is carried over as
     a draft, and the correction scope is closed. Returns None when the case is
-    in no stage, or has no court establishment to be scrutinised at.
+    in no stage.
+
+    Raises ``SCRUTINY_NOT_CONFIGURED`` when the deployment names no
+    establishment, so the transition that moved the case rolls back instead of
+    leaving it in a stage with no round, where nobody can see or act on it.
     """
     stage = ports.STATUS_STAGE.get(case.status)
     if stage is None:
@@ -49,8 +53,11 @@ def open_round(case, visit_id=None, routing_reason=""):
         previous = ScrutinyRound.objects.filter(case=case).order_by("-created_at").first()
         establishment_id = previous.establishment_id if previous else ports.establishment_id(case)
         if establishment_id is None:
-            logger.error("event=SCRUTINY_ROUND_NOT_OPENED case=%s reason=no court", case.pk)
-            return None
+            logger.error(
+                "event=SCRUTINY_ROUND_NOT_OPENED case=%s reason=no establishment configured",
+                case.pk,
+            )
+            raise BusinessError(errors.SCRUTINY_NOT_CONFIGURED)
         fields = {}
         if stage == RoundStage.REGISTRATION and previous is not None:
             fields = {

@@ -136,8 +136,13 @@ REGISTRATION_TYPES = (RegistrationType("CC", "Criminal complaint"),)
 
 
 def establishment_id(case):
-    """Return the court establishment the case was filed in, or None."""
-    return case.court_id
+    """Return the establishment a case entering scrutiny goes to, or None if unconfigured.
+
+    Always the deployment's one establishment (``RLE-00``, #2.5), never the
+    filer's ``court_id``: that may be missing, a courtroom or another court,
+    and the courtroom is the Scrutiny officer's choice (``SCR-16``).
+    """
+    return configured_establishment()
 
 
 def courtrooms(establishment_id):
