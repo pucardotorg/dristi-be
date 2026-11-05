@@ -614,6 +614,8 @@ EGRAS_DTO = env("EGRAS_DTO", default="")
 EGRAS_STO = env("EGRAS_STO", default="")
 EGRAS_DDO = env("EGRAS_DDO", default="")
 EGRAS_OFFICE_NAME = env("EGRAS_OFFICE_NAME", default="")
+# Path to the NIC-issued key file for decrypting the encrypted callback (payRes).
+EGRAS_RESPONSE_KEY_PATH = env("EGRAS_RESPONSE_KEY_PATH", default="")
 EGRAS_USER_ID = env("EGRAS_USER_ID", default="guest")
 # JSON object: account_head or charge_type -> 17-character scheme code.
 EGRAS_SCHEME_MAP = env.json("EGRAS_SCHEME_MAP", default={})

@@ -357,6 +357,7 @@ entry removes the integration entirely.
 | `EGRAS_DTO` / `EGRAS_STO` | 2-digit treasury / sub-treasury codes | `01` / `02` |
 | `EGRAS_DDO` | 4-character drawing & disbursing officer code | `DDO1` |
 | `EGRAS_OFFICE_NAME` | 8-character office name; defaults to `DTO+STO+DDO` | `0102DDO1` |
+| `EGRAS_RESPONSE_KEY_PATH` | Path to the NIC-issued key file for decrypting the encrypted callback (`payRes`); 16/24/32 bytes | `/run/secrets/egras-response.key` |
 | `EGRAS_USER_ID` | e-GRAS user id | `guest` |
 | `EGRAS_SCHEME_MAP` | JSON: `account_head` or `charge_type` → 17-character scheme code `NNNN-NN-NNN-NN-NN` | `{"COURT_FEE": "0030-01-501-01-00"}` |
 | `EGRAS_MAX_SCHEMES` | Government-charge scheme slots per transaction. Keep `1` until NIC confirms the field names of the second and later heads (spec 0022 Q-3); up to `4` once confirmed | `1` |

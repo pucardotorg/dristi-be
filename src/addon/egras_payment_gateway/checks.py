@@ -9,7 +9,7 @@ from django.core.checks import Error, Warning, register
 from apps.payments.checks import is_production_settings
 from apps.payments.enums import ChargeType
 
-from .config import is_active_provider, resolve_config
+from .config import EGRASKeyError, is_active_provider, load_response_key, resolve_config
 
 _CODE_IDS = {
     "EGRAS_PAYMENT_URL": "egras_payment_gateway.E002",
@@ -47,6 +47,7 @@ def check_egras_configuration(app_configs, **kwargs):
     ]
 
     messages.extend(_check_charge_type_coverage(config))
+    messages.extend(_check_response_key(config))
 
     if is_production_settings() and not config.verify_ssl:
         messages.append(
@@ -58,6 +59,31 @@ def check_egras_configuration(app_configs, **kwargs):
         )
 
     return messages
+
+
+def _check_response_key(config):
+    """Validate the encrypted-callback key (spec 0022 #5.4).
+
+    e-GRAS v3.7 sends the callback encrypted, so without a readable key the
+    callback cannot be decoded. Payments still resolve through the poller, so a
+    missing key is a Warning outside production; in production it is an Error.
+    A key that is set but unreadable or the wrong length is always an Error.
+    """
+
+    if not config.response_key_path:
+        message = (
+            "EGRAS_RESPONSE_KEY_PATH is not set; encrypted e-GRAS callbacks cannot be "
+            "decrypted and payments will resolve through the poller only."
+        )
+        if is_production_settings():
+            return [Error(message, id="egras_payment_gateway.E009")]
+        return [Warning(message, id="egras_payment_gateway.W002")]
+
+    try:
+        load_response_key(config.response_key_path)
+    except EGRASKeyError as exc:
+        return [Error(str(exc), id="egras_payment_gateway.E009")]
+    return []
 
 
 def _check_charge_type_coverage(config):
