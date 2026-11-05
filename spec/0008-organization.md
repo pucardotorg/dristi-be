@@ -21,7 +21,7 @@ The location hierarchy introduced in `0007-location.md` already models geography
 ## Non-goals
 
 - Write APIs (create/update/delete) for organizations.
-- Role/user membership in organizations.
+- Role/user membership in organizations (see [`0026`](0026-court-roles.md)).
 - Case assignment rules by organization.
 - Historical versioning of organizational boundaries.
 
@@ -179,7 +179,7 @@ Filter validation:
 
 ## Out of scope
 
-- User membership/roles inside organizations.
+- User membership/roles inside organizations — specified in [`0026`](0026-court-roles.md).
 - Organization-specific workflow configuration.
 - Temporal jurisdiction history.
 
