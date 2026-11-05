@@ -437,7 +437,7 @@ POST /cases/{case_id_or_draft_session_id}/complainants
 
 Exactly one of `person` or `self` describes the individual, and either may be left out when `institution` is given. `designation` is accepted only when both an individual and an institution are given; it is optional for a complainant and required for an accused (spec 0020 §4.2). `date_of_birth` and `age` are both optional.
 
-`permanent_address` (an address, optional) is accepted only for an individual complainant (`E07023` otherwise): send it when the permanent address differs from `address`. Left out, the person's permanent address is the same address row as `address`. It is saved on the person, the filer's own included (`"self": true`), not on the participant; PATCH does not change it.
+`permanent_address` (an address, optional) is accepted only for an individual complainant (`E07023` otherwise): send it when the permanent address differs from `address`. Left out, the person's permanent address is the same address row as `address`, except that the filer's own person (`"self": true`) keeps a permanent address they already have: `address` only fills one they lack. It is saved on the person, not on the participant; PATCH does not change it.
 
 **Response (201 Created):**
 ```json
@@ -517,7 +517,7 @@ Updates only the participant's own data. The `person` and `institution` rows are
 - A changed address is written through the address service and `address_id` is repointed; the old address row is kept.
 - `side` and `what_will_witness_prove` apply only to witnesses (§4.3) and update the `witness` row.
 - A changed accused or witness address needs a `police_station` (`E00002` on `address.police_station`).
-- `institution` **re-links** a participant that already has an institution, for example after a mistyped PAN or CIN. It is resolved exactly as on create (step 4): an existing institution with the `pan` or `cin` is linked, otherwise a new one is created with the participant's (possibly just changed) address as its registered office. Neither institution row, nor the person acting for it, is changed. The participant keeps its id and ordinal, so its representations, mandates and linked documents stay in place. For an institution with no person, `name_at_filing` and `phone_number_at_filing` are taken from the `institution` sent, as on create, unless the same request sets them. The role checks apply to the new institution (`E07013`, `E07014` on `institution`).
+- `institution` **re-links** a participant that already has an institution, for example after a mistyped PAN or CIN. It is resolved exactly as on create (step 4): an existing institution with the `pan` or `cin` is linked, otherwise a new one is created with the participant's (possibly just changed) address as its registered office. Neither institution row, nor the person acting for it, is changed. The participant keeps its id and ordinal, so its representations, mandates and linked documents stay in place. `entity_name_at_filing` is taken from the `institution` sent, and for an institution with no person so are `name_at_filing` and `phone_number_at_filing`, as on create, unless the same request sets them. A person acting for the institution keeps their own name and contact details. The role checks apply to the new institution (`E07013`, `E07014` on `institution`).
 - `role` and `person` cannot be changed, and an individual cannot become an institution or the reverse (`E07023` on `institution`); remove the participant and add it again instead.
 - Setting `is_party_in_person` to true is refused while the participant has an active advocate.
 - `designation_at_filing` is accepted only for a person acting for an institution, or a witness.
@@ -1086,11 +1086,12 @@ form. It is separate from the case's `filed_at`, which the server sets at
 submission. It must be on or after `cause_of_action_date`; an earlier date is a
 400 with code `E00001` on `data.complaint_filing_date`.
 
-`condonation_reason` is required when `complaint_filing_date` is more than 30
-days after `cause_of_action_date`: the complaint is then outside the limitation
-period (NI Act s.142(b)) and the court must be asked to condone the delay. A
-filing date within 30 days of the cause of action needs no reason (one may
-still be sent). JSON Schema cannot compare or subtract dates, so the schema
+`condonation_reason` is required when `complaint_filing_date` is more than one
+calendar month after `cause_of_action_date`: the complaint is then outside the
+limitation period (NI Act s.142(b)) and the court must be asked to condone the
+delay. One month runs to the same day of the next month, or to that month's last
+day when it is shorter (31 January to 28 or 29 February). A filing date within
+it needs no reason (one may still be sent). JSON Schema cannot compare or subtract dates, so the schema
 served to clients lists these fields but not these two rules; the server
 applies them on every save and again in the completeness check (§6.3). A missing
 reason is a 400 with code `E00002` on `data`, like other missing required
@@ -1120,8 +1121,6 @@ rendered (preview, PDFs).
 **Open questions:**
 - `payee_bank_police_station` and `drawer_bank_police_station` are free text;
   if police stations become master data they should hold the station's id.
-- The limitation period is a flat 30 days; counting it as one calendar month
-  (as s.142(b) reads) is an open question.
 - `complaint_filing_date` is entered by the filer and not compared with
   `filed_at` or with today.
 - Required fields are enforced on every save, so a section cannot be saved
@@ -1374,7 +1373,7 @@ POST /cases/{case_id}/validate
 
 6. **Case Details:**
    - `jurisdiction_limitation` and `adr_other_prayer` JSONs pass their schemas (defined per case type)
-   - `jurisdiction_limitation` has a `complaint_filing_date` on or after `cause_of_action_date`, and a `condonation_reason` when it is more than 30 days after (§5.3)
+   - `jurisdiction_limitation` has a `complaint_filing_date` on or after `cause_of_action_date`, and a `condonation_reason` when it is more than one calendar month after (§5.3)
 
 7. **Affidavit:**
    - The case has an `affidavit` (§5.4); reported on the field `affidavit`.

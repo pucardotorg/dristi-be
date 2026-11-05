@@ -709,6 +709,8 @@ class TestInstitutionRelink:
         response = patch(client, body["case_participant_id"], {"institution": self.CORRECTED})
 
         relinked = response.json()
+        assert relinked["institution_id"] != body["institution_id"]
+        assert relinked["entity_name_at_filing"] == "ABC Private Ltd"
         assert relinked["name_at_filing"] == "Rajesh Kumar"
         assert relinked["designation_at_filing"] == "Director"
         person = Person.objects.get(pk=body["person_id"])
@@ -1673,6 +1675,22 @@ class TestPermanentAddress:
 
         assert response.status_code == 201, response.json()
         assert Person.objects.get(user=user).permanent_address.line1 == "7 Temple Street"
+
+    def test_a_self_filer_keeps_theirs_when_none_is_sent(self, client, user, draft):
+        add(client, draft, self=True, permanent_address=self.ELSEWHERE)
+        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+
+        response = add(client, other_draft, self=True)
+
+        assert response.status_code == 201, response.json()
+        assert Person.objects.get(user=user).permanent_address.line1 == "7 Temple Street"
+
+    def test_a_self_filer_without_one_gets_the_address(self, client, user, draft):
+        response = add(client, draft, self=True)
+
+        assert response.status_code == 201, response.json()
+        person = Person.objects.get(user=user)
+        assert str(person.permanent_address_id) == response.json()["address_id"]
 
     def test_a_poa_holder_has_one(self, client, draft):
         complainant = add_complainant(client, draft)

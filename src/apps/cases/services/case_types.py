@@ -13,6 +13,7 @@ Adding a document or evidence type: add it to the enum below (the shared
 vocabulary, with its label), then list it under each case type that accepts it.
 """
 
+from calendar import monthrange
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -233,7 +234,16 @@ def _object(required, properties, **extra):
 
 # A cheque bounce complaint is due within one month of the cause of action
 # (NI Act s.142(b)); one filed later needs a reason for the court to condone the delay.
-LIMITATION_PERIOD_DAYS = 30
+
+
+def limitation_deadline(arose):
+    """Return the last day to file without condonation: one calendar month after ``arose``.
+
+    The same day of the next month, or that month's last day when it is
+    shorter (31 January gives 28 or 29 February).
+    """
+    year, month = (arose.year + 1, 1) if arose.month == 12 else (arose.year, arose.month + 1)
+    return date(year, month, min(arose.day, monthrange(year, month)[1]))
 
 
 def _limitation_errors(data):
@@ -256,13 +266,13 @@ def _limitation_errors(data):
                 "minimum",
             )
         ]
-    if (filed - arose).days <= LIMITATION_PERIOD_DAYS or "condonation_reason" in data:
+    if filed <= limitation_deadline(arose) or "condonation_reason" in data:
         return []
     return [
         SchemaError(
             "",
             "'condonation_reason' is a required property: the complaint is filed more "
-            f"than {LIMITATION_PERIOD_DAYS} days after the cause of action.",
+            "than one month after the cause of action.",
             "required",
         )
     ]

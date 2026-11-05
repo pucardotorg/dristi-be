@@ -583,8 +583,8 @@ class TestDetails:
         assert set(error_codes(response)) == {field}
 
     def test_condonation_reason_required_when_filed_past_the_limitation_period(self, client, draft):
-        # 31 days after the cause of action (2024 is a leap year).
-        data = {**JURISDICTION, "complaint_filing_date": "2024-03-23"}
+        # A day past one month after the cause of action (2024-02-21).
+        data = {**JURISDICTION, "complaint_filing_date": "2024-03-22"}
 
         response = put_section(client, draft, "jurisdiction_limitation", data)
 
@@ -598,7 +598,7 @@ class TestDetails:
 
     @pytest.mark.parametrize("reason", ["", " ", "\t\n"])
     def test_a_blank_condonation_reason_does_not_excuse_a_late_filing(self, client, draft, reason):
-        data = {**JURISDICTION, "complaint_filing_date": "2024-03-23", "condonation_reason": reason}
+        data = {**JURISDICTION, "complaint_filing_date": "2024-03-22", "condonation_reason": reason}
 
         response = put_section(client, draft, "jurisdiction_limitation", data)
 
@@ -619,7 +619,7 @@ class TestDetails:
         "complaint_filing_date",
         [
             "2024-02-21",  # the same day
-            "2024-03-22",  # 30 days after
+            "2024-03-21",  # one month after, though only 29 days in February
         ],
     )
     def test_condonation_reason_not_needed_within_the_limitation_period(

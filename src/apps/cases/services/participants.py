@@ -231,18 +231,25 @@ def _create_participant(case, user, role, data):
 
     # An individual complainant or POA holder has a permanent address: the
     # one sent when it differs from ``address``, else ``address`` itself.
-    permanent_address = None
+    permanent_address = sent_permanent_address = None
     if role in PERMANENT_ADDRESS_ROLES and institution is None:
-        permanent_address = _save_address(data.get("permanent_address"), user, "permanent_address")
-        permanent_address = permanent_address or address
+        sent_permanent_address = _save_address(
+            data.get("permanent_address"), user, "permanent_address"
+        )
+        permanent_address = sent_permanent_address or address
 
     person = None
     if data["is_self"]:
         with errors_under("self"):
             person = get_or_create_self_person(user)
-        if permanent_address is not None and person.permanent_address_id != permanent_address.pk:
-            # The one change a filing makes to the filer's own person row: the
-            # permanent address they just gave (spec 0020 §2.5).
+        # The one change a filing makes to the filer's own person row: the
+        # permanent address they just gave (spec 0020 §2.5). Falling back to
+        # ``address`` only fills one they lack; it never replaces theirs.
+        if (
+            permanent_address is not None
+            and (sent_permanent_address or person.permanent_address_id is None)
+            and person.permanent_address_id != permanent_address.pk
+        ):
             person.permanent_address = permanent_address
             person.updated_by = user
             person.save(update_fields=["permanent_address", "updated_by", "updated_at"])
@@ -420,8 +427,11 @@ def _relink_institution(participant, user, fields, data):
     person acting for it: other cases may share them. The participant keeps
     its id, so its advocates, mandates and documents stay linked.
 
-    An institution alone is shown by the name and number sent, as on create,
-    unless the same request sets ``name_at_filing`` or ``phone_number_at_filing``.
+    The institution's name is taken from the ``institution`` sent, as on
+    create; an institution alone is also shown by the number sent. Either is
+    kept when the same request sets it (``entity_name_at_filing``,
+    ``name_at_filing``, ``phone_number_at_filing``). A person acting for the
+    institution keeps their own name and contact details.
     """
     with errors_under("institution"):
         participant.institution = get_or_create_institution(
@@ -430,9 +440,11 @@ def _relink_institution(participant, user, fields, data):
             address=participant.address,
             require_identifier=participant.role == ParticipantRole.COMPLAINANT,
         )
-    if participant.person_id is None:
-        for field, value in _snapshot(None, {"institution": fields}).items():
-            data.setdefault(field, value)
+    snapshot = _snapshot(None, {"institution": fields})
+    if participant.person_id is not None:
+        snapshot = {"entity_name_at_filing": snapshot["entity_name_at_filing"]}
+    for field, value in snapshot.items():
+        data.setdefault(field, value)
 
 
 def _update_witness(participant, user, fields):

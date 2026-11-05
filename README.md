@@ -225,7 +225,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `PDF_TASK_TIME_LIMIT_MS` | Dramatiq time limit for PDF actors in milliseconds | `600000` |
 | `PDF_SIGNATURE_CONTAINER_BYTES` | Signature container reserved by `prepare_for_signing`; must exceed the largest ESP PKCS#7 | `16384` |
 | `PDF_SIGNATURE_HASH_ALGORITHM` | ByteRange digest algorithm (`SHA256`, `SHA384`, `SHA512`); must match the ESP request | `SHA256` |
-| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives. Defaults to `FILE_MAX_SIZE_BYTES`. | `15728640` |
+| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives; keep it at or above `FILE_MAX_SIZE_BYTES`, or an accepted upload cannot be signed | `20971520` |
 
 ## Services included
 
