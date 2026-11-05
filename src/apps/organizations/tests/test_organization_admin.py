@@ -3,6 +3,7 @@
 import pytest
 from django.contrib.admin.sites import AdminSite
 
+from apps.locations.models import Location
 from apps.locations.tests.factories import make_hierarchy
 from apps.organizations.admin import OrganizationAdmin, OrganizationAdminForm
 from apps.organizations.models import Organization, OrganizationType
@@ -76,3 +77,21 @@ class TestOrganizationAdminConfiguration:
         assert admin_instance.search_fields == ("code", "name", "short_name")
         assert admin_instance.readonly_fields == ("id", "created_at", "updated_at")
         assert admin_instance.filter_horizontal == ("jurisdictions",)
+
+
+@pytest.mark.django_db
+def test_jurisdiction_choices_leave_out_pincodes(admin_instance, rf):
+    _, _, patna = make_hierarchy()
+    Location.objects.create(
+        code="PIN_800001",
+        name="800001",
+        location_type=Location.LocationType.PINCODE,
+        parent=patna,
+    )
+    field = Organization._meta.get_field("jurisdictions")
+
+    formfield = admin_instance.formfield_for_manytomany(field, rf.get("/"))
+
+    codes = set(formfield.queryset.values_list("code", flat=True))
+    assert "PATNA" in codes
+    assert "PIN_800001" not in codes

@@ -318,6 +318,8 @@ cooldown needs the explicit key.
 
 ### 4.2 Completing registration
 
+![Citizen registration sequence](../docs/sequence-diagrams/0005-registration-and-login/registration.svg)
+
 ```http
 POST   /litigants/            cookie auth
 POST   /power-of-attorneys/   cookie auth
@@ -511,6 +513,8 @@ Design decisions:
 
 Both mobile+password and mobile+OTP are supported by registering two backends. Django tries each in order until one returns a user.
 
+![Citizen sign-in sequence](../docs/sequence-diagrams/0005-registration-and-login/sign-in.svg)
+
 ```python
 # settings.py
 AUTH_USER_MODEL = "users.User"
@@ -697,7 +701,11 @@ Both hooks run inside the approver's decision transaction, so raising rolls the
 decision back. Both are idempotent, because a resubmitted request can be decided
 again.
 
+![Approver review sequence](../docs/sequence-diagrams/0005-registration-and-login/approver-review.svg)
+
 ### 7.4 Correcting a rejected registration
+
+![Rejection and resubmission sequence](../docs/sequence-diagrams/0005-registration-and-login/rejection-and-resubmission.svg)
 
 ```http
 GET    /registrations/current/            cookie auth, rejected registrant only

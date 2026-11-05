@@ -240,8 +240,11 @@ example `E01001`.
 | `02` | `apps.dristi_requests` | request and approval workflow |
 | `03` | `apps.esign` | electronic signing (one code per spec 0015 failure code) |
 | `04` | `apps.pdf` | PDF generation and jobs (spec 0016) |
-| `05` | `apps.address` | pincode lookup (spec 0020) |
+| `05` | `apps.address` | address (spec 0020) |
 | `06` | `apps.payments` | demands and payments (spec 0017); reserved, not yet implemented |
+| `07` | `apps.cases` | case filing (spec 0021) |
+| `08` | `apps.workflows` | case workflows and pending tasks (spec 0011); reserved, not yet implemented |
+| `09` | `apps.scrutiny` | scrutiny and registration (spec 0024); reserved, not yet implemented |
 | `10` | `apps.hearings` | hearings, court calendar and bulk rescheduling (spec 0023); reserved, not yet implemented |
 
 Rules:

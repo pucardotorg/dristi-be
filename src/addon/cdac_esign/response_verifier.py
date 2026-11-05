@@ -34,6 +34,13 @@ ACCEPTED_DIGEST_ALGORITHMS = frozenset(
 )
 
 
+# C-DAC signs eSign 2.1 responses with RSA-SHA1 over a SHA-1 digest. They are
+# accepted only when CDAC_ESIGN_ALLOW_SHA1_RESPONSE is set, because SHA-1 is
+# no longer collision resistant; every signed field is still bound by it.
+SHA1_SIGNATURE_METHODS = frozenset({SignatureMethod.RSA_SHA1})
+SHA1_DIGEST_ALGORITHMS = frozenset({DigestAlgorithm.SHA1})
+
+
 class CDACResponseUntrusted(Exception):  # noqa: N818
     """Raised when the response signature is absent, invalid or from another key."""
 
@@ -42,8 +49,14 @@ class CDACResponseStale(Exception):  # noqa: N818
     """Raised when the response timestamp is outside the accepted window."""
 
 
-def verify_response_signature(document: str, certificate_pem: str) -> None:
-    """Verify the enveloped XMLDSig of ``document`` against ``certificate_pem``."""
+def verify_response_signature(
+    document: str, certificate_pem: str, *, allow_sha1: bool = False
+) -> None:
+    """Verify the enveloped XMLDSig of ``document`` against ``certificate_pem``.
+
+    ``allow_sha1`` additionally accepts RSA-SHA1 / SHA-1, which is what the
+    C-DAC ESP signs with.
+    """
 
     if not certificate_pem:
         raise CDACResponseUntrusted("No C-DAC response certificate is configured.")
@@ -56,15 +69,30 @@ def verify_response_signature(document: str, certificate_pem: str) -> None:
     except etree.XMLSyntaxError as exc:
         raise CDACResponseUntrusted("The response document is not well-formed XML.") from exc
 
+    signature_methods = ACCEPTED_SIGNATURE_METHODS
+    digest_algorithms = ACCEPTED_DIGEST_ALGORITHMS
+    if allow_sha1:
+        signature_methods |= SHA1_SIGNATURE_METHODS
+        digest_algorithms |= SHA1_DIGEST_ALGORITHMS
+
+    verifier = XMLVerifier()
+    # lxml's inclusive C14N emits a spurious ``xmlns=""`` on descendants of a
+    # default-namespaced <Signature> such as C-DAC's (<Transforms xmlns="">),
+    # so the bytes hashed differ from the bytes the ESP signed and a genuine
+    # signature fails. signxml's documented switch removes those declarations
+    # (signxml issue #193). It only affects what is hashed: a tampered
+    # document still fails the digest.
+    verifier.excise_empty_xmlns_declarations = True
+
     try:
-        XMLVerifier().verify(
+        verifier.verify(
             root,
             x509_cert=normalise_pem(certificate_pem),
             expect_config=SignatureConfiguration(
                 require_x509=True,
                 expect_references=1,
-                signature_methods=ACCEPTED_SIGNATURE_METHODS,
-                digest_algorithms=ACCEPTED_DIGEST_ALGORITHMS,
+                signature_methods=signature_methods,
+                digest_algorithms=digest_algorithms,
             ),
         )
     except (InvalidSignature, InvalidInput) as exc:

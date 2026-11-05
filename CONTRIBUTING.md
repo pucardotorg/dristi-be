@@ -121,6 +121,8 @@ git checkout -b docs/api-documentation
 6. **Add test cases** for bug fixes and new features:
    - Place tests in the appropriate `tests/` directory
    - Ensure all tests pass before committing
+   - Keep total coverage at or above **85%**; CI fails below it. To check it
+     locally, see [Test coverage](docs/development.md#test-coverage).
 
 ### 6. Verify Application Functionality
 
@@ -203,6 +205,8 @@ git commit -m "chore(deps): Upgrade Django to 5.1"
    - Linting (Ruff)
    - Tests (pytest)
    - Django system checks
+   - Test coverage: fails below 85% overall; Codecov reports the coverage of
+     your PR and of the lines it changes
 
 2. **Code review:**
    - Maintainers will review your code

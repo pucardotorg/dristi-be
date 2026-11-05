@@ -8,6 +8,7 @@ The production stack (`docker/docker-compose.prod.yml`) runs:
 
 - **web**: Gunicorn serving the Django API (2 replicas by default)
 - **worker**: Dramatiq background workers (2 replicas by default)
+- **scheduler**: enqueues periodic (`@cron`) Dramatiq jobs; 1 replica, a Redis lock keeps a single active instance (spec 0026)
 - **db**: PostgreSQL
 - **redis**: Redis for cache and the Dramatiq queue
 - **rustfs**: S3-compatible object store for media uploads (MinIO by default)

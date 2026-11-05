@@ -27,6 +27,8 @@ class InstitutionSerializer(serializers.ModelSerializer):
             "id",
             "entity_type",
             "entity_name",
+            "pan",
+            "cin",
             "contact_number",
             "email_address",
             "address",

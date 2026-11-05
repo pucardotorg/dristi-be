@@ -3,7 +3,7 @@ set -e
 
 # Show help if requested
 if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ -z "$1" ]; then
-    echo "Usage: entrypoint.sh [web|worker|migrate|collectstatic|dev|shell]"
+    echo "Usage: entrypoint.sh [web|worker|scheduler|migrate|collectstatic|dev|shell]"
     exit 0
 fi
 
@@ -47,6 +47,11 @@ case "$1" in
         wait_for_db
         echo "Starting Dramatiq workers..."
         exec python manage.py rundramatiq --processes 2 --threads 8
+        ;;
+    scheduler)
+        wait_for_db
+        echo "Starting Dramatiq scheduler..."
+        exec python manage.py crontab
         ;;
     migrate)
         wait_for_db

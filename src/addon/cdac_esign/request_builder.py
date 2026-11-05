@@ -51,6 +51,9 @@ def build_request_xml(
             "sc": config.consent,
             "ts": format_timestamp(timestamp),
             "txn": transaction_id,
+            # Empty: the signer enters Aadhaar/VID on the ESP page. The 2.1
+            # reference ASP always sends the attribute.
+            "ekycId": "",
             "ekycIdType": config.ekyc_id_type,
             "aspId": config.asp_id,
             "AuthMode": config.auth_mode,
@@ -68,7 +71,6 @@ def build_request_xml(
             "id": constants.INPUT_HASH_ID,
             "hashAlgorithm": config.hash_algorithm,
             "docInfo": doc_info or "",
-            "docUrl": "",
         },
     )
     input_hash.text = document_hash

@@ -120,6 +120,18 @@ class ESignFileStorageError(ESignError):
     default_message = "Document storage is temporarily unavailable."
 
 
+class ESignFileStorageRejected(ESignFileStorageError):  # noqa: N818
+    """Raised when the File Storage Service refuses the call as invalid.
+
+    Storage is reachable but the payload this module built is wrong (for
+    example an unknown ``file_type``). That is a defect to fix, not an outage to
+    wait out, so it carries the storage module's own validation detail.
+    """
+
+    code = constants.ESIGN_FILE_STORAGE_REJECTED
+    default_message = "Document storage rejected the request."
+
+
 class ESignSignedUploadError(ESignFileStorageError):
     """Raised when the signed PDF cannot be stored."""
 

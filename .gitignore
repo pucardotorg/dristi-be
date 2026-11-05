@@ -91,3 +91,6 @@ docker/rustfs_volumes/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Pincode directory CSV: downloaded per environment (see src/data/pincodes/README.md).
+src/data/pincodes/*.csv

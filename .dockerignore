@@ -32,3 +32,6 @@ htmlcov
 # Local development artifacts
 media
 staticfiles
+
+# Pincode directory CSV: loaded per environment, not baked into the image.
+src/data/pincodes/*.csv

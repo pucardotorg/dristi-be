@@ -42,6 +42,10 @@ SIGNATURES_ELEMENT = "Signatures"
 DOC_SIGNATURE_ELEMENT = "DocSignature"
 RESPONSE_SUCCESS_STATUS = "1"
 
+# eSign API 2.1 #3.4.1: on success ``errCode`` / ``errMsg`` (and, in practice,
+# ``DocSignature@error``) carry ``NA`` rather than being empty.
+NO_ERROR_VALUES = frozenset({"", "NA"})
+
 # Form field the response document arrives under. C-DAC's field name is part of
 # the ASP onboarding pack and is configurable through
 # ``CDAC_ESIGN_RESPONSE_FIELD``; these are the names seen in practice, plus the

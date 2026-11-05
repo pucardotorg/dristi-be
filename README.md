@@ -30,7 +30,7 @@ A Django-based API project template using:
    docker compose --env-file .env -f docker/docker-compose.yml up -d --build
    ```
 
-   This starts: PostgreSQL, Redis, Django dev server, Dramatiq workers, Rustfs (S3-compatible storage), MailHog, Adminer, and monitoring dashboards.
+   This starts: PostgreSQL, Redis, Django dev server, Dramatiq workers and scheduler, Rustfs (S3-compatible storage), MailHog, Adminer, and monitoring dashboards.
 
 3. **Create an admin user** (first time only):
 
@@ -79,6 +79,65 @@ make format      # Format code with ruff
 ```
 
 Run `make help` to see all available commands.
+
+Pincode pre-fill needs location data, which the repository does not ship: put
+the India Post CSV in `src/data/pincodes/`, then run
+`python manage.py import_pincodes --create-districts` in the `web` container,
+which also creates the states and districts (see
+[src/data/pincodes/README.md](src/data/pincodes/README.md)).
+
+## Scheduled and delayed jobs
+
+Background jobs are Dramatiq actors in `src/apps/<app>/tasks.py`, run by the
+`worker` service. Two kinds of jobs run later rather than now. Both are
+specified in [spec/0026-dramatiq-crontab.md](spec/0026-dramatiq-crontab.md).
+
+**Periodic job (on a timetable).** Add `@cron(...)` from
+[`dramatiq-crontab`](https://github.com/voiio/dramatiq-crontab) on top of the
+actor. A separate `scheduler` service (`python manage.py crontab`) enqueues it
+on each tick, and the worker runs it:
+
+```python
+from dramatiq import actor
+from dramatiq_crontab import cron
+
+
+@cron("*/5 * * * *")  # every 5 minutes, UTC
+@actor(max_retries=0)
+def expire_stale_transactions() -> int: ...
+```
+
+A scheduled actor must:
+
+- live in `<app>/tasks.py` of an installed app;
+- take no arguments;
+- be idempotent and safe to run twice at once;
+- process a bounded batch per run;
+- use `max_retries=0`.
+
+Cron expressions are in UTC, and the day of week must be a name (`Sun`), not a
+number. Schedules are read when the scheduler starts, so restart it after a
+change. See spec 0026 §4 for the full checklist.
+
+**One-off delayed job (for example, "run once, 30 minutes from now").** No
+scheduler is needed. Send a delayed message after the transaction commits:
+
+```python
+from datetime import timedelta
+from functools import partial
+
+from django.db import transaction
+
+transaction.on_commit(
+    partial(my_actor.send_with_options, args=(str(obj.pk),), delay=timedelta(minutes=30))
+)
+```
+
+The message is kept in Redis and runs no earlier than the delay. Delivery is at
+least once, and the delay must be under 7 days. To make the job run exactly
+once, have the actor re-read the row under `select_for_update` and do nothing
+unless the row is still in the state the job was scheduled for. Rescheduling or
+cancelling is done by changing that state. See spec 0026 §5.
 
 ## Pre-commit hooks
 
@@ -147,6 +206,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CACHE_REDIS_URL` | Redis connection for Django cache | `redis://redis:6379/1` |
 | `CACHE_ENABLED` | Enable or disable Django's cache backend. When disabled, Django uses the dummy cache backend. | `True` |
 | `CACHE_KEY_PREFIX` | Prefix added to Django cache keys to namespace cached data. | `dristi-dev` |
+| `STATE_CACHE_REDIS_URL` | Redis database for state that exists nowhere else, such as case draft sessions. Not affected by `CACHE_ENABLED`; use a database separate from `CACHE_REDIS_URL`, on a server whose `maxmemory-policy` does not evict keys. | `redis://redis:6379/3` |
 | `CACHALOT_ENABLED` | Enable or disable django-cachalot automatic ORM query caching. Defaults to `CACHE_ENABLED`. | `True` |
 | `CACHALOT_TIMEOUT` | Default lifetime of django-cachalot cached ORM query results, in seconds. | `120` |
 | `RULES_EVALUATION_TIMEOUT_SECONDS` | Per-evaluation time limit for business rules, in seconds. A GoRules evaluation that times out still finishes in the background. | `2` |
@@ -171,9 +231,6 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `MESSAGING_TASK_TIME_LIMIT` | Dramatiq time limit for `send_message` in milliseconds; must exceed any gateway timeout | `600000` |
 | `OTP_MAX_ATTEMPTS` | Wrong guesses allowed against one OTP before it is destroyed | `5` |
 | `PASSWORD_RESET_WINDOW_SECONDS` | How long a verified password-reset code allows the new password to be set, in seconds | `600` |
-| `PINCODE_API_URL` | India Post Pincode API endpoint; `{pincode}` is substituted | `https://api.postalpincode.in/pincode/{pincode}` |
-| `PINCODE_API_TIMEOUT` | Pincode API connect/read timeout in seconds; on timeout the lookup returns 503 | `5` |
-| `PINCODE_API_CACHE_SECONDS` | How long a successful pincode lookup is cached | `604800` |
 | `CDAC_SMS_URL` | CDAC gateway endpoint (required when the CDAC backend is active) | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
 | `CDAC_SMS_USERNAME` | CDAC username | `dristi` |
 | `CDAC_SMS_PASSWORD` | CDAC password; hashed (SHA-1) before transmission, never sent in plaintext | secret |
@@ -258,6 +315,7 @@ The Docker Compose stack includes:
 | `CDAC_ESIGN_TXN_TEMPLATE` | Template for the ESP correlation id; must keep `{transaction_id}` | `{module}-{transaction_id}` |
 | `CDAC_ESIGN_RESPONSE_MAX_SKEW` | Seconds of clock skew allowed on the response `ts` | `900` |
 | `CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE` | Verify the response XMLDSig; rejected as `False` in production | `True` |
+| `CDAC_ESIGN_ALLOW_SHA1_RESPONSE` | Also accept RSA-SHA1 / SHA-1 response signatures. C-DAC signs eSign 2.1 responses with SHA-1, so it must be `True` for them to verify | `False` |
 | `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
 | `PDF_SIGNATURE_HASH_ALGORITHM` | Digest the PDF service computes over the signing ByteRange | `SHA256` |
 | `PDF_SIGNATURE_CONTAINER_BYTES` | Bytes reserved for the PKCS#7 signature container | `16384` |
@@ -276,4 +334,5 @@ If you run `docker build` directly without setting `REQUIREMENTS_FILE`, it defau
 ## CI/CD
 
 - `.github/workflows/ci.yml` runs linting, Django system checks, and pytest on every push/PR.
+- **Test coverage:** pytest measures coverage of `src/` (tests, migrations and settings excluded). CI fails if the total is below **85%** (`fail_under` in `pyproject.toml`). The report is uploaded to [Codecov](https://about.codecov.io/), which shows the coverage of each PR and of the lines it changes. The upload needs a `CODECOV_TOKEN` repository secret (Settings → Secrets and variables → Actions); without it the CI job fails. See [docs/development.md](docs/development.md#test-coverage) to measure coverage locally.
 - `.github/workflows/docker-publish.yml` builds and pushes the Docker image to GitHub Container Registry on every push to `main`.

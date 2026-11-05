@@ -1,8 +1,9 @@
 """Enveloped XMLDSig signing of the eSign request (spec 0015 #7.2).
 
-Exclusive canonicalisation, SHA-256 digest, RSA-SHA256 signature, enveloped
-transform, and the ASP ``X509Certificate`` in ``KeyInfo`` — the combination the
-C-DAC ESP validates the request with.
+Inclusive C14N 1.0, SHA-256 digest, RSA-SHA256 signature and a single enveloped
+transform, matching the C-DAC 2.1 reference ASP (``XmlSigning.signXmlStringNew``),
+plus the ASP ``X509Certificate`` in ``KeyInfo``. The reference signs with
+RSA-SHA1; SHA-1 is not used here.
 """
 
 from lxml import etree
@@ -18,7 +19,7 @@ from .keystore import ASPKeyMaterial
 
 SIGNATURE_METHOD = SignatureMethod.RSA_SHA256
 DIGEST_ALGORITHM = DigestAlgorithm.SHA256
-C14N_ALGORITHM = CanonicalizationMethod.EXCLUSIVE_XML_CANONICALIZATION_1_0
+C14N_ALGORITHM = CanonicalizationMethod.CANONICAL_XML_1_0
 
 
 class CDACXMLSigningError(Exception):
@@ -44,6 +45,8 @@ def sign_request_xml(xml: bytes, key_material: ASPKeyMaterial) -> bytes:
             document,
             key=key_material.private_key,
             cert=[key_material.certificate_pem()],
+            # The reference request carries only the enveloped transform.
+            exclude_c14n_transform_element=True,
         )
     except Exception as exc:
         raise CDACXMLSigningError("The request XML could not be signed.") from exc

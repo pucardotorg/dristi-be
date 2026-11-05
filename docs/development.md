@@ -36,6 +36,38 @@ docker compose -f docker/docker-compose.yml exec web python manage.py shell
 docker compose -f docker/docker-compose.yml exec web python manage.py makemigrations
 ```
 
+### Loading location data (pincode pre-fill)
+
+The repository ships no location data. Address forms pre-fill district and
+state from a pincode only once the locations are loaded, so whoever sets up
+an environment does this once (spec 0007 section 7):
+
+1. Download the *All India Pincode Directory* CSV from
+   https://www.data.gov.in/catalog/all-india-pincode-directory and save it as
+   `src/data/pincodes/all_india_pincode_directory.csv`. The file is git- and
+   docker-ignored.
+2. Check what would happen, then import. `--create-districts` also creates the
+   states and districts the CSV names, which an empty database needs:
+
+   ```bash
+   docker compose --env-file .env -f docker/docker-compose.yml exec web python manage.py import_pincodes --create-districts --dry-run
+   docker compose --env-file .env -f docker/docker-compose.yml exec web python manage.py import_pincodes --create-districts
+   ```
+
+   Without `--create-districts`, pincodes go only under existing districts and
+   the dry run lists CSV state and district names that match none. Map
+   them in `src/data/pincodes/aliases.json`, which is picked up automatically
+   and can be committed, e.g.
+   `{"JAMMU AND KASHMIR": "IN_JK", "KARNATAKA / BANGALORE": "IN_KA_BLR_URBAN"}`
+   (a CSV state to a state code, or a CSV state and district to a district
+   code), and run it again.
+
+[src/data/pincodes/README.md](../src/data/pincodes/README.md) also covers
+running it without Docker and on a production container.
+
+Until this is done, every pincode lookup returns 404 and users type district
+and state by hand.
+
 Once the stack is running:
 
 - API root: http://localhost:8000/api/v1/
@@ -75,11 +107,29 @@ cd src
 pytest
 ```
 
-To run with coverage:
+### Test coverage
+
+Coverage settings live in the root `pyproject.toml`: `src/` is measured,
+`tests/`, `migrations/` and `settings/` are left out, and the run fails if total
+coverage is below **85%**. CI runs the same command and uploads the result to
+Codecov, which reports on each pull request.
+
+Without Docker, from `src/`:
 
 ```bash
-pytest --cov --cov-report=html
+pytest --cov=. --cov-config=../pyproject.toml --cov-report=term-missing
 ```
+
+With Docker: the container only mounts `src/`, so copy `pyproject.toml` in
+first:
+
+```bash
+docker compose -f docker/docker-compose.yml cp pyproject.toml web:/tmp/pyproject.toml
+docker compose -f docker/docker-compose.yml exec web pytest --cov=. --cov-config=/tmp/pyproject.toml --cov-report=term-missing
+```
+
+`term-missing` lists the uncovered line numbers of each file; use
+`--cov-report=html` instead for a browsable report in `src/htmlcov/`.
 
 ## File uploads and media storage
 
@@ -108,6 +158,11 @@ from apps.core.tasks import send_welcome_email
 
 send_welcome_email.send("user@example.com")
 ```
+
+To run a job on a timetable (`@cron`) or once after a delay
+(`send_with_options(delay=...)`), see
+[Scheduled and delayed jobs](../README.md#scheduled-and-delayed-jobs) and
+[spec 0026](../spec/0026-dramatiq-crontab.md).
 
 Monitor the worker logs:
 

@@ -40,7 +40,7 @@ class FakeFileClient:
             "content_type": content_type,
             "file_name": f"{file_id}.pdf",
             "file_size": len(content),
-            "file_type": "PDF",
+            "file_type": "pdf",
             "tags": [],
         }
         return file_id

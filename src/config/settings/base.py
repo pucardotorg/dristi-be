@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "corsheaders",
     "django_dramatiq",
+    "dramatiq_crontab",
     "health_check",
     "simple_history",
     "cachalot",
@@ -59,6 +60,7 @@ INSTALLED_APPS = [
     "apps.pdf",
     "apps.address",
     "apps.parties",
+    "apps.cases",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
@@ -305,6 +307,12 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
+        "CaseStatusEnum": "apps.cases.models.CaseStatus",
+        "ParticipantRoleEnum": "apps.cases.models.ParticipantRole",
+        "UserRoleEnum": "apps.users.models.Role",
+        "PartyEntityTypeEnum": "apps.parties.models.EntityType",
+        "ESignEntityTypeEnum": "apps.esign.constants.EntityType",
+        "GenderEnum": "apps.parties.models.Gender",
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
@@ -353,6 +361,14 @@ CACHES["default"]["KEY_PREFIX"] = CACHE_KEY_PREFIX
 
 if not CACHE_ENABLED:
     CACHES["default"] = {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}
+
+# Short-lived state that is the only copy of its data, such as case draft
+# sessions (spec 0021 §2.2). Kept apart from "default" so CACHE_ENABLED, a
+# cache.clear() or a FLUSHDB of the query cache cannot drop it; use its own
+# Redis database, on a server whose maxmemory-policy does not evict keys.
+# apps.cases.checks refuses a dummy backend here.
+CACHES["state"] = env.cache(var="STATE_CACHE_REDIS_URL", default="redis://localhost:6379/3")
+CACHES["state"]["KEY_PREFIX"] = CACHE_KEY_PREFIX
 
 # ---------------------------------------------------------------------------
 # django-cachalot (automatic ORM query caching, Redis-backed)
@@ -423,6 +439,11 @@ DRAMATIQ_BROKER = {
 
 DRAMATIQ_TASKS_DATABASE = "default"
 
+# Scheduler lock (spec 0026): only the instance holding it fires schedules.
+DRAMATIQ_CRONTAB = {
+    "REDIS_URL": env("DRAMATIQ_BROKER_URL", default="redis://localhost:6379/2"),
+}
+
 
 # ---------------------------------------------------------------------------
 # Messaging
@@ -461,16 +482,6 @@ MESSAGING_RETRY_DELAY_MAX = env.int("MESSAGING_RETRY_DELAY_MAX", default=3600)
 # greater than any gateway HTTP timeout so a network hang surfaces as a clean
 # transient failure instead of a worker kill.
 MESSAGING_TASK_TIME_LIMIT = env.int("MESSAGING_TASK_TIME_LIMIT", default=600000)
-
-
-# ---------------------------------------------------------------------------
-# India Post Pincode API (apps.address.services, spec 0020 §7.3)
-# ---------------------------------------------------------------------------
-# Used only to pre-fill district and state; a failure is reported to the
-# client as 503 and never blocks saving an address.
-PINCODE_API_URL = env("PINCODE_API_URL", default="https://api.postalpincode.in/pincode/{pincode}")
-PINCODE_API_TIMEOUT = env.int("PINCODE_API_TIMEOUT", default=5)
-PINCODE_API_CACHE_SECONDS = env.int("PINCODE_API_CACHE_SECONDS", default=60 * 60 * 24 * 7)
 
 
 # ---------------------------------------------------------------------------
@@ -545,6 +556,8 @@ CDAC_ESIGN_RESPONSE_MAX_SKEW = env.int("CDAC_ESIGN_RESPONSE_MAX_SKEW", default=9
 CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE = env.bool(
     "CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE", default=True
 )
+# C-DAC signs eSign 2.1 responses with RSA-SHA1; accept them only when set.
+CDAC_ESIGN_ALLOW_SHA1_RESPONSE = env.bool("CDAC_ESIGN_ALLOW_SHA1_RESPONSE", default=False)
 CDAC_ESIGN_RESPONSE_FIELD = env("CDAC_ESIGN_RESPONSE_FIELD", default="")
 
 
@@ -599,6 +612,11 @@ LOGGING = {
             "propagate": False,
         },
         "cachalot": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apscheduler.executors.default": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

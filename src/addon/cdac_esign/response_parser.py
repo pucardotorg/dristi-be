@@ -111,7 +111,7 @@ def parse_response_xml(
 
     status = (root.get("status") or "").strip()
     signatures = _doc_signatures(root)
-    certificate = _text(root, constants.USER_CERTIFICATE_ELEMENT)
+    certificate = compact_base64(_text(root, constants.USER_CERTIFICATE_ELEMENT))
 
     parsed_status_success = status == constants.RESPONSE_SUCCESS_STATUS
     if parsed_status_success and len(signatures) != expected_signature_count:
@@ -144,8 +144,8 @@ def _read_signature(entry) -> tuple[str | None, str]:
     """Return ``(signature, error)`` for a ``DocSignature`` element."""
 
     element, error = entry
-    value = (element.text or "").strip()
-    if error or not value:
+    value = compact_base64(element.text)
+    if not is_no_error(error) or not value:
         return None, SIGNATURE_MISSING
     try:
         decoded = base64.b64decode(value, validate=True)
@@ -154,6 +154,27 @@ def _read_signature(entry) -> tuple[str | None, str]:
     if not decoded or not is_pkcs7_signed_data(decoded):
         return None, SIGNATURE_INVALID
     return value, SIGNATURE_OK
+
+
+def is_no_error(value) -> bool:
+    """Whether an ESP error field means "no error".
+
+    eSign API 2.1 #3.4.1 fills error fields with ``NA`` on success instead of
+    leaving them empty, so both spellings mean success.
+    """
+
+    return (value or "").strip().upper() in constants.NO_ERROR_VALUES
+
+
+def compact_base64(value) -> str:
+    """Return base64 text with all whitespace removed.
+
+    C-DAC wraps base64 in MIME-style lines (``\\r\\n`` every 76 characters),
+    which strict decoding rejects. Removing whitespace here means everything
+    downstream sees one canonical, single-line value.
+    """
+
+    return "".join((value or "").split())
 
 
 def is_pkcs7_signed_data(der: bytes) -> bool:

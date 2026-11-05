@@ -67,6 +67,7 @@ ESIGN_INVALID_PLACEHOLDER = "ESIGN_INVALID_PLACEHOLDER"
 ESIGN_NOT_PERMITTED = "ESIGN_NOT_PERMITTED"
 ESIGN_PDF_PREPARATION_FAILED = "ESIGN_PDF_PREPARATION_FAILED"
 ESIGN_FILE_STORAGE_UNAVAILABLE = "ESIGN_FILE_STORAGE_UNAVAILABLE"
+ESIGN_FILE_STORAGE_REJECTED = "ESIGN_FILE_STORAGE_REJECTED"
 ESIGN_PROVIDER_NOT_CONFIGURED = "ESIGN_PROVIDER_NOT_CONFIGURED"
 ESIGN_REQUEST_BUILD_FAILED = "ESIGN_REQUEST_BUILD_FAILED"
 ESIGN_REQUEST_SIGNING_FAILED = "ESIGN_REQUEST_SIGNING_FAILED"
@@ -110,6 +111,7 @@ EVENT_ESIGN_SUCCEEDED = "ESIGN_SUCCEEDED"
 EVENT_ESIGN_FAILED = "ESIGN_FAILED"
 EVENT_ESIGN_EXPIRED = "ESIGN_EXPIRED"
 EVENT_ESIGN_RETRIED = "ESIGN_RETRIED"
+EVENT_FILE_STORAGE_REJECTED = "FILE_STORAGE_REJECTED"
 
 
 # ---------------------------------------------------------------------------
@@ -117,11 +119,12 @@ EVENT_ESIGN_RETRIED = "ESIGN_RETRIED"
 # ---------------------------------------------------------------------------
 PDF_CONTENT_TYPE = "application/pdf"
 
-# ``apps.files`` owns the FileType enum; these are the two values spec 0014
-# #1.2 records for this module's artefacts. They are passed as plain strings so
-# the domain does not import the storage module's schema.
-FILE_TYPE_PDF = "PDF"
-FILE_TYPE_SIGNED_PDF = "DIGITALLY_SIGNED"
+# ``apps.files`` owns the FileType enum; these are the stored *values* (not the
+# member names) of the two types spec 0014 #1.2 records for this module's
+# artefacts. They are passed as plain strings so the domain does not import the
+# storage module's schema; ``checks.py`` fails startup if they drift from it.
+FILE_TYPE_PDF = "pdf"
+FILE_TYPE_SIGNED_PDF = "digitally_signed"
 
 # Tags make the artefacts discoverable through ``search_file()``.
 FILE_TAG_ESIGN = "esign"

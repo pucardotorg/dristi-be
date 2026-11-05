@@ -88,6 +88,7 @@ class RequestXMLTests(SimpleTestCase):
         self.assertEqual(root.get("sc"), "Y")
         self.assertEqual(root.get("ts"), "2026-09-22T17:40:03")
         self.assertEqual(root.get("txn"), "orders-0f9d")
+        self.assertEqual(root.get("ekycId"), "")
         self.assertEqual(root.get("ekycIdType"), "A")
         self.assertEqual(root.get("aspId"), "ASP-TEST")
         self.assertEqual(root.get("AuthMode"), "1")
@@ -104,7 +105,7 @@ class RequestXMLTests(SimpleTestCase):
         self.assertEqual(hashes[0].get("hashAlgorithm"), "SHA256")
         self.assertEqual(hashes[0].get("id"), "1")
         self.assertEqual(hashes[0].get("docInfo"), "ORDER 9f2c")
-        self.assertEqual(hashes[0].get("docUrl"), "")
+        self.assertIsNone(hashes[0].get("docUrl"))
 
     def test_document_bytes_are_never_sent(self):
         """Only the hash travels to the ESP."""

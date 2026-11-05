@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
+from asn1crypto import cms as asn1_cms
 from asn1crypto import keys as asn1_keys
 from asn1crypto import x509 as asn1_x509
 from cryptography import x509
@@ -108,6 +109,36 @@ def placeholder_field(pdf: bytes, index=0):
     reader = PdfFileReader(io.BytesIO(pdf))
     name, value, ref = list(fields.enumerate_sig_fields(reader))[index]
     return name, ref.get_object(), value.get_object()
+
+
+def _der_length(length: int) -> bytes:
+    if length < 0x80:
+        return bytes([length])
+    body = length.to_bytes((length.bit_length() + 7) // 8, "big")
+    return bytes([0x80 | len(body)]) + body
+
+
+def _with_extra_certificate(pkcs7: bytes, certificate_der: bytes) -> bytes:
+    """Append ``certificate_der`` to the CMS ``certificates`` set, byte for byte.
+
+    Re-encoding through asn1crypto would parse the certificate, so the outer
+    lengths are rebuilt by hand instead: ContentInfo > [0] > SignedData >
+    [0] IMPLICIT certificates.
+    """
+    content_info = asn1_cms.ContentInfo.load(pkcs7)
+    signed_data = content_info["content"]
+    fields = []
+    for name in ("version", "digest_algorithms", "encap_content_info"):
+        fields.append(signed_data[name].dump())
+    certificates = signed_data["certificates"]
+    body = certificates.contents + certificate_der
+    fields.append(b"\xa0" + _der_length(len(body)) + body)
+    fields.append(signed_data["signer_infos"].dump())
+    signed_body = b"".join(fields)
+    signed_der = b"\x30" + _der_length(len(signed_body)) + signed_body
+    explicit = b"\xa0" + _der_length(len(signed_der)) + signed_der
+    outer_body = content_info["content_type"].dump() + explicit
+    return b"\x30" + _der_length(len(outer_body)) + outer_body
 
 
 def assert_valid(pdf: bytes, esp, index=0):
@@ -275,6 +306,58 @@ class TestEmbed:
         tampered = prepared.prepared_document + b"\n% appended\n"
         with pytest.raises(PDFSignatureFieldMissing):
             embed_signature(tampered, esp_sign(esp, prepared.document_hash), prepared.field_name)
+
+    def test_zero_padded_pkcs7_is_trimmed_and_verifies(self, esp):
+        """iText/BouncyCastle ESPs (C-DAC) return the CMS padded with zeros."""
+        prepared = prepare_for_signing(simple_pdf(), PLACEHOLDER)
+        pkcs7 = esp_sign(esp, prepared.document_hash)
+        padded = pkcs7 + b"\x00" * 4096
+
+        signed = embed_signature(prepared.prepared_document, padded, prepared.field_name)
+
+        assert signed == embed_signature(prepared.prepared_document, pkcs7, prepared.field_name)
+        assert_valid(signed, esp)
+
+    def test_chain_certificate_asn1crypto_cannot_convert_does_not_block_embedding(self, esp):
+        """eSign ESPs bundle the CA chain; one odd certificate field is not our concern.
+
+        The previous check converted the whole CMS with ``.native``, which also
+        converted every bundled certificate and rejected C-DAC's real signature
+        with PDF_INVALID_PKCS7.
+        """
+        prepared = prepare_for_signing(simple_pdf(), PLACEHOLDER)
+        pkcs7 = esp_sign(esp, prepared.document_hash)
+        # Bundle a separate "CA" certificate whose notBefore month is 13:
+        # well-formed DER, but not convertible to a Python datetime. Edited at
+        # byte level, as an ESP would send it; asn1crypto never re-encodes it.
+        ca_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Odd Test CA")])
+        ca_der = (
+            x509.CertificateBuilder()
+            .subject_name(ca_name)
+            .issuer_name(ca_name)
+            .public_key(ca_key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(datetime(2026, 1, 15, tzinfo=UTC))
+            .not_valid_after(datetime(2036, 1, 15, tzinfo=UTC))
+            .sign(ca_key, hashes.SHA256())
+            .public_bytes(serialization.Encoding.DER)
+        )
+        odd_der = ca_der.replace(b"260115000000Z", b"261315000000Z", 1)
+        assert odd_der != ca_der
+        with_chain = _with_extra_certificate(pkcs7, odd_der)
+        with pytest.raises(ValueError):
+            asn1_cms.ContentInfo.load(with_chain)["content"].native  # noqa: B018
+
+        signed = embed_signature(prepared.prepared_document, with_chain, prepared.field_name)
+
+        assert_valid(signed, esp)
+
+    def test_non_zero_data_after_the_pkcs7_is_rejected(self, esp):
+        prepared = prepare_for_signing(simple_pdf(), PLACEHOLDER)
+        pkcs7 = esp_sign(esp, prepared.document_hash) + b"\x00\x01"
+        with pytest.raises(PDFInvalidPKCS7):
+            embed_signature(prepared.prepared_document, pkcs7, prepared.field_name)
 
     @pytest.mark.parametrize("pkcs7", [b"", b"not der", b"\x30\x03\x02\x01\x01"])
     def test_invalid_pkcs7_is_rejected(self, pkcs7):

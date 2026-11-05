@@ -33,6 +33,7 @@ from ..constants import (
 from ..exceptions import (
     ESignError,
     ESignFileStorageError,
+    ESignFileStorageRejected,
     ESignNotProcessable,
     ESignPDFEmbedError,
     ESignProviderRejected,
@@ -169,10 +170,12 @@ def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> C
     try:
         signed = get_pdf_client().embed_signature(prepared, pkcs7, transaction.signature_field_name)
     except ESignError as exc:
-        raise _fail(transaction, exc, parsed) from exc
+        raise _fail(transaction, exc, parsed, signature_bytes=len(pkcs7)) from exc
     except Exception as exc:
-        raise _fail(transaction, ESignPDFEmbedError(), parsed) from exc
-    log_event(EVENT_SIGNATURE_EMBEDDED, transaction, signed_size=len(signed))
+        raise _fail(transaction, ESignPDFEmbedError(), parsed, signature_bytes=len(pkcs7)) from exc
+    log_event(
+        EVENT_SIGNATURE_EMBEDDED, transaction, signed_size=len(signed), signature_bytes=len(pkcs7)
+    )
 
     try:
         signed_file_id = files.upload(
@@ -183,6 +186,11 @@ def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> C
             organization_id=transaction.organization_id,
             tags=artefact_tags(module=transaction.module, entity_id=transaction.entity_id),
         )
+    except ESignFileStorageRejected as exc:
+        # Keep the storage module's reason for support (it names the wrong
+        # field) in the audit and log, not in the user-facing message.
+        error = ESignSignedUploadError(audit={"storage_error": exc.message[:200]})
+        raise _fail(transaction, error, parsed) from exc
     except ESignError as exc:
         raise _fail(transaction, ESignSignedUploadError(), parsed) from exc
     except Exception as exc:
@@ -218,7 +226,8 @@ def _decode_signature(transaction: ESignTransaction, parsed: ESignProviderRespon
     if not parsed.signature:
         raise _fail(transaction, ESignSignatureMissing(), parsed)
     try:
-        pkcs7 = base64.b64decode(parsed.signature, validate=True)
+        # Providers may hand over line-wrapped base64; whitespace is never data.
+        pkcs7 = base64.b64decode("".join(parsed.signature.split()), validate=True)
     except (binascii.Error, ValueError) as exc:
         raise _fail(transaction, ESignSignatureInvalid(), parsed) from exc
     if not pkcs7:
@@ -248,11 +257,20 @@ def _fail(
     transaction: ESignTransaction,
     error: ESignError,
     parsed: ESignProviderResponse,
+    **diagnostics,
 ) -> ESignError:
-    """Record ``error`` on ``transaction`` and return it for raising."""
+    """Record ``error`` on ``transaction`` and return it for raising.
 
-    transaction.mark_failed(error.code, error.message, response_audit=_response_audit(parsed))
-    log_event(EVENT_ESIGN_FAILED, transaction, failure_code=error.code)
+    ``error.audit`` and ``diagnostics`` (sizes, the PDF Service's own error
+    code) are support detail: they go to the one ``ESIGN_FAILED`` log line and
+    the stored ``response_audit``, never to the user-facing ``failure_message``.
+    """
+
+    details = {**error.audit, **diagnostics}
+    response_audit = _response_audit(parsed)
+    response_audit.update(safe_audit(details))
+    transaction.mark_failed(error.code, error.message, response_audit=response_audit)
+    log_event(EVENT_ESIGN_FAILED, transaction, failure_code=error.code, **details)
     error.transaction = transaction
     return error
 
