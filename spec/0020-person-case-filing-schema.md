@@ -33,7 +33,7 @@ One row per human being the system knows of, whether registered or not. A person
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
-| `name` | varchar(256) | NOT NULL | Full name |
+| `name` | varchar(256) | NULLABLE | Full name; a blank value is stored as NULL. Optional here because a witness may be named by designation alone; every other case role requires its participant's name (§4) |
 | `phone_number` | varchar(16) | NULLABLE | E.164 (`+`, country code, number, digits only), any country; a blank value is stored as NULL |
 | `email_address` | varchar(256) | NULLABLE | |
 | `relation` | varchar(16) | NULLABLE | Relationship type (S/O, D/O, W/O, etc.) |
@@ -190,14 +190,14 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `institution_id` | uuid | FK → institution, NULLABLE | The institution party; COMPLAINANT and ACCUSED only |
 | `role` | varchar(32) | NOT NULL | COMPLAINANT, ACCUSED, WITNESS, POA_HOLDER |
 | `ordinal` | smallint | NOT NULL | 1, 2, 3… per role (complainant #1, accused #2) |
-| `name_at_filing` | varchar(256) | NOT NULL | Frozen snapshot of name: the person's, or the institution's when there is no person; 256 wide, as `person.name` and `institution.entity_name`, so any stored name fits |
+| `name_at_filing` | varchar(256) | NULLABLE | Frozen snapshot of name: the person's, or the institution's when there is no person; 256 wide, as `person.name` and `institution.entity_name`, so any stored name fits. Required for every role but WITNESS; a witness needs this or `designation_at_filing` |
 | `phone_number_at_filing` | varchar(20) | NULLABLE | Frozen snapshot of phone; 20 wide so an institution's landline fits |
 | `gender_at_filing` | varchar(32) | NULLABLE | Frozen snapshot of gender |
 | `age_at_filing` | smallint | NULLABLE | Frozen snapshot of age: from `person.date_of_birth` when known, else `person.age` |
 | `designation_at_filing` | varchar(128) | NULLABLE | The acting person's designation at the institution, e.g. Director; required for an ACCUSED when both `person_id` and `institution_id` are set, optional for a COMPLAINANT |
 | `email_at_filing` | varchar(256) | NULLABLE | Frozen snapshot of email: the person's, or the institution's when there is no person |
 | `entity_name_at_filing` | varchar(256) | NULLABLE | The institution's name as the filer entered it; set exactly when `institution_id` is set. With no person it equals `name_at_filing` |
-| `address_id` | uuid | FK → address, NULLABLE | The address for service of notice; required for every role except WITNESS |
+| `address_id` | uuid | FK → address, NULLABLE | The address for service of notice; required for every role |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Role-specific data (see §4.3) |
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
 | `end_date` | timestamp | NULLABLE | When participant was removed |
@@ -233,7 +233,8 @@ Date of birth is optional when filing: a party may be added with only an approxi
 
 **Application-layer rules:**
 - The same person cannot be both a complainant and an accused on one case, nor hold the same role twice on it (while active). A complainant may also be the POA holder for a co-complainant (§5).
-- `address_id` is required for COMPLAINANT, ACCUSED and POA_HOLDER: notices and summons must be served somewhere.
+- `address_id` is required for every role: notices and summons must be served somewhere, witnesses included.
+- `name_at_filing` is required for COMPLAINANT, ACCUSED and POA_HOLDER. A witness is often known only by their post ("Branch manager, SBI Kottayam"), so a witness needs a `name_at_filing` or a `designation_at_filing`, and a `phone_number_at_filing`. Witnesses are optional; these apply to each witness who is added. The completeness check (spec 0021 §6.3) checks them again.
 
 ### 4.3 Role-Specific `additional_details`
 
@@ -312,7 +313,7 @@ Witness-specific data, one row per witness. Every witness is also a `case_partic
 `side` and `what_will_witness_prove` apply only to witnesses. As columns on `case_participant` they would be empty for every other role; in `additional_details` `side` could not be a checked, required field. A table of their own keeps it enforced by the database.
 
 **Why `side`, not the calling party:**
-A witness is called by a side of the case, not by one complainant or accused. Recording the side is what the filing forms ask, and it does not tie the witness to a party who may later be removed or renumbered. A witness re-called by the other side is a new participant with its own `witness` row and the other side. A witness may also have a designation (their job title), kept as `case_participant.designation_at_filing`.
+A witness is called by a side of the case, not by one complainant or accused. Recording the side is what the filing forms ask, and it does not tie the witness to a party who may later be removed or renumbered. A witness re-called by the other side is a new participant with its own `witness` row and the other side. A witness may also have a designation (their job title), kept as `case_participant.designation_at_filing`; it may stand in for the witness's name (§4.2).
 
 ## 5. Power of Attorney: The `poa_mandate` Table
 
@@ -810,7 +811,7 @@ To add a second case type (e.g., civil suit):
 ### 14.1 Application-Layer Checks
 
 - `case_participant`: At least one of `person_id` or `institution_id` must be set; when both are set on an ACCUSED, `designation_at_filing` is required. Only COMPLAINANT and ACCUSED may have an `institution_id`.
-- `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. `address_id` is required except for witnesses.
+- `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. `address_id` is required for every role. `name_at_filing` is required except for a witness, who needs it or `designation_at_filing`, and `phone_number_at_filing`.
 - `witness`: an active person is a witness at most once per side of a case.
 - `poa_mandate`: The represented participant is an active COMPLAINANT or ACCUSED on the same case, and not the holder's own person.
 - `representation`: The client is an active COMPLAINANT or ACCUSED on the same case, not marked `is_party_in_person`, not the advocate themselves, and not on the opposite side from another active client of the same advocate.

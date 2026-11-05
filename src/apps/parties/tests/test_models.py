@@ -355,11 +355,11 @@ class TestRulesOnEveryWrite:
         assert Institution.objects.count() == 0
 
     @pytest.mark.parametrize("blank", ["", "   "])
-    def test_person_name_cannot_be_blank(self, blank):
-        with pytest.raises(ValidationError) as exc:
-            Person(name=blank).full_clean()
+    def test_a_blank_person_name_is_stored_as_none(self, blank):
+        """Optional on the person: each case role decides whether a name is needed."""
+        person = Person.objects.create(name=blank)
 
-        assert "name" in exc.value.message_dict
+        assert person.name is None
 
     @pytest.mark.parametrize("blank", ["", "   "])
     def test_institution_name_cannot_be_blank(self, blank):

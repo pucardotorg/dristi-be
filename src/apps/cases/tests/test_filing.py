@@ -442,6 +442,54 @@ class TestValidate:
             f"participants.{complainant['case_participant_id']}"
         }
 
+    def test_witnesses_are_optional(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+
+        assert not CaseParticipant.objects.filter(role=ParticipantRole.WITNESS).exists()
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_witness_saved_before_the_rules_is_reported(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        witness = add_witness(client, draft).json()
+        # Stored another way than the API, which refuses each of these.
+        CaseParticipant.objects.filter(pk=witness["case_participant_id"]).update(
+            name_at_filing=None, phone_number_at_filing=None, address=None
+        )
+
+        body = validate(client, draft)
+
+        field = f"participants.{witness['case_participant_id']}"
+        assert body["errors"] == [
+            {"field": field, "message": "Witness #1 has no name or designation."},
+            {"field": field, "message": "Witness #1 has no mobile number."},
+            {"field": field, "message": "Witness #1 has no address."},
+        ]
+
+    def test_a_witness_named_by_designation_alone_is_complete(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        witness = add_witness(
+            client,
+            draft,
+            person={"phone_number": PERSON["phone_number"]},
+            designation="Branch manager",
+        )
+        assert witness.status_code == 201, witness.json()
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_party_with_no_name_is_reported(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        CaseParticipant.objects.filter(pk=complainant["case_participant_id"]).update(
+            name_at_filing=None
+        )
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #1 has no name.",
+            }
+        ]
+
     def test_a_poa_mandate_needs_a_poa_document(self, client, draft, pdf):
         complainant = make_complete_case(client, draft, pdf)
         response = client.post(

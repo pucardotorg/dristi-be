@@ -259,7 +259,9 @@ class Person(BaseModel, BaseAuditableModel):
     person never rewrites a court record.
     """
 
-    name = models.CharField(max_length=256)
+    # Optional here: a witness may be named by designation alone. Each case
+    # role decides whether its participant needs a name (``CaseParticipant``).
+    name = models.CharField(max_length=256, null=True, blank=True)
     phone_number = models.CharField(
         max_length=16,
         null=True,
@@ -339,16 +341,15 @@ class Person(BaseModel, BaseAuditableModel):
 
     def __str__(self):
         """Return a readable label for admin and logs."""
-        return self.name
+        return self.name or f"Unnamed person {self.pk}"
 
     def clean_fields(self, exclude=None):
         """Validate values as they will be stored.
 
-        The name is trimmed, so a whitespace-only name is rejected as missing;
-        a blank phone number or relative's name is stored as none; and a stated
-        age is dropped once the date of birth is known (spec 0020 §2.4).
+        A blank name, phone number or relative's name is stored as none; and a
+        stated age is dropped once the date of birth is known (spec 0020 §2.4).
         """
-        self.name = _strip(self.name)
+        self.name = _blank_to_none(self.name)
         # Not given (None or blank) means no disability.
         if self.disability_status in (None, ""):
             self.disability_status = False

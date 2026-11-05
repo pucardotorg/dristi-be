@@ -18,6 +18,9 @@ from .models import (
     DESIGNATION_REQUIRED_MESSAGE,
     EMPTY_TEXT_MESSAGE,
     INSTITUTION_ROLES,
+    NAME_REQUIRED_MESSAGE,
+    WITNESS_NAME_OR_DESIGNATION_MESSAGE,
+    WITNESS_PHONE_REQUIRED_MESSAGE,
     Case,
     CaseDocument,
     CaseEvidence,
@@ -426,8 +429,12 @@ class PartySerializer(serializers.Serializer):
     """Base body of a party write.
 
     The individual is ``person`` (someone the filer names) or ``"self": true``
-    (the filer). ``self`` is returned as ``is_self``.
+    (the filer). ``self`` is returned as ``is_self``. A named person needs a
+    name unless ``person_name_required`` is off (a witness, who may give a
+    designation instead).
     """
+
+    person_name_required = True
 
     person = PersonInputSerializer(required=False)
     address = AddressInputSerializer(required=False)
@@ -440,9 +447,14 @@ class PartySerializer(serializers.Serializer):
         return fields
 
     def validate(self, attrs):
-        """Return ``self`` as ``is_self``."""
+        """Return ``self`` as ``is_self``; require a named person's name."""
         attrs = super().validate(attrs)
         attrs["is_self"] = attrs.pop("self")
+        person = attrs.get("person")
+        if self.person_name_required and person is not None and not person.get("name"):
+            raise api_errors.REQUIRED.validation_error(
+                {"person": {"name": [NAME_REQUIRED_MESSAGE]}}
+            )
         return attrs
 
 
@@ -546,20 +558,41 @@ class WitnessCreateSerializer(IndividualPartySerializer):
     """Body of POST /cases/{id}/witnesses (spec 0021 §4.3).
 
     ``side`` says whether the complainant or the accused calls the witness.
-    The address is optional, but needs a police station when given.
-    ``designation`` is the witness's job title, kept on the participant.
-    ``additional_details`` is stored on the witness row.
+    The address is required, with a police station. ``designation`` is the
+    witness's job title, kept on the participant; a named person needs a name
+    or a designation, and a mobile number. ``additional_details`` is stored on
+    the witness row.
     """
+
+    person_name_required = False
 
     side = serializers.ChoiceField(choices=WitnessSide.choices)
     what_will_witness_prove = serializers.CharField(required=False, allow_blank=True)
     designation = serializers.CharField(max_length=128, required=False, allow_null=True)
 
     def validate(self, attrs):
-        """Require a police station on an address that is given."""
+        """Require a name or designation, a mobile number, and an address with a police station."""
         attrs = super().validate(attrs)
-        if problem := police_station_error(ParticipantRole.WITNESS, attrs.get("address")):
-            raise serializers.ValidationError({"address": problem})
+        problems = {}
+        person = attrs.get("person")
+        if person is not None:
+            person_problems = {}
+            if not (person.get("name") or attrs.get("designation")):
+                person_problems["name"] = [
+                    errors.coded(api_errors.REQUIRED, WITNESS_NAME_OR_DESIGNATION_MESSAGE)
+                ]
+            if not person.get("phone_number"):
+                person_problems["phone_number"] = [
+                    errors.coded(api_errors.REQUIRED, WITNESS_PHONE_REQUIRED_MESSAGE)
+                ]
+            if person_problems:
+                problems["person"] = person_problems
+        if "address" not in attrs:
+            problems["address"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
+        elif problem := police_station_error(ParticipantRole.WITNESS, attrs["address"]):
+            problems["address"] = problem
+        if problems:
+            raise serializers.ValidationError(problems)
         return attrs
 
 
@@ -681,7 +714,8 @@ class ParticipantUpdateSerializer(PartialUpdateSerializer):
     CIN names (spec 0021 §4.1).
     """
 
-    name_at_filing = serializers.CharField(max_length=256, required=False)
+    # ``null`` clears it; only a witness with a designation may have no name.
+    name_at_filing = serializers.CharField(max_length=256, required=False, allow_null=True)
     phone_number_at_filing = serializers.CharField(max_length=20, required=False, allow_null=True)
     gender_at_filing = serializers.ChoiceField(
         choices=Gender.choices, required=False, allow_null=True

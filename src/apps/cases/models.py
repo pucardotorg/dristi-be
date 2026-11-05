@@ -167,6 +167,9 @@ def police_station_error(role, address):
 # Each rule raises its message with the API code it is reported as (spec 0021
 # §10), which the project error handler keeps.
 ADDRESS_REQUIRED_MESSAGE = "An address for service of notice is required for this role."
+NAME_REQUIRED_MESSAGE = "A name is required for this role."
+WITNESS_NAME_OR_DESIGNATION_MESSAGE = "Enter the witness's name or designation."
+WITNESS_PHONE_REQUIRED_MESSAGE = "A mobile number is required for a witness."
 POLICE_STATION_REQUIRED_MESSAGE = "A police station is required for this role's address."
 INSTITUTION_ROLE_MESSAGE = "Only a complainant or an accused may be an institution."
 DESIGNATION_REQUIRED_MESSAGE = (
@@ -281,8 +284,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     )
     role = models.CharField(max_length=32, choices=ParticipantRole.choices)
     ordinal = models.PositiveSmallIntegerField()
-    # The person's name, or the institution's when there is no person.
-    name_at_filing = models.CharField(max_length=256)
+    # The person's name, or the institution's when there is no person. Every
+    # role but a witness needs one; a witness may be named by designation alone.
+    name_at_filing = models.CharField(max_length=256, null=True, blank=True)
     # 20 wide so an institution's landline fits.
     phone_number_at_filing = models.CharField(max_length=20, null=True, blank=True)
     gender_at_filing = models.CharField(max_length=32, null=True, blank=True)
@@ -387,13 +391,16 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         indexes = [models.Index(fields=["case", "role", "is_active"])]
 
     def __str__(self):
-        return f"{self.role} #{self.ordinal} ({self.name_at_filing}) for {self.case_id}"
+        label = self.name_at_filing or self.designation_at_filing
+        return f"{self.role} #{self.ordinal} ({label}) for {self.case_id}"
 
     def clean(self):
         """Apply the rules the database cannot express (spec 0020 §4.2, §7.2, §14.1).
 
-        Every role but a witness needs an address for service of notice, and
-        an accused's or witness's address needs a police station. An
+        Every role needs an address for service of notice, and an accused's or
+        witness's address needs a police station. Every role but a witness
+        needs a name; a witness needs a name or a designation, and a mobile
+        number. An
         institution's name is recorded exactly when there is one, and only a
         complainant has a party-in-person affidavit. While
         active, a person or an institution cannot hold one role twice on a
@@ -405,7 +412,18 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         # Not a ``_raise_broken_rules`` list: the role-conflict and advocate
         # checks query the database, and run only when the cheaper rules allow.
         errors = {}
-        if self.role != ParticipantRole.WITNESS and not self.address_id:
+        if self.role == ParticipantRole.WITNESS:
+            if not (self.name_at_filing or self.designation_at_filing):
+                errors["name_at_filing"] = _rule_error(
+                    api_errors.REQUIRED, WITNESS_NAME_OR_DESIGNATION_MESSAGE
+                )
+            if not self.phone_number_at_filing:
+                errors["phone_number_at_filing"] = _rule_error(
+                    api_errors.REQUIRED, WITNESS_PHONE_REQUIRED_MESSAGE
+                )
+        elif not self.name_at_filing:
+            errors["name_at_filing"] = _rule_error(api_errors.REQUIRED, NAME_REQUIRED_MESSAGE)
+        if not self.address_id:
             errors["address"] = _rule_error(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)
         elif (
             self.role in POLICE_STATION_ROLES

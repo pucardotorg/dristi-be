@@ -412,6 +412,40 @@ class TestAddAccused:
         assert error_codes(response) == {"self": ["E07019"]}
 
 
+class TestNameRequired:
+    """Only a witness may be named by designation alone; every other party needs a name."""
+
+    NAMELESS = {key: value for key, value in PERSON.items() if key != "name"}
+
+    @pytest.mark.parametrize("role", ["complainant", "accused"])
+    @pytest.mark.parametrize("name", [None, "", "   "])
+    def test_a_party_needs_a_name(self, client, draft, role, name):
+        person = self.NAMELESS if name is None else {**self.NAMELESS, "name": name}
+
+        response = add(client, draft, role=role, person=person)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"person.name": ["E00002"]}
+
+    def test_a_poa_holder_needs_a_name(self, client, draft):
+        complainant = add_complainant(client, draft)
+
+        response = add_poa_holder(
+            client, draft, [complainant["case_participant_id"]], person=self.NAMELESS
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"person.name": ["E00002"]}
+
+    def test_a_party_name_cannot_be_cleared(self, client, draft):
+        body = add_complainant(client, draft)
+
+        response = patch(client, body["case_participant_id"], {"name_at_filing": None})
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"name_at_filing": ["E00002"]}
+
+
 class TestListing:
     def test_lists_active_participants_by_role(self, client, draft):
         add_complainant(client, draft)
@@ -791,6 +825,7 @@ class TestRemove:
 
 def add_witness(client, case_id, side="COMPLAINANT", **body):
     body.setdefault("person", {**PERSON, "name": "Meena Rao"})
+    body.setdefault("address", ADDRESS_DEFAULTS)
     body.setdefault("what_will_witness_prove", "Saw the cheque being signed")
     body.setdefault("side", side)
     url = reverse("case-witness-list", args=[case_id])
@@ -810,7 +845,7 @@ class TestAddWitness:
 
         assert exc.value.error_dict["person"][0].code == "E07032"
 
-    def test_creates_a_participant_and_a_witness_row_without_an_address(self, client, draft):
+    def test_creates_a_participant_and_a_witness_row(self, client, draft):
         response = add_witness(client, draft, additional_details={"lang": "kn"})
 
         assert response.status_code == 201, response.json()
@@ -818,7 +853,8 @@ class TestAddWitness:
         assert body["role"] == "WITNESS"
         assert body["ordinal"] == 1
         assert body["name_at_filing"] == "Meena Rao"
-        assert body["address_id"] is None
+        assert body["phone_number_at_filing"] == PERSON["phone_number"]
+        assert body["address_id"] is not None
         assert body["additional_details"] == {}
         assert body["witness"] == {
             "side": "COMPLAINANT",
@@ -850,7 +886,12 @@ class TestAddWitness:
         body = {} if statement is None else {"what_will_witness_prove": statement}
         response = client.post(
             reverse("case-witness-list", args=[draft]),
-            {"person": {**PERSON, "name": "Meena Rao"}, "side": "COMPLAINANT", **body},
+            {
+                "person": {**PERSON, "name": "Meena Rao"},
+                "address": ADDRESS_DEFAULTS,
+                "side": "COMPLAINANT",
+                **body,
+            },
             format="json",
         )
 
@@ -862,6 +903,46 @@ class TestAddWitness:
 
         assert response.status_code == 201, response.json()
         assert response.json()["designation_at_filing"] == "Branch manager"
+
+    def test_a_designation_is_enough_without_a_name(self, client, draft):
+        person = {"phone_number": PERSON["phone_number"]}
+
+        response = add_witness(client, draft, person=person, designation="Branch manager")
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["name_at_filing"] is None
+        assert response.json()["designation_at_filing"] == "Branch manager"
+        assert Person.objects.get(pk=response.json()["person_id"]).name is None
+
+    @pytest.mark.parametrize("name", [None, "", "   "])
+    def test_a_witness_needs_a_name_or_designation(self, client, draft, name):
+        person = {"phone_number": PERSON["phone_number"]}
+        if name is not None:
+            person["name"] = name
+
+        response = add_witness(client, draft, person=person)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"person.name": ["E00002"]}
+
+    def test_a_witness_needs_a_mobile_number(self, client, draft):
+        person = {key: value for key, value in PERSON.items() if key != "phone_number"}
+
+        response = add_witness(client, draft, person=person)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"person.phone_number": ["E00002"]}
+
+    def test_a_witness_needs_an_address(self, client, draft):
+        response = client.post(
+            reverse("case-witness-list", args=[draft]),
+            {"person": {**PERSON, "name": "Meena Rao"}, "side": "COMPLAINANT"},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"address": ["E00002"]}
+        assert not CaseParticipant.objects.filter(role=ParticipantRole.WITNESS).exists()
 
     def test_a_witness_address_needs_a_police_station(self, client, draft):
         address = {**ADDRESS_DEFAULTS, "police_station": ""}
@@ -945,6 +1026,31 @@ class TestWitnessUpdate:
 
         assert response.status_code == 400
         assert error_codes(response) == {field: [code]}
+
+    def test_the_name_may_be_cleared_while_there_is_a_designation(self, client, witness):
+        response = patch(
+            client,
+            witness["case_participant_id"],
+            {"name_at_filing": None, "designation_at_filing": "Branch manager"},
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["name_at_filing"] is None
+
+    @pytest.mark.parametrize(
+        ("change", "field"),
+        [
+            ({"name_at_filing": None}, "name_at_filing"),
+            ({"phone_number_at_filing": None}, "phone_number_at_filing"),
+        ],
+    )
+    def test_a_witness_keeps_a_name_or_designation_and_a_mobile_number(
+        self, client, witness, change, field
+    ):
+        response = patch(client, witness["case_participant_id"], change)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {field: ["E00002"]}
 
     def test_witness_fields_are_refused_for_other_roles(self, client, draft, witness):
         complainant = listing(client, draft, role="COMPLAINANT")["results"][0]

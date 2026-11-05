@@ -571,10 +571,10 @@ POST /cases/{case_id_or_draft_session_id}/witnesses
 **Implementation:**
 - Same steps as §4.1, with `role = 'WITNESS'`, plus a `witness` row (spec 0020 §4.5) holding `side`, `what_will_witness_prove` and `additional_details`.
 - `side` is required: `COMPLAINANT` (the complainant's witness) or `ACCUSED` (the accused's witness).
-- `designation` is optional (the witness's job title) and is kept as `designation_at_filing`.
+- `designation` is optional (the witness's job title) and is kept as `designation_at_filing`. A named `person` needs a `name` or a `designation` (`E00002` on `person.name`), and a `phone_number` (`E00002` on `person.phone_number`). On PATCH, `name_at_filing` may be cleared (`null`) only while the witness has a `designation_at_filing`, and `phone_number_at_filing` cannot be cleared.
 - `what_will_witness_prove` is optional; left out or blank, it is stored empty.
 - A witness is always an individual: `institution` is not accepted. `"self": true` is. `is_party_in_person` does not apply to a witness and is refused.
-- The address is optional for witnesses; when given, it needs a `police_station`.
+- The address is required (`E00002` on `address`) and needs a `police_station`.
 - A complainant or accused may also be a witness. The same person may be a witness more than once on a case (a witness recalled by the other side is a new participant, spec 0020 §4.5.3), but not twice for the same side while active (`E07032`).
 - `additional_details` is stored on the `witness` row; the participant's own `additional_details` stays `{}`. On PATCH, a witness's `additional_details` likewise changes the `witness` row.
 
@@ -1343,6 +1343,8 @@ POST /cases/{case_id}/validate
 1. **Participants:**
    - At least one active complainant (`role = 'COMPLAINANT'`, `is_active = true`)
    - At least one active accused (`role = 'ACCUSED'`, `is_active = true`)
+   - Each active complainant, accused and POA holder has a `name_at_filing`.
+   - Witnesses are optional. Each active witness has a `name_at_filing` or a `designation_at_filing`, a `phone_number_at_filing` and an address. The writes already refuse a party missing these; this catches rows saved before the rules or outside the API.
 
 2. **Representation:**
    - Each complainant either:

@@ -29,4 +29,14 @@ class Migration(migrations.Migration):
                 null=True,
             ),
         ),
+        migrations.AlterField(
+            model_name="historicalperson",
+            name="name",
+            field=models.CharField(blank=True, max_length=256, null=True),
+        ),
+        migrations.AlterField(
+            model_name="person",
+            name="name",
+            field=models.CharField(blank=True, max_length=256, null=True),
+        ),
     ]

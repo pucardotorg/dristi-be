@@ -83,4 +83,14 @@ class Migration(migrations.Migration):
                 violation_error_message="Declare the accused's contact details unknown only for an accused with no phone number or email.",
             ),
         ),
+        migrations.AlterField(
+            model_name="caseparticipant",
+            name="name_at_filing",
+            field=models.CharField(blank=True, max_length=256, null=True),
+        ),
+        migrations.AlterField(
+            model_name="historicalcaseparticipant",
+            name="name_at_filing",
+            field=models.CharField(blank=True, max_length=256, null=True),
+        ),
     ]

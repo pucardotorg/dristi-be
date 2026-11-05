@@ -186,6 +186,23 @@ def validation_errors(case):
     if not participants.filter(role=ParticipantRole.ACCUSED).exists():
         error("participants.accused", "At least one active accused is required.")
 
+    # Writes already check these; a rule tightened since then is caught here.
+    # Witnesses are optional, but one who is added needs a name or designation,
+    # a mobile number and an address; every other party needs a name.
+    for participant in participants.order_by(*PARTICIPANT_ORDERING):
+        field = f"participants.{participant.id}"
+        label = f"{participant.get_role_display()} #{participant.ordinal}"
+        if participant.role != ParticipantRole.WITNESS:
+            if not participant.name_at_filing:
+                error(field, f"{label} has no name.")
+            continue
+        if not (participant.name_at_filing or participant.designation_at_filing):
+            error(field, f"{label} has no name or designation.")
+        if not participant.phone_number_at_filing:
+            error(field, f"{label} has no mobile number.")
+        if not participant.address_id:
+            error(field, f"{label} has no address.")
+
     represented = set(
         Representation.objects.active().filter(case=case).values_list("case_participant", flat=True)
     )
