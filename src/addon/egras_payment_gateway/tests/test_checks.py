@@ -53,6 +53,18 @@ class AddonCheckTests(EGRASSettingsMixin, SimpleTestCase):
         self.configure(SETTINGS_MODULE=PRODUCTION, EGRAS_VERIFY_SSL=False)
         self.assertIn("egras_payment_gateway.E008", ids(check_egras_configuration(None)))
 
+    def test_missing_response_key_warns_outside_production(self):
+        self.configure(EGRAS_RESPONSE_KEY_PATH="")
+        self.assertIn("egras_payment_gateway.W002", ids(check_egras_configuration(None)))
+
+    def test_missing_response_key_is_an_error_in_production(self):
+        self.configure(SETTINGS_MODULE=PRODUCTION, EGRAS_RESPONSE_KEY_PATH="")
+        self.assertIn("egras_payment_gateway.E009", ids(check_egras_configuration(None)))
+
+    def test_unreadable_response_key_is_an_error(self):
+        self.configure(EGRAS_RESPONSE_KEY_PATH="/no/such/egras.key")
+        self.assertIn("egras_payment_gateway.E009", ids(check_egras_configuration(None)))
+
 
 def _all_charge_types():
     from apps.payments.enums import ChargeType

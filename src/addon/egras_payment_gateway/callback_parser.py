@@ -18,6 +18,8 @@ from apps.payments.providers.base import (
 )
 
 from . import constants
+from .config import EGRASKeyError, load_response_key
+from .response_crypto import ResponseDecryptionError, checksum_matches, decrypt_pay_res
 from .status_mapper import map_status_text
 
 logger = logging.getLogger(constants.LOGGER_NAME)
@@ -26,13 +28,52 @@ logger = logging.getLogger(constants.LOGGER_NAME)
 def _lower_keyed(payload: Mapping[str, str]) -> dict[str, str]:
     """Match field names case-insensitively (``status``/``Status``)."""
 
-    return {str(key).lower(): value for key, value in payload.items()}
+    return {
+        str(key).lower(): ("" if value is None else str(value)) for key, value in payload.items()
+    }
+
+
+def _decrypt_fields(pay_res: str, config) -> dict[str, str]:
+    """Decrypt the ``payRes`` blob into the same lower-keyed fields (#5.4).
+
+    A failure to decrypt (bad key, tampered blob, malformed JSON) is reported as
+    a malformed callback: it cannot be correlated, so ``apps.payments`` redirects
+    ``status=UNKNOWN`` and the poller resolves the payment through ``fetch_status``.
+    """
+
+    try:
+        key = load_response_key(config.response_key_path)
+        data = decrypt_pay_res(pay_res, key)
+    except (ResponseDecryptionError, EGRASKeyError) as exc:
+        logger.warning("event=%s reason=%s", constants.EGRAS_RESPONSE_DECRYPT_FAILED, exc)
+        raise ProviderCallbackMalformed(
+            constants.EGRAS_RESPONSE_DECRYPT_FAILED,
+            "The encrypted e-GRAS callback could not be decrypted.",
+        ) from exc
+
+    # AES-GCM already authenticated the payload; the checksum is a redundant
+    # extra check, logged but not enforced (and verification is the real gate).
+    if not checksum_matches(data):
+        logger.warning(
+            "event=%s provider_payment_id=%s",
+            constants.EGRAS_CHECKSUM_MISMATCH,
+            str(data.get("Applicationnumber", "")),
+        )
+    return _lower_keyed(data)
 
 
 def parse(payload: Mapping[str, str], config) -> ProviderCallback:
-    """Parse an e-GRAS return-URL form into an untrusted ``ProviderCallback``."""
+    """Parse an e-GRAS return-URL form into an untrusted ``ProviderCallback``.
+
+    Handles both the encrypted ``payRes`` response (e-GRAS v3.7, #5.4) and the
+    legacy plain-field response, so the cutover needs no flag.
+    """
 
     fields = _lower_keyed(payload)
+    pay_res = (fields.get(constants.CALLBACK_PAYRES, "") or "").strip()
+    if pay_res:
+        fields = _decrypt_fields(pay_res, config)
+
     application_number = (fields.get(constants.CALLBACK_APPLICATION_NUMBER, "") or "").strip()
 
     if (

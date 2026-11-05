@@ -2,10 +2,12 @@
 
 One deployment serves one state and collects into one department, so the
 settings are flat ``EGRAS_*`` values read from the environment into a frozen,
-cached :class:`EGRASConfig`. e-GRAS has no credential, so nothing needs
-redacting; payer data is masked in logs instead (#11). The cache is cleared
-automatically when an ``EGRAS_*`` setting changes, which keeps tests honest, as
-``CDACConfig`` does in spec 0013.
+cached :class:`EGRASConfig`. The only credential is the symmetric key used to
+decrypt the callback (#5.4); the config holds just its *path*, and the key bytes
+are loaded on demand and never logged, so nothing in the config needs redacting
+(payer data is masked in logs instead, #11). The cache is cleared automatically
+when an ``EGRAS_*`` setting changes, which keeps tests honest, as ``CDACConfig``
+does in spec 0013.
 """
 
 import re
@@ -65,6 +67,9 @@ class EGRASConfig:
     sto: str = ""
     ddo: str = ""
     office_name: str = ""
+    # Path to the shared symmetric key NIC issues for decrypting the encrypted
+    # callback (payRes); 16/24/32 bytes (spec 0022 #5.4).
+    response_key_path: str = ""
     user_id: str = "guest"
     scheme_map: dict = field(default_factory=dict)
     # One head until NIC confirms the field names of the second and later heads
@@ -218,6 +223,7 @@ def resolve_config() -> EGRASConfig:
         sto=get("EGRAS_STO", ""),
         ddo=get("EGRAS_DDO", ""),
         office_name=get("EGRAS_OFFICE_NAME", ""),
+        response_key_path=get("EGRAS_RESPONSE_KEY_PATH", ""),
         user_id=get("EGRAS_USER_ID", "") or "guest",
         scheme_map=dict(get("EGRAS_SCHEME_MAP", {}) or {}),
         max_schemes=int(get("EGRAS_MAX_SCHEMES", 1)),
@@ -236,10 +242,39 @@ def resolve_config() -> EGRASConfig:
     )
 
 
+class EGRASKeyError(Exception):
+    """The encrypted-callback key is missing, unreadable or the wrong length."""
+
+
+# AES keys are 128, 192 or 256 bits.
+_VALID_KEY_LENGTHS = (16, 24, 32)
+
+
+@lru_cache(maxsize=4)
+def load_response_key(path: str) -> bytes:
+    """Read and cache the shared symmetric key used to decrypt ``payRes``.
+
+    Raises :class:`EGRASKeyError` when the path is empty, the file cannot be
+    read, or the key is not a valid AES length.
+    """
+
+    if not path:
+        raise EGRASKeyError("EGRAS_RESPONSE_KEY_PATH is not configured.")
+    try:
+        with open(path, "rb") as handle:
+            key = handle.read()
+    except OSError as exc:
+        raise EGRASKeyError(f"The e-GRAS response key file could not be read: {exc}") from exc
+    if len(key) not in _VALID_KEY_LENGTHS:
+        raise EGRASKeyError(f"The e-GRAS response key must be 16, 24 or 32 bytes, got {len(key)}.")
+    return key
+
+
 def reset_config_cache() -> None:
     """Clear the cached configuration (needed when overriding settings)."""
 
     resolve_config.cache_clear()
+    load_response_key.cache_clear()
 
 
 @receiver(setting_changed)
