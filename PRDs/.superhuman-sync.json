@@ -1958,6 +1958,20 @@
           "hash": "985ec7090369"
         }
       ]
+    },
+    "payment-settlement-systems-act.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
+      "title": "Payment and Settlement Systems Act Cases",
+      "contentHash": "ab5e342a6c93",
+      "pageUpdatedAt": 1793856536.537,
+      "calloutElementId": "cl-8kTOmx76kL",
+      "sections": [
+        {
+          "key": "# Payment and Settlement Systems Act Cases",
+          "elementId": "cl-kmbsO7Iml7",
+          "hash": "b256455ffefe"
+        }
+      ]
     }
   },
   "prdsTableUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu/tables/grid-3QCTt30e1H"
