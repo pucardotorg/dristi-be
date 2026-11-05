@@ -80,11 +80,12 @@ make format      # Format code with ruff
 
 Run `make help` to see all available commands.
 
-Pincode pre-fill needs location data, which the repository does not ship: put
-the India Post CSV in `src/data/pincodes/`, then run
-`python manage.py import_pincodes --create-districts` in the `web` container,
-which also creates the states and districts (see
-[src/data/pincodes/README.md](src/data/pincodes/README.md)).
+Pincode pre-fill needs location data, which the repository does not ship. The
+states, districts and pincodes are seeded from TOML with the `seed` command
+(`python manage.py seed states.toml districts.toml pincodes.toml`); the data and
+its CSV-to-TOML converter live in the
+[`dristi-be-experiments`](https://github.com/pucardotorg/dristi-be-experiments)
+repo (see [src/data/seed/README.md](src/data/seed/README.md)).
 
 ## Scheduled and delayed jobs
 

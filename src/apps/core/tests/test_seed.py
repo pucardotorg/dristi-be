@@ -247,6 +247,26 @@ class TestDirectoryAndFlags:
         assert Configuration.objects.filter(config_set="pdf").exists()
         assert "skipped 0" in output
 
+    def test_same_model_files_load_in_given_order(self, tmp_path):
+        # The parent file is passed first even though its name sorts last, so a
+        # filename sort would load the child first and fail to resolve it. The
+        # command keeps the given order, so the state's parent resolves.
+        parent = write(
+            tmp_path,
+            "z_country.toml",
+            '[seed]\nmodel = "locations.Location"\n\n'
+            '[[rows]]\ncode = "IN"\nname = "India"\nlocation_type = "country"\n',
+        )
+        child = write(
+            tmp_path,
+            "a_state.toml",
+            '[seed]\nmodel = "locations.Location"\n\n'
+            '[[rows]]\ncode = "IN_KL"\nname = "Kerala"\nlocation_type = "state"\nparent = "IN"\n',
+        )
+        output = run(parent, child)
+        assert Location.objects.get(code="IN_KL").parent.code == "IN"
+        assert "skipped 0" in output
+
     def test_dry_run_saves_nothing(self, tmp_path):
         output = run(write(tmp_path, "locations.toml", LOCATIONS), dry_run=True)
         assert Location.objects.count() == 0
