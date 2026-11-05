@@ -41,6 +41,11 @@ SEND_BACK_COMMENT_REQUIRED = define(
 COURTROOM_REQUIRED = define("E09017", "Choose a courtroom of this court establishment.")
 # Reported on registration_type: missing where the state has several, or unknown (SCR-13).
 REGISTRATION_TYPE_REQUIRED = define("E09018", "Choose one of this state's registration types.")
+# The number the series gave was taken by a write outside numbering at the same
+# moment; the decision is rolled back and can be retried (#6.1).
+CASE_NUMBER_TAKEN = define(
+    "E09020", "The case number was just taken. Try registering again.", status=409
+)
 
 # Routing (#2.5): SCRUTINY_ESTABLISHMENT_ID is unset or malformed, so a case
 # entering scrutiny or registration has nowhere to go; the move is refused.

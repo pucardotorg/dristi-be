@@ -295,7 +295,10 @@ class ScrutinyViewSet(viewsets.GenericViewSet):
     @extend_schema(
         request=MoveOnSerializer,
         parameters=[IF_MATCH],
-        responses={200: ScrutinyDecisionSerializer, **error_responses(*MOVE_ON_ERRORS)},
+        responses={
+            200: ScrutinyDecisionSerializer,
+            **error_responses(*MOVE_ON_ERRORS, errors.CASE_NUMBER_TAKEN),
+        },
     )
     @action(detail=True, methods=["post"])
     def register(self, request, case_id=None):
@@ -378,6 +381,7 @@ class RegistrationViewSet(viewsets.GenericViewSet):
                 *DECISION_ERRORS,
                 errors.REGISTRATION_TYPE_REQUIRED.example(field="registration_type"),
                 errors.OPEN_ITEMS_NOT_ACKNOWLEDGED,
+                errors.CASE_NUMBER_TAKEN,
             ),
         },
     )

@@ -8,7 +8,14 @@ from django.utils import timezone
 from rest_framework.exceptions import NotFound, ValidationError
 
 from apps.api.errors import BusinessError
-from apps.cases.models import Case, CaseEvidence, CaseParticipant, CaseStatus, ParticipantRole
+from apps.cases.models import (
+    Case,
+    CaseEvidence,
+    CaseNumberSeries,
+    CaseParticipant,
+    CaseStatus,
+    ParticipantRole,
+)
 from apps.cases.services import filing, participants
 from apps.cases.services import services as case_services
 from apps.cases.services.case_types import CaseType, EvidenceType, get_config
@@ -34,6 +41,7 @@ from .factories import (
     draft_field,
     enter,
     field,
+    make_case,
     make_user,
     open_round,
     set_cause_of_action,
@@ -348,6 +356,46 @@ def test_register_at_scrutiny(case, officer_registerer):
     case.refresh_from_db()
     assert (round_.decision, case.status) == (RoundDecision.REGISTERED, CaseStatus.REGISTERED)
     assert not ScrutinyRound.objects.filter(case=case, stage=RoundStage.REGISTRATION).exists()
+
+
+# Case numbers (#6.1, #9.4)
+
+
+def test_cases_in_one_series_get_consecutive_numbers(
+    case, filer, establishment, officer_registerer
+):
+    second = make_case(filer, establishment, filing_number="F/EST/2026/00002")
+    rounds.register_at_scrutiny(case.pk, officer_registerer)
+    rounds.register_at_scrutiny(second.pk, officer_registerer)
+    year = timezone.now().year
+    case.refresh_from_db()
+    second.refresh_from_db()
+    assert (case.case_number, second.case_number) == (f"CC/1/{year}", f"CC/2/{year}")
+    assert CaseNumberSeries.objects.get(series="CC", year=year).last_number == 2
+
+
+def test_number_held_outside_the_series_is_skipped(case, filer, establishment, officer_registerer):
+    year = timezone.now().year
+    other = make_case(filer, establishment, filing_number="F/EST/2026/00002")
+    Case.objects.filter(pk=other.pk).update(case_number=f"CC/1/{year}")
+    rounds.register_at_scrutiny(case.pk, officer_registerer)
+    case.refresh_from_db()
+    assert case.case_number == f"CC/2/{year}"
+
+
+def test_number_taken_at_the_same_moment_is_refused(
+    case, filer, establishment, officer_registerer, monkeypatch
+):
+    other = make_case(filer, establishment, filing_number="F/EST/2026/00002")
+    Case.objects.filter(pk=other.pk).update(case_number="CC/1/2026")
+    # The series hands out a number another write took after numbering checked it.
+    monkeypatch.setattr(ports.numbering, "next_case_number", lambda series, year: "CC/1/2026")
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.register_at_scrutiny(case.pk, officer_registerer)
+    assert code(excinfo) == "E09020"
+    case.refresh_from_db()
+    assert (case.status, case.case_number) == (CaseStatus.UNDER_SCRUTINY, None)
+    assert open_round(case).decision == ""
 
 
 def test_registration_type_required_when_there_are_several(case, officer, monkeypatch):

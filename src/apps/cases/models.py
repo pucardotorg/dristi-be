@@ -86,6 +86,30 @@ class Case(BaseModel, BaseAuditableModel):
         return self.case_number or self.filing_number or f"{self.case_type} draft {self.id}"
 
 
+class CaseNumberSeries(BaseModel):
+    """The last number handed out in one case number series (``services.numbering``).
+
+    One row per registration type and year. Registration locks the row, so two
+    cases registered at once in the same series wait for each other instead of
+    both taking the same number.
+    """
+
+    series = models.CharField(max_length=32)
+    year = models.PositiveIntegerField()
+    last_number = models.PositiveIntegerField(default=0)
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        verbose_name_plural = "case number series"
+        constraints = [
+            models.UniqueConstraint(fields=["series", "year"], name="cases_number_series_unique")
+        ]
+
+    def __str__(self):
+        return f"{self.series}/{self.year}: {self.last_number}"
+
+
 class ParticipantRole(models.TextChoices):
     """The role a participant plays in a case (spec 0020 §4.2)."""
 

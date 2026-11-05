@@ -27,12 +27,13 @@ import uuid
 from dataclasses import dataclass
 
 from django.conf import settings
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.api.errors import define
+from apps.api.errors import BusinessError, define
 from apps.cases import errors as case_errors
 from apps.cases.models import Case, CaseDocument, CaseEvidence, CaseStatus
-from apps.cases.services import correction
+from apps.cases.services import correction, numbering
 from apps.cases.services.case_types import EvidenceType, get_config
 from apps.cases.services.filing import (
     get_filing_side_case,
@@ -41,6 +42,7 @@ from apps.cases.services.filing import (
 )
 from apps.organizations.models import Organization
 
+from . import errors as scrutiny_errors
 from .enums import CourtRole, RoundStage
 
 # Roles
@@ -165,19 +167,20 @@ def set_court(case, courtroom_id):
 def register_case(case, registration_type, actor):
     """Number the locked ``case`` from its type's series and move it on to cognizance.
 
-    A stand-in series, ``{type}/{n}/{year}``; ``case-numbers.md`` will replace
-    it. Raises ``IntegrityError`` when the number is taken, which rolls the
-    whole decision back.
+    Refuses ``409 E09020`` if the number was taken outside the series at the
+    same moment, which rolls the whole decision back.
     """
     now = timezone.now()
-    prefix, suffix = f"{registration_type}/", f"/{now.year}"
-    taken = Case.objects.filter(
-        case_number__startswith=prefix, case_number__endswith=suffix
-    ).count()
-    case.case_number = f"{prefix}{taken + 1}{suffix}"
+    case.case_number = numbering.next_case_number(registration_type, now.year)
     case.registered_at = now
     case.status = CaseStatus.REGISTERED
-    case.save()
+    try:
+        with transaction.atomic():
+            case.save()
+    except IntegrityError:
+        if Case.objects.filter(case_number=case.case_number).exclude(pk=case.pk).exists():
+            raise BusinessError(scrutiny_errors.CASE_NUMBER_TAKEN) from None
+        raise
 
 
 # Oath and documents

@@ -5,13 +5,13 @@ from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from apps.cases.models import CaseEvidence, CaseStatus
+from apps.cases.models import Case, CaseEvidence, CaseStatus
 from apps.cases.services.case_types import EvidenceType
 from apps.scrutiny import ports
 from apps.scrutiny.enums import DocumentIssue, FlagStatus, FlagTarget, ResponseKind
 from apps.scrutiny.services import flags
 
-from .factories import add_courtroom, draft_field, make_user, open_round
+from .factories import add_courtroom, draft_field, make_case, make_user, open_round
 
 pytestmark = pytest.mark.django_db
 
@@ -186,6 +186,17 @@ def test_register_at_scrutiny_numbers_the_case(case, officer_registerer):
     response = client_for(officer_registerer).post(url(case, "register"), {}, format="json")
     assert response.status_code == 200
     assert response.json()["case_number"].startswith("CC/1/")
+
+
+def test_register_number_taken_at_the_same_moment_is_409(
+    case, filer, establishment, officer_registerer, monkeypatch
+):
+    # A number taken outside numbering after the series handed it out.
+    other = make_case(filer, establishment, filing_number="F/EST/2026/00002")
+    Case.objects.filter(pk=other.pk).update(case_number="CC/1/2026")
+    monkeypatch.setattr(ports.numbering, "next_case_number", lambda series, year: "CC/1/2026")
+    response = client_for(officer_registerer).post(url(case, "register"), {}, format="json")
+    assert (response.status_code, error_codes(response)) == (409, {None: ["E09020"]})
 
 
 def test_edit_title(case, officer):

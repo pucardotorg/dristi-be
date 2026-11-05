@@ -985,6 +985,7 @@ Domain prefix `09` in `apps.api.errors.DOMAINS`, recorded in
 | `E09017` | `COURTROOM_REQUIRED` | 400 | Forward or Register without a courtroom, or with one not in the establishment (`SCR-16`); `field = courtroom_id` |
 | `E09018` | `REGISTRATION_TYPE_REQUIRED` | 400 | Forward or Register without a registration type where the state has several, or with an unknown one (`SCR-13`); `field = registration_type` |
 | `E09019` | `SCRUTINY_NOT_CONFIGURED` | 503 | a case enters scrutiny or registration with no establishment configured (#2.5); the submission is rolled back |
+| `E09020` | `CASE_NUMBER_TAKEN` | 409 | Register or Register at Scrutiny: the number the series gave was taken by a write outside numbering at the same moment; the decision is rolled back and can be retried |
 
 Workflow errors (`E08xxx`) from [`0011`](0011-case-workflows.md) pass through
 unchanged — a stale version is `412 E08005`.
@@ -1036,6 +1037,7 @@ change.
 * Every decision locks the round, then the workflow instance (through `move_case`).
 * Flag drafting locks the round, so two officers drafting on the same target produce one flag (`E09009`) rather than two.
 * `If-Match` on decisions: two officers deciding the same file — one succeeds, the other gets `412 E08005`.
+* Registering two cases at once in the same series: the series counter row (`CaseNumberSeries`) is locked, so they get consecutive numbers; a number taken by a write outside numbering is skipped, or refused `409 E09020` if taken at the same moment.
 
 ### 10. Testing
 

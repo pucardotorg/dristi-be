@@ -9,6 +9,7 @@ from .models import (
     Case,
     CaseDocument,
     CaseEvidence,
+    CaseNumberSeries,
     CaseParticipant,
     ChequeBounceCase,
     PoaMandate,
@@ -26,6 +27,19 @@ class CaseAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     search_fields = ("id", "filing_number", "case_number", "cnr_number")
     raw_id_fields = ("court",)
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(CaseNumberSeries)
+class CaseNumberSeriesAdmin(admin.ModelAdmin):
+    """Read-only view of the case number counters; registration moves them."""
+
+    list_display = ("series", "year", "last_number", "updated_at")
+    list_filter = ("series", "year")
+    readonly_fields = ("id", "series", "year", "last_number", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        """Series rows are created by registration only."""
+        return False
 
 
 @admin.register(CaseParticipant)
