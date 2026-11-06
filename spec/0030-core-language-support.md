@@ -77,12 +77,13 @@ copy may need them later, so the model, its admin and its read API live in
 - `OCR = "ocr"` — scanned-document OCR works for this language's script.
 
 `supports` is stored as a `JSONField` list of enum strings (for example
-`["ui", "ocr"]`), not a Postgres `ArrayField`: the test suite runs on SQLite
-(`config.settings.test`) and `ArrayField` is Postgres-only, whereas a JSON
-array behaves identically on both databases and filters with
-`supports__contains=<value>`. The enum is deliberately a code-level
-`TextChoices` (not rows): capabilities are features of the product, so adding
-one is a code change anyway; languages remain admin-managed rows.
+`["ui", "ocr"]`) and filtered with `supports__contains=<value>`. That lookup
+is PostgreSQL-only (Django raises `NotSupportedError` on SQLite), which is
+fine because CI runs the test suite on PostgreSQL, as in production
+(`.github/workflows/ci.yml`); tests that filter on `supports` therefore need
+`DATABASE_URL` pointing at PostgreSQL when run locally. The enum is
+deliberately a code-level `TextChoices` (not rows): capabilities are features
+of the product, so adding one is a code change anyway; languages remain admin-managed rows.
 
 `supports` is capability metadata for clients and other features (a UI
 switcher lists `ui` languages, an OCR pipeline checks `ocr`). It does **not**
@@ -94,6 +95,7 @@ Model `Meta`:
 - `ordering = ("sort_order", "code")`
 - `UniqueConstraint(fields=["is_default"], condition=Q(is_default=True), name="core_language_single_default")`
 - `CheckConstraint(condition=Q(is_default=False) | Q(is_active=True), name="core_language_default_is_active")`
+  (`condition=` needs Django 5.1+; this spec requires Django 5.2.17+, see Dependencies)
 
 Validation and behaviour:
 
@@ -318,6 +320,14 @@ Add model and API tests covering at least:
 - `src/apps/core/tests/test_languages.py`
 - `src/apps/core/tests/test_languages_api.py`
 - `src/apps/core/tests/test_language_resolution.py`
+
+## Dependencies
+
+- Django 5.2.17+ (upgraded in a separate PR). Implementation must not start on
+  the current Django 5.0 pin: `CheckConstraint(condition=...)` (section 1)
+  does not exist before 5.1.
+- CI tests running on PostgreSQL (separate PR): `supports__contains`
+  (sections 1, 3 and 4.1) is not supported on SQLite.
 
 ## Open questions
 
