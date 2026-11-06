@@ -40,7 +40,7 @@ The `config` package is the Django project configuration. Settings are split by 
 
 - `base.py` — shared settings (installed apps, middleware, DRF, cache, Dramatiq broker, logging).
 - `local.py` — development settings; loads `.env`, enables debug toolbar, browsable API.
-- `test.py` — CI settings; uses an in-memory SQLite database and the Dramatiq stub broker.
+- `test.py` — CI settings; PostgreSQL via `DATABASE_URL` in CI (in-memory SQLite otherwise) and the Dramatiq stub broker.
 - `production.py` — production settings; security hardening.
 
 ### `apps.core`
@@ -80,6 +80,7 @@ DRF API layer:
 2. The `worker` service consumes messages from Redis.
 3. Actors execute business logic; database connections are managed by `django_dramatiq` middleware.
 4. Results (if requested) are stored back in Redis or ignored for fire-and-forget tasks.
+5. Periodic jobs: the `scheduler` service (`manage.py crontab`) sends `@cron` actors on their schedule; the worker runs them like any other message. One-off delayed jobs use `send_with_options(delay=...)` and need no scheduler (spec 0026).
 
 ### File uploads
 

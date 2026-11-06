@@ -62,6 +62,8 @@ PLEASE NOTE: This "case number"
 
 Shows the user's earlier filings and lets them create a new draft.
 
+![Start a filing sequence](../docs/sequence-diagrams/0021-case-filing-api/start-a-filing.svg)
+
 ```
 GET  /cases?status=DRAFT_IN_PROGRESS,PENDING_SIGN&created_by=me
 POST /cases
@@ -172,6 +174,8 @@ Once a case is created (after the first data entry), all subsequent endpoints us
 ## 3. Step 1: Document Upload
 
 Every upload requires a case ID and a `document_type`. Only **case-level documents** use these endpoints. Vakalatnamas and POA documents are uploaded here too, as case documents (§3.4).
+
+![Upload documents sequence](../docs/sequence-diagrams/0021-case-filing-api/upload-documents.svg)
 
 ### 3.1 Upload Document
 
@@ -316,6 +320,8 @@ endpoint.
 ## 4. Step 2: Party Management
 
 Complainants, accused, witnesses and POA holders are all rows in `case_participant` (spec 0020 §4), differing by `role`; witnesses also have a `witness` row (spec 0020 §4.5). Advocates are `representation` rows (spec 0020 §6) and POA authority is `poa_mandate` rows (spec 0020 §5).
+
+![Parties sequence](../docs/sequence-diagrams/0021-case-filing-api/parties.svg)
 
 Adding a party uses a **per-role endpoint** under the case, for frontend clarity (see §9.2). Like documents and evidence, the case id in the path may be a draft session id: adding the first party creates the case (§9.1). Once something exists it is changed by its own id, which is unique across cases, so item endpoints are flat:
 
@@ -630,6 +636,8 @@ One POA acting for 2 of 3 complainants = 2 `poa_mandate` rows pointing to the sa
 Revokes the mandate: `is_active = false`, `revoked_at = now()`. Revoking a holder's last active mandate also removes the holder's participant row (§4.1 DELETE), since a POA holder with no one to act for is no longer a party.
 
 ## 5. Step 3: Case Details and Evidence
+
+![Cheque and case details sequence](../docs/sequence-diagrams/0021-case-filing-api/cheque-and-case-details.svg)
 
 ### 5.1 Evidence (Sections 1 & 2: Cheques, Notices)
 
@@ -972,6 +980,8 @@ CREATE INDEX ON case_evidence ((evidence_info->>'cheque_date')::date) WHERE evid
 Promote to columns (option b) only if query performance requires it.
 
 ## 6. Preview and Validation
+
+![Preview and submit sequence](../docs/sequence-diagrams/0021-case-filing-api/preview-and-submit.svg)
 
 ### 6.1 Full Assembled Filing
 

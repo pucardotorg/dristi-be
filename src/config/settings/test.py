@@ -9,8 +9,9 @@ from .base import MESSAGING_BACKENDS, MIDDLEWARE, REST_FRAMEWORK, STORAGES, env 
 SECRET_KEY = "test-secret-key-not-for-production"
 DEBUG = False
 
-# Use an in-memory SQLite database for speed in CI. Override with DATABASE_URL
-# if you prefer running tests against PostgreSQL.
+# CI sets DATABASE_URL to a PostgreSQL service, matching production. Without
+# it, tests fall back to in-memory SQLite, which lacks some PostgreSQL-only
+# lookups (for example JSONField `contains`).
 DATABASES = {
     "default": env.db(
         var="DATABASE_URL",
@@ -40,6 +41,10 @@ DRAMATIQ_BROKER = {
     ],
 }
 
+# No scheduler lock URL: dramatiq-crontab falls back to an in-process lock, so
+# tests never need Redis (spec 0026 #3.3).
+DRAMATIQ_CRONTAB = {}
+
 # Tests run on the dummy SMS backend; CDAC is exercised via override_settings.
 MESSAGING_BACKENDS = {**MESSAGING_BACKENDS, "sms": "apps.messaging.senders.sms.DummySMSBackend"}
 
@@ -49,6 +54,12 @@ ESIGN_PROVIDER = "apps.esign.providers.mock.MockESignProvider"
 # The public callback throttle shares the process cache across tests, so it
 # is off by default and switched on by the test that asserts it.
 ESIGN_CALLBACK_THROTTLE_RATE = ""
+
+# Payments run on the mock provider in tests; the public callback throttle is
+# off by default for the same reason as eSign's.
+PAYMENT_PROVIDERS = {"mock": "apps.payments.providers.mock.MockPaymentProvider"}
+PAYMENT_DEFAULT_PROVIDER = "mock"
+PAYMENT_CALLBACK_THROTTLE_RATE = ""
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 

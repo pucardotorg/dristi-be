@@ -1,0 +1,17 @@
+[seed]
+model = "organizations.Organization"
+
+# jurisdictions reference locations seeded earlier (locations load first).
+[[rows]]
+code = "KL_HC"
+organization_type = "high_court"
+name = "High Court of Kerala"
+short_name = "KL HC"
+jurisdictions = ["IN_KL"]
+
+[[rows]]
+code = "ERN_DC"
+organization_type = "district_court"
+name = "Ernakulam District Court"
+parent = "KL_HC"
+jurisdictions = ["IN_KL_ERN"]

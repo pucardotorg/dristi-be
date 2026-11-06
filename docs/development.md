@@ -39,31 +39,23 @@ docker compose -f docker/docker-compose.yml exec web python manage.py makemigrat
 ### Loading location data (pincode pre-fill)
 
 The repository ships no location data. Address forms pre-fill district and
-state from a pincode only once the locations are loaded, so whoever sets up
-an environment does this once (spec 0007 section 7):
+state from a pincode only once the locations are loaded, so whoever sets up an
+environment does this once, seeding the states, districts and pincodes from
+TOML with the `seed` command (spec 0025):
 
-1. Download the *All India Pincode Directory* CSV from
-   https://www.data.gov.in/catalog/all-india-pincode-directory and save it as
-   `src/data/pincodes/all_india_pincode_directory.csv`. The file is git- and
-   docker-ignored.
-2. Check what would happen, then import. `--create-districts` also creates the
-   states and districts the CSV names, which an empty database needs:
+1. Get `states.toml`, `districts.toml` and `pincodes.toml` from the
+   [`dristi-be-experiments`](https://github.com/pucardotorg/dristi-be-experiments)
+   repo, which also holds the one-time CSV-to-TOML converter that builds them
+   from the India Post directory.
+2. Seed them, in order (states first, then districts, then pincodes):
 
    ```bash
-   docker compose --env-file .env -f docker/docker-compose.yml exec web python manage.py import_pincodes --create-districts --dry-run
-   docker compose --env-file .env -f docker/docker-compose.yml exec web python manage.py import_pincodes --create-districts
+   docker compose --env-file .env -f docker/docker-compose.yml exec web python manage.py seed --dry-run states.toml districts.toml pincodes.toml
+   docker compose --env-file .env -f docker/docker-compose.yml exec web python manage.py seed states.toml districts.toml pincodes.toml
    ```
 
-   Without `--create-districts`, pincodes go only under existing districts and
-   the dry run lists CSV state and district names that match none. Map
-   them in `src/data/pincodes/aliases.json`, which is picked up automatically
-   and can be committed, e.g.
-   `{"JAMMU AND KASHMIR": "IN_JK", "KARNATAKA / BANGALORE": "IN_KA_BLR_URBAN"}`
-   (a CSV state to a state code, or a CSV state and district to a district
-   code), and run it again.
-
-[src/data/pincodes/README.md](../src/data/pincodes/README.md) also covers
-running it without Docker and on a production container.
+Seeding is insert-only, so re-running is safe. See
+[src/data/seed/README.md](../src/data/seed/README.md) for the file format.
 
 Until this is done, every pincode lookup returns 404 and users type district
 and state by hand.
@@ -100,11 +92,18 @@ Once the stack is running:
 
 ## Running tests
 
-Tests use pytest with the `config.settings.test` settings module (SQLite in-memory by default).
+Tests use pytest with the `config.settings.test` settings module. CI runs them
+on PostgreSQL, matching production; without `DATABASE_URL` they fall back to
+in-memory SQLite, where PostgreSQL-only lookups (such as JSONField `contains`)
+fail.
 
 ```bash
 cd src
 pytest
+
+# Same database as CI, via the docker-compose `db` service (credentials from
+# .env.example); pytest creates and drops a separate test_dristi database
+DATABASE_URL=postgres://dristi:secret@localhost:5432/dristi pytest
 ```
 
 ### Test coverage
@@ -158,6 +157,11 @@ from apps.core.tasks import send_welcome_email
 
 send_welcome_email.send("user@example.com")
 ```
+
+To run a job on a timetable (`@cron`) or once after a delay
+(`send_with_options(delay=...)`), see
+[Scheduled and delayed jobs](../README.md#scheduled-and-delayed-jobs) and
+[spec 0026](../spec/0026-dramatiq-crontab.md).
 
 Monitor the worker logs:
 
