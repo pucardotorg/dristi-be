@@ -76,7 +76,10 @@ class TestFields:
     def test_ordering_by_code(self):
         make_rule(code="B_RULE")
         make_rule(code="A_RULE")
-        assert list(BusinessRule.objects.values_list("code", flat=True)) == ["A_RULE", "B_RULE"]
+        codes = BusinessRule.objects.filter(code__in=["A_RULE", "B_RULE"]).values_list(
+            "code", flat=True
+        )
+        assert list(codes) == ["A_RULE", "B_RULE"]
 
 
 @pytest.mark.django_db
@@ -213,7 +216,7 @@ class TestClean:
     def test_save_runs_full_clean(self):
         with pytest.raises(ValidationError):
             make_rule(rule_expression="undeclared_symbol")
-        assert not BusinessRule.objects.exists()
+        assert not BusinessRule.objects.filter(code="COURT_FEE_CALCULATION").exists()
 
     def test_validate_rule_is_the_shared_check(self):
         """clean() and the admin form both delegate to BusinessRuleService.validate_rule."""

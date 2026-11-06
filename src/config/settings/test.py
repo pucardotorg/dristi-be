@@ -86,3 +86,10 @@ STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticF
 
 # WhiteNoise is not needed in tests and would warn about a missing staticfiles directory
 MIDDLEWARE = [m for m in MIDDLEWARE if m != "whitenoise.middleware.WhiteNoiseMiddleware"]
+
+# A paid case needs an establishment to enter scrutiny (spec 0024 #2.5), or the
+# submission is refused. Scrutiny's own tests set a real one; tests that only
+# walk the filing flow get this placeholder.
+SCRUTINY_ESTABLISHMENT_ID = env(
+    "SCRUTINY_ESTABLISHMENT_ID", default="00000000-0000-0000-0000-000000000001"
+)

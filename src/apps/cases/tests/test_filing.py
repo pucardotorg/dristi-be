@@ -1,12 +1,15 @@
 """Tests for the preview, completeness check, status transitions and signing (spec 0021 §6–8)."""
 
+import datetime
 import uuid
 
 import pytest
 from django.contrib.auth.models import Permission
 from django.urls import reverse
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
+from apps.api.errors import BusinessError
 from apps.cases.models import (
     Case,
     CaseEvidence,
@@ -16,6 +19,7 @@ from apps.cases.models import (
     ParticipantRole,
     Representation,
 )
+from apps.cases.services.filing import return_to_signing
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 from apps.files.tests.factories import make_file
@@ -491,6 +495,45 @@ class TestSign:
         assert response.status_code == 400
         assert error_codes(response) == {"signature_document_id": ["E07028"]}
 
+    def test_a_case_sent_back_to_signing_is_signed_again(self, client, user, draft, pending):
+        participant_id = pending["case_participant_id"]
+        sign(client, draft, participant_id, signed_document(user, draft))
+        unused = signed_document(
+            user, draft, completed_at=timezone.now() - timezone.timedelta(seconds=1)
+        )
+        case = Case.objects.get(pk=draft)
+        with pytest.raises(BusinessError) as excinfo:
+            return_to_signing(case)
+        assert excinfo.value.error.code == "E07004"
+        case.status = CaseStatus.PENDING_CORRECTION
+        case.save()
+        return_to_signing(case)
+        assert Case.objects.get(pk=draft).status == CaseStatus.PENDING_SIGN
+        participant = CaseParticipant.objects.get(pk=participant_id)
+        assert (participant.has_signed, participant.signature_document_id) == (False, None)
+        # A save while still pending signature is not a new submission.
+        case.save()
+
+        response = sign(client, draft, participant_id, unused)
+        assert error_codes(response) == {"signature_document_id": ["E07028"]}
+        response = sign(client, draft, participant_id, signed_document(user, draft))
+        assert response.status_code == 200
+
+    def test_an_incomplete_correction_is_not_sent_to_signing(self, client, user, draft, pending):
+        participant_id = pending["case_participant_id"]
+        sign(client, draft, participant_id, signed_document(user, draft))
+        CaseEvidence.objects.filter(case_id=draft, evidence_type="CHEQUE").update(is_active=False)
+        case = Case.objects.get(pk=draft)
+        case.status = CaseStatus.PENDING_CORRECTION
+        case.save()
+
+        with pytest.raises(ValidationError) as excinfo:
+            return_to_signing(case)
+
+        assert excinfo.value.detail["evidence.CHEQUE"][0].code == "E07005"
+        assert Case.objects.get(pk=draft).status == CaseStatus.PENDING_CORRECTION
+        assert CaseParticipant.objects.get(pk=participant_id).has_signed is True
+
     def test_the_accused_does_not_sign(self, client, user, draft, pending):
         accused = CaseParticipant.objects.get(case_id=draft, role=ParticipantRole.ACCUSED)
 
@@ -538,6 +581,17 @@ class TestSubmitForPaymentAndScrutiny:
         assert scrutiny.status_code == 200
         assert scrutiny.json()["status"] == "UNDER_SCRUTINY"
         assert scrutiny.json()["filed_at"]
+
+    def test_resubmission_keeps_the_first_filing_date(self, client, draft):
+        add_complainant(client, draft)
+        filed_at = timezone.now() - datetime.timedelta(days=6)
+        Case.objects.filter(pk=draft).update(filed_at=filed_at)
+        set_status(draft, CaseStatus.PENDING_PAYMENT)
+
+        response = submit(client, draft, "scrutiny")
+
+        assert response.status_code == 200
+        assert Case.objects.get(pk=draft).filed_at == filed_at
 
     @pytest.mark.parametrize(
         ("step", "wrong_status"),

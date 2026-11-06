@@ -7,6 +7,11 @@ precondition:
     PENDING_SIGN      --submit-for-payment--> PENDING_PAYMENT   (every signer has signed)
     PENDING_PAYMENT   --submit-for-scrutiny-> UNDER_SCRUTINY    (filed_at is set)
 
+    PENDING_CORRECTION --return-to-signing--> PENDING_SIGN      (complete; signatures cleared)
+
+Scrutiny calls ``return_to_signing`` when the filer submits a correction, so
+the corrected case is signed again from scratch.
+
 The transitions live here rather than in the workflow service (spec 0021 §7,
 option a). Leaving ``DRAFT_IN_PROGRESS`` freezes the filing: every write in
 ``services`` and ``participants`` is refused from then on.
@@ -54,15 +59,13 @@ from .services import (
 # Preview (spec 0021 §6.1, §6.2)
 
 
-def get_viewable_case(case_id, user):
-    """Return a case ``user`` may preview, or raise ``NotFound`` (spec 0021 §9.6).
+def _filing_side(user):
+    """Match the cases ``user`` is on the filing side of.
 
-    The filer, an active complainant or POA holder who is the user, an active
-    advocate of a complainant, and staff holding ``cases.view_case`` may.
-    Anyone else, the accused and witnesses included, is told the case does
-    not exist.
+    The filer, an active complainant or POA holder who is the user, or an
+    active advocate of a complainant.
     """
-    viewable = (
+    return (
         Q(created_by=user)
         | Q(
             participants__person__user=user,
@@ -75,13 +78,33 @@ def get_viewable_case(case_id, user):
             representations__case_participant__role__in=FILING_SIDE_ROLES,
         )
     )
-    found = (
-        Case.objects.all() if user.has_perm("cases.view_case") else Case.objects.filter(viewable)
-    )
+
+
+def _find_case(found, case_id):
     case = found.filter(pk=case_id).distinct().first()
     if case is None:
         raise NotFound("Case not found.")
     return case
+
+
+def get_viewable_case(case_id, user):
+    """Return a case ``user`` may preview, or raise ``NotFound`` (spec 0021 §9.6).
+
+    The filing side and staff holding ``cases.view_case`` may. Anyone else,
+    the accused and witnesses included, is told the case does not exist.
+    """
+    if user.has_perm("cases.view_case"):
+        return _find_case(Case.objects.all(), case_id)
+    return _find_case(Case.objects.filter(_filing_side(user)), case_id)
+
+
+def get_filing_side_case(case_id, user):
+    """Return a case ``user`` may act on as its filing side, or raise ``NotFound``.
+
+    As ``get_viewable_case`` without the staff ``cases.view_case`` reading
+    access: viewing a case is no right to answer for its filer.
+    """
+    return _find_case(Case.objects.filter(_filing_side(user)), case_id)
 
 
 def get_preview(case_id, user):
@@ -267,14 +290,15 @@ def submit_for_scrutiny(case_id, user):
     """Send a paid case to scrutiny; this is when it counts as filed.
 
     There is no payment service yet, so being in ``PENDING_PAYMENT`` is the
-    only precondition until one records the payment.
+    only precondition until one records the payment. A case resubmitted after
+    correction keeps its first filing date: limitation and delay run from it.
     """
     return _transition(
         case_id,
         user,
         CaseStatus.PENDING_PAYMENT,
         CaseStatus.UNDER_SCRUTINY,
-        filed_at=timezone.now(),
+        filed_at=lambda case: case.filed_at or timezone.now(),
     )
 
 
@@ -283,6 +307,7 @@ def _transition(case_id, user, from_status, to_status, check=None, **fields):
 
     The case row is locked, so two concurrent submissions cannot both pass the
     status check. A plain ``save()``, so each step is kept in the case's history.
+    A callable value in ``fields`` is called with the locked case.
     """
     with transaction.atomic():
         case = lock_case(get_case(case_id, user))
@@ -296,7 +321,7 @@ def _transition(case_id, user, from_status, to_status, check=None, **fields):
         case.status = to_status
         case.updated_by = user
         for field, value in fields.items():
-            setattr(case, field, value)
+            setattr(case, field, value(case) if callable(value) else value)
         case.save(update_fields=["status", *fields, "updated_by", "updated_at"])
         clear_preview_cache(case.pk)
     return case
@@ -356,12 +381,57 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
     return participant
 
 
-def _check_signature(case, participant, esign, signature_document_id):
-    """Refuse an e-signature that is not this participant's signature of this filing.
+def return_to_signing(case):
+    """Send the locked, corrected ``case`` back to PENDING_SIGN with no signatures.
 
-    The case only moves forward and enters PENDING_SIGN once, so its first
-    history row in that status is when it was submitted for signing.
+    Any edit invalidates all signatures (spec 0024 ``LIFE-13``, ``SIG-07``), so
+    the case is never back in PENDING_SIGN with an earlier signature still
+    counted. The old e-sign transactions are kept; only the participants stop
+    counting them. A plain ``save()``, so the new entry is kept in the case's
+    history and ``_check_signature`` dates signatures from it.
+
+    Correction can remove parties, evidence and documents, so the corrected
+    filing must pass the completeness check again, as at ``submit_for_signing``.
     """
+    if case.status != CaseStatus.PENDING_CORRECTION:
+        raise BusinessError(
+            errors.INVALID_STATUS_TRANSITION,
+            f"Only a case in {CaseStatus.PENDING_CORRECTION} can return to "
+            f"{CaseStatus.PENDING_SIGN}; this one is {case.status}.",
+        )
+    problems = validation_errors(case)
+    if problems:
+        _raise_not_ready(errors.FILING_INCOMPLETE, problems)
+    CaseParticipant.objects.filter(case=case, has_signed=True).update(
+        has_signed=False, signature_document=None, updated_at=timezone.now()
+    )
+    case.status = CaseStatus.PENDING_SIGN
+    case.save()
+    clear_preview_cache(case.pk)
+
+
+def _submitted_for_signing_at(case):
+    """Return when ``case`` last entered PENDING_SIGN, or None.
+
+    A corrected case enters it again, so this is the first PENDING_SIGN
+    history row after the last row in any other status. Rows are ordered by
+    ``history_id``, the insertion order: consecutive saves can share a
+    ``history_date`` on a coarse clock.
+    """
+    left = (
+        case.history.exclude(status=CaseStatus.PENDING_SIGN)
+        .order_by("-history_id")
+        .values_list("history_id", flat=True)
+        .first()
+    )
+    entries = case.history.filter(status=CaseStatus.PENDING_SIGN)
+    if left is not None:
+        entries = entries.filter(history_id__gt=left)
+    return entries.order_by("history_id").values_list("history_date", flat=True).first()
+
+
+def _check_signature(case, participant, esign, signature_document_id):
+    """Refuse an e-signature that is not this participant's signature of this filing."""
     if (
         CaseParticipant.objects.filter(signature_document_id=signature_document_id)
         .exclude(pk=participant.pk)
@@ -375,12 +445,7 @@ def _check_signature(case, participant, esign, signature_document_id):
         raise errors.SIGNED_BY_SOMEONE_ELSE.validation_error(
             {"signature_document_id": [errors.SIGNED_BY_SOMEONE_ELSE.message]}
         )
-    submitted_at = (
-        case.history.filter(status=CaseStatus.PENDING_SIGN)
-        .order_by("history_date")
-        .values_list("history_date", flat=True)
-        .first()
-    )
+    submitted_at = _submitted_for_signing_at(case)
     if esign.completed_at is None or submitted_at is None or esign.completed_at < submitted_at:
         raise errors.SIGNED_BEFORE_SUBMISSION.validation_error(
             {"signature_document_id": [errors.SIGNED_BEFORE_SUBMISSION.message]}
