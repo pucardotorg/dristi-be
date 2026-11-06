@@ -40,7 +40,7 @@ The `config` package is the Django project configuration. Settings are split by 
 
 - `base.py` — shared settings (installed apps, middleware, DRF, cache, Dramatiq broker, logging).
 - `local.py` — development settings; loads `.env`, enables debug toolbar, browsable API.
-- `test.py` — CI settings; uses an in-memory SQLite database and the Dramatiq stub broker.
+- `test.py` — CI settings; PostgreSQL via `DATABASE_URL` in CI (in-memory SQLite otherwise) and the Dramatiq stub broker.
 - `production.py` — production settings; security hardening.
 
 ### `apps.core`

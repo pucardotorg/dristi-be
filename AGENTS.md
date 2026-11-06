@@ -8,7 +8,7 @@ This document helps AI coding assistants work effectively inside the **Dristi** 
 - **Code style:** [Ruff](https://docs.astral.sh/ruff/) (replaces flake8, black, isort)
 - **Django settings:** split by environment under `src/config/settings/`
   - `local.py` — development, reads `.env`
-  - `test.py` — CI / unit tests, uses SQLite by default
+  - `test.py` — CI / unit tests; CI runs them on PostgreSQL via `DATABASE_URL`, local runs fall back to SQLite
   - `production.py` — production, relies on injected environment variables
 - **Apps:** live under `src/apps/<app>/`. Always use the full Python path (`apps.<app>`) in `INSTALLED_APPS`, imports, and `AppConfig.name`.
 - **Models:** inherit from `apps.core.models.BaseModel` unless you have a strong reason not to.
