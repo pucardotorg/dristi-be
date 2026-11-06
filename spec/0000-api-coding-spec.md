@@ -245,6 +245,7 @@ example `E01001`.
 | `07` | `apps.cases` | case filing (spec 0021) |
 | `08` | `apps.workflows` | case workflows and pending tasks (spec 0011); reserved, not yet implemented |
 | `09` | `apps.scrutiny` | scrutiny and registration (spec 0024); reserved, not yet implemented |
+| `10` | `apps.hearings` | hearings, court calendar and bulk rescheduling (spec 0023); reserved, not yet implemented |
 
 Rules:
 
