@@ -1,6 +1,6 @@
 # Signing Methods
 
-**Status:** v2.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover". v2 — 2026-10-24; **digital signing and e-sign are different terms** (§1):
+**Status:** v2.2 — 2026-11-06; **who can use which method** (§3, `SGM-05`): Aadhaar e-sign and DSC are available in every state; mobile OTP and batch signing are switched on per state. Aadhaar e-sign: every signatory. DSC: every user, after a setup whose mechanics are open (`SQ-3`, new). Mobile OTP, where on: complainants and advocates always, the accused once marked present in a hearing. Batch signing, where on: every signatory. A document type can disallow methods (`SGM-09`, new; which ones is `SQ-5`, new). Which states switch on mobile OTP and batch signing is `SQ-4` (new). `signingMethods` and `SQ-1` removed. v2.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover". v2 — 2026-10-24; **digital signing and e-sign are different terms** (§1):
 digital signing covers mobile OTP, DSC and Aadhaar e-sign; e-sign means Aadhaar-based
 e-signing only, and batch signing is a way of doing it. **Not specific to e-filing**:
 each method is described by how many documents one signing transaction covers, which is
@@ -56,20 +56,33 @@ transaction places it once.
 | `SGM-03` | **Aadhaar e-sign** | C-DAC Aadhaar OTP | **One** | **Once.** Where several documents are signed together they are combined into one PDF, and the one signature covers all of them |
 | `SGM-04` | **Batch signing** — a way of doing an Aadhaar e-sign | One e-sign per signatory, on their own batch certificate (§4) | Any number | On **every document**: once a signatory's e-sign succeeds, the **system's own signature** goes on each document — one for that signatory, naming them and their batch certificate |
 
-The enabled methods are offered together under digital signing, as in the prototype
+The methods available to a signatory (§3) are offered together under digital signing, as in the prototype
 ("Aadhaar OTP" / "My DSC").
 
-# 3. Switching methods on — `SGM-05`
+# 3. Who can use which method — `SGM-05`
 
-**[OWNER]** Methods are switched on **per state**: `signingMethods`, the list of methods
-enabled for the state. Only enabled methods are offered.
+**[OWNER]** Aadhaar e-sign and DSC are available in every state. Mobile OTP and batch
+signing are switched on or off per state; which states switch them on is open (`SQ-4`).
 
-- Where more than one is enabled, each signatory chooses among them when they sign.
+| Method | Per state | Who can use it |
+| --- | --- | --- |
+| Aadhaar e-sign (`SGM-03`) | Always on | Every signatory |
+| DSC (`SGM-02`) | Always on | Every user, once they have set up their DSC in the system. How the setup works is open (`SQ-3`) |
+| Mobile OTP (`SGM-01`) | On or off | Where on: complainants and advocates, always; the accused, once they have been marked present in a hearing of the case |
+| Batch signing (`SGM-04`) | On or off | Where on: every signatory. Where off, an Aadhaar e-sign signs one document per transaction and there is no bulk signing with Aadhaar |
+
+- `SGM-09` **[OWNER]** A document type can disallow some methods. A disallowed method is
+  not offered for that document, even where the state has it on and the signatory could
+  otherwise use it. Which methods each document type disallows is open (`SQ-5`).
+- Where more than one method is available to a signatory, they choose among them when
+  they sign.
 - `[DERIVED]` Each signatory's signature is placed according to the method **they** used.
   Where several people sign the same documents, one using DSC signs every document while
   one using Aadhaar e-sign signs once.
 
 # 4. Batch signing — `SGM-04`
+
+Batch signing is switched on per state (§3).
 
 C-DAC's e-sign accepts one document per OTP. Batch signing lets a signatory authorise
 any number of documents with **one** e-sign.
@@ -118,5 +131,7 @@ order of signing).
 
 | ID | Question | Blocking |
 | --- | --- | --- |
-| `SQ-1` | Which methods each state enables (`signingMethods`) | Per state, before that state goes live |
 | `SQ-2` | Whether each batch certificate is filed with the documents it lists, or kept by the system and produced on request | Batch signing |
+| `SQ-3` | How a user sets up their DSC before signing with it, and what signing with it then involves | DSC |
+| `SQ-4` | Which states switch on mobile OTP, and which switch on batch signing | Per state, before that state goes live |
+| `SQ-5` | Which signing methods each document type disallows | Per document type, before it is signed in the system |
