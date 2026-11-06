@@ -1972,6 +1972,91 @@
           "hash": "b256455ffefe"
         }
       ]
+    },
+    "e-post.md": {
+      "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-mzCQ8BW4Ux",
+      "title": "e-Post — post offices and routing",
+      "contentHash": "6dace368d374",
+      "pageUpdatedAt": 1793946372.901,
+      "calloutElementId": "cl-W9eNE5FInj",
+      "sections": [
+        {
+          "key": "# e-Post — post offices and routing",
+          "elementId": "cl-P06dQkMK1n",
+          "hash": "88a95278df59"
+        },
+        {
+          "key": "## 1. Context",
+          "elementId": "cl-jXYg_YMgk3",
+          "hash": "dd3b464f7a5a"
+        },
+        {
+          "key": "## 2. Where routing fits",
+          "elementId": "cl-JJqrBQAj97",
+          "hash": "8a981ff99679"
+        },
+        {
+          "key": "## 3. Requirements",
+          "elementId": "cl-wvwuJIAe6n",
+          "hash": "5dc9f2305e77"
+        },
+        {
+          "key": "## 4. The post-office master",
+          "elementId": "cl-f-bNNVlNT1",
+          "hash": "e83c4c666a6f"
+        },
+        {
+          "key": "## Linked records",
+          "elementId": "cl--_RciC0jqS",
+          "hash": "31275623d214"
+        },
+        {
+          "key": "view: Pending tasks (Court Side) — e-Post",
+          "elementId": "table-5HuBM6g-5V",
+          "hash": "fc9fd64d4236"
+        },
+        {
+          "key": "### Pending tasks (Citizen-Side)",
+          "elementId": "cl-XFAGUB3yv9",
+          "hash": "20c1668ccaf5"
+        },
+        {
+          "key": "view: Pending tasks (Citizen-Side) — e-Post",
+          "elementId": "table-ELndZNzHmQ",
+          "hash": "e7a2f3339af1"
+        },
+        {
+          "key": "### Notifications",
+          "elementId": "cl-wbHehkGCTt",
+          "hash": "65ac5c2cf5a5"
+        },
+        {
+          "key": "view: Notifications — e-Post",
+          "elementId": "table-P5Pv1bi2xF",
+          "hash": "6f9adc9ad755"
+        },
+        {
+          "key": "### Events",
+          "elementId": "cl-aLtU8XOPK0",
+          "hash": "72199396868f"
+        },
+        {
+          "key": "view: Events — e-Post",
+          "elementId": "table-NlHUMxi95W",
+          "hash": "1b155efd249f"
+        },
+        {
+          "key": "---",
+          "elementId": "edl-H8_U1Q3DTC",
+          "hash": "cb3f91d54eee"
+        },
+        {
+          "key": "## 5. Open questions",
+          "elementId": "cl-oGJXgRLnYH",
+          "hash": "54fe65164de0"
+        }
+      ],
+      "note": "Created 2026-11-06. Each chunk expands to several blocks on the page; elementId is the chunk heading block (views: the embedded view table). Adding a view left an empty \"### \" block after it; those were deleted. \"e-post\" added as an option to the PRDs column of all four master tables the same day."
     }
   },
   "prdsTableUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WnGJlAWqcu/tables/grid-3QCTt30e1H"
