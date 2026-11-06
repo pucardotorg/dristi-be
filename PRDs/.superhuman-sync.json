@@ -15,9 +15,9 @@
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing",
       "contentHash": "a7e9952476ad",
-      "pageUpdatedAt": 1793943137.801,
+      "pageUpdatedAt": 1793945781.883,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match). 2026-10-30: patched in place to v50 (§11 note replaced by cl-m468m1p6tY; PRY-5 cell in grid-UGBc7eKxqI; §16.4 row 2.3 in grid-CZmW9VMuDl; §16.9 page-5 bullet; batch 19 block cl-_STdzi6lOi; Status block and callout prepended). 2026-11-04: patched in place to v50.10 — §19 rewritten (fee figures now link to payment-logic; grids grid-KUHUyNtILD and grid-cH4_y371AG deleted; PAY-10–12, PAY-14, PAY-15 blocks replaced by insert-then-delete), Status block and callout prepended, Q-1 cell edited and Q-5 row deleted in grid-UpCdPcmE4h. contentHash still left as before: the file-name link renames are still not on the page. 2026-11-06: patched in place to v50.12 — LDN table grid-fm4BK3pMEh rows shifted down one to put LDN-1a after LDN-1 (new row i-WfC0QjtsCn holds LDN-11); LIT-3 cell in grid-X1RS0LbXL2; batch 20 block cl-yUwr1JcsQe after cl-_STdzi6lOi; §24 Enhancements appended after the glossary table; Status block and callout prepended. A table cell written with a single markdown marker is stored literally — use plain text or two markers. contentHash still left as before: the file-name link renames are still not on the page."
+      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Overwritten in place 2026-10-19 at the owner's request (local wins; an unidentified page edit at 10:08 IST discarded): renamed to E-Filing Handover, moved scrutiny/registration sections deleted, changed tables replaced (new grid IDs), Court Side embed removed, three live views refiltered to \"efiling\". Comment thread r-Agi_MXoVH1 kept. Status block is now cl-qAZzsW2pfV. `sections` dropped as stale. replace_element_text misplaces edits after links in a block: use insert-then-delete for such blocks. Patched 2026-10-19 to v46 (oath moved to §18.2). updatedAt may lag the last write; if the next sync sees a page change with no editor other than this sync, check before treating it as a conflict. 2026-10-24: the unexplained 2026-10-19 19:29 page edit was checked — prose and all 32 grid tables matched v46, so nothing was lost; patched in place to v47 (callout, Status block, new batch 17 block after cl-06qyUkf8O7). 2026-10-24 later: patched in place to v49 (signing terms, SIG-09/§18.1, batch 18; Status block and callout prepended; tables grid-G0Nrzaluh4, grid-fCenP3ua5u, grid-D0ZlSNGgEk, grid-BDr-S9qQsh updated; two glossary rows appended to grid-UplsI7RML5 and the local glossary reordered to match). 2026-10-30: patched in place to v50 (§11 note replaced by cl-m468m1p6tY; PRY-5 cell in grid-UGBc7eKxqI; §16.4 row 2.3 in grid-CZmW9VMuDl; §16.9 page-5 bullet; batch 19 block cl-_STdzi6lOi; Status block and callout prepended). 2026-11-04: patched in place to v50.10 — §19 rewritten (fee figures now link to payment-logic; grids grid-KUHUyNtILD and grid-cH4_y371AG deleted; PAY-10–12, PAY-14, PAY-15 blocks replaced by insert-then-delete), Status block and callout prepended, Q-1 cell edited and Q-5 row deleted in grid-UpCdPcmE4h. contentHash still left as before: the file-name link renames are still not on the page. 2026-11-06: patched in place to v50.12 — LDN table grid-fm4BK3pMEh rows shifted down one to put LDN-1a after LDN-1 (new row i-WfC0QjtsCn holds LDN-11); LIT-3 cell in grid-X1RS0LbXL2; batch 20 block cl-yUwr1JcsQe after cl-_STdzi6lOi; §24 Enhancements appended after the glossary table; Status block and callout prepended. A table cell written with a single markdown marker is stored literally — use plain text or two markers. contentHash still left as before: the file-name link renames are still not on the page. 2026-11-06 later: patched in place to v50.13 — SIG-09 block cl-tihB_tWsw-, Status block and callout prepended. contentHash still left as before: the file-name link renames are still not on the page."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -1764,42 +1764,42 @@
     "signing-methods.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
       "title": "Signing Methods",
-      "contentHash": "ba271892c2fd",
-      "pageUpdatedAt": 1793681344.013,
+      "contentHash": "c8fd72db3dc1",
+      "pageUpdatedAt": 1793945756.728,
       "calloutElementId": "cl-T3V--SS-ky",
       "sections": [
         {
-          "key": "# Signing Methods — Developer & Agent Handover",
+          "key": "# Signing Methods",
           "elementId": "cl-viwRGSL4rX",
-          "hash": "06a363080fbf"
+          "hash": "3327a5a75490"
         },
         {
           "key": "# 1. Digital signing and e-sign",
           "elementId": "cl-bveZc1QEGI",
-          "hash": "ad6e42fe01e9"
+          "hash": "1df0c82dad2b"
         },
         {
           "key": "# 2. The methods — `SGM`",
           "elementId": "cl-rwwv_n6Mo3",
-          "hash": "152a03655941"
+          "hash": "52cf8ac92d1b"
         },
         {
-          "key": "# 3. Switching methods on — `SGM-05`",
+          "key": "# 3. Who can use which method — `SGM-05`",
           "elementId": "cl-LTegq-ZpVu",
-          "hash": "5814a77ba81f"
+          "hash": "42c092e6c2fe"
         },
         {
           "key": "# 4. Batch signing — `SGM-04`",
           "elementId": "cl-OnOFxTPmdx",
-          "hash": "761bba21296f"
+          "hash": "9f54507eaf6f"
         },
         {
           "key": "# 5. Open questions",
           "elementId": "cl-lLMllPUR5F",
-          "hash": "e9d097904b74"
+          "hash": "9f136b2d7ecc"
         }
       ],
-      "note": "2026-11-03: patched in place — heading drops \"Developer (& Agent) Handover\", Status line and callout updated. Link renames from the file-name change are not on the page yet; contentHash left as before so the next sync picks them up. Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block."
+      "note": "Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block. 2026-11-06: patched in place to v2.2 — §3 rewritten (new intro cl-ZjYL4VTzXo, table grid-Pbt_Tevue6, SGM-09 bullet cl-fb07EsghFx), §4 line cl-Zlg0yp4IRo, SQ-1 row deleted and SQ-3–SQ-5 added to grid-R2TeTM3dZa; ownership paragraph re-inserted as cl-NO4h3fi0-v with the efiling.md link rename. The page now matches the file, so contentHash is current."
     },
     "bulk-filing.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
