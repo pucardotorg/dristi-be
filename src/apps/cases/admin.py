@@ -30,7 +30,7 @@ class CaseAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
 
 
 @admin.register(CaseNumberSeries)
-class CaseNumberSeriesAdmin(admin.ModelAdmin):
+class CaseNumberSeriesAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Read-only view of the case number counters; registration moves them."""
 
     list_display = ("series", "year", "last_number", "updated_at")
