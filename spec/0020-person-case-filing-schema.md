@@ -45,7 +45,7 @@ One row per human being the system knows of, whether registered or not. A person
 | `designation` | varchar(128) | NULLABLE | Role within the institution, e.g. Director, Branch Manager, Authorised Signatory |
 | `residential_address_id` | uuid | FK → address, NULLABLE | Current residential address |
 | `correspondence_address_id` | uuid | FK → address, NULLABLE | Current mailing address |
-| `disability_status` | varchar(16) | NOT NULL, default NONE | NONE, VISUAL, HEARING, MOBILITY, COGNITIVE, OTHER; a missing or blank value is stored as NONE |
+| `disability_status` | boolean | NOT NULL, default false | Whether the person is differently abled; a missing value is stored as false |
 | `verification_level` | varchar(16) | NOT NULL, default ASSERTED | See §2.3 |
 | `user_id` | uuid | FK → app_user, NULLABLE, UNIQUE | NULL until they register |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
@@ -76,8 +76,8 @@ Identity verification is a spectrum. The `verification_level` field records how 
 **Why `age` alongside `date_of_birth`:**
 - The exact date of birth of an accused or witness is often unknown, while the complaint still states an approximate age ("aged about 45"). `age` records that. When the date of birth is known it is the only source of truth: `age` is cleared on save, and today's age is computed from the date of birth (`Person.current_age`, which the API returns as `age`). Storing both would let the stored age go stale at the next birthday and contradict the date of birth. Because any age changes over time, `case_participant.age_at_filing` freezes the age that was true on the filing date (§4).
 
-**Why `disability_status` defaults to `NONE`:**
-- Every person has a value, so queries and forms never need to treat a missing status separately. A missing or blank value is stored as `NONE`, and the column also has a database default, so a row inserted outside Django gets it too.
+**Why `disability_status` is a boolean, defaulting to false:**
+- The filing form asks only whether the person is differently abled, not the kind of disability, so a true or false is all that is recorded. Every person has a value, so queries and forms never need to treat a missing status separately. A missing value is stored as false, and the column also has a database default, so a row inserted outside Django gets it too. Earlier values were converted: `NONE` to false, any kind of disability (`VISUAL`, `HEARING`, `MOBILITY`, `COGNITIVE`, `OTHER`) to true.
 
 **Why `phone_number` is any E.164 number, not an Indian mobile:**
 - A party may live abroad, or be reachable only on a landline. Unlike a `User`'s login number (spec 0005), this number is only for contacting the person, so any country is accepted. The model validator and a `CHECK` constraint use the same pattern, `^\+[1-9][0-9]{6,14}$`.
@@ -122,6 +122,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 | `email_address` | varchar(256) | NULLABLE | Main contact email |
 | `pan` | varchar(10) | NULLABLE, UNIQUE | Permanent Account Number, e.g. `AAACA1234A`; uppercase, `^[A-Z]{5}[0-9]{4}[A-Z]$` |
 | `cin` | varchar(21) | NULLABLE, UNIQUE | Corporate Identification Number, companies only, e.g. `U72200KA2010PTC052651`; uppercase, `^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$` |
+| `pan_cin_skip_declared` | boolean | NOT NULL, default false | The filer declared they will give neither a PAN nor a CIN (the UI's skip checkbox). Then both are null; otherwise at least one is set |
 | `address_id` | uuid | FK → address, NULLABLE, ON DELETE PROTECT | Registered office: where notices to the institution are served |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
@@ -132,6 +133,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 - `CHECK (entity_type IN (...))` — values from §3.3
 - `CHECK` on the `pan` and `cin` patterns when not null; both are stored uppercase with spaces removed
 - `UNIQUE (pan)` and `UNIQUE (cin)` where not null
+- `CHECK`: `pan_cin_skip_declared` with both `pan` and `cin` null, or not declared with at least one of them set
 - Index on `entity_name` — lookup when naming a party at filing
 
 ### 3.3 Entity Types (enum)
@@ -155,6 +157,9 @@ They identify an entity better than its spelled name, so they are how an institu
 - The existing row's stored details (name, contact, address) are **not** returned: they may have been entered by another filer, possibly the other side.
 - The existing row is not changed. The participant snapshot uses the name sent in this request (§4.4), even if it differs from the stored name, since the PAN or CIN is the better identifier.
 - With no PAN or CIN, a new institution is always created.
+
+**Why a skip declaration:**
+A filer may choose not to give the PAN or CIN, and the form records that as an explicit choice. So an institution always has a PAN, a CIN (or both), or `pan_cin_skip_declared = true`, never none of them (`E00002` on `pan`); and the declaration cannot come with a PAN or CIN, which it contradicts (`E00001` on `pan_cin_skip_declared`). The rule is checked on every save, and before matching, since a matched row is linked without being saved. An institution declared this way has nothing to be matched by, so it is never reused.
 
 **Why an institution has its own address:**
 A company or firm named as a party is served at its registered office, which need not be the address of whoever signs for it, so it is recorded on the institution rather than reached through a linked person. Like every address, it is an immutable row (§7): a move is a new row and the FK is repointed.
@@ -194,6 +199,7 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
 | `end_date` | timestamp | NULLABLE | When participant was removed |
 | `is_party_in_person` | boolean | NOT NULL, default false | Appearing without an advocate |
+| `resides_within_jurisdiction` | boolean | NULLABLE; NOT NULL and default true for an accused, NULL for every other role (CHECK) | The filer's answer to "Does the accused reside within the jurisdiction of this court?" (BNSS s.225). A column, not `additional_details`, because scrutiny acts on it: an accused outside jurisdiction means process is postponed for inquiry |
 | `has_signed` | boolean | NOT NULL, default false | True once they have e-signed, or uploaded a signed copy of, the case filing |
 | `signature_document_id` | uuid | FK → file, nullable, ON DELETE PROTECT | The signed filing the e-sign service stored (spec 0021 §8). When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here |
 | `is_active` | boolean | NOT NULL, default true | Soft delete flag (spec 0006) |
@@ -265,10 +271,10 @@ A participant can be a natural person, a legal entity, or both: when an individu
 A stored age goes stale. `age_at_filing` is computed when the participant is added and on each edit: from the date of birth when it is known, else the stated age. When submission is built, it will be recomputed on the filing date.
 
 **Why `ordinal` is separate from `role`, and how it is kept gap-free:**
-"All accused" and "accused #2" are both queryable without parsing a combined field. The ordinal resets per role: complainant #1, complainant #2, accused #1, accused #2. While the case is a draft, removing a participant renumbers the remaining active participants of that role to 1…n, so the cause title never reads "Accused No. 1, 3 and 4". Uniqueness applies to active rows only, so a removed row keeps its old ordinal without blocking anyone. Everything that refers to a participant (a witness's caller, a representation, a mandate) uses its id, never its ordinal, so renumbering breaks no link. After submission writes are refused, so ordinals are fixed; history keeps every earlier value.
+"All accused" and "accused #2" are both queryable without parsing a combined field. The ordinal resets per role: complainant #1, complainant #2, accused #1, accused #2. While the case is a draft, removing a participant renumbers the remaining active participants of that role to 1…n, so the cause title never reads "Accused No. 1, 3 and 4". Uniqueness applies to active rows only, so a removed row keeps its old ordinal without blocking anyone. Everything that refers to a participant (a representation, a mandate, a linked document) uses its id, never its ordinal, so renumbering breaks no link. After submission writes are refused, so ordinals are fixed; history keeps every earlier value.
 
 **What removing a participant does:**
-Removal is a soft delete (`is_active = false`, `end_date = now()`). It also ends the participant's active representations (§6) and the mandates in which they are the represented party (§5); removing a POA holder ends their mandates. Removal is refused while an active witness names the participant as its caller (§4.5).
+Removal is a soft delete (`is_active = false`, `end_date = now()`). It also ends the participant's active representations (§6) and the mandates in which they are the represented party (§5); removing a POA holder ends their mandates. Witnesses are not tied to a party (§4.5), so removing a party leaves them in place.
 
 ### 4.5 Witnesses: The `witness` Table
 
@@ -281,8 +287,8 @@ Witness-specific data, one row per witness. Every witness is also a `case_partic
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | `case_participant_id` | uuid | PK, FK → case_participant, ON DELETE CASCADE | The witness's participant row (role = 'WITNESS') |
-| `called_by_participant_id` | uuid | FK → case_participant, NOT NULL | The party that calls the witness: an active COMPLAINANT or ACCUSED on the same case |
-| `what_will_witness_prove` | text | NOT NULL | What the witness's evidence will establish |
+| `side` | varchar(16) | NOT NULL, CHECK in (`COMPLAINANT`, `ACCUSED`) | Whose witness: the complainant's or the accused's. The case is the witness participant's `case_id` |
+| `what_will_witness_prove` | text | NOT NULL, default '' | What the witness's evidence will establish; optional, empty when not given |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Anything else about the witness |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
@@ -291,15 +297,15 @@ Witness-specific data, one row per witness. Every witness is also a `case_partic
 
 **Application-layer rules:**
 - `case_participant_id` must have `role = 'WITNESS'`.
-- `called_by_participant_id` must be an active COMPLAINANT or ACCUSED on the same case: not another witness, not a POA holder.
+- While active, a person cannot be a witness twice for the same side of a case.
 
 #### 4.5.3 Design Decisions
 
 **Why a separate table:**
-`called_by_participant_id` and `what_will_witness_prove` apply only to witnesses. As columns on `case_participant` they would be empty for every other role; in `additional_details` they could not be a foreign key or a required field. A table of their own keeps both enforced by the database.
+`side` and `what_will_witness_prove` apply only to witnesses. As columns on `case_participant` they would be empty for every other role; in `additional_details` `side` could not be a checked, required field. A table of their own keeps it enforced by the database.
 
-**Why `called_by_participant_id`:**
-Tracks which party called this witness, creating a clear evidence chain. A witness re-called by the opposing party is a new participant with its own `witness` row and a different caller.
+**Why `side`, not the calling party:**
+A witness is called by a side of the case, not by one complainant or accused. Recording the side is what the filing forms ask, and it does not tie the witness to a party who may later be removed or renumbered. A witness re-called by the other side is a new participant with its own `witness` row and the other side. A witness may also have a designation (their job title), kept as `case_participant.designation_at_filing`.
 
 ## 5. Power of Attorney: The `poa_mandate` Table
 
@@ -410,7 +416,7 @@ A single recorded address. Rows are **immutable snapshots**: once written, never
 | `pincode` | varchar(6) | NOT NULL | Indian postal code |
 | `district` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
 | `state` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
-| `police_station` | varchar(255) | NOT NULL | Police station with jurisdiction over the address, needed for service of notice |
+| `police_station` | varchar(255) | NOT NULL, may be blank | Police station with jurisdiction over the address, needed for service of notice. Required for accused and witness addresses, as stored (a value of only invisible characters is blank), and enforced on the participant for every writer, the admin included; complainant and POA holder addresses may leave it blank |
 | `hash` | varchar(64) | NOT NULL, UNIQUE | SHA-256 of the canonical form, see §7.4 |
 | `created_at` | timestamp | NOT NULL, default now() | Creation timestamp only, no `updated_at` |
 | `created_by` | uuid | FK → app_user, NULLABLE, ON DELETE PROTECT | Who first recorded the address; no `updated_by` |
@@ -526,7 +532,7 @@ Drafts may not have a court assigned yet. Could be tightened with a constraint: 
 
 ### 9.1 Purpose
 
-Documents filed as part of the case itself. A classification layer over the document store (spec 0014), holding only case-level documents rather than party-specific or relationship-specific ones.
+Documents filed as part of the case itself. A classification layer over the document store (spec 0014). A document belongs to the case, and may also say whose it is (`case_participant_id`) or which evidence item it supports (`case_evidence_id`).
 
 ### 9.2 Schema
 
@@ -536,8 +542,10 @@ Documents filed as part of the case itself. A classification layer over the docu
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | |
 | `document_id` | uuid | FK → document, NOT NULL, ON DELETE PROTECT | From file storage service (spec 0014) |
 | `document_type` | varchar(64) | NOT NULL | See §9.3 |
+| `case_participant_id` | uuid | FK → case_participant, NULLABLE, ON DELETE SET NULL | Whose document: an identity proof, vakalatnama or POA document (§9.3) |
+| `case_evidence_id` | uuid | FK → case_evidence, NULLABLE, ON DELETE SET NULL | The evidence item it supports: a demand notice's dispatch, delivery or reply papers (§9.3). An evidence item's own scan is linked from the evidence (`case_evidence.case_document_id`, §11) |
 | `is_active` | boolean | NOT NULL, default true | Soft delete — documents get replaced during scrutiny |
-| `additional_details` | jsonb | NOT NULL, default '{}' | Type-specific metadata |
+| `additional_details` | jsonb | NOT NULL, default '{}' | Type-specific metadata; `is_digital` (born digital, not a scan) and `display_name` (the uploader's name for it) when sent |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
 | `created_at` | timestamp | NOT NULL, auto | From BaseModel |
@@ -563,18 +571,28 @@ The `document_type` field drives upload checklists and completeness gates:
 - `VAKALATNAMA` (when an advocate represents a party)
 - `POA_DOCUMENT` (when a POA holder acts for a party)
 - `OTHER_SUPPORTING_DOCUMENT`
+- `IDENTITY_PROOF` (each complainant's)
+- `PROOF_OF_TRANSACTION` (a loan agreement, invoice or ledger behind the debt)
 
 New case types add new enums without altering the table structure.
 
-`VAKALATNAMA` and `POA_DOCUMENT` are case-level documents, not linked to a particular `representation` or `poa_mandate`: the filing UI collects signed documents only when the full set of case documents is downloaded and uploaded back, so there is no step at which a document can be tied to one advocate or one mandate. They will be linked once documents can be matched to them (for example by OCR); see §5.3 and §6.3.
+**Links.** Some types belong to a party or an evidence item, and may be linked to it:
+
+| Document type | `case_participant_id` (role) | `case_evidence_id` (evidence type) |
+|---|---|---|
+| `IDENTITY_PROOF` | COMPLAINANT | — |
+| `VAKALATNAMA`, `POA_DOCUMENT` | COMPLAINANT or ACCUSED (the party represented) | — |
+| `PROOF_OF_DISPATCH`, `PROOF_OF_DELIVERY_OF_DEMAND_NOTICE`, `REPLY_TO_DEMAND_NOTICE` | — | LEGAL_DEMAND_NOTICE |
+
+An evidence item's own scan (`BOUNCED_CHEQUE`, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE`) is not linked here but from the evidence, `case_evidence.case_document_id` (§11), so it is recorded in one place and two links can never disagree. Any other link is refused (`E07030`), before the file is stored; so is a participant of the wrong role (`E07016`), or one that is unknown, on another case or removed (`E07010`), and evidence of the wrong type (`E07029`), or unknown, on another case or removed (`E07031`). Removing a participant or an evidence item unlinks the documents linked to it; they stay on the case. The completeness check counts a per-party or per-notice document only when it is linked (spec 0021 §6.3). A vakalatnama is still linked to the party, not to one `representation`; a POA document to the represented party, not to one `poa_mandate`.
 
 ### 9.4 Design Decisions
 
 **Why `document_type` is an enum:**
 It drives the upload checklist UI and the completeness gate before preview. An unrecognized value would silently break both, so the set must be closed.
 
-**Why only case-level documents:**
-Party-specific documents (e.g., a witness's affidavit) would require adding a `case_participant_id` FK, which couples document classification to participant structure. Keep case-level documents here; consider a separate `participant_document` table if needed.
+**Why optional links on this table, not separate tables:**
+Every document is still a case document, filed and listed with the case. Two nullable foreign keys say whose it is or what it supports, which is enough for the per-complainant and per-notice checks, without a `participant_document` or `evidence_document` table for each kind. `ON DELETE SET NULL`, since participants and evidence are soft-deleted; a hard delete only drops the link.
 
 **Why `ON DELETE PROTECT` on `document_id`:**
 Deleting the underlying file should not cascade to case records. If a document must be removed from the case, set `is_active = false`.
@@ -649,7 +667,7 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | |
-| `case_document_id` | uuid | FK → case_document, NULLABLE | Links to the uploaded file |
+| `case_document_id` | uuid | FK → case_document, NULLABLE | The evidence's own scan; must be of its type: `BOUNCED_CHEQUE` for a cheque, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE` (`E07029` otherwise) |
 | `evidence_type` | varchar(64) | NOT NULL | CHEQUE, RETURN_MEMO, LEGAL_DEMAND_NOTICE, etc. |
 | `ordinal` | smallint | NOT NULL | Cheque #1, cheque #2, demand notice #1 |
 | `evidence_info` | jsonb | NOT NULL, default '{}' | Type-specific details, see §11.3 |
@@ -718,7 +736,7 @@ Supports multiple instances of the same evidence type. "Cheque #1" and "Cheque #
 If queries filter by amount (`WHERE evidence_info->>'amount' > 100000`), promote `amount` to a real `numeric(15,2)` column with an index. Same for `cheque_date` if date-range queries are common.
 
 **Why link to `case_document_id`:**
-A piece of evidence may have no uploaded file yet (entered as metadata before scanning), so the FK is nullable. When the file is uploaded, link it.
+A piece of evidence may have no uploaded file yet (entered as metadata before scanning), so the FK is nullable. When the file is uploaded, link it. The scan must be of the evidence's own type, so a proof of dispatch can never stand in for a cheque. Other papers about the evidence, such as a notice's proof of delivery, point the other way, through `case_document.case_evidence_id` (§9.3).
 
 ## 12. Migration Path
 
@@ -766,7 +784,7 @@ To add a second case type (e.g., civil suit):
 | 1 | An accused is named at filing, has never registered | `person`, `case_participant` | A new `person` with `user_id = NULL`, `verification_level = ASSERTED` |
 | 2 | That accused later registers and claims their record | `person`, `users_user` | `person.user_id` set, `verification_level = VERIFIED`. The claim flow is not part of case filing: filing only guarantees the starting state of scenario 1 |
 | 3 | A complainant files with OTP verification | `person`, `case_participant`, `users_user` | `person.user_id` set, `verification_level = VERIFIED` |
-| 4 | Witness called by complainant #1 | `case_participant`, `witness` | `case_participant.role = WITNESS`; `witness.called_by_participant_id → complainant`, `what_will_witness_prove` set |
+| 4 | Complainant's witness | `case_participant`, `witness` | `case_participant.role = WITNESS`; `witness.side = COMPLAINANT`, `what_will_witness_prove` set |
 | 5 | Power of attorney holder acts for two parties | `poa_mandate` (2 rows) | Same `poa_participant_id`, different `represented_participant_id` |
 | 6 | Advocate represents three complainants | `representation` (3 rows) | Same `advocate_id`, different `case_participant_id` |
 | 7 | Notice served to a specific address, person later moves | `address` (2 rows), `case_participant.address_id` unchanged | Immutable address preserves service record |
@@ -782,7 +800,7 @@ To add a second case type (e.g., civil suit):
 
 - `case_participant`: At least one of `person_id` or `institution_id` must be set; when both are set on an ACCUSED, `designation_at_filing` is required. Only COMPLAINANT and ACCUSED may have an `institution_id`.
 - `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. `address_id` is required except for witnesses.
-- `witness.called_by_participant_id`: An active COMPLAINANT or ACCUSED on the same case.
+- `witness`: an active person is a witness at most once per side of a case.
 - `poa_mandate`: The represented participant is an active COMPLAINANT or ACCUSED on the same case, and not the holder's own person.
 - `representation`: The client is an active COMPLAINANT or ACCUSED on the same case, not marked `is_party_in_person`, not the advocate themselves, and not on the opposite side from another active client of the same advocate.
 - `person.designation`: Only meaningful when `person.institution_id` is set.

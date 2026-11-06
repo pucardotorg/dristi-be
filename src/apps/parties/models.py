@@ -7,6 +7,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.api import errors as api_errors
 from apps.api.meta import IST_TIMEZONE
 from apps.core.models import BaseAuditableModel, BaseModel
 
@@ -41,6 +42,27 @@ pan_validator = RegexValidator(PAN_REGEX, "Enter a valid PAN, e.g. AAACA1234A.")
 # and registration number.
 CIN_REGEX = r"^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$"
 cin_validator = RegexValidator(CIN_REGEX, "Enter a valid CIN, e.g. U72200KA2010PTC052651.")
+
+PAN_CIN_REQUIRED_MESSAGE = "Enter a PAN or a CIN, or declare that neither is given."
+PAN_CIN_SKIP_CONFLICT_MESSAGE = "Leave the PAN and CIN out when declaring that neither is given."
+
+
+def pan_cin_errors(pan, cin, skip_declared):
+    """Return ``{field: error}`` when a PAN, a CIN and the skip declaration do not fit together.
+
+    An institution has a PAN, a CIN (or both), or the filer's declaration that
+    they will give neither, never none of them; and the declaration cannot come
+    with a PAN or CIN, which it contradicts. ``pan`` and ``cin`` are stored values.
+    """
+    if skip_declared and (pan or cin):
+        return {
+            "pan_cin_skip_declared": ValidationError(
+                PAN_CIN_SKIP_CONFLICT_MESSAGE, code=api_errors.INVALID.code
+            )
+        }
+    if not (skip_declared or pan or cin):
+        return {"pan": ValidationError(PAN_CIN_REQUIRED_MESSAGE, code=api_errors.REQUIRED.code)}
+    return {}
 
 
 def today_in_india():
@@ -109,17 +131,6 @@ class Relation(models.TextChoices):
     WARD_OF = "WARD_OF", "Ward of"
 
 
-class DisabilityStatus(models.TextChoices):
-    """Supported disability statuses. ``NONE`` is the default when none is given."""
-
-    NONE = "NONE", "None"
-    VISUAL = "VISUAL", "Visual"
-    HEARING = "HEARING", "Hearing"
-    MOBILITY = "MOBILITY", "Mobility"
-    COGNITIVE = "COGNITIVE", "Cognitive"
-    OTHER = "OTHER", "Other"
-
-
 class VerificationLevel(models.TextChoices):
     """How we know a person is who they claim to be (spec 0020 §2.3)."""
 
@@ -163,6 +174,9 @@ class Institution(BaseModel, BaseAuditableModel):
     cin = models.CharField(
         "CIN", max_length=21, null=True, blank=True, unique=True, validators=[cin_validator]
     )
+    # The filer ticked "We do not want to give a PAN or CIN". Then the
+    # institution has neither, and is never matched again (spec 0020 §3.4).
+    pan_cin_skip_declared = models.BooleanField("Declared no PAN or CIN", default=False)
     # Registered office: where notices to the institution are served.
     address = models.ForeignKey(
         "address.Address",
@@ -193,6 +207,14 @@ class Institution(BaseModel, BaseAuditableModel):
                 check=Q(cin__isnull=True) | Q(cin__regex=CIN_REGEX),
                 name="parties_institution_cin_valid",
             ),
+            # ``clean`` reports the same rule on its field; this guards writes
+            # that skip ``save``, such as ``update()`` and ``bulk_create``.
+            models.CheckConstraint(
+                check=Q(pan_cin_skip_declared=True, pan__isnull=True, cin__isnull=True)
+                | Q(pan_cin_skip_declared=False) & (Q(pan__isnull=False) | Q(cin__isnull=False)),
+                name="parties_institution_pan_cin_or_skip_declared",
+                violation_error_message=PAN_CIN_REQUIRED_MESSAGE,
+            ),
         ]
 
     def __str__(self):
@@ -212,6 +234,12 @@ class Institution(BaseModel, BaseAuditableModel):
         self.pan = normalize_identifier(self.pan)
         self.cin = normalize_identifier(self.cin)
         super().clean_fields(exclude=exclude)
+
+    def clean(self):
+        """Require a PAN, a CIN or the skip declaration, and not the declaration with either."""
+        super().clean()
+        if problems := pan_cin_errors(self.pan, self.cin, self.pan_cin_skip_declared):
+            raise ValidationError(problems)
 
     def save(self, *args, **kwargs):
         """Validate before every save, so no write path can skip the rules."""
@@ -269,13 +297,9 @@ class Person(BaseModel, BaseAuditableModel):
         blank=True,
         related_name="+",
     )
-    disability_status = models.CharField(
-        max_length=16,
-        choices=DisabilityStatus.choices,
-        default=DisabilityStatus.NONE,
-        # Also the column default, so a row inserted outside Django gets NONE too.
-        db_default=DisabilityStatus.NONE,
-    )
+    # Whether the person is differently abled. Also the column default, so a
+    # row inserted outside Django is False too.
+    disability_status = models.BooleanField(default=False, db_default=False)
     verification_level = models.CharField(
         max_length=16,
         choices=VerificationLevel.choices,
@@ -322,8 +346,8 @@ class Person(BaseModel, BaseAuditableModel):
         """
         self.name = _strip(self.name)
         # Not given (None or blank) means no disability.
-        if not _blank_to_none(self.disability_status):
-            self.disability_status = DisabilityStatus.NONE
+        if self.disability_status in (None, ""):
+            self.disability_status = False
         self.phone_number = _blank_to_none(self.phone_number)
         self.relative_name = _blank_to_none(self.relative_name)
         # A known date of birth replaces an approximate age.

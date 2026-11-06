@@ -24,6 +24,8 @@ from .models import (
     PoaMandate,
     Representation,
     Witness,
+    WitnessSide,
+    police_station_error,
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
 
@@ -45,6 +47,23 @@ class RejectUnknownFieldsMixin:
                 {field: [self.unknown_field_message] for field in unknown}
             )
         return super().validate(attrs)
+
+
+class PartialUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializer):
+    """Base body of a PATCH: any declared field, at least one, and nothing else.
+
+    A field left out is kept. The views take JSON only, so a field left out is
+    never read as an empty form value.
+    """
+
+    unknown_field_message = "This field cannot be changed."
+
+    def validate(self, attrs):
+        """Require at least one change."""
+        attrs = super().validate(attrs)
+        if not attrs:
+            raise api_errors.REQUIRED.validation_error("Send at least one field to change.")
+        return attrs
 
 
 def _require_each_once(ids):
@@ -116,6 +135,15 @@ class CaseDocumentUploadSerializer(serializers.Serializer):
 
     file = UploadField()
     document_type = serializers.ChoiceField(choices=DocumentType.choices)
+    # Whose document it is, or which evidence item it supports; checked against
+    # the document type when saving.
+    case_participant_id = serializers.UUIDField(required=False)
+    case_evidence_id = serializers.UUIDField(required=False)
+    # Kept in the document's additional_details. allow_null, so a multipart
+    # form that leaves it out sends nothing rather than False.
+    is_digital = serializers.BooleanField(required=False, allow_null=True)
+    # Blank means none, as on PATCH.
+    display_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
     def validate_file(self, upload):
         """Accept a real PDF, JPEG or PNG within the size limit.
@@ -130,12 +158,39 @@ class CaseDocumentUploadSerializer(serializers.Serializer):
         return upload
 
 
+class CaseDocumentUpdateSerializer(PartialUpdateSerializer):
+    """Body of PATCH /case-documents/{id} (spec 0021 §3.3).
+
+    The file and the document type cannot change. ``null`` removes a link or a
+    detail.
+    """
+
+    case_participant_id = serializers.UUIDField(required=False, allow_null=True)
+    case_evidence_id = serializers.UUIDField(required=False, allow_null=True)
+    is_digital = serializers.BooleanField(required=False, allow_null=True)
+    display_name = serializers.CharField(
+        max_length=255, required=False, allow_null=True, allow_blank=True
+    )
+
+
 class CaseDocumentSerializer(serializers.ModelSerializer):
-    """A case document with its file's metadata."""
+    """A case document with its file's metadata and links."""
 
     case_document_id = serializers.UUIDField(source="id", read_only=True)
     file_name = serializers.CharField(source="document.file_name", read_only=True)
     file_size = serializers.IntegerField(source="document.file_size", read_only=True)
+    is_digital = serializers.SerializerMethodField()
+    display_name = serializers.SerializerMethodField()
+
+    @extend_schema_field(serializers.BooleanField(allow_null=True))
+    def get_is_digital(self, document):
+        """Return whether the uploader said the file was born digital, or ``None``."""
+        return document.additional_details.get("is_digital")
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_display_name(self, document):
+        """Return the name the uploader gave the document, or ``None``."""
+        return document.additional_details.get("display_name")
 
     class Meta:
         """Meta options."""
@@ -146,8 +201,12 @@ class CaseDocumentSerializer(serializers.ModelSerializer):
             "case_document_id",
             "document_id",
             "document_type",
+            "case_participant_id",
+            "case_evidence_id",
             "file_name",
             "file_size",
+            "is_digital",
+            "display_name",
             "created_at",
         ]
         read_only_fields = fields
@@ -164,7 +223,7 @@ class EvidenceCreateSerializer(serializers.Serializer):
     evidence_info = serializers.DictField()
 
 
-class EvidenceUpdateSerializer(serializers.Serializer):
+class EvidenceUpdateSerializer(PartialUpdateSerializer):
     """Body of PATCH /case-evidence/{id}: either field, or both.
 
     ``case_document_id`` links an uploaded document to the evidence, or unlinks
@@ -174,12 +233,6 @@ class EvidenceUpdateSerializer(serializers.Serializer):
 
     evidence_info = serializers.DictField(required=False)
     case_document_id = serializers.UUIDField(required=False, allow_null=True)
-
-    def validate(self, attrs):
-        """Require at least one change."""
-        if not attrs:
-            raise serializers.ValidationError("Send evidence_info, case_document_id, or both.")
-        return attrs
 
 
 class CaseEvidenceSerializer(serializers.ModelSerializer):
@@ -233,6 +286,8 @@ class CaseTypeDescriptionSerializer(serializers.Serializer):
     document_types = CodeLabelSerializer(many=True)
     # Codes that must each be uploaded before the case can be submitted.
     required_document_types = serializers.ListField(child=serializers.CharField())
+    # Codes that must each have at least one active evidence item.
+    required_evidence_types = serializers.ListField(child=serializers.CharField())
     evidence_types = EvidenceTypeDescriptionSerializer(many=True)
 
 
@@ -259,7 +314,9 @@ class AddressInputSerializer(serializers.Serializer):
     pincode = serializers.CharField(max_length=16)
     district = serializers.CharField(max_length=100)
     state = serializers.CharField(max_length=100)
-    police_station = serializers.CharField(max_length=255)
+    # Optional here; ``models.police_station_error`` requires it for an accused
+    # or a witness.
+    police_station = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
 
 class PersonInputSerializer(serializers.ModelSerializer):
@@ -278,6 +335,7 @@ class PersonInputSerializer(serializers.ModelSerializer):
             "gender",
             "relation",
             "relative_name",
+            "disability_status",
         ]
 
 
@@ -287,6 +345,8 @@ class InstitutionInputSerializer(serializers.ModelSerializer):
     PAN and CIN are not checked for uniqueness: an existing institution with
     either is reused rather than refused (spec 0020 §3.4). Their format is
     checked by the model, after spaces are removed and letters uppercased.
+    One of them, or ``pan_cin_skip_declared``, is required, and the
+    declaration cannot come with either (``parties.models.pan_cin_errors``).
     """
 
     pan = serializers.CharField(required=False, allow_null=True, allow_blank=True)
@@ -296,7 +356,15 @@ class InstitutionInputSerializer(serializers.ModelSerializer):
         """Meta options."""
 
         model = Institution
-        fields = ["entity_type", "entity_name", "pan", "cin", "contact_number", "email_address"]
+        fields = [
+            "entity_type",
+            "entity_name",
+            "pan",
+            "cin",
+            "pan_cin_skip_declared",
+            "contact_number",
+            "email_address",
+        ]
 
 
 class PartySerializer(serializers.Serializer):
@@ -333,6 +401,8 @@ class ParticipantCreateSerializer(PartySerializer):
     institution = InstitutionInputSerializer(required=False)
     designation = serializers.CharField(max_length=128, required=False, allow_null=True)
     is_party_in_person = serializers.BooleanField(default=False)
+    # Accused only; yes when left out.
+    resides_within_jurisdiction = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
         """Check the fields that only make sense together, for the role being added."""
@@ -363,8 +433,14 @@ class ParticipantCreateSerializer(PartySerializer):
             problems["designation"] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, DESIGNATION_NOT_ALLOWED_MESSAGE)
             ]
+        if "resides_within_jurisdiction" in attrs and role != ParticipantRole.ACCUSED:
+            problems["resides_within_jurisdiction"] = [
+                errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")
+            ]
         if "address" not in attrs:
             problems["address"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
+        elif problem := police_station_error(role, attrs["address"]):
+            problems["address"] = problem
         if problems:
             raise serializers.ValidationError(problems)
         return attrs
@@ -393,13 +469,22 @@ class IndividualPartySerializer(RejectUnknownFieldsMixin, PartySerializer):
 class WitnessCreateSerializer(IndividualPartySerializer):
     """Body of POST /cases/{id}/witnesses (spec 0021 §4.3).
 
-    The address is optional. ``additional_details`` is stored on the witness
-    row. Whether the caller is an active party of the case is checked when
-    saving.
+    ``side`` says whether the complainant or the accused calls the witness.
+    The address is optional, but needs a police station when given.
+    ``designation`` is the witness's job title, kept on the participant.
+    ``additional_details`` is stored on the witness row.
     """
 
-    called_by_participant_id = serializers.UUIDField()
-    what_will_witness_prove = serializers.CharField()
+    side = serializers.ChoiceField(choices=WitnessSide.choices)
+    what_will_witness_prove = serializers.CharField(required=False, allow_blank=True)
+    designation = serializers.CharField(max_length=128, required=False, allow_null=True)
+
+    def validate(self, attrs):
+        """Require a police station on an address that is given."""
+        attrs = super().validate(attrs)
+        if problem := police_station_error(ParticipantRole.WITNESS, attrs.get("address")):
+            raise serializers.ValidationError({"address": problem})
+        return attrs
 
 
 class PoaHolderCreateSerializer(IndividualPartySerializer):
@@ -509,15 +594,14 @@ class RepresentationSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class ParticipantUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializer):
+class ParticipantUpdateSerializer(PartialUpdateSerializer):
     """Body of PATCH /case-participants/{id} (spec 0021 §4.1).
 
     Changes only the case's copy of the party's details; the person and
-    institution rows are never changed. Any of the fields may be sent, and
-    nothing else: the role, person and institution cannot change.
+    institution rows are never changed. The role and person cannot change.
+    ``institution`` re-links an institution participant to the one its PAN or
+    CIN names (spec 0021 §4.1).
     """
-
-    unknown_field_message = "This field cannot be changed."
 
     name_at_filing = serializers.CharField(max_length=256, required=False)
     phone_number_at_filing = serializers.CharField(max_length=20, required=False, allow_null=True)
@@ -530,17 +614,13 @@ class ParticipantUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializ
     designation_at_filing = serializers.CharField(max_length=128, required=False, allow_null=True)
     address = AddressInputSerializer(required=False)
     is_party_in_person = serializers.BooleanField(required=False)
+    resides_within_jurisdiction = serializers.BooleanField(required=False)
     additional_details = serializers.DictField(required=False)
+    # Institution participants only.
+    institution = InstitutionInputSerializer(required=False)
     # Witnesses only (spec 0021 §4.3); they change the witness row.
-    called_by_participant_id = serializers.UUIDField(required=False)
-    what_will_witness_prove = serializers.CharField(required=False)
-
-    def validate(self, attrs):
-        """Require at least one change."""
-        attrs = super().validate(attrs)
-        if not attrs:
-            raise api_errors.REQUIRED.validation_error("Send at least one field to change.")
-        return attrs
+    side = serializers.ChoiceField(choices=WitnessSide.choices, required=False)
+    what_will_witness_prove = serializers.CharField(required=False, allow_blank=True)
 
 
 class WitnessSerializer(serializers.ModelSerializer):
@@ -550,7 +630,7 @@ class WitnessSerializer(serializers.ModelSerializer):
         """Meta options."""
 
         model = Witness
-        fields = ["called_by_participant_id", "what_will_witness_prove", "additional_details"]
+        fields = ["side", "what_will_witness_prove", "additional_details"]
         read_only_fields = fields
 
 
@@ -583,6 +663,7 @@ class CaseParticipantSerializer(serializers.ModelSerializer):
             "designation_at_filing",
             "address_id",
             "is_party_in_person",
+            "resides_within_jurisdiction",
             "additional_details",
             "witness",
             "has_signed",
