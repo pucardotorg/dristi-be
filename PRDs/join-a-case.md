@@ -141,7 +141,7 @@ the prototype.
 | --- | --- | --- |
 | `JOIN-07` | The user has an account and is signed in | If not, account creation happens first |
 | `JOIN-08` | The case exists in the system | If the case is not yet in the system, the lookup returns no result and the user is told to check their papers |
-| `JOIN-08a` | The case has been registered | **[OWNER]** Registration is the hard cut-off: a case cannot be joined before it is registered, whatever stage it is at (pending signature, pending payment, at scrutiny) |
+| `JOIN-08a` | The case has been registered | **[OWNER]** Registration is the **hard cut-off**: a case cannot be joined before it is registered, whatever stage it is at (pending signature, pending payment, at scrutiny) |
 | `JOIN-09` | The user has the six-digit access code | Printed on the summons; parties who have already joined the case can also share it |
 
 ---

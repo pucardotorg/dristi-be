@@ -439,8 +439,8 @@ Repeats per demand notice.
 
 | ID | Field | Type | Validation | Logic |
 | --- | --- | --- | --- | --- |
-| LDN-1 | Nature of debt/liability | Dropdown, MDMS, including **Other** | — | Always visible. Tooltip: purpose/underlying transaction for the cheque |
-| LDN-1a | Nature of debt/liability — other | Text | — | **[OWNER]** Visible only when LDN-1 is Other. Kept as its own field, not written into LDN-1, so the dropdown values stay queryable |
+| LDN-1 | Nature of debt/liability | Dropdown, MDMS, including Other | — | Always visible. Tooltip: purpose/underlying transaction for the cheque |
+| LDN-1a | Nature of debt/liability — other | Text | — | **[OWNER]** Visible only when `LDN-1` is Other. Kept as its own field, not written into `LDN-1`, so the dropdown values stay queryable |
 | LDN-2 | Date of dispatch of demand notice | Date picker | **[OWNER]** at least one cheque's date of return (CHQ-9) must be **on or before** the dispatch date. **[OWNER]** **Warning, never a block,** if the dispatch date is **more than 30 days after the date of return** (CHQ-9) of every cheque returned on or before it: *"Demand notice not issued within 30 days of the return of the cheque as unpaid."* The same check is shown to the court at cognizance ([cognizance cheat sheet](cognizance-cheat-sheet.md), row 6) | — |
 | LDN-3 | Mode of service | Dropdown, MDMS | — | — |
 | LDN-4 | Tracking number | Text | Optional | Tooltip: used to track delivery |
