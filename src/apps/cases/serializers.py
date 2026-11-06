@@ -21,7 +21,6 @@ from .models import (
     NAME_REQUIRED_MESSAGE,
     PERMANENT_ADDRESS_MESSAGE,
     WITNESS_NAME_OR_DESIGNATION_MESSAGE,
-    WITNESS_PHONE_REQUIRED_MESSAGE,
     Case,
     CaseDocument,
     CaseEvidence,
@@ -558,8 +557,8 @@ class WitnessCreateSerializer(IndividualPartySerializer):
     ``side`` says whether the complainant or the accused calls the witness.
     The address is required, with a police station. ``designation`` is the
     witness's job title, kept on the participant; a named person needs a name
-    or a designation, and a mobile number. ``additional_details`` is stored on
-    the witness row.
+    or a designation. The mobile number is optional. ``additional_details`` is
+    stored on the witness row.
     """
 
     person_name_required = False
@@ -569,22 +568,14 @@ class WitnessCreateSerializer(IndividualPartySerializer):
     designation = serializers.CharField(max_length=128, required=False, allow_null=True)
 
     def validate(self, attrs):
-        """Require a name or designation, a mobile number, and an address with a police station."""
+        """Require a name or designation, and an address with a police station."""
         attrs = super().validate(attrs)
         problems = {}
         person = attrs.get("person")
-        if person is not None:
-            person_problems = {}
-            if not (person.get("name") or attrs.get("designation")):
-                person_problems["name"] = [
-                    errors.coded(api_errors.REQUIRED, WITNESS_NAME_OR_DESIGNATION_MESSAGE)
-                ]
-            if not person.get("phone_number"):
-                person_problems["phone_number"] = [
-                    errors.coded(api_errors.REQUIRED, WITNESS_PHONE_REQUIRED_MESSAGE)
-                ]
-            if person_problems:
-                problems["person"] = person_problems
+        if person is not None and not (person.get("name") or attrs.get("designation")):
+            problems["person"] = {
+                "name": [errors.coded(api_errors.REQUIRED, WITNESS_NAME_OR_DESIGNATION_MESSAGE)]
+            }
         if "address" not in attrs:
             problems["address"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
         elif problem := police_station_error(ParticipantRole.WITNESS, attrs["address"]):

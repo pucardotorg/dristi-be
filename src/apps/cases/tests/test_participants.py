@@ -927,13 +927,13 @@ class TestAddWitness:
         assert response.status_code == 400
         assert error_codes(response) == {"person.name": ["E00002"]}
 
-    def test_a_witness_needs_a_mobile_number(self, client, draft):
+    def test_the_mobile_number_is_optional(self, client, draft):
         person = {key: value for key, value in PERSON.items() if key != "phone_number"}
 
         response = add_witness(client, draft, person=person)
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"person.phone_number": ["E00002"]}
+        assert response.status_code == 201, response.json()
+        assert response.json()["phone_number_at_filing"] is None
 
     def test_a_witness_needs_an_address(self, client, draft):
         response = client.post(
@@ -1039,20 +1039,17 @@ class TestWitnessUpdate:
         assert response.status_code == 200, response.json()
         assert response.json()["name_at_filing"] is None
 
-    @pytest.mark.parametrize(
-        ("change", "field"),
-        [
-            ({"name_at_filing": None}, "name_at_filing"),
-            ({"phone_number_at_filing": None}, "phone_number_at_filing"),
-        ],
-    )
-    def test_a_witness_keeps_a_name_or_designation_and_a_mobile_number(
-        self, client, witness, change, field
-    ):
-        response = patch(client, witness["case_participant_id"], change)
+    def test_a_witness_keeps_a_name_or_designation(self, client, witness):
+        response = patch(client, witness["case_participant_id"], {"name_at_filing": None})
 
         assert response.status_code == 400
-        assert error_codes(response) == {field: ["E00002"]}
+        assert error_codes(response) == {"name_at_filing": ["E00002"]}
+
+    def test_the_mobile_number_may_be_cleared(self, client, witness):
+        response = patch(client, witness["case_participant_id"], {"phone_number_at_filing": None})
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["phone_number_at_filing"] is None
 
     def test_witness_fields_are_refused_for_other_roles(self, client, draft, witness):
         complainant = listing(client, draft, role="COMPLAINANT")["results"][0]
@@ -1779,6 +1776,18 @@ class TestPermanentAddress:
         Person.objects.filter(pk=body["person_id"]).update(user=other_user)
         advocate = make_advocate(make_user, user=user)
         add_advocate(client, draft, advocate.pk, [body["case_participant_id"]])
+
+        response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
+
+        assert response.status_code == 200, response.json()
+        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
+
+    def test_patch_lets_a_filing_complainant_change_a_co_complainants(
+        self, client, other_user, draft
+    ):
+        add(client, draft, self=True)
+        body = add_complainant(client, draft, name="Anita Kumar")
+        Person.objects.filter(pk=body["person_id"]).update(user=other_user)
 
         response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
 

@@ -318,12 +318,16 @@ def _may_change_person(participant, user):
     """Return whether ``user`` may change the participant's person row.
 
     Anyone filing the case may, until the person registers and claims the row;
-    then only that user, or an advocate actively representing the participant.
+    then only that user, an advocate actively representing the participant, or
+    a filer who is themselves an active complainant on the case.
     """
     owner_id = participant.person.user_id
     return (
         owner_id in (None, user.pk)
         or participant.representations.active().filter(advocate__user=user).exists()
+        or CaseParticipant.objects.active()
+        .filter(case_id=participant.case_id, role=ParticipantRole.COMPLAINANT, person__user=user)
+        .exists()
     )
 
 

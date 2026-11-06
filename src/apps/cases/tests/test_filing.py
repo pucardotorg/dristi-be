@@ -453,7 +453,7 @@ class TestValidate:
         witness = add_witness(client, draft).json()
         # Stored another way than the API, which refuses each of these.
         CaseParticipant.objects.filter(pk=witness["case_participant_id"]).update(
-            name_at_filing=None, phone_number_at_filing=None, address=None
+            name_at_filing=None, address=None
         )
 
         body = validate(client, draft)
@@ -461,7 +461,6 @@ class TestValidate:
         field = f"participants.{witness['case_participant_id']}"
         assert body["errors"] == [
             {"field": field, "message": "Witness #1 has no name or designation."},
-            {"field": field, "message": "Witness #1 has no mobile number."},
             {"field": field, "message": "Witness #1 has no address."},
         ]
 

@@ -169,7 +169,6 @@ def police_station_error(role, address):
 ADDRESS_REQUIRED_MESSAGE = "An address for service of notice is required for this role."
 NAME_REQUIRED_MESSAGE = "A name is required for this role."
 WITNESS_NAME_OR_DESIGNATION_MESSAGE = "Enter the witness's name or designation."
-WITNESS_PHONE_REQUIRED_MESSAGE = "A mobile number is required for a witness."
 POLICE_STATION_REQUIRED_MESSAGE = "A police station is required for this role's address."
 INSTITUTION_ROLE_MESSAGE = "Only a complainant or an accused may be an institution."
 DESIGNATION_REQUIRED_MESSAGE = (
@@ -181,7 +180,8 @@ INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE = "Only for an institution."
 COMPLAINANT_ONLY_MESSAGE = "Only for a complainant."
 PERMANENT_ADDRESS_MESSAGE = "Only for an individual complainant or a POA holder."
 PERSON_OF_ANOTHER_USER_MESSAGE = (
-    "This person has registered; only they or their advocate can change their details."
+    "This person has registered; only they, their advocate or a complainant filing the case "
+    "can change their details."
 )
 EMPTY_TEXT_MESSAGE = "Enter some text; the editor content is empty."
 INSTITUTION_NAMES_DIFFER_MESSAGE = (
@@ -403,8 +403,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
         Every role needs an address for service of notice, and an accused's or
         witness's address needs a police station. Every role but a witness
-        needs a name; a witness needs a name or a designation, and a mobile
-        number. An
+        needs a name; a witness needs a name or a designation. An
         institution's name is recorded exactly when there is one, and only a
         complainant has a party-in-person affidavit. While
         active, a person or an institution cannot hold one role twice on a
@@ -420,10 +419,6 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             if not (self.name_at_filing or self.designation_at_filing):
                 errors["name_at_filing"] = _rule_error(
                     api_errors.REQUIRED, WITNESS_NAME_OR_DESIGNATION_MESSAGE
-                )
-            if not self.phone_number_at_filing:
-                errors["phone_number_at_filing"] = _rule_error(
-                    api_errors.REQUIRED, WITNESS_PHONE_REQUIRED_MESSAGE
                 )
         elif not self.name_at_filing:
             errors["name_at_filing"] = _rule_error(api_errors.REQUIRED, NAME_REQUIRED_MESSAGE)

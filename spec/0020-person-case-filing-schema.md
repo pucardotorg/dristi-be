@@ -102,7 +102,7 @@ Identity verification is a spectrum. The `verification_level` field records how 
 The current schema permits duplicate persons with the same name and no phone number. Matching logic is implemented at the application layer, and is deliberately narrow:
 - The only `person` a party write reuses is the **filer's own**: when the filer adds themselves (`"self": true`, spec 0021 §4.1), their `person` is fetched by `user_id`, or created from their account at `VERIFIED` if they have none yet. A client never sends another person's id, so a filer cannot attach, or read back, someone else's record.
 - Every other party gets a **new** row at `ASSERTED`, with no attempt to match by name or phone.
-- The `person` row holds current data and may change; what a case must keep is its own copy, the participant's `*_at_filing` snapshot (§4.4), which only the case's own writes change. Today a party write changes one thing on the person: an individual complainant's or POA holder's `permanent_address`, which has no snapshot, on create and on PATCH, also when the person is the filer (`"self": true`). A person another user has registered and claimed is changed only by that user, or by an advocate filing the case who actively represents them.
+- The `person` row holds current data and may change; what a case must keep is its own copy, the participant's `*_at_filing` snapshot (§4.4), which only the case's own writes change. Today a party write changes one thing on the person: an individual complainant's or POA holder's `permanent_address`, which has no snapshot, on create and on PATCH, also when the person is the filer (`"self": true`). A person another user has registered and claimed is changed only by that user, by an advocate filing the case who actively represents them, or by a filer who is an active complainant on the case.
 - `permanent_address` is the same address row as `correspondence_address` (the request's `address`) unless the write sends a different `permanent_address`, which is then stored as its own row. Only an individual complainant or POA holder has one.
 - Duplicate asserted records resolve when the person registers and claims their row (a separate flow, not part of case filing).
 
@@ -234,7 +234,7 @@ Date of birth is optional when filing: a party may be added with only an approxi
 **Application-layer rules:**
 - The same person cannot be both a complainant and an accused on one case, nor hold the same role twice on it (while active). A complainant may also be the POA holder for a co-complainant (§5).
 - `address_id` is required for every role: notices and summons must be served somewhere, witnesses included.
-- `name_at_filing` is required for COMPLAINANT, ACCUSED and POA_HOLDER. A witness is often known only by their post ("Branch manager, SBI Kottayam"), so a witness needs a `name_at_filing` or a `designation_at_filing`, and a `phone_number_at_filing`. Witnesses are optional; these apply to each witness who is added. The completeness check (spec 0021 §6.3) checks them again.
+- `name_at_filing` is required for COMPLAINANT, ACCUSED and POA_HOLDER. A witness is often known only by their post ("Branch manager, SBI Kottayam"), so a witness needs a `name_at_filing` or a `designation_at_filing`; their phone number is optional. Witnesses are optional; these apply to each witness who is added. The completeness check (spec 0021 §6.3) checks them again.
 
 ### 4.3 Role-Specific `additional_details`
 
@@ -811,7 +811,7 @@ To add a second case type (e.g., civil suit):
 ### 14.1 Application-Layer Checks
 
 - `case_participant`: At least one of `person_id` or `institution_id` must be set; when both are set on an ACCUSED, `designation_at_filing` is required. Only COMPLAINANT and ACCUSED may have an `institution_id`.
-- `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. `address_id` is required for every role. `name_at_filing` is required except for a witness, who needs it or `designation_at_filing`, and `phone_number_at_filing`.
+- `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. `address_id` is required for every role. `name_at_filing` is required except for a witness, who needs it or `designation_at_filing`.
 - `witness`: an active person is a witness at most once per side of a case.
 - `poa_mandate`: The represented participant is an active COMPLAINANT or ACCUSED on the same case, and not the holder's own person.
 - `representation`: The client is an active COMPLAINANT or ACCUSED on the same case, not marked `is_party_in_person`, not the advocate themselves, and not on the opposite side from another active client of the same advocate.
