@@ -208,7 +208,7 @@ if all([S3_API_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY]):
 # S3-compatible bucket above once S3_* is configured.
 STORAGES["files"] = STORAGES["default"]
 
-FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=10 * 1024 * 1024)
+FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=15 * 1024 * 1024)
 FILE_MAX_COUNT_PER_UPLOAD = env.int("FILE_MAX_COUNT_PER_UPLOAD", default=10)
 FILE_MAX_READ_BYTES = env.int("FILE_MAX_READ_BYTES", default=FILE_MAX_SIZE_BYTES)
 # User that background/system uploads are attributed to (spec 0014 #10): the
@@ -244,7 +244,6 @@ PDF_TASK_TIME_LIMIT_MS = env.int("PDF_TASK_TIME_LIMIT_MS", default=600000)
 # Signing primitives consumed by eSign (spec 0016 #14).
 PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
 PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
-PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=FILE_MAX_SIZE_BYTES)
 # Service credentials external API mappings may reference by name, e.g.
 # {"hrms": {"Authorization": "Bearer ..."}}. Configure in code or via the
 # environment-specific settings module; never stored on jobs.
@@ -566,6 +565,7 @@ CDAC_ESIGN_RESPONSE_FIELD = env("CDAC_ESIGN_RESPONSE_FIELD", default="")
 # module tells the ESP about is the one the PDF Service digests with.
 PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
 PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
+# Keep at or above FILE_MAX_SIZE_BYTES, or an accepted upload cannot be signed.
 PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=20971520)
 
 

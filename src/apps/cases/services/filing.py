@@ -38,6 +38,7 @@ from ..models import (
     ParticipantRole,
     PoaMandate,
     Representation,
+    has_visible_text,
     scan_type_message,
 )
 from ..serializers import CasePreviewSerializer
@@ -47,6 +48,7 @@ from .case_types import (
     EvidenceType,
     get_config,
     schema_errors,
+    section_errors,
 )
 from .services import (
     PREVIEW_TTL_SECONDS,
@@ -184,6 +186,21 @@ def validation_errors(case):
     if not participants.filter(role=ParticipantRole.ACCUSED).exists():
         error("participants.accused", "At least one active accused is required.")
 
+    # Writes already check these; a rule tightened since then is caught here.
+    # Witnesses are optional, but one who is added needs a name or designation,
+    # and an address; every other party needs a name.
+    for participant in participants.order_by(*PARTICIPANT_ORDERING):
+        field = f"participants.{participant.id}"
+        label = f"{participant.get_role_display()} #{participant.ordinal}"
+        if participant.role != ParticipantRole.WITNESS:
+            if not participant.name_at_filing:
+                error(field, f"{label} has no name.")
+            continue
+        if not (participant.name_at_filing or participant.designation_at_filing):
+            error(field, f"{label} has no name or designation.")
+        if not participant.address_id:
+            error(field, f"{label} has no address.")
+
     represented = set(
         Representation.objects.active().filter(case=case).values_list("case_participant", flat=True)
     )
@@ -194,6 +211,19 @@ def validation_errors(case):
                 f"Complainant #{complainant.ordinal} has no advocate and is not marked "
                 "as party-in-person.",
             )
+        if complainant.is_party_in_person and not has_visible_text(
+            complainant.party_in_person_affidavit
+        ):
+            error(
+                f"participants.{complainant.id}",
+                f"Complainant #{complainant.ordinal} appears in person but has no "
+                "party-in-person affidavit.",
+            )
+
+    # Writes refuse empty editor output; this also catches what reached the
+    # database another way (the admin, a shell).
+    if not has_visible_text(case.affidavit):
+        error("affidavit", "The affidavit is required.")
 
     documents = list(
         CaseDocument.objects.active()
@@ -289,7 +319,7 @@ def validation_errors(case):
 
     # An unsaved section is still ``{}``, which fails its required fields here.
     for section, data in get_detail_sections(case).items():
-        for problem in schema_errors(config.section_schemas[section], data):
+        for problem in section_errors(config, section, data):
             error(f"details.{section}", str(problem))
     return problems
 

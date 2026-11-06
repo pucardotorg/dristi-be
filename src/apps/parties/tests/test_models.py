@@ -226,17 +226,15 @@ class TestInstitution:
         assert institution.pan is None
         assert institution.cin is None
 
-    def test_a_pan_a_cin_or_the_declaration_is_required(self):
-        with pytest.raises(ValidationError) as exc:
-            make_institution(pan_cin_skip_declared=False)
+    def test_an_institution_may_have_none_of_the_three(self):
+        """An accused institution: only a complainant's party write requires one."""
+        institution = make_institution(pan_cin_skip_declared=False)
 
-        assert exc.value.error_dict["pan"][0].code == "E00002"
-
-    def test_the_database_refuses_none_of_the_three(self):
-        institution = make_institution(pan="AAACA1234A")
-
-        with pytest.raises(IntegrityError), transaction.atomic():
-            Institution.objects.filter(pk=institution.pk).update(pan=None)
+        assert (institution.pan, institution.cin, institution.pan_cin_skip_declared) == (
+            None,
+            None,
+            False,
+        )
 
     def test_the_database_refuses_the_declaration_with_a_pan(self):
         institution = make_institution(pan="AAACA1234A")
@@ -357,11 +355,11 @@ class TestRulesOnEveryWrite:
         assert Institution.objects.count() == 0
 
     @pytest.mark.parametrize("blank", ["", "   "])
-    def test_person_name_cannot_be_blank(self, blank):
-        with pytest.raises(ValidationError) as exc:
-            Person(name=blank).full_clean()
+    def test_a_blank_person_name_is_stored_as_none(self, blank):
+        """Optional on the person: each case role decides whether a name is needed."""
+        person = Person.objects.create(name=blank)
 
-        assert "name" in exc.value.message_dict
+        assert person.name is None
 
     @pytest.mark.parametrize("blank", ["", "   "])
     def test_institution_name_cannot_be_blank(self, blank):

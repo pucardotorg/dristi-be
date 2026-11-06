@@ -1,11 +1,14 @@
 """Cases, participants, witnesses, POA mandates, representations, documents, evidence (spec 0020)."""
 
+from html import unescape
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from apps.address.models import normalize_field
 from apps.api import errors as api_errors
@@ -23,6 +26,7 @@ from .services.case_types import (
     EvidenceType,
     get_config,
     schema_errors,
+    section_errors,
 )
 
 
@@ -79,6 +83,9 @@ class Case(BaseModel, BaseAuditableModel):
     )
     filed_at = models.DateTimeField(null=True, blank=True)
     registered_at = models.DateTimeField(null=True, blank=True)
+    # The sworn affidavit filed with the complaint: rich-text editor output,
+    # stored as sent and sanitized wherever it is rendered.
+    affidavit = models.TextField(null=True, blank=True)
 
     class Meta(BaseModel.Meta):
         """Meta options."""
@@ -160,15 +167,33 @@ def police_station_error(role, address):
 # Each rule raises its message with the API code it is reported as (spec 0021
 # §10), which the project error handler keeps.
 ADDRESS_REQUIRED_MESSAGE = "An address for service of notice is required for this role."
+NAME_REQUIRED_MESSAGE = "A name is required for this role."
+WITNESS_NAME_OR_DESIGNATION_MESSAGE = "Enter the witness's name or designation."
 POLICE_STATION_REQUIRED_MESSAGE = "A police station is required for this role's address."
 INSTITUTION_ROLE_MESSAGE = "Only a complainant or an accused may be an institution."
 DESIGNATION_REQUIRED_MESSAGE = (
     "Enter the designation of the person acting for the accused institution."
 )
 DESIGNATION_NOT_ALLOWED_MESSAGE = "Only for a person acting for an institution."
+INSTITUTION_DETAILS_REQUIRED_MESSAGE = "Required for an institution."
+INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE = "Only for an institution."
+COMPLAINANT_ONLY_MESSAGE = "Only for a complainant."
+PERMANENT_ADDRESS_MESSAGE = "Only for an individual complainant or a POA holder."
+PERSON_OF_ANOTHER_USER_MESSAGE = (
+    "This person has registered; only they, their advocate or a complainant filing the case "
+    "can change their details."
+)
+EMPTY_TEXT_MESSAGE = "Enter some text; the editor content is empty."
+INSTITUTION_NAMES_DIFFER_MESSAGE = (
+    "For an institution with no person acting for it, this must equal name_at_filing."
+)
 PARTY_ROLE_MESSAGE = "Must be a complainant or an accused."
 RESIDES_WITHIN_JURISDICTION_MESSAGE = (
     "Whether the party resides within the court's jurisdiction is recorded for an accused only."
+)
+CONTACT_UNKNOWN_MESSAGE = (
+    "Declare the accused's contact details unknown only for an accused with no phone "
+    "number or email."
 )
 SAME_CASE_MESSAGE = "Must be a participant of the same case."
 ACTIVE_PARTICIPANT_MESSAGE = "Must be an active participant."
@@ -205,6 +230,15 @@ POA_MANDATE_ORDERING = (
 )
 REPRESENTATION_ORDERING = ("case_participant__role", "case_participant__ordinal", "from_date")
 EVIDENCE_ORDERING = ("evidence_type", "ordinal")
+
+
+def has_visible_text(html):
+    """Return whether rich-text editor output shows any text once rendered.
+
+    An editor emits markup even when empty (``<p><br></p>``, ``<p>&nbsp;</p>``),
+    so a non-blank string is not enough.
+    """
+    return bool(html and unescape(strip_tags(html)).strip())
 
 
 def _rule_error(error, message):
@@ -254,8 +288,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     )
     role = models.CharField(max_length=32, choices=ParticipantRole.choices)
     ordinal = models.PositiveSmallIntegerField()
-    # The person's name, or the institution's when there is no person.
-    name_at_filing = models.CharField(max_length=256)
+    # The person's name, or the institution's when there is no person. Every
+    # role but a witness needs one; a witness may be named by designation alone.
+    name_at_filing = models.CharField(max_length=256, null=True, blank=True)
     # 20 wide so an institution's landline fits.
     phone_number_at_filing = models.CharField(max_length=20, null=True, blank=True)
     gender_at_filing = models.CharField(max_length=32, null=True, blank=True)
@@ -263,6 +298,11 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         null=True, blank=True, validators=[MaxValueValidator(MAX_AGE)]
     )
     designation_at_filing = models.CharField(max_length=128, null=True, blank=True)
+    # The person's, or the institution's when there is no person.
+    email_at_filing = models.EmailField(max_length=256, null=True, blank=True)
+    # Set exactly when there is an institution: its name as the filer entered
+    # it, which may differ from a reused institution's stored one.
+    entity_name_at_filing = models.CharField(max_length=256, null=True, blank=True)
     # The address for service of notice.
     address = models.ForeignKey(
         "address.Address",
@@ -279,6 +319,12 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     # this court?" (BNSS s.225): yes by default for an accused, empty for every
     # other role. The court decides jurisdiction on the facts.
     resides_within_jurisdiction = models.BooleanField(null=True, blank=True)
+    # A complainant's request to appear in person: rich-text editor output,
+    # stored as sent and sanitized wherever it is rendered.
+    party_in_person_affidavit = models.TextField(null=True, blank=True)
+    # The filer's declaration that they do not know the accused's phone number
+    # or email (PRD ACC-6/7), made instead of giving one. Accused only.
+    contact_details_unknown_declared = models.BooleanField(default=False)
     has_signed = models.BooleanField(default=False)
     signature_document = models.ForeignKey(
         "files.File",
@@ -327,6 +373,14 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 violation_error_message=RESIDES_WITHIN_JURISDICTION_MESSAGE,
             ),
             models.CheckConstraint(
+                check=Q(contact_details_unknown_declared=False)
+                | Q(role=ParticipantRole.ACCUSED)
+                & (Q(phone_number_at_filing__isnull=True) | Q(phone_number_at_filing=""))
+                & (Q(email_at_filing__isnull=True) | Q(email_at_filing="")),
+                name="cases_case_participant_contact_unknown_accused_only",
+                violation_error_message=CONTACT_UNKNOWN_MESSAGE,
+            ),
+            models.CheckConstraint(
                 check=Q(role__in=ParticipantRole.values),
                 name="cases_case_participant_role_valid",
                 violation_error_message=ROLE_VALID_MESSAGE,
@@ -341,13 +395,17 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         indexes = [models.Index(fields=["case", "role", "is_active"])]
 
     def __str__(self):
-        return f"{self.role} #{self.ordinal} ({self.name_at_filing}) for {self.case_id}"
+        label = self.name_at_filing or self.designation_at_filing
+        return f"{self.role} #{self.ordinal} ({label}) for {self.case_id}"
 
     def clean(self):
         """Apply the rules the database cannot express (spec 0020 §4.2, §7.2, §14.1).
 
-        Every role but a witness needs an address for service of notice, and
-        an accused's or witness's address needs a police station. While
+        Every role needs an address for service of notice, and an accused's or
+        witness's address needs a police station. Every role but a witness
+        needs a name; a witness needs a name or a designation. An
+        institution's name is recorded exactly when there is one, and only a
+        complainant has a party-in-person affidavit. While
         active, a person or an institution cannot hold one role twice on a
         case, nor be both a complainant and an accused there, nor appear in
         person while an advocate actively represents them; a person cannot be
@@ -357,7 +415,14 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         # Not a ``_raise_broken_rules`` list: the role-conflict and advocate
         # checks query the database, and run only when the cheaper rules allow.
         errors = {}
-        if self.role != ParticipantRole.WITNESS and not self.address_id:
+        if self.role == ParticipantRole.WITNESS:
+            if not (self.name_at_filing or self.designation_at_filing):
+                errors["name_at_filing"] = _rule_error(
+                    api_errors.REQUIRED, WITNESS_NAME_OR_DESIGNATION_MESSAGE
+                )
+        elif not self.name_at_filing:
+            errors["name_at_filing"] = _rule_error(api_errors.REQUIRED, NAME_REQUIRED_MESSAGE)
+        if not self.address_id:
             errors["address"] = _rule_error(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)
         elif (
             self.role in POLICE_STATION_ROLES
@@ -365,9 +430,29 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             and not self.address.police_station
         ):
             errors["address"] = _rule_error(api_errors.REQUIRED, POLICE_STATION_REQUIRED_MESSAGE)
+        if self.contact_details_unknown_declared and (
+            self.role != ParticipantRole.ACCUSED
+            or self.phone_number_at_filing
+            or self.email_at_filing
+        ):
+            errors["contact_details_unknown_declared"] = _rule_error(
+                api_errors.INVALID, CONTACT_UNKNOWN_MESSAGE
+            )
         if self.institution_id and self.role not in INSTITUTION_ROLES:
             errors["institution"] = _rule_error(
                 case_errors.INSTITUTION_NOT_ALLOWED, INSTITUTION_ROLE_MESSAGE
+            )
+        if self.party_in_person_affidavit and self.role != ParticipantRole.COMPLAINANT:
+            errors["party_in_person_affidavit"] = _rule_error(
+                case_errors.FIELD_NOT_APPLICABLE, COMPLAINANT_ONLY_MESSAGE
+            )
+        if self.institution_id and not self.entity_name_at_filing:
+            errors["entity_name_at_filing"] = _rule_error(
+                api_errors.REQUIRED, INSTITUTION_DETAILS_REQUIRED_MESSAGE
+            )
+        elif not self.institution_id and self.entity_name_at_filing:
+            errors["entity_name_at_filing"] = _rule_error(
+                case_errors.FIELD_NOT_APPLICABLE, INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE
             )
         if (
             self.role == ParticipantRole.ACCUSED
@@ -917,12 +1002,12 @@ class ChequeBounceCase(BaseModel, BaseAuditableModel):
         super().clean()
         if not self.case_id:
             return
-        schemas = get_config(self.case.case_type).section_schemas
+        config = get_config(self.case.case_type)
         errors = {
             section: [str(problem) for problem in problems]
-            for section, schema in schemas.items()
+            for section in config.sections
             if getattr(self, section)
-            and (problems := schema_errors(schema, getattr(self, section)))
+            and (problems := section_errors(config, section, getattr(self, section)))
         }
         if errors:
             raise ValidationError(errors)

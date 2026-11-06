@@ -33,14 +33,14 @@ One row per human being the system knows of, whether registered or not. A person
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
-| `name` | varchar(256) | NOT NULL | Full name |
+| `name` | varchar(256) | NULLABLE | Full name; a blank value is stored as NULL. Optional here because a witness may be named by designation alone; every other case role requires its participant's name (§4) |
 | `phone_number` | varchar(16) | NULLABLE | E.164 (`+`, country code, number, digits only), any country; a blank value is stored as NULL |
 | `email_address` | varchar(256) | NULLABLE | |
 | `relation` | varchar(16) | NULLABLE | Relationship type (S/O, D/O, W/O, etc.) |
 | `relative_name` | varchar(256) | NULLABLE | Father's / spouse's / guardian's name; required when `relation` is set |
 | `date_of_birth` | date | NULLABLE | Not after today's date in India (IST); `TIME_ZONE` is UTC, so the server's date is not used |
 | `age` | smallint | NULLABLE, CHECK 0–150 | Approximate age, only when the date of birth is unknown ("aged about 45"); cleared whenever `date_of_birth` is set |
-| `gender` | varchar(32) | NULLABLE | One of: MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY |
+| `gender` | varchar(32) | NULLABLE | One of: MALE, FEMALE, OTHER |
 | `institution_id` | uuid | FK → institution, NULLABLE | When acting for an institution (see §3) |
 | `designation` | varchar(128) | NULLABLE | Role within the institution, e.g. Director, Branch Manager, Authorised Signatory |
 | `residential_address_id` | uuid | FK → address, NULLABLE | Current residential address |
@@ -102,7 +102,8 @@ Identity verification is a spectrum. The `verification_level` field records how 
 The current schema permits duplicate persons with the same name and no phone number. Matching logic is implemented at the application layer, and is deliberately narrow:
 - The only `person` a party write reuses is the **filer's own**: when the filer adds themselves (`"self": true`, spec 0021 §4.1), their `person` is fetched by `user_id`, or created from their account at `VERIFIED` if they have none yet. A client never sends another person's id, so a filer cannot attach, or read back, someone else's record.
 - Every other party gets a **new** row at `ASSERTED`, with no attempt to match by name or phone.
-- An existing `person` row is never changed by a party write; the case keeps its own values in the participant snapshot (§4.4).
+- The `person` row holds current data and may change; what a case must keep is its own copy, the participant's `*_at_filing` snapshot (§4.4), which only the case's own writes change. Today a party write changes one thing on the person: an individual complainant's or POA holder's `permanent_address`, which has no snapshot, on create and on PATCH, also when the person is the filer (`"self": true`). A person another user has registered and claimed is changed only by that user, by an advocate filing the case who actively represents them, or by a filer who is an active complainant on the case.
+- `permanent_address` is the same address row as `correspondence_address` (the request's `address`) unless the write sends a different `permanent_address`, which is then stored as its own row. Only an individual complainant or POA holder has one.
 - Duplicate asserted records resolve when the person registers and claims their row (a separate flow, not part of case filing).
 
 ## 3. Legal Entities: The `institution` Table
@@ -122,7 +123,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 | `email_address` | varchar(256) | NULLABLE | Main contact email |
 | `pan` | varchar(10) | NULLABLE, UNIQUE | Permanent Account Number, e.g. `AAACA1234A`; uppercase, `^[A-Z]{5}[0-9]{4}[A-Z]$` |
 | `cin` | varchar(21) | NULLABLE, UNIQUE | Corporate Identification Number, companies only, e.g. `U72200KA2010PTC052651`; uppercase, `^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$` |
-| `pan_cin_skip_declared` | boolean | NOT NULL, default false | The filer declared they will give neither a PAN nor a CIN (the UI's skip checkbox). Then both are null; otherwise at least one is set |
+| `pan_cin_skip_declared` | boolean | NOT NULL, default false | The filer declared they will give neither a PAN nor a CIN (the complainant form's skip checkbox). Then both are null |
 | `address_id` | uuid | FK → address, NULLABLE, ON DELETE PROTECT | Registered office: where notices to the institution are served |
 | `created_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel (spec 0002) |
@@ -133,7 +134,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 - `CHECK (entity_type IN (...))` — values from §3.3
 - `CHECK` on the `pan` and `cin` patterns when not null; both are stored uppercase with spaces removed
 - `UNIQUE (pan)` and `UNIQUE (cin)` where not null
-- `CHECK`: `pan_cin_skip_declared` with both `pan` and `cin` null, or not declared with at least one of them set
+- `CHECK`: when `pan_cin_skip_declared` is true, `pan` and `cin` are both null
 - Index on `entity_name` — lookup when naming a party at filing
 
 ### 3.3 Entity Types (enum)
@@ -159,7 +160,7 @@ They identify an entity better than its spelled name, so they are how an institu
 - With no PAN or CIN, a new institution is always created.
 
 **Why a skip declaration:**
-A filer may choose not to give the PAN or CIN, and the form records that as an explicit choice. So an institution always has a PAN, a CIN (or both), or `pan_cin_skip_declared = true`, never none of them (`E00002` on `pan`); and the declaration cannot come with a PAN or CIN, which it contradicts (`E00001` on `pan_cin_skip_declared`). The rule is checked on every save, and before matching, since a matched row is linked without being saved. An institution declared this way has nothing to be matched by, so it is never reused.
+A filer may choose not to give a complainant institution's PAN or CIN, and the form records that as an explicit choice (PRD LIT-18a). So a **complainant** institution has a PAN, a CIN (or both), or `pan_cin_skip_declared = true`, never none of them (`E00002` on `pan`). This is checked by the party write, not the table: the accused's form asks for no PAN or CIN, and one institution can be the complainant in one case and the accused in another. On every institution the declaration cannot come with a PAN or CIN, which it contradicts (`E00001` on `pan_cin_skip_declared`; a `CHECK` too). Both rules are checked before matching, since a matched row is linked without being saved. An institution declared this way has nothing to be matched by, so it is never reused.
 
 **Why an institution has its own address:**
 A company or firm named as a party is served at its registered office, which need not be the address of whoever signs for it, so it is recorded on the institution rather than reached through a linked person. Like every address, it is an immutable row (§7): a move is a new row and the FK is repointed.
@@ -189,17 +190,21 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `institution_id` | uuid | FK → institution, NULLABLE | The institution party; COMPLAINANT and ACCUSED only |
 | `role` | varchar(32) | NOT NULL | COMPLAINANT, ACCUSED, WITNESS, POA_HOLDER |
 | `ordinal` | smallint | NOT NULL | 1, 2, 3… per role (complainant #1, accused #2) |
-| `name_at_filing` | varchar(256) | NOT NULL | Frozen snapshot of name: the person's, or the institution's when there is no person; 256 wide, as `person.name` and `institution.entity_name`, so any stored name fits |
+| `name_at_filing` | varchar(256) | NULLABLE | Frozen snapshot of name: the person's, or the institution's when there is no person; 256 wide, as `person.name` and `institution.entity_name`, so any stored name fits. Required for every role but WITNESS; a witness needs this or `designation_at_filing` |
 | `phone_number_at_filing` | varchar(20) | NULLABLE | Frozen snapshot of phone; 20 wide so an institution's landline fits |
 | `gender_at_filing` | varchar(32) | NULLABLE | Frozen snapshot of gender |
 | `age_at_filing` | smallint | NULLABLE | Frozen snapshot of age: from `person.date_of_birth` when known, else `person.age` |
 | `designation_at_filing` | varchar(128) | NULLABLE | The acting person's designation at the institution, e.g. Director; required for an ACCUSED when both `person_id` and `institution_id` are set, optional for a COMPLAINANT |
-| `address_id` | uuid | FK → address, NULLABLE | The address for service of notice; required for every role except WITNESS |
+| `email_at_filing` | varchar(256) | NULLABLE | Frozen snapshot of email: the person's, or the institution's when there is no person |
+| `entity_name_at_filing` | varchar(256) | NULLABLE | The institution's name as the filer entered it; set exactly when `institution_id` is set. With no person it equals `name_at_filing` |
+| `address_id` | uuid | FK → address, NULLABLE | The address for service of notice; required for every role |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Role-specific data (see §4.3) |
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
 | `end_date` | timestamp | NULLABLE | When participant was removed |
 | `is_party_in_person` | boolean | NOT NULL, default false | Appearing without an advocate |
 | `resides_within_jurisdiction` | boolean | NULLABLE; NOT NULL and default true for an accused, NULL for every other role (CHECK) | The filer's answer to "Does the accused reside within the jurisdiction of this court?" (BNSS s.225). A column, not `additional_details`, because scrutiny acts on it: an accused outside jurisdiction means process is postponed for inquiry |
+| `contact_details_unknown_declared` | boolean | NOT NULL, default false; true only for an accused with no `phone_number_at_filing` or `email_at_filing` (CHECK) | The filer's declaration that they do not know the accused's phone number or email (PRD ACC-6/7), made instead of giving one |
+| `party_in_person_affidavit` | text | NULLABLE | A complainant's affidavit asking to appear in person (rich text, stored as sent, sanitized wherever rendered); COMPLAINANT only; required by the completeness check when `is_party_in_person` is true |
 | `has_signed` | boolean | NOT NULL, default false | True once they have e-signed, or uploaded a signed copy of, the case filing |
 | `signature_document_id` | uuid | FK → file, nullable, ON DELETE PROTECT | The signed filing the e-sign service stored (spec 0021 §8). When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here |
 | `is_active` | boolean | NOT NULL, default true | Soft delete flag (spec 0006) |
@@ -228,7 +233,8 @@ Date of birth is optional when filing: a party may be added with only an approxi
 
 **Application-layer rules:**
 - The same person cannot be both a complainant and an accused on one case, nor hold the same role twice on it (while active). A complainant may also be the POA holder for a co-complainant (§5).
-- `address_id` is required for COMPLAINANT, ACCUSED and POA_HOLDER: notices and summons must be served somewhere.
+- `address_id` is required for every role: notices and summons must be served somewhere, witnesses included.
+- `name_at_filing` is required for COMPLAINANT, ACCUSED and POA_HOLDER. A witness is often known only by their post ("Branch manager, SBI Kottayam"), so a witness needs a `name_at_filing` or a `designation_at_filing`; their phone number is optional. Witnesses are optional; these apply to each witness who is added. The completeness check (spec 0021 §6.3) checks them again.
 
 ### 4.3 Role-Specific `additional_details`
 
@@ -253,7 +259,9 @@ The `additional_details` JSONB column stores data that varies by role and has no
 ### 4.4 Design Decisions
 
 **What the snapshot is, and why data is frozen (`name_at_filing`, etc.):**
-The `*_at_filing` columns are a frozen copy of the party's details as they stand for this case. Court records must not change with people: if a summons went to a phone number in January and the person changes it in June, the case must still show the January number. The `person` row holds current data; `case_participant` holds the case's copy, and a party write never changes the `person` row (§2.5). Editing a participant edits only its snapshot.
+The `*_at_filing` columns are a frozen copy of the party's details as they stand for this case. Court records must not change with people: if a summons went to a phone number in January and the person changes it in June, the case must still show the January number. The `person` row holds current data and may change (§2.5); `case_participant` holds the case's copy, which a change to the person never rewrites. Editing a participant edits its snapshot, and for an individual complainant or POA holder may set the person's `permanent_address`.
+
+An institution reused by its PAN or CIN keeps the name stored when it was first created, which may have been entered by another filer. `entity_name_at_filing` records the name this filer entered, so the case shows, and the filer can correct, their own value without changing the shared row.
 
 **How a party's person is resolved:**
 - The filer adding themselves (`"self": true`): their own `person`, created from their account at `VERIFIED` the first time. Not allowed for an accused.
@@ -305,7 +313,7 @@ Witness-specific data, one row per witness. Every witness is also a `case_partic
 `side` and `what_will_witness_prove` apply only to witnesses. As columns on `case_participant` they would be empty for every other role; in `additional_details` `side` could not be a checked, required field. A table of their own keeps it enforced by the database.
 
 **Why `side`, not the calling party:**
-A witness is called by a side of the case, not by one complainant or accused. Recording the side is what the filing forms ask, and it does not tie the witness to a party who may later be removed or renumbered. A witness re-called by the other side is a new participant with its own `witness` row and the other side. A witness may also have a designation (their job title), kept as `case_participant.designation_at_filing`.
+A witness is called by a side of the case, not by one complainant or accused. Recording the side is what the filing forms ask, and it does not tie the witness to a party who may later be removed or renumbered. A witness re-called by the other side is a new participant with its own `witness` row and the other side. A witness may also have a designation (their job title), kept as `case_participant.designation_at_filing`; it may stand in for the witness's name (§4.2).
 
 ## 5. Power of Attorney: The `poa_mandate` Table
 
@@ -503,6 +511,7 @@ One filing. Holds only what every dispute type shares; type-specific data goes i
 | `court_id` | varchar(64) | NULLABLE | FK to court master data |
 | `filed_at` | timestamp | NULLABLE | When submission completed, NULL while draft |
 | `registered_at` | timestamp | NULLABLE | When court accepted the case |
+| `affidavit` | text | NULLABLE | The sworn affidavit filed with the complaint (rich text, stored as sent, sanitized wherever rendered); required by the completeness check |
 | `created_by` | uuid | FK → app_user, NOT NULL | The filer (from BaseModel) |
 | `updated_by` | uuid | FK → app_user, NULLABLE | From BaseModel |
 | `created_at` | timestamp | NOT NULL, auto | From BaseModel |
@@ -628,16 +637,18 @@ displayed. The schemas each section is validated against are in spec 0021 §5.3.
   "payee_ifsc_code": "HDFC0000512",
   "payee_bank_name": "HDFC Bank",
   "payee_bank_branch": "Kochi",
-  "bank_police_station": "Ernakulam Central",
+  "payee_bank_police_station": "Ernakulam Central",
   "other_complaints_pending": false,
-  "cause_of_action_date": "2024-02-21"
+  "cause_of_action_date": "2024-02-21",
+  "complaint_filing_date": "2024-04-10",
+  "condonation_reason": "The complainant was hospitalised from 1 to 30 March 2024."
 }
 ```
 
 **`adr_other_prayer`:**
 ```json
 {
-  "adr_preference": "MAYBE",
+  "adr_preference": "NO",
   "other_details": "",
   "interim_relief": "<p>Direct the Accused to pay interim compensation under Section 143A ...</p>",
   "final_relief": "<p>Take cognizance of the offence committed by the Accused under Section 138 ...</p>"
@@ -685,8 +696,9 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 ### 11.3 Evidence Info Structure by Type
 
 The schemas each type is validated against are in spec 0021 §5.2. For cheque
-bounce, each cheque has one `RETURN_MEMO` and one `LEGAL_DEMAND_NOTICE`,
-matched to it by `ordinal`.
+bounce, each cheque has one `RETURN_MEMO`, matched to it by `ordinal`. A
+`LEGAL_DEMAND_NOTICE` is not tied to any cheque: one notice may cover several
+cheques, so their counts need not match, and nothing links them.
 
 **For `evidence_type = 'CHEQUE'`:**
 ```json
@@ -696,7 +708,8 @@ matched to it by `ordinal`.
   "cheque_number": "456789",
   "ifsc_code": "SBIN0001234",
   "bank_name": "State Bank of India",
-  "bank_branch": "MG Road"
+  "bank_branch": "MG Road",
+  "bank_account_number": "30012345678"
 }
 ```
 
@@ -705,22 +718,21 @@ matched to it by `ordinal`.
 {
   "presentation_date": "2024-01-18",
   "return_date": "2024-01-22",
-  "return_reason": "Funds insufficient"
+  "return_reason": "FUNDS_INSUFFICIENT"
 }
 ```
 
 **For `evidence_type = 'LEGAL_DEMAND_NOTICE'`:**
 ```json
 {
-  "nature_of_debt": "Loan",
-  "cheque_issue_reason": "Repayment of loan",
+  "nature_of_debt": "LOAN_OR_ADVANCE_REPAYMENT",
   "dispatch_date": "2024-02-01",
-  "mode_of_service": "Registered post",
+  "mode_of_service": "REGISTERED_POST",
   "tracking_number": "RR123456789IN",
   "is_delivered": true,
   "delivery_date": "2024-02-05",
   "accused_replied": false,
-  "payment_status": "No payment"
+  "payment_status": "NO_PAYMENT_MADE"
 }
 ```
 
@@ -799,7 +811,7 @@ To add a second case type (e.g., civil suit):
 ### 14.1 Application-Layer Checks
 
 - `case_participant`: At least one of `person_id` or `institution_id` must be set; when both are set on an ACCUSED, `designation_at_filing` is required. Only COMPLAINANT and ACCUSED may have an `institution_id`.
-- `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. `address_id` is required except for witnesses.
+- `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. `address_id` is required for every role. `name_at_filing` is required except for a witness, who needs it or `designation_at_filing`.
 - `witness`: an active person is a witness at most once per side of a case.
 - `poa_mandate`: The represented participant is an active COMPLAINANT or ACCUSED on the same case, and not the holder's own person.
 - `representation`: The client is an active COMPLAINANT or ACCUSED on the same case, not marked `is_party_in_person`, not the advocate themselves, and not on the opposite side from another active client of the same advocate.
