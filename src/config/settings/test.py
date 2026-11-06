@@ -9,8 +9,9 @@ from .base import MESSAGING_BACKENDS, MIDDLEWARE, REST_FRAMEWORK, STORAGES, env 
 SECRET_KEY = "test-secret-key-not-for-production"
 DEBUG = False
 
-# Use an in-memory SQLite database for speed in CI. Override with DATABASE_URL
-# if you prefer running tests against PostgreSQL.
+# CI sets DATABASE_URL to a PostgreSQL service, matching production. Without
+# it, tests fall back to in-memory SQLite, which lacks some PostgreSQL-only
+# lookups (for example JSONField `contains`).
 DATABASES = {
     "default": env.db(
         var="DATABASE_URL",

@@ -92,11 +92,18 @@ Once the stack is running:
 
 ## Running tests
 
-Tests use pytest with the `config.settings.test` settings module (SQLite in-memory by default).
+Tests use pytest with the `config.settings.test` settings module. CI runs them
+on PostgreSQL, matching production; without `DATABASE_URL` they fall back to
+in-memory SQLite, where PostgreSQL-only lookups (such as JSONField `contains`)
+fail.
 
 ```bash
 cd src
 pytest
+
+# Same database as CI, via the docker-compose `db` service (credentials from
+# .env.example); pytest creates and drops a separate test_dristi database
+DATABASE_URL=postgres://dristi:secret@localhost:5432/dristi pytest
 ```
 
 ### Test coverage
