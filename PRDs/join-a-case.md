@@ -1,6 +1,6 @@
 # Join a Case
 
-**Status:** v7.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `join-a-case.md`. v7 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-10-06; added a placeholder for the vakalatnama payment logic. v5 — 2026-10-06; a mobile number entered for a party is confirmed by that party at their first sign-in before the case links to their account (JOIN-64). v4 — 2026-10-06; PoA holders can join for the complainant side and for several parties at once (one authorization document and one mobile number per party); flow outcome is Success. v3 — 2026-09-17; §12 Linked records now carries live views of all four
+**Status:** v7.2 — 2026-11-06; **a case can be joined only once it is registered** (`JOIN-08a`, new, §3). v7.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `join-a-case.md`. v7 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-10-06; added a placeholder for the vakalatnama payment logic. v5 — 2026-10-06; a mobile number entered for a party is confirmed by that party at their first sign-in before the case links to their account (JOIN-64). v4 — 2026-10-06; PoA holders can join for the complainant side and for several parties at once (one authorization document and one mobile number per party); flow outcome is Success. v3 — 2026-09-17; §12 Linked records now carries live views of all four
 master tables (pending tasks court and citizen side, notifications, events), so anything
 tagged later appears automatically. v2 — §12 Events added; later sections renumbered. v1 — all open questions resolved;
 no approval flows in V1 (replacement deferred, all joins immediate)
@@ -141,6 +141,7 @@ the prototype.
 | --- | --- | --- |
 | `JOIN-07` | The user has an account and is signed in | If not, account creation happens first |
 | `JOIN-08` | The case exists in the system | If the case is not yet in the system, the lookup returns no result and the user is told to check their papers |
+| `JOIN-08a` | The case has been registered | **[OWNER]** Registration is the hard cut-off: a case cannot be joined before it is registered, whatever stage it is at (pending signature, pending payment, at scrutiny) |
 | `JOIN-09` | The user has the six-digit access code | Printed on the summons; parties who have already joined the case can also share it |
 
 ---
