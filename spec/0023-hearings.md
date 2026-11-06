@@ -668,7 +668,7 @@ POST /api/v1/hearings/bulk-action/
 * **Ending a `SCHEDULED` hearing starts and ends it with the same press**: both are recorded at the same time, and `heard_duration` stays zero (`HRG-02`, `CLS-10`). The business-date rule of #6.1 applies.
 * A hearing that cannot take the action — End needs `SCHEDULED` or `IN_PROGRESS`, Pass over needs `SCHEDULED` or `IN_PROGRESS` — is left as it is and returned under `skipped` with its `allowed_actions`.
 * Applied in one transaction under the court lock (#11.5); the response reports `done` and `skipped`, one entry per hearing.
-* The next hearing set in the same dialog is order data and goes through the orders module (#7.1), not this endpoint.
+* The next hearing set in the same dialog is order data and goes through the orders module (#7.1), not this endpoint. It is the one way a next hearing is set on a listing that has not been started (`PLC-05`). Such a listing has no order yet, so the orders module first creates its draft order and calls `attach_order`, then `hold` against that order.
 
 ### 7. Fixing a date: the orders contract
 
