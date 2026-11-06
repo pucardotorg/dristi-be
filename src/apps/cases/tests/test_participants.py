@@ -1726,6 +1726,113 @@ class TestPermanentAddress:
         assert response.status_code == 400
         assert error_codes(response) == {"permanent_address": ["E07023"]}
 
+    def test_patch_sets_it_on_the_person_and_leaves_the_snapshot(self, client, draft):
+        body = add_complainant(client, draft)
+
+        response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["address_id"] == body["address_id"]
+        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
+
+    def test_patch_sets_the_filers_own(self, client, user, draft):
+        body = add(client, draft, self=True).json()
+
+        response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
+
+        assert response.status_code == 200, response.json()
+        assert Person.objects.get(user=user).permanent_address.line1 == "7 Temple Street"
+
+    @pytest.mark.parametrize(
+        ("role", "body"),
+        [
+            ("accused", {"person": {**PERSON, "name": "Suresh"}}),
+            ("complainant", {"institution": INSTITUTION}),
+        ],
+    )
+    def test_patch_refuses_it_for_other_parties(self, client, draft, role, body):
+        add_complainant(client, draft, name="First")
+        participant = add(client, draft, role, **body).json()
+
+        response = patch(
+            client, participant["case_participant_id"], {"permanent_address": self.ELSEWHERE}
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"permanent_address": ["E07023"]}
+
+    def test_patch_refuses_a_person_another_user_has_claimed(self, client, other_user, draft):
+        body = add_complainant(client, draft)
+        Person.objects.filter(pk=body["person_id"]).update(user=other_user)
+
+        response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"permanent_address": ["E07023"]}
+        assert self.person_of(body).permanent_address.line1 != "7 Temple Street"
+
+    def test_patch_lets_the_filing_advocate_change_their_clients(
+        self, client, user, make_user, other_user, draft
+    ):
+        """An advocate filing for a registered client may update that client's record."""
+        body = add_complainant(client, draft)
+        Person.objects.filter(pk=body["person_id"]).update(user=other_user)
+        advocate = make_advocate(make_user, user=user)
+        add_advocate(client, draft, advocate.pk, [body["case_participant_id"]])
+
+        response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
+
+        assert response.status_code == 200, response.json()
+        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
+
+    def test_patch_null_makes_it_the_address_again(self, client, draft):
+        response = add(client, draft, person=PERSON, permanent_address=self.ELSEWHERE)
+        body = response.json()
+
+        response = patch(client, body["case_participant_id"], {"permanent_address": None})
+
+        assert response.status_code == 200, response.json()
+        assert str(self.person_of(body).permanent_address_id) == body["address_id"]
+
+    def test_patch_null_follows_an_address_changed_in_the_same_request(self, client, draft):
+        body = add_complainant(client, draft)
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {"address": self.ELSEWHERE, "permanent_address": None},
+        )
+
+        assert response.status_code == 200, response.json()
+        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
+
+    @pytest.mark.parametrize(
+        ("role", "body"),
+        [
+            ("accused", {"person": {**PERSON, "name": "Suresh"}}),
+            ("complainant", {"institution": INSTITUTION}),
+        ],
+    )
+    def test_patch_null_is_ignored_for_other_parties(self, client, draft, role, body):
+        add_complainant(client, draft, name="First")
+        participant = add(client, draft, role, **body).json()
+
+        response = patch(client, participant["case_participant_id"], {"permanent_address": None})
+
+        assert response.status_code == 200, response.json()
+
+    def test_patch_reports_an_invalid_one_under_its_own_name(self, client, draft):
+        body = add_complainant(client, draft)
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {"permanent_address": {**self.ELSEWHERE, "pincode": "12"}},
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"permanent_address.pincode": ["E00001"]}
+
     def test_a_witness_cannot_send_one(self, client, draft):
         response = add_witness(client, draft, permanent_address=self.ELSEWHERE)
 

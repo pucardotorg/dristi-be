@@ -29,6 +29,8 @@ from ..models import (
     INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE,
     INSTITUTION_NAMES_DIFFER_MESSAGE,
     INSTITUTION_ROLES,
+    PERMANENT_ADDRESS_MESSAGE,
+    PERSON_OF_ANOTHER_USER_MESSAGE,
     CaseParticipant,
     ParticipantRole,
     PoaMandate,
@@ -242,17 +244,13 @@ def _create_participant(case, user, role, data):
     if data["is_self"]:
         with errors_under("self"):
             person = get_or_create_self_person(user)
-        # The one change a filing makes to the filer's own person row: the
-        # permanent address they just gave (spec 0020 §2.5). Falling back to
-        # ``address`` only fills one they lack; it never replaces theirs.
-        if (
-            permanent_address is not None
-            and (sent_permanent_address or person.permanent_address_id is None)
-            and person.permanent_address_id != permanent_address.pk
+        # The filer's own person row takes the permanent address they just
+        # gave (spec 0020 §2.5). Falling back to ``address`` only fills one
+        # they lack; it never replaces theirs.
+        if permanent_address is not None and (
+            sent_permanent_address or person.permanent_address_id is None
         ):
-            person.permanent_address = permanent_address
-            person.updated_by = user
-            person.save(update_fields=["permanent_address", "updated_by", "updated_at"])
+            _set_permanent_address(person, user, permanent_address)
     elif "person" in data:
         with errors_under("person"):
             person = create_asserted_person(
@@ -316,15 +314,46 @@ def _snapshot(person, data):
     }
 
 
+def _may_change_person(participant, user):
+    """Return whether ``user`` may change the participant's person row.
+
+    Anyone filing the case may, until the person registers and claims the row;
+    then only that user, or an advocate actively representing the participant.
+    """
+    owner_id = participant.person.user_id
+    return (
+        owner_id in (None, user.pk)
+        or participant.representations.active().filter(advocate__user=user).exists()
+    )
+
+
+def _set_permanent_address(person, user, address):
+    """Make ``address`` the person's permanent address, if it is not already.
+
+    The person row holds current data, so a party write may change it; the
+    participant's ``*_at_filing`` snapshot is what the case keeps.
+    """
+    if person.permanent_address_id != address.pk:
+        person.permanent_address = address
+        person.updated_by = user
+        person.save(update_fields=["permanent_address", "updated_by", "updated_at"])
+
+
 def get_participant(case_participant_id, user):
     """Return an active participant on one of ``user``'s cases, or raise ``NotFound``."""
     return get_active_case_item(CaseParticipant, case_participant_id, user)
 
 
 def update_participant(participant, user, data):
-    """Change the case's copy of a party's details; the person and institution are untouched.
+    """Change the case's copy of a party's details, and an individual's permanent address.
 
-    ``data`` is a validated ``ParticipantUpdateSerializer`` body. A new address
+    ``data`` is a validated ``ParticipantUpdateSerializer`` body. The
+    ``*_at_filing`` snapshot is changed on the participant; the institution
+    row never is. ``permanent_address`` (an individual complainant or POA
+    holder) is set on the person; ``null`` makes it the participant's address
+    again, as when none is sent on create, and is ignored for a party that has
+    no permanent address. Once another user has claimed the person, only they
+    or their advocate on this case may change it. A new address
     is stored as its own row and the participant repointed; the old row stays.
     A witness's side, statement and ``additional_details`` are on its
     ``Witness`` row. Accused and witness addresses need a police station.
@@ -334,6 +363,16 @@ def update_participant(participant, user, data):
     ensure_editable(participant.case)
     data = dict(data)
     institution_fields = data.pop("institution", None)
+    sends_permanent_address = "permanent_address" in data
+    permanent_address_fields = data.pop("permanent_address", None)
+    has_permanent_address = (
+        participant.role in PERMANENT_ADDRESS_ROLES
+        and participant.person_id
+        and not participant.institution_id
+    )
+    if sends_permanent_address and permanent_address_fields is None and not has_permanent_address:
+        # Clearing what the party cannot have changes nothing.
+        sends_permanent_address = False
     is_witness = participant.role == ParticipantRole.WITNESS
     witness_fields = {
         field: data.pop(field) for field in ("side", "what_will_witness_prove") if field in data
@@ -375,6 +414,15 @@ def update_participant(participant, user, data):
         ]
     if problem := police_station_error(participant.role, data.get("address")):
         problems["address"] = problem
+    if sends_permanent_address:
+        if not has_permanent_address:
+            problems["permanent_address"] = [
+                errors.coded(errors.FIELD_NOT_APPLICABLE, PERMANENT_ADDRESS_MESSAGE)
+            ]
+        elif not _may_change_person(participant, user):
+            problems["permanent_address"] = [
+                errors.coded(errors.FIELD_NOT_APPLICABLE, PERSON_OF_ANOTHER_USER_MESSAGE)
+            ]
     if not participant.institution_id:
         if "entity_name_at_filing" in data:
             problems["entity_name_at_filing"] = [
@@ -407,6 +455,12 @@ def update_participant(participant, user, data):
         participant = get_participant(participant.pk, user)
         if "address" in data:
             participant.address = _save_address(data.pop("address"), user)
+        if sends_permanent_address:
+            # After any change to ``address``, which ``null`` falls back to.
+            permanent_address = _save_address(permanent_address_fields, user, "permanent_address")
+            _set_permanent_address(
+                participant.person, user, permanent_address or participant.address
+            )
         if institution_fields is not None:
             _relink_institution(participant, user, institution_fields, data)
         for field, value in data.items():

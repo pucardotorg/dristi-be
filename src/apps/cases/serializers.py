@@ -19,6 +19,7 @@ from .models import (
     EMPTY_TEXT_MESSAGE,
     INSTITUTION_ROLES,
     NAME_REQUIRED_MESSAGE,
+    PERMANENT_ADDRESS_MESSAGE,
     WITNESS_NAME_OR_DESIGNATION_MESSAGE,
     WITNESS_PHONE_REQUIRED_MESSAGE,
     Case,
@@ -422,9 +423,6 @@ class InstitutionInputSerializer(serializers.ModelSerializer):
         ]
 
 
-PERMANENT_ADDRESS_MESSAGE = "Only for an individual complainant or a POA holder."
-
-
 class PartySerializer(serializers.Serializer):
     """Base body of a party write.
 
@@ -708,8 +706,9 @@ class RepresentationSerializer(serializers.ModelSerializer):
 class ParticipantUpdateSerializer(PartialUpdateSerializer):
     """Body of PATCH /case-participants/{id} (spec 0021 §4.1).
 
-    Changes only the case's copy of the party's details; the person and
-    institution rows are never changed. The role and person cannot change.
+    Changes the case's copy of the party's details; the institution row is
+    never changed, and the person only by ``permanent_address``. The role and
+    person cannot change.
     ``institution`` re-links an institution participant to the one its PAN or
     CIN names (spec 0021 §4.1).
     """
@@ -729,6 +728,10 @@ class ParticipantUpdateSerializer(PartialUpdateSerializer):
     # ``name_at_filing`` and ``entity_name_at_filing`` are kept the same.
     entity_name_at_filing = serializers.CharField(max_length=256, required=False)
     address = AddressInputSerializer(required=False)
+    # Individual complainants and POA holders only. Set on the person, which
+    # holds current data; it has no snapshot on the participant. ``null``
+    # makes it the participant's address again.
+    permanent_address = AddressInputSerializer(required=False, allow_null=True)
     is_party_in_person = serializers.BooleanField(required=False)
     resides_within_jurisdiction = serializers.BooleanField(required=False)
     contact_details_unknown_declared = serializers.BooleanField(required=False)

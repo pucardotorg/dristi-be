@@ -179,6 +179,10 @@ DESIGNATION_NOT_ALLOWED_MESSAGE = "Only for a person acting for an institution."
 INSTITUTION_DETAILS_REQUIRED_MESSAGE = "Required for an institution."
 INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE = "Only for an institution."
 COMPLAINANT_ONLY_MESSAGE = "Only for a complainant."
+PERMANENT_ADDRESS_MESSAGE = "Only for an individual complainant or a POA holder."
+PERSON_OF_ANOTHER_USER_MESSAGE = (
+    "This person has registered; only they or their advocate can change their details."
+)
 EMPTY_TEXT_MESSAGE = "Enter some text; the editor content is empty."
 INSTITUTION_NAMES_DIFFER_MESSAGE = (
     "For an institution with no person acting for it, this must equal name_at_filing."

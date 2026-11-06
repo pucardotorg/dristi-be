@@ -102,7 +102,7 @@ Identity verification is a spectrum. The `verification_level` field records how 
 The current schema permits duplicate persons with the same name and no phone number. Matching logic is implemented at the application layer, and is deliberately narrow:
 - The only `person` a party write reuses is the **filer's own**: when the filer adds themselves (`"self": true`, spec 0021 §4.1), their `person` is fetched by `user_id`, or created from their account at `VERIFIED` if they have none yet. A client never sends another person's id, so a filer cannot attach, or read back, someone else's record.
 - Every other party gets a **new** row at `ASSERTED`, with no attempt to match by name or phone.
-- An existing `person` row is never changed by a party write; the case keeps its own values in the participant snapshot (§4.4). One exception: an individual complainant's or POA holder's write sets the person's `permanent_address`, also when the person is the filer (`"self": true`).
+- The `person` row holds current data and may change; what a case must keep is its own copy, the participant's `*_at_filing` snapshot (§4.4), which only the case's own writes change. Today a party write changes one thing on the person: an individual complainant's or POA holder's `permanent_address`, which has no snapshot, on create and on PATCH, also when the person is the filer (`"self": true`). A person another user has registered and claimed is changed only by that user, or by an advocate filing the case who actively represents them.
 - `permanent_address` is the same address row as `correspondence_address` (the request's `address`) unless the write sends a different `permanent_address`, which is then stored as its own row. Only an individual complainant or POA holder has one.
 - Duplicate asserted records resolve when the person registers and claims their row (a separate flow, not part of case filing).
 
@@ -259,7 +259,7 @@ The `additional_details` JSONB column stores data that varies by role and has no
 ### 4.4 Design Decisions
 
 **What the snapshot is, and why data is frozen (`name_at_filing`, etc.):**
-The `*_at_filing` columns are a frozen copy of the party's details as they stand for this case. Court records must not change with people: if a summons went to a phone number in January and the person changes it in June, the case must still show the January number. The `person` row holds current data; `case_participant` holds the case's copy, and a party write never changes the `person` row (§2.5). Editing a participant edits only its snapshot.
+The `*_at_filing` columns are a frozen copy of the party's details as they stand for this case. Court records must not change with people: if a summons went to a phone number in January and the person changes it in June, the case must still show the January number. The `person` row holds current data and may change (§2.5); `case_participant` holds the case's copy, which a change to the person never rewrites. Editing a participant edits its snapshot, and for an individual complainant or POA holder may set the person's `permanent_address`.
 
 An institution reused by its PAN or CIN keeps the name stored when it was first created, which may have been entered by another filer. `entity_name_at_filing` records the name this filer entered, so the case shows, and the filer can correct, their own value without changing the shared row.
 
