@@ -388,22 +388,24 @@ POST /cases/{case_id_or_draft_session_id}/complainants
 {
   "person": {
     "name": "Rajesh Kumar",
-    "phone_number": "+919876543210",
-    "email_address": "rajesh@example.com",
     "date_of_birth": "1985-06-15",
     "age": null,
     "gender": "MALE",
     "relation": "SON_OF",
     "relative_name": "Ram Kumar"
   },
-  "address": {
-    "line1": "123 MG Road",
-    "city": "Bengaluru",
-    "pincode": "560001",
-    "district": "Bengaluru Urban",
-    "state": "Karnataka",
-    "police_station": "Cubbon Park"
-  },
+  "mobile_numbers": ["+919876543210"],
+  "email_addresses": ["rajesh@example.com"],
+  "addresses": [
+    {
+      "line1": "123 MG Road",
+      "city": "Bengaluru",
+      "pincode": "560001",
+      "district": "Bengaluru Urban",
+      "state": "Karnataka",
+      "police_station": "Cubbon Park"
+    }
+  ],
   "is_party_in_person": false,
   "additional_details": {}
 }
@@ -413,7 +415,7 @@ POST /cases/{case_id_or_draft_session_id}/complainants
 ```json
 {
   "self": true,
-  "address": { ... }
+  "addresses": [{ ... }]
 }
 ```
 
@@ -426,18 +428,25 @@ POST /cases/{case_id_or_draft_session_id}/complainants
     "pan": "AAACA1234A",
     "cin": "U72200KA2010PTC052651",
     "pan_cin_skip_declared": false,
-    "contact_number": "080-22334455",
-    "email_address": "legal@abc.example"
+    "mobile_numbers": ["080-22334455"],
+    "email_addresses": ["legal@abc.example"],
+    "addresses": [{ ... registered office ... }]
   },
   "person": { "name": "Priya Sharma", ... },
   "designation": "Director",
-  "address": { ... }
+  "mobile_numbers": ["+919812345678"]
 }
 ```
 
+**Contacts** (spec 0020 §4.6): `mobile_numbers`, `email_addresses` and `addresses` are lists, in order; the first of each is the primary. At the top level they are the individual's; inside `institution`, the institution's own **for this case** (a reused institution's contacts in other cases are never shown or changed). Every party, every role, has the same lists:
+- An individual needs at least one address (`E00002` on `addresses`). An institution needs at least one of its own (`E00002` on `institution.addresses`); the person acting for it may give theirs too. An institution with no person has no top-level lists (`E07023`).
+- A person's mobile numbers are in E.164 form; an institution's may be landlines (`E00001` on `mobile_numbers[1]`, say). Nothing may appear twice in one list, emails compared ignoring case (`E07033` on the repeat).
+- Every address of an accused or witness, their institution's included, needs a `police_station` (`E00002` on `addresses[0].police_station` or `institution.addresses[0].police_station`).
+- A new person keeps the first mobile number, email and address as their own (`person.phone_number`, `email_address`, `correspondence_address`).
+
 Exactly one of `person` or `self` describes the individual, and either may be left out when `institution` is given. `designation` is accepted only when both an individual and an institution are given; it is optional for a complainant and required for an accused (spec 0020 §4.2). `date_of_birth` and `age` are both optional.
 
-`permanent_address` (an address, optional) is accepted only for an individual complainant (`E07023` otherwise): send it when the permanent address differs from `address`. Left out, the person's permanent address is the same address row as `address`, except that the filer's own person (`"self": true`) keeps a permanent address they already have: `address` only fills one they lack. It is saved on the person, not on the participant. PATCH `/case-participants/{id}` may send `permanent_address` for an individual complainant or POA holder to set it on the person; the participant's `address` and snapshot are unchanged. `null` makes it the participant's `address` again (after any change to `address` in the same request), as when it is left out on create; for a party with no permanent address, `null` is accepted and changes nothing. It is refused (`E07023`) for any other participant, and for a person another user has registered and claimed, unless the filer is that user, an advocate actively representing the participant on this case, or an active complainant on this case.
+`permanent_address` (an address, optional) is accepted only for an individual complainant (`E07023` otherwise): send it when the permanent address differs from their first address. Left out, the person's permanent address is that first address, except that the filer's own person (`"self": true`) keeps a permanent address they already have: the first address only fills one they lack. It is saved on the person, not on the participant. PATCH `/case-participants/{id}` may send `permanent_address` for an individual complainant or POA holder to set it on the person; the participant's contacts and snapshot are unchanged. `null` makes it the participant's first address again (after any change to `addresses` in the same request), as when it is left out on create; for a party with no permanent address, `null` is accepted and changes nothing. It is refused (`E07023`) for any other participant, and for a person another user has registered and claimed, unless the filer is that user, an advocate actively representing the participant on this case, or an active complainant on this case.
 
 **Response (201 Created):**
 ```json
@@ -449,13 +458,15 @@ Exactly one of `person` or `self` describes the individual, and either may be le
   "role": "COMPLAINANT",
   "ordinal": 1,
   "name_at_filing": "Rajesh Kumar",
-  "phone_number_at_filing": "+919876543210",
   "gender_at_filing": "MALE",
   "age_at_filing": 39,
   "designation_at_filing": null,
-  "email_at_filing": null,
   "entity_name_at_filing": null,
-  "address_id": "uuid",
+  "mobile_numbers": ["+919876543210"],
+  "email_addresses": ["rajesh@example.com"],
+  "addresses": [{ "address_id": "uuid", "line1": "123 MG Road", "city": "Bengaluru", "district": "Bengaluru Urban", "state": "Karnataka", "pincode": "560001", "police_station": "Cubbon Park" }],
+  "institution": null,
+  "disability_status": null,
   "is_party_in_person": false,
   "party_in_person_affidavit": null,
   "additional_details": {},
@@ -475,20 +486,18 @@ Exactly one of `person` or `self` describes the individual, and either may be le
    - `person`: a new `person` at `ASSERTED`, with no attempt to match. When given together with an institution, it is created with `institution_id` and `designation` set.
    - The same person cannot be both complainant and accused, nor complainant twice, on one case.
 
-3. **Write the address:**
-   - Insert new `address` row with provided fields (immutable, spec 0017 §6).
-   - `district` and `state` are pre-filled by the client from the pincode location (spec 0007, spec 0020); the API stores what it is sent.
-4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created, with the request's address as its registered office. A reused institution's stored details are not returned or changed.
+4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created. A reused institution's row is not changed.
    - A `pan` and a `cin` that belong to two different institutions are refused (400).
    - For a **complainant** institution, at least one of `pan`, `cin` or `"pan_cin_skip_declared": true` is required (`E00002` on `institution.pan`); an accused institution needs none of them. For any institution, the declaration with a `pan` or `cin` is refused (`E00001` on `institution.pan_cin_skip_declared`). The same applies to `institution` in PATCH (re-link).
    - The same institution cannot be both complainant and accused, nor hold one role twice, on one case.
 
-5. **Write the address** through the address service (spec 0020 §7): an identical address reuses its row. District and state are not looked up here; the client pre-fills them from `GET /pincodes/{pincode}`. A newly created person also gets this address as their `correspondence_address`; an existing person's addresses are unchanged. The address is required for complainants. When the filer adds themselves without an address, it will come from their profile once profiles carry one; until then it must be sent.
+5. **Write the addresses** through the address service (spec 0020 §7): an identical address reuses its row. District and state are not looked up here; the client pre-fills them from `GET /pincodes/{pincode}`. A newly created person also gets the first as their `correspondence_address`; an existing person's addresses are unchanged. When the filer adds themselves without an address, it will come from their profile once profiles carry one; until then it must be sent.
 
 6. **Create the participant:**
    - `role = 'COMPLAINANT'`, the next free `ordinal` for this role on this case
-   - snapshot: `name_at_filing` (the person's name, or the institution's when there is no person), `phone_number_at_filing` and `email_at_filing` (the person's, or the institution's when there is no person), `gender_at_filing`, `age_at_filing` (from the date of birth when known, else the stated age), `designation_at_filing`, and, when an institution is given, `entity_name_at_filing` as sent (not the stored name of a reused institution)
-   - `address_id` from step 5, `start_date = now()`
+   - snapshot: `name_at_filing` (the person's name, or the institution's when there is no person), `gender_at_filing`, `age_at_filing` (from the date of birth when known, else the stated age), `designation_at_filing`, and, when an institution is given, `entity_name_at_filing` as sent (not the stored name of a reused institution)
+   - `start_date = now()`
+   - one `case_contact` row per mobile number, email and address, in order: the person's (with `institution_id` too for the person acting for an institution), and the institution's own (with `case_id` and `institution_id`, no participant)
 
 7. **Touch the case** (`updated_at`), and clear the preview cache.
 
@@ -498,29 +507,32 @@ Updates only the participant's own data. The `person` and `institution` rows are
 ```json
 {
   "name_at_filing": "Rajesh S. Kumar",
-  "phone_number_at_filing": "+919876543210",
   "gender_at_filing": "MALE",
   "age_at_filing": 40,
   "designation_at_filing": "Managing Director",
-  "email_at_filing": "rajesh@example.com",
   "entity_name_at_filing": "ABC Private Ltd",
-  "address": { "line1": "456 New Street", "city": "Bengaluru", "pincode": "560002", "district": "...", "state": "...", "police_station": "..." },
+  "mobile_numbers": ["+919876543210", "+919812345678"],
+  "email_addresses": ["rajesh@example.com"],
+  "addresses": [{ "line1": "456 New Street", "city": "Bengaluru", "pincode": "560002", "district": "...", "state": "...", "police_station": "..." }],
   "is_party_in_person": true,
   "party_in_person_affidavit": "<p>I request permission to appear and argue in person ...</p>",
   "additional_details": {},
   "side": "ACCUSED",
   "what_will_witness_prove": "...",
-  "institution": { "entity_type": "PRIVATE_LIMITED_COMPANY", "entity_name": "ABC Pvt Ltd", "pan": "AAACA1234A", "cin": null, "contact_number": "080-22334455" }
+  "institution": { "entity_type": "PRIVATE_LIMITED_COMPANY", "entity_name": "ABC Pvt Ltd", "pan": "AAACA1234A", "cin": null, "mobile_numbers": ["080-22334455"] },
+  "institution_contacts": { "mobile_numbers": ["080-22334455"], "email_addresses": [], "addresses": [{ ... }] }
 }
 ```
 
-- A changed address is written through the address service and `address_id` is repointed; the old address row is kept.
+- **`institution_contacts`** replaces the institution's own lists in this case and changes nothing else: the participant stays linked to the same institution. Use it to edit a company's mobile numbers, emails or addresses. `institution` is for correcting *which* company the party is (it re-links, and without a PAN or CIN always creates a new institution row, since there is nothing to match). `institution_contacts` is accepted only for a participant with an institution (`E07023`), its errors are reported under it (`institution_contacts.addresses[0].police_station`), and a list may not be sent both here and inside `institution` (`E00001`).
+
+- A contact list sent **replaces** that whole list: the old rows are deactivated (kept in history) and the new ones written in order. A list left out is unchanged, and a list sent unchanged writes nothing. Inside `institution`, the lists replace the institution's own in this case. The rules on create apply: a party keeps an address (`E00002` on `addresses: []`), accused and witness addresses need a police station, nothing twice. An accused may keep `contact_details_unknown_declared` only while no mobile number or email is left.
 - `side` and `what_will_witness_prove` apply only to witnesses (§4.3) and update the `witness` row.
-- A changed accused or witness address needs a `police_station` (`E00002` on `address.police_station`).
-- `institution` **re-links** a participant that already has an institution, for example after a mistyped PAN or CIN. It is resolved exactly as on create (step 4): an existing institution with the `pan` or `cin` is linked, otherwise a new one is created with the participant's (possibly just changed) address as its registered office. Neither institution row, nor the person acting for it, is changed. The participant keeps its id and ordinal, so its representations, mandates and linked documents stay in place. `entity_name_at_filing` is taken from the `institution` sent, and for an institution with no person so are `name_at_filing` and `phone_number_at_filing`, as on create, unless the same request sets them. A person acting for the institution keeps their own name and contact details. The role checks apply to the new institution (`E07013`, `E07014` on `institution`).
+- `institution` **re-links** a participant that already has an institution, for example after a mistyped PAN or CIN. It is resolved exactly as on create (step 4): an existing institution with the `pan` or `cin` is linked, otherwise a new one is created. Neither institution row, nor the person acting for it, is changed. The participant keeps its id and ordinal, so its representations, mandates and linked documents stay in place, and the case's contacts of the old institution move to the new one. `entity_name_at_filing` is taken from the `institution` sent, and for an institution with no person so is `name_at_filing`, as on create, unless the same request sets them. A person acting for the institution keeps their own name and contacts. The role checks apply to the new institution (`E07013`, `E07014` on `institution`).
 - `role` and `person` cannot be changed, and an individual cannot become an institution or the reverse (`E07023` on `institution`); remove the participant and add it again instead.
 - Setting `is_party_in_person` to true is refused while the participant has an active advocate.
 - `designation_at_filing` is accepted only for a person acting for an institution, or a witness.
+- `disability_status` is accepted only for a participant with a person (`E07023` otherwise, and for a person another user has claimed, as for `permanent_address`) and is set on the person; `null` means not answered. On create it is `person.disability_status`, null when left out.
 - `contact_details_unknown_declared` is accepted only for an accused (`E07023` otherwise), and only while it has no phone number or email (`E00001`).
 - `entity_name_at_filing` is accepted only when the participant has an institution (`E07023` otherwise).
 - `party_in_person_affidavit` (rich text) is accepted only for a complainant (`E07023` otherwise), here and when the complainant is added; `null` clears it. It is stored whether or not the complainant is party-in-person, and required by the completeness check (§6.3) only when they are. For an institution with no person acting for it, `name_at_filing` and `entity_name_at_filing` are the same value: changing one changes the other.
@@ -560,7 +572,8 @@ POST /cases/{case_id_or_draft_session_id}/witnesses
 ```json
 {
   "person": { ... },
-  "address": { ... },
+  "mobile_numbers": ["+919876543210"],
+  "addresses": [{ ... }],
   "side": "COMPLAINANT",
   "designation": "Branch manager",
   "what_will_witness_prove": "Eyewitness to the transaction on 2024-01-15",
@@ -571,10 +584,10 @@ POST /cases/{case_id_or_draft_session_id}/witnesses
 **Implementation:**
 - Same steps as §4.1, with `role = 'WITNESS'`, plus a `witness` row (spec 0020 §4.5) holding `side`, `what_will_witness_prove` and `additional_details`.
 - `side` is required: `COMPLAINANT` (the complainant's witness) or `ACCUSED` (the accused's witness).
-- `designation` is optional (the witness's job title) and is kept as `designation_at_filing`. A named `person` needs a `name` or a `designation` (`E00002` on `person.name`); the `phone_number` is optional. On PATCH, `name_at_filing` may be cleared (`null`) only while the witness has a `designation_at_filing`; `phone_number_at_filing` may be cleared.
+- `designation` is optional (the witness's job title) and is kept as `designation_at_filing`. A named `person` needs a `name` or a `designation` (`E00002` on `person.name`); `mobile_numbers` is optional. On PATCH, `name_at_filing` may be cleared (`null`) only while the witness has a `designation_at_filing`; `mobile_numbers` may be emptied.
 - `what_will_witness_prove` is optional; left out or blank, it is stored empty.
 - A witness is always an individual: `institution` is not accepted. `"self": true` is. `is_party_in_person` does not apply to a witness and is refused.
-- The address is required (`E00002` on `address`) and needs a `police_station`.
+- At least one address is required (`E00002` on `addresses`), each with a `police_station`.
 - A complainant or accused may also be a witness. The same person may be a witness more than once on a case (a witness recalled by the other side is a new participant, spec 0020 §4.5.3), but not twice for the same side while active (`E07032`).
 - `additional_details` is stored on the `witness` row; the participant's own `additional_details` stays `{}`. On PATCH, a witness's `additional_details` likewise changes the `witness` row.
 
@@ -658,10 +671,10 @@ DELETE /poa-mandates/{poa_mandate_id}
 {
   "person": {
     "name": "Suresh Patel",
-    "phone_number": "+919123456789",
     ...
   },
-  "address": { ... },
+  "mobile_numbers": ["+919123456789"],
+  "addresses": [{ ... }],
   "represented_participant_ids": ["uuid1", "uuid2"],
   "additional_details": {}
 }
@@ -680,12 +693,12 @@ DELETE /poa-mandates/{poa_mandate_id}
 
 **Validation** (spec 0020 §5), before anything is written:
 - Each represented participant is an active COMPLAINANT or ACCUSED on this case, and is not the holder's own person.
-- A POA holder is always an individual: `institution` is not accepted. The address is required. `permanent_address` works as for a complainant (§4.1): left out, it is the same row as `address`.
+- A POA holder is always an individual: `institution` is not accepted. At least one address is required. `permanent_address` works as for a complainant (§4.1): left out, it is their first address.
 
 **Transaction Steps:**
 1. Get or create the case (same as §3.1, step 1).
 2. Resolve the person (§4.1, step 3): the filer's own with `self`, otherwise a new `person` at `ASSERTED`.
-3. Write the address and create the `case_participant` with `role = 'POA_HOLDER'` (§4.1, steps 5–6).
+3. Write the addresses and create the `case_participant` with `role = 'POA_HOLDER'`, and its contacts (§4.1, steps 5–6).
 4. For each represented participant, insert a `poa_mandate` row with `case_id`, `poa_participant_id`, `represented_participant_id`, `is_active = true`, `granted_at = now()`.
 
 **Why multiple mandate rows:**
@@ -1215,12 +1228,17 @@ GET /cases/{case_id}
       "role": "COMPLAINANT",
       "ordinal": 1,
       "name_at_filing": "Rajesh Kumar",
-      "phone_number_at_filing": "+919876543210",
-      "address": {
+      "mobile_numbers": ["+919876543210"],
+      "email_addresses": [],
+      "addresses": [{
+        "address_id": "uuid",
         "line1": "123 MG Road",
         "city": "Bangalore",
         "pincode": "560001"
-      },
+      }],
+      "permanent_address": null,
+      "disability_status": null,
+      "institution": null,
       "is_party_in_person": false,
       "is_active": true
     }
@@ -1230,6 +1248,7 @@ GET /cases/{case_id}
       "representation_id": "uuid",
       "advocate_id": "uuid",
       "advocate_name": "Adv. Sharma",
+      "bar_registration_id": "KA/1234/2015",
       "client_participant_id": "uuid",
       "is_active": true
     }
@@ -1278,7 +1297,11 @@ GET /cases/{case_id}
 - Active `case_document` rows
 
 **Participant data is frozen:**
-`name_at_filing`, `phone_number_at_filing`, and `address_id` come from `case_participant`, **not** `person`. The preview shows the case as it was filed (spec 0017 §3.4).
+`name_at_filing` comes from `case_participant`, and the contact lists from the case's `case_contact` rows, **not** `person`. The preview shows the case as it was filed (spec 0017 §3.4). `disability_status` is the person's answer, read from the person: null when not answered, or for an institution with no person.
+
+Each participant (here and in every participant response) carries `mobile_numbers`, `email_addresses` and `addresses` (written out, primary first): the person's on this case, empty for an institution with no person. It also carries `institution`, or null for an individual: the institution's own row, `entity_name`, `entity_type`, `pan`, `cin` and `pan_cin_skip_declared`, plus its own `mobile_numbers`, `email_addresses` and `addresses` **in this case**. The row is read from the shared institution, not frozen, so a reused institution shows the name and type stored when it was first created, which may have been entered by another filer; the case's own name for it stays `entity_name_at_filing`. Its contacts are this case's only. `pan`, `cin` and `pan_cin_skip_declared` are shown for a complainant only (null for an accused, whose form does not ask for them).
+
+Each participant also carries `permanent_address`, written out like an address: the person's permanent address (an individual complainant or POA holder) when it differs from their first address, and null when it is the same or there is none. It is current data from the person, so a change to it from any filing clears the cached preview of every filing that person is on. Each representation carries the advocate's `bar_registration_id`.
 
 ### 6.2 Caching Strategy
 
@@ -1343,7 +1366,8 @@ POST /cases/{case_id}/validate
    - At least one active complainant (`role = 'COMPLAINANT'`, `is_active = true`)
    - At least one active accused (`role = 'ACCUSED'`, `is_active = true`)
    - Each active complainant, accused and POA holder has a `name_at_filing`.
-   - Witnesses are optional. Each active witness has a `name_at_filing` or a `designation_at_filing`, and an address; the phone number is optional. The writes already refuse a party missing these; this catches rows saved before the rules or outside the API.
+   - Witnesses are optional. Each active witness has a `name_at_filing` or a `designation_at_filing`; the mobile number is optional.
+   - Every active party has an address contact: an individual their own, an institution its own on this case ("Accused #2 has no address."). The writes already refuse a party missing these; this catches rows saved before the rules or outside the API.
 
 2. **Representation:**
    - Each complainant either:
@@ -1423,6 +1447,7 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 | `E07030` | 400 | This document type cannot be linked there (a cheque scan to a participant or to evidence: a scan is linked from its evidence; an "other document" to evidence). |
 | `E07031` | 400 | The linked evidence is not an active evidence item of this case. |
 | `E07032` | 400 | The person is already a witness for this side. |
+| `E07033` | 400 | A mobile number, email or address is given more than once in one list (spec 0020 §4.6). |
 
 A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00004` blank text, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
 

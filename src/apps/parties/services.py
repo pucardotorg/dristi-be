@@ -55,11 +55,10 @@ def create_asserted_person(
     )
 
 
-def get_or_create_institution(user, fields, *, address=None, require_identifier=False):
+def get_or_create_institution(user, fields, *, require_identifier=False):
     """Return the institution with the PAN or CIN in ``fields``, or create one.
 
-    A match is returned as is: none of ``fields`` is applied to it. A new
-    institution gets ``address`` as its registered office. A PAN and a CIN
+    A match is returned as is: none of ``fields`` is applied to it. A PAN and a CIN
     belonging to two different institutions are refused, since either could
     be the one meant. ``require_identifier`` refuses an institution with no
     PAN, no CIN and no skip declaration: a complainant's (spec 0020 §3.4).
@@ -80,9 +79,7 @@ def get_or_create_institution(user, fields, *, address=None, require_identifier=
         # A savepoint, so a concurrent insert of the same PAN or CIN can be
         # recovered from without aborting the caller's transaction.
         with transaction.atomic():
-            return Institution.objects.create(
-                **fields, address=address, created_by=user, updated_by=user
-            )
+            return Institution.objects.create(**fields, created_by=user, updated_by=user)
     except IntegrityError:
         found = _find_institution(pan, cin)
         if found is None:

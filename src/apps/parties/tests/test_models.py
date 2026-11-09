@@ -9,7 +9,14 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
 
-from apps.parties.models import Institution, Person, VerificationLevel, age_on, today_in_india
+from apps.parties.models import (
+    Institution,
+    Person,
+    VerificationLevel,
+    age_on,
+    contact_number_validator,
+    today_in_india,
+)
 from apps.parties.tests.factories import make_address, make_institution, make_person
 from apps.users.models import User
 
@@ -176,9 +183,8 @@ class TestInstitution:
         ],
     )
     def test_contact_number_accepts_phone_lines(self, number):
-        institution = make_institution(contact_number=number)
-
-        institution.full_clean()
+        """An institution's number on a case (``cases.CaseContact``) may be any phone line."""
+        contact_number_validator(number)
 
     @pytest.mark.parametrize(
         "number",
@@ -195,30 +201,8 @@ class TestInstitution:
         ],
     )
     def test_contact_number_rejects_letters_and_symbols(self, number):
-        institution = Institution(
-            entity_type="PRIVATE_LIMITED_COMPANY", entity_name="ABC", contact_number=number
-        )
-
-        with pytest.raises(ValidationError) as exc:
-            institution.full_clean()
-
-        assert "contact_number" in exc.value.message_dict
-
-    def test_database_rejects_letters_in_contact_number(self):
-        institution = make_institution()
-
-        with pytest.raises(IntegrityError), transaction.atomic():
-            Institution.objects.filter(pk=institution.pk).update(contact_number="abc")
-
-    @pytest.mark.parametrize("blank", ["", "   "])
-    def test_blank_contact_number_is_stored_as_no_number(self, blank):
-        institution = make_institution(contact_number=blank)
-
-        institution.full_clean()
-        institution.save()
-
-        institution.refresh_from_db()
-        assert institution.contact_number is None
+        with pytest.raises(ValidationError):
+            contact_number_validator(number)
 
     def test_pan_and_cin_may_both_be_left_out_with_the_declaration(self):
         institution = make_institution(pan_cin_skip_declared=True)
@@ -350,7 +334,7 @@ class TestRulesOnEveryWrite:
 
     def test_plain_create_cannot_store_an_invalid_institution(self):
         with pytest.raises(ValidationError):
-            Institution.objects.create(entity_type="LLP", entity_name="X", contact_number="abc")
+            Institution.objects.create(entity_type="LLP", entity_name="X", pan="NOTAPAN")
 
         assert Institution.objects.count() == 0
 
@@ -377,32 +361,18 @@ class TestRulesOnEveryWrite:
 
 
 @pytest.mark.django_db
-class TestInstitutionAddress:
-    def test_institution_has_a_registered_address(self):
-        address = make_address()
-        institution = make_institution(address=address)
-
-        assert Institution.objects.get(pk=institution.pk).address == address
-
-    def test_address_is_optional(self):
-        assert make_institution().address is None
-
-    def test_address_in_use_by_an_institution_cannot_be_deleted(self):
-        address = make_address()
-        make_institution(address=address)
-
-        with pytest.raises(Exception):  # noqa: B017 - immutability or PROTECT, either blocks it
-            address.delete()
-
-
-@pytest.mark.django_db
 class TestDisabilityStatus:
-    def test_defaults_to_false(self):
-        assert make_person().disability_status is False
+    def test_defaults_to_not_answered(self):
+        assert make_person().disability_status is None
 
     @pytest.mark.parametrize("missing", [None, ""])
-    def test_missing_value_is_stored_as_false(self, missing):
+    def test_missing_value_is_stored_as_not_answered(self, missing):
         person = make_person(disability_status=missing)
+
+        assert Person.objects.get(pk=person.pk).disability_status is None
+
+    def test_false_is_kept(self):
+        person = make_person(disability_status=False)
 
         assert Person.objects.get(pk=person.pk).disability_status is False
 

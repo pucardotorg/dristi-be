@@ -18,7 +18,7 @@ from apps.cases.models import (
     ParticipantRole,
 )
 from apps.files.models import File
-from apps.parties.tests.factories import make_address, make_institution, make_person
+from apps.parties.tests.factories import make_institution, make_person
 
 from .conftest import CHEQUE_INFO, error_codes
 
@@ -204,7 +204,6 @@ class TestModelRulesMatchTheApi:
                 role=role,
                 ordinal=1,
                 name_at_filing=person.name,
-                address=make_address(),
             )
 
         participant(ParticipantRole.COMPLAINANT).save()
@@ -219,7 +218,6 @@ class TestModelRulesMatchTheApi:
             role=ParticipantRole.COMPLAINANT,
             ordinal=1,
             name_at_filing="ABC Pvt Ltd",
-            address=make_address(),
         )
 
         with pytest.raises(ValidationError) as exc:
@@ -235,7 +233,6 @@ class TestModelRulesMatchTheApi:
             ordinal=1,
             name_at_filing="Rajesh Kumar",
             entity_name_at_filing="ABC Pvt Ltd",
-            address=make_address(),
         )
 
         with pytest.raises(ValidationError) as exc:
@@ -252,7 +249,6 @@ class TestModelRulesMatchTheApi:
             name_at_filing="Suresh Patel",
             resides_within_jurisdiction=True,
             party_in_person_affidavit="<p>T</p>",
-            address=make_address(),
         )
 
         with pytest.raises(ValidationError) as exc:

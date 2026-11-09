@@ -4,7 +4,7 @@ from html import unescape
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator
+from django.core.validators import EmailValidator, MaxValueValidator
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
@@ -13,7 +13,7 @@ from django.utils.html import strip_tags
 from apps.address.models import normalize_field
 from apps.api import errors as api_errors
 from apps.core.models import BaseActivatableModel, BaseAuditableModel, BaseModel
-from apps.parties.models import MAX_AGE
+from apps.parties.models import MAX_AGE, contact_number_validator, phone_number_validator
 from apps.users.models import ApprovalStatus
 
 from . import errors as case_errors
@@ -163,6 +163,15 @@ def police_station_error(role, address):
     return None
 
 
+def police_station_problems(role, addresses):
+    """Return ``{index: problem}`` for each of ``addresses`` ``role`` needs a police station on."""
+    return {
+        index: problem
+        for index, address in enumerate(addresses or [])
+        if (problem := police_station_error(role, address))
+    }
+
+
 # Messages shared by the model rules and the request checks that run before them.
 # Each rule raises its message with the API code it is reported as (spec 0021
 # §10), which the project error handler keeps.
@@ -178,6 +187,10 @@ DESIGNATION_NOT_ALLOWED_MESSAGE = "Only for a person acting for an institution."
 INSTITUTION_DETAILS_REQUIRED_MESSAGE = "Required for an institution."
 INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE = "Only for an institution."
 COMPLAINANT_ONLY_MESSAGE = "Only for a complainant."
+INSTITUTION_CONTACTS_MESSAGE = (
+    "Only for a person. Send an institution's own contacts under institution."
+)
+PERSON_ONLY_MESSAGE = "Only for a person."
 PERMANENT_ADDRESS_MESSAGE = "Only for an individual complainant or a POA holder."
 PERSON_OF_ANOTHER_USER_MESSAGE = (
     "This person has registered; only they, their advocate or a complainant filing the case "
@@ -291,26 +304,15 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     # The person's name, or the institution's when there is no person. Every
     # role but a witness needs one; a witness may be named by designation alone.
     name_at_filing = models.CharField(max_length=256, null=True, blank=True)
-    # 20 wide so an institution's landline fits.
-    phone_number_at_filing = models.CharField(max_length=20, null=True, blank=True)
     gender_at_filing = models.CharField(max_length=32, null=True, blank=True)
     age_at_filing = models.PositiveSmallIntegerField(
         null=True, blank=True, validators=[MaxValueValidator(MAX_AGE)]
     )
     designation_at_filing = models.CharField(max_length=128, null=True, blank=True)
-    # The person's, or the institution's when there is no person.
-    email_at_filing = models.EmailField(max_length=256, null=True, blank=True)
     # Set exactly when there is an institution: its name as the filer entered
     # it, which may differ from a reused institution's stored one.
     entity_name_at_filing = models.CharField(max_length=256, null=True, blank=True)
-    # The address for service of notice.
-    address = models.ForeignKey(
-        "address.Address",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="+",
-    )
+    # Mobile numbers, emails and addresses are ``CaseContact`` rows.
     additional_details = models.JSONField(default=dict, blank=True)
     start_date = models.DateTimeField(default=timezone.now)
     end_date = models.DateTimeField(null=True, blank=True)
@@ -373,10 +375,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 violation_error_message=RESIDES_WITHIN_JURISDICTION_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(contact_details_unknown_declared=False)
-                | Q(role=ParticipantRole.ACCUSED)
-                & (Q(phone_number_at_filing__isnull=True) | Q(phone_number_at_filing=""))
-                & (Q(email_at_filing__isnull=True) | Q(email_at_filing="")),
+                # That no mobile number or email is given is checked against the
+                # participant's contacts, in the party write and at validation.
+                check=Q(contact_details_unknown_declared=False) | Q(role=ParticipantRole.ACCUSED),
                 name="cases_case_participant_contact_unknown_accused_only",
                 violation_error_message=CONTACT_UNKNOWN_MESSAGE,
             ),
@@ -401,9 +402,10 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     def clean(self):
         """Apply the rules the database cannot express (spec 0020 §4.2, §7.2, §14.1).
 
-        Every role needs an address for service of notice, and an accused's or
-        witness's address needs a police station. Every role but a witness
-        needs a name; a witness needs a name or a designation. An
+        Every role but a witness needs a name; a witness needs a name or a
+        designation. Only an accused may declare their contact details unknown;
+        the rules on addresses, mobile numbers and emails are the contacts'
+        (``CaseContact``, ``services.participants``). An
         institution's name is recorded exactly when there is one, and only a
         complainant has a party-in-person affidavit. While
         active, a person or an institution cannot hold one role twice on a
@@ -422,19 +424,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 )
         elif not self.name_at_filing:
             errors["name_at_filing"] = _rule_error(api_errors.REQUIRED, NAME_REQUIRED_MESSAGE)
-        if not self.address_id:
-            errors["address"] = _rule_error(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)
-        elif (
-            self.role in POLICE_STATION_ROLES
-            and self.address_id
-            and not self.address.police_station
-        ):
-            errors["address"] = _rule_error(api_errors.REQUIRED, POLICE_STATION_REQUIRED_MESSAGE)
-        if self.contact_details_unknown_declared and (
-            self.role != ParticipantRole.ACCUSED
-            or self.phone_number_at_filing
-            or self.email_at_filing
-        ):
+        if self.contact_details_unknown_declared and self.role != ParticipantRole.ACCUSED:
             errors["contact_details_unknown_declared"] = _rule_error(
                 api_errors.INVALID, CONTACT_UNKNOWN_MESSAGE
             )
@@ -830,6 +820,192 @@ class Representation(BaseModel, BaseActivatableModel, BaseAuditableModel):
             .exclude(pk=self.pk)
             .exists()
         )
+
+
+class ContactType(models.TextChoices):
+    """What a ``CaseContact`` row holds."""
+
+    MOBILE_NUMBER = "MOBILE_NUMBER", "Mobile number"
+    EMAIL = "EMAIL", "Email"
+    ADDRESS = "ADDRESS", "Address"
+
+
+# Where each contact type keeps its value.
+VALUE_CONTACT_TYPES = (ContactType.MOBILE_NUMBER, ContactType.EMAIL)
+
+CONTACT_OWNER_MESSAGE = "Choose a case participant, an institution, or both."
+CONTACT_SHAPE_MESSAGE = "An address contact has an address and no value; any other has a value."
+CONTACT_SAME_CASE_MESSAGE = "Must belong to the same case."
+CONTACT_INSTITUTION_MESSAGE = "Must be the institution of the participant, or of one on the case."
+DUPLICATE_CONTACT_MESSAGE = "This contact is already given."
+# The active contacts of a participant, and of an institution itself.
+_CONTACT_OF_PARTICIPANT = Q(is_active=True, case_participant__isnull=False)
+_CONTACT_OF_INSTITUTION = Q(is_active=True, case_participant__isnull=True)
+
+
+class CaseContact(BaseModel, BaseActivatableModel, BaseAuditableModel):
+    """One mobile number, email or address of a party, for one case (spec 0020 §4.6).
+
+    Whose it is:
+
+    - ``case_participant`` only: an individual party's.
+    - ``case_participant`` and ``institution``: the person acting for that
+      institution (its representative).
+    - ``institution`` only: the institution's own, in this case. Institutions
+      are shared between filings; these rows are not, so each case keeps its
+      own.
+
+    ``ordinal`` orders each owner's contacts of one type; 1 is the primary.
+    A changed list replaces the active rows, which stay as history.
+    """
+
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="contacts")
+    case_participant = models.ForeignKey(
+        CaseParticipant,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="contacts",
+    )
+    institution = models.ForeignKey(
+        "parties.Institution",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="case_contacts",
+    )
+    contact_type = models.CharField(max_length=16, choices=ContactType.choices)
+    # A mobile number or an email; NULL for an address. 256 fits any email.
+    value = models.CharField(max_length=256, null=True, blank=True)
+    # PROTECT: an address a case uses cannot be deleted from under it.
+    address = models.ForeignKey(
+        "address.Address",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    ordinal = models.PositiveSmallIntegerField()
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        constraints = [
+            models.CheckConstraint(
+                check=Q(case_participant__isnull=False) | Q(institution__isnull=False),
+                name="cases_case_contact_owner",
+                violation_error_message=CONTACT_OWNER_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=Q(contact_type=ContactType.ADDRESS, address__isnull=False, value__isnull=True)
+                | Q(
+                    contact_type__in=VALUE_CONTACT_TYPES,
+                    address__isnull=True,
+                    value__isnull=False,
+                ),
+                name="cases_case_contact_shape",
+                violation_error_message=CONTACT_SHAPE_MESSAGE,
+            ),
+            # Each owner's active contacts: no value or address twice, and one
+            # row per position. Separate by owner, since NULLs never clash.
+            models.UniqueConstraint(
+                fields=["case_participant", "contact_type", "value"],
+                condition=_CONTACT_OF_PARTICIPANT & Q(value__isnull=False),
+                name="cases_case_contact_unique_participant_value",
+                violation_error_message=DUPLICATE_CONTACT_MESSAGE,
+            ),
+            models.UniqueConstraint(
+                fields=["case_participant", "address"],
+                condition=_CONTACT_OF_PARTICIPANT & Q(address__isnull=False),
+                name="cases_case_contact_unique_participant_address",
+                violation_error_message=DUPLICATE_CONTACT_MESSAGE,
+            ),
+            models.UniqueConstraint(
+                fields=["case", "institution", "contact_type", "value"],
+                condition=_CONTACT_OF_INSTITUTION & Q(value__isnull=False),
+                name="cases_case_contact_unique_institution_value",
+                violation_error_message=DUPLICATE_CONTACT_MESSAGE,
+            ),
+            models.UniqueConstraint(
+                fields=["case", "institution", "address"],
+                condition=_CONTACT_OF_INSTITUTION & Q(address__isnull=False),
+                name="cases_case_contact_unique_institution_address",
+                violation_error_message=DUPLICATE_CONTACT_MESSAGE,
+            ),
+            models.UniqueConstraint(
+                fields=["case_participant", "contact_type", "ordinal"],
+                condition=_CONTACT_OF_PARTICIPANT,
+                name="cases_case_contact_unique_participant_ordinal",
+            ),
+            models.UniqueConstraint(
+                fields=["case", "institution", "contact_type", "ordinal"],
+                condition=_CONTACT_OF_INSTITUTION,
+                name="cases_case_contact_unique_institution_ordinal",
+            ),
+        ]
+        indexes = [models.Index(fields=["case", "is_active"])]
+
+    def __str__(self):
+        return f"{self.contact_type} #{self.ordinal} for {self.case_id}"
+
+    @property
+    def party(self):
+        """Return the participant these contacts belong to, or ``None``.
+
+        For an institution's own contact, the case's active participant that
+        is that institution.
+        """
+        if self.case_participant_id:
+            return self.case_participant
+        return (
+            CaseParticipant.objects.active()
+            .filter(case_id=self.case_id, institution_id=self.institution_id)
+            .first()
+        )
+
+    def clean_fields(self, exclude=None):
+        """Store a value without surrounding whitespace."""
+        if isinstance(self.value, str):
+            self.value = self.value.strip() or None
+        super().clean_fields(exclude=exclude)
+
+    def clean(self):
+        """Apply the rules the database cannot express.
+
+        The owner is on the same case, and an institution is the participant's
+        own or one on the case. A person's mobile number is in E.164 form; an
+        institution's may be a landline. An accused's or witness's address,
+        their institution's included, needs a police station.
+        """
+        super().clean()
+        errors = {}
+        party = self.party if self.case_id else None
+        if self.case_participant_id and self.case_participant.case_id != self.case_id:
+            errors["case_participant"] = CONTACT_SAME_CASE_MESSAGE
+        if self.institution_id and (party is None or party.institution_id != self.institution_id):
+            errors["institution"] = CONTACT_INSTITUTION_MESSAGE
+        if self.value and self.contact_type == ContactType.MOBILE_NUMBER:
+            validator = (
+                phone_number_validator if self.case_participant_id else contact_number_validator
+            )
+            try:
+                validator(self.value)
+            except ValidationError as exc:
+                errors["value"] = exc.messages
+        elif self.value and self.contact_type == ContactType.EMAIL:
+            try:
+                EmailValidator()(self.value)
+            except ValidationError as exc:
+                errors["value"] = exc.messages
+        if (
+            self.address_id
+            and party is not None
+            and party.role in POLICE_STATION_ROLES
+            and not self.address.police_station
+        ):
+            errors["address"] = _rule_error(api_errors.REQUIRED, POLICE_STATION_REQUIRED_MESSAGE)
+        if errors:
+            raise ValidationError(errors)
 
 
 class CaseDocument(BaseModel, BaseActivatableModel, BaseAuditableModel):

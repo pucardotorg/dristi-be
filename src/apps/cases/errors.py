@@ -91,3 +91,6 @@ EVIDENCE_NOT_ON_CASE = define("E07031", "No active evidence with this id on this
 
 # Witnesses (spec 0020 §4.5)
 WITNESS_ALREADY_ON_SIDE = define("E07032", "This person is already a witness for this side.")
+
+# Contacts (spec 0020 §4.6)
+DUPLICATE_CONTACT = define("E07033", "This contact is given more than once.")

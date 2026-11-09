@@ -1,5 +1,6 @@
 """Case filing serializers (spec 0021)."""
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -8,15 +9,24 @@ from apps.address.models import Address
 from apps.api import errors as api_errors
 from apps.files import documents
 from apps.organizations.models import Organization
-from apps.parties.models import MAX_AGE, Gender, Institution, Person
+from apps.parties.models import (
+    MAX_AGE,
+    Gender,
+    Institution,
+    Person,
+    contact_number_validator,
+    phone_number_validator,
+)
 
 from . import errors
 from .models import (
     ADDRESS_REQUIRED_MESSAGE,
     COMPLAINANT_ONLY_MESSAGE,
+    CONTACT_UNKNOWN_MESSAGE,
     DESIGNATION_NOT_ALLOWED_MESSAGE,
     DESIGNATION_REQUIRED_MESSAGE,
     EMPTY_TEXT_MESSAGE,
+    INSTITUTION_CONTACTS_MESSAGE,
     INSTITUTION_ROLES,
     NAME_REQUIRED_MESSAGE,
     PERMANENT_ADDRESS_MESSAGE,
@@ -25,15 +35,17 @@ from .models import (
     CaseDocument,
     CaseEvidence,
     CaseParticipant,
+    ContactType,
     ParticipantRole,
     PoaMandate,
     Representation,
     Witness,
     WitnessSide,
     has_visible_text,
-    police_station_error,
+    police_station_problems,
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
+from .services.contacts import contacts_of, first
 
 
 class RejectUnknownFieldsMixin:
@@ -375,7 +387,11 @@ class AddressInputSerializer(serializers.Serializer):
 
 
 class PersonInputSerializer(serializers.ModelSerializer):
-    """A person named in a party write. The model's rules apply again when saving."""
+    """A person named in a party write. The model's rules apply again when saving.
+
+    Their mobile numbers and emails are the party's ``mobile_numbers`` and
+    ``email_addresses``; a new person row keeps the first of each.
+    """
 
     class Meta:
         """Meta options."""
@@ -383,8 +399,6 @@ class PersonInputSerializer(serializers.ModelSerializer):
         model = Person
         fields = [
             "name",
-            "phone_number",
-            "email_address",
             "date_of_birth",
             "age",
             "gender",
@@ -394,15 +408,77 @@ class PersonInputSerializer(serializers.ModelSerializer):
         ]
 
 
-class InstitutionInputSerializer(serializers.ModelSerializer):
-    """An institution named in a party write.
+class ContactListsSerializer(serializers.Serializer):
+    """Mobile numbers, emails and addresses, each a list in order; the first is the primary.
+
+    Stored as ``CaseContact`` rows (spec 0020 §4.6). A list left out is not
+    changed; on PATCH, a list sent replaces the whole list. A person's mobile
+    number is in E.164 form; an institution's may be a landline
+    (``mobile_number_validator``). Nothing may be given twice in one list.
+    """
+
+    mobile_number_validator = phone_number_validator
+
+    mobile_numbers = serializers.ListField(
+        child=serializers.CharField(max_length=20), required=False
+    )
+    email_addresses = serializers.ListField(
+        child=serializers.EmailField(max_length=256), required=False
+    )
+    addresses = serializers.ListField(child=AddressInputSerializer(), required=False)
+
+    def validate_mobile_numbers(self, values):
+        """Check each number's form, and that none is repeated."""
+        problems = {}
+        for index, value in enumerate(values):
+            try:
+                self.mobile_number_validator(value)
+            except DjangoValidationError as exc:
+                problems[index] = exc.messages
+        if problems:
+            raise serializers.ValidationError(problems)
+        return _require_unique(values)
+
+    def validate_email_addresses(self, values):
+        """Refuse an email given twice, in any case."""
+        return _require_unique(values, key=str.lower)
+
+
+def _require_unique(values, key=None):
+    """Refuse a list with the same value twice, reporting each repeat at its position."""
+    seen = set()
+    problems = {}
+    for index, value in enumerate(values):
+        compared = key(value) if key else value
+        if compared in seen:
+            problems[index] = [errors.coded(errors.DUPLICATE_CONTACT)]
+        seen.add(compared)
+    if problems:
+        raise serializers.ValidationError(problems)
+    return values
+
+
+class InstitutionContactsSerializer(ContactListsSerializer):
+    """An institution's own contacts on one case, changed without re-linking it.
+
+    Its mobile numbers may be landlines.
+    """
+
+    mobile_number_validator = contact_number_validator
+
+
+class InstitutionInputSerializer(ContactListsSerializer, serializers.ModelSerializer):
+    """An institution named in a party write, with its contacts for this case.
 
     PAN and CIN are not checked for uniqueness: an existing institution with
     either is reused rather than refused (spec 0020 §3.4). Their format is
     checked by the model, after spaces are removed and letters uppercased.
     One of them, or ``pan_cin_skip_declared``, is required, and the
     declaration cannot come with either (``parties.models.pan_cin_errors``).
+    Its mobile numbers may be landlines.
     """
+
+    mobile_number_validator = contact_number_validator
 
     pan = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     cin = serializers.CharField(required=False, allow_null=True, allow_blank=True)
@@ -417,24 +493,28 @@ class InstitutionInputSerializer(serializers.ModelSerializer):
             "pan",
             "cin",
             "pan_cin_skip_declared",
-            "contact_number",
-            "email_address",
+            "mobile_numbers",
+            "email_addresses",
+            "addresses",
         ]
 
 
-class PartySerializer(serializers.Serializer):
+CONTACT_LIST_FIELDS = ("mobile_numbers", "email_addresses", "addresses")
+
+
+class PartySerializer(ContactListsSerializer):
     """Base body of a party write.
 
     The individual is ``person`` (someone the filer names) or ``"self": true``
     (the filer). ``self`` is returned as ``is_self``. A named person needs a
     name unless ``person_name_required`` is off (a witness, who may give a
-    designation instead).
+    designation instead). ``mobile_numbers``, ``email_addresses`` and
+    ``addresses`` are the individual's.
     """
 
     person_name_required = True
 
     person = PersonInputSerializer(required=False)
-    address = AddressInputSerializer(required=False)
     additional_details = serializers.DictField(default=dict)
 
     def get_fields(self):
@@ -458,13 +538,15 @@ class PartySerializer(serializers.Serializer):
 class ParticipantCreateSerializer(PartySerializer):
     """Body of POST /cases/{id}/complainants and /accused (spec 0021 §4.1, §4.2).
 
-    Either individual may be left out when ``institution`` is given. The role
-    being added is passed in the context as ``role``.
+    Either individual may be left out when ``institution`` is given. An
+    individual needs at least one address; an institution needs at least one
+    of its own, and the person acting for it may give theirs. The role being
+    added is passed in the context as ``role``.
     """
 
     institution = InstitutionInputSerializer(required=False)
     designation = serializers.CharField(max_length=128, required=False, allow_null=True)
-    # An individual complainant's, when it differs from ``address``.
+    # An individual complainant's, when it differs from their first address.
     permanent_address = AddressInputSerializer(required=False)
     is_party_in_person = serializers.BooleanField(default=False)
     # Accused only; yes when left out.
@@ -518,10 +600,36 @@ class ParticipantCreateSerializer(PartySerializer):
                 problems[field] = [
                     errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")
                 ]
-        if "address" not in attrs:
-            problems["address"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
-        elif problem := police_station_error(role, attrs["address"]):
-            problems["address"] = problem
+        institution = attrs.get("institution")
+        if institution is not None and not has_individual:
+            for field in CONTACT_LIST_FIELDS:
+                if attrs.get(field):
+                    problems[field] = [
+                        errors.coded(errors.FIELD_NOT_APPLICABLE, INSTITUTION_CONTACTS_MESSAGE)
+                    ]
+        if problem := police_station_problems(role, attrs.get("addresses")):
+            problems["addresses"] = problem
+        if institution is not None and "institution" not in problems:
+            if not institution.get("addresses"):
+                problems["institution"] = {
+                    "addresses": [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
+                }
+            elif problem := police_station_problems(role, institution["addresses"]):
+                problems["institution"] = {"addresses": problem}
+        elif institution is None and not attrs.get("addresses"):
+            problems["addresses"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
+        if (
+            "contact_details_unknown_declared" not in problems
+            and attrs.get("contact_details_unknown_declared")
+            and any(
+                contacts.get(field)
+                for contacts in (attrs, institution or {})
+                for field in ("mobile_numbers", "email_addresses")
+            )
+        ):
+            problems["contact_details_unknown_declared"] = [
+                errors.coded(api_errors.INVALID, CONTACT_UNKNOWN_MESSAGE)
+            ]
         if attrs.get("party_in_person_affidavit") and role != ParticipantRole.COMPLAINANT:
             problems["party_in_person_affidavit"] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, COMPLAINANT_ONLY_MESSAGE)
@@ -555,7 +663,7 @@ class WitnessCreateSerializer(IndividualPartySerializer):
     """Body of POST /cases/{id}/witnesses (spec 0021 §4.3).
 
     ``side`` says whether the complainant or the accused calls the witness.
-    The address is required, with a police station. ``designation`` is the
+    At least one address is required, each with a police station. ``designation`` is the
     witness's job title, kept on the participant; a named person needs a name
     or a designation. The mobile number is optional. ``additional_details`` is
     stored on the witness row.
@@ -576,10 +684,10 @@ class WitnessCreateSerializer(IndividualPartySerializer):
             problems["person"] = {
                 "name": [errors.coded(api_errors.REQUIRED, WITNESS_NAME_OR_DESIGNATION_MESSAGE)]
             }
-        if "address" not in attrs:
-            problems["address"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
-        elif problem := police_station_error(ParticipantRole.WITNESS, attrs["address"]):
-            problems["address"] = problem
+        if not attrs.get("addresses"):
+            problems["addresses"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
+        elif problem := police_station_problems(ParticipantRole.WITNESS, attrs["addresses"]):
+            problems["addresses"] = problem
         if problems:
             raise serializers.ValidationError(problems)
         return attrs
@@ -588,7 +696,7 @@ class WitnessCreateSerializer(IndividualPartySerializer):
 class PoaHolderCreateSerializer(IndividualPartySerializer):
     """Body of POST /cases/{id}/poa-holders (spec 0021 §4.5).
 
-    The address is required. One mandate is created per represented party;
+    At least one address is required. One mandate is created per represented party;
     whether each is an active complainant or accused of the case is checked
     when saving.
     """
@@ -596,7 +704,7 @@ class PoaHolderCreateSerializer(IndividualPartySerializer):
     represented_participant_ids = serializers.ListField(
         child=serializers.UUIDField(), allow_empty=False
     )
-    # The holder's, when it differs from ``address``.
+    # The holder's, when it differs from their first address.
     permanent_address = AddressInputSerializer(required=False)
 
     def validate_represented_participant_ids(self, value):
@@ -604,10 +712,10 @@ class PoaHolderCreateSerializer(IndividualPartySerializer):
         return _require_each_once(value)
 
     def validate(self, attrs):
-        """Require the address."""
+        """Require an address."""
         attrs = super().validate(attrs)
-        if "address" not in attrs:
-            raise api_errors.REQUIRED.validation_error({"address": [ADDRESS_REQUIRED_MESSAGE]})
+        if not attrs.get("addresses"):
+            raise api_errors.REQUIRED.validation_error({"addresses": [ADDRESS_REQUIRED_MESSAGE]})
         return attrs
 
 
@@ -669,10 +777,13 @@ class AdvocateCreatedSerializer(serializers.Serializer):
 
 
 class RepresentationSerializer(serializers.ModelSerializer):
-    """A representation, with the advocate's name."""
+    """A representation, with the advocate's name and bar registration number."""
 
     representation_id = serializers.UUIDField(source="id", read_only=True)
     advocate_name = serializers.CharField(source="advocate.name", read_only=True)
+    bar_registration_id = serializers.CharField(
+        source="advocate.bar_registration_id", read_only=True
+    )
     client_participant_id = serializers.UUIDField(source="case_participant_id", read_only=True)
 
     class Meta:
@@ -684,6 +795,7 @@ class RepresentationSerializer(serializers.ModelSerializer):
             "case_id",
             "advocate_id",
             "advocate_name",
+            "bar_registration_id",
             "client_participant_id",
             "is_active",
             "from_date",
@@ -694,19 +806,20 @@ class RepresentationSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class ParticipantUpdateSerializer(PartialUpdateSerializer):
+class ParticipantUpdateSerializer(ContactListsSerializer, PartialUpdateSerializer):
     """Body of PATCH /case-participants/{id} (spec 0021 §4.1).
 
     Changes the case's copy of the party's details; the institution row is
-    never changed, and the person only by ``permanent_address``. The role and
-    person cannot change.
-    ``institution`` re-links an institution participant to the one its PAN or
-    CIN names (spec 0021 §4.1).
+    never changed, and the person only by ``permanent_address`` and
+    ``disability_status``. The role and person cannot change. A contact list
+    sent replaces the person's whole list. ``institution_contacts`` replaces
+    the institution's own lists in this case and nothing else; ``institution``
+    re-links an institution participant to the one its PAN or CIN names, and
+    may carry the lists too (spec 0021 §4.1).
     """
 
     # ``null`` clears it; only a witness with a designation may have no name.
     name_at_filing = serializers.CharField(max_length=256, required=False, allow_null=True)
-    phone_number_at_filing = serializers.CharField(max_length=20, required=False, allow_null=True)
     gender_at_filing = serializers.ChoiceField(
         choices=Gender.choices, required=False, allow_null=True
     )
@@ -714,14 +827,14 @@ class ParticipantUpdateSerializer(PartialUpdateSerializer):
         min_value=0, max_value=MAX_AGE, required=False, allow_null=True
     )
     designation_at_filing = serializers.CharField(max_length=128, required=False, allow_null=True)
-    email_at_filing = serializers.EmailField(max_length=256, required=False, allow_null=True)
+    # People only; set on the person. ``null`` means not answered.
+    disability_status = serializers.BooleanField(required=False, allow_null=True)
     # Institutions only. For an institution with no person acting for it,
     # ``name_at_filing`` and ``entity_name_at_filing`` are kept the same.
     entity_name_at_filing = serializers.CharField(max_length=256, required=False)
-    address = AddressInputSerializer(required=False)
     # Individual complainants and POA holders only. Set on the person, which
     # holds current data; it has no snapshot on the participant. ``null``
-    # makes it the participant's address again.
+    # makes it the participant's first address again.
     permanent_address = AddressInputSerializer(required=False, allow_null=True)
     is_party_in_person = serializers.BooleanField(required=False)
     resides_within_jurisdiction = serializers.BooleanField(required=False)
@@ -729,8 +842,10 @@ class ParticipantUpdateSerializer(PartialUpdateSerializer):
     # Complainants only; ``null`` clears it.
     party_in_person_affidavit = serializers.CharField(required=False, allow_null=True)
     additional_details = serializers.DictField(required=False)
-    # Institution participants only.
+    # Institution participants only. ``institution`` re-links the participant;
+    # ``institution_contacts`` changes only the institution's contacts here.
     institution = InstitutionInputSerializer(required=False)
+    institution_contacts = InstitutionContactsSerializer(required=False)
     # Witnesses only (spec 0021 §4.3); they change the witness row.
     side = serializers.ChoiceField(choices=WitnessSide.choices, required=False)
     what_will_witness_prove = serializers.CharField(required=False, allow_blank=True)
@@ -751,15 +866,83 @@ class WitnessSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class AddressSerializer(serializers.ModelSerializer):
+    """An address, as recorded for a participant on the case."""
+
+    address_id = serializers.UUIDField(source="id", read_only=True)
+
+    class Meta:
+        """Meta options."""
+
+        model = Address
+        fields = ["address_id", "line1", "city", "district", "state", "pincode", "police_station"]
+        read_only_fields = fields
+
+
+class ContactListsOutSerializer(serializers.Serializer):
+    """An owner's contacts in one case, each list in order: the first is the primary."""
+
+    mobile_numbers = serializers.ListField(child=serializers.CharField())
+    email_addresses = serializers.ListField(child=serializers.CharField())
+    addresses = AddressSerializer(many=True)
+
+
+def contact_lists(rows):
+    """Return the three contact lists of ``rows`` (one owner's active contacts)."""
+    rows = sorted(rows, key=lambda row: row.ordinal)
+    return {
+        "mobile_numbers": [r.value for r in rows if r.contact_type == ContactType.MOBILE_NUMBER],
+        "email_addresses": [r.value for r in rows if r.contact_type == ContactType.EMAIL],
+        "addresses": [
+            AddressSerializer(r.address).data for r in rows if r.contact_type == ContactType.ADDRESS
+        ],
+    }
+
+
+class ParticipantInstitutionSerializer(ContactListsOutSerializer, serializers.ModelSerializer):
+    """The institution a participant is, as its row stores it, with its contacts in this case.
+
+    PAN, CIN and the skip declaration are shown for a complainant only; an
+    accused's form does not ask for them.
+    """
+
+    class Meta:
+        """Meta options."""
+
+        model = Institution
+        fields = [
+            "entity_name",
+            "entity_type",
+            "pan",
+            "cin",
+            "pan_cin_skip_declared",
+            "mobile_numbers",
+            "email_addresses",
+            "addresses",
+        ]
+        read_only_fields = fields
+
+
 class CaseParticipantSerializer(serializers.ModelSerializer):
     """A case participant: the case's copy of a party's details.
 
-    Only ids of the person and institution are shown, never their stored
-    details, which may have been entered by the other side (spec 0020 §3.4).
-    ``witness`` is null for every role but a witness.
+    The person is shown by id only. ``mobile_numbers``, ``email_addresses``
+    and ``addresses`` are the person's on this case (empty for an institution
+    alone). ``institution`` is the institution's row (``null`` for an
+    individual), which a reused institution shares with other filings (spec
+    0020 §3.4), with its own contacts on this case. ``witness`` is null for
+    every role but a witness.
     """
 
     case_participant_id = serializers.UUIDField(source="id", read_only=True)
+    mobile_numbers = serializers.SerializerMethodField()
+    email_addresses = serializers.SerializerMethodField()
+    addresses = serializers.SerializerMethodField()
+    institution = serializers.SerializerMethodField()
+    # The person's answer; null when not answered, or for an institution alone.
+    disability_status = serializers.BooleanField(
+        source="person.disability_status", read_only=True, allow_null=True
+    )
     witness = WitnessSerializer(read_only=True, allow_null=True)
 
     class Meta:
@@ -774,13 +957,15 @@ class CaseParticipantSerializer(serializers.ModelSerializer):
             "role",
             "ordinal",
             "name_at_filing",
-            "phone_number_at_filing",
             "gender_at_filing",
             "age_at_filing",
             "designation_at_filing",
-            "email_at_filing",
             "entity_name_at_filing",
-            "address_id",
+            "mobile_numbers",
+            "email_addresses",
+            "addresses",
+            "institution",
+            "disability_status",
             "is_party_in_person",
             "resides_within_jurisdiction",
             "contact_details_unknown_declared",
@@ -795,33 +980,71 @@ class CaseParticipantSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    # Preview, validation and signing (spec 0021 §6–8)
 
-# Preview, validation and signing (spec 0021 §6–8)
+    def _own(self, participant):
+        return contact_lists(contacts_of(participant)[0])
 
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_mobile_numbers(self, participant):
+        """Return the person's mobile numbers on this case, primary first."""
+        return self._own(participant)["mobile_numbers"]
 
-class AddressSerializer(serializers.ModelSerializer):
-    """An address, as recorded for a participant on the case."""
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_email_addresses(self, participant):
+        """Return the person's emails on this case, primary first."""
+        return self._own(participant)["email_addresses"]
 
-    address_id = serializers.UUIDField(source="id", read_only=True)
+    @extend_schema_field(AddressSerializer(many=True))
+    def get_addresses(self, participant):
+        """Return the person's addresses on this case, written out, primary first."""
+        return self._own(participant)["addresses"]
 
-    class Meta:
-        """Meta options."""
-
-        model = Address
-        fields = ["address_id", "line1", "city", "district", "state", "pincode", "police_station"]
-        read_only_fields = fields
+    @extend_schema_field(ParticipantInstitutionSerializer(allow_null=True))
+    def get_institution(self, participant):
+        """Return the institution's row and its contacts here; PAN and CIN for a complainant only."""
+        if participant.institution is None:
+            return None
+        institution = participant.institution
+        data = {
+            "entity_name": institution.entity_name,
+            "entity_type": institution.entity_type,
+            "pan": institution.pan,
+            "cin": institution.cin,
+            "pan_cin_skip_declared": institution.pan_cin_skip_declared,
+            **contact_lists(contacts_of(participant)[1]),
+        }
+        if participant.role != ParticipantRole.COMPLAINANT:
+            data.update(pan=None, cin=None, pan_cin_skip_declared=None)
+        return data
 
 
 class PreviewParticipantSerializer(CaseParticipantSerializer):
-    """A participant with their address on the case written out."""
+    """A participant with the person's permanent address too.
 
-    address = AddressSerializer(read_only=True, allow_null=True)
+    ``permanent_address`` is the person's (an individual complainant or POA
+    holder), shown only when it differs from their first address: ``null``
+    means the same as the residential address, or none.
+    """
+
+    permanent_address = serializers.SerializerMethodField()
 
     class Meta(CaseParticipantSerializer.Meta):
         """Meta options."""
 
-        fields = [*CaseParticipantSerializer.Meta.fields, "address"]
+        fields = [*CaseParticipantSerializer.Meta.fields, "permanent_address"]
         read_only_fields = fields
+
+    @extend_schema_field(AddressSerializer(allow_null=True))
+    def get_permanent_address(self, participant):
+        """Return the person's permanent address when it differs from their first address."""
+        person = participant.person
+        if person is None or person.permanent_address_id is None:
+            return None
+        primary = first(contacts_of(participant)[0], ContactType.ADDRESS)
+        if primary is not None and primary.address_id == person.permanent_address_id:
+            return None
+        return AddressSerializer(person.permanent_address).data
 
 
 class CasePreviewSerializer(CaseSerializer):

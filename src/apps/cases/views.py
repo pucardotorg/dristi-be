@@ -69,6 +69,7 @@ from .serializers import (
 )
 from .services import case_types, filing, participants, services
 from .services.case_types import DocumentType
+from .services.contacts import load_contacts
 
 TAGS = ["cases"]
 
@@ -415,9 +416,9 @@ class _ParticipantCreateView(APIView):
         responses={
             201: CaseParticipantSerializer,
             **error_responses(
-                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="address"),
+                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="addresses"),
                 api_errors.REQUIRED.example(
-                    POLICE_STATION_REQUIRED_MESSAGE, field="address.police_station"
+                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
                 ),
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.SELF_AS_ACCUSED.example(field="self"),
@@ -474,7 +475,7 @@ class WitnessCreateView(APIView):
             **error_responses(
                 errors.WITNESS_ALREADY_ON_SIDE.example(field="side"),
                 api_errors.REQUIRED.example(
-                    POLICE_STATION_REQUIRED_MESSAGE, field="address.police_station"
+                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
                 ),
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.FIELD_NOT_ACCEPTED.example(field="institution"),
@@ -513,7 +514,7 @@ class CaseParticipantListView(generics.ListAPIView):
         queryset = (
             CaseParticipant.objects.active()
             .filter(case=case)
-            .select_related("witness")
+            .select_related("witness", "institution")
             .order_by(*PARTICIPANT_ORDERING)
         )
         role = self.request.query_params.get("role")
@@ -524,6 +525,11 @@ class CaseParticipantListView(generics.ListAPIView):
                 )
             queryset = queryset.filter(role=role)
         return queryset
+
+    def paginate_queryset(self, queryset):
+        """Load the page's contacts in one query."""
+        page = super().paginate_queryset(queryset)
+        return load_contacts(page) if page is not None else None
 
 
 @extend_schema(tags=TAGS)
@@ -549,7 +555,7 @@ class CaseParticipantDetailView(APIView):
                 errors.BOTH_SIDES.example(field="institution"),
                 errors.WITNESS_ALREADY_ON_SIDE.example(field="side"),
                 api_errors.REQUIRED.example(
-                    POLICE_STATION_REQUIRED_MESSAGE, field="address.police_station"
+                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
                 ),
                 errors.CASE_NOT_EDITABLE,
             ),
@@ -588,7 +594,7 @@ class PoaHolderCreateView(APIView):
         responses={
             201: PoaHolderCreatedSerializer,
             **error_responses(
-                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="address"),
+                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="addresses"),
                 errors.DUPLICATE_PARTICIPANT.example(field="represented_participant_ids"),
                 errors.PARTICIPANT_NOT_ON_CASE.example(
                     "Must be active participants of the same case.",

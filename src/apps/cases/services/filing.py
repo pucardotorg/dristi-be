@@ -35,6 +35,7 @@ from ..models import (
     CaseEvidence,
     CaseParticipant,
     CaseStatus,
+    ContactType,
     ParticipantRole,
     PoaMandate,
     Representation,
@@ -50,6 +51,7 @@ from .case_types import (
     schema_errors,
     section_errors,
 )
+from .contacts import contacts_of, first, load_contacts
 from .services import (
     PREVIEW_TTL_SECONDS,
     clear_preview_cache,
@@ -114,7 +116,7 @@ def _load_preview(case_id):
         Prefetch(
             "participants",
             queryset=CaseParticipant.objects.active()
-            .select_related("address", "witness")
+            .select_related("witness", "institution", "person__permanent_address")
             .order_by(*PARTICIPANT_ORDERING),
             to_attr="active_participants",
         ),
@@ -145,6 +147,7 @@ def _load_preview(case_id):
             to_attr="active_documents",
         ),
     ).get(pk=case_id)
+    load_contacts(case.active_participants)
     case.detail_sections = get_detail_sections(case)
     return case
 
@@ -187,18 +190,20 @@ def validation_errors(case):
         error("participants.accused", "At least one active accused is required.")
 
     # Writes already check these; a rule tightened since then is caught here.
-    # Witnesses are optional, but one who is added needs a name or designation,
-    # and an address; every other party needs a name.
-    for participant in participants.order_by(*PARTICIPANT_ORDERING):
+    # Witnesses are optional, but one who is added needs a name or designation;
+    # every other party needs a name. Each party is served at an address: an
+    # individual their own, an institution its own on this case.
+    for participant in load_contacts(participants.order_by(*PARTICIPANT_ORDERING)):
         field = f"participants.{participant.id}"
         label = f"{participant.get_role_display()} #{participant.ordinal}"
         if participant.role != ParticipantRole.WITNESS:
             if not participant.name_at_filing:
                 error(field, f"{label} has no name.")
-            continue
-        if not (participant.name_at_filing or participant.designation_at_filing):
+        elif not (participant.name_at_filing or participant.designation_at_filing):
             error(field, f"{label} has no name or designation.")
-        if not participant.address_id:
+        own, of_institution = contacts_of(participant)
+        served = of_institution if participant.institution_id else own
+        if not first(served, ContactType.ADDRESS):
             error(field, f"{label} has no address.")
 
     represented = set(

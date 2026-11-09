@@ -15,7 +15,7 @@ pytestmark = pytest.mark.django_db
 
 def test_person_output_nests_institution_and_addresses():
     address = make_address()
-    institution = make_institution(address=address)
+    institution = make_institution()
     person = make_person(
         institution=institution,
         designation="Director",
@@ -26,7 +26,6 @@ def test_person_output_nests_institution_and_addresses():
     data = PersonSerializer(person).data
 
     assert data["institution"]["entity_name"] == institution.entity_name
-    assert data["institution"]["address"]["line1"] == address.line1
     assert data["permanent_address"]["id"] == str(address.id)
 
 

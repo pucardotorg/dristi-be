@@ -9,14 +9,17 @@ from django.utils import timezone
 
 from apps.cases.models import (
     Case,
+    CaseContact,
     CaseDocument,
     CaseEvidence,
     CaseParticipant,
     CaseStatus,
+    CaseType,
     ChequeBounceCase,
     ParticipantRole,
     Representation,
 )
+from apps.cases.services import services
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 from apps.files.tests.factories import make_file
@@ -204,8 +207,8 @@ class TestPreview:
         assert [p["role"] for p in body["participants"]] == ["ACCUSED", "COMPLAINANT"]
         first = next(p for p in body["participants"] if p["role"] == "COMPLAINANT")
         assert first["case_participant_id"] == complainant["case_participant_id"]
-        assert first["address"]["address_id"] == complainant["address_id"]
-        assert first["address"]["pincode"]
+        assert first["addresses"] == complainant["addresses"]
+        assert first["addresses"][0]["pincode"]
         assert sorted(e["evidence_type"] for e in body["evidence"]) == [
             "CHEQUE",
             "LEGAL_DEMAND_NOTICE",
@@ -221,8 +224,47 @@ class TestPreview:
         assert body["representations"] == []
         assert body["poa_mandates"] == []
 
+    def test_a_permanent_address_is_shown_only_when_it_differs(self, client, draft):
+        elsewhere = {**ADDRESS_DEFAULTS, "line1": "7 Temple Street", "pincode": "560004"}
+        same = add_complainant(client, draft)
+        differs = add(
+            client, draft, person={**PERSON, "name": "Anita"}, permanent_address=elsewhere
+        )
+
+        body = client.get(reverse("case-detail", args=[draft])).json()
+
+        by_id = {p["case_participant_id"]: p for p in body["participants"]}
+        assert by_id[same["case_participant_id"]]["permanent_address"] is None
+        shown = by_id[differs.json()["case_participant_id"]]["permanent_address"]
+        assert shown["line1"] == "7 Temple Street"
+
+    def test_a_permanent_address_changed_from_another_case_is_shown(self, client, user, draft):
+        """The filer's own person appears in both filings; both previews follow it."""
+        elsewhere = {**ADDRESS_DEFAULTS, "line1": "7 Temple Street", "pincode": "560004"}
+        add(client, draft, self=True)
+        client.get(reverse("case-detail", args=[draft]))  # cached
+        other = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+        assert add(client, other, self=True, permanent_address=elsewhere).status_code == 201
+
+        body = client.get(reverse("case-detail", args=[draft])).json()
+
+        assert body["participants"][0]["permanent_address"]["line1"] == "7 Temple Street"
+
+    def test_representations_show_the_bar_registration_number(
+        self, client, make_user, other_user, draft
+    ):
+        complainant = add_complainant(client, draft)
+        advocate = make_advocate(make_user, user=other_user)
+        add_advocate(client, draft, advocate.pk, [complainant["case_participant_id"]])
+
+        body = client.get(reverse("case-detail", args=[draft])).json()
+
+        assert body["representations"][0]["bar_registration_id"] == advocate.bar_registration_id
+
     def test_shows_the_frozen_copy_not_the_person(self, client, draft):
-        complainant = add_complainant(client, draft, email_address="rajesh@example.com")
+        complainant = add(
+            client, draft, person=PERSON, email_addresses=["rajesh@example.com"]
+        ).json()
         Person.objects.filter(pk=complainant["person_id"]).update(
             name="Renamed Later", email_address="later@example.com"
         )
@@ -230,7 +272,7 @@ class TestPreview:
         body = client.get(reverse("case-detail", args=[draft])).json()
 
         assert body["participants"][0]["name_at_filing"] == "Rajesh Kumar"
-        assert body["participants"][0]["email_at_filing"] == "rajesh@example.com"
+        assert body["participants"][0]["email_addresses"] == ["rajesh@example.com"]
 
     def test_shows_the_institution_as_entered(self, client, draft):
         response = add(client, draft, institution=INSTITUTION)
@@ -453,7 +495,10 @@ class TestValidate:
         witness = add_witness(client, draft).json()
         # Stored another way than the API, which refuses each of these.
         CaseParticipant.objects.filter(pk=witness["case_participant_id"]).update(
-            name_at_filing=None, address=None
+            name_at_filing=None
+        )
+        CaseContact.objects.filter(case_participant_id=witness["case_participant_id"]).update(
+            is_active=False
         )
 
         body = validate(client, draft)
@@ -464,12 +509,31 @@ class TestValidate:
             {"field": field, "message": "Witness #1 has no address."},
         ]
 
+    def test_an_institution_is_served_at_its_own_address(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        accused = add(
+            client,
+            draft,
+            "accused",
+            institution={**INSTITUTION, "mobile_numbers": ["080-22334455"]},
+        ).json()
+        CaseContact.objects.filter(
+            case_id=draft, institution_id=accused["institution_id"], case_participant__isnull=True
+        ).update(is_active=False)
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{accused['case_participant_id']}",
+                "message": "Accused #2 has no address.",
+            }
+        ]
+
     def test_a_witness_named_by_designation_alone_is_complete(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)
         witness = add_witness(
             client,
             draft,
-            person={"phone_number": PERSON["phone_number"]},
+            person={},
             designation="Branch manager",
         )
         assert witness.status_code == 201, witness.json()
@@ -495,7 +559,7 @@ class TestValidate:
             reverse("case-poa-holder-list", args=[draft]),
             {
                 "person": {**PERSON, "name": "Mohan Das"},
-                "address": ADDRESS_DEFAULTS,
+                "addresses": [ADDRESS_DEFAULTS],
                 "represented_participant_ids": [complainant["case_participant_id"]],
             },
             format="json",
