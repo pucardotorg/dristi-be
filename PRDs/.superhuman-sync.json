@@ -458,11 +458,11 @@
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
       "title": "Application Lifecycle",
-      "contentHash": "10a7e29c0061",
-      "pageUpdatedAt": 1794299884.339,
+      "contentHash": "40823b97e678",
+      "pageUpdatedAt": 1794300388.972,
       "calloutElementId": "cl-QKAlG9nMxl",
       "sections": [],
-      "note": "Force-synced (cleared and rebuilt) 2026-11-10 at v38, with the owner's go-ahead; comments discarded. Diagram is an image block uploaded from application-reference/application-lifecycle-states.png (the relative image link in the markdown is not pushed as text). The Status block is split across three page blocks. `sections` not recorded: the next sync must rebuild or patch by hand. Patched 2026-11-10 later the same day: Status block, Users and actions, step 2, step 4, Application attributes and Enhancements replaced as whole sections (Application action, Outcome)."
+      "note": "Force-synced (cleared and rebuilt) 2026-11-10 at v38, with the owner's go-ahead; comments discarded. Diagram is an image block uploaded from application-reference/application-lifecycle-states.png (the relative image link in the markdown is not pushed as text). The Status block is split across three page blocks. `sections` not recorded: the next sync must rebuild or patch by hand. Patched 2026-11-10 later the same day: Status block, Users and actions, step 2, step 4, Application attributes and Enhancements replaced as whole sections (Application action, Outcome). Patched again the same day: Status block, Users and actions, step 2 and step 4 replaced (\"order item linked to the application\" wording restored)."
     },
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
