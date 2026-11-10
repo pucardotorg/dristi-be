@@ -52,10 +52,11 @@
     "order-template-catalogue.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
       "title": "Order Item Catalogue",
-      "contentHash": "01a10d4f5f45",
-      "pageUpdatedAt": 1794143675.611,
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed.",
-      "sections": []
+      "contentHash": "5c8a2f1c91b4",
+      "pageUpdatedAt": 1794300079.636,
+      "note": "Force-synced (cleared and rebuilt) 2026-11-10 for (22), Application action #27; the page had no comments. `sections` not recorded: the next sync must rebuild or patch by hand.",
+      "sections": [],
+      "calloutElementId": "cl--FeemPAxJA"
     },
     "join-a-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WxtSmHU5wu",
@@ -457,11 +458,11 @@
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
       "title": "Application Lifecycle",
-      "contentHash": "75bfbddbf464",
-      "pageUpdatedAt": 1794296544.874,
+      "contentHash": "10a7e29c0061",
+      "pageUpdatedAt": 1794299884.339,
       "calloutElementId": "cl-QKAlG9nMxl",
       "sections": [],
-      "note": "Force-synced (cleared and rebuilt) 2026-11-10 at v38, with the owner's go-ahead; comments discarded. Diagram is an image block uploaded from application-reference/application-lifecycle-states.png (the relative image link in the markdown is not pushed as text). The Status block is split across three page blocks. `sections` not recorded: the next sync must rebuild or patch by hand."
+      "note": "Force-synced (cleared and rebuilt) 2026-11-10 at v38, with the owner's go-ahead; comments discarded. Diagram is an image block uploaded from application-reference/application-lifecycle-states.png (the relative image link in the markdown is not pushed as text). The Status block is split across three page blocks. `sections` not recorded: the next sync must rebuild or patch by hand. Patched 2026-11-10 later the same day: Status block, Users and actions, step 2, step 4, Application attributes and Enhancements replaced as whole sections (Application action, Outcome)."
     },
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
