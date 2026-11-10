@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "apps.address",
     "apps.parties",
     "apps.cases",
+    "apps.scrutiny",
     "apps.payments",
     # Addons
     "addon.cdac_sms_gateway",
@@ -315,6 +316,9 @@ SPECTACULAR_SETTINGS = {
         "PartyEntityTypeEnum": "apps.parties.models.EntityType",
         "ESignEntityTypeEnum": "apps.esign.constants.EntityType",
         "GenderEnum": "apps.parties.models.Gender",
+        "ScrutinyFlagStatusEnum": "apps.scrutiny.enums.FlagStatus",
+        "ScrutinyRoundStageEnum": "apps.scrutiny.enums.RoundStage",
+        "ScrutinyListStageEnum": "apps.scrutiny.selectors.LIST_STAGES",
         "DemandStatusEnum": "apps.payments.enums.DemandStatus",
         "DemandItemStatusEnum": "apps.payments.enums.DemandItemStatus",
         "PaymentStatusEnum": "apps.payments.enums.PaymentStatus",
@@ -642,6 +646,16 @@ EGRAS_ENABLED = env.bool("EGRAS_ENABLED", default=True)
 PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
 PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
 PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=20971520)
+
+
+# ---------------------------------------------------------------------------
+# Scrutiny (apps.scrutiny, spec 0024)
+# ---------------------------------------------------------------------------
+# The one court establishment this deployment scrutinises and registers for
+# (RLE-00). Court roles are Django groups until per-court role assignments
+# exist, so they count only here: unset, nobody holds a court role and every
+# scrutiny and registration endpoint is closed.
+SCRUTINY_ESTABLISHMENT_ID = env("SCRUTINY_ESTABLISHMENT_ID", default="")
 
 
 # ---------------------------------------------------------------------------

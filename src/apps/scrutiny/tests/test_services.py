@@ -1,0 +1,614 @@
+"""Rounds, flags, decisions and responses through the services (spec 0024 #3–#6, #10)."""
+
+import datetime
+import uuid
+
+import pytest
+from django.utils import timezone
+from rest_framework.exceptions import NotFound, ValidationError
+
+from apps.api.errors import BusinessError
+from apps.cases.models import (
+    Case,
+    CaseEvidence,
+    CaseNumberSeries,
+    CaseParticipant,
+    CaseStatus,
+    ParticipantRole,
+)
+from apps.cases.services import filing, participants
+from apps.cases.services import services as case_services
+from apps.cases.services.case_types import CaseType, EvidenceType, get_config
+from apps.scrutiny import ports
+from apps.scrutiny.enums import (
+    CourtRole,
+    DocumentIssue,
+    FlagStatus,
+    FlagTarget,
+    ResponseKind,
+    RoundDecision,
+    RoundStage,
+    RoutingReason,
+)
+from apps.scrutiny.models import ScrutinyFlagResponse, ScrutinyRound
+from apps.scrutiny.services import flags, responses, rounds
+
+from .factories import (
+    add_cheque,
+    add_courtroom,
+    code,
+    correct_amount,
+    draft_field,
+    enter,
+    field,
+    make_case,
+    make_user,
+    open_round,
+    set_cause_of_action,
+)
+
+pytestmark = pytest.mark.django_db
+
+
+# Rounds (#4.1)
+
+
+def test_entering_scrutiny_opens_round_one(case, establishment):
+    round_ = open_round(case)
+    assert (round_.stage, round_.number, round_.establishment_id) == (
+        RoundStage.SCRUTINY,
+        1,
+        establishment.pk,
+    )
+    case.save()
+    assert ScrutinyRound.objects.filter(case=case).count() == 1
+
+
+def test_start_records_first_starter_only(case, officer):
+    other = make_user(CourtRole.SCRUTINY_OFFICER)
+    rounds.start(case.pk, officer, RoundStage.SCRUTINY)
+    rounds.start(case.pk, other, RoundStage.SCRUTINY)
+    assert open_round(case).started_by == officer
+
+
+def test_actions_need_the_stage_role(case, registerer):
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.start(case.pk, registerer, RoundStage.SCRUTINY)
+    assert code(excinfo) == "E09008"
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.start(case.pk, registerer, RoundStage.REGISTRATION)
+    assert code(excinfo) == "E09001"
+
+
+# Flags (#3.2, #3.3)
+
+
+def test_field_flag_marks_its_own_cheques_dates(case, officer):
+    add_cheque(case, 2)
+    created = draft_field(case, officer, "CHQ-8[1]")
+    refs = [flag.target_ref for flag in created]
+    assert refs == ["CHQ-8[1]", "CHQ-9[1]", "LDN-2[1]", "LDN-6[1]", "JUR-9", "JUR-10"]
+    source = created[0]
+    assert source.value_at_flag == "2026-05-02"
+    assert all(flag.auto_marked_by == source for flag in created[1:])
+    assert created[1].note == "Marked because Date of presentation was flagged"
+
+
+def test_undelivered_notice_marks_its_return_date(case, officer):
+    add_cheque(case, 2, delivered=False)
+    refs = [flag.target_ref for flag in draft_field(case, officer, "LDN-2[1]")]
+    assert refs == ["LDN-2[1]", "LDN-7[1]", "JUR-9", "JUR-10"]
+
+
+def test_delay_field_marked_only_when_delay_applies(case, officer):
+    set_cause_of_action(case, "2026-01-01")
+    refs = [flag.target_ref for flag in draft_field(case, officer, "JUR-9")]
+    assert refs == ["JUR-9", "JUR-10", "JUR-11"]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_code", "expected_field"),
+    [
+        (
+            {"target_type": FlagTarget.FIELD, "target_ref": "CHQ-3[5]", "note": "x"},
+            "E09003",
+            "target_ref",
+        ),
+        (
+            {"target_type": FlagTarget.SECTION, "target_ref": "OTH", "note": "x"},
+            "E09003",
+            "target_ref",
+        ),
+        (
+            {"target_type": FlagTarget.DOCUMENT, "target_ref": "not-a-uuid", "note": "x"},
+            "E09003",
+            "target_ref",
+        ),
+        (
+            {"target_type": FlagTarget.FIELD, "target_ref": "CHQ-3[0]", "note": "  "},
+            "E09004",
+            "note",
+        ),
+        ({"target_type": FlagTarget.OATH, "target_ref": "x", "note": "x"}, "E09016", "target_ref"),
+    ],
+)
+def test_draft_refuses(case, officer, kwargs, expected_code, expected_field):
+    with pytest.raises(BusinessError) as excinfo:
+        flags.draft(case.pk, officer, **kwargs)
+    assert (code(excinfo), field(excinfo)) == (expected_code, expected_field)
+
+
+def test_one_live_flag_per_target(case, officer):
+    flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="LDN", note="x")
+    with pytest.raises(BusinessError) as excinfo:
+        flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="LDN", note="y")
+    assert code(excinfo) == "E09009"
+
+
+def test_save_both_links_and_withdraws_independently(case, officer, document):
+    field_flag, issue = draft_field(
+        case,
+        officer,
+        "CHQ-3[0]",
+        document_issue={"document_id": document.pk, "reason_code": DocumentIssue.BLURRY_UNREADABLE},
+    )
+    assert (issue.target_type, issue.linked_flag, field_flag.linked_flag) == (
+        FlagTarget.DOCUMENT,
+        field_flag,
+        issue,
+    )
+    flags.withdraw(case.pk, field_flag.pk, officer)
+    issue.refresh_from_db()
+    assert issue.status == FlagStatus.DRAFT
+
+
+def test_withdraw_keeps_edited_auto_marked_dates(case, officer):
+    source, presented, *rest = draft_field(case, officer, "CHQ-1[0]")
+    flags.edit(case.pk, presented.pk, officer, note="Presentation date looks wrong too.")
+    flags.withdraw(case.pk, source.pk, officer)
+    statuses = {flag.target_ref: flag.status for flag in open_round(case).flags.all()}
+    assert statuses["CHQ-8[0]"] == FlagStatus.DRAFT
+    assert {statuses[flag.target_ref] for flag in rest} == {FlagStatus.WITHDRAWN}
+
+
+# Send back, correction and re-scrutiny (#4.3, #5, #4.5)
+
+
+def test_send_back_needs_a_draft(case, officer):
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.send_back(case.pk, officer)
+    assert code(excinfo) == "E09005"
+
+
+def test_send_back_raises_drafts_and_opens_scope(case, officer):
+    set_cause_of_action(case, "2026-01-01")
+    draft_field(case, officer, "JUR-10")
+    round_ = rounds.send_back(case.pk, officer)
+    case.refresh_from_db()
+    assert case.status == CaseStatus.PENDING_CORRECTION
+    assert round_.decision == RoundDecision.SENT_BACK
+    assert {flag.status for flag in round_.flags.all()} == {FlagStatus.RAISED}
+    scope = ports.correction_scope(case)
+    assert scope["fields"] == ["JUR-10", "JUR-11"]
+    assert scope["required"] == ["JUR-11", "JUR-12"]
+
+
+def test_correction_round_trip(case, officer, filer):
+    flag = draft_field(case, officer, "CHQ-3[0]")[0]
+    rounds.send_back(case.pk, officer)
+    with pytest.raises(BusinessError) as excinfo:
+        responses.submit_correction(case.pk, filer)
+    assert code(excinfo) == "E09012"
+    with pytest.raises(BusinessError) as excinfo:
+        responses.explain(case.pk, flag.pk, filer, " ")
+    assert (code(excinfo), field(excinfo)) == ("E09011", "note")
+    responses.explain(case.pk, flag.pk, filer, "The amount is right.")
+    responses.submit_correction(case.pk, filer)
+    case.refresh_from_db()
+    assert case.status == CaseStatus.PENDING_SIGN
+
+    enter(case, CaseStatus.UNDER_SCRUTINY)
+    second = open_round(case)
+    assert (second.number, second.routing_reason) == (2, RoutingReason.RESUBMITTED)
+    carried = second.flags.get()
+    assert (carried.status, carried.carried_from_id) == (FlagStatus.DRAFT, flag.pk)
+    flag.refresh_from_db()
+    assert flag.status == FlagStatus.CARRIED
+    assert ports.correction_scope(case) is None
+
+    flags.resolve(case.pk, carried.pk, officer)
+    flag.refresh_from_db()
+    assert flag.status == FlagStatus.RESOLVED
+
+
+def test_correction_clears_the_signatures(case, officer, filer):
+    signer = CaseParticipant.objects.get(case=case, role=ParticipantRole.COMPLAINANT)
+    CaseParticipant.objects.filter(pk=signer.pk).update(has_signed=True)
+    flag = draft_field(case, officer, "CHQ-3[0]")[0]
+    rounds.send_back(case.pk, officer)
+    responses.explain(case.pk, flag.pk, filer, "The amount is right.")
+    responses.submit_correction(case.pk, filer)
+
+    signer.refresh_from_db()
+    assert (signer.has_signed, signer.signature_document_id) == (False, None)
+    with pytest.raises(ValidationError) as excinfo:
+        filing.submit_for_payment(case.pk, filer)
+    assert excinfo.value.detail[f"participants.{signer.pk}"][0].code == "E07006"
+
+
+def test_field_change_answers_the_section_flag(case, officer, filer):
+    flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="CHQ", note="x")
+    round_ = rounds.send_back(case.pk, officer)
+    correct_amount(case, filer)
+    response = ScrutinyFlagResponse.objects.get(flag__round=round_)
+    assert (response.kind, response.value_after, response.flag.status) == (
+        ResponseKind.CORRECTED,
+        5025000,
+        FlagStatus.RESPONDED,
+    )
+
+
+def test_a_section_change_answers_the_section_flag(case, officer, filer):
+    flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="PRY", note="x")
+    round_ = rounds.send_back(case.pk, officer)
+    case_services.save_details_section(
+        case.pk, filer, "adr_other_prayer", {"final_relief": "Pay the cheque amount."}
+    )
+    response = ScrutinyFlagResponse.objects.get(flag__round=round_)
+    assert (response.kind, response.value_after, response.flag.status) == (
+        ResponseKind.CORRECTED,
+        "Pay the cheque amount.",
+        FlagStatus.RESPONDED,
+    )
+
+
+def test_a_refused_change_answers_nothing(case, officer, filer):
+    draft_field(case, officer, "CHQ-1[0]")
+    round_ = rounds.send_back(case.pk, officer)
+    with pytest.raises(BusinessError) as excinfo:
+        correct_amount(case, filer)
+    assert (code(excinfo), field(excinfo)) == ("E07029", "evidence_info.amount")
+    assert not ScrutinyFlagResponse.objects.filter(flag__round=round_).exists()
+
+
+def test_field_catalogue_matches_the_case_type():
+    """Every value scrutiny reads is one a write in apps.cases maps back to the same ref."""
+    config = get_config(CaseType.CHEQUE_BOUNCE)
+    for field_id, (_label, evidence_type, key) in ports._EVIDENCE_FIELDS.items():
+        if key is not None:
+            assert config.correction_fields[(evidence_type, key)] == field_id
+    assert config.correction_fields[("jurisdiction_limitation", "cause_of_action_date")] == "JUR-9"
+    assert set(config.correction_sections.values()) == set(ports.SECTIONS)
+
+
+def test_document_replacement_answers_its_flag(case, officer, filer, document):
+    flags.draft(
+        case.pk,
+        officer,
+        target_type=FlagTarget.DOCUMENT,
+        target_ref=str(document.pk),
+        reason_code=DocumentIssue.PAGE_MISSING,
+    )
+    rounds.send_back(case.pk, officer)
+    response = responses.record_document_replaced(case.pk, document.pk, document.pk, filer)
+    assert response.kind == ResponseKind.REUPLOADED
+
+
+def test_resolve_needs_a_carried_draft(case, officer):
+    flag = draft_field(case, officer, "CHQ-3[0]")[0]
+    with pytest.raises(BusinessError) as excinfo:
+        flags.resolve(case.pk, flag.pk, officer)
+    assert code(excinfo) == "E09002"
+
+
+# Forward and register (#4.4, #6)
+
+
+def test_forward_and_register_follow_roles(case, officer, officer_registerer):
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.forward(case.pk, officer_registerer)
+    assert code(excinfo) == "E09007"
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.register_at_scrutiny(case.pk, officer)
+    assert code(excinfo) == "E09007"
+
+
+def test_courtroom_required_when_there_are_several(case, officer, establishment):
+    first = add_courtroom(establishment, "Courtroom 1")
+    add_courtroom(establishment, "Courtroom 2")
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.forward(case.pk, officer)
+    assert (code(excinfo), field(excinfo)) == ("E09017", "courtroom_id")
+    rounds.forward(case.pk, officer, courtroom_id=first.pk)
+    case.refresh_from_db()
+    assert (case.status, case.court) == (CaseStatus.PENDING_REGISTRATION, first)
+    registration = open_round(case)
+    assert (registration.stage, registration.courtroom_id) == (RoundStage.REGISTRATION, first.pk)
+
+
+def test_open_items_travel_with_the_case(case, officer, registerer, filer):
+    flag = draft_field(case, officer, "CHQ-3[0]")[0]
+    rounds.send_back(case.pk, officer)
+    responses.explain(case.pk, flag.pk, filer, "The amount is right.")
+    responses.submit_correction(case.pk, filer)
+    enter(case, CaseStatus.UNDER_SCRUTINY)
+    draft_field(case, officer, "CHQ-1[0]")  # never sent: withdrawn on forward
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.forward(case.pk, officer)
+    assert code(excinfo) == "E09006"
+    forwarded = rounds.forward(case.pk, officer, acknowledge_open_items=True)
+    assert (forwarded.open_items_acknowledged, forwarded.open_items_at_decision) == (True, 1)
+    assert not forwarded.flags.filter(status=FlagStatus.DRAFT, carried_from__isnull=True).exists()
+
+    registration = open_round(case)
+    assert registration.flags.get().target_ref == "CHQ-3[0]"
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.register(case.pk, registerer)
+    assert code(excinfo) == "E09006"
+    rounds.register(case.pk, registerer, acknowledge_open_items=True)
+    case.refresh_from_db()
+    assert case.status == CaseStatus.REGISTERED
+    assert case.case_number == f"CC/1/{timezone.now().year}"
+
+
+def test_register_at_scrutiny(case, officer_registerer):
+    round_ = rounds.register_at_scrutiny(case.pk, officer_registerer)
+    case.refresh_from_db()
+    assert (round_.decision, case.status) == (RoundDecision.REGISTERED, CaseStatus.REGISTERED)
+    assert not ScrutinyRound.objects.filter(case=case, stage=RoundStage.REGISTRATION).exists()
+
+
+# Case numbers (#6.1, #9.4)
+
+
+def test_cases_in_one_series_get_consecutive_numbers(
+    case, filer, establishment, officer_registerer
+):
+    second = make_case(filer, establishment, filing_number="F/EST/2026/00002")
+    rounds.register_at_scrutiny(case.pk, officer_registerer)
+    rounds.register_at_scrutiny(second.pk, officer_registerer)
+    year = timezone.now().year
+    case.refresh_from_db()
+    second.refresh_from_db()
+    assert (case.case_number, second.case_number) == (f"CC/1/{year}", f"CC/2/{year}")
+    assert CaseNumberSeries.objects.get(series="CC", year=year).last_number == 2
+
+
+def test_number_held_outside_the_series_is_skipped(case, filer, establishment, officer_registerer):
+    year = timezone.now().year
+    other = make_case(filer, establishment, filing_number="F/EST/2026/00002")
+    Case.objects.filter(pk=other.pk).update(case_number=f"CC/1/{year}")
+    rounds.register_at_scrutiny(case.pk, officer_registerer)
+    case.refresh_from_db()
+    assert case.case_number == f"CC/2/{year}"
+
+
+def test_number_taken_at_the_same_moment_is_refused(
+    case, filer, establishment, officer_registerer, monkeypatch
+):
+    other = make_case(filer, establishment, filing_number="F/EST/2026/00002")
+    Case.objects.filter(pk=other.pk).update(case_number="CC/1/2026")
+    # The series hands out a number another write took after numbering checked it.
+    monkeypatch.setattr(ports.numbering, "next_case_number", lambda series, year: "CC/1/2026")
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.register_at_scrutiny(case.pk, officer_registerer)
+    assert code(excinfo) == "E09020"
+    case.refresh_from_db()
+    assert (case.status, case.case_number) == (CaseStatus.UNDER_SCRUTINY, None)
+    assert open_round(case).decision == ""
+
+
+def test_registration_type_required_when_there_are_several(case, officer, monkeypatch):
+    monkeypatch.setattr(
+        ports,
+        "REGISTRATION_TYPES",
+        (ports.RegistrationType("ECC", "eCC"), ports.RegistrationType("ECR", "eCR")),
+    )
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.forward(case.pk, officer)
+    assert (code(excinfo), field(excinfo)) == ("E09018", "registration_type")
+    assert rounds.forward(case.pk, officer, registration_type="ECR").registration_type == "ECR"
+
+
+def test_registration_send_back_opens_everything(case, officer, registerer, filer):
+    rounds.forward(case.pk, officer)
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.registration_send_back(case.pk, registerer, " ")
+    assert (code(excinfo), field(excinfo)) == ("E09010", "comment")
+    round_ = rounds.registration_send_back(case.pk, registerer, "Re-check the affidavit.")
+    case.refresh_from_db()
+    assert (case.status, round_.comment) == (
+        CaseStatus.PENDING_CORRECTION,
+        "Re-check the affidavit.",
+    )
+    assert ports.correction_scope(case)["mode"] == "ALL"
+    with pytest.raises(BusinessError) as excinfo:
+        responses.submit_correction(case.pk, filer)
+    assert code(excinfo) == "E09012"
+    correct_amount(case, filer, 2)
+    responses.submit_correction(case.pk, filer)
+    enter(case, CaseStatus.UNDER_SCRUTINY)
+    assert open_round(case).routing_reason == RoutingReason.RESUBMITTED
+
+
+def test_an_incomplete_correction_is_not_resubmitted(case, officer, registerer, filer):
+    signer = CaseParticipant.objects.get(case=case, role=ParticipantRole.COMPLAINANT)
+    CaseParticipant.objects.filter(pk=signer.pk).update(has_signed=True)
+    rounds.forward(case.pk, officer)
+    rounds.registration_send_back(case.pk, registerer, "Re-check the evidence.")
+    for evidence in CaseEvidence.objects.active().filter(case=case):
+        case_services.remove_evidence(evidence, filer)
+
+    with pytest.raises(ValidationError) as excinfo:
+        responses.submit_correction(case.pk, filer)
+    assert excinfo.value.detail["evidence.CHEQUE"][0].code == "E07005"
+    case.refresh_from_db()
+    signer.refresh_from_db()
+    assert (case.status, signer.has_signed) == (CaseStatus.PENDING_CORRECTION, True)
+
+
+def test_removing_the_only_complainant_is_not_resubmitted(case, officer, filer):
+    flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="LIT", note="x")
+    rounds.send_back(case.pk, officer)
+    complainant = CaseParticipant.objects.get(case=case, role=ParticipantRole.COMPLAINANT)
+    participants.remove_participant(complainant, filer)
+    flag = ScrutinyRound.objects.get(case=case, decision=RoundDecision.SENT_BACK).flags.get()
+    responses.explain(case.pk, flag.pk, filer, "Removed the complainant.")
+
+    with pytest.raises(ValidationError) as excinfo:
+        responses.submit_correction(case.pk, filer)
+    assert excinfo.value.detail["participants.complainants"][0].code == "E07005"
+
+
+def test_set_title(case, officer):
+    rounds.set_title(case.pk, officer, complainant="Prateek Agrawal", accused="Deepak Choudhary")
+    assert ports.detail(case).additional_details["case_title"]["accused"] == "Deepak Choudhary"
+
+
+def test_delay_is_measured_against_today(case):
+    set_cause_of_action(case, (timezone.localdate() - datetime.timedelta(days=40)).isoformat())
+    assert ports.delay_alert(case)
+
+
+def test_date_chain_passes_through_missing_dates(case, officer):
+    # No return memo or notice for cheque 2: its memo dates are there, empty, to be
+    # flagged as missing; its notice dates do not exist, but the jurisdiction dates
+    # after them are still marked.
+    CaseEvidence.objects.create(
+        case=case,
+        evidence_type=EvidenceType.CHEQUE,
+        ordinal=2,
+        evidence_info=CaseEvidence.objects.get(
+            case=case, ordinal=1, evidence_type=EvidenceType.CHEQUE
+        ).evidence_info,
+    )
+    refs = [flag.target_ref for flag in draft_field(case, officer, "CHQ-1[1]")]
+    assert refs == ["CHQ-1[1]", "CHQ-8[1]", "CHQ-9[1]", "JUR-9", "JUR-10"]
+
+
+# Refusals and quiet paths
+
+
+def test_document_issue_rides_only_on_a_field_flag(case, officer, document):
+    with pytest.raises(BusinessError) as excinfo:
+        flags.draft(
+            case.pk,
+            officer,
+            target_type=FlagTarget.SECTION,
+            target_ref="CHQ",
+            note="x",
+            document_issue={"document_id": document.pk, "reason_code": DocumentIssue.PAGE_MISSING},
+        )
+    assert (code(excinfo), field(excinfo)) == ("E09003", "document_issue")
+
+
+def test_generated_document_is_not_flaggable(case, officer, document, monkeypatch):
+    monkeypatch.setattr(ports, "is_generated", lambda document: True)
+    with pytest.raises(BusinessError) as excinfo:
+        flags.draft(
+            case.pk,
+            officer,
+            target_type=FlagTarget.DOCUMENT,
+            target_ref=str(document.pk),
+            reason_code=DocumentIssue.PAGE_MISSING,
+        )
+    assert (code(excinfo), field(excinfo)) == ("E09013", "target_ref")
+
+
+def test_oath_flag_where_the_state_requires_one(case, officer, monkeypatch):
+    monkeypatch.setattr(ports, "oath_required", lambda case: True)
+    monkeypatch.setattr(ports, "oaths", lambda case: [{"id": "O1", "complainant": "Prateek"}])
+    flag = flags.draft(case.pk, officer, target_type=FlagTarget.OATH, target_ref="O1", note="x")[0]
+    assert flag.target_label == "Oath of Prateek"
+    with pytest.raises(BusinessError) as excinfo:
+        flags.draft(case.pk, officer, target_type=FlagTarget.OATH, target_ref="O2", note="x")
+    assert code(excinfo) == "E09003"
+
+
+def test_auto_mark_skips_a_date_already_flagged(case, officer):
+    own = draft_field(case, officer, "CHQ-9[0]", note="Return date?")[0]
+    created = draft_field(case, officer, "CHQ-8[0]")
+    assert "CHQ-9[0]" not in [flag.target_ref for flag in created]
+    own.refresh_from_db()
+    assert own.auto_marked_by is None
+
+
+def test_edit_changes_a_documents_reason(case, officer, document):
+    flag = flags.draft(
+        case.pk,
+        officer,
+        target_type=FlagTarget.DOCUMENT,
+        target_ref=str(document.pk),
+        reason_code=DocumentIssue.PAGE_MISSING,
+    )[0]
+    edited = flags.edit(case.pk, flag.pk, officer, reason_code=DocumentIssue.BLURRY_UNREADABLE)
+    assert edited.reason_code == DocumentIssue.BLURRY_UNREADABLE
+
+
+def test_unknown_flag_is_not_found(case, officer):
+    with pytest.raises(NotFound):
+        flags.withdraw(case.pk, uuid.uuid4(), officer)
+
+
+def test_changes_outside_correction_are_ignored(case, filer, document):
+    assert responses.record_field_change(case.pk, "CHQ-3[0]", "CHQ", 1, 2, filer) is None
+    assert responses.record_field_change(uuid.uuid4(), "CHQ-3[0]", "CHQ", 1, 2, filer) is None
+    assert responses.record_document_replaced(case.pk, document.pk, document.pk, filer) is None
+
+
+def test_changes_to_unflagged_targets_are_not_answers(case, officer, filer, document):
+    draft_field(case, officer, "CHQ-3[0]")
+    rounds.send_back(case.pk, officer)
+    assert responses.record_field_change(case.pk, "LDN-1[0]", "LDN", 1, 2, filer) is None
+    assert responses.record_field_change(case.pk, None, "LDN", None, None, filer) is None
+    assert responses.record_document_replaced(case.pk, document.pk, document.pk, filer) is None
+
+
+def test_explain_needs_a_known_case_and_flag(case, officer, filer):
+    with pytest.raises(NotFound):
+        responses.explain(uuid.uuid4(), uuid.uuid4(), filer, "Right.")
+    draft_field(case, officer, "CHQ-3[0]")
+    rounds.send_back(case.pk, officer)
+    with pytest.raises(NotFound):
+        responses.explain(case.pk, uuid.uuid4(), filer, "Right.")
+
+
+def test_no_round_for_a_case_in_no_stage(filer, establishment):
+    case = Case.objects.create(
+        case_type=CaseType.CHEQUE_BOUNCE, created_by=filer, court=establishment
+    )
+    assert rounds.open_round(case) is None
+
+
+def test_carried_dates_keep_their_chain(case, officer, filer):
+    source = draft_field(case, officer, "CHQ-9[0]")[0]
+    rounds.send_back(case.pk, officer)
+    responses.explain(case.pk, source.pk, filer, "The date is right.")
+    responses.submit_correction(case.pk, filer)
+    enter(case, CaseStatus.UNDER_SCRUTINY)
+    carried = {flag.target_ref: flag for flag in open_round(case).flags.all()}
+    assert carried["LDN-2[0]"].auto_marked_by == carried["CHQ-9[0]"]
+
+
+def test_forward_needs_the_scrutiny_officer_role(case, registerer):
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.forward(case.pk, registerer)
+    assert code(excinfo) == "E09008"
+
+
+def test_title_needs_an_open_round(case, officer):
+    draft_field(case, officer, "CHQ-3[0]")
+    rounds.send_back(case.pk, officer)
+    with pytest.raises(BusinessError) as excinfo:
+        rounds.set_title(case.pk, officer, complainant="A", accused="B")
+    assert code(excinfo) == "E09001"
+
+
+def test_plugin_edges(case):
+    assert ports.oaths(case) == []
+    assert ports.split_ref("not a ref") is None
+    assert ports.downstream(case, "not a ref", ports.fields(case)) == []
+    row = ports.detail(case)
+    row.jurisdiction_limitation = {}
+    row.save()
+    assert ports.delay_applicable(case) is False

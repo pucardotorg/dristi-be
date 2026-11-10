@@ -78,3 +78,9 @@ SIGNED_BY_SOMEONE_ELSE = define("E07027", "This document was e-signed by someone
 SIGNED_BEFORE_SUBMISSION = define(
     "E07028", "This document was e-signed before the case was submitted for signing."
 )
+
+# Correction (spec 0024 #5.1): a case sent back accepts writes only inside the
+# scope the court opened. The field is the part of the request outside it.
+FIELD_NOT_OPEN_FOR_CORRECTION = define(
+    "E07029", "This part of the filing is not open for correction.", status=409
+)

@@ -27,6 +27,10 @@ class CaseStatus(models.TextChoices):
     PENDING_SIGN = "PENDING_SIGN", "Pending sign"
     PENDING_PAYMENT = "PENDING_PAYMENT", "Pending payment"
     UNDER_SCRUTINY = "UNDER_SCRUTINY", "Under scrutiny"
+    # Sent back by scrutiny or registration; the filer corrects it (spec 0024 #5).
+    PENDING_CORRECTION = "PENDING_CORRECTION", "Pending correction"
+    # Forwarded by the Scrutiny officer to the Case registerer (spec 0024 #6).
+    PENDING_REGISTRATION = "PENDING_REGISTRATION", "Pending registration"
     REGISTERED = "REGISTERED", "Registered"
 
 
@@ -80,6 +84,30 @@ class Case(BaseModel, BaseAuditableModel):
 
     def __str__(self):
         return self.case_number or self.filing_number or f"{self.case_type} draft {self.id}"
+
+
+class CaseNumberSeries(BaseModel):
+    """The last number handed out in one case number series (``services.numbering``).
+
+    One row per registration type and year. Registration locks the row, so two
+    cases registered at once in the same series wait for each other instead of
+    both taking the same number.
+    """
+
+    series = models.CharField(max_length=32)
+    year = models.PositiveIntegerField()
+    last_number = models.PositiveIntegerField(default=0)
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        verbose_name_plural = "case number series"
+        constraints = [
+            models.UniqueConstraint(fields=["series", "year"], name="cases_number_series_unique")
+        ]
+
+    def __str__(self):
+        return f"{self.series}/{self.year}: {self.last_number}"
 
 
 class ParticipantRole(models.TextChoices):
