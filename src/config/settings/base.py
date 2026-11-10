@@ -310,6 +310,10 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
+        # drf-spectacular names an enum after its field. Scrutiny's round also has a
+        # `decision` field, and when two serializers share a field name with different
+        # choices, both enums get renamed. Both are pinned so neither name changes.
+        "DecisionEnum": "apps.dristi_requests.models.RequestApproval.DECISIONS",
         "CaseStatusEnum": "apps.cases.models.CaseStatus",
         "ParticipantRoleEnum": "apps.cases.models.ParticipantRole",
         "UserRoleEnum": "apps.users.models.Role",
@@ -319,6 +323,8 @@ SPECTACULAR_SETTINGS = {
         "ScrutinyFlagStatusEnum": "apps.scrutiny.enums.FlagStatus",
         "ScrutinyRoundStageEnum": "apps.scrutiny.enums.RoundStage",
         "ScrutinyListStageEnum": "apps.scrutiny.selectors.LIST_STAGES",
+        # Pinned with DecisionEnum above: both have a `decision` field.
+        "RoundDecisionEnum": "apps.scrutiny.enums.RoundDecision",
         "DemandStatusEnum": "apps.payments.enums.DemandStatus",
         "DemandItemStatusEnum": "apps.payments.enums.DemandItemStatus",
         "PaymentStatusEnum": "apps.payments.enums.PaymentStatus",
