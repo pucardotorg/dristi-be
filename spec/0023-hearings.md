@@ -546,7 +546,9 @@ A date is a **sitting day** for a court when:
 The **capacity** of a sitting day is the entry's `capacity_override`, else
 config `hearings.max_hearings_per_day`.
 
-The **load** of a day is two numbers, always reported separately (`NXT-12`):
+The **load** of a day is two numbers, always kept separate in the API so a
+screen can tell them apart (`NXT-12`); whether it shows them apart or as one
+total is the screen's choice:
 
 ```text
 listed      = count(status IN (SCHEDULED, IN_PROGRESS, PASSED_OVER, COMPLETED, ABANDONED))
@@ -900,6 +902,11 @@ court; one lock):
 Used when a magistrate goes on leave or a holiday is declared after dates were
 given, and for the not-reached matters at the end of a day.
 
+A bulk move is issued to parties as a **notification**, not an order: it is a
+court communication about listings across several cases (`view-case.md` #8.2).
+Its own requirements are still to be written up in a separate PRD; this
+section may change to follow them.
+
 **Preview** — `POST /api/v1/hearings/bulk-reschedule/preview/`
 
 ```json
@@ -952,8 +959,14 @@ its items. The client polls it.
 GET /api/v1/courts/{court_id}/calendar/?from=2026-10-12&to=2026-11-30
 {
   "data": [
-    { "date": "2026-10-12", "sitting": true, "capacity": 40, "listed": 31, "provisional": 6, "entry": null },
+    { "date": "2026-10-12", "sitting": true, "capacity": 40, "listed": 31, "provisional": 6,
+      "by_purpose": [
+        { "purpose": { "code": "APPEARANCE", "label": "Appearance" }, "listed": 12, "provisional": 2 },
+        { "purpose": { "code": "EVIDENCE_OF_COMPLAINANT", "label": "Evidence of the complainant" }, "listed": 9, "provisional": 1 }
+      ],
+      "entry": null },
     { "date": "2026-10-20", "sitting": false, "capacity": 0, "listed": 0, "provisional": 0,
+      "by_purpose": [],
       "entry": { "id": "…", "entry_type": "HOLIDAY", "reason": "Ayudha Puja" } }
   ],
   "meta": { "...": "standard envelope" }
@@ -962,6 +975,9 @@ GET /api/v1/courts/{court_id}/calendar/?from=2026-10-12&to=2026-11-30
 
 The range is capped at 92 days. This is the date picker's source for the order
 screen and the reschedule screens (`NXT-11`, `NXT-12`).
+
+* `by_purpose` splits the day's `listed` and `provisional` counts by hearing purpose, one entry per purpose with any hearing that day, ordered by the purpose's `sequence`. Its counts add up to the day's `listed` and `provisional`.
+* It is computed in the same grouped query as the day's totals, so it adds no query per day. Screens that do not show it ignore it.
 
 #### 9.2 Entries
 
@@ -1321,7 +1337,7 @@ No new environment variables. Nothing here is a secret.
 * **Board:** grouped and ordered by `status_order, sequence`; gaps kept after a move; reorder rewrites only `SCHEDULED` sequences and rejects a partial or foreign list; not-reached filter.
 * **Moves:** court-side reasons accepted, party and judicial reasons rejected with `E10013`; same date and purpose rejected; `reschedule_count`, `original_date`, `HearingDateChange` and history reason written.
 * **Bulk:** preview changes nothing; `NEXT_AVAILABLE` respects free capacity including holds and keeps relative order; expired and double confirm rejected; started and changed hearings skipped; source dates blocked; redelivery finishes rather than repeats; one notification per case.
-* **Calendar:** sitting-day rule with weekday config and each entry type; a non-sitting entry on a date with hearings or holds rejected with counts; past entries rejected.
+* **Calendar:** sitting-day rule with weekday config and each entry type; `by_purpose` counts per purpose add up to the day's `listed` and `provisional`; a non-sitting entry on a date with hearings or holds rejected with counts; past entries rejected.
 * **Cancel:** case closure cancels `SCHEDULED`/`PASSED_OVER`/`ABANDONED`, releases other drafts' holds, leaves the `IN_PROGRESS` hearing and the triggering order's own hold; `LISTED_IN_ERROR` is the only direct cancel.
 * **Business date:** IST boundary around midnight UTC; override honoured outside production and refused by the system check in production.
 * **Adjournments and trial target:** counts by side from ends and moves; warning at the threshold, never a block; `beyond_trial_target` flips at `trial_target_days`.
