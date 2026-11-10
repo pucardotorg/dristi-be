@@ -71,12 +71,11 @@
   <!-- Expiry -->
   <path class="d" d="M860,200 L975,96"/>
   <path class="d" d="M1180,200 L1065,96"/>
-  <text class="l" x="1110" y="62">Hearing passes (system) —</text>
+  <text class="l" x="1110" y="62">Hearing passes or is moved (system) —</text>
   <text class="l" x="1110" y="78">Advance / Prepone and Postpone only</text>
 
   <!-- Notes -->
   <text class="n" x="30" y="610">Shaded boxes are final: nothing leaves them. A court arrow takes effect once its order is signed and its order data is complete.</text>
   <text class="n" x="30" y="630">Not drawn, because the status does not change: deferring review (stays Pending Review); moving the decision date (stays Pending Decision).</text>
   <text class="n" x="30" y="650">Dismissal happens only before onboarding. In states that need it, the order also records a separate outcome for CIS.</text>
-  <text class="n" x="30" y="670">Whether expiry also applies in Draft, Pending Signature and Pending Payment is open (Q-8).</text>
 </svg>
