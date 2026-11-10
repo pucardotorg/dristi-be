@@ -1,6 +1,6 @@
 # Dropped ideas
 
-**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`).
+**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`).
 
 Ideas taken out of the PRDs, kept here with their last wording so they can be restored. Each entry says where it came from and what replaced it. The full earlier documents are also in git history: commit `cb97c67` holds both files as they were before.
 
@@ -367,3 +367,13 @@ As it stood in §2 of payment-logic.md:
 | `PMT-12` | `[DERIVED]` For a process, the channel-fee rounds paid upfront cannot exceed the court-fee rounds paid upfront ([`efiling.md`](efiling.md) `PAY-15`). |
 
 `PAY-15` of efiling.md also read: "The fee is charged per selected address, per round — no more rounds than those whose court fee they are paying upfront." Before 2026-11-04 it read: "So delivery rounds run **1 … summons rounds prepaid**."
+
+## No bulk acts on applications (`ALC-35`)
+
+**Dropped 2026-11-10.** Whether the court can act on several applications at once is a screen choice, not a requirement.
+
+As it stood in "Users and actions" of [`application-lifecycle.md`](application-lifecycle.md):
+
+| ID | Requirement |
+|---|---|
+| `ALC-35` | Every court act is on **one application at a time**. There are no bulk acts on a selection of applications. |
