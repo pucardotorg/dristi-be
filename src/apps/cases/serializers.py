@@ -358,8 +358,15 @@ class CaseAffidavitSerializer(serializers.Serializer):
         return _require_visible_text(value)
 
 
+class CaseAffidavitReadSerializer(serializers.Serializer):
+    """Response of GET /cases/{id}/affidavit: ``null`` until it is first saved."""
+
+    case_id = serializers.UUIDField()
+    affidavit = serializers.CharField(allow_null=True)
+
+
 class DetailsSectionSerializer(serializers.Serializer):
-    """Response of PUT /cases/{id}/details/{section}: the section as saved."""
+    """Response of GET and PUT /cases/{id}/details/{section}: the section as saved."""
 
     case_id = serializers.UUIDField()
     section = serializers.CharField()

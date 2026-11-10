@@ -642,6 +642,37 @@ class TestDetails:
         details = client.get(reverse("case-details", args=[draft])).json()
         assert details["adr_other_prayer"] == data
 
+    def test_one_section_reads_as_saved(self, client, draft):
+        put_section(client, draft, "jurisdiction_limitation", JURISDICTION)
+
+        response = client.get(
+            reverse("case-details-section", args=[draft, "jurisdiction_limitation"])
+        )
+
+        assert response.status_code == 200
+        assert response.json()["section"] == "jurisdiction_limitation"
+        assert response.json()["data"] == JURISDICTION
+
+    def test_a_section_not_yet_saved_reads_empty(self, client, draft):
+        put_section(client, draft, "jurisdiction_limitation", JURISDICTION)
+
+        response = client.get(reverse("case-details-section", args=[draft, "adr_other_prayer"]))
+
+        assert response.json()["data"] == {}
+
+    def test_an_unknown_section_is_400(self, client, draft):
+        put_section(client, draft, "jurisdiction_limitation", JURISDICTION)
+
+        response = client.get(reverse("case-details-section", args=[draft, "nonsense"]))
+
+        assert error_codes(response) == {"section": ["E07002"]}
+
+    def test_another_users_section_is_not_found(self, client, client_for, other_user, draft):
+        put_section(client, draft, "jurisdiction_limitation", JURISDICTION)
+
+        url = reverse("case-details-section", args=[draft, "jurisdiction_limitation"])
+        assert client_for(other_user).get(url).status_code == 404
+
     def test_details_of_a_draft_with_no_case_yet_are_not_found(self, client, draft):
         assert client.get(reverse("case-details", args=[draft])).status_code == 404
 
@@ -661,6 +692,22 @@ class TestDetails:
 
 
 class TestEvidence:
+    def test_several_types_are_listed_together_in_order(self, client, draft):
+        add_cheque(client, draft)
+        add_evidence(client, draft, "RETURN_MEMO", RETURN_MEMO_INFO)
+        add_evidence(client, draft, "LEGAL_DEMAND_NOTICE", DEMAND_NOTICE_INFO)
+
+        response = client.get(
+            reverse("case-evidence-list", args=[draft]), {"evidence_type": "CHEQUE,RETURN_MEMO"}
+        )
+
+        rows = response.json()["results"]
+        assert [(row["evidence_type"], row["ordinal"]) for row in rows] == [
+            ("CHEQUE", 1),
+            ("RETURN_MEMO", 1),
+        ]
+        assert rows[1]["evidence_info"] == RETURN_MEMO_INFO
+
     def test_evidence_round_trip(self, client, draft):
         first = add_cheque(client, draft)
         second = add_cheque(client, draft)

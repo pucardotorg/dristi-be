@@ -722,6 +722,13 @@ PATCH  /case-evidence/{case_evidence_id}
 DELETE /case-evidence/{case_evidence_id}
 ```
 
+GET lists the case's active evidence by type, then `ordinal`. `evidence_type`
+may name several types, separated by commas (`CHEQUE,RETURN_MEMO`). Each item
+carries `case_evidence_id`, `evidence_type`, `ordinal`, `evidence_info` exactly
+as saved and `case_document_id`. Removing evidence does not renumber the rest,
+so an ordinal stays the same for as long as the evidence exists: a cheque, its
+return memo and its demand notice can be paired by it.
+
 Adding and listing evidence happen under the case. Updating and removing one
 piece of evidence use its own id, which is unique across cases; the owning case
 is found through it, and evidence on a case the caller did not create returns
@@ -979,8 +986,14 @@ on a delivered notice, an amount with `NO_PAYMENT_MADE`) is accepted and stored.
 
 ```
 PUT /cases/{case_id_or_draft_session_id}/details/{section}
+GET /cases/{case_id}/details/{section}
 GET /cases/{case_id}/details
 ```
+
+GET on one section returns `{"case_id", "section", "data"}`, as PUT does; `data`
+is `{}` until the section is first saved. A section the case type does not have
+is `400` (`E07002` on `section`). GET without a section returns every section,
+one key each.
 
 The request body is the whole section object; it replaces what was stored, it
 is not merged with it.
@@ -1158,7 +1171,11 @@ Returns all sections for the case type:
 
 ```
 PUT /cases/{case_id_or_draft_session_id}/affidavit
+GET /cases/{case_id}/affidavit
 ```
+
+GET returns `{"case_id", "affidavit"}`; `affidavit` is `null` until it is first
+saved.
 
 The sworn affidavit filed with the complaint (its own screen in the filing
 flow). It is a column on the case, not a details section. The body replaces
@@ -1833,10 +1850,12 @@ CREATE INDEX ON representation (advocate_id, is_active);
 | POST | `/cases/{id_or_draft}/evidence` | Add evidence (creates case if first action) |
 | PATCH | `/case-evidence/{case_evidence_id}` | Update evidence |
 | DELETE | `/case-evidence/{case_evidence_id}` | Remove evidence |
-| GET | `/cases/{id}/evidence?evidence_type=` | List evidence |
+| GET | `/cases/{id}/evidence?evidence_type=` | List evidence, of one type or several (comma-separated) |
 | PUT | `/cases/{id_or_draft}/details/{section}` | Update case details (creates case if first action) |
+| GET | `/cases/{id}/details/{section}` | Get one details section |
 | GET | `/cases/{id}/details` | Get all case details |
 | PUT | `/cases/{id_or_draft}/affidavit` | Replace the case's affidavit (creates case if first action) |
+| GET | `/cases/{id}/affidavit` | Get the case's affidavit |
 | POST | `/cases/{id}/submit-for-signing` | Advance to signing |
 | POST | `/cases/{id}/participants/{id}/sign` | Record signature |
 

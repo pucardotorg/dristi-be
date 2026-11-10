@@ -168,6 +168,26 @@ class TestAffidavit:
         preview = client.get(reverse("case-detail", args=[draft])).json()
         assert preview["affidavit"] == AFFIDAVIT
 
+    def test_it_reads_as_saved(self, client, draft):
+        put_affidavit(client, draft)
+
+        response = client.get(reverse("case-affidavit", args=[draft]))
+
+        assert response.status_code == 200
+        assert response.json()["affidavit"] == AFFIDAVIT
+
+    def test_it_reads_null_before_it_is_saved(self, client, draft):
+        put_section(client, draft, "adr_other_prayer", PRAYER)
+
+        assert client.get(reverse("case-affidavit", args=[draft])).json()["affidavit"] is None
+
+    def test_another_users_affidavit_is_not_found(self, client, client_for, other_user, draft):
+        put_affidavit(client, draft)
+
+        response = client_for(other_user).get(reverse("case-affidavit", args=[draft]))
+
+        assert response.status_code == 404
+
     def test_a_put_replaces_the_affidavit(self, client, draft):
         put_affidavit(client, draft)
 

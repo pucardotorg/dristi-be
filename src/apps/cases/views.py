@@ -42,6 +42,7 @@ from .models import (
 from .serializers import (
     AdvocateCreatedSerializer,
     AdvocateCreateSerializer,
+    CaseAffidavitReadSerializer,
     CaseAffidavitSerializer,
     CaseDocumentSerializer,
     CaseDocumentUpdateSerializer,
@@ -289,9 +290,23 @@ class CaseDetailsView(APIView):
 
 @extend_schema(tags=TAGS)
 class CaseDetailsSectionView(APIView):
-    """PUT /cases/{case_id}/details/{section} — replace one section."""
+    """GET /cases/{case_id}/details/{section} — one section. PUT — replace it."""
 
     parser_classes = JSON_ONLY
+
+    @extend_schema(
+        tags=TAGS,
+        # GET /cases/{id}/details would otherwise take the same generated id.
+        operation_id="v1_cases_details_section_retrieve",
+        responses={
+            200: DetailsSectionSerializer,
+            **error_responses(errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="section")),
+        },
+    )
+    def get(self, request, case_id, section):
+        """Return one section as saved; ``{}`` before it is first saved."""
+        data = services.get_details_section(case_id, request.user, section)
+        return Response({"case_id": case_id, "section": section, "data": data})
 
     @extend_schema(
         tags=TAGS,
@@ -316,7 +331,13 @@ class CaseDetailsSectionView(APIView):
 
 
 class CaseAffidavitView(APIView):
-    """PUT /cases/{case_id}/affidavit — replace the case's affidavit."""
+    """GET /cases/{case_id}/affidavit — the case's affidavit. PUT — replace it."""
+
+    @extend_schema(responses={200: CaseAffidavitReadSerializer})
+    def get(self, request, case_id):
+        """Return the affidavit as saved; ``null`` before it is first saved."""
+        case = services.get_case(case_id, request.user)
+        return Response({"case_id": case.id, "affidavit": case.affidavit})
 
     @extend_schema(
         request=CaseAffidavitSerializer,
@@ -335,7 +356,14 @@ class CaseAffidavitView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(tags=TAGS, parameters=[OpenApiParameter("evidence_type", str)])
+    get=extend_schema(
+        tags=TAGS,
+        parameters=[
+            OpenApiParameter(
+                "evidence_type", str, description="One type, or several separated by commas."
+            )
+        ],
+    )
 )
 class CaseEvidenceListView(generics.ListAPIView):
     """GET /cases/{case_id}/evidence — active evidence. POST — add evidence."""
@@ -348,7 +376,9 @@ class CaseEvidenceListView(generics.ListAPIView):
         case = services.get_case(self.kwargs["case_id"], self.request.user)
         queryset = CaseEvidence.objects.active().filter(case=case).order_by(*EVIDENCE_ORDERING)
         if self.request.query_params.get("evidence_type"):
-            queryset = queryset.filter(evidence_type=self.request.query_params["evidence_type"])
+            # One type, or several separated by commas: CHEQUE,RETURN_MEMO.
+            types = self.request.query_params["evidence_type"].split(",")
+            queryset = queryset.filter(evidence_type__in=types)
         return queryset
 
     @extend_schema(

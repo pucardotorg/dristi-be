@@ -631,6 +631,13 @@ def get_details(case_id, user):
     return get_detail_sections(get_case(case_id, user))
 
 
+def get_details_section(case_id, user, section):
+    """Return one details section of ``user``'s case; ``{}`` before it is first saved."""
+    case = get_case(case_id, user)
+    _require_allowed(section, get_config(case.case_type).sections, "section", case.case_type)
+    return get_detail_sections(case)[section]
+
+
 def get_detail_sections(case):
     """Return every details section of ``case``, one key per section."""
     config = get_config(case.case_type)
