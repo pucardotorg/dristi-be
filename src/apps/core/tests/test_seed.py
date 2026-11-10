@@ -11,7 +11,7 @@ from apps.core.models import Configuration
 from apps.locations.models import Location
 from apps.organizations.models import Organization
 
-EXAMPLE_DIR = settings.BASE_DIR / "data" / "seed" / "example"
+EXAMPLE_DIR = settings.BASE_DIR.parent / "data" / "seed" / "example"
 
 
 def write(tmp_path, name, content):

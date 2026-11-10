@@ -167,7 +167,7 @@ Per file and as a run total: `created`, `unchanged` (already present), `skipped`
 
 - Unit tests per registered seeder: create-from-empty, re-run-is-noop (idempotency), existing row left untouched (insert-only), FK/M2M resolution by code, unresolved reference handling, composite-key match (Configuration), `config_value` coercion.
 - Engine tests: `[seed]` header parsing, missing-header/empty-rows errors, unknown model error, directory expansion to `*.toml`, multi-file load order, `--list` output, `--dry-run` rolls back, `--strict` exit code, transaction rollback on mid-run failure.
-- A small fixture seed set under `src/data/seed/` used by tests and as living documentation of the file format.
+- A small fixture seed set under `data/seed/` used by tests and as living documentation of the file format.
 
 ## Rollout
 
