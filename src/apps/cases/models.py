@@ -475,6 +475,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         added again. A person may be a witness more than once, since a witness
         recalled by the other side is a new participant, but not twice for one
         side. A new witness has no side yet; ``Witness.clean`` checks it then.
+        An accused institution is one participant per person summoned for it
+        (its representatives, of any designation), plus at most one for the
+        institution with no person (spec 0020 §4.2).
         """
         party_id = getattr(self, f"{field}_id")
         if not (self.is_active and self.case_id and party_id):
@@ -484,12 +487,22 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             if field == "person" and side and _witness_on_side(self, side):
                 return _rule_error(case_errors.WITNESS_ALREADY_ON_SIDE, WITNESS_TWICE_MESSAGE)
             return None
-        held = set(
+        others = (
             CaseParticipant.objects.active()
             .filter(case_id=self.case_id, **{f"{field}_id": party_id})
             .exclude(pk=self.pk)
-            .values_list("role", flat=True)
         )
+        held = set(others.values_list("role", flat=True))
+        if (
+            field == "institution"
+            and self.role == ParticipantRole.ACCUSED
+            and (
+                self.person_id
+                or not others.filter(role=ParticipantRole.ACCUSED, person__isnull=True).exists()
+            )
+        ):
+            # Another representative of the same accused institution.
+            held.discard(ParticipantRole.ACCUSED)
         if self.role in held and self.role != ParticipantRole.WITNESS:
             role = self.get_role_display().lower()
             article = "an" if role[0] in "aeiou" else "a"

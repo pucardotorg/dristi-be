@@ -500,6 +500,7 @@ class InstitutionInputSerializer(ContactListsSerializer, serializers.ModelSerial
 
 
 CONTACT_LIST_FIELDS = ("mobile_numbers", "email_addresses", "addresses")
+REPRESENTATIVE_MESSAGE = "Send the person summoned for the institution."
 
 
 class PartySerializer(ContactListsSerializer):
@@ -540,11 +541,15 @@ class ParticipantCreateSerializer(PartySerializer):
 
     Either individual may be left out when ``institution`` is given. An
     individual needs at least one address; an institution needs at least one
-    of its own, and the person acting for it may give theirs. The role being
-    added is passed in the context as ``role``.
+    of its own, and the person acting for it may give theirs.
+    ``institution_id`` adds another representative to an institution already
+    accused on the case, which keeps its details and contacts; it needs the
+    ``person``. The role being added is passed in the context as ``role``.
     """
 
     institution = InstitutionInputSerializer(required=False)
+    # Accused only: an institution already accused on this case.
+    institution_id = serializers.UUIDField(required=False)
     designation = serializers.CharField(max_length=128, required=False, allow_null=True)
     # An individual complainant's, when it differs from their first address.
     permanent_address = AddressInputSerializer(required=False)
@@ -565,32 +570,44 @@ class ParticipantCreateSerializer(PartySerializer):
         attrs = super().validate(attrs)
         role = self.context["role"]
         has_individual = attrs["is_self"] or "person" in attrs
+        joins = "institution_id" in attrs
+        has_institution = "institution" in attrs or joins
         problems = {}
         if attrs["is_self"] and "person" in attrs:
             problems["self"] = [errors.coded(errors.PERSON_AND_SELF)]
         elif attrs["is_self"] and role == ParticipantRole.ACCUSED:
             problems["self"] = [errors.coded(errors.SELF_AS_ACCUSED)]
-        elif not has_individual and "institution" not in attrs:
+        elif joins and not has_individual:
+            problems["person"] = [errors.coded(api_errors.REQUIRED, REPRESENTATIVE_MESSAGE)]
+        elif not has_individual and not has_institution:
             problems["person"] = [
                 errors.coded(api_errors.REQUIRED, "Send person, self or institution.")
             ]
         if "institution" in attrs and role not in INSTITUTION_ROLES:
             problems["institution"] = [errors.coded(errors.INSTITUTION_NOT_ALLOWED)]
+        if joins and role != ParticipantRole.ACCUSED:
+            problems["institution_id"] = [
+                errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")
+            ]
+        elif joins and "institution" in attrs:
+            problems["institution_id"] = [
+                errors.coded(api_errors.INVALID, "Send institution or institution_id, not both.")
+            ]
         if (
             role == ParticipantRole.ACCUSED
             and has_individual
-            and "institution" in attrs
+            and has_institution
             and not attrs.get("designation")
         ):
             problems["designation"] = [
                 errors.coded(api_errors.REQUIRED, DESIGNATION_REQUIRED_MESSAGE)
             ]
-        if attrs.get("designation") and not (has_individual and "institution" in attrs):
+        if attrs.get("designation") and not (has_individual and has_institution):
             problems["designation"] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, DESIGNATION_NOT_ALLOWED_MESSAGE)
             ]
         if "permanent_address" in attrs and (
-            role != ParticipantRole.COMPLAINANT or "institution" in attrs or not has_individual
+            role != ParticipantRole.COMPLAINANT or has_institution or not has_individual
         ):
             problems["permanent_address"] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, PERMANENT_ADDRESS_MESSAGE)
@@ -616,7 +633,7 @@ class ParticipantCreateSerializer(PartySerializer):
                 }
             elif problem := police_station_problems(role, institution["addresses"]):
                 problems["institution"] = {"addresses": problem}
-        elif institution is None and not attrs.get("addresses"):
+        elif institution is None and not joins and not attrs.get("addresses"):
             problems["addresses"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
         if (
             "contact_details_unknown_declared" not in problems

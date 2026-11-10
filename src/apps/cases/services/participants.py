@@ -7,12 +7,14 @@ saved in one transaction, and the case row is locked for it, so ordinals are
 assigned and renumbered one write at a time.
 """
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.address.models import Address
 from apps.api import errors as api_errors
+from apps.parties.models import normalize_identifier, pan_cin_errors
 from apps.parties.services import (
     create_asserted_person,
     get_or_create_institution,
@@ -237,7 +239,13 @@ def _create_participant(case, user, role, data):
 
     institution = None
     institution_lists = {}
-    if "institution" in data:
+    # Another representative of an institution already accused on the case.
+    represented = (
+        _accused_institution(case, data["institution_id"]) if "institution_id" in data else None
+    )
+    if represented is not None:
+        institution = represented.institution
+    elif "institution" in data:
         institution_fields = dict(data["institution"])
         institution_lists = {
             field: institution_fields.pop(field)
@@ -304,6 +312,9 @@ def _create_participant(case, user, role, data):
         updated_by=user,
         **_snapshot(person, data),
     )
+    if represented is not None:
+        # The case's name for the institution, as its other participants have it.
+        participant.entity_name_at_filing = represented.entity_name_at_filing
     validated_save(participant)
     # The person acting for an institution carries it on their own contacts.
     replace_contacts(case, user, own_lists, participant=participant, institution=institution)
@@ -312,6 +323,22 @@ def _create_participant(case, user, role, data):
             case, user, institution_lists, institution=institution, path=("institution",)
         )
     return participant
+
+
+def _accused_institution(case, institution_id):
+    """Return an active accused participant of ``case`` that is ``institution_id``, or raise 400."""
+    found = (
+        CaseParticipant.objects.active()
+        .filter(case=case, role=ParticipantRole.ACCUSED, institution_id=institution_id)
+        .select_related("institution")
+        .order_by("ordinal")
+        .first()
+    )
+    if found is None:
+        raise api_errors.DOES_NOT_EXIST.validation_error(
+            {"institution_id": ["No institution with this id is accused on this case."]}
+        )
+    return found
 
 
 def _snapshot(person, data):
@@ -524,7 +551,10 @@ def update_participant(participant, user, data):
         case = participant.case
         old_institution_id = participant.institution_id
         if institution_fields is not None:
-            _relink_institution(participant, user, institution_fields, data)
+            if _identified_by_nothing(participant.institution, institution_fields):
+                _edit_institution(participant, user, institution_fields, data)
+            else:
+                _relink_institution(participant, user, institution_fields, data)
         for field, value in data.items():
             setattr(participant, field, value)
         participant.updated_by = user
@@ -532,6 +562,8 @@ def update_participant(participant, user, data):
         # Only once the participant's rules allow the new institution.
         if participant.institution_id != old_institution_id:
             move_institution_contacts(case, user, old_institution_id, participant.institution)
+        if old_institution_id:
+            _align_representatives(participant, user, old_institution_id)
         if participant.person_id:
             replace_contacts(
                 case, user, own_lists, participant=participant, institution=participant.institution
@@ -575,11 +607,83 @@ def _relink_institution(participant, user, fields, data):
             fields,
             require_identifier=participant.role == ParticipantRole.COMPLAINANT,
         )
+    _name_from(participant, fields, data)
+
+
+def _identified_by_nothing(institution, fields):
+    """Return whether neither ``institution`` nor ``fields`` has a PAN or CIN.
+
+    Such an institution can never be matched by another filing, so it is this
+    case's alone and may be edited in place.
+    """
+    return not any(
+        (
+            institution.pan,
+            institution.cin,
+            normalize_identifier(fields.get("pan")),
+            normalize_identifier(fields.get("cin")),
+        )
+    )
+
+
+def _edit_institution(participant, user, fields, data):
+    """Change the participant's institution, one no other filing can share, in place.
+
+    Its type, name and skip declaration become those sent, for every
+    participant linked to it; it keeps its id. The name is the case's too,
+    as on a re-link.
+    """
+    institution = participant.institution
+    skip_declared = fields.get("pan_cin_skip_declared", False)
+    required = participant.role == ParticipantRole.COMPLAINANT
+    with errors_under("institution"):
+        if problems := pan_cin_errors(None, None, skip_declared, required=required):
+            raise DjangoValidationError(problems)
+        institution.entity_type = fields["entity_type"]
+        institution.entity_name = fields["entity_name"]
+        institution.pan_cin_skip_declared = skip_declared
+        institution.updated_by = user
+        institution.save()
+    _name_from(participant, fields, data)
+
+
+def _name_from(participant, fields, data):
+    """Name the participant after the institution sent, unless the request names it itself."""
     snapshot = _snapshot(None, {"institution": fields})
     if participant.person_id is not None:
         snapshot = {"entity_name_at_filing": snapshot["entity_name_at_filing"]}
     for field, value in snapshot.items():
         data.setdefault(field, value)
+
+
+def _align_representatives(participant, user, old_institution_id):
+    """Keep every participant of the participant's former institution in step with it.
+
+    The others summoned for the same institution (spec 0020 §4.2) follow a
+    re-link to the new institution, and take the case's name for it; one with
+    no person is named after it too.
+    """
+    others = (
+        CaseParticipant.objects.active()
+        .filter(case_id=participant.case_id, institution_id=old_institution_id)
+        .exclude(pk=participant.pk)
+    )
+    for other in others:
+        wanted = {
+            "institution_id": participant.institution_id,
+            "entity_name_at_filing": participant.entity_name_at_filing,
+        }
+        if other.person_id is None:
+            wanted["name_at_filing"] = participant.entity_name_at_filing
+        changed = {
+            field: value for field, value in wanted.items() if getattr(other, field) != value
+        }
+        if not changed:
+            continue
+        for field, value in changed.items():
+            setattr(other, field, value)
+        other.updated_by = user
+        validated_save(other)
 
 
 def _first_address(participant):

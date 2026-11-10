@@ -409,6 +409,121 @@ class TestInstitutions:
         assert (company.status_code, director.status_code) == (201, 201)
 
 
+class TestAccusedInstitutionRepresentatives:
+    """Everyone summoned for one accused institution shares it (spec 0020 §4.2)."""
+
+    NO_IDENTIFIER = {k: v for k, v in INSTITUTION.items() if k != "pan"}
+
+    def representative(self, client, draft, name, **body):
+        body.setdefault("designation", "Director")
+        return add(client, draft, role="accused", person={**PERSON, "name": name}, **body)
+
+    def test_a_matched_institution_takes_several_representatives(self, client, draft):
+        add_complainant(client, draft)
+        first = self.representative(client, draft, "Ravi", institution=INSTITUTION).json()
+
+        second = self.representative(client, draft, "Asha", institution=INSTITUTION)
+
+        assert second.status_code == 201, second.json()
+        assert second.json()["institution_id"] == first["institution_id"]
+        assert second.json()["designation_at_filing"] == "Director"
+
+    def test_institution_id_joins_one_with_no_pan_or_cin(self, client, draft):
+        add_complainant(client, draft)
+        first = self.representative(client, draft, "Ravi", institution=self.NO_IDENTIFIER).json()
+
+        second = self.representative(client, draft, "Asha", institution_id=first["institution_id"])
+
+        assert second.status_code == 201, second.json()
+        body = second.json()
+        assert body["institution_id"] == first["institution_id"]
+        assert body["entity_name_at_filing"] == "ABC Pvt Ltd"
+        assert body["institution"]["addresses"] == first["institution"]["addresses"]
+        assert Institution.objects.count() == 1
+
+    def test_the_institution_alone_is_accused_once(self, client, draft):
+        add_complainant(client, draft)
+        add(client, draft, role="accused", institution=INSTITUTION)
+        self.representative(client, draft, "Ravi", institution=INSTITUTION)
+
+        response = add(client, draft, role="accused", institution=INSTITUTION)
+
+        assert error_codes(response) == {"institution": ["E07013"]}
+
+    @pytest.mark.parametrize(
+        ("role", "body", "field", "code"),
+        [
+            ("accused", {"institution_id": str(uuid.uuid4())}, "institution_id", "E00011"),
+            ("complainant", {"institution_id": str(uuid.uuid4())}, "institution_id", "E07023"),
+        ],
+    )
+    def test_institution_id_must_be_accused_on_the_case(
+        self, client, draft, role, body, field, code
+    ):
+        add_complainant(client, draft, name="First")
+
+        response = add(client, draft, role=role, person=PERSON, designation="Director", **body)
+
+        assert error_codes(response) == {field: [code]}
+
+    def test_institution_id_needs_the_person(self, client, draft):
+        add_complainant(client, draft)
+        first = self.representative(client, draft, "Ravi", institution=INSTITUTION).json()
+
+        response = add(client, draft, role="accused", institution_id=first["institution_id"])
+
+        assert error_codes(response) == {"person": ["E00002"]}
+
+    def test_renaming_one_with_no_pan_or_cin_keeps_it_for_everyone(self, client, draft):
+        add_complainant(client, draft)
+        first = self.representative(client, draft, "Ravi", institution=self.NO_IDENTIFIER).json()
+        second = self.representative(
+            client, draft, "Asha", institution_id=first["institution_id"]
+        ).json()
+
+        response = patch(
+            client,
+            first["case_participant_id"],
+            {
+                "institution": {
+                    **self.NO_IDENTIFIER,
+                    "entity_name": "ABC Trading Co",
+                    "entity_type": "LLP",
+                }
+            },
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution_id"] == first["institution_id"]
+        institution = Institution.objects.get()
+        assert (institution.entity_name, institution.entity_type) == ("ABC Trading Co", "LLP")
+        other = CaseParticipant.objects.get(pk=second["case_participant_id"])
+        assert other.entity_name_at_filing == "ABC Trading Co"
+
+    def test_a_re_link_moves_everyone_summoned_for_it(self, client, draft):
+        add_complainant(client, draft)
+        first = self.representative(client, draft, "Ravi", institution=INSTITUTION).json()
+        second = self.representative(client, draft, "Asha", institution=INSTITUTION).json()
+        corrected = {**INSTITUTION, "pan": "AAACB5678B", "entity_name": "ABC Private Ltd"}
+
+        response = patch(client, first["case_participant_id"], {"institution": corrected})
+
+        assert response.status_code == 200, response.json()
+        other = CaseParticipant.objects.get(pk=second["case_participant_id"])
+        assert str(other.institution_id) == response.json()["institution_id"]
+        assert other.entity_name_at_filing == "ABC Private Ltd"
+
+    def test_renaming_on_the_case_is_shared_too(self, client, draft):
+        add_complainant(client, draft)
+        first = self.representative(client, draft, "Ravi", institution=INSTITUTION).json()
+        second = self.representative(client, draft, "Asha", institution=INSTITUTION).json()
+
+        patch(client, first["case_participant_id"], {"entity_name_at_filing": "ABC (India)"})
+
+        other = CaseParticipant.objects.get(pk=second["case_participant_id"])
+        assert other.entity_name_at_filing == "ABC (India)"
+
+
 class TestAddAccused:
     def test_accused_have_their_own_ordinals(self, client, draft):
         add_complainant(client, draft)

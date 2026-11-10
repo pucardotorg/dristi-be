@@ -226,7 +226,7 @@ Date of birth is optional when filing: a party may be added with only an approxi
 - Index on `(case_id, role, is_active)` — common query pattern
 
 **Application-layer rules:**
-- The same person cannot be both a complainant and an accused on one case, nor hold the same role twice on it (while active). A complainant may also be the POA holder for a co-complainant (§5).
+- The same person cannot be both a complainant and an accused on one case, nor hold the same role twice on it (while active). An institution likewise, with one exception: an **accused** institution is one participant for each person summoned for it (its authorised representatives, of any designation), plus at most one with no person. They share the institution, so its contacts on the case (§4.6) are theirs together, and a change to the institution, or to the case's name for it, applies to all of them. A complainant may also be the POA holder for a co-complainant (§5).
 - Every party needs at least one address contact (§4.6): notices and summons must be served somewhere, witnesses included. An individual is served at their own; an institution at its own in the case, whether or not a person acts for it.
 - `name_at_filing` is required for COMPLAINANT, ACCUSED and POA_HOLDER. A witness is often known only by their post ("Branch manager, SBI Kottayam"), so a witness needs a `name_at_filing` or a `designation_at_filing`; their phone number is optional. Witnesses are optional; these apply to each witness who is added. The completeness check (spec 0021 §6.3) checks them again.
 
