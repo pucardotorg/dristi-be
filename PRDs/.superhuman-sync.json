@@ -348,8 +348,8 @@
     "order-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
       "title": "Order Generation",
-      "contentHash": "c4f1d4437e7c",
-      "pageUpdatedAt": 1793948116.359,
+      "contentHash": "949684163107",
+      "pageUpdatedAt": 1794300682.916,
       "calloutElementId": "eca-DluhcPwJvd",
       "sections": [
         {
@@ -453,7 +453,7 @@
           "hash": "9e1da0487ee1"
         }
       ],
-      "note": "2026-11-03: patched in place to v8.6 (status, callout, §1/§6/§5.2 text; changed tables replaced whole — 1.1, out of scope, §3, §4, §5, 5.1, 5.2+5.3, 6.1, §7, §8, §9, 10.1, §11, §13, §14+14.1–14.3; §16 Enhancements and §17 Open questions added). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW, untouched. `sections` not refreshed. 2026-11-03 later: TXT-03 cell in grid-nro-qgW8LW and status patched. 2026-11-06: patched in place to v8.7 (status, callout, §10.1 intro; HRG-10 and CLS-06 cells updated; CLS-14 row added to grid-uCDhnjzU0v, its ID cell carries a trailing zero-width italic character so the ID stays monospace). `sections` still not refreshed."
+      "note": "2026-11-03: patched in place to v8.6 (status, callout, §1/§6/§5.2 text; changed tables replaced whole — 1.1, out of scope, §3, §4, §5, 5.1, 5.2+5.3, 6.1, §7, §8, §9, 10.1, §11, §13, §14+14.1–14.3; §16 Enhancements and §17 Open questions added). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW, untouched. `sections` not refreshed. 2026-11-03 later: TXT-03 cell in grid-nro-qgW8LW and status patched. 2026-11-06: patched in place to v8.7 (status, callout, §10.1 intro; HRG-10 and CLS-06 cells updated; CLS-14 row added to grid-uCDhnjzU0v, its ID cell carries a trailing zero-width italic character so the ID stays monospace). `sections` still not refreshed. 2026-11-10: patched in place to v8.8 (Status line, callout, §1.1 Order items cell); comments kept."
     },
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
