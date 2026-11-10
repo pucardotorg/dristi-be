@@ -74,13 +74,16 @@ class Command(BaseCommand):
 
         files = self._collect_files(options["paths"])
         documents = [self._read_document(path) for path in files]
-        # Group by model via each spec's load order, then by file name.
-        documents.sort(key=lambda doc: (doc["spec"].order, str(doc["path"])))
+        # Group by model via each spec's load order; within one order, keep the
+        # order the files were given (sort is stable), so a caller can control
+        # dependent loads, e.g. states.toml before districts.toml before
+        # pincodes.toml. Files from a directory keep their sorted-name order.
+        documents.sort(key=lambda doc: doc["spec"].order)
 
         totals = {"created": 0, "unchanged": 0, "skipped": 0}
         committed = True
-        # Disable the ORM query cache for the load: a bulk seed should not thrash
-        # the cache, and this matches the import_pincodes command.
+        # Disable the ORM query cache for the load: a bulk seed should not
+        # thrash the cache with its many inserts and invalidations.
         with transaction.atomic(), cachalot_disabled():
             for document in documents:
                 self._load(document, options, totals)

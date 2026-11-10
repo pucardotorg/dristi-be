@@ -226,12 +226,8 @@ class GenericRequestCreateSerializer(serializers.Serializer):
 class DecisionSerializer(serializers.Serializer):
     """Payload for POST /approvals/{id}/decide/."""
 
-    decision = serializers.ChoiceField(
-        choices=[
-            RequestApproval.Status.APPROVED,
-            RequestApproval.Status.REJECTED,
-        ]
-    )
+    # The schema names this enum DecisionEnum through ENUM_NAME_OVERRIDES.
+    decision = serializers.ChoiceField(choices=RequestApproval.DECISIONS)
     comments = serializers.CharField(required=False, allow_blank=True, default="")
 
     def validate(self, attrs):

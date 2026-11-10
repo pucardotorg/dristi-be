@@ -61,10 +61,13 @@ INSTALLED_APPS = [
     "apps.address",
     "apps.parties",
     "apps.cases",
+    "apps.scrutiny",
+    "apps.payments",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
     "addon.cdac_esign",
+    "addon.egras_payment_gateway",
 ]
 
 MIDDLEWARE = [
@@ -307,12 +310,24 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
+        # drf-spectacular names an enum after its field. Scrutiny's round also has a
+        # `decision` field, and when two serializers share a field name with different
+        # choices, both enums get renamed. Both are pinned so neither name changes.
+        "DecisionEnum": "apps.dristi_requests.models.RequestApproval.DECISIONS",
         "CaseStatusEnum": "apps.cases.models.CaseStatus",
         "ParticipantRoleEnum": "apps.cases.models.ParticipantRole",
         "UserRoleEnum": "apps.users.models.Role",
         "PartyEntityTypeEnum": "apps.parties.models.EntityType",
         "ESignEntityTypeEnum": "apps.esign.constants.EntityType",
         "GenderEnum": "apps.parties.models.Gender",
+        "ScrutinyFlagStatusEnum": "apps.scrutiny.enums.FlagStatus",
+        "ScrutinyRoundStageEnum": "apps.scrutiny.enums.RoundStage",
+        "ScrutinyListStageEnum": "apps.scrutiny.selectors.LIST_STAGES",
+        # Pinned with DecisionEnum above: both have a `decision` field.
+        "RoundDecisionEnum": "apps.scrutiny.enums.RoundDecision",
+        "DemandStatusEnum": "apps.payments.enums.DemandStatus",
+        "DemandItemStatusEnum": "apps.payments.enums.DemandItemStatus",
+        "PaymentStatusEnum": "apps.payments.enums.PaymentStatus",
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
@@ -536,6 +551,39 @@ ESIGN_ENTITY_AUTHORIZERS = {}
 
 
 # ---------------------------------------------------------------------------
+# Payments (spec 0017)
+# ---------------------------------------------------------------------------
+# Provider name -> dotted path, resolved lazily. A provider addon (e.g. e-GRAS,
+# spec 0022) is added here and selected with PAYMENT_DEFAULT_PROVIDER; payments
+# already in flight keep routing to the provider that started them.
+PAYMENT_PROVIDERS = {"mock": "apps.payments.providers.mock.MockPaymentProvider"}
+# Provider for NEW payments only. Empty: payments stay INITIATED for an
+# operator or internal service to confirm.
+PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="")
+# Names registered besides the default, read by the environment modules. A
+# provider stays here while payments are pending at it, so their callbacks and
+# polls still resolve after the default is cleared or moved (spec 0022 #8).
+PAYMENT_REGISTERED_PROVIDERS = [
+    name.strip() for name in env.list("PAYMENT_REGISTERED_PROVIDERS", default=[]) if name.strip()
+]
+PAYMENT_DEFAULT_CURRENCY = env("PAYMENT_DEFAULT_CURRENCY", default="INR")
+# Where the provider callback sends the browser. Server-side only: taking it
+# from the request would make the public callback an open redirect.
+PAYMENT_UI_REDIRECT_URL = env("PAYMENT_UI_REDIRECT_URL", default="")
+PAYMENT_CALLBACK_THROTTLE_RATE = env("PAYMENT_CALLBACK_THROTTLE_RATE", default="60/min")
+PAYMENT_CALLBACK_MAX_BODY_BYTES = env.int("PAYMENT_CALLBACK_MAX_BODY_BYTES", default=65536)
+PAYMENT_STATUS_POLL_INTERVAL_SECONDS = env.int("PAYMENT_STATUS_POLL_INTERVAL_SECONDS", default=300)
+PAYMENT_STATUS_POLL_MAX_INTERVAL_SECONDS = env.int(
+    "PAYMENT_STATUS_POLL_MAX_INTERVAL_SECONDS", default=21600
+)
+PAYMENT_STATUS_POLL_BATCH_SIZE = env.int("PAYMENT_STATUS_POLL_BATCH_SIZE", default=200)
+PAYMENT_BATCH_MAX_DEMANDS = env.int("PAYMENT_BATCH_MAX_DEMANDS", default=50)
+# Origin the mock provider's form posts back to (the API's own origin); empty
+# posts to a relative path. Unused by real providers.
+PAYMENT_MOCK_CALLBACK_BASE_URL = env("PAYMENT_MOCK_CALLBACK_BASE_URL", default="")
+
+
+# ---------------------------------------------------------------------------
 # CDAC eSign addon (spec 0015 #11)
 # ---------------------------------------------------------------------------
 # Delete this block plus the INSTALLED_APPS entry and the ESIGN_PROVIDER value
@@ -562,6 +610,41 @@ CDAC_ESIGN_RESPONSE_FIELD = env("CDAC_ESIGN_RESPONSE_FIELD", default="")
 
 
 # ---------------------------------------------------------------------------
+# e-GRAS payment provider addon (addon.egras_payment_gateway, spec 0022 #9)
+# ---------------------------------------------------------------------------
+# Remove this block, the INSTALLED_APPS entry, and the PAYMENT_PROVIDERS["egras"]
+# entry to remove the integration entirely; apps.payments keeps working on the
+# mock provider. The addon's system checks require every value below only when
+# "egras" is selected in PAYMENT_PROVIDERS, so local/CI need no e-GRAS codes.
+EGRAS_PAYMENT_URL = env("EGRAS_PAYMENT_URL", default="")
+EGRAS_VERIFY_URL = env("EGRAS_VERIFY_URL", default="")
+EGRAS_RETURN_URL = env("EGRAS_RETURN_URL", default="")
+EGRAS_DEPT_CODE = env("EGRAS_DEPT_CODE", default="")
+EGRAS_DTO = env("EGRAS_DTO", default="")
+EGRAS_STO = env("EGRAS_STO", default="")
+EGRAS_DDO = env("EGRAS_DDO", default="")
+EGRAS_OFFICE_NAME = env("EGRAS_OFFICE_NAME", default="")
+EGRAS_USER_ID = env("EGRAS_USER_ID", default="guest")
+# JSON object: account_head or charge_type -> 17-character scheme code.
+EGRAS_SCHEME_MAP = env.json("EGRAS_SCHEME_MAP", default={})
+# 1 until NIC confirms the SCHEMENAME2… field names (spec 0022 #16, Q-3).
+EGRAS_MAX_SCHEMES = env.int("EGRAS_MAX_SCHEMES", default=1)
+# JSON list of {code, label, group} issued by NIC.
+EGRAS_BANK_OPTIONS = env.json("EGRAS_BANK_OPTIONS", default=[])
+EGRAS_DEFAULT_BANK = env("EGRAS_DEFAULT_BANK", default="")
+EGRAS_APPLICATION_PREFIX = env("EGRAS_APPLICATION_PREFIX", default="DR")
+EGRAS_REMARKS_TEMPLATE = env("EGRAS_REMARKS_TEMPLATE", default="Dristi {demand_numbers}")
+EGRAS_PAYER_FALLBACK_CITY = env("EGRAS_PAYER_FALLBACK_CITY", default="NA")
+EGRAS_PAYER_FALLBACK_ADDRESS = env("EGRAS_PAYER_FALLBACK_ADDRESS", default="NA")
+EGRAS_PAYER_FALLBACK_PINCODE = env("EGRAS_PAYER_FALLBACK_PINCODE", default="000000")
+EGRAS_TIMEOUT = env.int("EGRAS_TIMEOUT", default=15)
+EGRAS_VERIFY_SSL = env.bool("EGRAS_VERIFY_SSL", default=True)
+EGRAS_PENDING_HORIZON = env.int("EGRAS_PENDING_HORIZON", default=9)
+EGRAS_NOT_FOUND_GRACE = env.int("EGRAS_NOT_FOUND_GRACE", default=2)
+EGRAS_ENABLED = env.bool("EGRAS_ENABLED", default=True)
+
+
+# ---------------------------------------------------------------------------
 # PDF Service (spec 0016) — signing primitives consumed by apps.esign
 # ---------------------------------------------------------------------------
 # Declared here because the eSign system checks verify that the algorithm this
@@ -569,6 +652,16 @@ CDAC_ESIGN_RESPONSE_FIELD = env("CDAC_ESIGN_RESPONSE_FIELD", default="")
 PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
 PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
 PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=20971520)
+
+
+# ---------------------------------------------------------------------------
+# Scrutiny (apps.scrutiny, spec 0024)
+# ---------------------------------------------------------------------------
+# The one court establishment this deployment scrutinises and registers for
+# (RLE-00). Court roles are Django groups until per-court role assignments
+# exist, so they count only here: unset, nobody holds a court role and every
+# scrutiny and registration endpoint is closed.
+SCRUTINY_ESTABLISHMENT_ID = env("SCRUTINY_ESTABLISHMENT_ID", default="")
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +725,11 @@ LOGGING = {
             "propagate": False,
         },
         "addon.cdac_sms_gateway": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "addon.egras_payment_gateway": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

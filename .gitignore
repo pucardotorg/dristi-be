@@ -92,5 +92,6 @@ docker/rustfs_volumes/
 .DS_Store
 Thumbs.db
 
-# Pincode directory CSV: downloaded per environment (see src/data/pincodes/README.md).
+# Pincodes are seeded from TOML now (see src/data/seed/README.md). Keep ignoring
+# any leftover India Post CSV so a local copy is never committed.
 src/data/pincodes/*.csv

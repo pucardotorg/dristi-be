@@ -5,6 +5,9 @@ stores the address for service of notice, and records the case's own copy of
 the party's details on a ``CaseParticipant``. Every row one write touches is
 saved in one transaction, and the case row is locked for it, so ordinals are
 assigned and renumbered one write at a time.
+
+A party's details have no field the court flags on its own, so in correction
+a party write needs its whole section open (``correction.check_write``).
 """
 
 from contextlib import contextmanager
@@ -37,6 +40,8 @@ from ..models import (
     Representation,
     Witness,
 )
+from . import correction
+from .case_types import ADVOCATES_PART
 from .services import (
     deactivate,
     editing,
@@ -106,6 +111,7 @@ def add_participant(case_or_draft_id, user, role, data):
     # Raises 404 or 409 before anything is written.
     get_case_type(case_or_draft_id, user)
     with editing_or_creating(case_or_draft_id, user) as case:
+        correction.check_write(case, user, role, whole=True)
         participant = _create_participant(case, user, role, data)
     return participant
 
@@ -119,6 +125,7 @@ def add_witness(case_or_draft_id, user, data):
     """
     get_case_type(case_or_draft_id, user)
     with editing_or_creating(case_or_draft_id, user) as case:
+        correction.check_write(case, user, ParticipantRole.WITNESS, whole=True)
         participant = _create_participant(
             case,
             user,
@@ -146,6 +153,7 @@ def add_poa_holder(case_or_draft_id, user, data):
     """
     get_case_type(case_or_draft_id, user)
     with editing_or_creating(case_or_draft_id, user) as case:
+        correction.check_write(case, user, ParticipantRole.POA_HOLDER, whole=True)
         represented = _get_represented(case, data, "represented_participant_ids")
         holder = _create_participant(
             case, user, ParticipantRole.POA_HOLDER, {**data, "is_party_in_person": False}
@@ -187,7 +195,8 @@ def get_mandate(poa_mandate_id, user):
 def revoke_mandate(mandate, user):
     """Revoke a mandate (soft delete); a holder left acting for no one is removed too."""
     ensure_editable(mandate.case)
-    with editing(mandate.case, user):
+    with editing(mandate.case, user) as case:
+        correction.check_write(case, user, ParticipantRole.POA_HOLDER, whole=True)
         now = timezone.now()
         deactivate(mandate, user, revoked_at=now)
         holder = mandate.poa_participant
@@ -206,6 +215,7 @@ def add_advocate(case_or_draft_id, user, data):
     if advocate is None:
         raise api_errors.DOES_NOT_EXIST.validation_error({"advocate_id": ["Advocate not found."]})
     with editing_or_creating(case_or_draft_id, user) as case:
+        correction.check_write(case, user, ADVOCATES_PART, whole=True)
         clients = _get_represented(case, data, "client_participant_ids")
         representations = []
         for client in clients:
@@ -229,7 +239,8 @@ def get_representation(representation_id, user):
 def end_representation(representation, user):
     """End a representation (soft delete); the row is kept as the record of who acted when."""
     ensure_editable(representation.case)
-    with editing(representation.case, user):
+    with editing(representation.case, user) as case:
+        correction.check_write(case, user, ADVOCATES_PART, whole=True)
         deactivate(representation, user, to_date=timezone.now())
 
 
@@ -360,7 +371,8 @@ def update_participant(participant, user, data):
     if problems:
         raise serializers.ValidationError(problems)
 
-    with editing(participant.case, user):
+    with editing(participant.case, user) as case:
+        correction.check_write(case, user, participant.role, whole=True)
         if "address" in data:
             participant.address = _save_address(data.pop("address"), user)
         for field, value in data.items():
@@ -395,7 +407,8 @@ def remove_participant(participant, user):
     party as its caller.
     """
     ensure_editable(participant.case)
-    with editing(participant.case, user):
+    with editing(participant.case, user) as case:
+        correction.check_write(case, user, participant.role, whole=True)
         _remove(participant, user, timezone.now())
 
 

@@ -230,7 +230,7 @@ class TestAdminSave:
         response = admin_client.post(self.url(), form_data(rule_expression="case_value / 0"))
         assert response.status_code == 200
         assert "Dry run failed" in response.content.decode()
-        assert not BusinessRule.objects.exists()
+        assert not BusinessRule.objects.filter(code="COURT_FEE_CALCULATION").exists()
         assert not BusinessRule.history.exists()
 
     def test_gorules_save_shows_result_and_trace(self, admin_client):

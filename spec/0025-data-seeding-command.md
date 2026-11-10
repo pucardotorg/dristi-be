@@ -10,7 +10,7 @@ Proposed
 
 Reference data that an environment needs before it can serve traffic — locations, organizations, business rules, configurations, CMS pages and similar — currently arrives two ways: some through ad-hoc data migrations, the rest entered by hand. Neither is reviewable, repeatable, or portable between environments. Bringing up a new jurisdiction means re-doing manual work, and there is no single human-readable record of what "initial data" an environment is supposed to hold.
 
-We already have a proven pattern for one slice of this problem: `apps.locations.management.commands.import_pincodes` reads a file, matches existing rows by a natural key, creates missing rows and their relationships, preserves manual edits, and supports `--dry-run`. This spec generalizes that pattern into a single `seed` command that works across the reference-data models.
+We had a proven pattern for one slice of this problem: the `import_pincodes` command read a file, matched existing rows by a natural key, created missing rows and their relationships, and supported `--dry-run`. This spec generalizes that pattern into a single `seed` command that works across the reference-data models. (Pincode loading was itself moved onto the `seed` command and `import_pincodes` removed — see issue #196.)
 
 ## Goals
 
@@ -128,7 +128,7 @@ Re-running any file therefore converges to zero writes. A composite key (Configu
 
 ### 7. Load order across files
 
-When multiple files are passed, they are grouped by target model and loaded in each spec's `order` (locations before organizations, categories before pages). Within the engine everything runs in **one transaction**, so a later failure rolls the whole run back — a partial seed never lands. `--dry-run` sets a rollback at the end so a full run can be previewed, created relationships included (same approach as `import_pincodes`).
+When multiple files are passed, they are grouped by target model and loaded in each spec's `order` (locations before organizations, categories before pages). Files of the **same** model load in the order they were given (the sort is stable), so dependent data can be split across files that are passed in dependency order, e.g. `states.toml districts.toml pincodes.toml`; files collected from a directory keep their sorted-name order. Within the engine everything runs in **one transaction**, so a later failure rolls the whole run back — a partial seed never lands. `--dry-run` sets a rollback at the end so a full run can be previewed, created relationships included.
 
 ### 8. CLI
 
@@ -161,7 +161,7 @@ python manage.py seed --list
 
 ### 9. Reporting
 
-Per file and as a run total: `created`, `unchanged` (already present), `skipped` (unresolved references), with a one-line `SUCCESS`/`WARNING` summary mirroring `import_pincodes`. At `-v 2`, each created row's key and each unresolved reference are listed. `--dry-run` prefixes counts with "Dry run: would have…".
+Per file and as a run total: `created`, `unchanged` (already present), `skipped` (unresolved references), with a one-line `SUCCESS`/`WARNING` summary. At `-v 2`, each created row's key and each unresolved reference are listed. `--dry-run` prefixes counts with "Dry run: would have…".
 
 ## Testing
 
@@ -181,7 +181,7 @@ Per file and as a run total: `created`, `unchanged` (already present), `skipped`
 All open questions were resolved in review by @thejeshgn:
 
 1. **Single `seed` command** (one self-describing command), with `--list` to show the registered seedable models — preferred over per-entity commands. See §2, §8.
-2. **TOML only**, per the ticket. CSV is out of scope; `import_pincodes` keeps its own CSV reader for the India Post directory.
+2. **TOML only**, per the ticket. CSV is out of scope; the India Post directory is converted to TOML out-of-band (in the `dristi-be-experiments` repo) and seeded like any other data — see issue #196.
 3. **Permissions out of scope** for now. See §4.
 4. **`config_value` is coerced** to its stored type; the file stays in native TOML types. See §4.
 5. **Insert-only** — no upsert, no deletes. Updates are manual. See §5.

@@ -53,6 +53,12 @@ class EvidenceType(models.TextChoices):
     LEGAL_DEMAND_NOTICE = "LEGAL_DEMAND_NOTICE", "Legal demand notice"
 
 
+# Parts of a filing that are neither an evidence type, a details section nor a
+# participant role, as ``CaseTypeConfig.correction_sections`` names them.
+DOCUMENTS_PART = "DOCUMENTS"
+ADVOCATES_PART = "ADVOCATES"
+
+
 @dataclass(frozen=True)
 class CaseTypeConfig:
     """What one case type accepts.
@@ -71,6 +77,13 @@ class CaseTypeConfig:
     # The completeness check (spec 0021 §6.3) requires at least one of each.
     required_document_types: tuple[str, ...] = ()
     required_evidence_types: tuple[str, ...] = ()
+    # What the court's correction scope (spec 0024 #5.1) names. Each part of the
+    # filing a write changes (an evidence type, a details section, a participant
+    # role, ``DOCUMENTS_PART`` or ``ADVOCATES_PART``) -> the court's section code.
+    correction_sections: dict[str, str] = field(default_factory=dict)
+    # (part, key) -> the court's field id, for each value it can flag on its own.
+    # An evidence value's ref carries the record index, ``CHQ-3[0]``.
+    correction_fields: dict[tuple[str, str], str] = field(default_factory=dict)
 
     @property
     def sections(self):
@@ -241,6 +254,29 @@ CASE_TYPES = {
                 # A delivered notice needs its delivery date.
                 **_required_when_true("is_delivered", ["delivery_date"]),
             ),
+        },
+        # Participant roles are spelt out: the models import this module.
+        correction_sections={
+            "COMPLAINANT": "LIT",
+            "POA_HOLDER": "LIT",
+            ADVOCATES_PART: "ADV",
+            "ACCUSED": "ACC",
+            EvidenceType.CHEQUE: "CHQ",
+            EvidenceType.RETURN_MEMO: "CHQ",
+            EvidenceType.LEGAL_DEMAND_NOTICE: "LDN",
+            "jurisdiction_limitation": "JUR",
+            "adr_other_prayer": "PRY",
+            "WITNESS": "WIT",
+            DOCUMENTS_PART: "DCM",
+        },
+        correction_fields={
+            (EvidenceType.CHEQUE, "cheque_date"): "CHQ-1",
+            (EvidenceType.CHEQUE, "amount"): "CHQ-3",
+            (EvidenceType.RETURN_MEMO, "presentation_date"): "CHQ-8",
+            (EvidenceType.RETURN_MEMO, "return_date"): "CHQ-9",
+            (EvidenceType.LEGAL_DEMAND_NOTICE, "dispatch_date"): "LDN-2",
+            (EvidenceType.LEGAL_DEMAND_NOTICE, "delivery_date"): "LDN-6",
+            ("jurisdiction_limitation", "cause_of_action_date"): "JUR-9",
         },
     ),
 }

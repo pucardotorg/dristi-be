@@ -9,8 +9,9 @@ from .base import MESSAGING_BACKENDS, MIDDLEWARE, REST_FRAMEWORK, STORAGES, env 
 SECRET_KEY = "test-secret-key-not-for-production"
 DEBUG = False
 
-# Use an in-memory SQLite database for speed in CI. Override with DATABASE_URL
-# if you prefer running tests against PostgreSQL.
+# CI sets DATABASE_URL to a PostgreSQL service, matching production. Without
+# it, tests fall back to in-memory SQLite, which lacks some PostgreSQL-only
+# lookups (for example JSONField `contains`).
 DATABASES = {
     "default": env.db(
         var="DATABASE_URL",
@@ -54,6 +55,12 @@ ESIGN_PROVIDER = "apps.esign.providers.mock.MockESignProvider"
 # is off by default and switched on by the test that asserts it.
 ESIGN_CALLBACK_THROTTLE_RATE = ""
 
+# Payments run on the mock provider in tests; the public callback throttle is
+# off by default for the same reason as eSign's.
+PAYMENT_PROVIDERS = {"mock": "apps.payments.providers.mock.MockPaymentProvider"}
+PAYMENT_DEFAULT_PROVIDER = "mock"
+PAYMENT_CALLBACK_THROTTLE_RATE = ""
+
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # The OTP code and its resend cooldown both live in the cache, so tests need a
@@ -79,3 +86,10 @@ STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticF
 
 # WhiteNoise is not needed in tests and would warn about a missing staticfiles directory
 MIDDLEWARE = [m for m in MIDDLEWARE if m != "whitenoise.middleware.WhiteNoiseMiddleware"]
+
+# A paid case needs an establishment to enter scrutiny (spec 0024 #2.5), or the
+# submission is refused. Scrutiny's own tests set a real one; tests that only
+# walk the filing flow get this placeholder.
+SCRUTINY_ESTABLISHMENT_ID = env(
+    "SCRUTINY_ESTABLISHMENT_ID", default="00000000-0000-0000-0000-000000000001"
+)

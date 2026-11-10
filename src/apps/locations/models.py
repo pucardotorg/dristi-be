@@ -21,8 +21,8 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
         COUNTRY = "country", "Country"
         STATE = "state", "State"
         DISTRICT = "district", "District"
-        # A postal pincode under the district that holds most of its post
-        # offices; loaded with the import_pincodes management command.
+        # A postal pincode under its district; seeded from TOML with the
+        # `seed` management command (spec 0025).
         PINCODE = "pincode", "Pincode"
 
     code = models.CharField(max_length=50, unique=True)
