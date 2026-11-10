@@ -109,13 +109,14 @@ web ── actor.send() ──▶ ┌──────────────�
 `src/requirements/base.txt`:
 
 ```text
-# Scheduler (spec 0026). 1.1+ requires Django >= 5.2.17; lift the cap with
-# the Django upgrade. APScheduler 4 has an incompatible API.
-dramatiq-crontab[redis]>=1.0.12,<1.1
+# Scheduler (spec 0026). APScheduler 4 has an incompatible API.
+dramatiq-crontab[redis]>=1.1,<2
 apscheduler>=3.11,<4
 ```
 
-`dramatiq-crontab` 1.0.12 leaves APScheduler unpinned, so we pin it ourselves.
+`dramatiq-crontab` 1.1+ requires Django >= 5.2.17 and caps APScheduler below 4
+itself. We keep our own APScheduler pin so the cap stays explicit if the
+library ever lifts it.
 
 ### 3.2 Installed app
 
@@ -606,7 +607,7 @@ No models, migrations, URLs or environment variables are added.
 | No catch-up of missed ticks | Sweepers act on state past a cutoff, so the next tick does the same work. A durable job store would add a table and a migration for no benefit. |
 | One-off delays via Dramatiq, not the scheduler | Delayed messages are already persisted in Redis and survive restarts. The scheduler's in-memory store would lose them, and only one process could add them. |
 | Exactly-once from guards, not the broker | Dramatiq is at-least-once by design. A state guard plus `on_commit` is what 0009, 0015 and 0016 already rely on. |
-| Pin `dramatiq-crontab` < 1.1 | 1.1+ requires Django ≥ 5.2.17. The project is on 5.0. |
+| Pin APScheduler < 4 ourselves | APScheduler 4 has an incompatible API. `dramatiq-crontab` 1.0.x left it unpinned; 1.1+ caps it too, but the project should not rely on that. |
 
 ## 12. Out of scope
 

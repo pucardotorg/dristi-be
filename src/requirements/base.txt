@@ -1,14 +1,15 @@
-Django>=5.0,<5.1
+# 5.2 LTS. dramatiq-crontab 1.1+ needs >= 5.2.17; 6.x needs Python 3.12.
+Django>=5.2.17,<6.0
 djangorestframework>=3.14.0
 drf-spectacular>=0.27.2
 django-cors-headers>=4.3.0
 django-environ>=0.11.0
-django-health-check[redis]>=3.17.0
+# 4.x (needs Django 5.2) drops the health_check.cache / .db modules config/urls.py uses.
+django-health-check[redis]>=3.17.0,<4
 django-dramatiq>=0.11.0
-dramatiq[redis,watch]>=1.15.0
-# Scheduler (spec 0026). 1.1+ requires Django >= 5.2.17; lift the cap with
-# the Django upgrade. APScheduler 4 has an incompatible API.
-dramatiq-crontab[redis]>=1.0.12,<1.1
+dramatiq[redis,watch]>=1.18.0
+# Scheduler (spec 0026). APScheduler 4 has an incompatible API.
+dramatiq-crontab[redis]>=1.1,<2
 apscheduler>=3.11,<4
 jinja2>=3.1.0
 jsonschema[format-nongpl]>=4.20.0

@@ -2,7 +2,7 @@
 
 A Django-based API project template using:
 
-- **Django 5** + **Django REST Framework** for the API
+- **Django 5.2 LTS** + **Django REST Framework** for the API
 - **Dramatiq** for background jobs (Redis broker)
 - **Redis** for cache and the task queue
 - **PostgreSQL** for the database
