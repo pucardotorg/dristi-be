@@ -1,6 +1,6 @@
 # Order item catalogue
 
-**Status:** 2026-10-22 (21) — rescheduling of hearing date (#4) is now a dropdown order item under Case management, offered only when the case already has a hearing scheduled and the order is not a hearing's own; it asks only the new hearing date and the purpose, the purpose defaulting to the one the hearing already has. 2026-10-20 (20) — dismissal no longer points at `APL-04`–`APL-06` of order-generation.md. 2026-10-19 (19) — templates dropped: retitled *Order item catalogue*; the Template column, the template notes and *How the template system works* moved to [`dropped-ideas.md`](dropped-ideas.md). The catalogue now holds the order items, their variables, workflows, availability, combination restrictions and hearing purposes. 2026-10-19 (18) — contextual order items can now be chosen on the order screen, and ask what they apply to (`ITM-04`). Channels, addresses and police station are fields of the order item like any other (`ITM-11` of order-generation.md removed). Locked / Optional column and the *Locked vs optional variables* section removed: a variable is mandatory to enter or not; the old text is in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
+**Status:** 2026-11-10 (22) — **one order item per application**: Accept application (#5), Reject application (#6), Acceptance of bail (#13) and Dismiss application (#26) are withdrawn and replaced by **#27 Application action**, the order item through which an order acts on an application, whose questions are owned by [`application-lifecycle.md`](application-lifecycle.md) `ALC-38`. Accepting a Bail application triggers the Bail type's workflow (`ALC-16`); there is no separate bail acceptance item. Combination rule 4 is now one Application action per application per order. "Application types covered by generic accept/reject" is replaced by a pointer to application-lifecycle.md. The withdrawn items are in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-22 (21) — rescheduling of hearing date (#4) is now a dropdown order item under Case management, offered only when the case already has a hearing scheduled and the order is not a hearing's own; it asks only the new hearing date and the purpose, the purpose defaulting to the one the hearing already has. 2026-10-20 (20) — dismissal no longer points at `APL-04`–`APL-06` of order-generation.md. 2026-10-19 (19) — templates dropped: retitled *Order item catalogue*; the Template column, the template notes and *How the template system works* moved to [`dropped-ideas.md`](dropped-ideas.md). The catalogue now holds the order items, their variables, workflows, availability, combination restrictions and hearing purposes. 2026-10-19 (18) — contextual order items can now be chosen on the order screen, and ask what they apply to (`ITM-04`). Channels, addresses and police station are fields of the order item like any other (`ITM-11` of order-generation.md removed). Locked / Optional column and the *Locked vs optional variables* section removed: a variable is mandatory to enter or not; the old text is in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
 application is onboarded; before that it can only be dismissed. New contextual order item
 **26. Dismiss application**, which cites no application number and names the application
 by its type, the party that filed it and its filing date. 2026-10-06 (16) — added a stop-reading marker before "Not in V1":
@@ -71,15 +71,12 @@ How an order is drafted from this configuration is owned by
 | 2 | Referral of case to ADR | Dropdown | Disposal | |
 | 3 | Scheduling of hearing date | Dropdown | Case management | Schedules next hearing |
 | 4 | Rescheduling of hearing date | Dropdown — only when a hearing is scheduled | Case management | Reschedules hearing |
-| 5 | Accept application | Contextual | | *(see note below)* |
-| 6 | Reject application | Contextual | | |
 | 7 | Case transfer | Dropdown | Case management | |
 | 8 | Case settlement | Dropdown | Disposal | |
 | 9 | Issue of summons | Dropdown | Process | Triggers the summons workflow |
 | 10 | Issue of warrants | Dropdown | Process | Triggers the warrant workflow |
 | 11 | Withdrawal of case | Dropdown or contextual | Disposal | |
 | 12 | Issue of notice | Dropdown | Process | Triggers the notice workflow |
-| 13 | Acceptance of bail | Contextual | | Optionally triggers bail bond submission workflow (magistrate specifies terms of bail) |
 | 14 | Cognizance | Dropdown | Case management | |
 | 15 | Judgement | Dropdown | Disposal | |
 | 16 | Dismiss case | Dropdown | Case management | |
@@ -92,7 +89,7 @@ How an order is drafted from this configuration is owned by
 | 23 | Moving case out of long pending register | Dropdown | Case management | |
 | 24 | Abate case | Dropdown | Disposal | |
 | 25 | Issue of miscellaneous process | Dropdown | Process | Triggers the miscellaneous process workflow |
-| 26 | Dismiss application | Contextual | | |
+| 27 | Application action | Contextual | | *(see note below)* |
 
 **Availability.** *Dropdown* order items can be picked by the judge on the order-issuance
 screen. *Contextual* order items act on something in the case, such as an application: they can be
@@ -100,13 +97,7 @@ chosen on the order screen, and then ask what they apply to, or arrive from the 
 produces them, such as an application being decided (`ITM-04` of
 [`order-generation.md`](order-generation.md)).
 
-**Onboarded applications only, except dismissal.** Accept application (#5), Reject
-application (#6) and Acceptance of bail (#13) — the specific acceptance of a bail
-application — apply only once the application has been onboarded. Before onboarding, the
-only order item for an application is **Dismiss application** (#26). An application that
-is not onboarded has no application number, so #26 names it by its type, the party that
-filed it and its filing date. Onboarding and dismissal are owned by `ALC-04` and
-`ALC-19` of [`application-lifecycle.md`](application-lifecycle.md).
+**Application action (#27).** The order item through which an order acts on an application ([`application-lifecycle.md`](application-lifecycle.md) `ALC-32`), at most one per application in an order. Its questions — whether to onboard the application, whether the order decides it, the outcome (Accepted or Rejected once onboarded; Dismissed before), the CIS outcome, a date, and whether the other party must respond — are owned by `ALC-38`. Numbers 5, 6, 13 and 26 are withdrawn and not reused.
 
 **Category.** Groups dropdown order items on the order-issuance screen. Contextual order
 items have none.
@@ -114,7 +105,7 @@ items have none.
 **Application workflows belong to the application, not the order item.** When an
 application is accepted, any workflow associated with that application type is triggered.
 It is not listed in the Workflow column because it is a property of the application type,
-not of the "accept application" order item.
+not of the Application action (#27).
 
 **Case stage changes are not workflows.** A listener watches order events and updates the
 case stage when it sees specific order items (case transfer, settlement, dismissal,
@@ -175,13 +166,6 @@ Offered only when the case already has a hearing scheduled. Not offered in a hea
 order, where the next date is set under Next hearing. Only the new hearing date and the
 purpose are asked.
 
-### 5. Accept application · 6. Reject application
-
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Application Number]` | Application being decided | Read-only — from the application | Yes | From the application the order item was reached from | |
-| `[Application Type]` | Its type | Read-only — from the application | Yes | From the application the order item was reached from | |
-
 ### 7. Case transfer · 8. Case settlement · 14. Cognizance · 15. Judgement · 16. Dismiss case · 22–23. Moving case to / out of long pending register · 24. Abate case
 
 No variables.
@@ -223,12 +207,6 @@ dropdown there is no application.
 A notice takes no police channel, so there is no police station. Otherwise as for the
 four above.
 
-### 13. Acceptance of bail
-
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Application Number]` | The bail application | Read-only — from the application *(proposed)* | Yes | From the application the order item was reached from | |
-
 ### 17. Bail
 
 | Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
@@ -268,42 +246,14 @@ four above.
 
 As for the four above, with the type of process added.
 
-### 26. Dismiss application
+### 27. Application action
 
 | Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
 |---|---|---|---|---|---|
-| `[Application Type]` | Type of the application being dismissed | Read-only — from the application | Yes | From the application the order item was reached from | |
-| `[Party Type]` | Party type of the person who filed it | Read-only — from the application | Yes | From the application the order item was reached from | |
-| `[Party Name]` | Person who filed it | Read-only — from the application | Yes | From the application the order item was reached from | |
-| `[Filing Date]` | Date the application was filed | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Application Number]` | The application acted on | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Application Type]` | Its type | Read-only — from the application | Yes | From the application the order item was reached from | |
 
-There is no `[Application Number]`: the application is not onboarded, so it has none.
-
----
-
-## Categories summary
-
-| Category | Order items | Count |
-|---|---|---|
-| Filings | Mandatory submissions, Bail | 2 |
-| Disposal | Referral to ADR, Case settlement, Withdrawal, Abate case, Judgement | 5 |
-| Case management | Scheduling of hearing, Rescheduling of hearing, Case transfer, Moving to/from LP register, Cognizance, Dismiss case | 7 |
-| Process | Issue of summons, warrants, notice, proclamation, attachment, miscellaneous process | 6 |
-| Miscellaneous | Cost, Witness batta | 2 |
-
-Regrouped 2026-09-25, owner's own reorganisation, in two passes:
-
-1. **Resolution → Disposal**; **Costs → Miscellaneous**; **Bail** folded into **Filings**
-   (its only member, Bail, moved there); **Filings** is new — home for mandatory
-   submissions and any future dropdown order tied to an application or a workflow it
-   starts. **Case management** lost Mandatory submissions to Filings, dropping from 5 to
-   4.
-2. **Cognizance and Judgment folded in**, each having stood alone for a single row or
-   two: **Judgement** moved into **Disposal** (it ends the case, like the rest of that
-   category); **Cognizance** and **Dismiss case** moved into **Case management**, taking
-   it from 4 to 6. Neither Cognizance nor Judgment survives as its own category.
-
-Still to add: case stages where each order item is most likely issued.
+Its questions are not variables: they are listed in [`application-lifecycle.md`](application-lifecycle.md) `ALC-38`.
 
 ---
 
@@ -321,7 +271,7 @@ the same order. The screen enforces them when an order item is added and shows t
 | 1 | Only **one case-closing order item** per order | Judgement · Dismiss case · Case settlement · Withdrawal of case · Case transfer · Referral of case to ADR · Abate case | You cannot add both *[order being added]* and *[order it clashes with]* |
 | 2 | **Cognizance and Dismiss case** cannot stand in the same order, and neither may be repeated | Cognizance · Dismiss case | You cannot add both *[order being added]* and *[order it clashes with]* |
 | 3 | Only **one hearing-date order item** per order | Scheduling of hearing date · Rescheduling of hearing date | You cannot add two *[order type]* items |
-| 4 | Only **one decision per application or request** | Accept application · Reject application · Acceptance of bail · Dismiss application | You cannot add two responses to the same application |
+| 4 | Only **one Application action per application** | Application action | You cannot add two responses to the same application |
 | 5 | **No restriction** — may be repeated and combined freely | Issue of summons · warrants · notice · proclamation · attachment · miscellaneous process · Mandatory submissions and responses · Cost · Witness batta · Bail · Moving case to / out of long pending register | |
 
 Mapping notes, for anyone checking this against the source:
@@ -371,18 +321,9 @@ Order types outside V1 scope. Kept here for future reference; they are not offer
 
 ---
 
-## Application types covered by generic accept/reject
+## Application types
 
-The generic "Accept application" (#5) and "Reject application" (#6) rows above cover every application type below. They have no order-level workflow — any workflow triggered belongs to the application type itself.
-
-| Application type | Notes |
-|---|---|
-| Voluntary submission | |
-| Delay condonation (DCA) | |
-| Bail (rejection only) | Bail acceptance is a separate order (#13) because it optionally triggers the bail bond submission workflow |
-| Changes in litigant details | |
-| Advocate replacement | Currently a task, not an application — has no application number |
-| Change in power of attorney | "No such order" noted in source spreadsheet |
+Application action (#27) covers every application type. The types, and the workflow each triggers on acceptance, are in "Application types" of [`application-lifecycle.md`](application-lifecycle.md).
 
 ---
 
@@ -412,7 +353,7 @@ The table below has two kinds of actions: **order types** (from the order type c
 | 3 | Delay condonation and admission | Complainant Advocate, Accused Advocate | Cognizance, Dismiss case, Issue of summons |
 | 4 | Cognizance | Complainant Advocate, Accused Advocate | Cognizance, Dismiss case, Issue of summons |
 | 5 | Appearance | Accused, Accused Advocate | Issue of summons, Issue of warrants, Bail, Issue of notice |
-| 6 | Bail | Accused, Accused Advocate | Bail, Acceptance of bail, Issue of warrants |
+| 6 | Bail | Accused, Accused Advocate | Bail, Application action, Issue of warrants |
 | 7 | Plea | Accused, Accused Advocate | Bail, Referral to ADR, Issue of notice · ⚙ Recording of plea |
 | 8 | Evidence of the complainant | Complainant, Complainant Advocate, Accused Advocate | Witness batta, Issue of summons (for witnesses) · ⚙ Evidence of the complainant, ⚙ Examination of the witness |
 | 9 | Examination of the accused under S. 351 BNSS | Accused, Accused Advocate | Issue of warrants · ⚙ Examination of the accused |

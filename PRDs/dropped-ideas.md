@@ -1,6 +1,6 @@
 # Dropped ideas
 
-**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`).
+**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`); the four application order items (#5, #6, #13, #26) of the order item catalogue.
 
 Ideas taken out of the PRDs, kept here with their last wording so they can be restored. Each entry says where it came from and what replaced it. The full earlier documents are also in git history: commit `cb97c67` holds both files as they were before.
 
@@ -377,3 +377,91 @@ As it stood in "Users and actions" of [`application-lifecycle.md`](application-l
 | ID | Requirement |
 |---|---|
 | `ALC-35` | Every court act is on **one application at a time**. There are no bulk acts on a selection of applications. |
+
+## Separate order items for accepting, rejecting and dismissing an application (#5, #6, #13, #26)
+
+**Dropped 2026-11-10.** An order now acts on an application through one order item, **#27 Application action**, whose questions are in [`application-lifecycle.md`](application-lifecycle.md) `ALC-38`. Accepting a Bail application triggers the Bail type's workflow; setting bail terms may come back later as its own item or another way of raising a pending task.
+
+As they stood in [`order-template-catalogue.md`](order-template-catalogue.md):
+
+| # | Order item | Availability | Category | Workflow |
+|---|---|---|---|---|
+| 5 | Accept application | Contextual | | *(see note below)* |
+| 6 | Reject application | Contextual | | |
+| 13 | Acceptance of bail | Contextual | | Optionally triggers bail bond submission workflow (magistrate specifies terms of bail) |
+| 26 | Dismiss application | Contextual | | |
+
+**Onboarded applications only, except dismissal.** Accept application (#5), Reject
+application (#6) and Acceptance of bail (#13) — the specific acceptance of a bail
+application — apply only once the application has been onboarded. Before onboarding, the
+only order item for an application is **Dismiss application** (#26). An application that
+is not onboarded has no application number, so #26 names it by its type, the party that
+filed it and its filing date. Onboarding and dismissal are owned by `ALC-04` and
+`ALC-19` of [`application-lifecycle.md`](application-lifecycle.md).
+
+### 5. Accept application · 6. Reject application
+
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Application Number]` | Application being decided | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Application Type]` | Its type | Read-only — from the application | Yes | From the application the order item was reached from | |
+
+### 13. Acceptance of bail
+
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Application Number]` | The bail application | Read-only — from the application *(proposed)* | Yes | From the application the order item was reached from | |
+
+### 26. Dismiss application
+
+| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
+|---|---|---|---|---|---|
+| `[Application Type]` | Type of the application being dismissed | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Party Type]` | Party type of the person who filed it | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Party Name]` | Person who filed it | Read-only — from the application | Yes | From the application the order item was reached from | |
+| `[Filing Date]` | Date the application was filed | Read-only — from the application | Yes | From the application the order item was reached from | |
+
+There is no `[Application Number]`: the application is not onboarded, so it has none.
+
+---
+
+## Categories summary
+
+| Category | Order items | Count |
+|---|---|---|
+| Filings | Mandatory submissions, Bail | 2 |
+| Disposal | Referral to ADR, Case settlement, Withdrawal, Abate case, Judgement | 5 |
+| Case management | Scheduling of hearing, Rescheduling of hearing, Case transfer, Moving to/from LP register, Cognizance, Dismiss case | 7 |
+| Process | Issue of summons, warrants, notice, proclamation, attachment, miscellaneous process | 6 |
+| Miscellaneous | Cost, Witness batta | 2 |
+
+Regrouped 2026-09-25, owner's own reorganisation, in two passes:
+
+1. **Resolution → Disposal**; **Costs → Miscellaneous**; **Bail** folded into **Filings**
+   (its only member, Bail, moved there); **Filings** is new — home for mandatory
+   submissions and any future dropdown order tied to an application or a workflow it
+   starts. **Case management** lost Mandatory submissions to Filings, dropping from 5 to
+   4.
+2. **Cognizance and Judgment folded in**, each having stood alone for a single row or
+   two: **Judgement** moved into **Disposal** (it ends the case, like the rest of that
+   category); **Cognizance** and **Dismiss case** moved into **Case management**, taking
+   it from 4 to 6. Neither Cognizance nor Judgment survives as its own category.
+
+Still to add: case stages where each order item is most likely issued.
+
+Combination rule 4: Only **one decision per application or request** — Accept application · Reject application · Acceptance of bail · Dismiss application — "You cannot add two responses to the same application".
+
+### Application types covered by generic accept/reject
+
+The generic "Accept application" (#5) and "Reject application" (#6) rows above cover every application type below. They have no order-level workflow — any workflow triggered belongs to the application type itself.
+
+| Application type | Notes |
+|---|---|
+| Voluntary submission | |
+| Delay condonation (DCA) | |
+| Bail (rejection only) | Bail acceptance is a separate order (#13) because it optionally triggers the bail bond submission workflow |
+| Changes in litigant details | |
+| Advocate replacement | Currently a task, not an application — has no application number |
+| Change in power of attorney | "No such order" noted in source spreadsheet |
+
+---
