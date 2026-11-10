@@ -454,9 +454,8 @@ Each type's own fields are in "Fields by application type," below.
 | Reopen Evidence | Always | — | Request that evidence be reopened for further examination or submission. |
 | **Objection** | Against an application of the other side that has not yet been decided (`ALC-37`) | No accept/reject of its own: ends at `Submitted`, not `Pending Review` — read alongside the original application when the court decides it (`ALC-14`, `ALC-23`), and appears in both applications' `Linked Applications` (`ALC-24`) | State an objection to another party's application. |
 
-Hearing-linked types (Advance / Prepone, Postpone) expire if their hearing passes before
-the application is dealt with (`ALC-30`); whether a hearing that is moved counts as well is
-open (`Q-8`). Until real per-type configuration of
+Hearing-linked types (Advance / Prepone, Postpone) expire if their hearing passes or is
+moved before the application is dealt with (`ALC-30`). Until real per-type configuration of
 "decide now vs. must offer objection" exists, `ALC-25` is the placeholder: every type
 behaves the same.
 
