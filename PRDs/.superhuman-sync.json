@@ -14,10 +14,10 @@
     "efiling.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing",
-      "contentHash": "ae99adc28ffe",
-      "pageUpdatedAt": 1794144032.803,
+      "contentHash": "10c6b4f2ca08",
+      "pageUpdatedAt": 1794292859.206,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed."
+      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -1804,8 +1804,8 @@
     "bulk-filing.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
       "title": "Bulk Filing",
-      "contentHash": "6a0fd87db405",
-      "pageUpdatedAt": 1794143956.053,
+      "contentHash": "9b53d47fedb9",
+      "pageUpdatedAt": 1794292873.303,
       "calloutElementId": "cl-IwwclcUBOf",
       "sections": [
         {
@@ -1834,7 +1834,7 @@
           "hash": "00ce141e31d3"
         }
       ],
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed."
+      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed."
     },
     "evidence-marking.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-uJ7EU__l31",
