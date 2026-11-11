@@ -8,6 +8,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID
 
+from django.db.models import Exists, OuterRef, Q
+
 from .models import Case, CaseParticipant, CaseStatus, ParticipantRole, Representation
 
 # The parties on an attendance roll, in the order the roll lists them.
@@ -241,3 +243,119 @@ def get_case_summaries(case_ids) -> dict[UUID, CaseSummary]:
             registered_at=case.registered_at,
         )
     return summaries
+
+
+# Advocates (spec 0023 #1.1, the Advocates column)
+
+
+@dataclass(frozen=True)
+class AdvocateRef:
+    """An active advocate of a case and the side they appear for.
+
+    ``id`` is the advocate's profile id, the value the board's advocate filter
+    takes (``CLS-07``).
+    """
+
+    id: UUID
+    name: str
+    side: str
+
+
+def get_case_advocates(case_ids) -> dict[UUID, list[AdvocateRef]]:
+    """Return ``{case_id: [AdvocateRef]}`` for the cases. One query, however many cases.
+
+    One entry per advocate and side, complainant side first, each in the order
+    they were engaged. An advocate of a PoA holder appears for the complainant.
+    A case with no advocate has an empty list.
+    """
+    case_ids = list(case_ids)
+    advocates = {case_id: [] for case_id in case_ids}
+    seen = set()
+    representations = (
+        Representation.objects.active()
+        .filter(case_id__in=case_ids, case_participant__role__in=list(PARTY_SIDES))
+        .select_related("advocate__user", "case_participant")
+        .order_by("from_date")
+    )
+    for representation in representations:
+        side = PARTY_SIDES[representation.case_participant.role]
+        key = (representation.case_id, representation.advocate_id, side)
+        if key in seen:
+            continue
+        seen.add(key)
+        advocates.setdefault(representation.case_id, []).append(
+            AdvocateRef(
+                id=representation.advocate_id,
+                name=_advocate_name(representation),
+                side=side,
+            )
+        )
+    for refs in advocates.values():
+        refs.sort(key=lambda ref: ref.side != COMPLAINANT_SIDE)
+    return advocates
+
+
+# Access and search (spec 0023 #1.1, #10.3, #10.5)
+
+# The parties a case shows its hearings to; a witness is not one.
+PARTY_ROLES = tuple(PARTY_SIDES)
+
+
+def case_ids_visible_to(user):
+    """Return the ids of the cases ``user`` has an active relationship with (spec 0023 #10.5).
+
+    The filer; an active complainant, accused or PoA holder who is the user;
+    and an active advocate of any party. Advocate clerks are not linked to
+    cases or advocates yet, so they see none. A lazy ``QuerySet`` of ids, to
+    use inside another query.
+    """
+    if not user or not user.is_authenticated:
+        return Case.objects.none().values_list("pk", flat=True)
+    party = CaseParticipant.objects.active().filter(
+        case=OuterRef("pk"), role__in=PARTY_ROLES, person__user=user
+    )
+    advocate = Representation.objects.active().filter(case=OuterRef("pk"), advocate__user=user)
+    return Case.objects.filter(Q(created_by=user) | Exists(party) | Exists(advocate)).values_list(
+        "pk", flat=True
+    )
+
+
+def search_case_ids(text, court_id=None):
+    """Return the ids of cases matching ``text`` (spec 0023 #10.3, ``?search=``).
+
+    Case-insensitive, anywhere in the case number, filing number, an active
+    party's name (which covers the "A v. B" title) or an active advocate's
+    name. ``court_id`` limits it to one court. A lazy ``QuerySet`` of ids.
+    """
+    text = (text or "").strip()
+    cases = Case.objects.all()
+    if court_id is not None:
+        cases = cases.filter(court_id=court_id)
+    if not text:
+        return cases.values_list("pk", flat=True)
+    party = CaseParticipant.objects.active().filter(
+        case=OuterRef("pk"), role__in=PARTY_ROLES, name_at_filing__icontains=text
+    )
+    advocate = Representation.objects.active().filter(
+        Q(advocate__name__icontains=text) | Q(advocate__user__name__icontains=text),
+        case=OuterRef("pk"),
+    )
+    return cases.filter(
+        Q(case_number__icontains=text)
+        | Q(filing_number__icontains=text)
+        | Exists(party)
+        | Exists(advocate)
+    ).values_list("pk", flat=True)
+
+
+def cases_awaiting_hearing(court_id):
+    """Return the ids of the court's registered, live cases (spec 0023 #10.4.8).
+
+    The scheduling queue is these minus the cases with a live hearing, which
+    hearings subtracts. Disposal, transfer and the Long Pending Register are
+    not modelled yet, so today every registered case of the court is live,
+    matching ``get_listability``. A lazy ``QuerySet`` of ids.
+    """
+    return Case.objects.filter(court_id=court_id, status=CaseStatus.REGISTERED).values_list(
+        "pk", flat=True
+    )
