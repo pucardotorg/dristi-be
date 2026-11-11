@@ -56,7 +56,9 @@ table. There is no `is_public` flag and no mixed table.
 * A write API. Public configuration is edited in Django admin only.
 * Per-organization or per-tenant overrides.
 * Per-environment public configuration beyond what the database already holds.
-* Typed schemas per key; values remain opaque strings with coercion helpers.
+* Per-key JSON schemas or validation beyond the coarse `value_type`
+  (`string`, `integer`, `boolean`, `json`). Values stay opaque strings on the
+  wire.
 * Replacing `Configuration` or adding a public flag to it.
 * Exposing audit fields, timestamps, descriptions, or admin metadata to clients.
 * Change approval workflows.
@@ -80,6 +82,7 @@ classDiagram
         +config_set
         +config_key
         +config_value
+        +value_type
         +description
         +is_active
         +created_at
@@ -105,7 +108,8 @@ There must be no database join between them.
 | `id` | UUID | Primary key, from `BaseModel` |
 | `config_set` | `CharField(max_length=100)` | Grouping used by the set-listing endpoint; required |
 | `config_key` | `CharField(max_length=255)` | Public key within the set; required, unique together with `config_set` |
-| `config_value` | `TextField(blank=True)` | Opaque value; required, MAY be empty string |
+| `config_value` | `TextField(blank=True)` | Opaque value; required, MAY be empty only for `string` |
+| `value_type` | `CharField(max_length=16, choices=ValueType.choices, default=ValueType.STRING)` | Coarse type clients use to interpret `config_value`; one of `string`, `integer`, `boolean`, `json` |
 | `description` | `TextField(null=True, blank=True)` | Admin-only note on what the entry controls |
 | `is_active` | `BooleanField` | From `BaseActivatableModel`; default `True` |
 | `created_at` / `updated_at` | datetime | From `BaseModel` |
@@ -174,6 +178,39 @@ The value itself is still reviewed by a human. A public key named
 hold a URL with embedded credentials. If a gateway has both public and private
 parts, keep the endpoint, timeout, and sender ID here and keep the username,
 password, and key in environment variables.
+
+### 1.5 Value types
+
+`value_type` tells clients how to interpret the opaque `config_value`. It does
+not change storage; values remain text.
+
+```python
+class PublicConfiguration(BaseModel, BaseActivatableModel):
+    class ValueType(models.TextChoices):
+        STRING = "string", "String"
+        INTEGER = "integer", "Integer"
+        BOOLEAN = "boolean", "Boolean"
+        JSON = "json", "JSON"
+```
+
+| `value_type` | Required content of `config_value` |
+| --- | --- |
+| `string` | Any text, including the empty string. Default. |
+| `integer` | A value accepted by `apps.core.validators.coerce_integer`. |
+| `boolean` | A value accepted by the boolean rules in section 2: `true/false`, `1/0`, `yes/no`, `on/off`, case-insensitive. |
+| `json` | Valid JSON text (object, array, string, number, boolean, or `null`). |
+
+* `save()` MUST call `full_clean()` so the type check runs on every write,
+  including admin saves and seeded rows.
+* A mismatch is a `ValidationError` on `value_type` and must not be stored. For
+  example, `value_type="integer"` with `config_value="abc"` and
+  `value_type="json"` with `config_value=""` are rejected.
+* The field is metadata and write-time validation. The server-side typed helpers
+  still parse `config_value`; they do not require callers to read `value_type`
+  first.
+* Boolean values are stored as entered; the model does not rewrite `"True"` to
+  `"true"`. Clients MUST compare case-insensitively using the accepted
+  spellings above. The API never returns a JSON boolean for a `boolean` entry.
 
 ---
 
@@ -257,11 +294,13 @@ default page size (20):
     {
       "config_set": "ui_feature_flag",
       "config_key": "enable_bulk_case_select",
+      "value_type": "boolean",
       "config_value": "true"
     },
     {
       "config_set": "ui_feature_flag",
       "config_key": "enable_dark_mode",
+      "value_type": "boolean",
       "config_value": "false"
     }
   ],
@@ -290,6 +329,7 @@ GET /api/v1/public-configuration/ui_feature_flag/enable_dark_mode/
 {
   "config_set": "ui_feature_flag",
   "config_key": "enable_dark_mode",
+  "value_type": "boolean",
   "config_value": "false",
   "meta": {
     "timestamp": "...",
@@ -321,6 +361,7 @@ GET /api/v1/public-configuration/efiling_cheque_fraud/identity_drop_down/
 {
   "config_set": "efiling_cheque_fraud",
   "config_key": "identity_drop_down",
+  "value_type": "json",
   "config_value": "{\"pan\": \"Pan Card\", \"epic_id\": \"Voter ID\"}",
   "meta": {
     "timestamp": "...",
@@ -341,6 +382,37 @@ This keeps `config_value` opaque and uniform for every key. Server-side code
 uses `get_public_json("efiling_cheque_fraud", "identity_drop_down")`, which
 returns the parsed object directly.
 
+The `value_type` field tells a generic client how to interpret the value:
+
+```js
+const TRUE_VALUES = new Set(["true", "1", "yes", "on"]);
+const FALSE_VALUES = new Set(["false", "0", "no", "off"]);
+
+function parseBoolean(value) {
+  const normalized = value.trim().toLowerCase();
+  if (TRUE_VALUES.has(normalized)) return true;
+  if (FALSE_VALUES.has(normalized)) return false;
+  throw new TypeError(`Invalid boolean configuration value: ${value}`);
+}
+
+function decode(entry) {
+  switch (entry.value_type) {
+    case "json":
+      return JSON.parse(entry.config_value);
+    case "integer":
+      return Number(entry.config_value);
+    case "boolean":
+      return parseBoolean(entry.config_value);
+    default:
+      return entry.config_value;
+  }
+}
+```
+
+`JSON.parse()` MUST only be used when `value_type` is `json`. Never parse every
+`config_value`: plain strings such as `court_notice` are not valid JSON, and
+numeric-looking strings would silently become numbers.
+
 ### 3.4 Serializer
 
 A read-only `PublicConfigurationSerializer` exposes exactly:
@@ -348,12 +420,13 @@ A read-only `PublicConfigurationSerializer` exposes exactly:
 ```text
 config_set
 config_key
+value_type
 config_value
 ```
 
 `id`, `description`, `is_active`, `created_at`, `updated_at`, `created_by`,
-and `updated_by` MUST NOT be serialized. The frontend needs the value, not the
-admin metadata.
+and `updated_by` MUST NOT be serialized. The frontend needs the value and its
+coarse type, not the admin metadata.
 
 ### 3.5 Routing and schema
 
@@ -399,9 +472,9 @@ Location: `apps.core.admin`.
 Register `PublicConfiguration` with the existing `AuditUserAdminMixin`, the
 same way `Configuration` is registered.
 
-* `list_display`: `config_set`, `config_key`, `config_value`, `is_active`,
-  `updated_at`.
-* `list_filter`: `config_set`, `is_active`.
+* `list_display`: `config_set`, `config_key`, `value_type`, `config_value`,
+  `is_active`, `updated_at`.
+* `list_filter`: `config_set`, `value_type`, `is_active`.
 * `search_fields`: `config_key`, `description`.
 * `readonly_fields`: `id`, `created_at`, `updated_at`.
 * `created_by` / `updated_by` remain read-only and are populated by
@@ -426,7 +499,14 @@ register(
     SeedSpec(
         model_label="core.PublicConfiguration",
         key=("config_set", "config_key"),
-        fields=("config_set", "config_key", "config_value", "description", "is_active"),
+        fields=(
+            "config_set",
+            "config_key",
+            "value_type",
+            "config_value",
+            "description",
+            "is_active",
+        ),
         order=30,
     )
 )
@@ -434,8 +514,8 @@ register(
 
 `config_value` is coerced to text by the seed engine, like
 `core.Configuration`. Model `full_clean()` runs during seeding, so
-normalization, format validation, and the secret-name rejection apply to seed
-rows too.
+normalization, format validation, `value_type` validation, and the secret-name
+rejection apply to seed rows too.
 
 ### 6.2 Example seed file
 
@@ -449,40 +529,47 @@ model = "core.PublicConfiguration"
 [[rows]]
 config_set = "registration"
 config_key = "show_welcome_message"
+value_type = "boolean"
 config_value = false
 
 [[rows]]
 config_set = "ui_feature_flag"
 config_key = "enable_bulk_case_select"
+value_type = "boolean"
 config_value = true
 
 [[rows]]
 config_set = "ui_feature_flag"
 config_key = "enable_dark_mode"
+value_type = "boolean"
 config_value = false
 
 [[rows]]
 config_set = "efiling_cheque_fraud"
 config_key = "enable_filtering"
+value_type = "boolean"
 config_value = true
 
 [[rows]]
 config_set = "efiling_cheque_fraud"
 config_key = "enable_sorting"
+value_type = "boolean"
 config_value = true
 
 # Structured value, stored as JSON text
 [[rows]]
 config_set = "efiling_cheque_fraud"
 config_key = "identity_drop_down"
+value_type = "json"
 config_value = '{"pan": "Pan Card", "epic_id": "Voter ID"}'
 ```
 
-Native TOML booleans are stringified by the seed engine (`"True"` / `"False"`)
-and remain readable through `get_public_bool`. Structured values MUST be written
-as JSON strings, as shown for `identity_drop_down`, so `get_public_json` can
-parse them. Do not use a TOML inline table for `config_value`: the seed engine
-stringifies it with Python's `str()`, which is not valid JSON.
+Native TOML booleans are stringified by the seed engine (`"True"` / `"False"`);
+`value_type = "boolean"` validation accepts either casing. Structured values
+MUST be written as JSON strings, as shown for `identity_drop_down`, with
+`value_type = "json"`, so validation and `get_public_json` can parse them. Do
+not use a TOML inline table for `config_value`: the seed engine stringifies it
+with Python's `str()`, which is not valid JSON.
 
 Seeding remains insert-only and idempotent: re-running the file creates no
 duplicates and does not overwrite existing rows. Changing a seeded public value
@@ -512,7 +599,11 @@ Required coverage:
 * A normalized collision such as `PDF`/`pdf` for the same set and key is
   rejected.
 * Invalid names are rejected; dotted names are accepted.
-* Empty `config_value` is allowed.
+* `value_type` defaults to `string`.
+* `value_type` accepts `string`, `integer`, `boolean`, and `json`.
+* A `config_value` that does not match its `value_type` is rejected.
+* Empty `config_value` is allowed for `string` and rejected for the other
+  types.
 * A `(config_set, config_key)` pair MUST NOT exist in both `Configuration`
   and `PublicConfiguration`. If that rule is not enforced in code yet, the
   test documents the intended behavior.
@@ -542,6 +633,9 @@ Required coverage:
 * A key present only in `Configuration` is **not** returned by either public
   route.
 * `POST`, `PUT`, `PATCH`, and `DELETE` on both routes return `405`.
+* Response bodies contain `config_set`, `config_key`, `value_type`, and
+  `config_value`.
+* The listing and detail return the stored `value_type`.
 * Response bodies do not contain `id`, `description`, `is_active`, or audit
   fields.
 * The OpenAPI schema contains both paths, the core tag, and no global list
@@ -560,7 +654,9 @@ Required coverage:
 * A public configuration row is created from TOML.
 * Re-running is a no-op (idempotent).
 * `config_value` native TOML types are coerced to text.
-* A structured value seeded as a JSON string is readable through
+* A row seeded with `value_type = "boolean"` is readable through
+  `get_public_bool`.
+* A structured value seeded with `value_type = "json"` is readable through
   `get_public_json`.
 * A secret-like key in a seed file is skipped/reported rather than stored.
 
@@ -574,6 +670,7 @@ Required coverage:
 | API | None | Two read-only `GET` endpoints |
 | Table | `core_configuration` | `core_publicconfiguration` |
 | Key uniqueness | `(config_set, config_key)` | `(config_set, config_key)` |
+| Value metadata | None | `value_type` (`string`, `integer`, `boolean`, `json`) |
 | Public flag | None | None: every row is public |
 | Secrets | Forbidden | Forbidden, and secret-like keys are rejected |
 | Edit surface | Django admin | Django admin |
@@ -591,7 +688,7 @@ two stores stay separate.
 * Global list of all public configuration without a set.
 * Per-organization or per-environment overrides.
 * Exposing `description`, audit fields, or timestamps.
-* Typed configuration (`config_type`) or per-key schemas.
+* Per-key schemas or stricter validation beyond the declared `value_type`.
 * History/diff views beyond `created_at` / `updated_at` / audit users.
 * CDN invalidation or push notifications to clients.
 * A startup system check that required public keys exist.
