@@ -126,8 +126,7 @@ e-GRAS uses: `apps.payments.conf` (is `"offline"` registered?),
 `apps.payments.enums` (validating `OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES`). It
 never imports `apps.payments` models, services, selectors, tasks, views,
 serializers, signals, the registry or the mock, never receives a model instance,
-and never writes a balance. `tests/test_isolation.py` enforces this list, as in
-0022.
+and never writes a balance. `tests/test_isolation.py` enforces this list, as in 0022.
 
 Django registration:
 
