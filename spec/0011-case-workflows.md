@@ -4,96 +4,80 @@
 
 Proposed
 
-Revised 2026-10-19 against the case-lifecycle, e-filing/scrutiny/registration,
-pending-tasks, cognizance and application PRDs and the court-side screens:
+Revised 2026-11-03: configurable workflow engine.
 
-* Tasks hang off states and are re-opened on every visit, so a case can pass through the same state any number of times (scrutiny rounds);
-* Modules move a case by **event**, without knowing transition keys;
-* The workflow holds the case-lifecycle **primary stages**, the **secondary stages** that run alongside them, and the history of both;
-* The engine holds every **pending task** — the ones a workflow state opens, and the ones other modules open against a case;
-* `Case.status` is kept as a projection written only by the engine;
-* case-type plugins live in the app that owns the case type;
-* The generic "trigger a transition" endpoint is withdrawn.
+* A definition is chosen by **court + case type**, with a fallback up the court hierarchy and then to a court-agnostic default.
+* Definitions have three statuses: **draft, active, retired**. They are immutable once active. A changed workflow is a new version, and cases already running stay on the version they started with.
+* Definitions are managed **only through Django admin and seed files**. There are no definition CRUD APIs.
+* **Task definitions** are attached to a transition (A → B), to the entry of a target state (B), or to a state. Each task has a pluggable **task type**, an **execution mode** (manual / auto) and an **assignee rule**.
+* Tasks are created **only for the path chosen**. When the case comes back to a state on a later visit, the engine creates **new** task instances, except for task definitions that are marked reusable.
+* **Auto tasks** run as Dramatiq jobs, or inline for fast local types. They have failure conditions and automatic or manual retry. A case never moves past a failed task.
+* Frontend APIs are keyed only by case ID: get the workflow status, request a transition, list the tasks, complete a task, and retry a task.
+* The 2026-10-19 revision is withdrawn where it conflicts with these points: state-only task templates, `blocks_transitions`, the global `TaskDefinition` catalogue, definition CRUD APIs, and "no generic transition endpoint". Visits, events, primary and secondary stages, the `Case.status` projection, case-type plugins and the shared pending-task store are kept.
 
 ## References
 
-- PRDs: `case-lifecycle-handover.md` (primary and secondary stages, tracking), `efiling-handover.md` (§4 `LIFE-`, §18 `SIG-07`, §19.4), `scrutiny-registration-handover.md` (§3, `SCR-09`–`SCR-12`), `court-roles.md` (`RLE-`), `pending-tasks-handover.md` (task attributes and statuses), `cognizance-cheat-sheet.md` (§3), `application-lifecycle.md` (`ALC-03`, `ALC-09`, `ALC-12`, `ALC-15`, `ALC-21`), `process-handover.md` (`FEE-06`, `STP-01`, `SGN-02`), `order-template-catalogue.md` (stage changes are listeners, not workflows)
+- PRDs: `case-lifecycle-handover.md` (primary and secondary stages), `efiling-handover.md` (§4 `LIFE-11`–`LIFE-14`, §18 `SIG-07`), `scrutiny-registration-handover.md` (`SCR-07`–`SCR-16`), `court-roles.md` (`RLE-`), `pending-tasks-handover.md` (task attributes and statuses), `cognizance-cheat-sheet.md` (§3), `application-lifecycle.md`, `process-handover.md` (`STP-02`)
+- Specs: [`0000`](0000-api-coding-spec.md) (API, errors), [`0017`](0017-orders-management.md) (payments), [`0019`](0019-business-rules.md) (business rules), [`0020`](0020-person-case-filing-schema.md) §8.3, [`0021`](0021-case-filing-api.md) §7–8, [`0024`](0024-scrutiny.md), [`0025`](0025-data-seeding-command.md), [`0026`](0026-dramatiq-crontab.md)
 
-> **Scope note.** `apps.workflows` is case-type agnostic. It knows states,
-> transitions, events, stages and tasks; it does not know what a cheque, a
-> scrutiny flag or an application is. The rules of a case type live in a
-> plugin registered by the app that owns the case type. Domain modules
-> (scrutiny, applications, processes, orders) move a case only through
-> `CaseWorkflowService` and open their tasks only through `TaskService`.
+> **Scope note.** `apps.workflows` does not depend on any case type. It knows
+> definitions, states, transitions, tasks and task types. It does not know
+> what a cheque, a scrutiny flag or a payment demand is. Case-type rules live
+> in a **plugin**, and task behaviour lives in a **task type**. Both are
+> registered by the app that owns them. Domain modules move a case only
+> through `CaseWorkflowService` and complete tasks only through `TaskService`.
 
 ## Context
 
-A case on Dristi moves through mutually exclusive **primary stages** — Filing,
-Scrutiny, Defect Correction, Registration, Cognizance, Appearance, Bail &
-Recording of Plea, Complainant Evidence, Examination of Accused, Defence
-Evidence, Arguments, Mediation, Judgement, Post-Judgement, Post-Disposal, Long
-Pending Register. At any moment it is in exactly one. Each starts on a trigger
-and replaces the stage before it (case lifecycle §3).
+### What exists today
 
-Alongside the primary stage, **secondary stages** start and end on their own —
-Delay Condonation, Notice, Summons, Warrant, Proclamation, Attachment — and
-several can be active at once (case lifecycle §4).
+| Area | Current code | Gap |
+| --- | --- | --- |
+| Case | `apps.cases.models.Case` has `case_type`, `court` (an `organizations.Organization`, nullable while drafting) and `status` (`CaseStatus`, documented as "illustrative until 0011") | There is no workflow instance, and `status` is not a projection. |
+| Lifecycle | `apps/cases/services/filing.py` moves a case `DRAFT_IN_PROGRESS → PENDING_SIGN → PENDING_PAYMENT → UNDER_SCRUTINY` by writing `Case.status` in `_transition()` (0021 §7, option a). | Each step is hard-coded, the path only goes forward, and nothing can loop back for correction. |
+| Signing | `_check_signature()` compares the e-sign time with the **first** `PENDING_SIGN` history row. | This breaks when a case is signed again after correction (`LIFE-13`). |
+| Payment | `submit_for_scrutiny` has no precondition ("no payment service yet"). | There is no gate. |
+| Courts | `Organization` has a `parent` hierarchy. | Nothing chooses behaviour by court. There is no court-role model yet (`court-roles.md`). |
+| Joinability | `JOINABLE_STATUSES = (REGISTERED,)` is an allow-list. | The previous revision of this spec referred to a `NOT_JOINABLE_STATUSES` list that does not exist. |
+| Workflows | There is no `apps.workflows`. Error domain `08` is reserved in 0000 §9.2. | Everything below is new. |
 
-The court must be able to see, for every case, every stage it entered, when it
-started and when it was replaced, and how long it stayed (case lifecycle §6).
+### What the engine must do
 
-Before registration the stages are the e-filing lifecycle, which loops:
+When a case is e-filed, a workflow is assigned to it. The workflow is the
+definition that matches the case's **court and case type**. A cheque-bounce
+case in Court X can follow a different workflow from one in Court Y.
 
-```text
-Draft ─> Pending Signature ─> Pending Payment ─> Scrutiny ─> Registration ─> Cognizance
-              ▲                    ▲                │  ▲          │
-              │     (balance due)  │                │  │          │
-              └── Pending Correction <──────────────┘  └──────────┘ (Register at Scrutiny, SCR-11)
-```
+A definition is a graph of **states** and **transitions**, and cycles are
+allowed. A case can go back to correction any number of times (`LIFE-11`).
+**Tasks** decide whether a case may move. A transition A → B succeeds only
+when every required task gating it is complete: payment, signature,
+case-number assignment, scrutiny completion and so on. Some tasks are done by
+people and some by the system.
 
-The same states are entered again on every correction round (`LIFE-11`).
-
-Work is driven by **pending tasks**, never by separate queues. A case is on the
-scrutiny officer's list exactly while its *Scrutinise case* task is open
-(`SCR-09`, `SCR-10`); it is on the *Take cognizance* list while its
-*Take Cognizance* task is open — and **not** by stage, because a case can move
-to a later stage before cognizance is taken (cognizance cheat sheet §3). Other
-modules raise tasks that have nothing to do with a state change: *Review
-application* and *Decide application* for the court, *File objection* and
-*Pay* for a party, *Hand in envelope* for a process (`ALC-03`, `ALC-21`,
-`ALC-12`, `FEE-06`, `STP-01`).
-
-Every task has the same attributes — name, due date, users, category, link,
-status, case, visibility, creation date, action label — and the same four
-statuses: Open, Completed, Expired, Archived (pending tasks §2, §3).
-
-The engine as first specified could not run this. It allowed a task only once
-per transition, so a second scrutiny round was impossible; it had no event
-entry point; it had no stages, no secondary stages, no assignees and no
-non-workflow tasks; its plugins lived inside the engine; and its example
-workflow did not match the case lifecycle.
+Tasks are also the **work lists**. A case is on the scrutiny officer's list
+exactly while its *Scrutinise case* task is pending (`SCR-09`). It is on the
+*Take cognizance* list while that task is pending, even if the case has
+already moved to a later stage (cognizance cheat sheet §3).
 
 ## Goals
 
-* One generic, data-driven engine; one active, locked definition per case type.
-* Start a case's workflow when the case row is created; move it only through the engine.
-* Fire transitions manually, by **event** from other modules, or automatically when a condition passes.
-* Allow a state to be entered any number of times, recording every visit.
-* Map states to primary stages, and track secondary stages started and ended by events.
-* Keep a full stage history with start and end dates.
-* Hold every pending task of a case — state-bound or opened by a module — with the pending-tasks attributes, statuses and visibility.
-* Resolve task users from court roles (`court-roles.md`) or case sides, and serve the court-side and citizen-side lists from one query.
-* Choose between transitions by context a domain module passes, such as the roles the actor holds.
-* Keep `Case.status` correct as a projection.
-* Expose REST APIs following [`0000`](0000-api-coding-spec.md), with registered error codes.
+* One generic engine driven by data, with versioned definitions chosen by court + case type.
+* Definitions managed in Django admin and loaded from seed files, with natural keys throughout.
+* A per-case instance that records the current state, every visit, every transition (who, when, manual/auto/event, from → to) and the attributes gathered along the way.
+* Tasks attached to transitions, target states or states, with extensible types, manual or auto execution, assignee rules, and status and completion data.
+* Transition semantics: check the transition is allowed, check its gates, move and record history, then open the tasks for the next path.
+* Auto tasks with failure conditions and automatic or manual retry. Transitions that fire on their own once their gates are complete.
+* Safe under concurrency: one transition per case at a time.
+* Running cases are unaffected when a definition changes.
+* Frontend APIs keyed by case ID, following [`0000`](0000-api-coding-spec.md).
 
 ## Non-goals
 
-* A graphical workflow designer, BPMN, parallel gateways, timers.
-* Domain screens and payloads — scrutiny, registration, cognizance, applications, processes. Each owns its endpoints.
-* Notification copy and the events catalogue (case-update timeline). Modules raise those; the engine only sends signals.
-* Court-side process work, which is a list of processes by status, not a pending task (`SGN-02`).
-* Case outcome (Dismissed, Withdrawn, Convicted …), which is a case field (case lifecycle §5).
+* A graphical designer, BPMN, parallel branches inside one case, or timers or escalations beyond task due dates.
+* CRUD APIs for definitions.
+* Migrating running cases onto a newer definition version.
+* Domain screens and their payloads (scrutiny flags, payment demands, e-sign). Each module owns its own.
+* Notification copy and the case-update events catalogue.
 * Case types other than §138 in this iteration.
 
 ---
@@ -104,57 +88,61 @@ workflow did not match the case lifecycle.
 
 ```text
 apps/workflows/
-├── apps.py                 # name = "apps.workflows"
-├── models.py               # definitions, instances, visits, secondary stages, tasks, logs
+├── apps.py                  # name = "apps.workflows"
+├── models/
+│   ├── definitions.py       # WorkflowDefinition, WorkflowState, WorkflowTransition, WorkflowTaskDefinition, SecondaryStageDefinition
+│   └── runtime.py           # CaseWorkflowInstance, CaseWorkflowVisit, CaseWorkflowTransitionLog, CaseTask, CaseTaskAttempt, CaseSecondaryStage
 ├── enums.py
-├── errors.py               # E08xxx (#9.5)
-├── exceptions.py
-├── signals.py              # state_entered, state_exited, stage_started, stage_ended, task_opened, task_closed
-├── engine.py               # WorkflowEngine
-├── services.py             # CaseWorkflowService, TaskService
-├── conditions.py           # condition_config evaluator (#5)
-├── assignees.py            # user rules (#7.3)
-├── plugins.py              # BaseCaseTypePlugin, registry (#6)
-├── selectors.py            # current state, stage history, task lists
-├── tasks.py                # Dramatiq actors (#7.6, #7.7)
+├── errors.py                # E08xxx (#10.6)
+├── engine.py                # Engine: start, request, dispatch, advance, force
+├── services.py              # CaseWorkflowService, TaskService (public API for other apps)
+├── resolution.py            # definition lookup by court + case type (#3)
+├── paths.py                 # path selection and task creation (#5)
+├── gates.py                 # gate evaluation (#5.4)
+├── conditions.py            # condition evaluator (#7)
+├── assignees.py             # assignee rules (#6.4)
+├── task_types/
+│   ├── base.py              # BaseTaskType, TaskResult, registry
+│   └── builtin.py           # GENERIC, ACKNOWLEDGEMENT, CONDITION_CHECK
+├── plugins.py               # BaseCaseTypePlugin, registry (#8)
+├── validation.py            # definition graph validation (#2.7)
+├── seeding.py               # document <-> definition (#11)
+├── management/commands/load_workflow.py · export_workflow.py
+├── selectors.py             # status view, task lists, history
+├── signals.py
+├── tasks.py                 # Dramatiq actors and crons (#6.6)
 ├── serializers.py · views.py · urls.py · permissions.py · admin.py
 └── tests/
-
-apps/cases/workflow/        # owned by the case type
-├── plugin.py               # ChequeBounceCasePlugin
-├── handlers.py             # automatic task handlers
-└── fixtures/cheque_bounce_v1.json   # the definition of #10, loaded by a data migration
 ```
 
 Dependency rules:
 
 ```text
-apps.cases, apps.scrutiny, apps.hearings, apps.orders, apps.applications, apps.processes
-        ── import ──> apps.workflows.services / selectors / plugins
-apps.workflows ── never imports ──> any of them   (FK to "cases.Case" by string only)
+apps.cases, apps.payments, apps.scrutiny, apps.esign, …
+        ── import ──> apps.workflows.services / selectors / plugins / task_types / signals
+apps.workflows ── imports only ──> apps.core, apps.api, apps.organizations (court hierarchy, role holders)
+apps.workflows ── never imports ──> apps.cases or any other domain app   ("cases.Case" by string FK only)
 ```
 
-Rules:
+* The engine uses case-type behaviour only through the plugin registry (#8), and task behaviour only through the task-type registry (#6.1).
+* Plugins and task types are registered from the owning app's `AppConfig.ready()`.
+* An isolation test asserts these import rules.
 
-* The engine reaches case-type behaviour only through the plugin registry.
-* Modules learn about state and stage changes from `apps.workflows.signals`, sent on commit.
-* A case-stage change is never an order workflow. A module that sees a stage-relevant event — an order signed, a hearing scheduled, the accused side joining — dispatches the event; the definition decides what it means (`order-template-catalogue.md`, *Case stage changes are not workflows*).
-* An isolation test asserts that nothing under `apps.workflows` imports another domain app.
-
-### 2. Data model
+### 2. Definition model
 
 ```mermaid
 classDiagram
     class WorkflowDefinition {
-        +case_type
+        +code
         +version
-        +initial_state
-        +is_active
-        +is_locked
+        +case_type
+        +court
+        +status
+        +initial_state_key
+        +attributes_schema
     }
     class WorkflowState {
         +state_key
-        +label
         +stage_key
         +case_status
         +is_terminal
@@ -163,1008 +151,1095 @@ classDiagram
     class WorkflowTransition {
         +transition_key
         +from_state
-        +excluded_from_states
         +to_state
         +trigger
         +event_key
-        +condition_config
-        +required_permission
-        +priority
+        +condition
+        +is_default
+        +request_via
+        +requester_rule
+    }
+    class WorkflowTaskDefinition {
+        +task_key
+        +task_type
+        +execution_mode
+        +attach_to
+        +transition
+        +state
+        +is_required
+        +on_repeat
+        +assignee_rule
+        +retry_policy
     }
     class SecondaryStageDefinition {
         +stage_key
-        +label
         +start_event
-        +start_condition
         +end_event
     }
-    class TaskDefinition {
-        +task_key
-        +name
-        +action_label
-        +task_type
-        +side
-        +category
-        +visibility
-        +link
-    }
-    class WorkflowTaskTemplate {
-        +state
-        +task
-        +close_on
-        +blocks_transitions
-        +assignee_rule
-        +due_in_days
-    }
+    WorkflowDefinition "1" --> "*" WorkflowState
+    WorkflowDefinition "1" --> "*" WorkflowTransition
+    WorkflowDefinition "1" --> "*" WorkflowTaskDefinition
+    WorkflowDefinition "1" --> "*" SecondaryStageDefinition
+    WorkflowTransition --> WorkflowState : from (null = wildcard)
+    WorkflowTransition --> WorkflowState : to
+    WorkflowTaskDefinition --> WorkflowTransition : attach_to = TRANSITION
+    WorkflowTaskDefinition --> WorkflowState : attach_to = ENTRY / STATE
+```
+
+All definition models inherit `BaseModel` and `BaseAuditableModel`. Every
+child has a **natural key** of `(workflow, <x>_key)`, so seeds and exports
+never depend on UUIDs. Bounded enums are `TextChoices` in `enums.py`.
+
+#### 2.1 `WorkflowDefinition`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `code` | `CharField(64)` | Stable family identifier in upper snake case, e.g. `CHEQUE_BOUNCE_DEFAULT`, `CHEQUE_BOUNCE_KL_ERN`. All versions of one family share it. |
+| `version` | `PositiveIntegerField` | Increases by one within a `code`. |
+| `name` / `description` | `CharField(255)` / `TextField(blank=True)` | e.g. "Cheque bounce — default — v2", plus what changed. |
+| `case_type` | `CharField(32)` | A `cases.CaseType` value. It must have a registered plugin (#8). |
+| `court` | `FK("organizations.Organization", null=True, on_delete=PROTECT)` | The court the definition applies to, including every court below it in the hierarchy. `NULL` is the court-agnostic default for the case type. |
+| `status` | `CharField(16, choices=DefinitionStatus)` | `DRAFT` (editable, never used), `ACTIVE` (chosen for new cases), `RETIRED` (no new cases, still runs existing ones). |
+| `initial_state_key` | `CharField(64)` | The state an e-filed case enters, e.g. `e_filing`. |
+| `attributes_schema` | `JSONField(default=dict)` | JSON Schema for `CaseWorkflowInstance.attributes` (#4.1). |
+| `metadata` | `JSONField(default=dict, blank=True)` | Free-form workflow attributes, e.g. `{"owner": "Registry, Ernakulam", "circular": "…"}`. The engine does not read them. |
+| `activated_at` / `activated_by` / `retired_at` / `retired_by` | | Set by the activate and retire actions. |
+
+Constraints:
+
+- `UniqueConstraint(code, version)`.
+- `UniqueConstraint(court, case_type, condition=Q(status="ACTIVE", court__isnull=False))` and `UniqueConstraint(case_type, condition=Q(status="ACTIVE", court__isnull=True))`. Together these allow at most one active definition per court + case type, and one active default per case type. Two partial constraints are used rather than `nulls_distinct`, so SQLite in tests enforces them too.
+
+Rules:
+
+- Only a `DRAFT` definition, and only its children, can be changed. `clean()` refuses edits to `ACTIVE` or `RETIRED` rows and their children, and the admin shows them read-only.
+- Activation (#2.7) validates the graph, sets `ACTIVE`, and in the same transaction **retires** the definition previously active for the same `(court, case_type)`.
+- A definition is never deleted once an instance references it (`PROTECT`).
+
+#### 2.2 `WorkflowState`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `workflow` | `FK(WorkflowDefinition, CASCADE, related_name="states")` | |
+| `state_key` | `CharField(64)` | snake_case, e.g. `e_filing`, `scrutiny`, `pending_correction` |
+| `label` | `CharField(255)` | e.g. "Under scrutiny" |
+| `stage_key` / `stage_label` | `CharField(64)` / `CharField(255)` | The case-lifecycle primary stage (#9.1), e.g. `filing` / "Filing". Several states may share a stage. |
+| `case_status` | `CharField(32, blank=True)` | The `cases.CaseStatus` this state projects to (#9.3). Empty leaves the status unchanged. |
+| `is_terminal` | `BooleanField(default=False)` | Entering it completes the instance. |
+| `is_sticky` | `BooleanField(default=False)` | Wildcard transitions never leave it (#4.4). |
+| `sequence` | `PositiveSmallIntegerField(default=0)` | Display order only. |
+| `metadata` | `JSONField(default=dict, blank=True)` | Free-form, for clients. |
+
+Constraints: `UniqueConstraint(workflow, state_key)`. A terminal state cannot be sticky.
+
+#### 2.3 `WorkflowTransition`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `workflow` | `FK(WorkflowDefinition, CASCADE, related_name="transitions")` | |
+| `transition_key` | `CharField(64)` | snake_case, unique within the workflow, e.g. `submit_to_scrutiny`, `send_back` |
+| `label` | `CharField(255)` | The action label, e.g. "Send back" |
+| `from_state` | `FK(WorkflowState, null=True, PROTECT)` | `NULL` is a **wildcard** (`*` in seed files): any state that is not terminal and not sticky (#4.4). |
+| `excluded_from_states` | `JSONField(default=list)` | State keys. Allowed only on wildcards. |
+| `to_state` | `FK(WorkflowState, PROTECT)` | |
+| `trigger` | `CharField(16, choices=TransitionTrigger)` | `MANUAL`: fires only when requested and every gate is complete. `AUTO`: fires as soon as it is the selected path and every gate is complete. `EVENT`: selected by a dispatched event, then behaves like `AUTO`. |
+| `event_key` | `CharField(64, blank=True)` | Required when `trigger = EVENT`. Upper snake case, e.g. `COGNIZANCE_TAKEN`. |
+| `condition` | `JSONField(default=dict, blank=True)` | A condition tree (#7). The path can be selected and fired only while the condition passes. |
+| `is_default` | `BooleanField(default=False)` | Breaks a tie in automatic path selection (#5.2). |
+| `priority` | `PositiveSmallIntegerField(default=100)` | Order among several candidates for one event; the lowest wins. |
+| `request_via` | `CharField(16, choices=RequestVia, default=ANY)` | `ANY`: the frontend transition API may request it. `SERVICE`: only a domain service may, because it needs a domain payload (e.g. scrutiny's send back). |
+| `requester_rule` | `JSONField(default=dict, blank=True)` | Who may request it. Uses the same rule language as assignees (#6.4), e.g. `{"type": "case_creator"}`. Empty means anyone who can see the case and holds `required_permission`. |
+| `required_permission` | `CharField(100, blank=True)` | A Django permission checked as well as `requester_rule`. |
+| `metadata` | `JSONField(default=dict, blank=True)` | e.g. button style and confirmation copy for clients |
+
+Constraints: `UniqueConstraint(workflow, transition_key)`;
+`CheckConstraint(trigger != EVENT OR event_key != '')`.
+Several transitions may share `from_state → to_state`; conditions tell them apart.
+
+#### 2.4 `WorkflowTaskDefinition`
+
+A task that a case may have to complete, and where it is attached.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `workflow` | `FK(WorkflowDefinition, CASCADE, related_name="task_definitions")` | |
+| `task_key` | `CharField(64)` | snake_case and unique within the workflow. It is **stable across versions and courts**, so lists and counts can group by it, e.g. `sign_filing`, `pay_filing_fee`, `scrutinise_case`. |
+| `task_type` | `CharField(64)` | A registered task type (#6.1), e.g. `SIGNATURE`, `PAYMENT`, `CASE_NUMBER_ASSIGNMENT`, `SCRUTINY_COMPLETION`. |
+| `execution_mode` | `CharField(8, choices=ExecutionMode)` | `MANUAL` (a person or a module completes it) or `AUTO` (the task type's executor completes it). It must be one of the modes the type allows. |
+| `attach_to` | `CharField(16, choices=AttachTo)` | `TRANSITION`, `ENTRY`, `STATE` or `STANDALONE` (#5.1) |
+| `transition` | `FK(WorkflowTransition, null=True, CASCADE)` | Set if and only if `attach_to = TRANSITION`. |
+| `state` | `FK(WorkflowState, null=True, CASCADE)` | Set if and only if `attach_to` is `ENTRY` or `STATE`. |
+| `is_required` | `BooleanField(default=True)` | Whether it gates. A non-required task is created and tracked but blocks nothing, e.g. advisory automated checks. |
+| `cancel_on_exit` | `BooleanField(default=True)` | `STATE` tasks only. `False` keeps the task pending after the case leaves the state, e.g. `take_cognizance`. |
+| `depends_on` | `JSONField(default=list)` | Keys of tasks in the same gate set. The task is created only once those are complete, e.g. `pay_filing_fee` after `sign_filing`. |
+| `on_repeat` | `CharField(16, choices=OnRepeat, default=NEW)` | What happens on a later visit (#5.5): `NEW`, `REUSE_COMPLETED` or `TYPE_DECIDES`. |
+| `assignee_rule` | `JSONField` | Who is responsible (#6.4), e.g. `{"type": "court_role", "role": "SCRUTINY_OFFICER", "level": "ESTABLISHMENT"}`. Use `{"type": "system"}` for `AUTO` tasks. |
+| `name` | `CharField(255)` | A template, e.g. `Pay ₹{amount} — {fee_head}` |
+| `description` | `TextField(blank=True)` | |
+| `action_label` | `CharField(64)` | e.g. "Make Payment" |
+| `side` | `CharField(16, choices=TaskSide)` | `COURT`, `CITIZEN` or `SYSTEM` |
+| `category` | `CharField(16, choices=TaskCategory, blank=True)` | For the citizen side only: `PAY`, `SIGN`, `FILE_SUBMIT` or `OTHERS` |
+| `visibility` | `CharField(16, choices=TaskVisibility)` | `USERS_ONLY`, `SAME_SIDE` or `COURTROOM` (pending tasks attribute 10) |
+| `link` | `CharField(255, blank=True)` | A client route template, e.g. `/employee/scrutiny/{filing_number}` |
+| `due_in_days` | `PositiveSmallIntegerField(null=True)` | Due date = creation date + days. `NULL` means no due date. |
+| `config` | `JSONField(default=dict, blank=True)` | Type-specific settings, validated against the task type's `config_schema`, e.g. `{"fee_head": "CASE_FILING"}` |
+| `completion_schema` | `JSONField(default=dict, blank=True)` | Extra JSON Schema for the metadata sent when a person completes the task. It is combined with the type's own schema. |
+| `capture` | `JSONField(default=dict, blank=True)` | Copies values from the result into instance attributes on completion, e.g. `{"case_number": "result.case_number"}` (#4.1) |
+| `failure_condition` | `JSONField(default=dict, blank=True)` | `AUTO` only. A condition over `result.*` that turns a completed run into a failure, e.g. `{"field": "result.blocking_defects", "op": "gt", "value": 0}` |
+| `retry_policy` | `JSONField(default=dict, blank=True)` | `AUTO` only (#6.6), e.g. `{"max_attempts": 3, "backoff_seconds": [60, 300, 900], "auto": true, "manual": true}` |
+| `timeout_seconds` | `PositiveIntegerField(default=600)` | `AUTO` only. A run that takes longer is treated as a failure (#6.6). |
+| `case_status_while_pending` | `CharField(32, blank=True)` | Overrides the state's `case_status` while this task is pending (#9.3), e.g. `PENDING_PAYMENT` |
+| `sequence` | `PositiveSmallIntegerField(default=0)` | Display and creation order |
+
+Constraints: `UniqueConstraint(workflow, task_key)`; a `CheckConstraint`
+that `transition` and `state` match `attach_to`.
+
+#### 2.5 `SecondaryStageDefinition`
+
+These are kept unchanged from the previous revision. Each has a `stage_key`,
+`label`, `start_event`, `start_condition` and `end_event`, with
+`UniqueConstraint(workflow, stage_key)`. Its rules are in #9.2.
+
+#### 2.6 Validation (`clean()`, on save)
+
+- Keys follow their format: snake_case for states, transitions and tasks; upper snake case for codes and events.
+- Every key referenced in `initial_state_key`, `excluded_from_states` and `depends_on` exists in the same workflow.
+- `from_state != to_state`. `excluded_from_states` is allowed only on a wildcard.
+- `task_type` is registered. `execution_mode` is one the type allows. `config` validates against the type's `config_schema`.
+- `depends_on` names only tasks with the same attachment, or tasks that gate the same transition, and has no cycles.
+- `assignee_rule` and `requester_rule` are known rule types. `{"type": "system"}` is allowed only for `AUTO`.
+- `failure_condition`, `retry_policy` and `timeout_seconds` are set only for `AUTO`.
+- `case_status` and `case_status_while_pending` are `cases.CaseStatus` values. The engine gets this list from the plugin (#8), not by importing `apps.cases`.
+- Every field used in a condition resolves (#7). An unknown field is a save error, never a silent `False` at runtime.
+
+#### 2.7 Activation validation (whole graph)
+
+On activation, and with `load_workflow --check`:
+
+1. `initial_state_key` exists and is not terminal.
+2. Every state can be reached from the initial state. Wildcards count as reaching their target.
+3. Every non-terminal state has at least one way out.
+4. Every `event_key` used by a transition or secondary stage is in the plugin's `known_events()`.
+5. No `AUTO` transition loops back to itself through other `AUTO` transitions that have no gating tasks. Such a loop would hit the chain cap (#4.3).
+6. Every task's assignee rule can be resolved for the case type (`plugin.supported_assignee_rules()`).
+
+Failures are reported together as a `ValidationError` listing each problem by
+key. The admin shows them, and `load_workflow` exits with status 1.
+
+### 3. Choosing a definition
+
+`resolution.resolve_definition(case_type, court)`:
+
+1. Walk from `court` up through its ancestors (`Organization.parent`), nearest first. Return the first `ACTIVE` definition for `(that court, case_type)`.
+2. Otherwise return the `ACTIVE` default for the case type (`court IS NULL`).
+3. Otherwise raise `E08001 NO_ACTIVE_DEFINITION`.
+
+So one default serves every court. A state or district overrides it by
+activating a definition for its own organisation, and a single court can
+override it again.
+
+The definition is **pinned** to the instance when the instance starts. Later
+changes do not re-select it. These include the Scrutiny officer choosing a
+courtroom (`SCR-16`), which changes `Case.court`, and a new version being
+activated.
+
+A system check (`workflows.W001`) warns for every `cases.CaseType` that has
+no active default.
+
+### 4. Runtime model
+
+```mermaid
+classDiagram
     class CaseWorkflowInstance {
         +case
         +workflow
         +current_state
         +current_visit
+        +selected_transition
         +status
         +version
+        +attributes
     }
-    class CaseWorkflowStateVisit {
-        +state_key
-        +stage_key
+    class CaseWorkflowVisit {
+        +state
         +sequence
         +visit_number
         +entered_at
         +exited_at
     }
-    class CaseSecondaryStage {
-        +stage_key
-        +started_at
-        +ended_at
-    }
-    class CaseTask {
-        +case
-        +task
-        +visit
-        +reference_type
-        +reference_id
-        +status
-        +court_id
-        +users
-        +claimed_by
-        +due_date
-        +name
-    }
     class CaseWorkflowTransitionLog {
+        +transition
         +from_state
         +to_state
         +trigger_type
-        +event_key
         +triggered_by
+        +context
     }
-    WorkflowDefinition "1" --> "*" WorkflowState
-    WorkflowDefinition "1" --> "*" WorkflowTransition
-    WorkflowDefinition "1" --> "*" SecondaryStageDefinition
-    WorkflowState "1" --> "*" WorkflowTaskTemplate
-    WorkflowTaskTemplate --> TaskDefinition
-    CaseWorkflowInstance --> WorkflowDefinition
-    CaseWorkflowInstance "1" --> "*" CaseWorkflowStateVisit
-    CaseWorkflowInstance "1" --> "*" CaseSecondaryStage
+    class CaseTask {
+        +definition
+        +visit
+        +transition
+        +status
+        +assignees
+        +result
+        +metadata
+    }
+    class CaseTaskAttempt {
+        +number
+        +outcome
+        +error
+    }
+    CaseWorkflowInstance "1" --> "*" CaseWorkflowVisit
     CaseWorkflowInstance "1" --> "*" CaseWorkflowTransitionLog
-    CaseTask --> TaskDefinition
-    CaseTask --> CaseWorkflowStateVisit : optional
+    CaseWorkflowInstance "1" --> "*" CaseTask
+    CaseWorkflowInstance "1" --> "*" CaseSecondaryStage
+    CaseTask "1" --> "*" CaseTaskAttempt
+    CaseTask --> CaseWorkflowVisit
 ```
 
-All models inherit `apps.core.models.BaseModel`. Definition models also inherit
-`BaseAuditableModel`. Every bounded enum is a `TextChoices` in
-`apps/workflows/enums.py`.
-
-#### 2.1 `WorkflowDefinition`
-
-A named, versioned workflow that belongs to a single `case_type`.
+#### 4.1 `CaseWorkflowInstance`
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `case_type` | `CharField(32, db_index=True)` | a `cases.CaseType` value, e.g. `CHEQUE_BOUNCE` |
-| `version` | `PositiveIntegerField` | monotonic per case type, e.g. `1`, `2` |
-| `name` | `CharField(255)` | human-readable name, e.g. "Cheque Bounce — v1" |
-| `description` | `TextField(blank=True)` | optional documentation, e.g. what changed from the previous version |
-| `initial_state` | `CharField(64)` | state key where new cases start, e.g. `draft` |
-| `is_active` | `BooleanField(default=False)` | the definition new cases start on |
-| `is_locked` | `BooleanField(default=False)` | set when the first instance is created; states, transitions, secondary stages and task templates become read-only |
-
-Constraints:
-
-- `UniqueConstraint(case_type, version)`.
-- `UniqueConstraint(case_type, condition=Q(is_active=True))` — at most one active definition per case type.
-
-Validation:
-
-- `initial_state` must match a `WorkflowState.state_key` of this definition.
-- `case_type` must be a registered plugin's `case_type` (#6).
-
-A locked definition is the snapshot a running case follows. A change is a new
-version: clone, edit, activate. Running cases stay on their version (question 3).
-
-#### 2.2 `WorkflowState`
-
-A state in a workflow.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `workflow` | `FK(WorkflowDefinition, on_delete=CASCADE)` | |
-| `state_key` | `CharField(64)` | stable machine identifier, e.g. `draft`, `scrutiny`, `pending_correction`, `registration`, `cognizance` |
-| `label` | `CharField(255)` | human-readable label, e.g. "Pending correction" |
-| `stage_key` | `CharField(64)` | the primary stage this state belongs to (#3.1), e.g. `filing` for `draft`, `pending_signature` and `pending_payment` |
-| `case_status` | `CharField(32, blank=True)` | the `Case.status` this state projects to (#3.3), e.g. `UNDER_SCRUTINY` for `scrutiny`; empty leaves it unchanged |
-| `is_terminal` | `BooleanField(default=False)` | `True` for final states, e.g. `deleted` |
-| `is_sticky` | `BooleanField(default=False)` | wildcard transitions never leave a sticky state (#4.3), e.g. `post_judgement`, `post_disposal`, `long_pending_register` |
-| `sequence` | `PositiveSmallIntegerField(default=0)` | display order; not enforced by the engine |
-
-Constraints:
-
-- `UniqueConstraint(workflow, state_key)`.
-
-Validation:
-
-- `state_key` must be lowercase snake_case: `^[a-z][a-z0-9_]*$`.
-- `stage_key` must be lowercase snake_case.
-- `case_status`, when set, must be a `cases.CaseStatus` value.
-- A terminal state cannot be sticky.
-
-#### 2.3 `WorkflowTransition`
-
-A permissible move from one state to another.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `workflow` | `FK(WorkflowDefinition, on_delete=CASCADE)` | |
-| `transition_key` | `CharField(64)` | stable identifier, unique per workflow, e.g. `send_back`, `forward`, `signed_pay` |
-| `label` | `CharField(255)` | the action label, e.g. "Send back", "Forward for registration" |
-| `from_state` | `CharField(64)` | a state key, e.g. `scrutiny`; or `*` for any non-terminal, non-sticky state (#4.3) |
-| `excluded_from_states` | `JSONField(default=list)` | with `*` only, e.g. `["draft", "scrutiny"]` |
-| `to_state` | `CharField(64)` | a state key, e.g. `pending_correction` |
-| `trigger` | `CharField(16, choices=TransitionTrigger)` | `MANUAL` (a user action), `EVENT` (dispatched by a module), `AUTOMATIC` (fires when its condition passes) |
-| `event_key` | `CharField(64, blank=True)` | required when `trigger = EVENT`, e.g. `PAYMENT_COMPLETED`, `ALL_SIGNED`, `HEARING_SCHEDULED` |
-| `condition_config` | `JSONField(default=dict, blank=True)` | data-driven conditions (#5), e.g. `{"field": "case.balance_due", "op": "gt", "value": 0}` |
-| `required_permission` | `CharField(100, blank=True)` | `MANUAL` only; a Django permission checked together with the plugin's object check (#9.4) |
-| `priority` | `PositiveSmallIntegerField(default=100)` | among candidates for one event or key, the lowest priority whose condition passes fires, e.g. `signed_pay` 10 before `signed_resubmit` 20 |
-
-Constraints:
-
-- `UniqueConstraint(workflow, transition_key)`.
-- `CheckConstraint`: `trigger != EVENT OR event_key != ''`.
-
-Validation:
-
-- `from_state` (unless `*`), `to_state` and every entry of `excluded_from_states` must exist on the same workflow.
-- `excluded_from_states` must be empty unless `from_state = *`.
-- `from_state != to_state`.
-- `transition_key` must be lowercase snake_case; `event_key` must be upper snake case.
-- Every field in `condition_config` must resolve (#5).
-
-Several transitions may share `from_state` and `to_state`, and several may share
-an `event_key`; they differ by condition. Two transitions out of `scrutiny` to
-`registration` and `cognizance` are distinguished by `event.registers_at_scrutiny`, not
-by states.
-
-#### 2.4 `SecondaryStageDefinition`
-
-A secondary stage that runs alongside the primary stage, started and ended by
-events (case lifecycle §4).
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `workflow` | `FK(WorkflowDefinition, on_delete=CASCADE)` | |
-| `stage_key` | `CharField(64)` | e.g. `delay_condonation`, `summons`, `warrant` |
-| `label` | `CharField(255)` | human-readable label, e.g. "Summons" |
-| `start_event` | `CharField(64)` | e.g. `SUMMONS_TRIGGERED` |
-| `start_condition` | `JSONField(default=dict, blank=True)` | #5; e.g. Delay Condonation starts on `CASE_REGISTERED` only when `case.delay_applicable` |
-| `end_event` | `CharField(64)` | e.g. `ALL_SUMMONS_TERMINAL` |
-
-Constraints:
-
-- `UniqueConstraint(workflow, stage_key)`.
-
-Validation:
-
-- `stage_key` must be lowercase snake_case and must not equal any primary `stage_key` of the workflow.
-- `start_event` and `end_event` must differ.
-
-#### 2.5 `TaskDefinition`
-
-The pending-tasks attributes that do not change per case.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `task_key` | `CharField(64, unique=True)` | stable identifier, e.g. `scrutinise_case`, `register_case`, `take_cognizance`, `review_application`, `pay_fee` |
-| `name` | `CharField(255)` | template with `{variables}`, e.g. `Pay ₹{amount} — {fee_head}`, `Scrutinise {case_title}` (pending tasks attribute 1) |
-| `description` | `TextField(blank=True)` | what the task is for |
-| `action_label` | `CharField(64)` | button text, e.g. "Make Payment", "Scrutinise" (attribute 12) |
-| `task_type` | `CharField(16, choices=TaskType)` | `HUMAN` (a person acts), `AUTOMATIC` (a handler runs) |
-| `handler_path` | `CharField(255, blank=True)` | dotted path to a `BaseTaskHandler` (#7.7); required for `AUTOMATIC` |
-| `side` | `CharField(16, choices=TaskSide)` | `COURT`, `CITIZEN`, `SYSTEM` |
-| `category` | `CharField(16, choices=TaskCategory, blank=True)` | citizen side only: `PAY`, `SIGN`, `FILE_SUBMIT`, `OTHERS` (attribute 6) |
-| `visibility` | `CharField(16, choices=TaskVisibility)` | `USERS_ONLY`, `SAME_SIDE`, `COURTROOM` (attribute 10) |
-| `link` | `CharField(255)` | client route template, e.g. `/employee/scrutiny/{filing_number}` (attribute 7) |
-| `config_schema` | `JSONField(default=dict, blank=True)` | JSON Schema for `WorkflowTaskTemplate.config` and the `context` a module passes at open |
-
-Creation and closure triggers (attributes 3 and 4) are documentation; they
-live in the PRD's master table and in the code that opens and closes the task.
-
-Validation:
-
-- `task_key` must be lowercase snake_case.
-- `handler_path` is required when `task_type = AUTOMATIC` and must import a `BaseTaskHandler` subclass; it must be empty for `HUMAN`.
-- `category` is required when `side = CITIZEN` and must be empty otherwise.
-- Every `{variable}` in `name` and `link` must be declared in `config_schema`.
-
-#### 2.6 `WorkflowTaskTemplate`
-
-A task the engine opens **when the case enters a state**.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `state` | `FK(WorkflowState, on_delete=CASCADE)` | the state whose entry opens the task, e.g. `scrutiny` |
-| `task` | `FK(TaskDefinition, on_delete=PROTECT)` | e.g. `scrutinise_case` |
-| `close_on` | `CharField(16, choices=CloseOn)` | `STATE_EXIT` — closes when the case leaves the state; `EXPLICIT` — stays open across stage changes until a module completes it (#7.2), e.g. `take_cognizance` |
-| `blocks_transitions` | `JSONField(default=list)` | transition keys that cannot fire while it is open, e.g. `["forward"]` |
-| `assignee_rule` | `JSONField` | who the task is for (#7.3), e.g. `{"type": "court_role", "role": "CASE_REGISTERER", "level": "ESTABLISHMENT"}` |
-| `due_in_days` | `PositiveSmallIntegerField(default=0)` | due date = entry date + days; `0` is due the same day (`SCR-09`) |
-| `first_visit_only` | `BooleanField(default=False)` | open only on the first entry of the state |
-| `execution_order` | `PositiveSmallIntegerField(default=0)` | order in which automatic tasks run |
-| `config` | `JSONField(default=dict, blank=True)` | template-specific configuration, e.g. `{"max_retries": 3}` |
-
-Constraints:
-
-- `UniqueConstraint(state, task)`.
-
-Validation:
-
-- `config` must validate against `task.config_schema`.
-- Every key in `blocks_transitions` must be a transition of the same workflow whose `from_state` is this state (or `*`).
-- `assignee_rule` must be a known rule type (#7.3); `{"type": "none"}` only for `AUTOMATIC` tasks.
-- `close_on = EXPLICIT` only for `HUMAN` tasks.
-
-#### 2.7 `CaseWorkflowInstance`
-
-Runtime snapshot of a workflow for a specific case.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `case` | `OneToOneField("cases.Case", on_delete=PROTECT, related_name="workflow")` | the case whose workflow is tracked |
-| `workflow` | `FK(WorkflowDefinition, on_delete=PROTECT)` | the locked version followed |
-| `current_state` | `CharField(64)` | current `WorkflowState.state_key`, e.g. `scrutiny` |
-| `current_visit` | `FK("CaseWorkflowStateVisit", null=True, on_delete=PROTECT)` | the open visit of `current_state` |
-| `status` | `CharField(16, choices=InstanceStatus)` | `ACTIVE`, `PAUSED` (no transition fires except an admin force), `COMPLETED` (terminal state reached) |
-| `version` | `PositiveIntegerField(default=0)` | +1 on every transition; the concurrency token (#9.4) |
-| `completed_at` | `DateTimeField(null=True, blank=True)` | set when entering a terminal state |
-
-Properties / behaviour:
-
-- On creation, `current_state` is copied from `workflow.initial_state` and the first visit is opened.
-- `is_terminal`: `True` if the current state is terminal.
-- `is_active`: `True` if `status == ACTIVE` and not terminal.
-- `current_state`, `current_visit`, `status` and `version` are written only by the engine (#4.2).
-
-#### 2.8 `CaseWorkflowStateVisit`
-
-One row each time the case enters a state. Append-only.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `instance` | `FK(CaseWorkflowInstance, on_delete=CASCADE, related_name="visits")` | |
-| `state_key` / `stage_key` | `CharField(64)` | copied at entry, e.g. `scrutiny` / `scrutiny` |
-| `sequence` | `PositiveIntegerField` | 1, 2, 3 … per instance, in the order the states were entered |
-| `visit_number` | `PositiveIntegerField` | how many times this state has been entered, including this one, e.g. `3` on the third entry into `scrutiny` — the scrutiny round number |
-| `entered_at` | `DateTimeField` | |
-| `exited_at` | `DateTimeField(null=True, blank=True)` | empty while the case is in this state |
-| `entered_by_log` | `FK(CaseWorkflowTransitionLog, null=True, on_delete=PROTECT)` | the transition that entered it; `NULL` only for the initial state |
-
-Constraints:
-
-- `UniqueConstraint(instance, sequence)`.
-- `UniqueConstraint(instance, condition=Q(exited_at__isnull=True))` — one open visit per case.
-- `CheckConstraint`: `exited_at IS NULL OR exited_at >= entered_at`.
-
-#### 2.9 `CaseSecondaryStage`
-
-One row each time a secondary stage starts on a case. Append-only except for
-`ended_at` and `end_event`.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `instance` | `FK(CaseWorkflowInstance, on_delete=CASCADE, related_name="secondary_stages")` | |
-| `stage_key` | `CharField(64)` | a `SecondaryStageDefinition.stage_key`, e.g. `summons` |
-| `started_at` | `DateTimeField` | |
-| `ended_at` | `DateTimeField(null=True, blank=True)` | empty while the stage is active |
-| `start_event` | `CharField(64)` | the event that started it, e.g. `SUMMONS_TRIGGERED` |
-| `end_event` | `CharField(64, blank=True)` | the event that ended it, e.g. `ALL_SUMMONS_TERMINAL` |
-
-`UniqueConstraint(instance, stage_key, condition=Q(ended_at__isnull=True))` —
-a secondary stage is either active or not; a second start while active is a
-no-op.
-
-#### 2.10 `CaseTask`
-
-Every pending task of a case. One table, one list query.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `case` | `FK("cases.Case", on_delete=CASCADE, related_name="tasks")` | every task links to exactly one case (pending tasks §1) |
-| `task` | `FK(TaskDefinition, on_delete=PROTECT)` | the kind of task, e.g. `scrutinise_case`, `pay_fee` |
-| `visit` | `FK(CaseWorkflowStateVisit, null=True, on_delete=CASCADE)` | set for state-bound tasks; empty for module-opened tasks |
-| `template` | `FK(WorkflowTaskTemplate, null=True, on_delete=PROTECT)` | the template that opened it; empty for module-opened tasks |
-| `reference_type` | `CharField(32, blank=True)` | what the task is about when not the case itself: `APPLICATION`, `PROCESS`, `ORDER`, `DEMAND`, `HEARING` |
-| `reference_id` | `UUIDField(null=True, blank=True)` | id of that thing, e.g. the application id for *Decide application* |
-| `name` | `CharField(255)` | rendered from the definition's template at open, e.g. "Pay ₹707.50 — Case filing fee" |
-| `link` | `CharField(255)` | rendered from the definition's template, e.g. `/employee/scrutiny/F%2FAHM%2F2026%2F00341` |
-| `status` | `CharField(16, choices=TaskStatus)` | `OPEN`, `COMPLETED`, `EXPIRED`, `ARCHIVED`, `FAILED` (automatic tasks only) |
-| `court_id` | `UUIDField(null=True, db_index=True)` | court-side tasks: the court establishment or courtroom whose role holders may act |
-| `side` | `CharField(16, blank=True)` | citizen-side tasks: `COMPLAINANT`, `ACCUSED` |
-| `users` | `ArrayField(UUIDField, default=list)` | users who can act (attribute 5), resolved at open (#7.3) |
-| `claimed_by` | `FK(User, null=True, on_delete=SET_NULL)` | court-side only (#7.4), e.g. the scrutiny officer working the file |
-| `claimed_at` | `DateTimeField(null=True, blank=True)` | |
-| `due_date` | `DateField(null=True, blank=True)` | attribute 2, e.g. entry date + `due_in_days`, or the decision date for *Decide application* |
-| `completed_by` | `FK(User, null=True, on_delete=SET_NULL)` | `NULL` when completed by the system |
-| `completed_at` | `DateTimeField(null=True, blank=True)` | |
-| `closed_reason` | `CharField(32, blank=True)` | why an `EXPIRED` task closed: `STATE_EXITED`, `WINDOW_CLOSED`, `NO_LONGER_RELEVANT`, `SUPERSEDED` |
-| `archived_by` | `FK(User, null=True, on_delete=SET_NULL)` | |
-| `archived_at` | `DateTimeField(null=True, blank=True)` | |
-| `context` | `JSONField(default=dict, blank=True)` | values used to render `name` and `link`, e.g. `{"amount": "707.50", "fee_head": "Case filing fee"}` |
-| `result_payload` | `JSONField(default=dict, blank=True)` | output of an automatic task, or what the module recorded on completion |
-| `attempt_count` | `PositiveSmallIntegerField(default=0)` | automatic tasks |
-| `error_message` | `TextField(blank=True)` | last error of a failed automatic task |
-
-Constraints: `UniqueConstraint(visit, template, condition=Q(visit__isnull=False))`;
-`UniqueConstraint(task, reference_type, reference_id, condition=Q(status=OPEN) & Q(reference_id__isnull=False))`
-— one open task of a kind per referenced thing. Indexes:
-`(court_id, status, task)`, GIN on `users`, `(case, status)`.
-
-**Overdue is not a status.** It is `status = OPEN and due_date < today`,
-computed at read (pending tasks §3). Moving a due date is an update, never a
-transition.
-
-Validation:
-
-- `visit` and `template` are set together or not at all.
-- `reference_type` and `reference_id` are set together or not at all.
-- `court_id` is required when the definition's `side = COURT`; `side` is required when it is `CITIZEN`.
-- `claimed_by` must be in `users`.
-- `context` must validate against `task.config_schema`.
-
-#### 2.11 `CaseWorkflowTransitionLog`
-
-Audit trail of every state change.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `instance` | `FK(CaseWorkflowInstance, on_delete=CASCADE, related_name="logs")` | |
-| `transition` | `FK(WorkflowTransition, null=True, on_delete=PROTECT)` | `NULL` for an admin force |
-| `from_state` | `CharField(64)` | e.g. `scrutiny` |
-| `to_state` | `CharField(64)` | e.g. `pending_correction` |
-| `trigger_type` | `CharField(16, choices=TriggerType)` | `MANUAL`, `EVENT`, `AUTOMATIC`, `ADMIN` |
-| `event_key` | `CharField(64, blank=True)` | for `EVENT`, e.g. `PAYMENT_COMPLETED` |
-| `triggered_by` | `FK(User, null=True, on_delete=PROTECT)` | `NULL` for system and automatic transitions |
-| `reason` | `TextField(blank=True)` | optional comment; required for `ADMIN` |
-| `metadata` | `JSONField(default=dict, blank=True)` | caller context and condition snapshot, e.g. `{"round_id": "…", "item_count": 3}` |
-
-Append-only: `save()` refuses an existing row; admin is read-only.
-
-### 3. Stages and status
-
-#### 3.1 Primary stages
-
-`WorkflowState.stage_key` maps states to the case-lifecycle primary stages.
-Several states may share a stage (Draft, Pending Signature and Pending Payment
-are all *Filing*). The stage shown everywhere — the "Stage" column, the case
-header, the *Under scrutiny* label — is the current state's stage label, or a
-finer label a domain module derives from the state.
-
-A stage **starts** when the case enters a state of that stage from a state of a
-different stage, and **ends** when it leaves to a different stage. Re-entering
-the same stage from a state of the same stage is not a new start.
-
-`stage_started` and `stage_ended` signals are sent on commit.
-
-#### 3.2 Secondary stages
-
-`CaseWorkflowService.dispatch(case, event_key, context)` also checks the
-secondary-stage definitions:
-
-* an event equal to a `start_event`, whose `start_condition` passes, starts that stage if it is not active;
-* an event equal to an `end_event` ends that stage if it is active.
-
-Secondary stages never change the primary stage, and the primary stage never
-ends a secondary stage. "No secondary stage" is simply no active row (case
-lifecycle §4, row 7).
-
-The module that owns the thing decides when its end event is due. The process
-module dispatches `ALL_SUMMONS_TERMINAL` when every active summons of the case
-is served, expired or status-updated; the engine does not count summonses.
-
-#### 3.3 `Case.status` projection
-
-`Case.status` already exists and is filtered on by the filing APIs. It stays,
-written only by the engine, in the same transaction as the transition, from
-`WorkflowState.case_status`. An empty `case_status` leaves it unchanged.
-
-| `Case.status` | States |
+| `case` | `OneToOneField("cases.Case", PROTECT, related_name="workflow")` | |
+| `workflow` | `FK(WorkflowDefinition, PROTECT)` | The pinned version |
+| `current_state` | `FK(WorkflowState, PROTECT)` | |
+| `current_visit` | `FK("CaseWorkflowVisit", null=True, PROTECT)` | The open visit |
+| `selected_transition` | `FK(WorkflowTransition, null=True, PROTECT)` | The path chosen out of the current state (#5.2). Cleared on every transition. |
+| `selected_by` / `selected_at` / `selection_context` | `FK(User, null)` / `DateTimeField(null)` / `JSONField` | Who chose the path (`NULL` for the engine), when, and the context passed with the request. Executors see this context. |
+| `status` | `CharField(16, choices=InstanceStatus)` | `ACTIVE`, `SUSPENDED` (nothing fires except an admin force) or `COMPLETED` (a terminal state was reached) |
+| `version` | `PositiveIntegerField(default=0)` | Incremented on every transition, path selection and task status change. It is the concurrency token (#10.5). |
+| `attributes` | `JSONField(default=dict)` | Data gathered along the way through task `capture` and transition context, e.g. `{"case_number": "ST/123/2026", "registration_type": "ECC"}`. Validated against `workflow.attributes_schema`. Conditions can read it as `workflow.attributes.*`. |
+| `started_at` / `completed_at` | `DateTimeField` | |
+
+Only the engine writes these fields. `attributes` is merged key by key, never
+replaced. Each write appears in the instance's `BaseAuditableModel` history.
+
+#### 4.2 `CaseWorkflowVisit`
+
+There is one append-only row each time the case enters a state. The fields
+are `instance`, `state`, `sequence` (1, 2, 3 … per instance), `visit_number`
+(how many times this state has been entered, so the third entry into
+`scrutiny` is scrutiny round 3), `entered_at`, `exited_at` and
+`entered_by_log` (`NULL` only for the initial state). The constraints are
+`UniqueConstraint(instance, sequence)` and
+`UniqueConstraint(instance, condition=Q(exited_at__isnull=True))`, which
+allows one open visit per case.
+
+#### 4.3 `CaseWorkflowTransitionLog`
+
+This is the append-only history of every state change. `save()` refuses to
+update an existing row, and the admin shows it read-only.
+
+| Field | Notes |
 | --- | --- |
-| `DRAFT_IN_PROGRESS` | `draft` |
-| `PENDING_SIGN` | `pending_signature` |
-| `PENDING_PAYMENT` | `pending_payment` |
-| `UNDER_SCRUTINY` | `scrutiny` |
-| `PENDING_CORRECTION` *(new)* | `pending_correction` |
-| `PENDING_REGISTRATION` *(new)* | `registration` |
-| `REGISTERED` | `cognizance` and every later state |
-| `DELETED` *(new)* | `deleted` |
+| `instance` | |
+| `transition` | `NULL` for an admin force |
+| `from_state` / `to_state` | FKs to `WorkflowState` |
+| `from_visit` / `to_visit` | The visits closed and opened |
+| `trigger_type` | `MANUAL` (requested by a user), `AUTO` (fired by the engine), `EVENT` (`event_key` set) or `ADMIN` (force) |
+| `event_key` | For `EVENT` |
+| `triggered_by` | The requesting user. `NULL` for system and auto transitions. For an `AUTO` transition that fired after a user completed the last gate, it is still `NULL`, and `context.caused_by_task` names that task. |
+| `reason` | Required for `ADMIN` |
+| `context` | The request context and a snapshot of the evaluated condition |
+| `satisfied_tasks` | `JSONField` listing `{task_id, task_key, completed_at, reused}` for every gate that passed |
+| `created_at` | When the transition happened |
 
-Rules:
+#### 4.4 Wildcards and sticky states
 
-* No code outside the engine assigns `Case.status`; a test scans for writes.
-* The new values are added to `cases.CaseStatus` by migration. `NOT_JOINABLE_STATUSES` gains `PENDING_CORRECTION`, `PENDING_REGISTRATION` and `DELETED`.
-* The [`0021`](0021-case-filing-api.md) §7 status-transition endpoints should be thin wrappers over `move_case` and `dispatch` — that section's option (b). 0021 is updated to record this in its own PR.
+A wildcard (`from_state = NULL`) matches any current state that is not
+terminal, not sticky, not in `excluded_from_states`, and not the wildcard's own
+`to_state`. A sticky state is left only by a transition that names it as
+`from_state` explicitly. This is how the lifecycle rule "*hearing scheduled
+for Arguments, unless the case is in Post-Judgement, Post-Disposal or Long
+Pending Register*" fits in one row.
 
-#### 3.4 Stage history
+#### 4.5 `CaseTask`
 
-`selectors.stage_history(case_id)` returns every primary and secondary stage
-the case entered, with start, end and duration, oldest first:
+Every task of a case lives in one table and is listed with one query.
 
-```json
-{
-  "primary": [
-    { "stage": "filing", "label": "Filing", "started_at": "2026-07-01T…", "ended_at": "2026-07-04T…", "days": 3 },
-    { "stage": "scrutiny", "label": "Scrutiny", "started_at": "2026-07-04T…", "ended_at": "2026-07-07T…", "days": 3 },
-    { "stage": "defect_correction", "label": "Defect Correction", "started_at": "2026-07-07T…", "ended_at": "2026-07-13T…", "days": 6 }
-  ],
-  "secondary": [
-    { "stage": "summons", "label": "Summons", "started_at": "…", "ended_at": null, "days": 12 }
-  ]
-}
-```
-
-Built from visits grouped by consecutive `stage_key`, and from
-`CaseSecondaryStage`. This is the data the stage-wise ageing views and the
-pendency dashboards need; nothing else has to be stored.
-
-### 4. Engine behaviour
-
-#### 4.1 Triggers
-
-| `trigger` | Fired by | Example |
+| Field | Type | Notes |
 | --- | --- | --- |
-| `MANUAL` | a domain endpoint, through `move_case(case, transition_key, actor)` | Scrutiny officer sends back; Case registerer registers |
-| `EVENT` | a module, through `dispatch(case, event_key, context)` | `ALL_SIGNED`, `PAYMENT_COMPLETED`, `HEARING_SCHEDULED` |
-| `AUTOMATIC` | the engine, after any state entry or task completion, when the condition passes | — |
+| `case` | `FK("cases.Case", CASCADE, related_name="tasks")` | |
+| `instance` | `FK(CaseWorkflowInstance, CASCADE, related_name="tasks")` | |
+| `definition` | `FK(WorkflowTaskDefinition, PROTECT)` | Copied fields: `task_key`, `task_type`, `execution_mode` (stored too, for filtering and indexes) |
+| `visit` | `FK(CaseWorkflowVisit, null=True, CASCADE)` | The visit of the **source** state during which the task was created. `NULL` only for `STANDALONE` tasks. |
+| `transition` | `FK(WorkflowTransition, null=True, PROTECT)` | The path the task belongs to, for `TRANSITION` and `ENTRY` tasks |
+| `status` | `CharField(16, choices=TaskStatus)` | See below |
+| `name` / `link` | `CharField(255)` | Rendered from the definition's templates and `context` when the task is created |
+| `context` | `JSONField(default=dict)` | Template variables and input for the task type, e.g. `{"amount": "707.50", "demand_id": "…"}` |
+| `court_id` / `side` / `assignees` | `UUIDField(null)` / `CharField(16, blank)` / `ArrayField(UUIDField)` | Resolved from `assignee_rule` (#6.4). In SQLite tests `assignees` is a `JSONField`. |
+| `assignee_type` | `CharField(16)` | The kind of rule: `COURT_ROLE`, `CASE_SIDE`, `CASE_CREATOR`, `USERS` or `SYSTEM` |
+| `due_date` | `DateField(null)` | |
+| `completed_by` / `completed_at` / `completion_mode` | `FK(User, null)` / `DateTimeField(null)` / `CharField` | `completion_mode` is `MANUAL` (via API or module, by a user), `AUTO` (executor) or `SYSTEM` (the type completed it on creation, e.g. nothing to pay) |
+| `metadata` | `JSONField(default=dict)` | Supplied with a manual completion, e.g. `{"remarks": "Verified original cheque"}` |
+| `result` | `JSONField(default=dict)` | Executor output, or the payload a module recorded |
+| `attempt_count` / `next_retry_at` | `PositiveSmallIntegerField` / `DateTimeField(null)` | `AUTO` only |
+| `last_error_code` / `last_error_message` | `CharField(64)` / `TextField` | The last failure |
+| `closed_reason` | `CharField(32, blank)` | For `CANCELLED`: `STATE_EXITED`, `PATH_CHANGED`, `NO_LONGER_RELEVANT` or `ADMIN` |
+| `reference_type` / `reference_id` | `CharField(32)` / `UUIDField(null)` | For `STANDALONE` tasks, the thing the task is about (application, process …) |
+| `claimed_by` / `claimed_at` | | For court-side tasks, an informational claim (#10.4) |
+| `archived_by` / `archived_at` | | A user has put the task away. This is not a status (#6.3). |
 
-Events keep modules apart. Payments never knows that a paid filing goes to
-scrutiny: the filing handler of `notify_payment_completed`
-([`0017`](0017-orders-management.md) #14) dispatches `PAYMENT_COMPLETED`, and
-the definition decides what that means for the current state.
+**Task statuses**
 
-#### 4.2 `move_case` and `dispatch`
+| Status | Meaning | Pending-tasks PRD status |
+| --- | --- | --- |
+| `PENDING` | Waiting for a person, or queued for the executor | Open |
+| `IN_PROGRESS` | An executor attempt is running | Open |
+| `FAILED` | The last auto attempt failed. If `next_retry_at` is set, a retry is scheduled; otherwise it waits for a manual retry, or retries are exhausted. | Open |
+| `COMPLETED` | Done. It counts towards gates. | Completed |
+| `CANCELLED` | No longer needed: the path changed or the state was exited. It never counts towards gates. | Expired |
+
+`PENDING`, `IN_PROGRESS` and `FAILED` are **live**. Overdue is not a status:
+it is computed when read as `live and due_date < today`. Allowed changes:
+`PENDING → IN_PROGRESS → COMPLETED | FAILED`, `FAILED → IN_PROGRESS` (retry),
+`PENDING → COMPLETED` (manual), and any live status `→ CANCELLED`.
+`COMPLETED` and `CANCELLED` are final.
+
+Constraints:
+
+- `UniqueConstraint(visit, definition, condition=Q(status__in=LIVE))`: at most one live instance of a task definition per visit.
+- `UniqueConstraint(definition, reference_type, reference_id, condition=Q(status__in=LIVE) & Q(reference_id__isnull=False))` for standalone tasks.
+
+Indexes: `(case, status)`, `(court_id, status, task_key)`, GIN on `assignees`,
+`(status, next_retry_at)`.
+
+#### 4.6 `CaseTaskAttempt`
+
+There is one append-only row per executor run, holding `task`, `number`,
+`started_at`, `finished_at`, `outcome` (`COMPLETED`, `FAILED`, `TIMED_OUT` or
+`DISCARDED`), `error_code`, `error_message`, `result` and `triggered_by` (the
+user who asked for a manual retry). This is the failure audit trail.
+
+#### 4.7 `CaseSecondaryStage`
+
+This is unchanged from the previous revision: `instance`, `stage_key`,
+`started_at`, `ended_at`, `start_event` and `end_event`, with at most one
+active row per `(instance, stage_key)`.
+
+### 5. Tasks and paths
+
+#### 5.1 Where tasks attach
+
+The **gate** of a transition A → B is the set of **required** tasks that must
+be `COMPLETED` before it fires:
 
 ```text
-CaseWorkflowService.start_case_workflow(case) -> CaseWorkflowInstance
-CaseWorkflowService.move_case(case, transition_key, *, actor, reason="", context=None,
-                              expected_version=None) -> CaseWorkflowTransitionLog
-CaseWorkflowService.dispatch(case, event_key, *, context=None, actor=None)
-                              -> CaseWorkflowTransitionLog | None
-CaseWorkflowService.available_transitions(case, actor) -> list[WorkflowTransition]
-CaseWorkflowService.force(case, to_state, *, actor, reason) -> CaseWorkflowTransitionLog
+gate(A → B) = STATE tasks of A  ∪  TRANSITION tasks of (A → B)  ∪  ENTRY tasks of B
 ```
 
-`start_case_workflow` is called by `apps.cases` in the transaction that creates
-the case row ([`0021`](0021-case-filing-api.md) lazy creation), so no case
-exists without a workflow.
+| `attach_to` | Meaning | Created | Example |
+| --- | --- | --- | --- |
+| `TRANSITION` | Needed for **this path** A → B only | When the path is selected | `sign_filing` and `pay_filing_fee` on `e_filing → scrutiny` |
+| `ENTRY` | Needed to enter B **by any path** | When any path into B is selected | `assign_case_number` on `cognizance`, needed whether the case is registered at scrutiny or at registration |
+| `STATE` | The work of state A. Required ones gate **every** exit from A. | When A is entered | `scrutinise_case` on `scrutiny` |
+| `STANDALONE` | Opened by a module with `TaskService.open()`. Gates nothing. | When the module calls it | *Review application*, *Hand in envelope* |
 
-`move_case` and `dispatch`, in one `transaction.atomic()`:
+This is **design decision 1**: tasks attach to the transition, the target
+state, or the state. The reasons:
 
-1. `select_for_update()` the instance. `expected_version` given and different → `E08005`.
-2. Candidates: the transition with that key, or every `EVENT` transition for that event, ordered by `priority`.
-3. The first candidate that passes all checks fires: `from_state` matches (or `*`, #4.3); no open task lists it in `blocks_transitions`; `condition_config` passes; plugin `check_transition_condition` passes. With none, `move_case` raises the first failure (`E08001`–`E08003`); `dispatch` handles secondary stages (#3.2), then returns `None`. An event with no effect is normal.
-4. Plugin `before_transition`.
-5. Close the current visit; close its `STATE_EXIT` tasks still `OPEN` as `EXPIRED` with `STATE_EXITED`.
-6. Write the log; open the new visit; set `current_state`, `current_visit`, `version += 1`; write the status projection.
-7. Open the new state's templates (#7.1); run inline automatic handlers; enqueue the rest.
-8. Terminal state → `status = COMPLETED`, `completed_at`.
-9. Plugin `after_transition`.
-10. On commit: `state_exited`, `state_entered`, `stage_ended`, `stage_started`, `task_opened`, `task_closed`; then `attempt_automatic_transitions` once. Automatic chains are capped at 10 hops (`E08008`).
+* **Branching:** a transition task belongs to one path. Scrutiny → registration and scrutiny → cognizance can need different work.
+* **Merging:** an entry task is defined once even though many paths lead into B. Cognizance needs a case number however the case got there.
+* **Cycles:** tasks belong to a visit, not to a state, so every pass through a cycle gets its own tasks (#5.5). The definition never has to describe a round number.
+* **Work lists:** state tasks exist as soon as the case arrives, which is what puts a case on the scrutiny officer's list before any path is chosen (`SCR-09`). They are needed on every way out, so creating them on entry is still "only the work the case will need".
 
-#### 4.3 Wildcard transitions and sticky states
+#### 5.2 Path selection
 
-`from_state = "*"` matches any state that is not terminal, not sticky, not in
-`excluded_from_states`, and not the transition's own `to_state`.
+Tasks are created **only for the selected path** (design decision 2). The
+instance has at most one `selected_transition` at a time.
 
-This carries the case-lifecycle rule "*a hearing is scheduled with purpose =
-Arguments, and the case is not in Post-Judgement, Post-Disposal or Long Pending
-Register*" as one row. A sticky state is left only by a transition that names
-it as `from_state` explicitly — for example, the exit from the Long Pending
-Register.
+A path is selected in one of these ways:
 
-#### 4.4 Rules
+1. **On entry** to A, the engine looks at the outgoing `MANUAL` and `AUTO` transitions whose condition passes. If there is exactly one, it is selected. If there are several and exactly one is `is_default`, that one is selected. Otherwise nothing is selected and the case waits for a choice.
+2. **By request:** a transition request (#10.2, or `CaseWorkflowService.request`) selects that path, if it is allowed from A, its condition passes and the caller may request it.
+3. **By event:** `dispatch(event_key)` selects the highest-priority `EVENT` transition from A whose condition passes.
+4. **On re-evaluation:** if nothing is selected, `advance()` repeats rule 1, because a condition may have started to pass.
 
-1. A transition fires only from its `from_state` (or `*` as above).
-2. An open task that lists a transition in `blocks_transitions` blocks it.
-3. Nothing fires on a `PAUSED` or `COMPLETED` instance except an admin force.
-4. Every transition writes one log, one visit and the projection, or nothing.
-5. Signals are sent after commit only.
+When a path is selected, the engine creates the path's `TRANSITION` and
+`ENTRY` tasks that do not already exist live, or completed in this visit.
+Tasks with `depends_on` are created only when their dependencies complete.
 
-### 5. Conditions
+Selecting a **different** path cancels the live tasks that belonged only to
+the old path, with `closed_reason = PATH_CHANGED`. Tasks shared by both
+paths, such as `ENTRY` tasks when the target is the same, are kept. Completed
+tasks stay completed. If the case later returns to the old path **in the same
+visit**, a task completed in that visit still counts, and only the cancelled
+ones are created again.
 
-`condition_config` is a declarative tree. It performs no I/O; the engine and
-the plugin assemble its context first.
+Selecting a path is recorded on the instance (`selected_*`), increments
+`version`, and sends `path_selected`. It is **committed even if the request
+that caused it is then rejected** for incomplete tasks, because the point of
+the rejection is to hand the caller the tasks it now has to do (#5.3).
 
-```json
-{
-  "all": [
-    { "field": "event.registers_at_scrutiny", "op": "equals", "value": true },
-    { "field": "case.balance_due", "op": "lte", "value": 0 }
-  ]
-}
-```
+#### 5.3 Requesting a transition (A → B)
 
-Combinators `all`, `any`, `not`. Operators `equals`, `not_equals`, `in`,
-`not_in`, `is_null`, `is_not_null`, `gt`, `gte`, `lt`, `lte`.
+`Engine.request(case, *, to_state=None, transition_key=None, actor, trigger_type, context, expected_version)`
+runs these steps:
 
-| Prefix | Source |
-| --- | --- |
-| `case.<name>` | `plugin.case_context(case)` — a flat dict; the engine never reads case columns itself |
-| `event.<name>` | the `context` passed to `dispatch` or `move_case` |
-| `court_config.<key>` | configuration store, `config_set = "court.<COURT_CODE>"`, else `"court.default"` ([`0018`](0018-configuration-store.md)) |
-| `workflow.current_state`, `workflow.visits.<state_key>` | the instance; `visits.<state_key>` = how many times that state was entered |
-| `task.<task_key>.status` | the newest task of that key on the case |
+1. **Lock** the case row, then the instance (#10.5). If `expected_version` is given and does not match, raise `E08006`.
+2. **Check the instance is active.** If it is `SUSPENDED` or `COMPLETED`, raise `E08005`.
+3. **Resolve the transition.** Find the transitions from the current state (or wildcards) to `to_state`, or the one named by `transition_key`. With none, raise `E08002 TRANSITION_NOT_ALLOWED`, which names the current state and the allowed targets. If several match and no key was given, keep those whose condition passes. If more than one is still left, raise `E08007 AMBIGUOUS_TRANSITION` on `transition_key`.
+4. **Check the caller.** For an API request, a transition with `request_via = SERVICE` raises `E08008`. A caller who fails `requester_rule`, `required_permission` or the plugin's `can_request` gets `E08009`.
+5. **Check the condition** and the plugin's `check_transition`. If either fails, raise `E08004 CONDITION_NOT_MET`, naming the failing field.
+6. **Select the path** (#5.2) if it is not already selected, creating its tasks. Inline auto tasks run now (#6.6).
+7. **Evaluate the gate** (#5.4). If any required task is not complete, commit the selection and the new tasks, then raise `E08003 TASKS_INCOMPLETE` with **one error item per incomplete task** (#10.6).
+8. **Fire:**
+   1. Call the plugin's `before_transition`.
+   2. Close the current visit.
+   3. Cancel the live `STATE` tasks of A that have `cancel_on_exit`, and any live tasks of paths not taken, with `STATE_EXITED`.
+   4. Write the log with `satisfied_tasks`.
+   5. Open the new visit.
+   6. Set `current_state` and `current_visit`, clear the selection, increment `version`, and write the `Case.status` projection (#9.3).
+   7. Merge the request `context` keys declared in `attributes_schema` into `attributes`.
+   8. If B is terminal, set `COMPLETED`.
+   9. Call the plugin's `after_transition`.
+9. **Prepare the next step:** create the `STATE` tasks of B, using the **new task rule** (#5.5). Then auto-select a path out of B (#5.2, rule 1) and create its tasks. This is step 3 of the transition semantics: after entering B, the engine works out the possible next states and creates the tasks needed to move on.
+10. **On commit:** enqueue background auto tasks. Send `state_exited`, `state_entered`, `stage_*`, `path_selected` and `task_*`. Then run `advance()` once.
 
-An unknown prefix or field is a validation error when the transition is saved,
-never a runtime `False`.
+`move_case(case, transition_key, …)` is the service-side form of `request`
+and accepts `SERVICE` transitions. `dispatch(case, event_key, context)`
+performs steps 1, 2, 5 and 6 for the best `EVENT` candidate and fires it if
+the gate is complete. If no candidate matches, it applies secondary stages
+(#9.2) and returns `None`. An event with no effect is normal and is not an
+error.
 
-### 6. Case-type plugins
+#### 5.4 Gates and automatic firing
 
-```python
-class BaseCaseTypePlugin(ABC):
-    case_type: ClassVar[str]
+A gated task is **satisfied** when:
 
-    def case_context(self, case) -> dict: ...                         # "case." fields
-    def check_transition_condition(self, case, transition, context) -> bool: return True
-    def can_act(self, user, case, transition) -> bool: return True     # object-level check
-    def before_transition(self, case, transition, context) -> None: ...
-    def after_transition(self, case, transition, log, context) -> None: ...
-```
+* it has a `COMPLETED` instance in the current visit, for that path where the task belongs to a path; or
+* its definition has `on_repeat = REUSE_COMPLETED` and the case has a `COMPLETED` instance of the same `task_key` from any earlier visit of this instance; or
+* its definition has `on_repeat = TYPE_DECIDES` and the type's `is_reusable(previous_task, case)` returns `True` for the latest completed instance.
 
-Registered by the owning app from its `AppConfig.ready()`:
+A required task with `depends_on` that has not been created yet is **not
+satisfied**. It is reported with status `NOT_STARTED`.
 
-```python
-class CasesConfig(AppConfig):
-    name = "apps.cases"
+`Engine.advance(case)` runs after every task completion, path selection,
+transition and event, always in its own transaction with the locks:
 
-    def ready(self):
-        from apps.workflows.plugins import registry
-        from .workflow.plugin import ChequeBounceCasePlugin
+1. If nothing is selected, try automatic selection (#5.2, rule 1).
+2. Create any tasks whose dependencies are now complete.
+3. If the selected path is `AUTO`, or is an `EVENT` path already selected by its event, and its condition passes and its gate is satisfied, fire it (#5.3 step 8) with `trigger_type = AUTO` or `EVENT`.
+4. Repeat from step 1 for the new state, up to **10 hops**. After that, raise `E08015` and log an error. The cap is a safety net, and graph validation (#2.7) should prevent reaching it.
 
-        registry.register(ChequeBounceCasePlugin)
-```
+A `MANUAL` path never fires on its own. When its gate becomes complete, the
+`task_completed` signal and the status view (`ready: true`) tell the client it
+can now request the transition.
 
-`ChequeBounceCasePlugin.case_context` supplies:
+#### 5.5 Cycles: new tasks or reuse
 
-| Key | Meaning |
-| --- | --- |
-| `case.balance_due` | filing bill recalculated now, minus filing fees already paid ([`0017`](0017-orders-management.md) #6.5) (`LIFE-12`) |
-| `case.all_signed` | every required signatory has signed in the current round (`SIG-03`) |
-| `case.delay_applicable` | complaint filed (or refiled) more than one calendar month after the date of cause of action, evaluated against today (`JUR-11`, `REF-04`) |
-| `case.court_id` | the courtroom the Scrutiny officer chose; empty before Forward or Register (`SCR-16`) |
-| `case.accused_side_joined` | at least one user on the accused side has joined |
+Each entry into a state is a new visit, and **new task instances are created
+for it, as if the work were happening for the first time** (design decision
+3). Earlier instances stay, linked to their own visits, as history.
+`on_repeat` marks the exceptions:
 
-`can_act` enforces the e-filing scope predicates server-side (`ROLE-01`–`ROLE-08`),
-for example that a clerk cannot sign and that only the creator deletes a draft
-(`LIFE-14`).
-
-### 7. Tasks
-
-#### 7.1 State-bound tasks
-
-Entering a state opens one `CaseTask` per template on that state (skipping
-`first_visit_only` templates after the first visit), with `visit`, `template`,
-rendered `name` and `link`, `users` from the assignee rule (#7.3), and
-`due_date` = today + `due_in_days`.
-
-* `close_on = STATE_EXIT` — leaving the state expires it, if still open.
-* `close_on = EXPLICIT` — it stays open across stage changes until a module completes or expires it. *Take Cognizance* is explicit: the case can move to a later stage before cognizance is taken, and the task — not the stage — keeps it on the *Take cognizance* list (cognizance cheat sheet §3).
-
-#### 7.2 Module-opened tasks
-
-```text
-TaskService.open(*, case, task_key, users_rule, reference=None, due_date=None,
-                 context=None, court_id=None, side=None) -> CaseTask
-TaskService.complete(task, *, actor, payload=None) -> CaseTask
-TaskService.complete_for(*, task_key, reference, actor) -> CaseTask | None
-TaskService.expire(task, *, reason) -> CaseTask
-TaskService.expire_for(*, case=None, reference=None, reason) -> list[CaseTask]
-TaskService.reschedule(task, *, due_date) -> CaseTask
-TaskService.archive(task, *, actor) / restore(task, *, actor)
-```
-
-Modules open the tasks that are not a state change:
-
-| Module | Tasks | Closed by |
+| `on_repeat` | Behaviour on a later visit | Use for |
 | --- | --- | --- |
-| Applications | *Review application* (Application onboarder, due next working day), *Decide application* (due on the decision date), *File objection* (other party, due midnight before), *Pay* | onboarding or dismissal; the signed order; filing the objection; payment (`ALC-03`, `ALC-21`, `ALC-12`, `ALC-29`) |
-| Processes | *Pay process fee*, *Hand in envelope* (party directed to take steps) | payment; court staff recording receipt (`FEE-06`, `STP-01`, `STP-02`) |
-| Orders | *Mandatory submission*, *Pay cost*, *Witness batta* | submission; payment; party confirmation |
-| Join a case | *Pay vakalatnama fee* | payment |
+| `NEW` (default) | Create a new instance. | Signature (`LIFE-13`: everyone signs again), scrutiny, correction |
+| `REUSE_COMPLETED` | If an earlier visit completed this `task_key`, create nothing; the gate is satisfied and the status view shows `reused_from` that task. | `assign_case_number`: a case is never numbered twice |
+| `TYPE_DECIDES` | The task type's `is_reusable()` decides from the earlier instance and the case. | Types whose validity depends on data, e.g. a document check that holds while the document has not changed |
 
-Rules:
+A task type may declare a default `on_repeat`, and the definition may
+override it.
 
-* `open` is idempotent per `(task_key, reference)` while one is open (#2.10).
-* A module completes its own tasks. A user never completes a task directly through the engine API; they act in the module, and the module completes the task in the same transaction (`STP-02`: the party cannot close the envelope task).
-* Moving a decision date re-dates the task with `reschedule` (`ALC-15`); it is the same task.
-* A module expires its tasks when the thing they are about goes away: an application expiring (`ALC-30`), a process expiring (`EXP-02`).
-* Court-side process work is a list of processes by status, not a task (`SGN-02`); no task is opened for it.
+`PAYMENT` stays `NEW`. Each resubmission creates a new payment task, and the
+type completes it at once with `completion_mode = SYSTEM` when nothing more is
+due. That is how `LIFE-12` ("pay only the increase") works without separate
+states or priorities.
 
-#### 7.3 Users rules
+### 6. Task types, execution and assignment
 
-Resolved when the task opens:
-
-| Rule | Resolves to |
-| --- | --- |
-| `{"type": "court_role", "role": "SCRUTINY_OFFICER", "level": "ESTABLISHMENT"}` | holders of that role ([`court-roles.md`](court-roles.md)) at the case's court establishment, or (`"level": "COURTROOM"`) in its courtroom; sets `court_id` |
-| `{"type": "case_side", "side": "COMPLAINANT", "roles": ["ADVOCATE", "CLERK", "LITIGANT", "POA_HOLDER"]}` | users with those active roles on that side ([`0003`](0003-case-relationships.md)); sets `side` |
-| `{"type": "users", "user_ids": [...]}` | given users, e.g. the party directed to take steps |
-| `{"type": "case_creator"}` | `Case.created_by` |
-| `{"type": "none"}` | system tasks |
-
-Roles are held per courtroom, except Account approver, Scrutiny officer and
-Case registerer, which are held per court establishment (`court-roles.md`
-`RLE-02a`, `RLE-02c`). One account may hold several roles, and several people
-may hold the same role; any of them can act (`RLE-02`, `RLE-05`). Holders are
-read through `apps.organizations.selectors.role_holders(organization_id, role)`.
-
-`users` is a snapshot. When role assignments or case relationships change,
-`refresh_users(court_id=…)` / `refresh_users(case=…)` re-resolves open tasks.
-Someone removed from a case loses its tasks at once (e-filing §3).
-
-#### 7.4 Claiming
-
-A court-side task may be claimed by one of its users (`POST
-/tasks/{id}/claim/`). Claiming someone else's needs `take_over = true` and is
-logged. A claim is informational — it drives "with Biju B" and the *me /
-unassigned* filter — and never stops another user from acting.
-
-#### 7.5 Lists and visibility
-
-`GET /api/v1/tasks/` serves both sides from one query:
-
-| Visibility | Who sees it |
-| --- | --- |
-| `USERS_ONLY` | the task's `users` |
-| `SAME_SIDE` | every user with an active relationship on the task's `side` of the case |
-| `COURTROOM` | every staff account in the task's courtroom (`RLE-06`); before a courtroom is chosen, holders of the establishment's roles |
-
-Filters: `task` (repeatable key), `court`, `case`, `side`, `category`, `status`
-(default `OPEN`), `claimed` (`me`, `unassigned`, `anyone`), `overdue`,
-`due_before`, `reference_type`, `reference_id`; ordering `due_date`,
-`created_at`. The response carries `name`, `action_label`, `link`, `due_date`,
-`overdue`, `category`, `case` (summary from `apps.cases.selectors`, batched),
-`claimed_by`, `created_at`.
-
-`GET /api/v1/tasks/counts/?court=` returns open counts per `task_key` — the
-sidebar badges of the court screens (*Scrutinise submitted cases 6*, *Register
-cases 35*, *Take cognizance 24*, *Delay condonation 35* …).
-
-Domain lists with richer columns (the scrutiny list, the cognizance tabs) are
-served by their own modules on top of `selectors.open_tasks(...)`, so list
-membership still comes from tasks only.
-
-#### 7.6 Archive
-
-A user may archive an open task they can see and restore it later
-(`OPEN ↔ ARCHIVED`, pending tasks §3). Archive is the user putting it away; it
-does not complete the work. When the module later completes or expires an
-archived task, its status becomes `COMPLETED` or `EXPIRED` as usual.
-
-#### 7.7 Automatic tasks
+#### 6.1 Task type contract
 
 ```python
-class BaseTaskHandler(ABC):
-    inline: ClassVar[bool] = False
+class BaseTaskType(ABC):
+    key: ClassVar[str]                                     # "PAYMENT"
+    label: ClassVar[str]
+    execution_modes: ClassVar[frozenset[str]]              # {"MANUAL"}, {"AUTO"}, or both
+    api_completable: ClassVar[bool] = False                # may a user complete it via #10.3?
+    inline: ClassVar[bool] = False                         # AUTO: run inside the transition (#6.6)
+    default_on_repeat: ClassVar[str] = "NEW"
+    config_schema: ClassVar[dict] = {}                     # validates WorkflowTaskDefinition.config
+    completion_schema: ClassVar[dict] = {}                 # validates manual completion metadata
 
-    @abstractmethod
-    def execute(self, task: CaseTask, context: dict) -> TaskResult: ...
+    def on_open(self, task, ctx) -> TaskResult | None: ...       # e.g. raise a demand; may complete at once
+    def execute(self, task, ctx) -> TaskResult: ...              # AUTO only; no DB locks held
+    def validate_completion(self, task, actor, metadata) -> None: ...  # raise BusinessError to refuse
+    def on_cancel(self, task, ctx) -> None: ...                  # e.g. cancel the demand
+    def is_reusable(self, previous, case) -> bool: return False  # on_repeat = TYPE_DECIDES
 
 
 @dataclass(frozen=True)
 class TaskResult:
     status: Literal["COMPLETED", "FAILED"]
-    payload: dict = field(default_factory=dict)
+    result: dict = field(default_factory=dict)
+    error_code: str = ""          # machine-readable, e.g. "GATEWAY_TIMEOUT", "DEFECTS_FOUND"
     error_message: str = ""
+    retryable: bool = True        # False: do not auto-retry (manual retry still allowed if policy says so)
 ```
 
-Inline handlers run inside the transition's transaction. Others run in
-`tasks.execute_case_task(task_id)` (Dramatiq), enqueued on commit, idempotent
-(a task no longer `OPEN` returns at once), retried up to the template's
-`max_retries` (default 3) with backoff; then `attempt_automatic_transitions`.
+Types are registered with `task_types.registry.register(cls)` from the owning
+app's `ready()`. A new type therefore needs no migration: `task_type` is a
+string checked against the registry, like a plugin's `case_type`. A system
+check (`workflows.E002`) fails if any active definition uses a type that is
+not registered.
 
-### 8. Signals
+#### 6.2 Initial task types
 
-`apps.workflows.signals`, all sent on commit, with `case_id` and identifiers only:
+| Key | Owner | Modes | API-completable | Behaviour |
+| --- | --- | --- | --- | --- |
+| `GENERIC` | `apps.workflows` | MANUAL | yes | A person marks it done, with metadata validated by `completion_schema`. |
+| `ACKNOWLEDGEMENT` | `apps.workflows` | MANUAL | yes | Confirm-only. Metadata is an optional `remarks`. |
+| `CONDITION_CHECK` | `apps.workflows` | AUTO (inline) | no | Completes when `config.condition` (#7) passes, and is re-evaluated on `advance()`. It never fails; it stays pending. |
+| `SIGNATURE` | `apps.cases` (with `apps.esign`) | MANUAL | no | `assignees` = signatories still to sign. `record_signature` removes each signer and completes the task when the last one signs (0021 §8). |
+| `PAYMENT` | `apps.payments` (0017). Until it lands, a placeholder in `apps.cases`. | MANUAL | no (placeholder: yes, for staff) | `on_open` raises the demand for the balance due and completes at once if nothing is due. The payment confirmation completes the task. |
+| `CASE_NUMBER_ASSIGNMENT` | `apps.cases` | AUTO (inline) | no | Calls `register_case()` with `registration_type` from the selection context. The result is `{case_number, registered_at}`. Its default `on_repeat` is `REUSE_COMPLETED`. |
+| `SCRUTINY_COMPLETION` | `apps.scrutiny` (0024) | MANUAL | no | Completed by the scrutiny decision services in the same transaction as their `move_case`. |
+| `CORRECTION` | `apps.scrutiny` | MANUAL | no | Completed by corrections submit (0024 §5.3). |
+| `AUTOMATED_SCRUTINY` | `apps.scrutiny` | AUTO | no | Runs the `CHECKS` business rule (0024 §2.4, [`0019`](0019-business-rules.md)). `failure_condition` can turn blocking findings into a failure. |
 
-| Signal | Payload | Typical receiver |
+`api_completable = False` keeps the rule that a party cannot close work done
+in another module. For example, the party cannot close the envelope task
+(`STP-02`). That module completes the task through `TaskService.complete()`.
+
+#### 6.3 Manual completion
+
+`TaskService.complete(task, *, actor, metadata=None, result=None, via_api=False)`:
+
+1. Lock the case, the instance and the task.
+2. The task must be `PENDING` (`E08010`) and `MANUAL` (`E08011`). Through the API, the type must also be `api_completable` (`E08011`).
+3. The actor must be one of the task's assignees, or hold `workflows.complete_any_casetask` (`E08012`). Modules completing their own tasks may pass the system actor.
+4. Validate `metadata` against the type's schema and the definition's `completion_schema`, reporting errors on `metadata.<path>` (`E08013`). Then call `validate_completion`.
+5. Set `COMPLETED`, `completed_by`, `completed_at`, `completion_mode = MANUAL`, `metadata` and `result`. Apply `capture` to the instance attributes. Increment `version`.
+6. On commit, send `task_completed` and run `advance()` (#5.4).
+
+Archiving (`archived_at`) is a per-task flag that hides the task from list
+defaults, and it can be undone. It does not complete the task, and an
+archived task still gates.
+
+#### 6.4 Assignee rules
+
+These are resolved when the task is created. `assignees` is a snapshot.
+
+| Rule | Resolves to | `assignee_type` |
 | --- | --- | --- |
-| `state_entered` / `state_exited` | `state_key`, `visit_id`, `visit_number`, `log_id` | scrutiny opens a round on entering `scrutiny` or `registration` ([`0024`](0024-scrutiny.md)) |
-| `stage_started` / `stage_ended` | `stage_key`, primary or secondary | case-update events, notifications |
-| `task_opened` / `task_closed` | `task_id`, `task_key`, `status` | notifications |
+| `{"type": "court_role", "role": "SCRUTINY_OFFICER", "level": "ESTABLISHMENT" \| "COURTROOM"}` | Holders of the role at the case's establishment or courtroom ([`court-roles.md`](../PRDs/court-roles.md) `RLE-02a`, `RLE-02c`). Also sets `court_id`. | `COURT_ROLE` |
+| `{"type": "case_side", "side": "COMPLAINANT", "roles": ["ADVOCATE", "CLERK", "LITIGANT", "POA_HOLDER"]}` | Users with those active roles on that side, from `plugin.side_users()`. Also sets `side`. | `CASE_SIDE` |
+| `{"type": "signatories"}` | Signatories who have not yet signed, from `plugin.pending_signatories()` | `CASE_SIDE` |
+| `{"type": "case_creator"}` | `Case.created_by` | `CASE_CREATOR` |
+| `{"type": "users", "from": "context.user_ids"}` | Users named in the task context | `USERS` |
+| `{"type": "system"}` | Nobody. `AUTO` tasks only. | `SYSTEM` |
 
-Receivers read current facts back through selectors; they never trust a payload
-alone.
+The type of user responsible therefore depends on the definition, which is
+chosen by court + case type, so it can differ by court and by case type.
+`TaskService.refresh_assignees(case=… | court_id=…)` resolves live tasks again
+when roles or case relationships change. A user removed from a case loses its
+tasks immediately.
 
-### 9. APIs
+Court-role holders are read through
+`apps.organizations.selectors.role_holders(org_id, role)`. **That selector
+does not exist yet** (`court-roles.md`). Until it does, the selector returns
+`[]`. `court_id` is still set, so the task is visible to the court by
+`COURTROOM` visibility, and acting on it is checked by permission rather than
+by membership in `assignees`.
 
-Mounted under `/api/v1/`, tag `workflows`, `meta` envelope, standard error
-shape.
+#### 6.5 Requester rules
 
-#### 9.1 Definitions
+`WorkflowTransition.requester_rule` uses the same rule language. A caller may
+request the transition if they would be an assignee under the rule. The
+plugin's `can_request(user, case, transition)` adds object-level checks such as
+`LIFE-14` (only the creator deletes).
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET / POST | `/workflows/` | list (`case_type`, `is_active`), create a draft definition |
-| GET / PATCH | `/workflows/{id}/` | retrieve with states, transitions, secondary stages, task templates; edit while unlocked |
-| POST | `/workflows/{id}/clone/` | new unlocked version |
-| POST | `/workflows/{id}/activate/` | validate the graph, then activate |
-| GET / POST / PATCH / DELETE | `/workflows/{id}/states/` · `/transitions/` · `/secondary-stages/` · `/task-templates/` | children; refused when locked (`E08007`) |
-| GET / POST / PATCH | `/task-definitions/` | `TaskDefinition` catalogue |
+#### 6.6 Auto task execution and failure
 
-Activation validates: the initial state exists; every state is reachable; every
-non-terminal state has a way out; every `blocks_transitions` key exists; every
-condition field resolves; every event used by a transition or secondary stage
-is in the plugin's `known_events()`. Failures are `400 E08009` with the list.
+**Design decision 4:** a task type runs either inline or as a background
+job. Signals are used only for notification. In both cases **the case does
+not move until the task is `COMPLETED`**.
 
-Definitions are seeded by data migration from the case type's fixture and
-changed only by a system administrator with `workflows.change_workflowdefinition`.
+* **Inline types** (`inline = True`) run inside the transaction that created the task. They must be local and fast, such as case-number assignment or a condition check. If an inline task fails, the task is recorded as `FAILED`, the transition is rejected with that task listed, and the failure is committed together with the path selection.
+* **Background types** are enqueued on commit to the Dramatiq actor `workflows.tasks.execute_case_task(task_id)`, with `max_retries=0`, because the engine owns retries:
+  1. In a short transaction, lock the task. If it is not `PENDING`, or not `FAILED` with a retry due, return; this makes the actor idempotent. Set `IN_PROGRESS`, increment `attempt_count`, and open a `CaseTaskAttempt`.
+  2. Run `execute()` with **no database locks held**. It may call external systems.
+  3. In a new transaction, lock the case, the instance and the task. If the task is no longer `IN_PROGRESS` (cancelled, or the path changed), close the attempt as `DISCARDED` and stop. Otherwise apply the result. A `COMPLETED` result is still a failure if `failure_condition` passes against `result.*`.
+  4. On success: `COMPLETED`, `completion_mode = AUTO`, `capture` applied, then on commit `advance()`.
+  5. On failure: `FAILED`, with `last_error_*` set and the attempt closed. If `retryable`, `retry_policy.auto` and `attempt_count < max_attempts`, set `next_retry_at` from `backoff_seconds` and enqueue `send_with_options(delay=…)` on commit ([`0026`](0026-dramatiq-crontab.md) §5). Otherwise leave it `FAILED` with no `next_retry_at`.
+* **Manual retry:** `POST /cases/{case_id}/tasks/{task_id}/retry/` (#10.3) when `retry_policy.manual` is true, the task is `FAILED`, and the caller holds `workflows.retry_casetask` or is allowed by `retry_policy.retry_by` (a requester rule). It resets `next_retry_at` and enqueues immediately. Manual retries do not count against `max_attempts`.
+* **Timeouts and lost messages:** a cron, `@cron("*/5 * * * *") sweep_case_tasks` (no arguments, idempotent, `max_retries=0`, added to `apps/core/tests/test_schedules.py`), marks `IN_PROGRESS` tasks older than `timeout_seconds` as `FAILED` with `TIMED_OUT`, then applies the retry policy. It also re-enqueues `FAILED` tasks whose `next_retry_at` has passed. It runs on **at most 500 tasks per run**.
+* **Defaults:** `retry_policy = {"max_attempts": 3, "backoff_seconds": [60, 300, 900], "auto": true, "manual": true}`.
 
-#### 9.2 Case workflow
+A failed **required** auto task blocks its path. The case can still take
+another path whose conditions allow it, such as a send back, which cancels the
+failed task with `PATH_CHANGED`. An admin can also force the case (#10.7).
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/cases/{case_id}/workflow/` | state, stage, active secondary stages, manual transitions open to the caller, open tasks, `version` |
-| GET | `/cases/{case_id}/workflow/history/` | logs and visits, newest first |
-| GET | `/cases/{case_id}/workflow/stages/` | stage history (#3.4) |
-| POST | `/cases/{case_id}/workflow/force/` | admin move with `to_state` and `reason`; `workflows.force_caseworkflowinstance` |
-| POST | `/cases/{case_id}/workflow/re-evaluate/` | re-run automatic transitions; admin |
+### 7. Conditions
 
-There is **no generic endpoint to fire a transition.** Every manual move goes
-through the domain endpoint that owns it — filing, scrutiny, registration —
-because each needs its own payload and checks. The first draft's `POST
-/cases/{case_id}/workflow/transitions/{transition_key}/` and the task
-`complete` / `start` / `reset` endpoints are withdrawn.
+Conditions are declarative trees that perform no I/O. The format is the same
+as `apps.dristi_requests.conditions`, which is moved to
+`apps.core.conditions` and shared by both:
 
 ```json
-GET /api/v1/cases/{case_id}/workflow/
+{ "all": [
+    { "field": "context.registers_at_scrutiny", "op": "eq", "value": true },
+    { "field": "workflow.visits.scrutiny", "op": "gt", "value": 0 }
+] }
+```
+
+The combinators are `all`, `any` and `not`. The operators are `eq`, `ne`,
+`gt`, `gte`, `lt`, `lte`, `in`, `not_in`, `contains` and `exists`.
+
+| Prefix | Source |
+| --- | --- |
+| `case.<name>` | `plugin.case_context(case)`, a flat dict. The engine never reads case columns itself. |
+| `context.<name>` | The context passed with the request, event or selection |
+| `workflow.current_state`, `workflow.visits.<state_key>`, `workflow.attributes.<name>` | The instance |
+| `task.<task_key>.status`, `task.<task_key>.result.<path>` | The latest instance of that task on the case |
+| `result.<path>` | `failure_condition` only: the executor's result |
+| `court_config.<key>` | The configuration store, `court.<COURT_CODE>` falling back to `court.default` ([`0018`](0018-configuration-store.md)) |
+
+A decision that needs real logic, such as fee slabs, belongs in a
+[`0019`](0019-business-rules.md) rule that the plugin or a task type
+evaluates. It should not be built up from conditions.
+
+### 8. Case-type plugins
+
+```python
+class BaseCaseTypePlugin(ABC):
+    case_type: ClassVar[str]
+
+    def case_statuses(self) -> set[str]: ...                       # valid Case.status values
+    def known_events(self) -> set[str]: ...
+    def supported_assignee_rules(self) -> set[str]: ...
+    def case_context(self, case) -> dict: ...                      # "case." fields
+    def can_view(self, user, case) -> bool: ...                    # access to the case-scoped APIs
+    def can_request(self, user, case, transition) -> bool: return True
+    def check_transition(self, case, transition, context) -> str | None: return None  # failing field
+    def side_users(self, case, side, roles) -> list[UUID]: ...
+    def pending_signatories(self, case) -> list[UUID]: ...
+    def set_case_status(self, case, status) -> None: ...           # the only writer of Case.status
+    def before_transition(self, case, transition, context) -> None: ...
+    def after_transition(self, case, transition, log, context) -> None: ...
+```
+
+`apps.cases` registers `ChequeBounceCasePlugin` in `CasesConfig.ready()`.
+`can_view` reuses `filing.get_viewable_case()` and adds court staff of the
+case's court. `after_transition` sets `filed_at` when the case first enters
+`scrutiny`, as `submit_for_scrutiny` does today.
+
+### 9. Stages and status
+
+#### 9.1 Primary stages
+
+`WorkflowState.stage_key` maps states to the case-lifecycle primary stages.
+A stage starts when the case enters a state of that stage from a state of a
+different stage, and ends when the case leaves for a different stage. The
+engine sends `stage_started` and `stage_ended` on commit.
+`selectors.stage_history(case)` returns the stages from the visits, grouped
+by consecutive `stage_key`, with start, end and days spent.
+
+#### 9.2 Secondary stages
+
+These are unchanged from the previous revision. `dispatch()` starts a
+secondary stage whose `start_event` matches and whose `start_condition`
+passes, if it is not already active. It ends an active one whose `end_event`
+matches. Secondary stages never affect the primary stage.
+
+#### 9.3 `Case.status` projection
+
+`Case.status` stays because the filing APIs filter on it, but only the engine
+writes it, through `plugin.set_case_status()`, in the transaction that changes
+the state or the task status. The value is:
+
+1. the `case_status_while_pending` of the first live task, in `sequence` order, of the current visit that has one; otherwise
+2. the current state's `case_status`; otherwise
+3. unchanged.
+
+`cases.CaseStatus` gains three values: `PENDING_CORRECTION`,
+`PENDING_REGISTRATION` and `DELETED`. `JOINABLE_STATUSES` stays an allow-list
+(`REGISTERED`), so the new statuses are not joinable without any further
+change. A test checks that nothing outside `set_case_status` assigns
+`Case.status`, apart from the initial `DRAFT_IN_PROGRESS` default.
+
+### 10. APIs
+
+These are mounted under `/api/v1/`, tagged `workflows`, use the `meta`
+envelope and the standard error shape ([`0000`](0000-api-coding-spec.md)).
+They are **keyed only by case ID**. The court, the case type and the
+definition all come from the case's instance.
+
+There are **no definition endpoints**. Definitions are managed in the admin
+(#11.1) and seed files (#11.2).
+
+Access: a case the caller cannot see (`plugin.can_view`) returns
+`404 E00105`. A case with no instance yet, such as a draft, returns
+`404 E00105` on the workflow endpoints and an empty list on the task list.
+
+#### 10.1 Get workflow status
+
+`GET /cases/{case_id}/workflow/`
+
+```json
 {
-  "current_state": "scrutiny",
-  "stage": { "key": "scrutiny", "label": "Scrutiny" },
-  "secondary_stages": [],
+  "workflow": { "code": "CHEQUE_BOUNCE_DEFAULT", "version": 1, "name": "Cheque bounce — default — v1", "status": "ACTIVE" },
   "status": "ACTIVE",
-  "visit_number": 3,
-  "entered_at": "2026-08-03T10:12:00+05:30",
-  "available_transitions": [
-    { "transition_key": "send_back", "label": "Send back" },
-    { "transition_key": "forward", "label": "Forward for registration" }
+  "version": 14,
+  "current_state": {
+    "key": "e_filing", "label": "E-filing", "stage": { "key": "filing", "label": "Filing" },
+    "visit_number": 2, "entered_at": "2026-11-02T10:12:00+05:30"
+  },
+  "case_status": "PENDING_PAYMENT",
+  "attributes": {},
+  "state_tasks": [],
+  "transitions": [
+    {
+      "transition_key": "submit_to_scrutiny", "label": "Submit to scrutiny",
+      "to_state": { "key": "scrutiny", "label": "Under scrutiny" },
+      "trigger": "AUTO", "selected": true, "can_request": false, "ready": false,
+      "tasks": [
+        { "id": "7b1…", "task_key": "sign_filing", "name": "Sign the complaint", "task_type": "SIGNATURE",
+          "execution_mode": "MANUAL", "required": true, "attach_to": "TRANSITION", "status": "COMPLETED",
+          "assignee_type": "CASE_SIDE", "completed_at": "2026-11-02T11:40:00+05:30", "reused_from": null },
+        { "id": "9c4…", "task_key": "pay_filing_fee", "name": "Pay ₹120.00 — Case filing fee", "task_type": "PAYMENT",
+          "execution_mode": "MANUAL", "required": true, "attach_to": "TRANSITION", "status": "PENDING",
+          "assignee_type": "CASE_SIDE", "due_date": "2026-11-09", "overdue": false, "action_label": "Make Payment",
+          "link": "/citizen/payments/…" }
+      ]
+    },
+    {
+      "transition_key": "edit_correction", "label": "Edit filing",
+      "to_state": { "key": "pending_correction", "label": "Pending correction" },
+      "trigger": "MANUAL", "selected": false, "can_request": true, "ready": null,
+      "tasks": [
+        { "id": null, "task_key": "…", "status": "NOT_STARTED", "required": true, "…": "…" }
+      ]
+    }
   ],
-  "open_tasks": [
-    { "id": "…", "task_key": "scrutinise_case", "name": "Scrutinise Prateek Agrawal v. Deepak Choudhary",
-      "due_date": "2026-08-03", "overdue": false, "claimed_by": { "id": "…", "name": "Biju B" } }
+  "history": [
+    { "id": "…", "from_state": "pending_correction", "to_state": "e_filing", "transition_key": "resubmit",
+      "trigger_type": "MANUAL", "triggered_by": { "id": "…", "name": "Adv. R. Menon" },
+      "at": "2026-11-02T10:12:00+05:30", "reason": "" }
   ],
-  "version": 9,
-  "meta": { "...": "standard envelope" }
+  "secondary_stages": [],
+  "meta": { "…": "standard envelope" }
 }
 ```
 
-`available_transitions` lists only manual transitions the caller could fire
-now: state, blocking tasks, condition, permission and `can_act` all pass.
+* `transitions` lists the transitions allowed from the current state whose condition currently passes. Each one shows the **complete and incomplete tasks** of its gate (#5.1). A task on a path that has not been selected appears as `NOT_STARTED` with `id: null`, as a preview from the definition.
+* `can_request` means the caller passes `request_via`, the requester rule, the permission and `can_request`. `ready` means the gate is complete (`null` while the path is not selected).
+* `history` holds the 20 most recent transitions, newest first. The full list is paginated at `GET /cases/{case_id}/workflow/history/`, which includes visits.
+* `GET /cases/{case_id}/workflow/stages/` returns the stage history (#9.1).
 
-#### 9.3 Tasks
+#### 10.2 Request a transition
+
+`POST /cases/{case_id}/workflow/transitions/`, with an optional `If-Match: <version>` header
+
+```json
+{ "to_state": "pending_correction", "transition_key": null, "context": {}, "reason": "" }
+```
+
+* `to_state` is required. `transition_key` is needed only to choose between several transitions A → B (`E08007`). `context` is validated against the plugin's `request_context_schema(transition)`.
+* **200** returns the new status, in the same body as #10.1. If `advance()` moved the case on further, the body shows the final state.
+* **409 `E08003`**: the transition is not ready. The path is now selected and its tasks exist. There is one error item per incomplete required task:
+
+```json
+{
+  "errors": [
+    { "code": "E08003", "message": "Sign the complaint is pending (complainant side).", "field": "tasks.sign_filing" },
+    { "code": "E08003", "message": "Pay case filing fee has not started; it follows Sign the complaint.", "field": "tasks.pay_filing_fee" }
+  ],
+  "meta": { "…": "…" }
+}
+```
+
+  `field` is `tasks.<task_key>`. Task keys are unique within a workflow, so this identifies the gate entry, including tasks with no instance yet. The client gets the task IDs from #10.1. *This uses `field` to name an entity related to the request rather than a body field. [`0000`](0000-api-coding-spec.md) §9.1 gains a sentence allowing this for `E08003`, in the same PR.*
+* Other errors: `E08002`, `E08004`, `E08005`, `E08006` (412), `E08007`, `E08008`, `E08009`.
+* The automated form of a transition is the service call (`move_case`, `dispatch`) or an `AUTO` trigger. The API always records `trigger_type = MANUAL` and `triggered_by` = the caller.
+
+#### 10.3 Tasks for a case
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/tasks/` | #7.5 |
-| GET | `/tasks/counts/` | #7.5 |
-| POST | `/tasks/{id}/claim/` | #7.4 |
-| POST | `/tasks/{id}/archive/` · `/restore/` | #7.6 |
-| POST | `/tasks/{id}/retry/` | retry a `FAILED` automatic task; admin |
+| GET | `/cases/{case_id}/tasks/` | List the case's tasks |
+| GET | `/cases/{case_id}/tasks/{task_id}/` | One task, with its attempts |
+| POST | `/cases/{case_id}/tasks/{task_id}/complete/` | Complete a manual task: `{"metadata": {…}}`, optional `If-Match`. Returns the task and the updated `workflow_version`. |
+| POST | `/cases/{case_id}/tasks/{task_id}/retry/` | Retry a failed auto task (#6.6) |
 
-#### 9.4 Concurrency and permissions
+List filters:
 
-* `move_case` and `dispatch` lock the instance. Domain endpoints that move a case accept `If-Match: <version>`; a mismatch is `412 E08005`, so two officers deciding the same file cannot both succeed.
-* Definitions: model permissions, system administrators.
-* Case workflow and stage reads: anyone who can see the case — filing parties per the e-filing scope predicates, court staff of the case's court.
-* A manual transition needs `required_permission` and the plugin's `can_act`.
-* A case or task the caller cannot see is `404 E00105`.
+* `status` (repeatable): `PENDING`, `IN_PROGRESS`, `FAILED`, `COMPLETED`, `CANCELLED`
+* the shorthands `state=open` (live tasks; the default), `state=closed` and `state=all`
+* `task_key` (repeatable), `task_type`, `execution_mode`, `assignee_type`
+* `assigned_to_me=true`, `overdue=true`, `required=true`
+* `visit=current|all` (default `all`), `transition`, `include_archived` (default `false`)
 
-#### 9.5 Error codes
+Ordering is by `created_at` (default), `due_date` or `sequence`. The list is
+paginated.
 
-Domain prefix `08` in `apps.api.errors.DOMAINS`, recorded in
-[`0000`](0000-api-coding-spec.md) #9.2 (reserved).
+Complete errors: `E08010`, `E08011`, `E08012`, `E08013`, and `E08006` (412).
+Retry errors: `E08010` (not `FAILED`), `E08014`.
+
+#### 10.4 Cross-case task inbox
+
+This is kept from the previous revision so the court and citizen work lists
+use the same store. `GET /tasks/` returns live tasks visible to the caller by
+`visibility`, with filters `task_key`, `court`, `side`, `category`,
+`claimed=me|unassigned|anyone`, `overdue` and `due_before`.
+`GET /tasks/counts/?court=` returns live counts per `task_key`.
+`POST /tasks/{id}/claim/` (with `take_over` to take a task claimed by someone
+else) and `POST /tasks/{id}/archive/` / `restore/` are also available. A claim
+is informational and never stops another assignee from acting.
+
+#### 10.5 Concurrency
+
+* Every write — request, dispatch, advance, complete, retry, executor result, admin force — runs in `transaction.atomic()`. It locks rows **in a fixed order: case row → instance → task rows**. The case row is locked first because the engine writes `Case.status`, and because `apps.cases` already locks the case (`lock_case`) before calling in. Any other order could deadlock against it.
+* Two simultaneous requests on one case are therefore serialised. The second one sees the new state and fails `E08002`, or succeeds if it is still valid. Clients that must not act on stale data send `If-Match: <version>` and get `412 E08006`.
+* Executors never hold locks while they run (#6.6). Their results are applied under the locks, after checking that the task is still `IN_PROGRESS`.
+* The partial unique constraints on `CaseTask` and `CaseWorkflowVisit` are a database-level backstop against duplicate tasks or two open visits.
+
+#### 10.6 Error codes
+
+Domain `08` is already allocated in [`0000`](0000-api-coding-spec.md) §9.2.
+None of these codes has been released, so this list replaces the one in the
+previous revision.
 
 | Code | Name | Status | Raised when |
 | --- | --- | --- | --- |
-| `E08001` | `TRANSITION_NOT_AVAILABLE` | 409 | not from the current state; carries `current_state` |
-| `E08002` | `TRANSITION_BLOCKED` | 409 | an open task blocks it; carries `blocked_by` |
-| `E08003` | `CONDITION_NOT_MET` | 409 | condition or plugin check failed; carries the failing field |
-| `E08004` | `WORKFLOW_NOT_ACTIVE` | 409 | instance paused or completed |
-| `E08005` | `WORKFLOW_STALE` | 412 | `If-Match` mismatch |
-| `E08006` | `NO_ACTIVE_DEFINITION` | 500 | a case type has no active definition (also a system check) |
-| `E08007` | `DEFINITION_LOCKED` | 409 | editing a locked definition |
-| `E08008` | `AUTOMATIC_CHAIN_TOO_LONG` | 500 | more than 10 automatic hops |
-| `E08009` | `DEFINITION_INVALID` | 400 | activation validation failed |
-| `E08010` | `NOT_TASK_USER` | 403 | claiming a task the caller is not a user of |
-| `E08011` | `TASK_NOT_OPEN` | 409 | claiming, archiving or completing a task that is not open (restore: not archived) |
+| `E08001` | `NO_ACTIVE_DEFINITION` | 409 | E-filing a case whose court + case type has no active definition |
+| `E08002` | `TRANSITION_NOT_ALLOWED` | 409 | No transition leads from the current state to the target. The message names the current state and the allowed targets. |
+| `E08003` | `TASKS_INCOMPLETE` | 409 | The gate is incomplete. One item per task, `field = tasks.<task_key>`. |
+| `E08004` | `CONDITION_NOT_MET` | 409 | The condition or the plugin check failed. The failing field is named. |
+| `E08005` | `WORKFLOW_NOT_ACTIVE` | 409 | The instance is suspended or completed |
+| `E08006` | `WORKFLOW_STALE` | 412 | `If-Match` does not match `version` |
+| `E08007` | `AMBIGUOUS_TRANSITION` | 400 | Several transitions lead to the target. `field = transition_key`. |
+| `E08008` | `TRANSITION_NOT_REQUESTABLE` | 409 | A `request_via = SERVICE` transition requested through the API |
+| `E08009` | `NOT_ALLOWED_TO_REQUEST` | 403 | The caller fails the requester rule, permission or plugin check |
+| `E08010` | `TASK_NOT_PENDING` | 409 | Completing a task that is not `PENDING`, or retrying one that is not `FAILED` |
+| `E08011` | `TASK_NOT_COMPLETABLE` | 409 | Completing an auto task, or a type completed only by its module |
+| `E08012` | `NOT_TASK_ASSIGNEE` | 403 | The caller is not an assignee and lacks the override permission |
+| `E08013` | `TASK_METADATA_INVALID` | 400 | The metadata fails its schema. `field = metadata.<path>`. |
+| `E08014` | `TASK_NOT_RETRYABLE` | 409 | Manual retry is not allowed by the policy |
+| `E08015` | `AUTOMATIC_CHAIN_TOO_LONG` | 500 | More than 10 automatic hops |
+| `E08016` | `WORKFLOW_ALREADY_STARTED` | 409 | Starting a workflow for a case that already has one |
 
-### 10. The §138 workflow
+Endpoints declare these codes with `error_responses(...)`. Tests assert the
+`code` and `field`, never the message.
 
-`apps/cases/workflow/fixtures/cheque_bounce_v1.json`, `case_type =
-CHEQUE_BOUNCE`, version 1, `initial_state = draft`.
+#### 10.7 Admin operations on instances
 
-#### 10.1 States
+Admin only, with model permissions:
 
-| `state_key` | Stage | `case_status` | Sticky | Tasks opened on entry |
-| --- | --- | --- | --- | --- |
-| `draft` | Filing | `DRAFT_IN_PROGRESS` | | — |
-| `pending_signature` | Filing | `PENDING_SIGN` | | `sign_case` (citizen, `SIGN`) — one task whose `users` are the required signatories who have not yet signed; `apps.cases` removes a signatory from `users` when they sign, and the task completes when the last one does |
-| `pending_payment` | Filing | `PENDING_PAYMENT` | | `pay_filing_fee` (citizen, `PAY`, filer's side) |
-| `scrutiny` | Scrutiny | `UNDER_SCRUTINY` | | `scrutinise_case` (court, `SCRUTINY_OFFICER` at the establishment, +0) |
-| `pending_correction` | Defect Correction | `PENDING_CORRECTION` | | `correct_defects` (citizen, `FILE_SUBMIT`, filer's side) |
-| `registration` | Registration | `PENDING_REGISTRATION` | | `register_case` (court, `CASE_REGISTERER` at the establishment, +0) |
-| `cognizance` | Cognizance | `REGISTERED` | | `take_cognizance` (court, the chosen courtroom; the role is set by the cognizance PRD's pending-task row, **explicit**) |
-| `appearance` | Appearance | `REGISTERED` | | — |
-| `bail_and_plea` | Bail & Recording of Plea | `REGISTERED` | | — |
-| `complainant_evidence` | Complainant Evidence | `REGISTERED` | | — |
-| `examination_of_accused` | Examination of Accused | `REGISTERED` | | — |
-| `defence_evidence` | Defence Evidence | `REGISTERED` | | — |
-| `arguments` | Arguments | `REGISTERED` | | — |
-| `mediation` | Mediation | `REGISTERED` | | — |
-| `judgement` | Judgement | `REGISTERED` | | — |
-| `post_judgement` | Post-Judgement | `REGISTERED` | yes | — |
-| `post_disposal` | Post-Disposal | `REGISTERED` | yes | — |
-| `long_pending_register` | Long Pending Register | `REGISTERED` | yes | — |
-| `deleted` | Filing | `DELETED` | terminal | — |
+* `force` (`workflows.force_caseworkflowinstance`): move to any state, with a reason. It writes an `ADMIN` log, cancels live tasks with `ADMIN`, and opens the target's tasks as for a normal entry.
+* `suspend` / `resume`
+* `re-evaluate`: runs `advance()`
+* `retry task`
 
-#### 10.2 Transitions up to cognizance
+There are no frontend APIs for these.
 
-| `transition_key` | From → To | Trigger | Condition / notes |
-| --- | --- | --- | --- |
-| `submit_for_signing` | `draft` → `pending_signature` | manual (filer) | filing validation passes ([`0021`](0021-case-filing-api.md) §6.3) |
-| `edit_during_signing` | `pending_signature` → `draft` | manual (filer) | `workflow.visits.scrutiny = 0`; invalidates every signature (`LIFE-13`) |
-| `edit_during_resigning` | `pending_signature` → `pending_correction` | manual (filer) | `workflow.visits.scrutiny > 0` — going back to edit during a correction round returns to correction, never to draft, and keeps the correction scope |
-| `signed_pay` | `pending_signature` → `pending_payment` | event `ALL_SIGNED`, priority 10 | `case.balance_due > 0` |
-| `signed_resubmit` | `pending_signature` → `scrutiny` | event `ALL_SIGNED`, priority 20 | `case.balance_due <= 0` and `workflow.visits.scrutiny > 0` (`LIFE-12`) |
-| `paid` | `pending_payment` → `scrutiny` | event `PAYMENT_COMPLETED` | |
-| `delete_draft_*` | `draft`, `pending_signature`, `pending_payment` → `deleted` | manual | creator only; `workflow.visits.scrutiny = 0` (`LIFE-14`) |
-| `send_back` | `scrutiny` → `pending_correction` | manual | [`0024`](0024-scrutiny.md) |
-| `forward` | `scrutiny` → `registration` | manual (Scrutiny officer) | `event.registers_at_scrutiny = false` |
-| `register_at_scrutiny` | `scrutiny` → `cognizance` | manual (Scrutiny officer + Case registerer) | `event.registers_at_scrutiny = true` |
-| `submit_correction` | `pending_correction` → `pending_signature` | manual (filer) | [`0024`](0024-scrutiny.md) |
-| `registration_send_back` | `registration` → `pending_correction` | manual (Case registerer) | |
-| `register` | `registration` → `cognizance` | manual (Case registerer) | |
+### 11. Managing definitions
 
-A first filing always has `balance_due > 0`, so it always passes through
-payment. A resubmission after correction goes through payment only for the
-balance.
+#### 11.1 Django admin
 
-Whether a case is registered at Scrutiny follows from the roles the person
-holds, not from a setting: someone holding both Scrutiny officer and Case
-registerer registers there; anyone else forwards (`SCR-11`). The scrutiny
-module checks the roles and passes `registers_at_scrutiny` in the `context` of
-`move_case` ([`0024`](0024-scrutiny.md) #4.4); the workflow enforces it as a
-condition and never reads it from configuration. A manual move without the key
-in `context` fails its condition (`E08003`).
+* `WorkflowDefinition` admin has inlines for states, transitions, task definitions and secondary stages. They are editable while the definition is `DRAFT` and read-only otherwise.
+* Admin actions are guarded by permissions:
+  * **Validate** runs #2.7 and shows every problem.
+  * **Activate** (`workflows.activate_workflowdefinition`) validates and then activates, retiring the previous version for the same court + case type.
+  * **Retire** stops new cases from using a definition. Running cases are unaffected. Retiring the only active default needs confirmation, because e-filing for that case type will be refused (`E08001`).
+  * **Clone as new version** copies every child into a `DRAFT` with `version + 1`, or into a new `code` for another court.
+  * **Export** downloads the seed document (#11.2).
+* The admin for instances, visits, logs, tasks and attempts is read-only, apart from the #10.7 actions.
+* The definition tables go into `CACHALOT_ONLY_CACHABLE_TABLES` ([`0012`](0012-redis-caching.md)), because they change only through these actions. Runtime tables are not cached.
 
-#### 10.3 Transitions after cognizance
+#### 11.2 Seed format
 
-All `EVENT` unless stated. In this table `*` is a wildcard whose
-`excluded_from_states` lists every state before `cognizance` (`draft`,
-`pending_signature`, `pending_payment`, `scrutiny`, `pending_correction`,
-`registration`) and the sticky states are skipped by #4.3. A stage-moving event
-therefore never touches a case that is not yet registered.
+There is one TOML (or JSON) document per definition version. It uses natural
+keys only, so it can be reviewed, diffed and kept in the external data
+repository with the other seeds ([`0025`](0025-data-seeding-command.md)).
 
-| Event | From → To | Dispatched by |
-| --- | --- | --- |
-| `COGNIZANCE_TAKEN` | `cognizance` → `appearance` | orders: *Cognizance* order item signed |
-| `ACCUSED_SIDE_JOINED` | `appearance` → `bail_and_plea` | join a case: the first user on the accused side joins |
-| *(automatic)* `case.accused_side_joined` | `appearance` → `bail_and_plea` | engine, on entering `appearance` — covers an accused who joined before cognizance was taken |
-| `HEARING_SCHEDULED`, `event.purpose_code = EVIDENCE_OF_COMPLAINANT` | `*` → `complainant_evidence` | hearings ([`0023`](0023-hearings.md) #7.5, through `apps.cases`) |
-| `HEARING_SCHEDULED`, `EXAMINATION_OF_ACCUSED` | `*` → `examination_of_accused` | hearings |
-| `HEARING_SCHEDULED`, `EVIDENCE_OF_ACCUSED` | `*` → `defence_evidence` | hearings |
-| `HEARING_SCHEDULED`, `ARGUMENTS` | `*` → `arguments` | hearings |
-| `HEARING_SCHEDULED`, `JUDGEMENT` | `*` → `judgement` | hearings |
-| `MEDIATION_ORDERED` | `*` → `mediation` | orders: *Referral of case to ADR* signed |
-| `JUDGEMENT_PASSED` | `*` → `post_judgement` | orders: *Judgement* signed |
-| `CASE_DISPOSED` | `*` → `post_disposal` | orders: dismissal, withdrawal, settlement, transfer, abatement signed |
-| `MOVED_TO_LPR` | `*` → `long_pending_register` | orders: *Moving case to long pending register* signed |
-| `CASE_DISPOSED` | `post_judgement` → `post_disposal` | explicit row; sticky states are left only by name |
-| `CASE_DISPOSED` | `long_pending_register` → `post_disposal` | explicit row; a case on the LPR can still be disposed of |
-| `MOVED_OUT_OF_LPR` | `long_pending_register` → *open* | orders; target stage unresolved (case lifecycle `OQ-1`) |
+```toml
+[workflow]
+code = "CHEQUE_BOUNCE_DEFAULT"
+version = 1
+name = "Cheque bounce — default — v1"
+case_type = "CHEQUE_BOUNCE"
+court = ""                      # Organization.code; empty = default for all courts
+initial_state = "e_filing"
+activate = true
 
-The cognizance screen's *Dismiss case* goes through an order like every other
-disposal.
+[[states]]
+key = "e_filing"
+label = "E-filing"
+stage = "filing"
+stage_label = "Filing"
+case_status = "PENDING_SIGN"
 
-`take_cognizance` is completed by the orders module when an order carrying
-*Cognizance* or *Dismiss case* is signed (cognizance cheat sheet §6). *Issue
-notice* leaves it open.
+[[states]]
+key = "scrutiny"
+label = "Under scrutiny"
+stage = "scrutiny"
+stage_label = "Scrutiny"
+case_status = "UNDER_SCRUTINY"
 
-#### 10.4 Secondary stages
+[[transitions]]
+key = "submit_to_scrutiny"
+label = "Submit to scrutiny"
+from = "e_filing"
+to = "scrutiny"
+trigger = "AUTO"
+is_default = true
 
-| `stage_key` | Start event (condition) | End event | Dispatched by |
-| --- | --- | --- | --- |
-| `delay_condonation` | `CASE_REGISTERED` (`case.delay_applicable`) | `DCA_DECIDED` | cases on registration; applications on accept or reject |
-| `notice` | `NOTICE_TRIGGERED` | `ALL_NOTICES_TERMINAL` | processes |
-| `summons` | `SUMMONS_TRIGGERED` | `ALL_SUMMONS_TERMINAL` | processes |
-| `warrant` | `WARRANT_TRIGGERED` | `ALL_WARRANTS_TERMINAL` | processes |
-| `proclamation` | `PROCLAMATION_TRIGGERED` | `ALL_PROCLAMATIONS_TERMINAL` | processes |
-| `attachment` | `ATTACHMENT_TRIGGERED` | `ALL_ATTACHMENTS_TERMINAL` | processes |
+[[tasks]]
+key = "sign_filing"
+type = "SIGNATURE"
+mode = "MANUAL"
+attach_to = "TRANSITION"
+transition = "submit_to_scrutiny"
+assignee = { type = "signatories" }
+name = "Sign the complaint"
+action_label = "Sign"
+side = "CITIZEN"
+category = "SIGN"
+visibility = "SAME_SIDE"
+case_status_while_pending = "PENDING_SIGN"
 
-`CASE_REGISTERED` is dispatched by `apps.cases.services.register_case` when it
-assigns the case number. A DCA that is never decided leaves the case in Delay
-Condonation indefinitely; that is accepted (case lifecycle §4, row 1).
-
-#### 10.5 Diagram up to cognizance
-
-```mermaid
-stateDiagram-v2
-    [*] --> draft
-    draft --> pending_signature: submit_for_signing
-    pending_signature --> draft: edit_during_signing [first filing]
-    pending_signature --> pending_correction: edit_during_resigning [correction round]
-    pending_signature --> pending_payment: ALL_SIGNED [balance_due > 0]
-    pending_signature --> scrutiny: ALL_SIGNED [resubmission, nothing due]
-    pending_payment --> scrutiny: PAYMENT_COMPLETED
-    scrutiny --> pending_correction: send_back
-    pending_correction --> pending_signature: submit_correction
-    scrutiny --> registration: forward [Scrutiny officer only]
-    scrutiny --> cognizance: register_at_scrutiny [both roles]
-    registration --> cognizance: register
-    registration --> pending_correction: registration_send_back
-    draft --> deleted: delete_draft
-    pending_signature --> deleted: delete_draft
-    pending_payment --> deleted: delete_draft
-    cognizance --> appearance: COGNIZANCE_TAKEN
-    deleted --> [*]
+[[tasks]]
+key = "pay_filing_fee"
+type = "PAYMENT"
+mode = "MANUAL"
+attach_to = "TRANSITION"
+transition = "submit_to_scrutiny"
+depends_on = ["sign_filing"]
+assignee = { type = "case_side", side = "COMPLAINANT", roles = ["ADVOCATE", "CLERK", "LITIGANT", "POA_HOLDER"] }
+config = { fee_head = "CASE_FILING" }
+name = "Pay ₹{amount} — Case filing fee"
+action_label = "Make Payment"
+side = "CITIZEN"
+category = "PAY"
+visibility = "SAME_SIDE"
+due_in_days = 7
+case_status_while_pending = "PENDING_PAYMENT"
 ```
 
-### 11. Cross-cutting
+Commands:
 
-#### 11.1 Configuration and jurisdiction differences
+```bash
+python manage.py load_workflow path/to/cheque_bounce_default_v1.toml [--check] [--dry-run] [--activate]
+python manage.py export_workflow CHEQUE_BOUNCE_DEFAULT --version 1 > out.toml
+```
 
-The §138 definition reads no configuration-store keys. What differs by state
-— who holds which court role, registration types, whether an oath is required
-— is decided outside the workflow: role assignment (`court-roles.md` §3) and
-per-state configuration owned by the domain modules ([`0024`](0024-scrutiny.md)
-#2). Where it affects a move, it reaches the workflow as `event.*` context. One
-definition therefore serves every state; the workflow stays the enforcer, not
-the policy.
+* **Insert-only**, as in 0025: if `code + version` already exists with identical content, it is skipped; with different content, it is an error. A change is always a new version.
+* The whole document loads in one transaction, through `full_clean()` on every row, followed by #2.7 when activating. `--dry-run` rolls back at the end.
+* `court` is resolved by `Organization.code`. An unknown code is an error.
+* `export_workflow` followed by `load_workflow` reproduces the same definition. A test checks this round trip.
+* The §138 default (#12) ships in `apps/cases/workflow/seeds/cheque_bounce_default_v1.toml` and is loaded by a data migration, so every environment, including tests, has an active default.
 
-The `court_config.` condition prefix (#5) remains available for a future
-setting that is truly a plain value, not a decision.
+### 12. The §138 default workflow (`CHEQUE_BOUNCE_DEFAULT` v1)
 
-#### 11.2 Audit
+#### 12.1 E-filing
 
-* Logs, visits and secondary-stage rows are append-only.
-* Definitions carry `BaseAuditableModel` history.
-* `CaseTask` changes are recorded through `BaseAuditableModel`, so who claimed, archived or re-dated a task is kept.
+The workflow starts when the case is **e-filed**. That is when the filer
+submits a complete draft: the existing
+`POST /cases/{case_id}/submit-for-signing` (0021 §7). `apps.cases` then:
 
-#### 11.3 Caching
+1. runs the completeness check, which now also requires `court` (new rule `court_id` → `E00002`);
+2. calls `CaseWorkflowService.start(case, actor)`. This resolves the definition (#3), creates the instance and the first visit in `initial_state`, creates its state tasks, and auto-selects a path;
 
-Definition tables are added to `CACHALOT_ONLY_CACHABLE_TABLES`
-([`0012`](0012-redis-caching.md)); they change only on activation. Instances,
-visits, secondary stages, tasks and logs are not cached.
+all in one transaction. Drafts before e-filing have no instance.
+`DRAFT_IN_PROGRESS` and draft deletion stay with `apps.cases`.
 
-### 12. Testing
+#### 12.2 States
 
-* **Engine:** start in the case-creation transaction; manual, event and automatic triggers; event priority; wildcard with exclusions, sticky states and never to itself; blocking task (`E08002`); condition failure names the field (`E08003`); paused instance (`E08004`); `If-Match` (`E08005`); automatic chain cap (`E08008`).
-* **Visits:** three scrutiny rounds give three visits with `visit_number` 1–3; every transition writes one log, one visit and the projection, or nothing on rollback.
-* **Stages:** primary stage starts and ends only across stage boundaries; secondary stages start on event and condition, end on event, never duplicate, never touch the primary stage; stage history and durations.
-* **Projection:** `Case.status` after every transition; no other writer.
-* **Definitions:** locked after first instance; clone, edit, activate; activation validation; one active per case type.
-* **Tasks:** state-bound open on entry and expire on exit; explicit tasks survive stage changes; module tasks idempotent per reference; complete, expire, reschedule; archive and restore; overdue derived, never stored; users from each rule, refreshed on staff and relationship changes; removed users lose tasks; claim and take over; visibility per value; counts per key; batched case summaries.
-* **§138 definition:** first filing passes payment; resubmission with a higher bill pays, with an equal or lower bill skips; `PAYMENT_COMPLETED` outside `pending_payment` does nothing; deletion only before first scrutiny and only by the creator; `event.registers_at_scrutiny` both ways and missing (`E08003`); hearing-purpose stage moves skip sticky states; `take_cognizance` stays open when the case moves on before cognizance.
+| State | Stage | `case_status` | Notes |
+| --- | --- | --- | --- |
+| `draft` | Filing | `DRAFT_IN_PROGRESS` | Re-editing after e-filing, first filing only (`LIFE-13`) |
+| `e_filing` | Filing | `PENDING_SIGN` | Tasks override the status: `PENDING_SIGN` while signing, then `PENDING_PAYMENT` |
+| `scrutiny` | Scrutiny | `UNDER_SCRUTINY` | |
+| `pending_correction` | Defect Correction | `PENDING_CORRECTION` | |
+| `registration` | Registration | `PENDING_REGISTRATION` | |
+| `cognizance` | Cognizance | `REGISTERED` | |
+| `appearance` … `judgement` | as in case lifecycle §3 | `REGISTERED` | `appearance`, `bail_and_plea`, `complainant_evidence`, `examination_of_accused`, `defence_evidence`, `arguments`, `mediation`, `judgement` |
+| `post_judgement`, `post_disposal`, `long_pending_register` | | `REGISTERED` | sticky |
+| `deleted` | Filing | `DELETED` | terminal |
+
+#### 12.3 Transitions and tasks up to cognizance
+
+| Transition | From → To | Trigger / via | Condition | Gate (✱ = required) |
+| --- | --- | --- | --- | --- |
+| `submit_to_scrutiny` | `e_filing → scrutiny` | AUTO, default | | TRANSITION: ✱`sign_filing` (SIGNATURE, signatories), ✱`pay_filing_fee` (PAYMENT, complainant side, `depends_on: sign_filing`) |
+| `edit_filing` | `e_filing → draft` | MANUAL, ANY, `case_side` filing side | `workflow.visits.scrutiny = 0` | — |
+| `edit_correction` | `e_filing → pending_correction` | MANUAL, ANY, filing side | `workflow.visits.scrutiny > 0` | — |
+| `refile` | `draft → e_filing` | MANUAL, SERVICE (cases submit, after the completeness check) | | — |
+| `delete_filing`, `delete_draft` | `e_filing`, `draft → deleted` | MANUAL, ANY, `case_creator` | `workflow.visits.scrutiny = 0` (`LIFE-14`) | — |
+| `send_back` | `scrutiny → pending_correction` | MANUAL, SERVICE (0024 §4.3) | | STATE of `scrutiny`: ✱`scrutinise_case` (SCRUTINY_COMPLETION, `court_role SCRUTINY_OFFICER @ESTABLISHMENT`, due +0); `run_automated_checks` (AUTOMATED_SCRUTINY, AUTO, not required) |
+| `forward` | `scrutiny → registration` | MANUAL, SERVICE (0024 §4.4) | `context.registers_at_scrutiny = false` | STATE of `scrutiny` |
+| `register_at_scrutiny` | `scrutiny → cognizance` | MANUAL, SERVICE | `context.registers_at_scrutiny = true` | STATE of `scrutiny` + ENTRY of `cognizance` |
+| `resubmit` | `pending_correction → e_filing` | MANUAL, SERVICE (0024 §5.3) | | STATE of `pending_correction`: ✱`correct_defects` (CORRECTION, complainant side) |
+| `register` | `registration → cognizance` | MANUAL, SERVICE (0024 §6.1) | | STATE of `registration`: ✱`register_case` (SCRUTINY_COMPLETION, `court_role CASE_REGISTERER @ESTABLISHMENT`) + ENTRY of `cognizance` |
+| `registration_send_back` | `registration → pending_correction` | MANUAL, SERVICE (0024 §6.2) | | STATE of `registration` |
+
+ENTRY tasks of `cognizance`: ✱`assign_case_number` (CASE_NUMBER_ASSIGNMENT,
+AUTO inline, system, `on_repeat = REUSE_COMPLETED`, captures `case_number`).
+
+STATE tasks of `cognizance`: `take_cognizance` (GENERIC, courtroom role, **not
+required**, `cancel_on_exit = false`). The case can move on before cognizance
+is taken, and this task keeps it on the *Take cognizance* list (cognizance
+cheat sheet §3). The orders module completes it.
+
+How this covers the lifecycle:
+
+* **First filing:** the case is e-filed into `e_filing`. `submit_to_scrutiny` is the default path, so `sign_filing` is created. When the last signatory signs, `pay_filing_fee` is created. Payment completes it, and the AUTO transition moves the case to `scrutiny`, which creates `scrutinise_case`.
+* **Correction round:** `send_back` → `pending_correction` (new `correct_defects`) → `resubmit` → `e_filing` (visit 2). This creates a **new** `sign_filing`, because everyone signs again (`LIFE-13`), and a new `pay_filing_fee`, which completes at once with `SYSTEM` if nothing more is due (`LIFE-12`). Then the case returns to `scrutiny` (visit 2, round 2).
+* **Registration:** Forward → `registration` → `register`, or Register at scrutiny. Either path selects the `cognizance` entry gate. `assign_case_number` runs inline, so the request succeeds in one call. A later `registration_send_back` → … → `register` reuses the completed case number instead of assigning another.
+* **Roles decide, the workflow enforces:** scrutiny passes `registers_at_scrutiny` from the roles the actor holds (0024 §4.4). A missing key fails the condition (`E08004`).
+
+#### 12.4 After cognizance and secondary stages
+
+These are unchanged from the previous revision (old §10.3, §10.4). `EVENT`
+transitions are dispatched by the orders, hearings, join-a-case and processes
+modules:
+
+* `COGNIZANCE_TAKEN`, `ACCUSED_SIDE_JOINED`;
+* `HEARING_SCHEDULED` by purpose, as wildcards that exclude every state before `cognizance`;
+* `MEDIATION_ORDERED`, `JUDGEMENT_PASSED`, `CASE_DISPOSED`, `MOVED_TO_LPR`;
+* explicit rows out of the sticky states.
+
+The `appearance → bail_and_plea` auto move becomes an AUTO transition gated
+by a required `accused_joined` task (CONDITION_CHECK,
+`case.accused_side_joined = true`). Secondary stages (`delay_condonation`,
+`notice`, `summons`, `warrant`, `proclamation`, `attachment`) start and end
+on their events, as before.
+
+### 13. Changes to existing code
+
+| Where | Change |
+| --- | --- |
+| `apps/cases/models.py` | Add `PENDING_CORRECTION`, `PENDING_REGISTRATION` and `DELETED` to `CaseStatus`, and remove its "illustrative" note. |
+| `apps/cases/services/filing.py` | `submit_for_signing` validates (now including `court`) and calls `CaseWorkflowService.start()`, or `move_case("refile")` from `draft`. `submit_for_payment` and `submit_for_scrutiny` and their endpoints are withdrawn, because completing the signature and payment tasks now moves the case. `_transition()` is removed. |
+| `record_signature` / `_check_signature` | Check that the case is in `e_filing` with a live `sign_filing` task. Compare the e-sign time with **that task's `created_at`**, not the first `PENDING_SIGN` history row. Remove the signer from the task's assignees and complete the task when the last one signs. |
+| `apps/cases` receiver | On `state_entered(e_filing)` with `visit_number > 1`, reset `has_signed` and `signature_document` for the filing side (`LIFE-13`). |
+| `apps/cases/workflow/` | `plugin.py` (ChequeBounceCasePlugin), `task_types.py` (SIGNATURE, CASE_NUMBER_ASSIGNMENT, placeholder PAYMENT) and `seeds/cheque_bounce_default_v1.toml`, plus the data migration that loads it |
+| `apps/dristi_requests/conditions.py` | Move to `apps/core/conditions.py` and re-export, so behaviour is unchanged |
+| `apps/api/errors.py` | Add `"08": "workflows"` to `DOMAINS`. It is already reserved in 0000 §9.2. |
+| `config/settings/base.py` | Add `apps.workflows` to `INSTALLED_APPS`, and the definition tables to `CACHALOT_ONLY_CACHABLE_TABLES` |
+| Specs | 0021 §7: record option (b) and the withdrawn endpoints. 0020 §8.3: point to #9.3. 0000 §9.1: one sentence on `field` for `E08003`. 0024: replace "task opened on entry" with STATE tasks, and name the transitions from #12.3. |
+| Existing data | `manage.py start_workflows --backfill` creates instances for cases past draft. It maps `PENDING_SIGN`/`PENDING_PAYMENT` → `e_filing` (creating the outstanding tasks) and `UNDER_SCRUTINY` → `scrutiny`, and writes an `ADMIN` log with reason "backfill". |
+
+### 14. Testing
+
+* **Resolution:** an exact court, an ancestor, the default, and none (`E08001`). The definition stays pinned when the court changes or a new version is activated.
+* **Definitions:** only `DRAFT` can be edited. Activating retires the previous version. Only one active per court + case type and one default (both constraints). Each graph validation failure is reported. Clone. The seed round trip: export then load.
+* **Paths:** auto-selection with one candidate, with a default, and with none. Selection by request and by event. Changing path cancels only that path's live tasks. Returning to a path in the same visit reuses tasks completed in that visit. A `depends_on` task is created only after its dependency.
+* **Gates:** a STATE, TRANSITION or ENTRY task each blocks. Non-required tasks never block. `E08003` lists every incomplete task, including `NOT_STARTED` ones, and the selection is committed even though the request is rejected.
+* **Cycles:** three scrutiny rounds create three visits and three `scrutinise_case` tasks. `REUSE_COMPLETED` does not create the task again. `TYPE_DECIDES` calls the hook.
+* **Auto tasks:** inline success and failure. Background success. A failure followed by a scheduled retry with backoff, then exhaustion, then a manual retry. `failure_condition`. A timeout handled by the sweeper. A result arriving after cancellation is `DISCARDED`. The case never moves while a required task is not `COMPLETED`.
+* **AUTO transitions:** fire when the last gate completes, whether by API, module or executor. Chains stop at the cap (`E08015`).
+* **Concurrency:** two threads requesting transitions on one case serialise (PostgreSQL CI job, `select_for_update`). `If-Match` (`E08006`). Completing a task at the same time as a transition request.
+* **Projection:** `Case.status` after every transition and task change, and no other writer.
+* **API:** status, transition, list with each filter, complete, retry. Permissions (`404 E00105`, `E08009`, `E08012`). Every code in #10.6 asserted by `code` and `field`.
+* **§138:** first filing, a correction round with a higher, equal or lower bill, forward and register, register at scrutiny, a case number reused after a registration send back, delete only before the first scrutiny and only by the creator, `take_cognizance` surviving the stage change.
 * **Isolation:** `apps.workflows` imports no domain app.
-* **API:** success paths, permissions (`404 E00105`), `meta` envelope, pagination, filters, every code in #9.5 asserted by `code`, never message ([`0000`](0000-api-coding-spec.md) #13).
+* **Schedules:** `sweep_case_tasks` is in the schedule inventory.
 
-Quality checks before committing:
+Run before committing:
 
 ```bash
 cd src && DJANGO_SETTINGS_MODULE=config.settings.test pytest
@@ -1172,43 +1247,46 @@ cd src && ruff check . && ruff format .
 cd src && python manage.py check
 ```
 
+### 15. Rollout
+
+1. `apps.workflows` models, admin, seeding commands and validation, with no callers yet.
+2. Engine, task types, conditions, the plugin, the §138 seed and the data migration.
+3. Switch `apps.cases` filing to the engine (#13), and backfill.
+4. Frontend APIs (#10.1–#10.3), then the inbox (#10.4).
+5. The scrutiny (0024) and payments (0017) task types replace the placeholders as those modules land.
+
 ---
 
 ## Design decisions
 
-| # | Decision | Options | Direction |
+| # | Question | Decision | Why |
 | --- | --- | --- | --- |
-| 1 | Where tasks hang | transitions / states | States, re-opened on every visit |
-| 2 | Re-entering a state | one task per transition / visits | Visits — unlimited rounds (`LIFE-11`) and stage durations |
-| 3 | How modules move a case | call transition keys / dispatch events | Events |
-| 4 | Stage changes after registration | order workflows / events from listeners | Events (`order-template-catalogue.md`) |
-| 5 | Secondary stages | out of scope / second instance / rows on the instance | Rows on the instance, started and ended by events |
-| 6 | Sticky stages | per-transition exclusions / state flag | `is_sticky` on the state; wildcards never leave it |
-| 7 | Pending tasks | engine tasks only / one store for all case tasks | One store — every task links to one case and one list query serves both sides |
-| 8 | Task closure | always on state exit / per template | Per template — *Take Cognizance* is explicit (cognizance cheat sheet §3) |
-| 9 | Plugins | inside the engine / registered by the owning app | Owning app |
-| 10 | `Case.status` | drop / projection | Projection written only by the engine |
-| 11 | Per-jurisdiction variants | separate definitions / conditions on configuration / roles and domain configuration passed as context | Court roles and per-state configuration decide; domain modules pass the result as `event.*`; one definition for every state |
-| 12 | Definition changes | edit in place / locked versions | Locked after first use; clone to change |
-| 13 | Generic transition endpoint | keep / remove | Remove; domain endpoints own their moves |
-
----
+| 1 | Do tasks attach to the transition (A → B) or the target state (B)? | **Both, plus the state.** TRANSITION for a single path, ENTRY for any path into B, STATE for the work of a state. | Branches get path-specific work, merges define shared work once, and work lists exist on arrival. |
+| 2 | With several ways out, are tasks created up front? | **Only for the selected path.** STATE tasks are needed on every exit, so they are created on entry. | Avoids orphan tasks on paths not taken. The default and condition rules select the obvious path without user input. |
+| 3 | Cycling back | **New task instances on each visit.** `on_repeat` (`REUSE_COMPLETED`, `TYPE_DECIDES`) marks the exceptions. | Every pass is auditable. One-time facts such as the case number are never repeated. |
+| 4 | Concurrency | **Row locks in the fixed order case → instance → task**, plus a `version` token and `If-Match`, plus partial unique constraints. | Serialises transitions per case without deadlocking against `apps.cases`. |
+| 5 | Auto task execution and failure | **Dramatiq background job by default, inline for fast local types.** A failure leaves the task `FAILED` and the case stays where it is. There is a failure condition, a retry policy with automatic backoff and manual retry, and a timeout sweeper. | External calls never hold locks, and failures are visible, retryable and audited per attempt. |
+| 6 | Versioning | **Immutable once active. A change is a new version. Activating retires the previous version, and retired versions keep serving their running cases.** | Running cases never see the graph change underneath them. |
+| 7 | Choosing a definition | **Court + case type, walking up the court hierarchy, then a default** | One default serves everywhere, and a state, district or court overrides it only where it differs. |
+| 8 | Definition management | **Admin and seed files only, with no APIs** | As required. Natural keys make seeds reviewable. |
+| 9 | Generic transition endpoint | **Yes, keyed by case.** Transitions that need a domain payload are marked `request_via = SERVICE`. | The frontend needs one API, and the domain modules keep ownership of their own decisions. |
+| 10 | Who may complete a task via the API | **Only types marked `api_completable`.** Module-owned types are completed by their module. | A party cannot close work that another module owns (`STP-02`). |
+| 11 | Signing and payment | **Tasks on `e_filing → scrutiny`, not separate states.** `Case.status` is kept accurate by `case_status_while_pending`. | This matches "tasks gate a state change", and removes the priority-split transitions of the previous revision. |
+| 12 | Reporting incomplete tasks | **One `E08003` item per task, with `field = tasks.<task_key>`** | Keeps the 0000 error shape and covers tasks that have not been created yet. |
 
 ## Open questions
 
-1. Are archived tasks per user (one user's archive hides it only for them) or per task, as the pending-tasks status lifecycle reads?
-2. When the case leaves the Long Pending Register, which primary stage does it return to (case lifecycle `OQ-1`)?
-3. When a new definition version is activated, do running cases migrate, and who maps their states?
-4. Should a task's due date skip non-working days (the court calendar of [`0023`](0023-hearings.md)) — "due the next working day" (`ALC-03`) suggests yes?
-5. Is the full list of case outcomes confirmed (case lifecycle `OQ-2`), and does any outcome need its own terminal state rather than Post-Disposal?
-
----
+1. Should one case ever have **parallel** selected paths? This version allows one path at a time.
+2. Should a case leaving the Long Pending Register return to a fixed stage (case lifecycle `OQ-1`)?
+3. Should due dates skip non-working days ("next working day", `ALC-03`)?
+4. Is archiving per task, as specified here, or per user?
+5. Until the court-role model exists (#6.4), is "visible to the court, acted on by permission" acceptable for court-side tasks?
+6. In the backfill, should cases in `PENDING_PAYMENT` be treated as already signed? That is, should their `sign_filing` task be created as completed, with `completion_mode = SYSTEM`?
 
 ## Out of scope
 
-* Graphical workflow builder, BPMN, parallel gateways, timers and escalations.
-* Scrutiny, registration, cognizance, application, process and order screens and payloads.
-* Notification copy and the case-update events catalogue.
-* Court-side process lists.
-* Case outcome.
+* Definition CRUD APIs, a graphical builder and BPMN.
 * Migrating running cases between definition versions.
+* Domain screens and payloads: scrutiny, payments, e-sign, orders and hearings.
+* Notification copy and the events catalogue.
+* Case types other than §138.
