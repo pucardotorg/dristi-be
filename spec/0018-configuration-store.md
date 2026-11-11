@@ -30,9 +30,13 @@ Example:
 The module is intentionally dumb: it stores strings and returns strings. It does
 not know what `max_records_per_pdf` means, and it MUST NOT grow conditional logic.
 
-**This iteration does not expose any REST API.** The module is consumed in-process
-through service-level functions only. A thin DRF layer MAY be added later on top
-of the same functions.
+**This store is internal use only and will never have a public API.** It is
+consumed in-process by backend modules through service-level functions only.
+Values that the frontend or any internet client must fetch belong in
+`apps.core.models.PublicConfiguration` ([`0031`](0031-public-configuration-store.md)),
+not here. Do not add an HTTP API, serializer, viewset, or route for this
+module; exposing it would turn every backend-only operational value into part
+of the public surface.
 
 ## Goals
 
@@ -49,7 +53,8 @@ of the same functions.
 * Storing secrets, passwords, API keys, tokens, or private keys.
 * Replacing environment variables for infrastructure wiring (DB URL, broker URL).
 * A typed/validated schema per key in this iteration (see #2.2).
-* REST/HTTP APIs, serializers, viewsets, or URL routing in this iteration.
+* REST/HTTP APIs, serializers, viewsets, or URL routing for this store. It is
+  internal use only and MUST NOT be exposed publicly.
 * Per-organization or per-tenant configuration overrides (see #10).
 * Rule evaluation, conditionals, expressions, or templating of any kind.
 * Change approval workflows.
@@ -214,7 +219,8 @@ Rules:
 
 * The service functions are plain Python callables returning plain Python values.
 * They MUST NOT depend on request/response objects, DRF, or HTTP status codes.
-* Errors are raised as Python exceptions; a future REST layer translates them.
+* Errors are raised as Python exceptions. This store has no HTTP layer to
+  translate them, now or in the future.
 
 ### 4. Caching
 
@@ -360,7 +366,9 @@ licence to pull domain logic into core.
 
 ## 10. Out of scope
 
-* Read-only REST API (`GET /api/v1/configuration/{set}/`) if a frontend needs it.
+* Read-only REST API for this store. Frontend/public values belong in
+  `PublicConfiguration` ([`0031`](0031-public-configuration-store.md)); this
+  store is internal use only.
 * Write API with admin-only permissions.
 * `simple_history` tracking and a config diff view.
 * Per-organization overrides.
