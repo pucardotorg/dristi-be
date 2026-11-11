@@ -3,10 +3,8 @@
 from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
-from health_check.cache.backends import CacheBackend
-from health_check.contrib.redis.backends import RedisHealthCheck
-from health_check.db.backends import DatabaseBackend
 from health_check.views import HealthCheckView
+from redis import Redis
 
 from apps.core.views import index
 
@@ -28,7 +26,26 @@ urlpatterns = [
     path("api/v1/", include("apps.payments.urls")),
     path(
         "health/",
-        HealthCheckView.as_view(checks=[DatabaseBackend, CacheBackend, RedisHealthCheck]),
+        HealthCheckView.as_view(
+            # Import-string names (3.21+, and the same in 4.x). Bare classes
+            # make 3.24 raise TypeError on every request.
+            checks=[
+                "health_check.Database",
+                "health_check.Cache",
+                # Redis is the Dramatiq broker. test.py's stub broker has no
+                # url, hence .get().
+                (
+                    "health_check.contrib.redis.Redis",
+                    {
+                        "client": Redis.from_url(
+                            settings.DRAMATIQ_BROKER["OPTIONS"].get(
+                                "url", "redis://localhost:6379/2"
+                            )
+                        )
+                    },
+                ),
+            ]
+        ),
     ),
 ]
 

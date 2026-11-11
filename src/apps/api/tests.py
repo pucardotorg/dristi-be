@@ -3,9 +3,12 @@
 import io
 import json
 from datetime import datetime
+from unittest.mock import patch
 
 from django.core.management import call_command
 from django.urls import reverse
+from redis import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -34,6 +37,28 @@ class HealthCheckTests(APITestCase):
         payload = response.json()
         self.assertEqual(payload["status"], "ok")
         self.assert_meta(payload)
+
+
+class SystemHealthCheckTests(APITestCase):
+    """django-health-check's /health/ (database, cache and the broker's Redis)."""
+
+    # CI has no Redis server, so the broker ping is stubbed.
+    @patch.object(Redis, "ping", return_value=True)
+    def test_health_ok(self, ping):
+        """/health/ returns 200 with every check working."""
+        response = self.client.get("/health/?format=json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        self.assertEqual(
+            {name.split("(")[0] for name in response.json()},
+            {"Database", "Cache", "RedisHealthCheck"},
+        )
+        ping.assert_called_once()
+
+    @patch.object(Redis, "ping", side_effect=RedisConnectionError)
+    def test_redis_down(self, ping):
+        """/health/ returns 500 when the broker's Redis is unreachable."""
+        response = self.client.get("/health/?format=json")
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class APIDocumentationTests(APITestCase):

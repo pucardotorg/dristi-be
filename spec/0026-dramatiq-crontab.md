@@ -114,9 +114,10 @@ dramatiq-crontab[redis]>=1.1,<2
 apscheduler>=3.11,<4
 ```
 
-`dramatiq-crontab` 1.1+ requires Django >= 5.2.17 and caps APScheduler below 4
-itself. We keep our own APScheduler pin so the cap stays explicit if the
-library ever lifts it.
+`dramatiq-crontab` 1.1 requires Django >= 5.2.17; 1.2 requires >= 5.2.18 and
+Python >= 3.11. The Django floor is the latest 5.2 security patch, which covers
+both. 1.1+ also caps APScheduler below 4 itself. We keep our own APScheduler pin
+so the cap stays explicit if the library ever lifts it.
 
 ### 3.2 Installed app
 
