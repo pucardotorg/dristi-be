@@ -242,7 +242,7 @@ above are exposed.
 ### 3.2 Set listing
 
 ```text
-GET /api/v1/public-configuration/pdf/
+GET /api/v1/public-configuration/ui_feature_flag/
 ```
 
 Returns a standard DRF page-number paginated response, using the project
@@ -255,14 +255,14 @@ default page size (20):
   "previous": null,
   "results": [
     {
-      "config_set": "pdf",
-      "config_key": "default_template",
-      "config_value": "court_notice"
+      "config_set": "ui_feature_flag",
+      "config_key": "enable_bulk_case_select",
+      "config_value": "true"
     },
     {
-      "config_set": "pdf",
-      "config_key": "max_records_per_pdf",
-      "config_value": "100"
+      "config_set": "ui_feature_flag",
+      "config_key": "enable_dark_mode",
+      "config_value": "false"
     }
   ],
   "meta": {
@@ -274,7 +274,8 @@ default page size (20):
 ```
 
 * Results are ordered by `config_key`.
-* `config_set` is normalized before filtering (`PDF` resolves to `pdf`).
+* `config_set` is normalized before filtering (`UI_FEATURE_FLAG` resolves to
+  `ui_feature_flag`).
 * An unknown or inactive set returns `200` with `count: 0` and an empty
   `results` list. An unknown set is not an error.
 * Only active rows are included.
@@ -282,14 +283,14 @@ default page size (20):
 ### 3.3 Detail by set and key
 
 ```text
-GET /api/v1/public-configuration/pdf/default_template/
+GET /api/v1/public-configuration/ui_feature_flag/enable_dark_mode/
 ```
 
 ```json
 {
-  "config_set": "pdf",
-  "config_key": "default_template",
-  "config_value": "court_notice",
+  "config_set": "ui_feature_flag",
+  "config_key": "enable_dark_mode",
+  "config_value": "false",
   "meta": {
     "timestamp": "...",
     "app_version": "...",
@@ -306,6 +307,39 @@ GET /api/v1/public-configuration/pdf/default_template/
   code is required.
 * A key is never returned from `Configuration`, even when both tables contain
   a similarly named row.
+
+#### Structured value example
+
+`identity_drop_down` is stored as a JSON string. The API returns that stored
+string verbatim; it does not turn it into a nested JSON object:
+
+```text
+GET /api/v1/public-configuration/efiling_cheque_fraud/identity_drop_down/
+```
+
+```json
+{
+  "config_set": "efiling_cheque_fraud",
+  "config_key": "identity_drop_down",
+  "config_value": "{\"pan\": \"Pan Card\", \"epic_id\": \"Voter ID\"}",
+  "meta": {
+    "timestamp": "...",
+    "app_version": "...",
+    "spec_version": "1.0"
+  }
+}
+```
+
+`config_value` is a JSON string in the response, so a client parses it:
+
+```js
+const options = JSON.parse(response.config_value);
+// { pan: "Pan Card", epic_id: "Voter ID" }
+```
+
+This keeps `config_value` opaque and uniform for every key. Server-side code
+uses `get_public_json("efiling_cheque_fraud", "identity_drop_down")`, which
+returns the parsed object directly.
 
 ### 3.4 Serializer
 
@@ -411,24 +445,44 @@ Add `data/seed/example/public_configurations.toml`:
 [seed]
 model = "core.PublicConfiguration"
 
+# Boolean values
 [[rows]]
-config_set = "ui"
-config_key = "items_per_page"
-config_value = 20
-description = "Default page size used by list screens."
+config_set = "registration"
+config_key = "show_welcome_message"
+config_value = false
 
 [[rows]]
-config_set = "payment"
-config_key = "payment_expiry_minutes"
-config_value = 30
-description = "How long a payment link stays valid."
+config_set = "ui_feature_flag"
+config_key = "enable_bulk_case_select"
+config_value = true
 
 [[rows]]
-config_set = "pdf"
-config_key = "default_template"
-config_value = "court_notice"
-description = "Template used when a caller does not specify one."
+config_set = "ui_feature_flag"
+config_key = "enable_dark_mode"
+config_value = false
+
+[[rows]]
+config_set = "efiling_cheque_fraud"
+config_key = "enable_filtering"
+config_value = true
+
+[[rows]]
+config_set = "efiling_cheque_fraud"
+config_key = "enable_sorting"
+config_value = true
+
+# Structured value, stored as JSON text
+[[rows]]
+config_set = "efiling_cheque_fraud"
+config_key = "identity_drop_down"
+config_value = '{"pan": "Pan Card", "epic_id": "Voter ID"}'
 ```
+
+Native TOML booleans are stringified by the seed engine (`"True"` / `"False"`)
+and remain readable through `get_public_bool`. Structured values MUST be written
+as JSON strings, as shown for `identity_drop_down`, so `get_public_json` can
+parse them. Do not use a TOML inline table for `config_value`: the seed engine
+stringifies it with Python's `str()`, which is not valid JSON.
 
 Seeding remains insert-only and idempotent: re-running the file creates no
 duplicates and does not overwrite existing rows. Changing a seeded public value
@@ -506,6 +560,8 @@ Required coverage:
 * A public configuration row is created from TOML.
 * Re-running is a no-op (idempotent).
 * `config_value` native TOML types are coerced to text.
+* A structured value seeded as a JSON string is readable through
+  `get_public_json`.
 * A secret-like key in a seed file is skipped/reported rather than stored.
 
 ---
