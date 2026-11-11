@@ -245,6 +245,7 @@ example `E01001`.
 | `07` | `apps.cases` | case filing (spec 0021) |
 | `08` | `apps.workflows` | case workflows and pending tasks (spec 0011); only `E08005`, defined by the `apps.scrutiny` stand-in until the app exists |
 | `09` | `apps.scrutiny` | scrutiny and registration (spec 0024) |
+| `10` | `apps.core` | shared reference data: languages (spec 0030) |
 
 Rules:
 

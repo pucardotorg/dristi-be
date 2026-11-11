@@ -328,6 +328,8 @@ SPECTACULAR_SETTINGS = {
         "DemandStatusEnum": "apps.payments.enums.DemandStatus",
         "DemandItemStatusEnum": "apps.payments.enums.DemandItemStatus",
         "PaymentStatusEnum": "apps.payments.enums.PaymentStatus",
+        # Otherwise named after the generic `supports` field.
+        "LanguageSupportEnum": "apps.core.models.Language.LanguageSupport",
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
@@ -399,6 +401,7 @@ CACHALOT_ONLY_CACHABLE_APPS = ("locations", "cms")
 CACHALOT_ONLY_CACHABLE_TABLES = (
     "core_configuration",
     "core_businessrule",
+    "core_language",
 )
 CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
