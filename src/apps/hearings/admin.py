@@ -5,7 +5,7 @@ from simple_history.admin import SimpleHistoryAdmin
 
 from apps.core.mixins import AuditUserAdminMixin
 
-from .models import CourtCalendarEntry, HearingPurpose
+from .models import CourtCalendarEntry, Hearing, HearingPurpose
 
 
 @admin.register(HearingPurpose)
@@ -34,3 +34,50 @@ class CourtCalendarEntryAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     ordering = ("-date",)
     autocomplete_fields = ("court",)
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Hearing)
+class HearingAdmin(SimpleHistoryAdmin):
+    """Read-only: every change goes through the services (spec 0023 #11.10).
+
+    Admin never moves, starts or cancels a hearing, so the court lock, the
+    date-change log, signals and notifications cannot be skipped.
+    """
+
+    list_display = (
+        "hearing_date",
+        "sequence",
+        "case",
+        "court",
+        "purpose",
+        "status",
+        "mode",
+        "reschedule_count",
+    )
+    list_filter = ("status", "mode", "court", "purpose")
+    search_fields = (
+        "=id",
+        "case__case_number",
+        "case__filing_number",
+        "=source_order_id",
+        "=order_id",
+    )
+    date_hierarchy = "hearing_date"
+    ordering = ("-hearing_date", "court", "status_order", "sequence")
+    list_select_related = ("case", "court", "purpose")
+
+    def get_readonly_fields(self, request, obj=None):
+        """Show every field read-only."""
+        return tuple(field.name for field in self.model._meta.fields)
+
+    def has_add_permission(self, request):
+        """Hearings are created only by the services."""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """Hearings are never edited by hand."""
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """Hearings are never deleted; every end is a status."""
+        return False
