@@ -159,92 +159,97 @@
     "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
       "title": "View Case",
-      "contentHash": "d9e81fe73f2b",
-      "pageUpdatedAt": 1793681335.564,
-      "calloutElementId": "eca-cluFlrCGVO",
+      "contentHash": "939c1b05c080",
+      "pageUpdatedAt": 1794404983.571,
+      "calloutElementId": "cl-i2jpMT8bMh",
       "sections": [
         {
-          "key": "# View Case — Developer & Agent Handover",
-          "elementId": "cl-MvPziNzeIg",
-          "hash": "6e6b796bccf6"
+          "key": "# View Case",
+          "elementId": "cl-MPobgQF3Nq",
+          "hash": "b5f3d3aa45f3"
+        },
+        {
+          "key": "1",
+          "elementId": "cl-mew3LUajQx",
+          "hash": "86556e0baafd"
+        },
+        {
+          "key": "## Sources and precedence",
+          "elementId": "cl-9bcdYOn6Hn",
+          "hash": "f271b2284d30"
         },
         {
           "key": "# 1. Scope",
-          "elementId": "cl-6CiKJdHOyT",
-          "hash": "98cd68e0d53c"
+          "elementId": "cl-V42Y3DMfW5",
+          "hash": "a404c98f3680"
         },
         {
           "key": "# 2. Entry context",
-          "elementId": "cl-1v26PqzVzd",
-          "hash": "e6366e0f8ded"
+          "elementId": "cl-yRVtnLJQsV",
+          "hash": "d9c4afd0b993"
         },
         {
           "key": "# 3. Case detail — header",
-          "elementId": "cl-GTyNPHeBmq",
-          "hash": "ecde57b4b254"
+          "elementId": "cl-RuE4BUsg4d",
+          "hash": "b6bd4925a5a3"
         },
         {
           "key": "# 4. Section navigation",
-          "elementId": "cl-Vt2LuUT8ej",
-          "hash": "c7a59b32a41c"
+          "elementId": "cl-hUbhWdhAw7",
+          "hash": "3142566993bb"
         },
         {
           "key": "# 5. Overview",
-          "elementId": "cl-cu8LUSJYuN",
-          "hash": "2ab11c6f5920"
+          "elementId": "cl-HcHZLajPsq",
+          "hash": "3637b908840c"
         },
         {
           "key": "# 6. Case File",
-          "elementId": "cl-VgmEGB4dY7",
-          "hash": "4ef3e4e2d217"
+          "elementId": "cl-smTQBsrUxR",
+          "hash": "aab95d44ca1d"
         },
         {
           "key": "# 7. Notice/Process Status",
-          "elementId": "cl-X4XiAU8VoM",
-          "hash": "c171ac1e4f87"
+          "elementId": "cl-bDkI33DbCB",
+          "hash": "2374b5631291"
         },
         {
           "key": "# 8. Orders & Notifications",
-          "elementId": "cl-5Wz0kifnDZ",
-          "hash": "e228875bb5e3"
+          "elementId": "cl-b4i3Fw6P4M",
+          "hash": "3d5c605bad67"
         },
         {
           "key": "# 9. Applications",
-          "elementId": "cl-vBdRHK4yYn",
-          "hash": "f4c464ab06a5"
+          "elementId": "cl-0u2jjrurWG",
+          "hash": "22f2489c67e8"
         },
         {
           "key": "# 10. Documents",
-          "elementId": "cl-7C50XhyGZn",
-          "hash": "cbc132e128c0"
+          "elementId": "cl-zMm1auWWbw",
+          "hash": "9b3efbbeec0d"
         },
         {
           "key": "# 11. Parties",
-          "elementId": "cl-7KxOksE2sO",
-          "hash": "872828c6be22"
+          "elementId": "cl-05FJEKmH30",
+          "hash": "133158198661"
         },
         {
           "key": "# 12. Case History",
-          "elementId": "cl-VjVLKfXvf6",
-          "hash": "1b5d8577cce6"
+          "elementId": "cl-0ThP_2-Gnr",
+          "hash": "de6162e14233"
         },
         {
-          "key": "# 13. Bail lifecycle",
-          "elementId": "cl-DEJz-_8Kag",
-          "hash": "fb11d8dc72c4"
+          "key": "# 13. Open questions",
+          "elementId": "cl-PHWcX66f3y",
+          "hash": "726437073a30"
         },
         {
-          "key": "# 14. Open questions",
-          "elementId": "cl-PZj3mxqX9q",
-          "hash": "7255cbefba14"
-        },
-        {
-          "key": "# 15. Not yet covered",
-          "elementId": "cl-3x7xUxv8po",
-          "hash": "2ce404e69b82"
+          "key": "# 14. Enhancements",
+          "elementId": "cl-9DsCxsFTCl",
+          "hash": "e44f84850f61"
         }
       ],
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed."
+      "note": "Force-synced (cleared and rebuilt) 2026-11-11 at v1.70, with the owner's go-ahead; two unanchored @-mention comments discarded. Status line split across two blocks (00a/00b). Section elementIds are each chunk's first block."
     },
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
@@ -458,11 +463,11 @@
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
       "title": "Application Lifecycle",
-      "contentHash": "40823b97e678",
-      "pageUpdatedAt": 1794300388.972,
+      "contentHash": "6677f14beec3",
+      "pageUpdatedAt": 1794404555.09,
       "calloutElementId": "cl-QKAlG9nMxl",
       "sections": [],
-      "note": "Force-synced (cleared and rebuilt) 2026-11-10 at v38, with the owner's go-ahead; comments discarded. Diagram is an image block uploaded from application-reference/application-lifecycle-states.png (the relative image link in the markdown is not pushed as text). The Status block is split across three page blocks. `sections` not recorded: the next sync must rebuild or patch by hand. Patched 2026-11-10 later the same day: Status block, Users and actions, step 2, step 4, Application attributes and Enhancements replaced as whole sections (Application action, Outcome). Patched again the same day: Status block, Users and actions, step 2 and step 4 replaced (\"order item linked to the application\" wording restored)."
+      "note": "Force-synced (cleared and rebuilt) 2026-11-10 at v38, with the owner's go-ahead; comments discarded. Diagram is an image block uploaded from application-reference/application-lifecycle-states.png (the relative image link in the markdown is not pushed as text). The Status block is split across three page blocks. `sections` not recorded: the next sync must rebuild or patch by hand. Patched 2026-11-10 later the same day: Status block, Users and actions, step 2, step 4, Application attributes and Enhancements replaced as whole sections (Application action, Outcome). Patched again the same day: Status block, Users and actions, step 2 and step 4 replaced (\"order item linked to the application\" wording restored). Patched 2026-11-11 at v40: ALC-23, ALC-28, status-table row, Q-16 (table cells), Users and actions bullet and new line, PoA Change template line, Status block and callout. `sections` still not recorded."
     },
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
