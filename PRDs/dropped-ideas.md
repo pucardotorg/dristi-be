@@ -1,6 +1,6 @@
 # Dropped ideas
 
-**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`); the four application order items (#5, #6, #13, #26) of the order item catalogue.
+**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`); the four application order items (#5, #6, #13, #26) of the order item catalogue. 2026-11-11 — the next hearing's status and View All Hearings on the case overview (`OVW-02`, `OVW-05`); one line of text per case update on the overview (`OVW-06`); the hearings list and hearing detail on the case (`HRG-01`–`HRG-12`); hiding Notice/Process Status when no process has issued (`SVC-16`); the Applications filters and search, and the Needs attention grouping, bulk signing and bulk payment (`APP-01`–`APP-04`, `APP-09`–`APP-11`); the application statuses and record restated in view-case (`APP-12`–`APP-20`); the Documents section's separate bail-bond list and its filters and search (`DOC-01`–`DOC-04`); a witness's linked party and added by, and how its number is composed (`PTY-13`–`PTY-16`); legal teams all authored or none (`PTY-21`); counts per group in Parties (`PTY-22`); the rest of the Parties section's structure — list and selection, per-population rules and fields (`PTY-01`–`PTY-14`, `PTY-17`–`PTY-20`, `PTY-23`, `PTY-27`, `PTY-29`, `PTY-31`, `PTY-32`); Case History's date range and the Bail lifecycle section of view-case (`TME-02`, `TME-03`, §13); view-case's Not yet covered section; the last order highlighted in Case History (`TME-06`).
 
 Ideas taken out of the PRDs, kept here with their last wording so they can be restored. Each entry says where it came from and what replaced it. The full earlier documents are also in git history: commit `cb97c67` holds both files as they were before.
 
@@ -463,5 +463,396 @@ The generic "Accept application" (#5) and "Reject application" (#6) rows above c
 | Changes in litigant details | |
 | Advocate replacement | Currently a task, not an application — has no application number |
 | Change in power of attorney | "No such order" noted in source spreadsheet |
+
+---
+
+## Next hearing status and View All Hearings on the case overview
+
+**Dropped 2026-11-11.** The overview's next hearing shows only the date and the purpose,
+as on the court side.
+
+**Now:** `OVW-01`, `OVW-03` and `OVW-04` of [`view-case.md`](view-case.md) §5.1. How the
+list of all hearings is reached is open (`view-case.md` Q-11).
+
+### From view-case.md §5.1
+
+> | `OVW-02` | Status badge | Status of the next hearing |
+> | `OVW-05` | View All Hearings | **[OWNER]** Link labelled "View All Hearings" (not "View Hearing Details"). Opens the hearings pop-up (§5.4). |
+
+---
+
+## One line of text per case update on the overview (`OVW-06`)
+
+**Dropped 2026-11-11.** Not every event has a one-line text describing what happened. Only
+an order shows text: its diary entry text.
+
+**Now:** `OVW-17` of [`view-case.md`](view-case.md) §5.2.
+
+### From view-case.md §5.2
+
+> | `OVW-06` | Update text | A single line of text describing what happened |
+
+---
+
+## Hearings list and hearing detail on the case (`HRG-01`–`HRG-12`)
+
+**Dropped 2026-11-11.** The case no longer has a list of all its hearings or a hearing
+detail. The overview shows only the next hearing ([`view-case.md`](view-case.md) §5.1).
+
+### From view-case.md §5.4
+
+> ## 5.4 Hearings
+>
+> The list of all hearings on the case. How the user reaches it is open (Q-11).
+>
+> ### 5.4.1 List
+>
+> | ID | Element | Detail |
+> | --- | --- | --- |
+> | `HRG-01` | Contents | Each hearing shows its date, purpose and status, and can be opened to its detail (§5.4.2) |
+> | `HRG-02` | Ordering | Newest first |
+> | `HRG-03` | Values | Every value in the list is drawn from the hearing record (§5.4.2) |
+>
+> ### 5.4.2 Hearing detail
+>
+> A hearing carries these fields:
+>
+> | ID | Field | Notes |
+> | --- | --- | --- |
+> | `HRG-04` | Hearing purpose | What the matter was listed for |
+> | `HRG-05` | Date | Date of the hearing |
+> | `HRG-06` | Start time | When the hearing started |
+> | `HRG-07` | End time | When the hearing ended |
+> | `HRG-08` | Attendance | Who attended the hearing, as a line of text |
+> | `HRG-09` | Next hearing purpose | What the matter is next listed for |
+> | `HRG-10` | Next hearing date | The date it is next listed on |
+> | `HRG-11` | Hearing summary | The order text entered in the order for that hearing. One text, held on the order and read from there. |
+> | `HRG-12` | Order | The order passed in the hearing. Opens the order (§8). |
+
+---
+
+## Hiding Notice/Process Status when no process has issued (`SVC-16`)
+
+**Dropped 2026-11-11.** Better to show the section empty than to hide it.
+
+**Now:** `SVC-21` of [`view-case.md`](view-case.md) §7.1.
+
+### From view-case.md §7.4
+
+> | `SVC-16` | The section is not shown when no process has ever issued on the case (nothing to report). |
+
+---
+
+## Applications filters, search, and Needs attention grouping (`APP-01`–`APP-04`, `APP-09`–`APP-11`)
+
+**Dropped 2026-11-11.** Filters and search are a UI matter, shown in the prototype. Needs
+attention only shows the applications in draft, pending signature or pending payment.
+
+**Now:** `APP-05` of [`view-case.md`](view-case.md) §9.2.
+
+### From view-case.md §9.1 and §9.2
+
+> ## 9.1 What is shown
+>
+> | ID | Element | Detail |
+> | --- | --- | --- |
+> | `APP-01` | Type filter | Filter by application type |
+> | `APP-02` | Status filter | Filter by status (§9.3) |
+> | `APP-03` | Filed by filter | Filter by the person on the case who filed it |
+> | `APP-04` | Search | By application ID |
+> | `APP-05` | Needs attention | Applications that still need a step from the viewer — drafts, pending signature, pending payment — are shown separately, ahead of the rest. |
+> | `APP-06` | List | `[DERIVED]` Each application shows its type, application ID, status, who filed it, created on and submitted on, and can be opened |
+> | `APP-07` | Open an application | Opens the application, the documents attached to it, and the linked order where there is one |
+>
+> `APP-08` `[DERIVED]` — the record carries both a created and a submitted date (§9.4), so the
+> list shows both. Confirm which the list leads on.
+>
+> ## 9.2 "Needs attention" grouping
+>
+> `APP-09` — two or more applications waiting on the **same step from the same filer**
+> collapse into one entry with one action.
+>
+> `APP-10` Signing — signatures can be added **one at a time or in bulk**. In v1, bulk
+> signing is offered only to a filer who has set up their bulk signing tool; everyone else
+> signs one application at a time.
+>
+> `APP-11` Payment — payments can be completed **one at a time or in bulk**.
+
+---
+
+## Application statuses and record restated in view-case (`APP-12`–`APP-20`)
+
+**Dropped 2026-11-11.** They restated, and disagreed with,
+[`application-lifecycle.md`](application-lifecycle.md), which owns an application's
+statuses and attributes.
+
+**Now:** [`view-case.md`](view-case.md) §9.3 links to "Application attributes" in
+`application-lifecycle.md`.
+
+### From view-case.md §9.3 and §9.4
+
+> ## 9.3 Filing statuses
+>
+> | Value | Label | Needs attention? |
+> | --- | --- | --- |
+> | `draft` | Draft | Yes — continue the draft |
+> | `pending-signature` | Pending signature | Yes — add the signature |
+> | `pending-payment` | Pending payment | Yes — complete the payment |
+> | `completed` | Completed | No |
+> | `rejected` | Rejected | No |
+> | `expired` | Expired | No |
+>
+> ## 9.4 Application record
+>
+> An application carries:
+>
+> | ID | Field | Notes |
+> | --- | --- | --- |
+> | `APP-12` | Type | One of the application types |
+> | `APP-13` | Status | Filing workflow status (§9.3) |
+> | `APP-14` | Created on | When the application was created |
+> | `APP-15` | Submitted on | When it was submitted |
+> | `APP-16` | Filed by | The person who submitted the application |
+> | `APP-17` | Side | Whether it was filed by the complainant, the accused, or the court. Held separately from the person, not derived from them. |
+> | `APP-18` | Application ID | The registry's identifier, once allotted |
+> | `APP-19` | Linked order | The order the court passed on the application, where there is one |
+> | `APP-20` | Documents | The files attached to the application |
+
+---
+
+## Documents section: separate bail-bond list, filters and search (`DOC-01`–`DOC-04`)
+
+**Dropped 2026-11-11.** Every kind of document is returned, marked with its kind; how the
+screen separates them, and which filters it offers, is a UI choice.
+
+**Now:** `DOC-07` and `DOC-08` of [`view-case.md`](view-case.md) §10.2.
+
+### From view-case.md §10
+
+> | ID | Element | Detail |
+> | --- | --- | --- |
+> | `DOC-01` | Documents and bail bonds | Listed separately. Bail bonds are not a document type. |
+> | `DOC-02` | Type filter | Filter by document type ([`document-submission.md`](document-submission.md) `DSB-11`) |
+> | `DOC-03` | Submitted by filter | Filter by the person on the case who submitted it |
+> | `DOC-04` | Search | By document title, provisional ID or evidence number |
+
+---
+
+## Witness linked party, added by, and number composition (`PTY-13`, `PTY-15`, `PTY-16`)
+
+**Dropped 2026-11-11.** A witness's linked party and who added it both follow from its
+side. How a witness number is formed belongs in another PRD, not the case view.
+
+**Now:** `PTY-12` (side) and `PTY-13` (number, without how it is formed) of
+[`view-case.md`](view-case.md) §11.
+
+### From view-case.md §11, Witnesses
+
+> | `PTY-13` | Number | Composed from prefix + index: PW-1, DW-2, CW-1. **Side is a field, never derived from the prefix** — they are two authored fields and must agree. |
+> | `PTY-15` | Linked party | The party whose evidence this witness speaks to |
+> | `PTY-16` | Added by | Complainant, accused, or court |
+
+---
+
+## Legal teams all authored or none (`PTY-21`)
+
+**Dropped 2026-11-11.** A rule about how the prototype's sample data is put together, not
+a requirement on the product.
+
+**Now:** `PTY-20` of [`view-case.md`](view-case.md) §11.5.
+
+### From view-case.md §11.3
+
+> `PTY-21` — either all of a case's teams are authored or none are. A half-authored case
+> throws — the mismatch cannot be resolved silently.
+
+---
+
+## Counts per group in Parties (`PTY-22`)
+
+**Dropped 2026-11-11.** Not important enough to specify; the UI counts if it needs to.
+
+### From view-case.md §11.1
+
+> | `PTY-22` | The count shown for each group equals the number of people in it: every litigant on the case title, institutions included; every witness, the court's own included; every advocate on record; every office member with access to the case, each counted once. |
+
+---
+
+## Parties section structure (`PTY-01`–`PTY-14`, `PTY-17`–`PTY-20`, `PTY-23`, `PTY-27`, `PTY-29`, `PTY-31`, `PTY-32`)
+
+**Dropped 2026-11-11.** The section is cut to the people on the case and the details shown
+for each; how they are organised and shown is left to the UI. `PTY-24`–`PTY-26` and
+`PTY-28` were kept.
+
+**Now:** `PTY-33`–`PTY-42` of [`view-case.md`](view-case.md) §11.1.
+
+### From view-case.md §11, as it stood before
+
+> # 11. Parties
+>
+> This section shows everyone on the case and what is held about each of them: the
+> litigants, their representatives and power of attorney holders, the witnesses, and the
+> advocates with their juniors and clerks. It is the same for everyone who can see the case.
+>
+> The details themselves are collected elsewhere — at e-filing, by an application, or at
+> registration — and the PRD that collects them sets their fields and rules. This section
+> says which details are shown, and links there.
+>
+> ## 11.1 The list
+>
+> | ID | Requirement |
+> | --- | --- |
+> | `PTY-01` | A list of the people on the case, grouped as litigants, witnesses, and advocates with the members of their office; selecting one shows their details. |
+> | `PTY-02` | It opens on the first litigant, unless a link names another person on the case. A link naming someone not on the case falls back to the first litigant. |
+> | `PTY-23` | The viewer's own entry is marked "you". |
+>
+> ## 11.2 What is not shown
+>
+> | ID | Requirement |
+> | --- | --- |
+> | `PTY-24` | Contact details — phone, email and addresses — are shown to everyone who can see the case. Masking them is a later enhancement (§16). |
+> | `PTY-25` | No documents are shown here. ID cards, vakalatnamas and power of attorney authorisations are in Documents (§10). |
+> | `PTY-26` | An Aadhaar number is never shown. |
+>
+> ## 11.3 Litigants
+>
+> | ID | Requirement |
+> | --- | --- |
+> | `PTY-07` | An institution's entry names the person who acts for it. For an institution complainant, that is its authorised representative ([`efiling.md`](efiling.md)): they act for the institution but are not a party. For an institution accused, each person in charge is an accused in their own right (`PTY-08`). |
+> | `PTY-08` | When an accused is a person in charge of an institution (§141), their entry names the institution and says whether they are its representative or another person in charge. |
+> | `PTY-09` | When a litigant has a power of attorney holder, the holder is named on the litigant's entry. A litigant has at most one. The holder acts for the litigant but is not a party. |
+> | `PTY-10` | A litigant conducting their own case is shown as party in person. This is shown differently from a litigant with no advocate on record: party in person is the litigant's own choice, while no advocate only means no vakalatnama has been filed for them. |
+> | `PTY-11` | A litigant represented by advocates has each advocate on record named on their entry, with their bar registration ID (§11.5). A litigant cannot be party in person and have an advocate on record at the same time. |
+>
+> Each litigant shows:
+>
+> | ID | Field | Detail |
+> | --- | --- | --- |
+> | `PTY-03` | Side | Complainant or accused |
+> | `PTY-04` | Kind | Individual or institution |
+> | `PTY-05` | Institution type | e.g. "Partnership firm", "Private limited company" — institutions only |
+> | `PTY-06` | Designation | How an individual stands inside an institution, e.g. "Managing partner" |
+> | `PTY-27` | Details | The details collected at e-filing ([`efiling.md`](efiling.md) §6 for a complainant, §8 for an accused), as last changed by an Edit Litigant Details application ([`application-lifecycle.md`](application-lifecycle.md)). For an individual: name, age, gender, phone, email and addresses. For an institution: its name, CIN or PAN, contact phone and email, and address, and its representative's name, designation, phone, email and address. An accused's addresses each show their police station. |
+> | `PTY-28` | Addresses | Every address on record for the litigant, including any added since filing, for example on an order issuing process ([`process.md`](process.md) `PRC-05`) |
+> | `PTY-29` | Power of attorney holder's details | Name, age, phone, email and addresses ([`efiling.md`](efiling.md) `LIT-11`–`LIT-16`) |
+>
+> ## 11.4 Witnesses
+>
+> Each witness shows:
+>
+> | ID | Field | Detail |
+> | --- | --- | --- |
+> | `PTY-12` | Side | Complainant, accused, or neither (court witness) |
+> | `PTY-13` | Number | The witness's number, e.g. PW-1. How it is formed is not set here. |
+> | `PTY-14` | What the witness will prove | As entered when the witness was added ([`efiling.md`](efiling.md) `WIT-3`), where it was given |
+> | `PTY-31` | Details | Name or designation, age, phone, email and addresses, as collected at e-filing ([`efiling.md`](efiling.md) §13) or by an Addition of Witness application ([`application-lifecycle.md`](application-lifecycle.md)), including any address added since (`PTY-28`) |
+>
+> ## 11.5 Advocates and their offices
+>
+> | ID | Requirement |
+> | --- | --- |
+> | `PTY-20` | Each advocate on record shows their name and bar registration ID ([`account-creation.md`](account-creation.md) `REG-13`), their side, the parties they appear for, whether they appear for more than one party on that side, and the members of their office who have access to this case — juniors and clerks ([`office-management.md`](office-management.md)). An advocate's address is not shown. |
+> | `PTY-18` | Each office member is listed once, however many advocates they work for. A clerk in the offices of two advocates is one person with two advocates listed. |
+>
+> Each office member shows:
+>
+> | ID | Field | Detail |
+> | --- | --- | --- |
+> | `PTY-17` | Role | Junior or clerk |
+> | `PTY-19` | Advocates | Every advocate on record whose office they are in |
+> | `PTY-32` | Identifier | A junior's bar registration ID, or a clerk's clerk registration number ([`account-creation.md`](account-creation.md) `REG-13`, `REG-13a`) |
+
+---
+
+## Case History date range, and the Bail lifecycle section (`TME-02`, `TME-03`, view-case §13)
+
+**Dropped 2026-11-11.** Case History was rewritten to match the overview's case updates;
+the date range was a display detail, and `TME-03` (each event opens its record) is now part
+of `TME-04`. The Bail lifecycle section does not belong in the case view.
+
+**Now:** `TME-01`, `TME-04`–`TME-07` of [`view-case.md`](view-case.md) §12. Bail is owned by
+[`bail-bond.md`](bail-bond.md).
+
+### From view-case.md §12, as it stood before
+
+> # 12. Case History
+>
+>
+> | ID | Element | Detail |
+> | --- | --- | --- |
+> | `TME-01` | Order | Events grouped by date, newest first |
+> | `TME-02` | Date range | The span of the history: first event to latest event |
+> | `TME-03` | Events | Each event opens the record it came from |
+>
+> ## 12.1 Event types
+>
+> Case history draws from the same event catalogue as the overview case updates (§5.2).
+> The full event catalogue is maintained in a [separate document](https://docs.superhuman.com/d/PUCAR-Dashboard-2027_dKtL_rwN6Qw/Events_suDoUtbn#Events-Case-Updates_tudKS-s9).
+> The overview shows the updates down to the last order issued; case history shows all.
+
+### From view-case.md §13
+
+> # 13. Bail lifecycle
+>
+> Bail runs across the case: Make filings (`ACT-02`) and the overview's pending tasks (§5.3)
+> always show the same bail state.
+>
+> ## 13.1 Phases
+>
+> | Phase | What happens |
+> | --- | --- |
+> | `none` | No bail activity |
+> | `task` | The court has approved bail with terms; the task is to raise the bond |
+> | `signing` | Bond generated, out for signatures |
+> | `review` | Signatures complete; status review |
+>
+> ## 13.2 Entry points
+>
+> - Make filings → Raise bail application (`ACT-02`)
+> - The bail bond task in the overview's pending tasks (§5.3)
+>
+> ## 13.3 Bail actions
+>
+> | Action | Purpose |
+> | --- | --- |
+> | Bail application | Raise a bail application |
+> | Bail bond | Generate the bond document, or view it |
+> | Bail bond status | Review status of an outstanding bond |
+
+---
+
+## view-case's Not yet covered section
+
+**Dropped 2026-11-11.** No other PRD keeps a section like this.
+
+### From view-case.md §14
+
+> # 14. Not yet covered
+>
+> The following are known to be needed but are not specified in this document:
+>
+> | Area | Notes |
+> | --- | --- |
+> | Backend API contracts | Endpoints, payloads, pagination, real-time updates |
+> | Data model (server) | Database schema, relationships, indices |
+> | Search | Full-text search across cases, documents, orders |
+> | Notifications | Push/in-app notifications for case events |
+> | Audit trail | Who viewed/accessed what, when |
+> | Offline / degraded | Behaviour when the backend is unreachable |
+> | Performance | Pagination limits, caching strategy, lazy loading |
+> | Permissions (server-side) | Enforcing access model server-side |
+> | Join case / vakalatnama filing | How an advocate joins an existing case |
+> | Share access | **[OWNER]** Not in v1. Will cover sharing office staff access to a case. |
+> | Calendar | The calendar view mentioned in the prototype app shell |
+
+---
+
+## Last order highlighted in Case History (`TME-06`)
+
+**Dropped 2026-11-11.** Not needed in the case's Case History section.
+
+### From view-case.md §12
+
+> | `TME-06` | The last order issued on the case is highlighted. |
 
 ---

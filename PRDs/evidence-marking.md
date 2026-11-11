@@ -1,6 +1,6 @@
 # Evidence Marking
 
-**Status:** v1 — 2026-10-30; first version, moved out of [`document-submission.md`](document-submission.md) §4. Requirement IDs `DSB-12`–`DSB-15` and `DSB-20` keep their numbers. New: what a marked document shows (`EVM-01`) and that the A-Diary takes no entry for marking in this version (`EVM-02`). Open questions `Q-1`–`Q-4`.
+**Status:** v1.1 — 2026-11-11; `Q-4` now links to [`case-file.md`](case-file.md), which owns the case file's contents and order. v1 — 2026-10-30; first version, moved out of [`document-submission.md`](document-submission.md) §4. Requirement IDs `DSB-12`–`DSB-15` and `DSB-20` keep their numbers. New: what a marked document shows (`EVM-01`) and that the A-Diary takes no entry for marking in this version (`EVM-02`). Open questions `Q-1`–`Q-4`.
 **Audience:** developers and agents building evidence marking
 
 Requirement IDs: `DSB-*` (carried over from document submission) and `EVM-*` — use in
@@ -39,4 +39,4 @@ case file and Documents tab by [`view-case.md`](view-case.md) and
 | `Q-1` | Is marking signed? DRISTI 1.0 stamps an evidence seal on the document (court, marked as, case number, marked through), which the magistrate signs; other staff send it to the magistrate's signing queue. | Yes |
 | `Q-2` | Is **marked through** recorded — the witness or party through whom the document was marked (PW-1, DW-1 …)? DRISTI 1.0 requires it. Is the hearing it was marked in recorded? | No |
 | `Q-3` | Can a marking be undone or corrected — wrong side, wrong document? | No |
-| `Q-4` | Where does a marked document sit in the case file: does it move under the evidence headings ([`view-case.md`](view-case.md) §6.2), or stay where it was filed? | No |
+| `Q-4` | Where does a marked document sit in the case file: does it move under the evidence headings ([`case-file.md`](case-file.md)), or stay where it was filed? | No |
