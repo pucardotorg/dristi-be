@@ -11,7 +11,13 @@ from django.db import models
 from django.db.models import F, Q
 
 from apps.cases.selectors import get_attendance_roll
-from apps.core.models import CODE_RE, BaseActivatableModel, BaseAuditableModel, BaseModel
+from apps.core.models import (
+    CODE_RE,
+    ActivatableQuerySet,
+    BaseActivatableModel,
+    BaseAuditableModel,
+    BaseModel,
+)
 
 from .enums import (
     ATTENDANCE_STATUSES,
@@ -39,6 +45,8 @@ from .enums import (
     Side,
 )
 
+PURPOSE_CODE_FIXED_MESSAGE = "A purpose's code cannot change once created: other modules store it."
+PURPOSE_NEVER_DELETED_MESSAGE = "A purpose is never deleted; retire it by unticking Active."
 CAPACITY_REQUIRED_MESSAGE = "Enter a capacity of at least 1 for a reduced sitting."
 CAPACITY_NOT_ALLOWED_MESSAGE = (
     "Capacity can be set only for a reduced sitting; leave it empty for other entry types."
@@ -127,6 +135,20 @@ STARTED_BEFORE_ENDED_MESSAGE = (
 STATUS_ORDER_MESSAGE = "The status order does not match the status."
 
 
+class HearingPurposeQuerySet(ActivatableQuerySet):
+    """Refuses to delete purposes or rename their codes in bulk."""
+
+    def update(self, **kwargs):
+        """Update, unless the change would rename a code."""
+        if "code" in kwargs:
+            raise ValidationError({"code": PURPOSE_CODE_FIXED_MESSAGE})
+        return super().update(**kwargs)
+
+    def delete(self):
+        """Refuse: purposes are retired, never deleted."""
+        raise ValidationError(PURPOSE_NEVER_DELETED_MESSAGE)
+
+
 class HearingPurpose(BaseModel, BaseActivatableModel, BaseAuditableModel):
     """What a hearing is listed for, e.g. Appearance or Arguments (spec 0023 #2.2).
 
@@ -141,6 +163,8 @@ class HearingPurpose(BaseModel, BaseActivatableModel, BaseAuditableModel):
     description = models.TextField(blank=True)
     sequence = models.PositiveSmallIntegerField(help_text="Display order in dropdowns.")
 
+    objects = HearingPurposeQuerySet.as_manager()
+
     class Meta:
         """Meta options."""
 
@@ -153,17 +177,25 @@ class HearingPurpose(BaseModel, BaseActivatableModel, BaseAuditableModel):
         return f"{self.label} ({self.code})"
 
     def clean(self):
-        """Validate the code format."""
+        """Validate the code format, and that an existing purpose keeps its code."""
         super().clean()
         if self.code and not CODE_RE.fullmatch(self.code):
             raise ValidationError(
                 {"code": "Must be uppercase snake_case matching ^[A-Z0-9_]+$ (e.g. APPEARANCE)."}
             )
+        if not self._state.adding:
+            stored = type(self).objects.filter(pk=self.pk).values_list("code", flat=True).first()
+            if stored is not None and stored != self.code:
+                raise ValidationError({"code": PURPOSE_CODE_FIXED_MESSAGE})
 
     def save(self, *args, **kwargs):
         """Validate the model before saving."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Refuse: purposes are retired, never deleted."""
+        raise ValidationError(PURPOSE_NEVER_DELETED_MESSAGE)
 
 
 def _raise_broken_rules(rules):

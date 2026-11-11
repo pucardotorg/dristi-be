@@ -26,6 +26,11 @@ class HearingPurposeAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     ordering = ("sequence", "code")
     readonly_fields = ("id", "created_at", "updated_at")
 
+    def get_readonly_fields(self, request, obj=None):
+        """Lock the code once the purpose exists: other modules store it."""
+        readonly = super().get_readonly_fields(request, obj)
+        return (*readonly, "code") if obj else readonly
+
     def has_delete_permission(self, request, obj=None):
         """Purposes are retired, never deleted; hearings keep a PROTECT reference."""
         return False
