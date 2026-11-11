@@ -1,13 +1,13 @@
 """Tests for the Language model, its admin, caching and seed data (spec 0030)."""
 
-import importlib
+from io import StringIO
 
 import pytest
-from django.apps import apps as django_apps
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.core.exceptions import ImproperlyConfigured, ValidationError
+from django.core.management import call_command
 from django.db import IntegrityError, connection, transaction
 from django.db.models import ProtectedError
 from django.test import Client, RequestFactory
@@ -16,8 +16,12 @@ from django.test.utils import CaptureQueriesContext
 from apps.core.admin import LanguageAdmin, LanguageSupportFilter
 from apps.core.languages import resolve_request_language
 from apps.core.models import Language, validate_language_code
+from apps.core.tests.conftest import LANGUAGES_SEED
 
 User = get_user_model()
+
+# Every test starts from the seeded languages (spec 0030 section 10).
+pytestmark = pytest.mark.usefixtures("languages")
 
 # supports__contains is PostgreSQL-only (spec 0030 section 1); CI runs on PostgreSQL.
 requires_postgres = pytest.mark.skipif(
@@ -337,16 +341,16 @@ class TestLanguageCaching:
 
 @pytest.mark.django_db
 class TestSeededLanguages:
-    """The data migration seeds English (default), Malayalam and Hindi."""
+    """The seed file loads English (default), Malayalam and Hindi (spec 0025)."""
 
-    def test_seeding_is_idempotent_and_restores_values(self):
-        migration = importlib.import_module("apps.core.migrations.0008_seed_languages")
+    def test_reseeding_is_a_noop_and_leaves_rows_untouched(self):
         Language.objects.filter(code="hi").update(name="Changed", sort_order=99)
-        migration.seed_languages(django_apps, None)
-        migration.seed_languages(django_apps, None)
+        out = StringIO()
+        call_command("seed", str(LANGUAGES_SEED), stdout=out)
+        assert "created 0, unchanged 3, skipped 0" in out.getvalue()
         assert Language.objects.count() == 3
-        assert Language.objects.get(code="hi").name == "Hindi"
-        assert Language.objects.get(code="hi").sort_order == 20
+        assert Language.objects.get(code="hi").name == "Changed"
+        assert Language.objects.get(code="hi").sort_order == 99
 
     def test_seeded_rows(self):
         rows = list(

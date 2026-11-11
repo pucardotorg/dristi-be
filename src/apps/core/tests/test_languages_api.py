@@ -10,6 +10,9 @@ from rest_framework.test import APIClient
 
 from apps.core.models import Language
 
+# Every test starts from the seeded languages (spec 0030 section 10).
+pytestmark = pytest.mark.usefixtures("languages")
+
 URL = reverse("language-list")
 
 requires_postgres = pytest.mark.skipif(

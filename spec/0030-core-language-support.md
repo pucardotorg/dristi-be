@@ -268,10 +268,18 @@ any feature-app prefix.
 
 ### 10. Migrations and seed data
 
-1. `core/0007_language` — create `apps.core.models.Language` (including
-   `supports`) and its constraints.
-2. `core/0008_seed_languages` (data migration, reversible) — seed the languages
-   below.
+`core/0007_language` creates `apps.core.models.Language` (including `supports`)
+and its constraints. It is the only migration: reference data is not seeded by
+data migrations.
+
+The initial languages are seeded with the `seed` command (spec 0025) from
+`data/seed/core/languages.toml`, registered as `core.Language` (natural key
+`code`) in `apps.core.seeding.specs`. Every environment runs it once after
+migrating:
+
+```sh
+python manage.py seed ../data/seed/core/languages.toml   # from src/; /data/seed/core/ in the image
+```
 
 | `code` | `name` | `native_name` | `is_default` | `sort_order` | `is_active` | `supports` |
 |---|---|---|---|---|---|---|
@@ -282,7 +290,10 @@ any feature-app prefix.
 All seeded languages declare only `ui` at first; `translation` and `ocr` are
 added later from admin as those capabilities actually ship for a language.
 
-Seeding uses `update_or_create(code=...)` so it is idempotent.
+Seeding is insert-only and idempotent (spec 0025 section 5): re-running the
+file creates nothing and never overwrites a language changed in admin. Until it
+has run there is no default language, and language resolution raises
+`ImproperlyConfigured`.
 
 ### 11. Tests
 
@@ -300,7 +311,8 @@ Add model and API tests covering at least:
 5. Resolution order: `lang` beats `Accept-Language`; `Accept-Language` beats the default; `q` values are honoured; `en-IN` matches `en`; unknown or malformed `Accept-Language` falls back to the default without error.
 6. `?lang=xx` and `?lang=<inactive code>` return `400` with code `E10001` and field `lang`.
 7. cachalot behavior for language reads + invalidation on `Language` writes.
-8. Seeded languages are present with the codes, flags and `supports` values above.
+8. Seeding `languages.toml` creates the codes, flags and `supports` values
+   above; re-seeding creates nothing and leaves admin edits untouched.
 9. Schema contains the `Core` tag and `/api/v1/languages/`.
 
 ## Affected files
@@ -316,10 +328,12 @@ Add model and API tests covering at least:
 - `src/apps/core/serializers.py` (`LanguageSerializer`)
 - `src/apps/core/views.py` (`LanguageViewSet`)
 - `src/apps/core/migrations/0007_language.py`
-- `src/apps/core/migrations/0008_seed_languages.py`
+- `src/apps/core/seeding/specs.py` (register `core.Language`)
+- `data/seed/core/languages.toml`
 - `src/apps/core/tests/test_languages.py`
 - `src/apps/core/tests/test_languages_api.py`
 - `src/apps/core/tests/test_language_resolution.py`
+- `src/apps/core/tests/conftest.py` (`languages` fixture)
 
 ## Dependencies
 

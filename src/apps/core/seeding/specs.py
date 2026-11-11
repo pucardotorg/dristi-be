@@ -89,3 +89,20 @@ register(
         order=50,
     )
 )
+
+register(
+    SeedSpec(
+        model_label="core.Language",
+        key=("code",),
+        fields=(
+            "code",
+            "name",
+            "native_name",
+            "is_default",
+            "sort_order",
+            "is_active",
+            "supports",
+        ),
+        order=30,
+    )
+)

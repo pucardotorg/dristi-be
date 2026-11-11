@@ -1,0 +1,31 @@
+# Initial supported languages (spec 0030 section 10). Every environment needs
+# these: the default language is the fallback for language resolution.
+[seed]
+model = "core.Language"
+
+[[rows]]
+code = "en"
+name = "English"
+native_name = "English"
+is_default = true
+sort_order = 0
+is_active = true
+supports = ["ui"]
+
+[[rows]]
+code = "ml"
+name = "Malayalam"
+native_name = "മലയാളം"
+is_default = false
+sort_order = 10
+is_active = true
+supports = ["ui"]
+
+[[rows]]
+code = "hi"
+name = "Hindi"
+native_name = "हिन्दी"
+is_default = false
+sort_order = 20
+is_active = true
+supports = ["ui"]

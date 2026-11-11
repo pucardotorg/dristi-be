@@ -13,6 +13,9 @@ from apps.api.errors import get_error
 from apps.core.languages import parse_accept_language, resolve_request_language
 from apps.core.models import Language
 
+# Every test starts from the seeded languages (spec 0030 section 10).
+pytestmark = pytest.mark.usefixtures("languages")
+
 
 def resolve(params=None, accept_language=None):
     headers = {"HTTP_ACCEPT_LANGUAGE": accept_language} if accept_language is not None else {}
