@@ -38,12 +38,13 @@ table. There is no `is_public` flag and no mixed table.
 * Provide a separate `core_publicconfiguration` table for non-sensitive values
   that the frontend may fetch over the internet.
 * Guarantee that the public API only reads this table.
-* Make `config_key` globally unique so a single-key detail endpoint is
-  unambiguous.
+* Guarantee a `UniqueConstraint` on (`config_set`, `config_key`) so a key is
+  unique within its set.
 * Expose two read-only endpoints:
-  * `GET /api/v1/public-configuration/set/{config_set}/` — paginated list of a
+  * `GET /api/v1/public-configuration/{config_set}/` — paginated list of a
     set.
-  * `GET /api/v1/public-configuration/{config_key}/` — fetch one entry.
+  * `GET /api/v1/public-configuration/{config_set}/{config_key}/` — fetch one
+    entry from a set.
 * Return only active rows.
 * Allow values to be edited through Django admin without a deployment.
 * Seed example public values through the existing `seed` command (spec 0025).
@@ -103,7 +104,7 @@ There must be no database join between them.
 | --- | --- | --- |
 | `id` | UUID | Primary key, from `BaseModel` |
 | `config_set` | `CharField(max_length=100)` | Grouping used by the set-listing endpoint; required |
-| `config_key` | `CharField(max_length=255, unique=True)` | Public key; required, globally unique |
+| `config_key` | `CharField(max_length=255)` | Public key within the set; required, unique together with `config_set` |
 | `config_value` | `TextField(blank=True)` | Opaque value; required, MAY be empty string |
 | `description` | `TextField(null=True, blank=True)` | Admin-only note on what the entry controls |
 | `is_active` | `BooleanField` | From `BaseActivatableModel`; default `True` |
@@ -116,12 +117,11 @@ anyone, because the row itself is public.
 
 ### 1.2 Constraints and normalization
 
-* `config_key` MUST have a `unique=True` database constraint. This is what
-  makes `GET /public-configuration/{config_key}/` unambiguous even though keys
-  are also grouped by `config_set`.
+* A `UniqueConstraint` on (`config_set`, `config_key`) MUST exist. The same
+  `config_key` MAY be used in a different `config_set`.
 * `config_set` and `config_key` MUST be normalized on save: trimmed and
-  lowercased. Uniqueness is therefore case-insensitive, so `UI` and `ui`
-  cannot create two entries.
+  lowercased. Uniqueness is therefore effectively case-insensitive, so
+  `PDF`/`pdf` cannot create two entries for the same set and key.
 * Both fields MUST match the same machine-friendly pattern used by
   `Configuration`:
 
@@ -209,9 +209,9 @@ Rules:
 * `get_public_bool` accepts `true/false`, `1/0`, `yes/no`, `on/off`
   case-insensitively.
 
-The API detail view normalizes `config_key` before lookup, so
-`GET /public-configuration/MAX_RECORDS_PER_PDF/` resolves to the stored
-lowercase key.
+The API detail view normalizes both path parameters before lookup, so
+`GET /api/v1/public-configuration/PDF/MAX_RECORDS_PER_PDF/` resolves to the
+stored lowercase set and key.
 
 ---
 
@@ -222,11 +222,11 @@ canonical; requests without it redirect.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/v1/public-configuration/set/{config_set}/` | Paginated active entries in one set |
-| `GET` | `/api/v1/public-configuration/{config_key}/` | One active entry by globally unique key |
+| `GET` | `/api/v1/public-configuration/{config_set}/` | Paginated active entries in one set |
+| `GET` | `/api/v1/public-configuration/{config_set}/{config_key}/` | One active entry identified by its set and key |
 
-There is **no** global `GET /api/v1/public-configuration/` list and no write
-method. Only the two routes above are exposed.
+There is **no** all-entries list and no write method. Only the two routes
+above are exposed.
 
 ### 3.1 Permissions and read-only behavior
 
@@ -236,12 +236,13 @@ method. Only the two routes above are exposed.
 * The view MUST read only `PublicConfiguration`, never `Configuration`.
 * The queryset MUST filter `is_active=True` before pagination/serialization.
 * The view MUST NOT accept ordering or filtering parameters that could cause
-  backend-only rows to be selected. The only path parameter is the set or key.
+  backend-only rows to be selected. The only path parameters are `config_set`
+  and, on the detail route, `config_key`.
 
 ### 3.2 Set listing
 
 ```text
-GET /api/v1/public-configuration/set/pdf/
+GET /api/v1/public-configuration/pdf/
 ```
 
 Returns a standard DRF page-number paginated response, using the project
@@ -278,10 +279,10 @@ default page size (20):
   `results` list. An unknown set is not an error.
 * Only active rows are included.
 
-### 3.3 Detail by key
+### 3.3 Detail by set and key
 
 ```text
-GET /api/v1/public-configuration/default_template/
+GET /api/v1/public-configuration/pdf/default_template/
 ```
 
 ```json
@@ -297,8 +298,10 @@ GET /api/v1/public-configuration/default_template/
 }
 ```
 
-* The key is normalized before lookup.
-* A missing or inactive key returns `404` with the project-standard error
+* Both `config_set` and `config_key` are normalized before lookup.
+* The row MUST match both path parameters. A key that exists in another set is
+  not returned.
+* A missing or inactive pair returns `404` with the project-standard error
   envelope. The common not-found code (`E00105`) is used; no new business error
   code is required.
 * A key is never returned from `Configuration`, even when both tables contain
@@ -320,20 +323,21 @@ admin metadata.
 
 ### 3.5 Routing and schema
 
-Register a router prefix `public-configuration` in `apps.core.urls`, mounted
-under `/api/v1/` in `config/urls.py`, and include:
+Both endpoints live under the `public-configuration` prefix. In
+`apps.core.urls`, mounted under `/api/v1/` in `config/urls.py`:
 
-* `lookup_field = "config_key"`;
-* `lookup_value_regex = r"[^/]+"` so dotted keys are usable in the URL;
-* a custom action `by_set` reached at `set/{config_set}/`;
-* `list_actions = {"by_set"}` so drf-spectacular documents the action as a
+* use a read-only viewset with a custom `by_set` action at `{config_set}/`
+  and `list_actions = {"by_set"}` so drf-spectacular documents it as a
   paginated list;
-* `APIRetrieveMixin + APIBaseViewSet` (or an equivalent read-only viewset) so
-  no global list route is generated.
+* expose the detail through a read-only viewset action or `APIView` at
+  `{config_set}/{config_key}/`;
+* allow dotted names in both path parameters by matching `[^/]+`;
+* do not generate a global list route (`public-configuration/`) and do not
+  generate an id-based detail route.
 
-The view is owned by `apps.core`, so the schema tags it under the core app. No
-per-operation `tags=` or manual pagination schema is needed (spec 0000 section
-10.2).
+The views are owned by `apps.core`, so the schema tags them under the core
+app. No per-operation `tags=` or manual pagination schema is needed (spec 0000
+section 10.2).
 
 ---
 
@@ -448,13 +452,16 @@ Required coverage:
 
 ### Model and validation
 
-* `config_key` is globally unique.
+* `config_key` is unique within `config_set`; the same key in a different set
+  is allowed.
 * `config_set` and `config_key` are trimmed and lowercased.
+* A normalized collision such as `PDF`/`pdf` for the same set and key is
+  rejected.
 * Invalid names are rejected; dotted names are accepted.
 * Empty `config_value` is allowed.
-* A key that appears in `Configuration` may also exist in
-  `PublicConfiguration` only if the duplicate-across-stores rule is not
-  enforced at the database level; the tests MUST document the intended rule.
+* A `(config_set, config_key)` pair MUST NOT exist in both `Configuration`
+  and `PublicConfiguration`. If that rule is not enforced in code yet, the
+  test documents the intended behavior.
 * Secret-like keys (`gateway.password`, `auth.token`, `esign.private_key`,
   exactly `api_key`) are rejected.
 * A non-secret key containing a secret word as a prefix
@@ -474,8 +481,10 @@ Required coverage:
 * Set listing is public, paginated, and carries the `meta` envelope.
 * Set listing includes only active rows from that set.
 * Unknown set returns `200` with an empty page.
-* Detail returns one active row by key and normalizes the key.
-* Unknown/inactive key returns `404` with the standard error body.
+* Detail returns one active row by `config_set` + `config_key` and normalizes
+  both path parameters.
+* A key that exists only under a different set returns `404`.
+* Unknown/inactive pair returns `404` with the standard error body.
 * A key present only in `Configuration` is **not** returned by either public
   route.
 * `POST`, `PUT`, `PATCH`, and `DELETE` on both routes return `405`.
@@ -508,7 +517,7 @@ Required coverage:
 | Audience | Backend process only | Internet / frontend |
 | API | None | Two read-only `GET` endpoints |
 | Table | `core_configuration` | `core_publicconfiguration` |
-| Key uniqueness | `(config_set, config_key)` | `config_key` globally unique, plus `config_set` grouping |
+| Key uniqueness | `(config_set, config_key)` | `(config_set, config_key)` |
 | Public flag | None | None: every row is public |
 | Secrets | Forbidden | Forbidden, and secret-like keys are rejected |
 | Edit surface | Django admin | Django admin |
@@ -543,8 +552,5 @@ two stores stay separate.
 2. **Description exposure.** This spec keeps `description` admin-only. If the
    frontend needs human-readable labels per key, add explicit `label` and
    `help_text` fields later rather than exposing operator notes.
-3. **Global key uniqueness.** The detail route uses only `config_key`, so keys
-   are globally unique. If the same key must exist in multiple sets later, the
-   detail route must become `set/{config_set}/{config_key}/`.
-4. **Throttling.** Public reads are cheap and cached. Should a per-IP throttle
+3. **Throttling.** Public reads are cheap and cached. Should a per-IP throttle
    be added when traffic warrants it?
