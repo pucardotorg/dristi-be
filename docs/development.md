@@ -55,7 +55,7 @@ TOML with the `seed` command (spec 0025):
    ```
 
 Seeding is insert-only, so re-running is safe. See
-[src/data/seed/README.md](../src/data/seed/README.md) for the file format.
+[data/seed/README.md](../data/seed/README.md) for the file format.
 
 Until this is done, every pincode lookup returns 404 and users type district
 and state by hand.

@@ -85,7 +85,7 @@ states, districts and pincodes are seeded from TOML with the `seed` command
 (`python manage.py seed states.toml districts.toml pincodes.toml`); the data and
 its CSV-to-TOML converter live in the
 [`dristi-be-experiments`](https://github.com/pucardotorg/dristi-be-experiments)
-repo (see [src/data/seed/README.md](src/data/seed/README.md)).
+repo (see [data/seed/README.md](data/seed/README.md)).
 
 ## Scheduled and delayed jobs
 
