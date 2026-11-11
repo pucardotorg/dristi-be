@@ -170,7 +170,6 @@ src/apps/notifications/
 ├── serializers.py            # Notification + filter/response serializers
 ├── views.py                  # inbox viewset + SSE subscribe view
 ├── urls.py
-├── errors.py                 # E11001 stream unavailable
 ├── checks.py                 # settings sanity checks
 ├── admin.py                  # read-only admin
 ├── migrations/
@@ -374,9 +373,20 @@ class BaseNotificationBus(ABC):
         """Return the oldest retained stream id, or None when the stream is gone."""
 
     @abstractmethod
-    def read(self, user_id, after_id: str | None, block_ms: int) -> list[tuple[str, dict]]:
-        """Read events after ``after_id``; None means only new events."""
+    def last_id(self, user_id) -> str:
+        """Return the newest stream id, or "0-0" for a missing/empty stream."""
+
+    @abstractmethod
+    def read(self, user_id, after_id: str, block_ms: int) -> list[tuple[str, dict]]:
+        """Read events strictly after ``after_id``."""
 ```
+
+Stream ids are ordered: `<milliseconds>-<sequence>` compares as the tuple of
+its two integers. `compare_ids(a, b)` in `bus.py` implements this; the SSE view
+uses it to decide whether a client cursor is still inside the retained tail
+(§5.3). `read()` always takes an explicit cursor — the view never reads at `$`,
+because `$` is resolved when the `XREAD` command runs, not when the connection
+was accepted, and events published in between would be skipped silently (§5.3).
 
 Implementations:
 
@@ -419,7 +429,8 @@ Implementations:
   This is a creation-time snapshot, not a read-state update. A stream event
   for a notification the client already has must not reset its read state.
 
-- `XREAD BLOCK <heartbeat_ms> COUNT <batch> STREAMS <key> <after_id|$>`.
+- `XREAD BLOCK <heartbeat_ms> COUNT <batch> STREAMS <key> <after_id>` —
+  always an explicit cursor, never `$` (§4.1, §5.3).
 - No consumer groups: every SSE connection for the same user reads
   independently from its own position. Two tabs both receive the event.
 
@@ -430,9 +441,12 @@ Implementations:
 - The key expires after `NOTIFICATIONS_STREAM_TTL_SECONDS` from the last
   publish. A user who has not received an event for that long has no replay
   tail.
-- These limits are intentional. The database has the full inbox. If a stream
-  is missing when a client reconnects with a `Last-Event-ID`, the SSE view sends
-  a `resync` event and the client calls the REST inbox.
+- These limits are intentional. The database has the full inbox. If the replay
+  tail cannot prove it is gap-free for a reconnecting client — the stream is
+  missing, the cursor is older than the oldest retained entry (trimmed), or the
+  key expired and a newer publish recreated it — the SSE view sends a `resync`
+  event and the client calls the REST inbox (§5.3). A trimmed tail is never
+  resumed silently.
 - Redis Streams are not persisted as the source of truth. A Redis flush loses
   only live/replay events, never notifications.
 
@@ -452,11 +466,45 @@ Implementations:
   parameter or path parameter. A client cannot subscribe to another user's
   stream.
 - An unauthenticated or gated request receives the normal JSON error response
-  (`E00102`, `E01006`, etc.) with `meta`, before any stream starts.
+  (`E00102`, `E01006`, etc.) with `meta`, before any stream starts. These are
+  the **only** non-200 responses the endpoint produces: a native `EventSource`
+  fails permanently (no automatic retry) on any non-200 status, so a non-200
+  from this endpoint must only ever mean "this session cannot subscribe" — a
+  state a reconnect cannot fix. Transient conditions are handled inside an open
+  stream (§5.3), never with an error status.
 
-### 5.2 Response
+### 5.2 Response and content negotiation
 
-Return a `StreamingHttpResponse` directly from a DRF `APIView`; it is not a
+`EventSource` requests the route with `Accept: text/event-stream`. The
+project's `DEFAULT_RENDERER_CLASSES` is `MetaJSONRenderer` only, and DRF
+negotiates content in `APIView.initial()` — before the handler runs — so with
+the default renderers the browser would receive `406 E00107` and the handler
+would never execute. The subscribe view therefore declares its own renderers:
+
+```python
+class EventStreamRenderer(BaseRenderer):
+    """Negotiation target for text/event-stream; renders pre-stream errors as JSON."""
+
+    media_type = "text/event-stream"
+    format = "sse"
+
+    def render(self, data, accepted_media_type=None, renderer_context=None): ...
+
+
+class NotificationSubscribeView(APIView):
+    renderer_classes = [EventStreamRenderer, MetaJSONRenderer]
+```
+
+`EventStreamRenderer` exists to satisfy negotiation for
+`Accept: text/event-stream`; the success path bypasses it entirely by
+returning a `StreamingHttpResponse`. Its `render()` is reached only when DRF
+renders an exception (authentication or permission failures), and emits the
+standard JSON error body so those responses stay machine-readable.
+`MetaJSONRenderer` stays second so `Accept: application/json` and `*/*`
+clients (tests, curl) still negotiate successfully. Add a test that
+`Accept: text/event-stream` alone does not 406.
+
+Return a `StreamingHttpResponse` directly from the `APIView`; it is not a
 DRF `Response`, so `MetaJSONRenderer` does not wrap it.
 
 Headers:
@@ -484,7 +532,7 @@ data: {"id": "...", "event_type": "CASE_FILED", ...}
 : keep-alive
 
 event: resync
-data: {"reason": "stream_unavailable"}
+data: {"reason": "tail_lost"}
 ```
 
 Rules:
@@ -496,8 +544,11 @@ Rules:
 - A comment line (`: keep-alive`) is emitted after
   `NOTIFICATIONS_SSE_HEARTBEAT_SECONDS` without an event. It keeps proxies and
   load balancers from closing an idle connection.
-- `resync` means the replay tail is unavailable. The client should fetch the
-  REST inbox; the stream then continues live. It has no `id:`.
+- `resync` means the stream cannot prove the client has seen everything: the
+  replay tail is missing or trimmed past the client's cursor
+  (`"reason": "tail_lost"`), or live delivery was interrupted and has resumed
+  (`"reason": "bus_recovered"`). The client should fetch the REST inbox; the
+  stream then continues live. It has no `id:`.
 - `json.dumps` escapes newlines, so one event is always valid one-line SSE
   data. Titles and bodies are never interpolated into the frame unescaped.
 
@@ -515,24 +566,42 @@ If both are present, a valid header wins; if it is malformed, the query
 parameter is tried. The value is an opaque Redis stream id. Invalid values are
 ignored and the stream starts live; a malformed header must not produce a 500.
 
-Logic:
+Logic (all inside the 200 streaming response — after authentication succeeds
+the endpoint never returns an error status, because a non-200 permanently
+closes a native `EventSource`):
 
-1. Open the bus (`ping()`). Any Redis error during preflight (`ping()` or the
-   cursor check) raises `BusinessError(errors.NOTIFICATION_STREAM_UNAVAILABLE)`
-   before returning the streaming response, so the client gets a normal
-   `503 E11001` JSON error.
-2. If a cursor was supplied and `first_id(user_id)` is `None`, emit `resync`
-   and start live.
-3. Otherwise start `XREAD` after the supplied id, or at `$` for a new stream.
-4. Keep reading until `NOTIFICATIONS_SSE_MAX_DURATION_SECONDS`, then close.
+1. **Fix the cursor before `connected`.** Resolve the starting cursor while
+   still inside the connection handshake:
+   - No client cursor: `cursor = last_id(user_id)` — the newest entry at
+     connect time (`"0-0"` for an empty/missing stream). The view never reads
+     at `$`: `$` is resolved when the first `XREAD` runs, not at connect, so
+     an event published between `connected` (and the client's REST fetch) and
+     the first blocking read would be skipped silently. Reading strictly after
+     a cursor captured at connect closes that window: the REST inbox covers
+     everything up to the cursor, the stream everything after it.
+   - Client cursor supplied: compare it to `first_id(user_id)`. The resume is
+     gap-free only if the stream exists **and** `cursor >= first_id` (tuple
+     comparison, §4.1). Otherwise — stream missing, trimmed past the cursor,
+     or expired and recreated by a newer publish — plan a `resync` and fall
+     back to `cursor = last_id(user_id)`. A stale cursor is never resumed
+     silently: `XREAD` after a trimmed id would return only the retained tail
+     with no indication that entries in between were lost.
+2. Send `retry:`, then `connected`, then the planned `resync`
+   (`"reason": "tail_lost"`) if any.
+3. Loop: `read(user_id, cursor, heartbeat_ms)`; emit each event with its
+   stream id and advance the cursor; emit `: keep-alive` when the read times
+   out empty.
+4. **Redis failure, before or during the loop, degrades — it does not
+   error.** Emit keep-alives, retry the bus every
+   `NOTIFICATIONS_SSE_HEARTBEAT_SECONDS`, and log `SSE_DEGRADED` once. On
+   recovery, set `cursor = last_id(user_id)` and emit `resync`
+   (`"reason": "bus_recovered"`) so the client refetches whatever committed
+   while the bus was unreachable. The REST inbox is unaffected throughout.
+5. Keep reading until `NOTIFICATIONS_SSE_MAX_DURATION_SECONDS`, then close.
    The browser reconnects automatically and resumes from its last id.
-5. On `GeneratorExit`, `BrokenPipeError` or a client disconnect, stop and
+6. On `GeneratorExit`, `BrokenPipeError` or a client disconnect, stop and
    close the Redis client. No error is written after the stream has started;
    the connection simply closes.
-
-Resuming from an old id that has been trimmed returns only the retained tail;
-the client de-duplicates by the payload's `id` and can call REST for anything
-older.
 
 ### 5.4 Why a maximum duration
 
@@ -559,6 +628,12 @@ event:
 Because steps 2 and 3 can both produce the same notification, the client must
 be idempotent by notification UUID and preserve read state on duplicates. No
 ordering between the REST response and streamed events is guaranteed.
+
+The no-gap guarantee is server-side: the stream's starting cursor is fixed
+before `connected` is sent (§5.3), so every notification is either in the REST
+response fetched after `connected` or delivered on the stream (possibly both,
+never neither). The client's only obligations are the merge-by-UUID rule above
+and refetching on `resync`.
 
 ## 6. REST inbox API
 
@@ -658,11 +733,10 @@ respectively.
 - The viewset's tag is inferred from the owning app per spec 0000 §10.2.
 - `subscribe` is annotated with the optional `Last-Event-ID` header and
   `last_event_id` query parameter.
-- `E11001` is declared on `subscribe` with `error_responses(...)`.
 - The subscribe success is documented explicitly as `text/event-stream`, not as
-  a JSON body. Use an `OpenApiResponse` and, if the installed schema generator
-  would otherwise report the view's default JSON media type, a view-local
-  schema renderer or a schema override so the media type is correct.
+  a JSON body. The view's `EventStreamRenderer` (§5.2) already advertises that
+  media type to the schema generator; add an `OpenApiResponse` or schema
+  override only if the generated media type is still wrong.
 - The list action declares `parameters=[NotificationFilterSerializer]`;
   `ApiAutoSchema` does not infer query parameters from a serializer otherwise.
 - The list/retrieve/action serializers let `ApiAutoSchema` infer the rest.
@@ -698,23 +772,25 @@ detail ids.
 
 ## 8. Error codes
 
-Allocate domain `11` → `notifications` in `apps.api.errors.DOMAINS` and in the
-table in spec 0000 §9.2. Domain `10` is reserved for `core` by spec 0030.
+This spec defines **no** notification-specific error code, so it allocates no
+error domain and ships no `errors.py`.
 
-`src/apps/notifications/errors.py`:
+- The subscribe endpoint handles a transient Redis outage inside the open
+  stream (§5.3, degraded mode + `resync`) rather than with a 503: a native
+  `EventSource` fails permanently on any non-200 response, so an error status
+  for a recoverable condition would stop live notifications in every open tab
+  until a page reload. Its only error responses are the common
+  authentication/permission codes (`E00102`, `E01006`, …), which are exactly
+  the cases where a reconnect must not be retried.
+- An unknown/foreign notification id on the inbox endpoints returns the common
+  `404 E00105`, which is also the anti-enumeration behaviour.
+- Validation of `is_read`/`priority` uses the common `E00001`/`E00005` codes.
 
-| Code | Status | Default message | When |
-| --- | --- | --- | --- |
-| `E11001` | 503 | `Notification stream is temporarily unavailable.` | The Redis event bus cannot be reached before the SSE response starts. The client should retry; the REST inbox still works. |
-
-No notification-specific code is used for an unknown/foreign id: the inbox
-endpoints return the common `404 E00105`, which is also the anti-enumeration
-behaviour. Validation of `is_read`/`priority` uses the common `E00001`/`E00005`
-codes.
-
-Raise `E11001` from the subscribe view with `BusinessError`; do not hand-build
-an error `Response`. Once streaming has started, there is no status code to
-change, so log and close instead.
+A domain prefix for `apps.notifications` will be allocated in
+`apps.api.errors.DOMAINS` and spec 0000 §9.2 when a first domain-specific code
+is actually needed. Note for that allocation: `10` is reserved for `core`
+(spec 0030) and `11` is claimed for `apps.orders` by the in-flight court-order
+spec (0025), so notifications must take the next free prefix at that time.
 
 ## 9. Settings and environment
 
@@ -898,9 +974,10 @@ cache keys.
 Add `NOTIFICATIONS_REDIS_URL` to the `web`, `worker` and `sse` environment
 blocks (and to the local `.env`); `scheduler` does not need it.
 
-The existing `/health/` check covers Redis reachability. A Redis outage makes
-the subscribe endpoint return `503 E11001`; the inbox endpoints continue to
-work.
+The existing `/health/` check covers Redis reachability. During a Redis
+outage the subscribe endpoint stays open in degraded mode (heartbeats, no
+events) and emits `resync` on recovery (§5.3); the inbox endpoints continue
+to work throughout.
 
 ### 10.6 Observability
 
@@ -914,6 +991,7 @@ Use the structured event conventions of spec 0027:
 | `SSE_CONNECTED` | subscribe view | `user_id` (id only) |
 | `SSE_DISCONNECTED` | subscribe view | `user_id`, `duration_ms` |
 | `SSE_RESYNC` | subscribe view | `user_id`, `reason` |
+| `SSE_DEGRADED` | subscribe view | `user_id`, `error` (once per outage, on entering degraded mode) |
 | `SSE_FAILED` | subscribe view | `user_id`, `error` |
 
 Do not log notification titles, bodies or `data`: they may contain case or
@@ -953,9 +1031,12 @@ No test in the default suite needs a real Redis. The test settings use
 
 - `RedisStreamBus` key format, `MAXLEN` and `EXPIRE` are applied (mock the
   Redis client or test against a local Redis in an opt-in integration suite).
-- `read(after_id=None)` returns only new entries; `read(after_id=<id>)` returns
-  later entries.
-- `first_id` returns `None` for a missing stream.
+- `read(after_id=<id>)` returns only entries strictly after that id.
+- `first_id` returns `None` for a missing stream; `last_id` returns the newest
+  id, or `"0-0"` for a missing/empty stream, and reading after it yields
+  exactly the entries published afterwards.
+- `compare_ids` orders ids by their `(milliseconds, sequence)` tuple, not
+  lexically.
 - `InMemoryNotificationBus` mirrors the same contract for the SSE tests.
 
 ### 11.4 Actor tests
@@ -980,13 +1061,24 @@ No test in the default suite needs a real Redis. The test settings use
 - Serializer exposes exactly the fields in §6.4 and no `recipient`.
 - `subscribe` returns `Content-Type: text/event-stream; charset=utf-8`,
   `Cache-Control: no-cache, no-store` and `X-Accel-Buffering: no`.
+- `subscribe` with `Accept: text/event-stream` (what `EventSource` sends)
+  returns `200`, not `406`; an unauthenticated subscribe with that `Accept`
+  header still gets the standard JSON error body.
 - A `connected` frame, notification frames with `id:`/`event:`/`data:` and
   keep-alive comments are formatted correctly (test the frame helper/generator
   without consuming an infinite stream).
-- A valid `Last-Event-ID` resumes after that entry; a missing stream with a
-  cursor emits `resync`; an invalid cursor starts live rather than erroring.
-- Redis unavailability before the stream starts returns `503 E11001`.
-- The schema contains the route, the `text/event-stream` response and `E11001`.
+- The starting cursor is captured before `connected` is emitted: an event
+  published after connect but before the first blocking read is still
+  delivered (no `$`-race loss).
+- A valid `Last-Event-ID` inside the retained tail resumes after that entry
+  with no `resync`. A cursor older than `first_id` (trimmed tail), a missing
+  stream with a cursor, and a stream recreated after expiry each emit
+  `resync` with `"reason": "tail_lost"`. An invalid cursor starts live rather
+  than erroring.
+- Redis unavailability never produces a non-200 after authentication: the
+  stream opens, degrades to keep-alives, and emits `resync`
+  (`"reason": "bus_recovered"`) when the bus returns.
+- The schema contains the route and the `text/event-stream` response.
 
 ### 11.6 Quality checks
 
@@ -1006,7 +1098,6 @@ create another notification, reconnect, and confirm `Last-Event-ID` replays it.
 src/config/settings/base.py                  # app + NOTIFICATIONS_* block
 src/config/settings/test.py                  # InMemoryNotificationBus
 src/config/urls.py                           # include apps.notifications.urls
-src/apps/api/errors.py                       # allocate domain 11
 src/apps/notifications/__init__.py
 src/apps/notifications/apps.py               # NotificationsConfig + checks
 src/apps/notifications/checks.py
@@ -1017,11 +1108,9 @@ src/apps/notifications/tasks.py              # publish_notification
 src/apps/notifications/serializers.py
 src/apps/notifications/views.py              # inbox viewset + SSE view
 src/apps/notifications/urls.py
-src/apps/notifications/errors.py             # E11001
 src/apps/notifications/admin.py
 src/apps/notifications/migrations/0001_initial.py
 src/apps/notifications/tests/...
-spec/0000-api-coding-spec.md                 # domain 11 in §9.2
 spec/0031-push-notification.md               # this file
 .env.example
 .env.prod.example
@@ -1046,8 +1135,15 @@ No new Python dependency is required: `redis>=5.0.0` is already in
       Redis stream and retries on transient Redis failure.
 - [ ] An authenticated user can open `/api/v1/notifications/subscribe/` and
       receives only their own notifications.
-- [ ] The browser can reconnect with `Last-Event-ID`; a missing/expired stream
-      produces `resync` and the REST inbox remains complete.
+- [ ] The browser can reconnect with `Last-Event-ID`; a missing, trimmed or
+      recreated replay tail produces `resync` (never a silent gap) and the
+      REST inbox remains complete.
+- [ ] `EventSource` compatibility: `Accept: text/event-stream` negotiates
+      (no 406), and after authentication the endpoint never returns a
+      non-200 — a Redis outage degrades the open stream instead of failing
+      the connection.
+- [ ] No notification is lost between connect and the first blocking read:
+      the starting cursor is captured before `connected` is sent.
 - [ ] The REST inbox supports list, retrieve, mark read, mark all read and
       unread count, always scoped to the caller.
 - [ ] No public endpoint or query parameter can send a notification to another
@@ -1072,6 +1168,9 @@ No new Python dependency is required: `redis>=5.0.0` is already in
 | Dedicated `sse` service | A sync Gunicorn worker cannot serve a stream without being unavailable for ordinary requests. |
 | No templates in v1 | Callers already have the context and can compose copy; template rendering can reuse messaging later without changing the transport. |
 | No domain error for a missing notification | Common `E00105` already provides the correct 404 and avoids leaking whether another user's row exists. |
+| Never a non-200 after authentication on `subscribe` | A native `EventSource` closes permanently on any non-200, so an error status for a transient condition would require a page reload. Transient failures degrade the open stream; non-200 is reserved for auth/permission states a retry cannot fix. |
+| Starting cursor fixed at connect, never `XREAD $` | `$` resolves when the read command runs, leaving a window where events published after `connected` are skipped. A cursor captured before `connected` makes REST-fetch + stream provably gap-free. |
+| `resync` on any unprovable tail | Resuming past a trimmed or recreated stream would silently drop the entries in between; the client cannot detect that. The server detects it (`cursor < first_id`) and tells the client to refetch. |
 
 ## 15. Out of scope
 
@@ -1127,8 +1226,9 @@ No new Python dependency is required: `redis>=5.0.0` is already in
    `InMemoryNotificationBus`, `publish_notification`, settings and checks.
 3. **REST inbox** — serializer, owner-scoped viewset, list filters, read,
    read-all, unread-count, Swagger.
-4. **SSE endpoint** — streaming view, frame helpers, `Last-Event-ID` resume,
-   heartbeat, max duration, `E11001`.
+4. **SSE endpoint** — streaming view, `EventStreamRenderer`, frame helpers,
+   connect-time cursor capture, `Last-Event-ID` resume with trim detection,
+   degraded mode, heartbeat, max duration.
 5. **Deployment** — `sse` entrypoint command, compose services, nginx route,
    env examples, docs.
 6. **First consumers** — have an owning feature spec call `notify()` on commit
