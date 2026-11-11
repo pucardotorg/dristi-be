@@ -114,16 +114,16 @@ class Demand(BaseModel, BaseAuditableModel):
 
         constraints = [
             models.CheckConstraint(
-                check=Q(total_amount__gte=0), name="payments_demand_total_non_negative"
+                condition=Q(total_amount__gte=0), name="payments_demand_total_non_negative"
             ),
             models.CheckConstraint(
-                check=Q(paid_amount__gte=0), name="payments_demand_paid_non_negative"
+                condition=Q(paid_amount__gte=0), name="payments_demand_paid_non_negative"
             ),
             models.CheckConstraint(
-                check=Q(due_amount__gte=0), name="payments_demand_due_non_negative"
+                condition=Q(due_amount__gte=0), name="payments_demand_due_non_negative"
             ),
             models.CheckConstraint(
-                check=Q(paid_amount__lte=F("total_amount")),
+                condition=Q(paid_amount__lte=F("total_amount")),
                 name="payments_demand_paid_within_total",
             ),
         ]
@@ -182,19 +182,21 @@ class DemandItem(SnapshotMixin, BaseModel, BaseAuditableModel):
 
         ordering = ("demand_id", "position", "created_at")
         constraints = [
-            models.CheckConstraint(check=Q(quantity__gt=0), name="payments_item_quantity_positive"),
             models.CheckConstraint(
-                check=Q(unit_amount__gt=0), name="payments_item_unit_amount_positive"
-            ),
-            models.CheckConstraint(check=Q(amount__gt=0), name="payments_item_amount_positive"),
-            models.CheckConstraint(
-                check=Q(paid_amount__gte=0), name="payments_item_paid_non_negative"
+                condition=Q(quantity__gt=0), name="payments_item_quantity_positive"
             ),
             models.CheckConstraint(
-                check=Q(due_amount__gte=0), name="payments_item_due_non_negative"
+                condition=Q(unit_amount__gt=0), name="payments_item_unit_amount_positive"
+            ),
+            models.CheckConstraint(condition=Q(amount__gt=0), name="payments_item_amount_positive"),
+            models.CheckConstraint(
+                condition=Q(paid_amount__gte=0), name="payments_item_paid_non_negative"
             ),
             models.CheckConstraint(
-                check=Q(paid_amount__lte=F("amount")), name="payments_item_paid_within_amount"
+                condition=Q(due_amount__gte=0), name="payments_item_due_non_negative"
+            ),
+            models.CheckConstraint(
+                condition=Q(paid_amount__lte=F("amount")), name="payments_item_paid_within_amount"
             ),
         ]
         indexes = [
@@ -265,7 +267,9 @@ class Payment(SnapshotMixin, BaseModel, BaseAuditableModel):
         """Meta options."""
 
         constraints = [
-            models.CheckConstraint(check=Q(amount__gt=0), name="payments_payment_amount_positive"),
+            models.CheckConstraint(
+                condition=Q(amount__gt=0), name="payments_payment_amount_positive"
+            ),
             models.UniqueConstraint(
                 fields=["demand", "client_request_id"],
                 name="payments_payment_unique_client_request",
@@ -343,7 +347,7 @@ class PaymentDemandItem(BaseModel, BaseAuditableModel):
                 fields=["payment", "demand_item"], name="payments_payment_item_unique"
             ),
             models.CheckConstraint(
-                check=Q(amount__gt=0), name="payments_payment_item_amount_positive"
+                condition=Q(amount__gt=0), name="payments_payment_item_amount_positive"
             ),
         ]
 

@@ -233,14 +233,14 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="user",
             constraint=models.CheckConstraint(
-                check=models.Q(("registration_status__in", ["PENDING_PROFILE", "COMPLETE"])),
+                condition=models.Q(("registration_status__in", ["PENDING_PROFILE", "COMPLETE"])),
                 name="users_user_registration_status_valid",
             ),
         ),
         migrations.AddConstraint(
             model_name="user",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("role__isnull", True),
                     ("role__in", ["LITIGANT", "POWER_OF_ATTORNEY", "ADVOCATE", "CLERK"]),
                     _connector="OR",
@@ -251,14 +251,14 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="advocateprofile",
             constraint=models.CheckConstraint(
-                check=models.Q(("approval_status__in", ["PENDING", "ACCEPTED", "REJECTED"])),
+                condition=models.Q(("approval_status__in", ["PENDING", "ACCEPTED", "REJECTED"])),
                 name="users_advocateprofile_approval_status_valid",
             ),
         ),
         migrations.AddConstraint(
             model_name="advocateprofile",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("advocate_type__isnull", True),
                     ("advocate_type__in", ["CIVIL", "CRIMINAL"]),
                     _connector="OR",
@@ -269,7 +269,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="clerkprofile",
             constraint=models.CheckConstraint(
-                check=models.Q(("approval_status__in", ["PENDING", "ACCEPTED", "REJECTED"])),
+                condition=models.Q(("approval_status__in", ["PENDING", "ACCEPTED", "REJECTED"])),
                 name="users_clerkprofile_approval_status_valid",
             ),
         ),

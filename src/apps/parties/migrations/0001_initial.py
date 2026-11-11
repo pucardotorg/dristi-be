@@ -565,7 +565,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="institution",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     (
                         "entity_type__in",
                         [
@@ -585,7 +585,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="institution",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("contact_number__isnull", True),
                     (
                         "contact_number__regex",
@@ -599,7 +599,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="person",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("phone_number__isnull", True),
                     ("phone_number__regex", "^\\+[1-9][0-9]{6,14}$"),
                     _connector="OR",
@@ -610,14 +610,16 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="person",
             constraint=models.CheckConstraint(
-                check=models.Q(("verification_level__in", ["ASSERTED", "CONTACTED", "VERIFIED"])),
+                condition=models.Q(
+                    ("verification_level__in", ["ASSERTED", "CONTACTED", "VERIFIED"])
+                ),
                 name="parties_person_verification_level_valid",
             ),
         ),
         migrations.AddConstraint(
             model_name="person",
             constraint=models.CheckConstraint(
-                check=models.Q(("age__isnull", True), ("age__lte", 150), _connector="OR"),
+                condition=models.Q(("age__isnull", True), ("age__lte", 150), _connector="OR"),
                 name="parties_person_age_valid",
             ),
         ),
