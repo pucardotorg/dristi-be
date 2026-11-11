@@ -530,31 +530,31 @@ model = "core.PublicConfiguration"
 config_set = "registration"
 config_key = "show_welcome_message"
 value_type = "boolean"
-config_value = false
+config_value = "false"
 
 [[rows]]
 config_set = "ui_feature_flag"
 config_key = "enable_bulk_case_select"
 value_type = "boolean"
-config_value = true
+config_value = "true"
 
 [[rows]]
 config_set = "ui_feature_flag"
 config_key = "enable_dark_mode"
 value_type = "boolean"
-config_value = false
+config_value = "false"
 
 [[rows]]
 config_set = "efiling_cheque_fraud"
 config_key = "enable_filtering"
 value_type = "boolean"
-config_value = true
+config_value = "true"
 
 [[rows]]
 config_set = "efiling_cheque_fraud"
 config_key = "enable_sorting"
 value_type = "boolean"
-config_value = true
+config_value = "true"
 
 # Structured value, stored as JSON text
 [[rows]]
