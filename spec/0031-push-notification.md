@@ -31,8 +31,8 @@ The front end now needs to show notification badges and toasts without polling:
 
 - a user should see a notification created for them while their tab is open;
 - notifications must survive a disconnect and be available again through REST;
-- any backend module must be able to notify one user or a set of users through
-  one internal API;
+- any backend module must be able to notify one user through a common internal
+  API;
 - a client must never be able to subscribe to another user's notifications.
 
 SSE fits the requirement because notifications flow in one direction only
@@ -46,8 +46,8 @@ asynchronous fan-out so a caller's request never waits on Redis.
 - Persist every notification in PostgreSQL with a read/unread state.
 - Expose `GET /api/v1/notifications/subscribe/`, an authenticated SSE stream
   scoped to the requesting user.
-- Provide a common internal Python API — `notify()` and `notify_many()` — that
-  any app or task can call for one user or a set of users.
+- Provide a common internal Python API — `notify()` — that any app or task can
+  call to notify one user.
 - Fan out Redis events through a Dramatiq actor, after the database transaction
   commits.
 - Use Redis Streams so a reconnecting browser can resume from `Last-Event-ID`,
@@ -128,13 +128,13 @@ trimmed or expired, the client recovers it through the REST inbox.
 ```text
  Caller (view / service / task)
         │
-        │ apps.notifications.services.notify(...) / notify_many(...)
+        │ apps.notifications.services.notify(...)
         ▼
  ┌──────────────────────────┐       transaction.on_commit
- │ Notification row(s)      │──────────────────────────────┐
+ │ Notification row         │──────────────────────────────┐
  │ PostgreSQL (source of    │                              │
  │ truth, read/unread)      │                              ▼
- └──────────────────────────┘                 publish_notifications actor
+ └──────────────────────────┘                 publish_notification actor
         │                                              │
         │ REST: list / read / count                    │ XADD
         ▼                                              ▼
@@ -164,9 +164,9 @@ src/apps/notifications/
 ├── __init__.py
 ├── apps.py
 ├── models.py                 # Notification
-├── services.py               # notify(), notify_many(), inbox helpers
+├── services.py               # notify(), inbox helpers
 ├── bus.py                    # BaseNotificationBus, RedisStreamBus, InMemoryNotificationBus
-├── tasks.py                  # publish_notifications actor
+├── tasks.py                  # publish_notification actor
 ├── serializers.py            # Notification + filter/response serializers
 ├── views.py                  # inbox viewset + SSE subscribe view
 ├── urls.py
@@ -258,7 +258,7 @@ This is the contract every other module uses. Callers **must not** create
 
 ```python
 class NotificationRecipientError(Exception):
-    """The supplied recipient or recipient set is invalid."""
+    """The supplied recipient is invalid."""
 
 
 def notify(
@@ -271,19 +271,6 @@ def notify(
     priority: str = Notification.Priority.NORMAL,
     actor=None,
 ) -> Notification: ...
-
-
-def notify_many(
-    *,
-    recipients,                   # QuerySet[User], iterable[User], or iterable of ids
-    event_type: str,
-    title: str,
-    body: str = "",
-    data: dict | None = None,
-    priority: str = Notification.Priority.NORMAL,
-    actor=None,
-    batch_size: int | None = None,
-) -> list[Notification]: ...
 ```
 
 ### 2.1 `notify`
@@ -296,31 +283,11 @@ def notify_many(
 4. Schedule publication with `transaction.on_commit` (§3).
 5. Return the created row.
 
-### 2.2 `notify_many`
-
-1. Accept a `QuerySet`, an iterable of `User` objects, or an iterable of user
-   ids. If a `QuerySet` is supplied, evaluate only `pk` values.
-2. De-duplicate recipient ids while preserving order.
-3. Resolve them against active users. Missing or inactive recipients are
-   skipped and logged; if **no** valid recipient remains, raise
-   `NotificationRecipientError`. This catches callers that pass an empty or
-   entirely wrong set.
-4. Build all `Notification` objects and `bulk_create` them in batches
-   (`batch_size` defaults to `NOTIFICATIONS_PUBLISH_BATCH_SIZE`), inside one
-   `transaction.atomic()` so a failure in a later batch inserts none of them.
-5. Schedule publication on commit in the same batches.
-6. Return the created rows.
-
-Bulk creation is synchronous in the calling process. It is a single statement
-per batch, so a set of a few thousand users is acceptable. There is no
-"all users" shorthand; a caller that wants a large audience must pass the
-explicit queryset it means (`User.objects.filter(role=...)`).
-
-### 2.3 Transaction and failure semantics
+### 2.2 Transaction and failure semantics
 
 - The row insert and publication scheduling are part of the caller's
   transaction. If the caller rolls back, no row exists and no callback runs.
-- `transaction.on_commit` enqueues `publish_notifications` only after the
+- `transaction.on_commit` enqueues `publish_notification` only after the
   outermost transaction commits. Outside a transaction, Django runs the
   callback immediately.
 - Publication is **best-effort**. The on-commit callback catches broker
@@ -330,11 +297,10 @@ explicit queryset it means (`User.objects.filter(role=...)`).
 - A caller may call `notify()` from a worker or another service; the same
   on-commit rule applies.
 
-### 2.4 Usage examples
+### 2.3 Usage examples
 
 ```python
-from apps.notifications.services import notify, notify_many
-from apps.users.models import Role, User
+from apps.notifications.services import notify
 
 notify(
     recipient=case.filer,
@@ -343,13 +309,6 @@ notify(
     body=f"Case {case.filing_number} has been filed.",
     data={"case_id": str(case.id), "route": f"/cases/{case.id}"},
     actor=request.user,
-)
-
-notify_many(
-    recipients=User.objects.filter(role=Role.ADVOCATE, is_active=True),
-    event_type="HEARING_SCHEDULED",
-    title="Hearing scheduled",
-    data={"case_id": str(case.id), "hearing_date": hearing.date.isoformat()},
 )
 ```
 
@@ -366,32 +325,26 @@ Location: `apps.notifications.tasks`
     max_retries=3,
     time_limit=settings.NOTIFICATIONS_TASK_TIME_LIMIT,
 )
-def publish_notifications(notification_ids: list[str]) -> None:
-    """Publish committed Notification rows to each recipient's Redis stream."""
+def publish_notification(notification_id: str) -> None:
+    """Publish one committed Notification to its recipient's Redis stream."""
 ```
 
 Flow:
 
-1. Load the notifications by id, with `recipient`.
-2. Skip ids that no longer exist (the user or row was deleted).
-3. For each notification, build the event payload and call
-   `bus.publish(recipient_id, payload)`.
-4. Log one structured line: `event=NOTIFICATIONS_PUBLISHED count=<n>`.
+1. Load the notification by id, with `recipient`.
+2. If it no longer exists (for example, its user was deleted), return without
+   publishing.
+3. Build the event payload and call `bus.publish(recipient_id, payload)`.
+4. Log one structured line: `event=NOTIFICATION_PUBLISHED`.
 5. If Redis fails, let the exception propagate so Dramatiq retries the actor.
-   After the final retry Dramatiq records the failure; the rows remain in the
+   After the final retry Dramatiq records the failure; the row remains in the
    database. A failure hook or middleware may log
-   `event=NOTIFICATION_PUBLISH_FAILED count=<n>`.
+   `event=NOTIFICATION_PUBLISH_FAILED`.
 
 The actor is **idempotent**. A retry or duplicate delivery publishes the same
 notification again under a new stream entry id. This is harmless: the client
 de-duplicates on the payload's `id` (the notification UUID). The actor does not
 mutate notification rows.
-
-`notify()`/`notify_many()` split ids into
-`NOTIFICATIONS_PUBLISH_BATCH_SIZE` chunks and enqueue one actor message per
-chunk, so one large audience does not become one huge message. Each chunk is a
-separate on-commit callback; a failure to enqueue one chunk does not prevent
-the others.
 
 The actor must be defined in `tasks.py` so `rundramatiq` discovers it. It is
 not scheduled (`@cron` is not used).
@@ -797,9 +750,6 @@ NOTIFICATIONS_SSE_RETRY_MS = env.int("NOTIFICATIONS_SSE_RETRY_MS", default=3000)
 NOTIFICATIONS_SSE_MAX_DURATION_SECONDS = env.int(
     "NOTIFICATIONS_SSE_MAX_DURATION_SECONDS", default=1800
 )
-NOTIFICATIONS_PUBLISH_BATCH_SIZE = env.int(
-    "NOTIFICATIONS_PUBLISH_BATCH_SIZE", default=500
-)
 NOTIFICATIONS_TASK_TIME_LIMIT = env.int(
     "NOTIFICATIONS_TASK_TIME_LIMIT", default=60000
 )
@@ -817,8 +767,7 @@ performs soft startup checks:
 
 - `NOTIFICATIONS_REDIS_URL` is non-empty and parses as a Redis URL;
 - `NOTIFICATIONS_STREAM_PREFIX` is non-empty;
-- stream max length, TTL, publish batch size, retry delay and task time limit
-  are positive;
+- stream max length, TTL, retry delay and task time limit are positive;
 - heartbeat and maximum duration are positive, and max duration is greater
   than the heartbeat.
 
@@ -834,7 +783,6 @@ NOTIFICATIONS_STREAM_TTL_SECONDS=604800
 NOTIFICATIONS_SSE_HEARTBEAT_SECONDS=15
 NOTIFICATIONS_SSE_RETRY_MS=3000
 NOTIFICATIONS_SSE_MAX_DURATION_SECONDS=1800
-NOTIFICATIONS_PUBLISH_BATCH_SIZE=500
 NOTIFICATIONS_TASK_TIME_LIMIT=60000
 ```
 
@@ -960,9 +908,9 @@ Use the structured event conventions of spec 0027:
 
 | Event | Where | Fields |
 | --- | --- | --- |
-| `NOTIFICATION_CREATED` | `services.notify`/`notify_many` | `count`, `event_type` |
-| `NOTIFICATIONS_PUBLISHED` | actor | `count`, `duration_ms` |
-| `NOTIFICATION_PUBLISH_FAILED` | actor / on-commit callback | `count`, `error` |
+| `NOTIFICATION_CREATED` | `services.notify` | `notification_id`, `event_type` |
+| `NOTIFICATION_PUBLISHED` | actor | `notification_id`, `duration_ms` |
+| `NOTIFICATION_PUBLISH_FAILED` | actor / on-commit callback | `notification_id`, `error` |
 | `SSE_CONNECTED` | subscribe view | `user_id` (id only) |
 | `SSE_DISCONNECTED` | subscribe view | `user_id`, `duration_ms` |
 | `SSE_RESYNC` | subscribe view | `user_id`, `reason` |
@@ -995,12 +943,9 @@ No test in the default suite needs a real Redis. The test settings use
 - `notify()` rejects a missing/inactive recipient and invalid `event_type`,
   `title`, `data` or `priority`.
 - Rows are created and the publish callback is scheduled only after commit:
-  use `captureOnCommitCallbacks(execute=True)` and assert `publish_notifications.send`
+  use `captureOnCommitCallbacks(execute=True)` and assert `publish_notification.send`
   is not called before the block exits.
 - A rollback creates no row and enqueues nothing.
-- `notify_many()` de-duplicates ids, skips inactive users, raises when no valid
-  recipient remains, bulk-creates rows and enqueues one actor message per
-  batch.
 - A broker failure in the on-commit callback is logged and does not re-raise;
   the rows remain.
 
@@ -1015,12 +960,12 @@ No test in the default suite needs a real Redis. The test settings use
 
 ### 11.4 Actor tests
 
-- `publish_notifications.fn([...])` publishes one event per notification to
-  each recipient's stream with the correct payload.
-- Missing/deleted notification ids are skipped without error.
+- `publish_notification.fn(...)` publishes the notification to its recipient's
+  stream with the correct payload.
+- A missing/deleted notification is ignored without error.
 - A duplicate invocation publishes a duplicate event under a new stream id.
 - Redis failure propagates to Dramatiq (the actor is allowed to retry).
-- A structured `NOTIFICATIONS_PUBLISHED` line is emitted.
+- A structured `NOTIFICATION_PUBLISHED` line is emitted.
 
 ### 11.5 API tests
 
@@ -1066,9 +1011,9 @@ src/apps/notifications/__init__.py
 src/apps/notifications/apps.py               # NotificationsConfig + checks
 src/apps/notifications/checks.py
 src/apps/notifications/models.py             # Notification
-src/apps/notifications/services.py           # notify / notify_many
+src/apps/notifications/services.py           # notify
 src/apps/notifications/bus.py                # RedisStreamBus + in-memory bus
-src/apps/notifications/tasks.py              # publish_notifications
+src/apps/notifications/tasks.py              # publish_notification
 src/apps/notifications/serializers.py
 src/apps/notifications/views.py              # inbox viewset + SSE view
 src/apps/notifications/urls.py
@@ -1095,10 +1040,9 @@ No new Python dependency is required: `redis>=5.0.0` is already in
 ## 13. Acceptance criteria
 
 - [ ] `apps.notifications` is installed, migrated, routed and visible in Swagger.
-- [ ] `notify()` creates a notification for one user; `notify_many()` creates
-      one row per valid recipient in a set, de-duplicating ids.
+- [ ] `notify()` creates a notification for one user.
 - [ ] Notifications are published only after the caller's transaction commits.
-- [ ] `publish_notifications` appends the correct payload to each recipient's
+- [ ] `publish_notification` appends the correct payload to the recipient's
       Redis stream and retries on transient Redis failure.
 - [ ] An authenticated user can open `/api/v1/notifications/subscribe/` and
       receives only their own notifications.
@@ -1177,10 +1121,10 @@ No new Python dependency is required: `redis>=5.0.0` is already in
 
 ## 17. Implementation phases
 
-1. **Model and service** — `Notification`, migration, admin, `notify()` /
-   `notify_many()`, validation, retention notes.
+1. **Model and service** — `Notification`, migration, admin, `notify()`,
+   validation, retention notes.
 2. **Event bus and fan-out** — `BaseNotificationBus`, `RedisStreamBus`,
-   `InMemoryNotificationBus`, `publish_notifications`, settings and checks.
+   `InMemoryNotificationBus`, `publish_notification`, settings and checks.
 3. **REST inbox** — serializer, owner-scoped viewset, list filters, read,
    read-all, unread-count, Swagger.
 4. **SSE endpoint** — streaming view, frame helpers, `Last-Event-ID` resume,
