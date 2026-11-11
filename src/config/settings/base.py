@@ -400,6 +400,8 @@ CACHALOT_ONLY_CACHABLE_APPS = ("locations", "cms")
 CACHALOT_ONLY_CACHABLE_TABLES = (
     "core_configuration",
     "core_businessrule",
+    # Reference table edited in admin (spec 0023 #11.8).
+    "hearings_hearingpurpose",
 )
 CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
