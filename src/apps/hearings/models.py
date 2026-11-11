@@ -16,6 +16,8 @@ from .enums import (
     ATTENDANCE_STATUSES,
     BOARD_STATUSES,
     CONFIRMED_STATUSES,
+    COURT_SIDE_REASONS,
+    MOVABLE_STATUSES,
     OFF_BOARD_STATUS_ORDER,
     STATUS_ORDER,
     UNSEQUENCED_STATUSES,
@@ -24,9 +26,11 @@ from .enums import (
     AttendeeType,
     CalendarEntryType,
     CancellationReason,
+    ChangeSource,
     HearingMode,
     HearingStatus,
     ReleaseReason,
+    RescheduleReason,
     Side,
 )
 
@@ -59,6 +63,20 @@ NOT_ON_ROLL_MESSAGE = (
     "and an advocate line under each complainant or accused with an advocate, can be marked."
 )
 OWN_PREVIOUS_HEARING_MESSAGE = "A hearing cannot be its own previous hearing."
+NOTHING_MOVED_MESSAGE = "A change must move the date, the purpose, or both."
+SOUGHT_BY_MESSAGE = (
+    "A party application is sought by the complainant or the accused; "
+    "every other reason by the court."
+)
+ORDER_ONLY_REASON_MESSAGE = (
+    "A party application or a judicial direction moves a hearing only through an order."
+)
+SOURCE_REF_REQUIRED_MESSAGE = "Required for a change made by an order or a bulk move."
+SOURCE_REF_NOT_ALLOWED_MESSAGE = "Leave empty for a change made by court staff."
+NOT_MOVABLE_MESSAGE = "Only a scheduled, passed-over or abandoned hearing can be moved."
+FROM_DATE_MESSAGE = "Must be the hearing's date before the move."
+FROM_PURPOSE_MESSAGE = "Must be the hearing's purpose before the move."
+APPEND_ONLY_MESSAGE = "A date change is a log entry: it is never edited or deleted."
 MOVES_ITSELF_MESSAGE = "A hearing cannot hold a move of itself."
 SAME_CASE_HEARING_MESSAGE = "Must be a hearing of the same case."
 CASE_COURT_MESSAGE = "Must be the court the case is listed in."
@@ -533,6 +551,135 @@ class HearingAttendance(BaseModel):
         if self.hearing.attendance_locked_at:
             raise ValidationError({"hearing": ATTENDANCE_LOCKED_MESSAGE})
         return super().delete(*args, **kwargs)
+
+
+class HearingDateChangeQuerySet(models.QuerySet):
+    """Refuses bulk edits and deletes: the log is append-only (#2.4)."""
+
+    def bulk_create(self, objs, *args, **kwargs):
+        """Validate each entry first, which ``bulk_create`` would skip."""
+        objs = list(objs)
+        for obj in objs:
+            obj.full_clean()
+        return super().bulk_create(objs, *args, **kwargs)
+
+    def update(self, **kwargs):
+        """Refuse: a date change is never edited."""
+        raise ValidationError(APPEND_ONLY_MESSAGE)
+
+    def delete(self):
+        """Refuse: a date change is never deleted."""
+        raise ValidationError(APPEND_ONLY_MESSAGE)
+
+
+class HearingDateChange(BaseModel):
+    """One move of a hearing that has not been heard (spec 0023 #2.4).
+
+    Append-only: written in the same transaction as the move, before the
+    hearing itself changes (#8.2), and never edited or deleted. It answers how
+    many times, why and at whose request a case was adjourned, which the
+    history table is not built to (#11.3). A change of a provisional date in a
+    draft writes no row: nothing announced has moved (#7.2).
+    """
+
+    hearing = models.ForeignKey(Hearing, on_delete=models.PROTECT, related_name="date_changes")
+    from_date = models.DateField()
+    to_date = models.DateField()
+    from_purpose = models.ForeignKey(HearingPurpose, on_delete=models.PROTECT, related_name="+")
+    to_purpose = models.ForeignKey(
+        HearingPurpose,
+        on_delete=models.PROTECT,
+        related_name="+",
+        help_text="The same as the purpose before when only the date moves.",
+    )
+    reason_code = models.CharField(max_length=32, choices=RescheduleReason.choices)
+    reason_text = models.TextField(blank=True)
+    sought_by = models.CharField(max_length=16, choices=Side.choices)
+    source = models.CharField(max_length=16, choices=ChangeSource.choices)
+    source_ref = models.UUIDField(
+        null=True, blank=True, help_text="The order id or the bulk move job id."
+    )
+
+    objects = HearingDateChangeQuerySet.as_manager()
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("hearing", "created_at")
+        verbose_name = "Hearing date change"
+        verbose_name_plural = "Hearing date changes"
+        constraints = [
+            models.CheckConstraint(
+                check=~Q(from_date=F("to_date")) | ~Q(from_purpose=F("to_purpose")),
+                name="hearings_date_change_moves_something",
+                violation_error_message=NOTHING_MOVED_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=Q(reason_code__in=RescheduleReason.values),
+                name="hearings_date_change_reason_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(sought_by__in=Side.values),
+                name="hearings_date_change_sought_by_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(
+                    reason_code=RescheduleReason.PARTY_APPLICATION,
+                    sought_by__in=(Side.COMPLAINANT, Side.ACCUSED),
+                )
+                | (~Q(reason_code=RescheduleReason.PARTY_APPLICATION) & Q(sought_by=Side.COURT)),
+                name="hearings_date_change_sought_by_matches_reason",
+                violation_error_message=SOUGHT_BY_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=Q(source=ChangeSource.ORDER) | Q(reason_code__in=COURT_SIDE_REASONS),
+                name="hearings_date_change_order_only_reasons",
+                violation_error_message=ORDER_ONLY_REASON_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=Q(source__in=ChangeSource.values),
+                name="hearings_date_change_source_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(source=ChangeSource.COURT_ADMIN) | Q(source_ref__isnull=False),
+                name="hearings_date_change_ref_required",
+                violation_error_message=SOURCE_REF_REQUIRED_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=~Q(source=ChangeSource.COURT_ADMIN) | Q(source_ref__isnull=True),
+                name="hearings_date_change_ref_not_for_staff",
+                violation_error_message=SOURCE_REF_NOT_ALLOWED_MESSAGE,
+            ),
+        ]
+
+    def __str__(self):
+        """Return a readable label for admin and logs."""
+        return f"{self.from_date} to {self.to_date}: {self.get_reason_code_display()}"
+
+    def clean(self):
+        """Check the hearing as it stands before the move (#8.2 writes this row first)."""
+        super().clean()
+        if not (self._state.adding and self.hearing_id):
+            return
+        hearing = self.hearing
+        _raise_broken_rules(
+            [
+                ("hearing", hearing.status in MOVABLE_STATUSES, NOT_MOVABLE_MESSAGE),
+                ("from_date", self.from_date == hearing.hearing_date, FROM_DATE_MESSAGE),
+                ("from_purpose", self.from_purpose_id == hearing.purpose_id, FROM_PURPOSE_MESSAGE),
+            ]
+        )
+
+    def save(self, *args, **kwargs):
+        """Validate and write a new entry; an existing one is never edited."""
+        if not self._state.adding:
+            raise ValidationError(APPEND_ONLY_MESSAGE)
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Refuse: a date change is never deleted."""
+        raise ValidationError(APPEND_ONLY_MESSAGE)
 
 
 class CourtCalendarEntry(BaseModel, BaseAuditableModel):

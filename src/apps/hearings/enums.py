@@ -118,3 +118,37 @@ class AppearanceMode(models.TextChoices):
 
     IN_PERSON = "IN_PERSON", "In person"
     VIDEO = "VIDEO", "Video"
+
+
+# A hearing in one of these can be moved to another date (#8.1).
+MOVABLE_STATUSES = (HearingStatus.SCHEDULED, HearingStatus.PASSED_OVER, HearingStatus.ABANDONED)
+
+
+class RescheduleReason(models.TextChoices):
+    """Why a hearing that has not been heard was moved (#8.1)."""
+
+    PRESIDING_OFFICER_ON_LEAVE = "PRESIDING_OFFICER_ON_LEAVE", "Presiding officer on leave"
+    COURT_HOLIDAY = "COURT_HOLIDAY", "Court holiday"
+    COURT_NOT_SITTING = "COURT_NOT_SITTING", "Court not sitting"
+    NOT_REACHED = "NOT_REACHED", "Not reached"
+    LISTED_IN_ERROR = "LISTED_IN_ERROR", "Listed in error"
+    PARTY_APPLICATION = "PARTY_APPLICATION", "Party application"
+    JUDICIAL_DIRECTION = "JUDICIAL_DIRECTION", "Judicial direction"
+
+
+# Administrative reasons court staff may move a hearing for without an order (#8.1).
+COURT_SIDE_REASONS = (
+    RescheduleReason.PRESIDING_OFFICER_ON_LEAVE,
+    RescheduleReason.COURT_HOLIDAY,
+    RescheduleReason.COURT_NOT_SITTING,
+    RescheduleReason.NOT_REACHED,
+    RescheduleReason.LISTED_IN_ERROR,
+)
+
+
+class ChangeSource(models.TextChoices):
+    """What moved the hearing (#2.4)."""
+
+    ORDER = "ORDER", "Order"
+    COURT_ADMIN = "COURT_ADMIN", "Court staff"
+    BULK = "BULK", "Bulk move"
