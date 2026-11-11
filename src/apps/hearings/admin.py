@@ -6,6 +6,8 @@ from simple_history.admin import SimpleHistoryAdmin
 from apps.core.mixins import AuditUserAdminMixin
 
 from .models import (
+    BulkRescheduleItem,
+    BulkRescheduleJob,
     CourtCalendarEntry,
     Hearing,
     HearingAttendance,
@@ -161,4 +163,56 @@ class HearingDateChangeAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         """A logged move is never deleted."""
+        return False
+
+
+class BulkRescheduleItemInline(admin.TabularInline):
+    """The job's hearings and what happened to each, read-only."""
+
+    model = BulkRescheduleItem
+    fields = ("hearing", "from_date", "to_date", "result", "error_code", "hearing_updated_at")
+    readonly_fields = fields
+    extra = 0
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        """Items are written only by the preview."""
+        return False
+
+
+@admin.register(BulkRescheduleJob)
+class BulkRescheduleJobAdmin(admin.ModelAdmin):
+    """Read-only: a bulk move runs only through its preview and confirm (#11.10)."""
+
+    list_display = (
+        "created_at",
+        "court",
+        "mode",
+        "target_date",
+        "schedule_after",
+        "reason_code",
+        "status",
+        "confirmed_by",
+    )
+    list_filter = ("status", "mode", "reason_code", "court")
+    search_fields = ("=id",)
+    date_hierarchy = "created_at"
+    ordering = ("-created_at",)
+    list_select_related = ("court", "confirmed_by")
+    inlines = (BulkRescheduleItemInline,)
+
+    def get_readonly_fields(self, request, obj=None):
+        """Show every field read-only."""
+        return tuple(field.name for field in self.model._meta.fields)
+
+    def has_add_permission(self, request):
+        """Jobs are created only by the preview."""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """Jobs are never edited by hand."""
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """Jobs are kept as the record of what was moved."""
         return False

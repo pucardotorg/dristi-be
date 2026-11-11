@@ -152,3 +152,34 @@ class ChangeSource(models.TextChoices):
     ORDER = "ORDER", "Order"
     COURT_ADMIN = "COURT_ADMIN", "Court staff"
     BULK = "BULK", "Bulk move"
+
+
+class BulkMode(models.TextChoices):
+    """How a bulk move picks the new dates (#8.3)."""
+
+    TO_DATE = "TO_DATE", "To one date"
+    NEXT_AVAILABLE = "NEXT_AVAILABLE", "Next available days"
+
+
+class BulkRescheduleStatus(models.TextChoices):
+    """Where a bulk move is (#8.3)."""
+
+    PREVIEWED = "PREVIEWED", "Previewed"
+    QUEUED = "QUEUED", "Queued"
+    RUNNING = "RUNNING", "Running"
+    COMPLETED = "COMPLETED", "Completed"
+    PARTIALLY_FAILED = "PARTIALLY_FAILED", "Partially failed"
+    EXPIRED = "EXPIRED", "Expired"
+
+
+UNCONFIRMED_BULK_STATUSES = (BulkRescheduleStatus.PREVIEWED, BulkRescheduleStatus.EXPIRED)
+
+
+class BulkItemResult(models.TextChoices):
+    """What happened to one hearing in a bulk move (#8.3)."""
+
+    PENDING = "PENDING", "Pending"
+    MOVED = "MOVED", "Moved"
+    SKIPPED_STARTED = "SKIPPED_STARTED", "Skipped: started"
+    SKIPPED_CHANGED = "SKIPPED_CHANGED", "Skipped: changed after the preview"
+    FAILED = "FAILED", "Failed"

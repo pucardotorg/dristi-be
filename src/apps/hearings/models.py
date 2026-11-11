@@ -5,6 +5,7 @@ import uuid
 from functools import reduce
 from operator import or_
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
@@ -20,10 +21,14 @@ from .enums import (
     MOVABLE_STATUSES,
     OFF_BOARD_STATUS_ORDER,
     STATUS_ORDER,
+    UNCONFIRMED_BULK_STATUSES,
     UNSEQUENCED_STATUSES,
     AppearanceMode,
     AttendanceMark,
     AttendeeType,
+    BulkItemResult,
+    BulkMode,
+    BulkRescheduleStatus,
     CalendarEntryType,
     CancellationReason,
     ChangeSource,
@@ -77,6 +82,28 @@ NOT_MOVABLE_MESSAGE = "Only a scheduled, passed-over or abandoned hearing can be
 FROM_DATE_MESSAGE = "Must be the hearing's date before the move."
 FROM_PURPOSE_MESSAGE = "Must be the hearing's purpose before the move."
 APPEND_ONLY_MESSAGE = "A date change is a log entry: it is never edited or deleted."
+BULK_MODE_DATES_MESSAGE = (
+    "Moving to one date needs a target date only; "
+    "moving to the next available days needs a schedule-after date only."
+)
+BULK_REASON_MESSAGE = "A bulk move takes a court-side reason only; other moves need an order."
+BULK_CONFIRMATION_MESSAGE = (
+    "Confirmed time and user are set exactly when the job has been confirmed."
+)
+BULK_ITEM_MOVES_MESSAGE = "The new date must differ from the hearing's date."
+BULK_ITEM_ERROR_CODE_MESSAGE = (
+    "A failed item records its API error code (e.g. E10006); other items record none."
+)
+BULK_CONFIRMED_AFTER_EXPIRY_MESSAGE = "A preview cannot be confirmed after it expires."
+BULK_JOB_COMPLETED_MESSAGE = "A completed job has no failed or unprocessed items."
+BULK_JOB_PARTIAL_MESSAGE = "A partially failed job needs a failed item and no unprocessed ones."
+BULK_JOB_DELETE_MESSAGE = "A confirmed job is the record of the moves it made: it is never deleted."
+BULK_ITEM_RESULT_BEFORE_RUN_MESSAGE = "An item gets a result only while its job is running."
+BULK_ITEM_FINAL_MESSAGE = "This item is finished: its result cannot change."
+BULK_ITEM_SNAPSHOT_MESSAGE = "Must be the hearing's last change time at preview."
+BULK_ITEM_COURT_MESSAGE = "Must be a hearing of the job's court."
+BULK_ITEM_TARGET_DATE_MESSAGE = "Must be the job's target date."
+BULK_ITEM_AFTER_DATE_MESSAGE = "Must be after the job's schedule-after date."
 MOVES_ITSELF_MESSAGE = "A hearing cannot hold a move of itself."
 SAME_CASE_HEARING_MESSAGE = "Must be a hearing of the same case."
 CASE_COURT_MESSAGE = "Must be the court the case is listed in."
@@ -680,6 +707,264 @@ class HearingDateChange(BaseModel):
     def delete(self, *args, **kwargs):
         """Refuse: a date change is never deleted."""
         raise ValidationError(APPEND_ONLY_MESSAGE)
+
+
+class BulkRescheduleJobQuerySet(models.QuerySet):
+    """Refuses to delete a confirmed job: its moves point at it."""
+
+    def delete(self):
+        """Delete only unconfirmed previews."""
+        if self.exclude(status__in=UNCONFIRMED_BULK_STATUSES).exists():
+            raise ValidationError(BULK_JOB_DELETE_MESSAGE)
+        return super().delete()
+
+
+class BulkRescheduleJob(BaseModel):
+    """A court-side move of many hearings at once, previewed then run (spec 0023 #2.6, #8.3).
+
+    Only court-side reasons are accepted: party and judicial reasons need an
+    order. A preview stores the job and its items and changes nothing else;
+    confirming queues ``tasks.run_bulk_reschedule``, which moves each item
+    through the single-move service with ``source = BULK``.
+    """
+
+    court = models.ForeignKey(
+        "organizations.Organization",
+        on_delete=models.PROTECT,
+        related_name="bulk_reschedule_jobs",
+    )
+    mode = models.CharField(max_length=16, choices=BulkMode.choices)
+    target_date = models.DateField(null=True, blank=True, help_text="Only when moving to one date.")
+    schedule_after = models.DateField(
+        null=True, blank=True, help_text="Only when moving to the next available days."
+    )
+    block_source_dates = models.BooleanField(
+        default=False,
+        help_text="After the moves, mark the dates moved away from as non-sitting.",
+    )
+    reason_code = models.CharField(max_length=32, choices=RescheduleReason.choices)
+    reason_text = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=16, choices=BulkRescheduleStatus.choices, default=BulkRescheduleStatus.PREVIEWED
+    )
+    preview_expires_at = models.DateTimeField()
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    objects = BulkRescheduleJobQuerySet.as_manager()
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("-created_at",)
+        verbose_name = "Bulk reschedule job"
+        verbose_name_plural = "Bulk reschedule jobs"
+        constraints = [
+            models.CheckConstraint(
+                check=Q(
+                    mode=BulkMode.TO_DATE, target_date__isnull=False, schedule_after__isnull=True
+                )
+                | Q(
+                    mode=BulkMode.NEXT_AVAILABLE,
+                    schedule_after__isnull=False,
+                    target_date__isnull=True,
+                ),
+                name="hearings_bulk_job_mode_dates",
+                violation_error_message=BULK_MODE_DATES_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=Q(reason_code__in=COURT_SIDE_REASONS),
+                name="hearings_bulk_job_court_side_reason",
+                violation_error_message=BULK_REASON_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=Q(status__in=BulkRescheduleStatus.values),
+                name="hearings_bulk_job_status_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(
+                    status__in=UNCONFIRMED_BULK_STATUSES,
+                    confirmed_at__isnull=True,
+                    confirmed_by__isnull=True,
+                )
+                | (
+                    ~Q(status__in=UNCONFIRMED_BULK_STATUSES)
+                    & Q(confirmed_at__isnull=False, confirmed_by__isnull=False)
+                ),
+                name="hearings_bulk_job_confirmation",
+                violation_error_message=BULK_CONFIRMATION_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=Q(confirmed_at__isnull=True) | Q(confirmed_at__lte=F("preview_expires_at")),
+                name="hearings_bulk_job_confirmed_before_expiry",
+                violation_error_message=BULK_CONFIRMED_AFTER_EXPIRY_MESSAGE,
+            ),
+        ]
+
+    def __str__(self):
+        """Return a readable label for admin and logs."""
+        when = self.target_date or f"after {self.schedule_after}"
+        return f"{self.get_reason_code_display()} to {when} ({self.get_status_display()})"
+
+    def clean(self):
+        """Check a finished job's status against its items' results."""
+        super().clean()
+        if self._state.adding:
+            return
+        results = set(self.items.values_list("result", flat=True))
+        unprocessed = BulkItemResult.PENDING in results
+        failed = BulkItemResult.FAILED in results
+        _raise_broken_rules(
+            [
+                (
+                    "status",
+                    self.status != BulkRescheduleStatus.COMPLETED or not (failed or unprocessed),
+                    BULK_JOB_COMPLETED_MESSAGE,
+                ),
+                (
+                    "status",
+                    self.status != BulkRescheduleStatus.PARTIALLY_FAILED
+                    or (failed and not unprocessed),
+                    BULK_JOB_PARTIAL_MESSAGE,
+                ),
+            ]
+        )
+
+    def save(self, *args, **kwargs):
+        """Validate the model before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Refuse to delete a confirmed job."""
+        if self.status not in UNCONFIRMED_BULK_STATUSES:
+            raise ValidationError(BULK_JOB_DELETE_MESSAGE)
+        return super().delete(*args, **kwargs)
+
+
+class BulkRescheduleItemQuerySet(models.QuerySet):
+    """Validates items created in bulk, as a preview does."""
+
+    def bulk_create(self, objs, *args, **kwargs):
+        """Validate each item first, which ``bulk_create`` would skip."""
+        objs = list(objs)
+        for obj in objs:
+            obj.full_clean()
+        return super().bulk_create(objs, *args, **kwargs)
+
+
+class BulkRescheduleItem(BaseModel):
+    """One hearing in a bulk move, with its planned date and what happened (spec 0023 #2.6).
+
+    ``hearing_updated_at`` is the hearing's ``updated_at`` at preview: a
+    hearing changed after it is skipped, so a preview never overwrites a later
+    change (#8.3).
+    """
+
+    job = models.ForeignKey(BulkRescheduleJob, on_delete=models.CASCADE, related_name="items")
+    hearing = models.ForeignKey(
+        Hearing, on_delete=models.PROTECT, related_name="bulk_reschedule_items"
+    )
+    hearing_updated_at = models.DateTimeField(help_text="The hearing's last change at preview.")
+    from_date = models.DateField()
+    to_date = models.DateField()
+    result = models.CharField(
+        max_length=16, choices=BulkItemResult.choices, default=BulkItemResult.PENDING
+    )
+    error_code = models.CharField(max_length=16, blank=True)
+
+    objects = BulkRescheduleItemQuerySet.as_manager()
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("job", "to_date", "from_date")
+        verbose_name = "Bulk reschedule item"
+        verbose_name_plural = "Bulk reschedule items"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["job", "hearing"], name="hearings_bulk_item_one_per_hearing"
+            ),
+            models.CheckConstraint(
+                check=~Q(from_date=F("to_date")),
+                name="hearings_bulk_item_moves",
+                violation_error_message=BULK_ITEM_MOVES_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=Q(result__in=BulkItemResult.values),
+                name="hearings_bulk_item_result_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(result=BulkItemResult.FAILED, error_code__regex=r"^E[0-9]{5}$")
+                | (~Q(result=BulkItemResult.FAILED) & Q(error_code="")),
+                name="hearings_bulk_item_error_code_iff_failed",
+                violation_error_message=BULK_ITEM_ERROR_CODE_MESSAGE,
+            ),
+        ]
+
+    def __str__(self):
+        """Return a readable label for admin and logs."""
+        return f"{self.from_date} to {self.to_date}: {self.get_result_display()}"
+
+    def clean(self):
+        """Check the item against its job, and a new one against its hearing at preview.
+
+        A finished item is final: the task processes only pending items, so a
+        result set back to pending would move the hearing a second time.
+        """
+        super().clean()
+        if not self.job_id:
+            return
+        job = self.job
+        stored = None
+        if not self._state.adding:
+            stored = type(self).objects.filter(pk=self.pk).values_list("result", flat=True).first()
+        finished = stored not in (None, BulkItemResult.PENDING)
+        writes_result = not finished and self.result != BulkItemResult.PENDING
+        rules = [
+            ("result", not finished, BULK_ITEM_FINAL_MESSAGE),
+            (
+                "result",
+                not writes_result or job.status == BulkRescheduleStatus.RUNNING,
+                BULK_ITEM_RESULT_BEFORE_RUN_MESSAGE,
+            ),
+        ]
+        if self._state.adding and self.hearing_id:
+            hearing = self.hearing
+            to_date_ok = (
+                self.to_date == job.target_date
+                if job.mode == BulkMode.TO_DATE
+                else bool(job.schedule_after and self.to_date and self.to_date > job.schedule_after)
+            )
+            rules += [
+                ("hearing", hearing.court_id == job.court_id, BULK_ITEM_COURT_MESSAGE),
+                ("hearing", hearing.status in MOVABLE_STATUSES, NOT_MOVABLE_MESSAGE),
+                ("from_date", self.from_date == hearing.hearing_date, FROM_DATE_MESSAGE),
+                (
+                    "to_date",
+                    to_date_ok,
+                    BULK_ITEM_TARGET_DATE_MESSAGE
+                    if job.mode == BulkMode.TO_DATE
+                    else BULK_ITEM_AFTER_DATE_MESSAGE,
+                ),
+                (
+                    "hearing_updated_at",
+                    self.hearing_updated_at == hearing.updated_at,
+                    BULK_ITEM_SNAPSHOT_MESSAGE,
+                ),
+            ]
+        _raise_broken_rules(rules)
+
+    def save(self, *args, **kwargs):
+        """Validate the model before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class CourtCalendarEntry(BaseModel, BaseAuditableModel):
