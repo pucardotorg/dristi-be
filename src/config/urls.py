@@ -4,7 +4,6 @@ from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 from health_check.views import HealthCheckView
-from redis import Redis
 
 from apps.core.views import index
 
@@ -28,22 +27,17 @@ urlpatterns = [
         "health/",
         HealthCheckView.as_view(
             # Import-string names (3.21+, and the same in 4.x). Bare classes
-            # make 3.24 raise TypeError on every request.
+            # make 3.24 raise TypeError on every request. apps.api.health hides
+            # database errors from the response and gives each Redis probe its
+            # own time-bounded client.
             checks=[
-                "health_check.Database",
-                "health_check.Cache",
-                # Redis is the Dramatiq broker. test.py's stub broker has no
-                # url, hence .get().
-                (
-                    "health_check.contrib.redis.Redis",
-                    {
-                        "client": Redis.from_url(
-                            settings.DRAMATIQ_BROKER["OPTIONS"].get(
-                                "url", "redis://localhost:6379/2"
-                            )
-                        )
-                    },
-                ),
+                "apps.api.health.Database",
+                # cache_key's non-empty default makes 3.x warn on every
+                # request although the check ignores it. 4.x drops the
+                # field, so remove this override with the 4.x upgrade.
+                ("health_check.Cache", {"cache_key": None}),
+                # Redis is the Dramatiq broker.
+                "apps.api.health.RedisHealthCheck",
             ]
         ),
     ),

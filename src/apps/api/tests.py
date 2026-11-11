@@ -6,12 +6,14 @@ from datetime import datetime
 from unittest.mock import patch
 
 from django.core.management import call_command
+from django.db import OperationalError, connections
 from django.urls import reverse
 from redis import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.api.health import REDIS_PROBE_TIMEOUT
 from apps.core.models import ApiVersionChangeLog
 from apps.users.models import User
 
@@ -59,6 +61,38 @@ class SystemHealthCheckTests(APITestCase):
         """/health/ returns 500 when the broker's Redis is unreachable."""
         response = self.client.get("/health/?format=json")
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @patch.object(Redis, "ping", return_value=True)
+    def test_database_error_stays_in_the_log(self, ping):
+        """A database failure returns a generic message; the details are only logged."""
+        error = OperationalError('connection to "db.internal" failed for user "dristi"')
+        with (
+            # Class-wide: the checks run in worker threads with their own connections.
+            patch.object(type(connections["default"]), "cursor", side_effect=error),
+            self.assertLogs("health-check", "ERROR") as logs,
+        ):
+            json_response = self.client.get("/health/?format=json")
+            html_response = self.client.get("/health/", HTTP_ACCEPT="text/html")
+        self.assertEqual(json_response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(
+            json_response.json()["Database(alias='default')"],
+            "unavailable: Database unavailable.",
+        )
+        for response in (json_response, html_response):
+            self.assertNotIn(b"db.internal", response.content)
+        self.assertIn("db.internal", "\n".join(logs.output))
+
+    def test_redis_probe_gets_its_own_bounded_client(self):
+        """Each request pings with a new client that has finite timeouts."""
+        clients = []
+        with patch.object(Redis, "ping", autospec=True, side_effect=clients.append):
+            self.client.get("/health/?format=json")
+            self.client.get("/health/?format=json")
+        self.assertEqual(len(clients), 2)
+        self.assertIsNot(clients[0], clients[1])
+        options = clients[0].connection_pool.connection_kwargs
+        self.assertEqual(options["socket_connect_timeout"], REDIS_PROBE_TIMEOUT)
+        self.assertEqual(options["socket_timeout"], REDIS_PROBE_TIMEOUT)
 
 
 class APIDocumentationTests(APITestCase):
