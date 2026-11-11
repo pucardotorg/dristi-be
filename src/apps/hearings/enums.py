@@ -28,7 +28,6 @@ class HearingStatus(models.TextChoices):
     RELEASED = "RELEASED", "Released"
 
 
-# The statuses shown on a day's board, each with a serial number (#2.1, #5).
 BOARD_STATUSES = (
     HearingStatus.SCHEDULED,
     HearingStatus.IN_PROGRESS,
@@ -37,11 +36,18 @@ BOARD_STATUSES = (
     HearingStatus.ABANDONED,
 )
 
-# The statuses that never have a serial number (#2.1).
 UNSEQUENCED_STATUSES = (HearingStatus.PROVISIONAL, HearingStatus.RELEASED)
 
-# Sorts a board as #3 lists it: being heard, waiting, passed over, heard,
-# abandoned. Statuses off the board sort after all of them.
+CONFIRMED_STATUSES = tuple(status for status in HearingStatus if status not in UNSEQUENCED_STATUSES)
+
+# The status alone is not enough: the hearing must also have been started (#6.5).
+ATTENDANCE_STATUSES = (
+    HearingStatus.IN_PROGRESS,
+    HearingStatus.PASSED_OVER,
+    HearingStatus.COMPLETED,
+    HearingStatus.ABANDONED,
+)
+
 OFF_BOARD_STATUS_ORDER = 90
 STATUS_ORDER = {
     HearingStatus.IN_PROGRESS: 10,
@@ -87,3 +93,28 @@ class ReleaseReason(models.TextChoices):
     DATE_REMOVED = "DATE_REMOVED", "Date removed from the draft"
     CONSUMED = "CONSUMED", "Applied to the original hearing"
     CASE_CLOSED = "CASE_CLOSED", "Case closed"
+
+
+class AttendeeType(models.TextChoices):
+    """A line on a hearing's attendance roll (#2.3, ``ATT-01``)."""
+
+    COMPLAINANT = "COMPLAINANT", "Complainant"
+    ACCUSED = "ACCUSED", "Accused"
+    POA_HOLDER = "POA_HOLDER", "PoA holder"
+    COMPLAINANT_ADVOCATE = "COMPLAINANT_ADVOCATE", "Advocate for complainant"
+    ACCUSED_ADVOCATE = "ACCUSED_ADVOCATE", "Advocate for accused"
+
+
+class AttendanceMark(models.TextChoices):
+    """How a person on the roll is marked (``ATT-02``)."""
+
+    PRESENT = "PRESENT", "Present"
+    ABSENT = "ABSENT", "Absent"
+    NOT_REQUIRED = "NOT_REQUIRED", "Not required"
+
+
+class AppearanceMode(models.TextChoices):
+    """How a present person appeared (§355, §530 BNSS)."""
+
+    IN_PERSON = "IN_PERSON", "In person"
+    VIDEO = "VIDEO", "Video"

@@ -1,6 +1,7 @@
 """Hearings models (spec 0023 #2)."""
 
 import datetime
+import uuid
 from functools import reduce
 from operator import or_
 
@@ -8,13 +9,19 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
 
+from apps.cases.selectors import get_attendance_roll
 from apps.core.models import CODE_RE, BaseActivatableModel, BaseAuditableModel, BaseModel
 
 from .enums import (
+    ATTENDANCE_STATUSES,
     BOARD_STATUSES,
+    CONFIRMED_STATUSES,
     OFF_BOARD_STATUS_ORDER,
     STATUS_ORDER,
     UNSEQUENCED_STATUSES,
+    AppearanceMode,
+    AttendanceMark,
+    AttendeeType,
     CalendarEntryType,
     CancellationReason,
     HearingMode,
@@ -23,7 +30,6 @@ from .enums import (
     Side,
 )
 
-# Messages shared by the model rules and the database constraints behind them.
 CAPACITY_REQUIRED_MESSAGE = "Enter a capacity of at least 1 for a reduced sitting."
 CAPACITY_NOT_ALLOWED_MESSAGE = (
     "Capacity can be set only for a reduced sitting; leave it empty for other entry types."
@@ -42,6 +48,16 @@ CANCELLED_ONLY_MESSAGE = "Set only when the hearing is cancelled."
 RELEASED_REQUIRED_MESSAGE = "Required when the hearing is released."
 RELEASED_ONLY_MESSAGE = "Set only when the hearing is released."
 HELD_MOVE_ONLY_MESSAGE = "Set only on a date held by a rescheduling order."
+APPEARANCE_MODE_REQUIRED_MESSAGE = "Choose in person or video for someone marked present."
+APPEARANCE_MODE_NOT_ALLOWED_MESSAGE = (
+    "Only for someone marked present; leave it empty for absent or not required."
+)
+ATTENDANCE_NOT_STARTED_MESSAGE = "Attendance can be marked only once the hearing has been started."
+ATTENDANCE_LOCKED_MESSAGE = "Attendance is locked: the hearing's order has been triggered."
+NOT_ON_ROLL_MESSAGE = (
+    "Not on this case's attendance roll. Only its complainants, accused and PoA holders, "
+    "and an advocate line under each complainant or accused with an advocate, can be marked."
+)
 OWN_PREVIOUS_HEARING_MESSAGE = "A hearing cannot be its own previous hearing."
 MOVES_ITSELF_MESSAGE = "A hearing cannot hold a move of itself."
 SAME_CASE_HEARING_MESSAGE = "Must be a hearing of the same case."
@@ -105,67 +121,18 @@ class HearingPurpose(BaseModel, BaseActivatableModel, BaseAuditableModel):
         super().save(*args, **kwargs)
 
 
-CONFIRMED_STATUSES = tuple(status for status in HearingStatus if status not in UNSEQUENCED_STATUSES)
+def _raise_broken_rules(rules):
+    """Raise a ``ValidationError`` listing every rule in ``rules`` that does not hold.
 
-# Fields whose presence follows the status (#3, #6, #7). Each rule is
-# ``(field, statuses it is required in, message when missing,
-# statuses it is allowed in, message when set elsewhere)``. ``None`` allows it
-# in every status: a field that records history (a first start, an
-# abandonment) is kept when the hearing later moves on.
-STATUS_FIELD_RULES = (
-    (
-        "confirmed_at",
-        CONFIRMED_STATUSES,
-        CONFIRMED_REQUIRED_MESSAGE,
-        CONFIRMED_STATUSES,
-        CONFIRMED_NOT_ALLOWED_MESSAGE,
-    ),
-    (
-        "started_at",
-        (HearingStatus.IN_PROGRESS, HearingStatus.COMPLETED),
-        STARTED_REQUIRED_MESSAGE,
-        None,
-        None,
-    ),
-    ("last_started_at", (HearingStatus.IN_PROGRESS,), IN_PROGRESS_REQUIRED_MESSAGE, None, None),
-    (
-        "ended_at",
-        (HearingStatus.COMPLETED,),
-        COMPLETED_REQUIRED_MESSAGE,
-        (HearingStatus.COMPLETED,),
-        COMPLETED_ONLY_MESSAGE,
-    ),
-    ("adjournment_sought_by", (), None, (HearingStatus.COMPLETED,), COMPLETED_ONLY_MESSAGE),
-    ("abandoned_at", (HearingStatus.ABANDONED,), ABANDONED_REQUIRED_MESSAGE, None, None),
-    (
-        "cancelled_at",
-        (HearingStatus.CANCELLED,),
-        CANCELLED_REQUIRED_MESSAGE,
-        (HearingStatus.CANCELLED,),
-        CANCELLED_ONLY_MESSAGE,
-    ),
-    (
-        "cancellation_reason",
-        (HearingStatus.CANCELLED,),
-        CANCELLED_REQUIRED_MESSAGE,
-        (HearingStatus.CANCELLED,),
-        CANCELLED_ONLY_MESSAGE,
-    ),
-    (
-        "release_reason",
-        (HearingStatus.RELEASED,),
-        RELEASED_REQUIRED_MESSAGE,
-        (HearingStatus.RELEASED,),
-        RELEASED_ONLY_MESSAGE,
-    ),
-    (
-        "moves_hearing",
-        (),
-        None,
-        (HearingStatus.PROVISIONAL, HearingStatus.RELEASED),
-        HELD_MOVE_ONLY_MESSAGE,
-    ),
-)
+    ``rules`` are ``(field, rule holds, message when it does not)``. Every
+    broken rule is reported, not just the first one per field.
+    """
+    errors = {}
+    for field, holds, message in rules:
+        if not holds:
+            errors.setdefault(field, []).append(message)
+    if errors:
+        raise ValidationError(errors)
 
 
 class Hearing(BaseModel, BaseAuditableModel):
@@ -298,17 +265,14 @@ class Hearing(BaseModel, BaseAuditableModel):
                 name="hearings_hold_has_order",
                 violation_error_message=HOLD_HAS_ORDER_MESSAGE,
             ),
-            # ``started_at__isnull=False`` closes a gap in the spec's
-            # ``ended_at IS NULL OR started_at <= ended_at``: with no start,
-            # ``NULL <= ended_at`` is NULL, and a CHECK that evaluates to NULL passes.
+            # isnull=False: with no start, NULL <= ended_at is NULL, and a NULL CHECK passes.
             models.CheckConstraint(
                 check=Q(ended_at__isnull=True)
                 | Q(started_at__isnull=False, started_at__lte=F("ended_at")),
                 name="hearings_started_before_ended",
                 violation_error_message=STARTED_BEFORE_ENDED_MESSAGE,
             ),
-            # Keeps the board order right when a status is written with
-            # ``update()``, which skips ``save()``.
+            # save() derives status_order; this also catches update(), which skips save().
             models.CheckConstraint(
                 check=reduce(
                     or_,
@@ -336,55 +300,239 @@ class Hearing(BaseModel, BaseAuditableModel):
         return f"{self.case} on {self.hearing_date} ({self.get_status_display()})"
 
     def clean(self):
-        """Apply the rules between fields that the database constraints do not cover."""
+        """Apply the rules between fields that the database constraints do not cover.
+
+        Fields that record history (a first start, an abandonment) are only
+        required, never refused: they are kept when the hearing moves on.
+        """
         super().clean()
-        errors = {}
-        for field, required_in, required_message, allowed_in, only_message in STATUS_FIELD_RULES:
-            value = getattr(self, f"{field}_id" if field == "moves_hearing" else field)
-            if value in (None, "") and self.status in required_in:
-                errors.setdefault(field, []).append(required_message)
-            elif (
-                value not in (None, "") and allowed_in is not None and self.status not in allowed_in
-            ):
-                errors.setdefault(field, []).append(only_message)
-
-        if self.heard_duration is not None and self.heard_duration < datetime.timedelta(0):
-            errors.setdefault("heard_duration", []).append(NEGATIVE_DURATION_MESSAGE)
-        if self.started_at and self.last_started_at and self.last_started_at < self.started_at:
-            errors.setdefault("last_started_at", []).append(LAST_START_BEFORE_FIRST_MESSAGE)
-
-        if self.previous_hearing_id:
-            if self.previous_hearing_id == self.pk:
-                errors.setdefault("previous_hearing", []).append(OWN_PREVIOUS_HEARING_MESSAGE)
-            elif self.previous_hearing.case_id != self.case_id:
-                errors.setdefault("previous_hearing", []).append(SAME_CASE_HEARING_MESSAGE)
-        if self.moves_hearing_id and "moves_hearing" not in errors:
-            if self.moves_hearing_id == self.pk:
-                errors.setdefault("moves_hearing", []).append(MOVES_ITSELF_MESSAGE)
-            elif self.moves_hearing.case_id != self.case_id:
-                errors.setdefault("moves_hearing", []).append(SAME_CASE_HEARING_MESSAGE)
-
-        # Only when the date is first fixed: a case transferred later keeps its
-        # past hearings in the court that heard them.
-        if self._state.adding and self.case_id and self.court_id:
-            case_court_id = self.case.court_id
-            if case_court_id is None:
-                errors.setdefault("case", []).append(CASE_HAS_NO_COURT_MESSAGE)
-            elif case_court_id != self.court_id:
-                errors.setdefault("court", []).append(CASE_COURT_MESSAGE)
-
-        if errors:
-            raise ValidationError(errors)
+        status = self.status
+        confirmed = status in CONFIRMED_STATUSES
+        completed = status == HearingStatus.COMPLETED
+        cancelled = status == HearingStatus.CANCELLED
+        released = status == HearingStatus.RELEASED
+        held = status in (HearingStatus.PROVISIONAL, HearingStatus.RELEASED)
+        started = self.started_at and self.last_started_at
+        # Only on create: a case transferred later keeps its past hearings in their court.
+        newly_listed = self._state.adding and self.case_id and self.court_id
+        case_court_id = self.case.court_id if newly_listed else None
+        _raise_broken_rules(
+            [
+                ("confirmed_at", not confirmed or self.confirmed_at, CONFIRMED_REQUIRED_MESSAGE),
+                ("confirmed_at", confirmed or not self.confirmed_at, CONFIRMED_NOT_ALLOWED_MESSAGE),
+                (
+                    "started_at",
+                    status not in (HearingStatus.IN_PROGRESS, HearingStatus.COMPLETED)
+                    or self.started_at,
+                    STARTED_REQUIRED_MESSAGE,
+                ),
+                (
+                    "last_started_at",
+                    status != HearingStatus.IN_PROGRESS or self.last_started_at,
+                    IN_PROGRESS_REQUIRED_MESSAGE,
+                ),
+                (
+                    "last_started_at",
+                    not started or self.last_started_at >= self.started_at,
+                    LAST_START_BEFORE_FIRST_MESSAGE,
+                ),
+                ("ended_at", not completed or self.ended_at, COMPLETED_REQUIRED_MESSAGE),
+                ("ended_at", completed or not self.ended_at, COMPLETED_ONLY_MESSAGE),
+                (
+                    "heard_duration",
+                    self.heard_duration is None or self.heard_duration >= datetime.timedelta(0),
+                    NEGATIVE_DURATION_MESSAGE,
+                ),
+                (
+                    "adjournment_sought_by",
+                    completed or not self.adjournment_sought_by,
+                    COMPLETED_ONLY_MESSAGE,
+                ),
+                (
+                    "abandoned_at",
+                    status != HearingStatus.ABANDONED or self.abandoned_at,
+                    ABANDONED_REQUIRED_MESSAGE,
+                ),
+                ("cancelled_at", not cancelled or self.cancelled_at, CANCELLED_REQUIRED_MESSAGE),
+                ("cancelled_at", cancelled or not self.cancelled_at, CANCELLED_ONLY_MESSAGE),
+                (
+                    "cancellation_reason",
+                    not cancelled or self.cancellation_reason,
+                    CANCELLED_REQUIRED_MESSAGE,
+                ),
+                (
+                    "cancellation_reason",
+                    cancelled or not self.cancellation_reason,
+                    CANCELLED_ONLY_MESSAGE,
+                ),
+                ("release_reason", not released or self.release_reason, RELEASED_REQUIRED_MESSAGE),
+                ("release_reason", released or not self.release_reason, RELEASED_ONLY_MESSAGE),
+                ("moves_hearing", held or not self.moves_hearing_id, HELD_MOVE_ONLY_MESSAGE),
+                (
+                    "moves_hearing",
+                    not self.moves_hearing_id or self.moves_hearing_id != self.pk,
+                    MOVES_ITSELF_MESSAGE,
+                ),
+                (
+                    "moves_hearing",
+                    not self.moves_hearing_id
+                    or self.moves_hearing_id == self.pk
+                    or self.moves_hearing.case_id == self.case_id,
+                    SAME_CASE_HEARING_MESSAGE,
+                ),
+                (
+                    "previous_hearing",
+                    not self.previous_hearing_id or self.previous_hearing_id != self.pk,
+                    OWN_PREVIOUS_HEARING_MESSAGE,
+                ),
+                (
+                    "previous_hearing",
+                    not self.previous_hearing_id
+                    or self.previous_hearing_id == self.pk
+                    or self.previous_hearing.case_id == self.case_id,
+                    SAME_CASE_HEARING_MESSAGE,
+                ),
+                ("case", not newly_listed or case_court_id is not None, CASE_HAS_NO_COURT_MESSAGE),
+                (
+                    "court",
+                    not newly_listed or case_court_id in (None, self.court_id),
+                    CASE_COURT_MESSAGE,
+                ),
+            ]
+        )
 
     def save(self, *args, **kwargs):
         """Derive the status order and the first date, then validate before saving."""
         self.status_order = STATUS_ORDER.get(self.status, OFF_BOARD_STATUS_ORDER)
-        # Nothing is fixed while the date sits in a draft (#7.2), so the first
-        # fixed date follows it until the order is triggered.
+        # A draft date is not fixed yet (#7.2), so original_date follows it until confirm.
         if self.status == HearingStatus.PROVISIONAL or self.original_date is None:
             self.original_date = self.hearing_date
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class HearingAttendanceQuerySet(models.QuerySet):
+    """Refuses to delete marks once a hearing's attendance is locked."""
+
+    def delete(self):
+        """Delete the marks, unless any belongs to a locked hearing.
+
+        A full replace of the roll deletes the old marks first (#6.5), so
+        without this a replace after the order is triggered would erase them.
+        """
+        if self.filter(hearing__attendance_locked_at__isnull=False).exists():
+            raise ValidationError({"hearing": ATTENDANCE_LOCKED_MESSAGE})
+        return super().delete()
+
+
+class HearingAttendance(BaseModel):
+    """One marked line on a hearing's attendance roll (spec 0023 #2.3).
+
+    The roll is every complainant, accused and PoA holder on the case, with one
+    advocate line under each complainant and accused that has an advocate
+    (``ATT-01``), read from ``apps.cases`` ``get_attendance_roll``. An unmarked
+    person has no row; the roll is complete when every line has one (``ATT-04``).
+    Written only through ``services.courtroom``, which replaces the whole roll
+    and checks each line is on it (#6.5).
+    """
+
+    hearing = models.ForeignKey(Hearing, on_delete=models.CASCADE, related_name="attendance")
+    attendee_type = models.CharField(max_length=32, choices=AttendeeType.choices)
+    participant_id = models.UUIDField(
+        help_text="The party on the roll; for an advocate line, the party it sits under."
+    )
+    mark = models.CharField(max_length=16, choices=AttendanceMark.choices)
+    appearance_mode = models.CharField(
+        max_length=16,
+        choices=AppearanceMode.choices,
+        blank=True,
+        help_text="How a present person appeared. Only with Present.",
+    )
+
+    objects = HearingAttendanceQuerySet.as_manager()
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("hearing", "attendee_type", "participant_id")
+        verbose_name = "Hearing attendance"
+        verbose_name_plural = "Hearing attendance"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["hearing", "attendee_type", "participant_id"],
+                name="hearings_attendance_one_mark_per_line",
+            ),
+            models.CheckConstraint(
+                check=Q(attendee_type__in=AttendeeType.values),
+                name="hearings_attendance_type_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(mark__in=AttendanceMark.values),
+                name="hearings_attendance_mark_valid",
+            ),
+            models.CheckConstraint(
+                check=~Q(mark=AttendanceMark.PRESENT)
+                | Q(appearance_mode__in=AppearanceMode.values),
+                name="hearings_attendance_present_has_mode",
+                violation_error_message=APPEARANCE_MODE_REQUIRED_MESSAGE,
+            ),
+            models.CheckConstraint(
+                check=Q(mark=AttendanceMark.PRESENT) | Q(appearance_mode=""),
+                name="hearings_attendance_mode_only_present",
+                violation_error_message=APPEARANCE_MODE_NOT_ALLOWED_MESSAGE,
+            ),
+        ]
+
+    def __str__(self):
+        """Return a readable label for admin and logs."""
+        return (
+            f"{self.get_attendee_type_display()} {self.participant_id}: {self.get_mark_display()}"
+        )
+
+    def clean(self):
+        """Report a mode that does not match the mark, and a hearing that cannot take attendance."""
+        super().clean()
+        errors = {}
+        if self.mark == AttendanceMark.PRESENT and not self.appearance_mode:
+            errors["appearance_mode"] = APPEARANCE_MODE_REQUIRED_MESSAGE
+        elif self.mark != AttendanceMark.PRESENT and self.appearance_mode:
+            errors["appearance_mode"] = APPEARANCE_MODE_NOT_ALLOWED_MESSAGE
+        if self.hearing_id:
+            hearing = self.hearing
+            if hearing.attendance_locked_at:
+                errors["hearing"] = ATTENDANCE_LOCKED_MESSAGE
+            elif hearing.status not in ATTENDANCE_STATUSES or hearing.started_at is None:
+                errors["hearing"] = ATTENDANCE_NOT_STARTED_MESSAGE
+            if self.participant_id and self.attendee_type and not self._is_on_roll(hearing):
+                errors["participant_id"] = NOT_ON_ROLL_MESSAGE
+        if errors:
+            raise ValidationError(errors)
+
+    def _is_on_roll(self, hearing):
+        """Whether this line is on the case's attendance roll (#6.5, ``E10011``).
+
+        A malformed id counts as on the roll here: ``clean_fields`` already
+        reports it, and one error per mistake is enough.
+        """
+        try:
+            participant_id = uuid.UUID(str(self.participant_id))
+        except ValueError:
+            return True
+        return any(
+            entry.type == self.attendee_type and entry.participant_id == participant_id
+            for entry in get_attendance_roll(hearing.case_id)
+        )
+
+    def save(self, *args, **kwargs):
+        """Validate the model before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Refuse to delete a mark once the hearing's attendance is locked."""
+        if self.hearing.attendance_locked_at:
+            raise ValidationError({"hearing": ATTENDANCE_LOCKED_MESSAGE})
+        return super().delete(*args, **kwargs)
 
 
 class CourtCalendarEntry(BaseModel, BaseAuditableModel):
@@ -424,8 +572,7 @@ class CourtCalendarEntry(BaseModel, BaseAuditableModel):
                 check=Q(entry_type__in=CalendarEntryType.values),
                 name="hearings_calendar_entry_type_valid",
             ),
-            # ``isnull=False`` is needed: in SQL ``NULL >= 1`` is NULL, and a
-            # CHECK that evaluates to NULL passes.
+            # isnull=False: NULL >= 1 is NULL, and a NULL CHECK passes.
             models.CheckConstraint(
                 check=~Q(entry_type=CalendarEntryType.REDUCED_SITTING)
                 | Q(capacity_override__isnull=False, capacity_override__gte=1),
