@@ -10,6 +10,8 @@ when an ``EGRAS_*`` setting changes, which keeps tests honest, as ``CDACConfig``
 does in spec 0013.
 """
 
+import base64
+import binascii
 import re
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -68,8 +70,10 @@ class EGRASConfig:
     ddo: str = ""
     office_name: str = ""
     # Path to the shared symmetric key NIC issues for decrypting the encrypted
-    # callback (payRes); 16/24/32 bytes (spec 0022 #5.4).
+    # callback (payRes), and the format it is stored in (raw bytes, or base64/hex
+    # text); the decoded key must be 16/24/32 bytes (spec 0022 #5.4).
     response_key_path: str = ""
+    response_key_format: str = "raw"
     user_id: str = "guest"
     scheme_map: dict = field(default_factory=dict)
     # One head until NIC confirms the field names of the second and later heads
@@ -224,6 +228,7 @@ def resolve_config() -> EGRASConfig:
         ddo=get("EGRAS_DDO", ""),
         office_name=get("EGRAS_OFFICE_NAME", ""),
         response_key_path=get("EGRAS_RESPONSE_KEY_PATH", ""),
+        response_key_format=get("EGRAS_RESPONSE_KEY_FORMAT", "") or "raw",
         user_id=get("EGRAS_USER_ID", "") or "guest",
         scheme_map=dict(get("EGRAS_SCHEME_MAP", {}) or {}),
         max_schemes=int(get("EGRAS_MAX_SCHEMES", 1)),
@@ -248,25 +253,60 @@ class EGRASKeyError(Exception):
 
 # AES keys are 128, 192 or 256 bits.
 _VALID_KEY_LENGTHS = (16, 24, 32)
+KEY_FORMATS = ("raw", "base64", "hex")
+
+
+def _decode_key(raw: bytes, key_format: str) -> bytes:
+    """Decode the key file's bytes per ``key_format`` (spec 0022 #5.4).
+
+    NIC's reference reads the key as raw bytes, but a key saved as base64 or hex
+    *text* would otherwise pass the length check while not being the real key —
+    every callback would then silently fail to decrypt. So the format is
+    explicit; text formats are whitespace-trimmed (a stray trailing newline is
+    common and harmless), while raw bytes are used exactly as read.
+    """
+
+    key_format = (key_format or "raw").lower()
+    if key_format == "raw":
+        return raw
+    if key_format not in KEY_FORMATS:
+        raise EGRASKeyError(
+            f"EGRAS_RESPONSE_KEY_FORMAT {key_format!r} is not one of {', '.join(KEY_FORMATS)}."
+        )
+    try:
+        text = raw.decode("ascii").strip()
+    except UnicodeDecodeError as exc:
+        raise EGRASKeyError(f"The e-GRAS response key is not {key_format} text.") from exc
+    try:
+        return (
+            base64.b64decode(text, validate=True) if key_format == "base64" else bytes.fromhex(text)
+        )
+    except (binascii.Error, ValueError) as exc:
+        raise EGRASKeyError(f"The e-GRAS response key is not valid {key_format}: {exc}") from exc
 
 
 @lru_cache(maxsize=4)
-def load_response_key(path: str) -> bytes:
-    """Read and cache the shared symmetric key used to decrypt ``payRes``.
+def load_response_key(path: str, key_format: str = "raw") -> bytes:
+    """Read, decode and cache the shared symmetric key used to decrypt ``payRes``.
 
     Raises :class:`EGRASKeyError` when the path is empty, the file cannot be
-    read, or the key is not a valid AES length.
+    read, the content cannot be decoded in ``key_format``, or the decoded key is
+    not a valid AES length.
     """
 
     if not path:
         raise EGRASKeyError("EGRAS_RESPONSE_KEY_PATH is not configured.")
     try:
         with open(path, "rb") as handle:
-            key = handle.read()
+            raw = handle.read()
     except OSError as exc:
         raise EGRASKeyError(f"The e-GRAS response key file could not be read: {exc}") from exc
+
+    key = _decode_key(raw, key_format)
     if len(key) not in _VALID_KEY_LENGTHS:
-        raise EGRASKeyError(f"The e-GRAS response key must be 16, 24 or 32 bytes, got {len(key)}.")
+        raise EGRASKeyError(
+            f"The e-GRAS response key must decode to 16, 24 or 32 bytes, got {len(key)}."
+        )
     return key
 
 

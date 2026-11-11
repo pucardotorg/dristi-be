@@ -42,7 +42,7 @@ def _decrypt_fields(pay_res: str, config) -> dict[str, str]:
     """
 
     try:
-        key = load_response_key(config.response_key_path)
+        key = load_response_key(config.response_key_path, config.response_key_format)
         data = decrypt_pay_res(pay_res, key)
     except (ResponseDecryptionError, EGRASKeyError) as exc:
         logger.warning("event=%s reason=%s", constants.EGRAS_RESPONSE_DECRYPT_FAILED, exc)

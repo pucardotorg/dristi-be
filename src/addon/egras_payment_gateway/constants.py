@@ -119,7 +119,11 @@ BANKDATE_ELEMENT = "Bankdate"
 # ---------------------------------------------------------------------------
 # e-GRAS status vocabulary (spec 0022 #6.3), matched case-insensitively.
 # ---------------------------------------------------------------------------
-STATUS_SUCCESS = {"successfull", "success"}
+# NIC is inconsistent across docs/samples: the v3.6 GrnDetails sample says
+# "Successfull", the v3.7 Process doc says "Successful", and the callback table
+# says "Success". Accept all three so a real success is never missed (a missed
+# success would strand a debited payer at PENDING until the horizon).
+STATUS_SUCCESS = {"successful", "successfull", "success"}
 STATUS_FAILURE = "failure"
 STATUS_PENDING = "pending"
 STATUS_NOT_FOUND = "not found"

@@ -478,9 +478,11 @@ back into the same fields and then follows #5.2 unchanged:
 
 - **Cipher.** AES-GCM, 128-bit tag. The blob is
   `base64( nonce[16] ‖ ciphertext‖tag )`; associated data is empty. The key is a
-  shared symmetric secret NIC issues (16/24/32 bytes), read from
-  `EGRAS_RESPONSE_KEY_PATH` and cached (`config.load_response_key`). It is the
-  addon's only credential: the key bytes are never logged.
+  shared symmetric secret NIC issues (decodes to 16/24/32 bytes), read from
+  `EGRAS_RESPONSE_KEY_PATH` in the `EGRAS_RESPONSE_KEY_FORMAT` encoding (`raw`
+  bytes, or `base64`/`hex` text — text is whitespace-trimmed so a stray newline
+  is harmless) and cached (`config.load_response_key`). It is the addon's only
+  credential: the key bytes are never logged.
 - **Authenticity.** AES-GCM is authenticated encryption, so a `payRes` tampered
   in transit fails to decrypt. A successful decryption already proves integrity
   under the key; the response's `checksum` (SHA-256 of

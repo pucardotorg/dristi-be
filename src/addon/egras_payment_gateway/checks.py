@@ -80,7 +80,7 @@ def _check_response_key(config):
         return [Warning(message, id="egras_payment_gateway.W002")]
 
     try:
-        load_response_key(config.response_key_path)
+        load_response_key(config.response_key_path, config.response_key_format)
     except EGRASKeyError as exc:
         return [Error(str(exc), id="egras_payment_gateway.E009")]
     return []

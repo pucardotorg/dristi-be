@@ -87,8 +87,40 @@ class LoadKeyTests(SimpleTestCase):
         with self.assertRaises(EGRASKeyError):
             load_response_key("/no/such/egras.key")
 
-    def test_wrong_length_key_raises(self):
+    def test_wrong_length_raw_key_raises(self):
         path = write_key_file(b"too-short")
         self.addCleanup(os.unlink, path)
         with self.assertRaises(EGRASKeyError):
-            load_response_key(path)
+            load_response_key(path, "raw")
+
+    def test_base64_key_file_is_decoded(self):
+        key = make_response_key()
+        path = write_key_file(base64.b64encode(key) + b"\n")  # text + trailing newline
+        self.addCleanup(os.unlink, path)
+        self.assertEqual(load_response_key(path, "base64"), key)
+
+    def test_hex_key_file_is_decoded(self):
+        key = make_response_key()
+        path = write_key_file(key.hex().encode() + b"\n")
+        self.addCleanup(os.unlink, path)
+        self.assertEqual(load_response_key(path, "hex"), key)
+
+    def test_base64_text_read_as_raw_is_rejected(self):
+        # A 32-byte key saved as base64 is 44 text bytes: valid base64, but as raw
+        # it is the wrong length, so "raw" must not silently accept it.
+        path = write_key_file(base64.b64encode(make_response_key()))
+        self.addCleanup(os.unlink, path)
+        with self.assertRaises(EGRASKeyError):
+            load_response_key(path, "raw")
+
+    def test_unknown_format_raises(self):
+        path = write_key_file(make_response_key())
+        self.addCleanup(os.unlink, path)
+        with self.assertRaises(EGRASKeyError):
+            load_response_key(path, "pem")
+
+    def test_bad_base64_content_raises(self):
+        path = write_key_file(b"not valid base64 !!!")
+        self.addCleanup(os.unlink, path)
+        with self.assertRaises(EGRASKeyError):
+            load_response_key(path, "base64")
