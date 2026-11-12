@@ -436,6 +436,9 @@ class BulkPreviewResultSerializer(serializers.Serializer):
     preview_expires_at = serializers.DateTimeField(source="job.preview_expires_at", read_only=True)
     lines = PreviewLineSerializer(many=True, read_only=True)
     loads = PreviewLoadSerializer(many=True, read_only=True)
+    warnings = WarningSerializer(
+        many=True, read_only=True, help_text="A target day taken past its capacity (warn mode)."
+    )
 
 
 class BulkConfirmedSerializer(serializers.Serializer):

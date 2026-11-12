@@ -330,6 +330,38 @@ class TestBulkCapacity:
         schedule(third_case, FRI)
         result = preview(courtroom, [schedule(case, MON), schedule(other_case, TUE)])
         assert result.loads[0]["listed_after"] == 3
+        [warning] = result.warnings
+        assert warning.code == "COURT_DAY_FULL"
+        assert warning.detail == {
+            "date": FRI.isoformat(),
+            "capacity": 1,
+            "listed": 1,
+            "provisional": 0,
+            "moving": 2,
+        }
+
+    def test_no_warning_when_the_day_has_room(self, courtroom, case, other_case):
+        set_config("max_hearings_per_day", "2")
+        result = preview(courtroom, [schedule(case, MON), schedule(other_case, TUE)])
+        assert result.loads[0]["listed_after"] == 2
+        assert result.warnings == []
+
+    def test_held_dates_count_toward_the_warning(self, courtroom, case, other_case, third_case):
+        set_config("max_hearings_per_day", "2")
+        hold(third_case, FRI)
+        result = preview(courtroom, [schedule(case, MON), schedule(other_case, TUE)])
+        assert [w.detail["provisional"] for w in result.warnings] == [1]
+
+    def test_next_available_never_warns(self, courtroom, case, other_case):
+        set_config("max_hearings_per_day", "1")
+        result = preview(
+            courtroom,
+            [schedule(case, MON), schedule(other_case, TUE)],
+            mode=BulkMode.NEXT_AVAILABLE,
+            target_date=None,
+            schedule_after=TUE,
+        )
+        assert result.warnings == []
 
     def test_to_date_block_mode_refuses_an_overfull_day(
         self, courtroom, case, other_case, third_case

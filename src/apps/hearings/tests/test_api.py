@@ -16,7 +16,19 @@ from apps.hearings.models import BulkRescheduleJob, CourtCalendarEntry
 from apps.hearings.services import courtroom as court_service
 from apps.hearings.services import listing
 
-from .factories import FRI, MON, SUN, TODAY, TUE, WED, hold, make_case, make_user, schedule
+from .factories import (
+    FRI,
+    MON,
+    SUN,
+    TODAY,
+    TUE,
+    WED,
+    hold,
+    make_case,
+    make_user,
+    schedule,
+    set_config,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -578,6 +590,7 @@ class TestMoves:
         ]
         preview = client_for(setter).post(url, body, format="json").json()
         assert preview["status"] == "PREVIEWED" and len(preview["lines"]) == 2
+        assert preview["warnings"] == []
         job_url = reverse("hearing-bulk-reschedule-detail", args=[preview["job_id"]])
         assert client_for(controller).get(job_url).status_code == 200
         assert client_for(stranger).get(job_url).status_code == 404
@@ -586,6 +599,29 @@ class TestMoves:
             confirmed = client_for(setter).post(confirm_url)
         assert (confirmed.status_code, confirmed.json()["status"]) == (202, "QUEUED")
         assert errors_of(client_for(setter).post(confirm_url)) == [("E10016", None)]
+
+    def test_bulk_preview_warns_of_an_overfull_day(self, case, other_case, setter, courtroom):
+        set_config("max_hearings_per_day", "1")
+        body = {
+            "court": str(courtroom.pk),
+            "hearing_ids": [str(schedule(c, MON).pk) for c in (case, other_case)],
+            "mode": "TO_DATE",
+            "target_date": FRI.isoformat(),
+            "reason_code": "PRESIDING_OFFICER_ON_LEAVE",
+        }
+        response = client_for(setter).post(
+            reverse("hearing-bulk-reschedule-preview"), body, format="json"
+        )
+        assert response.status_code == 200
+        [warning] = response.json()["warnings"]
+        assert warning["code"] == "COURT_DAY_FULL"
+        assert warning["detail"] == {
+            "date": FRI.isoformat(),
+            "capacity": 1,
+            "listed": 0,
+            "provisional": 0,
+            "moving": 2,
+        }
 
     def test_bulk_reschedule_refusals(self, case, setter, courtroom):
         hearing = schedule(case, MON)

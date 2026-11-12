@@ -293,11 +293,12 @@ def _check_target(hearing, hearing_date):
 
 @dataclass(frozen=True)
 class BulkPreview:
-    """A stored preview: the job, one line per hearing, and each target day's load."""
+    """A stored preview: the job, one line per hearing, each target day's load, and warnings."""
 
     job: BulkRescheduleJob
     lines: list
     loads: list
+    warnings: list = field(default_factory=list)
 
 
 def _plan_next_available(hearings, court_id, schedule_after, today):
@@ -444,7 +445,7 @@ def preview_bulk(
             for h in hearings
         ]
         loads = _target_loads(court_id, plan)
-    return BulkPreview(job=job, lines=lines, loads=loads)
+    return BulkPreview(job=job, lines=lines, loads=loads, warnings=_overfull_warnings(loads))
 
 
 def _check_bulk_capacity(court_id, target_date, adding):
@@ -512,6 +513,35 @@ def _target_loads(court_id, plan):
             }
         )
     return loads
+
+
+def _overfull_warnings(loads):
+    """``COURT_DAY_FULL`` for each target day the move takes past its capacity (``warn`` mode).
+
+    In ``block`` mode such a preview was already refused (``E10009``), and
+    ``NEXT_AVAILABLE`` never plans past a day's free places, so this only fires
+    for a ``TO_DATE`` move in ``warn`` mode.
+    """
+    return [
+        SoftWarning(
+            code="COURT_DAY_FULL",
+            message=(
+                f"After this move the court's list for {display_date(load['date'])} would have "
+                f"{load['listed_after']} listed and {load['provisional']} held in draft orders, "
+                f"against a capacity of {load['capacity']}."
+            ),
+            # ``listed`` is the day's count now, as in the single move's warning.
+            detail={
+                "date": load["date"].isoformat(),
+                "capacity": load["capacity"],
+                "listed": load["listed_before"],
+                "provisional": load["provisional"],
+                "moving": load["listed_after"] - load["listed_before"],
+            },
+        )
+        for load in loads
+        if load["listed_after"] + load["provisional"] > load["capacity"]
+    ]
 
 
 def confirm_bulk(*, job_id, actor):
