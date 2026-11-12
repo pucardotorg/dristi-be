@@ -23,6 +23,7 @@ urlpatterns = [
     path("api/v1/", include("apps.pdf.urls")),
     path("api/v1/", include("apps.cases.urls")),
     path("api/v1/", include("apps.scrutiny.urls")),
+    path("api/v1/", include("apps.hearings.urls")),
     path("api/v1/", include("apps.esign.urls")),
     path("api/v1/", include("apps.cms.urls")),
     path("api/v1/", include("apps.payments.urls")),

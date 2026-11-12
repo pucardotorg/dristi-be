@@ -359,3 +359,24 @@ def cases_awaiting_hearing(court_id):
     return Case.objects.filter(court_id=court_id, status=CaseStatus.REGISTERED).values_list(
         "pk", flat=True
     )
+
+
+def case_ids_represented_by(advocate_ids):
+    """Return the ids of cases where any of the advocates is active for a party (spec 0023 #10.3).
+
+    ``advocate_ids`` are advocate profile ids, as ``AdvocateRef.id`` gives
+    them. A lazy ``QuerySet`` of ids, for the board's ``advocate`` filter.
+    """
+    return (
+        Representation.objects.active()
+        .filter(advocate_id__in=list(advocate_ids), case_participant__role__in=PARTY_ROLES)
+        .values_list("case_id", flat=True)
+    )
+
+
+def case_ids_filed_before(moment):
+    """Return the ids of cases filed before ``moment`` (spec 0023 #11.2, ``beyond_trial_target``).
+
+    A lazy ``QuerySet`` of ids; a case not yet filed is not in it.
+    """
+    return Case.objects.filter(filed_at__lt=moment).values_list("pk", flat=True)

@@ -183,3 +183,11 @@ class BulkItemResult(models.TextChoices):
     SKIPPED_STARTED = "SKIPPED_STARTED", "Skipped: started"
     SKIPPED_CHANGED = "SKIPPED_CHANGED", "Skipped: changed after the preview"
     FAILED = "FAILED", "Failed"
+
+
+class HearingRole(models.TextChoices):
+    """The court roles hearing actions need, held per courtroom (#1.2, ``court-roles.md``)."""
+
+    HEARING_CONTROLLER = "HEARING_CONTROLLER", "Hearing controller"
+    NEXT_HEARING_SETTER = "NEXT_HEARING_SETTER", "Next hearing setter"
+    ORDER_DATA_FILLER = "ORDER_DATA_FILLER", "Order data filler"
