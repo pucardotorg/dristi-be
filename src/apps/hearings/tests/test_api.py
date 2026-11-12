@@ -324,6 +324,14 @@ class TestCourtroomActions:
         again = client.post(reverse("hearing-end", args=[hearing.pk]))
         assert errors_of(again) == [("E10001", None)]
 
+    def test_pass_over_a_future_hearing(self, case, controller):
+        future = schedule(case, MON)
+        client = client_for(controller)
+        response = client.post(reverse("hearing-pass-over", args=[future.pk]))
+        assert (response.status_code, errors_of(response)) == (409, [("E10010", None)])
+        detail = client.get(reverse("hearing-detail", args=[future.pk])).json()
+        assert (detail["status"], detail["allowed_actions"]) == ("SCHEDULED", [])
+
     def test_end_validates_the_side(self, hearing, controller):
         court_service.start(hearing_id=hearing.pk)
         response = client_for(controller).post(

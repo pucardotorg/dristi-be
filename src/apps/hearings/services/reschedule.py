@@ -32,7 +32,13 @@ from ..enums import (
     RescheduleReason,
     Side,
 )
-from ..models import BulkRescheduleItem, BulkRescheduleJob, Hearing, HearingDateChange
+from ..models import (
+    BulkRescheduleItem,
+    BulkRescheduleJob,
+    Hearing,
+    HearingAttendance,
+    HearingDateChange,
+)
 from . import calendar, notifications
 from .common import (
     SoftWarning,
@@ -111,7 +117,8 @@ def move(
     transition, the date and the purpose. Writes the ``HearingDateChange``
     first, then the hearing: ``status = SCHEDULED``, ``reschedule_count + 1``,
     a new serial number on the new date (kept when only the purpose changes),
-    and the reason on the history row. ``original_date`` and ``id`` never
+    and the reason on the history row. A move to another date clears the
+    sitting on the old one (``_reset_sitting``). ``original_date`` and ``id`` never
     change. Queues the case-stage call when the purpose changed, the
     ``hearing_rescheduled`` signal and, unless ``notify`` is false, the
     parties' notification.
@@ -136,6 +143,7 @@ def move(
     # A purpose-only move keeps its place on the day's board.
     if to_date != from_date:
         hearing.sequence = calendar.next_sequence(hearing.court_id, to_date)
+        _reset_sitting(hearing)
     hearing.hearing_date = to_date
     hearing.purpose = to_purpose
     hearing.status = HearingStatus.SCHEDULED
@@ -154,6 +162,21 @@ def move(
     if notify:
         notify_rescheduled(hearing, from_date, reason_code)
     return change
+
+
+def _reset_sitting(hearing):
+    """Forget the sitting on the date moved away from: the new date is heard afresh (#6.5).
+
+    A hearing started, then passed over or abandoned, keeps its start, heard time
+    and attendance on the history table; carried to the new date they would open
+    its roll pre-filled with another day's marks and count it complete (``ATT-04``).
+    Locked marks are the record of a triggered order and are kept.
+    """
+    hearing.started_at = None
+    hearing.last_started_at = None
+    hearing.heard_duration = datetime.timedelta(0)
+    if hearing.attendance_locked_at is None:
+        HearingAttendance.objects.filter(hearing=hearing).delete()
 
 
 def notify_rescheduled(hearing, from_date, reason_code):
@@ -325,7 +348,8 @@ def preview_bulk(
     keeping the hearings' order on the board. Nothing but the job and its
     items is written. Refuses an order-only reason (``E10013``), more than
     ``bulk_max_hearings`` (``E10024``), a hearing of another court or unknown
-    (``E00105``), one that cannot be moved (``E10001``), and an invalid target date.
+    (``E00105``), one that cannot be moved (``E10001``), an invalid target date,
+    and in ``block`` mode a target date without room for them all (``E10009``).
     """
     if reason_code not in COURT_SIDE_REASONS:
         raise BusinessError(errors.REASON_NEEDS_ORDER, field="reason_code")
@@ -378,6 +402,7 @@ def preview_bulk(
                     f"{', '.join(same)}. Leave them out or choose another date.",
                     field="hearing_ids",
                 )
+            _check_bulk_capacity(court_id, target_date, len(hearings))
             plan = {hearing.pk: target_date for hearing in hearings}
         else:
             plan = _plan_next_available(hearings, court_id, schedule_after, today)
@@ -414,6 +439,26 @@ def preview_bulk(
         ]
         loads = _target_loads(court_id, plan)
     return BulkPreview(job=job, lines=lines, loads=loads)
+
+
+def _check_bulk_capacity(court_id, target_date, adding):
+    """In ``block`` mode, refuse a move to one date that would overfill it (``409 E10009``).
+
+    In ``warn`` mode the preview's ``loads`` show the overflow instead.
+    """
+    if conf.capacity_mode() != conf.CAPACITY_BLOCK:
+        return
+    load = calendar.day_load(court_id, target_date)
+    if load.listed + load.provisional + adding <= load.capacity:
+        return
+    raise BusinessError(
+        errors.COURT_DAY_FULL,
+        f"The court's list for {display_date(target_date)} has {load.free} free "
+        f"{'place' if load.free == 1 else 'places'} ({load.listed} listed and "
+        f"{load.provisional} held in draft orders, against a capacity of {load.capacity}); "
+        f"{adding} hearings cannot be moved there. Move fewer, or choose another date.",
+        field="target_date",
+    )
 
 
 def _as_uuid(value):
@@ -512,6 +557,11 @@ def _move_item(job, item, today):
             return BulkItemResult.FAILED, problems[0].error.code, None
         if other_scheduled(hearing):
             return BulkItemResult.FAILED, errors.CASE_ALREADY_SCHEDULED.code, None
+        # The preview planned within capacity; the day may have filled since.
+        if conf.capacity_mode() == conf.CAPACITY_BLOCK:
+            _load, full = calendar.capacity_check(job.court_id, item.to_date)
+            if full:
+                return BulkItemResult.FAILED, errors.COURT_DAY_FULL.code, None
         move(
             hearing,
             to_date=item.to_date,

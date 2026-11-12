@@ -324,6 +324,51 @@ class TestBulkPreview:
         assert not BulkRescheduleJob.objects.exists()
 
 
+class TestBulkCapacity:
+    def test_to_date_warn_mode_shows_the_overflow(self, courtroom, case, other_case, third_case):
+        set_config("max_hearings_per_day", "1")
+        schedule(third_case, FRI)
+        result = preview(courtroom, [schedule(case, MON), schedule(other_case, TUE)])
+        assert result.loads[0]["listed_after"] == 3
+
+    def test_to_date_block_mode_refuses_an_overfull_day(
+        self, courtroom, case, other_case, third_case
+    ):
+        set_config("capacity_mode", "block")
+        set_config("max_hearings_per_day", "2")
+        schedule(third_case, FRI)
+        hearings = [schedule(case, MON), schedule(other_case, TUE)]
+        with pytest.raises(BusinessError) as excinfo:
+            preview(courtroom, hearings)
+        assert (code(excinfo), field(excinfo)) == ("E10009", "target_date")
+        assert not BulkRescheduleJob.objects.exists()
+        assert preview(courtroom, hearings[:1]).job.items.count() == 1
+
+    def test_block_mode_fails_items_once_the_day_filled_after_the_preview(
+        self, courtroom, case, other_case, third_case, setter
+    ):
+        set_config("capacity_mode", "block")
+        set_config("max_hearings_per_day", "2")
+        first, second = schedule(case, MON), schedule(other_case, TUE)
+        job = preview(courtroom, [first, second]).job
+        schedule(third_case, FRI)
+        job = run(job, setter)
+        results = sorted(job.items.values_list("result", "error_code"))
+        assert results == [("FAILED", "E10009"), ("MOVED", "")]
+        assert job.status == BulkRescheduleStatus.PARTIALLY_FAILED
+        assert courtroom.hearings.filter(hearing_date=FRI, status="SCHEDULED").count() == 2
+
+    def test_warn_mode_run_moves_past_capacity(
+        self, courtroom, case, other_case, third_case, setter
+    ):
+        set_config("max_hearings_per_day", "2")
+        first, second = schedule(case, MON), schedule(other_case, TUE)
+        job = preview(courtroom, [first, second]).job
+        schedule(third_case, FRI)
+        assert run(job, setter).status == BulkRescheduleStatus.COMPLETED
+        assert courtroom.hearings.filter(hearing_date=FRI, status="SCHEDULED").count() == 3
+
+
 class TestBulkRun:
     def test_confirm_and_run(
         self, courtroom, case, other_case, setter, django_capture_on_commit_callbacks

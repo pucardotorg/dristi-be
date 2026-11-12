@@ -98,27 +98,33 @@ def start(*, hearing_id, actor=None, court_id=None, if_unmodified_since=None):
     """
 
     def apply(hearing, today, now):
-        if hearing.hearing_date != today:
-            raise BusinessError(
-                errors.HEARING_NOT_TODAY,
-                f"This hearing is listed for {display_date(hearing.hearing_date)}. It can be "
-                f"started only on that day, not today ({display_date(today)}).",
-            )
+        _require_today(hearing, today, "started")
         _start(hearing, now, actor)
 
     return _act(hearing_id, "start", actor, court_id, if_unmodified_since, apply)
 
 
+def _require_today(hearing, today, done):
+    """Raise ``409 E10010`` unless the hearing is listed for ``today``."""
+    if hearing.hearing_date != today:
+        raise BusinessError(
+            errors.HEARING_NOT_TODAY,
+            f"This hearing is listed for {display_date(hearing.hearing_date)}. It can be "
+            f"{done} only on that day, not today ({display_date(today)}).",
+        )
+
+
 def pass_over(*, hearing_id, actor=None, court_id=None, if_unmodified_since=None):
-    """Set a hearing aside unheard, to be returned to later the same day (#6.2, ``HRG-04``)."""
-    return _act(
-        hearing_id,
-        "pass_over",
-        actor,
-        court_id,
-        if_unmodified_since,
-        lambda hearing, today, now: _pass_over(hearing, now, actor),
-    )
+    """Set a hearing aside unheard, to be returned to later the same day (#6.2, ``HRG-04``).
+
+    Only on its date (``409 E10010``): a future hearing is moved, not passed over.
+    """
+
+    def apply(hearing, today, now):
+        _require_today(hearing, today, "passed over")
+        _pass_over(hearing, now, actor)
+
+    return _act(hearing_id, "pass_over", actor, court_id, if_unmodified_since, apply)
 
 
 def end(
@@ -216,11 +222,9 @@ def _bulk_skip(hearing, action, today):
     )
     if hearing.status not in allowed:
         return errors.INVALID_TRANSITION.code
-    if (
-        action == BULK_END
-        and hearing.status == HearingStatus.SCHEDULED
-        and hearing.hearing_date != today
-    ):
+    # Ending a scheduled hearing starts it, so both need its day; as single actions (#6.1, #6.2).
+    same_day = action == BULK_PASS_OVER or hearing.status == HearingStatus.SCHEDULED
+    if same_day and hearing.hearing_date != today:
         return errors.HEARING_NOT_TODAY.code
     return ""
 

@@ -30,6 +30,10 @@ TRANSITIONS = {
 }
 # Actions a user takes on the board; ``abandon`` is the midnight sweep's alone.
 USER_ACTIONS = ("start", "pass_over", "end", "reschedule", "cancel")
+# Taken only on the hearing's own date (``E10010``): a hearing is called and set
+# aside on its day. A future one passed over would slip past the one-scheduled-
+# per-case rule, which counts only ``SCHEDULED`` listings.
+SAME_DAY_ACTIONS = ("start", "pass_over")
 # How each action reads in a message: "A completed hearing cannot be <done>."
 ACTION_DONE = {
     "start": "started",
@@ -75,9 +79,12 @@ def allowed_actions(hearing, business_date):
     Roles are not applied here: the caller filters by the roles it holds in the
     hearing's court (#10.2). ``mark_attendance`` is added while attendance is open.
     """
-    actions = [action for action in USER_ACTIONS if hearing.status in TRANSITIONS[action]]
-    if "start" in actions and hearing.hearing_date != business_date:
-        actions.remove("start")
+    actions = [
+        action
+        for action in USER_ACTIONS
+        if hearing.status in TRANSITIONS[action]
+        and (action not in SAME_DAY_ACTIONS or hearing.hearing_date == business_date)
+    ]
     if attendance_open(hearing):
         actions.append("mark_attendance")
     return actions

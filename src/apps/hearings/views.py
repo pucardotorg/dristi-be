@@ -212,7 +212,9 @@ class HearingViewSet(HearingsViewMixin, viewsets.GenericViewSet):
         return self._act(request, pk, "start", courtroom.start)
 
     @extend_schema(
-        request=None, parameters=[IF_UNMODIFIED_SINCE], responses=error_responses(*STALE_ERRORS)
+        request=None,
+        parameters=[IF_UNMODIFIED_SINCE],
+        responses=error_responses(*STALE_ERRORS, errors.HEARING_NOT_TODAY),
     )
     @action(detail=True, methods=["post"], url_path="pass-over")
     def pass_over(self, request, pk=None):
@@ -418,6 +420,7 @@ class BulkRescheduleViewSet(HearingsViewMixin, viewsets.GenericViewSet):
                 errors.INVALID_TRANSITION.example(field="hearing_ids"),
                 errors.NOTHING_TO_CHANGE.example(field="hearing_ids"),
                 errors.DATE_NOT_SITTING.example(field="target_date"),
+                errors.COURT_DAY_FULL.example(field="target_date"),
             ),
         },
     )

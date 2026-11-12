@@ -9,10 +9,13 @@ from django.utils import timezone
 from apps.api.errors import BusinessError
 from apps.cases.selectors import get_attendance_roll
 from apps.hearings.enums import HearingStatus, RescheduleReason
+from apps.hearings.exceptions import CaseAlreadyScheduled
 from apps.hearings.models import HearingAttendance
 from apps.hearings.services import courtroom, reschedule
 
-from .factories import MON, TODAY, code, field, make_case, schedule, set_config
+from .factories import MON, TODAY, TUE, code, field, make_case, schedule, set_config
+
+LIVE = (HearingStatus.SCHEDULED, HearingStatus.PASSED_OVER, HearingStatus.IN_PROGRESS)
 
 pytestmark = pytest.mark.django_db
 
@@ -40,6 +43,23 @@ class TestStartPassOverEnd:
             courtroom.start(hearing_id=hearing.pk)
         assert code(excinfo) == "E10010"
         assert "16 Nov 2026" in str(excinfo.value.detail)
+
+    def test_pass_over_only_on_its_day(self, case, business_date):
+        hearing = schedule(case, MON)
+        with pytest.raises(BusinessError) as excinfo:
+            courtroom.pass_over(hearing_id=hearing.pk)
+        assert code(excinfo) == "E10010"
+        hearing.refresh_from_db()
+        assert hearing.status == HearingStatus.SCHEDULED
+        assert courtroom.allowed_actions(hearing, business_date) == ["reschedule", "cancel"]
+
+    def test_future_hearing_cannot_be_passed_over_to_list_the_case_twice(self, case):
+        listed = schedule(case, MON)
+        with pytest.raises(BusinessError):
+            courtroom.pass_over(hearing_id=listed.pk)
+        with pytest.raises(CaseAlreadyScheduled):
+            schedule(case, TUE)
+        assert case.hearings.filter(status__in=LIVE).count() == 1
 
     def test_several_in_progress_in_one_court(self, case, other_case):
         for c in (case, other_case):
@@ -142,6 +162,18 @@ class TestBulk:
         assert [d["hearing_id"] for d in result.done] == [waiting.pk]
         assert result.skipped[0]["code"] == "E10001"
 
+    def test_pass_over_skips_a_future_hearing(self, case, other_case):
+        waiting = schedule(case, TODAY)
+        future = schedule(other_case, MON)
+        result = courtroom.bulk_action(
+            court_id=case.court_id, hearing_ids=[waiting.pk, future.pk], action="PASS_OVER"
+        )
+        assert [d["hearing_id"] for d in result.done] == [waiting.pk]
+        assert [(s["hearing_id"], s["code"]) for s in result.skipped] == [(future.pk, "E10010")]
+        assert result.skipped[0]["allowed_actions"] == ["reschedule", "cancel"]
+        future.refresh_from_db()
+        assert future.status == HearingStatus.SCHEDULED
+
     def test_unknown_action(self, case):
         with pytest.raises(BusinessError) as excinfo:
             courtroom.bulk_action(court_id=case.court_id, hearing_ids=[], action="START")
@@ -220,8 +252,69 @@ class TestAttendance:
         with pytest.raises(BusinessError) as excinfo:
             courtroom.set_attendance(hearing_id=running.pk, marks=[mark(roll[0])])
         assert code(excinfo) == "E10022"
-        assert "scheduled" in str(excinfo.value.detail)
+        assert "once the hearing has started" in str(excinfo.value.detail)
         assert not HearingAttendance.objects.filter(hearing=running).exists()
+
+    def test_moved_hearing_is_heard_afresh_on_its_new_date(self, case, running):
+        roll = get_attendance_roll(case.pk)
+        courtroom.set_attendance(hearing_id=running.pk, marks=[mark(entry) for entry in roll])
+        assert courtroom.attendance_complete(running.pk) is True
+        courtroom.pass_over(hearing_id=running.pk)
+        reschedule.reschedule(
+            hearing_id=running.pk, hearing_date=MON, reason_code=RescheduleReason.NOT_REACHED
+        )
+        running.refresh_from_db()
+        assert (running.started_at, running.last_started_at, running.heard_duration) == (
+            None,
+            None,
+            datetime.timedelta(0),
+        )
+        assert not HearingAttendance.objects.filter(hearing=running).exists()
+        assert courtroom.attendance_complete(running.pk) is False
+        # The day's sitting stays on the history table.
+        assert running.history.filter(started_at__isnull=False).exists()
+
+        set_config("business_date_override", MON.isoformat())
+        restarted = courtroom.start(hearing_id=running.pk)
+        assert restarted.started_at == restarted.last_started_at
+        assert courtroom.attendance_open(restarted)
+
+    def test_abandoned_in_progress_hearing_moved_drops_its_marks(self, case, running):
+        roll = get_attendance_roll(case.pk)
+        courtroom.set_attendance(hearing_id=running.pk, marks=[mark(roll[0])])
+        courtroom.end_day(case.court_id, TODAY)
+        set_config("business_date_override", MON.isoformat())
+        reschedule.reschedule(
+            hearing_id=running.pk, hearing_date=TUE, reason_code=RescheduleReason.NOT_REACHED
+        )
+        running.refresh_from_db()
+        assert running.started_at is None
+        assert running.abandoned_at is not None
+        assert not HearingAttendance.objects.filter(hearing=running).exists()
+
+    def test_purpose_only_move_keeps_the_sitting(self, case, running):
+        roll = get_attendance_roll(case.pk)
+        courtroom.set_attendance(hearing_id=running.pk, marks=[mark(roll[0])])
+        courtroom.pass_over(hearing_id=running.pk)
+        reschedule.reschedule(
+            hearing_id=running.pk,
+            hearing_date=TODAY,
+            purpose_code="PLEA",
+            reason_code=RescheduleReason.LISTED_IN_ERROR,
+        )
+        running.refresh_from_db()
+        assert running.started_at is not None
+        assert HearingAttendance.objects.filter(hearing=running).count() == 1
+
+    def test_locked_marks_survive_a_move(self, case, running):
+        roll = get_attendance_roll(case.pk)
+        courtroom.set_attendance(hearing_id=running.pk, marks=[mark(entry) for entry in roll])
+        courtroom.lock_attendance(running.pk)
+        courtroom.pass_over(hearing_id=running.pk)
+        reschedule.reschedule(
+            hearing_id=running.pk, hearing_date=MON, reason_code=RescheduleReason.NOT_REACHED
+        )
+        assert HearingAttendance.objects.filter(hearing=running).count() == len(roll)
 
     def test_heard_hearing_until_locked(self, case, running):
         roll = get_attendance_roll(case.pk)
