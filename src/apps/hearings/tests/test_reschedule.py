@@ -18,7 +18,12 @@ from apps.hearings.enums import (
     HearingStatus,
     RescheduleReason,
 )
-from apps.hearings.models import BulkRescheduleJob, CourtCalendarEntry, HearingDateChange
+from apps.hearings.models import (
+    BulkRescheduleItem,
+    BulkRescheduleJob,
+    CourtCalendarEntry,
+    HearingDateChange,
+)
 from apps.hearings.services import calendar, listing, reschedule
 from apps.hearings.services import courtroom as court_service
 from apps.messaging.models import MessageLog
@@ -547,15 +552,145 @@ class TestBulkRun:
         BulkRescheduleJob.objects.filter(pk=job.pk).update(status=BulkRescheduleStatus.RUNNING)
         job.refresh_from_db()
         item = job.items.order_by("to_date", "from_date").first()
-        result, error, _ = reschedule._move_item(job, item, TODAY)
-        item.result = result
-        item.save()
+        assert reschedule._move_item(job, item.pk, TODAY) == (BulkItemResult.MOVED, "")
+        item.refresh_from_db()
+        assert item.result == BulkItemResult.MOVED
         job = reschedule.run_bulk(job.pk)
         assert job.status == BulkRescheduleStatus.COMPLETED
         for hearing in (first, second):
             hearing.refresh_from_db()
             assert hearing.reschedule_count == 1
         assert reschedule.run_bulk(job.pk).status == BulkRescheduleStatus.COMPLETED
+
+
+class Crash(BaseException):
+    """The worker dying: not an ``Exception``, so nothing in the task catches it."""
+
+
+def rescheduled_messages(case):
+    return MessageLog.objects.filter(
+        correlation_id=f"hearing:{case.pk}", message_key="HEARING_RESCHEDULED"
+    )
+
+
+class TestBulkRedelivery:
+    """A worker dying mid-job, then the message redelivered (#8.3)."""
+
+    @pytest.fixture
+    def job(self, courtroom, case, other_case, setter):
+        hearings = [schedule(case, MON), schedule(other_case, MON)]
+        job = preview(courtroom, hearings).job
+        reschedule.confirm_bulk(job_id=job.pk, actor=setter)
+        return job
+
+    def assert_moved_once(self, job, cases):
+        job.refresh_from_db()
+        assert job.status == BulkRescheduleStatus.COMPLETED
+        assert set(job.items.values_list("result", flat=True)) == {BulkItemResult.MOVED}
+        for item in job.items.select_related("hearing"):
+            assert item.hearing.hearing_date == FRI
+            assert item.hearing.reschedule_count == 1
+            assert item.hearing.date_changes.filter(source_ref=job.pk).count() == 1
+        for c in cases:
+            messages = rescheduled_messages(c)
+            assert messages.exists()
+            # One notification: no recipient got the message twice.
+            assert messages.count() == messages.values("recipient").distinct().count()
+
+    def test_crash_after_a_commit_does_not_skip_the_moved_hearing(
+        self, job, case, other_case, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        """The review's case: the move committed, then the worker died."""
+        real = reschedule._move_item
+        calls = []
+
+        def crash_after_first(*args, **kwargs):
+            outcome = real(*args, **kwargs)
+            if not calls:
+                calls.append(outcome)
+                raise Crash
+            return outcome
+
+        monkeypatch.setattr(reschedule, "_move_item", crash_after_first)
+        with django_capture_on_commit_callbacks(execute=True):
+            with pytest.raises(Crash):
+                reschedule.run_bulk(job.pk)
+            assert calls == [(BulkItemResult.MOVED, "")]
+            first = job.items.get(result=BulkItemResult.MOVED)
+            assert job.items.get(result=BulkItemResult.PENDING).pk != first.pk
+            reschedule.run_bulk(job.pk)
+        self.assert_moved_once(job, (case, other_case))
+
+    def test_crash_while_recording_the_result_neither_skips_nor_repeats(
+        self, job, case, other_case, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        """The review's report: the worker dies as the item's result is written."""
+        real_save = BulkRescheduleItem.save
+        crashed = []
+
+        def crash_on_first_result(item, *args, **kwargs):
+            if item.result != BulkItemResult.PENDING and not crashed:
+                crashed.append(item.pk)
+                raise Crash
+            return real_save(item, *args, **kwargs)
+
+        monkeypatch.setattr(BulkRescheduleItem, "save", crash_on_first_result)
+        with django_capture_on_commit_callbacks(execute=True):
+            with pytest.raises(Crash):
+                reschedule.run_bulk(job.pk)
+            reschedule.run_bulk(job.pk)
+        self.assert_moved_once(job, (case, other_case))
+
+    def test_crash_before_the_commit_moves_nothing(
+        self, job, case, other_case, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        real = reschedule._notify_once_per_case
+        calls = []
+
+        def crash_once(*args, **kwargs):
+            if not calls:
+                calls.append(1)
+                raise Crash
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(reschedule, "_notify_once_per_case", crash_once)
+        with django_capture_on_commit_callbacks(execute=True):
+            with pytest.raises(Crash):
+                reschedule.run_bulk(job.pk)
+            assert set(job.items.values_list("result", flat=True)) == {BulkItemResult.PENDING}
+            assert not HearingDateChange.objects.filter(source_ref=job.pk).exists()
+            assert not rescheduled_messages(case).exists()
+            reschedule.run_bulk(job.pk)
+        self.assert_moved_once(job, (case, other_case))
+
+    def test_unexpected_error_fails_the_item_and_undoes_its_move(
+        self, job, case, other_case, monkeypatch, django_capture_on_commit_callbacks
+    ):
+        real = reschedule.notify_rescheduled
+
+        def fail_for_case(hearing, *args, **kwargs):
+            if hearing.case_id == case.pk:
+                raise RuntimeError("contacts unavailable")
+            return real(hearing, *args, **kwargs)
+
+        monkeypatch.setattr(reschedule, "notify_rescheduled", fail_for_case)
+        with django_capture_on_commit_callbacks(execute=True):
+            job = reschedule.run_bulk(job.pk)
+        assert job.status == BulkRescheduleStatus.PARTIALLY_FAILED
+        failed = job.items.get(result=BulkItemResult.FAILED)
+        assert failed.error_code == "E00100"
+        failed.hearing.refresh_from_db()
+        assert (failed.hearing.hearing_date, failed.hearing.reschedule_count) == (MON, 0)
+        assert not rescheduled_messages(case).exists()
+        assert rescheduled_messages(other_case).exists()
+
+    def test_a_failure_never_overwrites_a_finished_item(self, job):
+        BulkRescheduleJob.objects.filter(pk=job.pk).update(status=BulkRescheduleStatus.RUNNING)
+        item = job.items.first()
+        assert reschedule._move_item(job, item.pk, TODAY)[0] == BulkItemResult.MOVED
+        assert reschedule._record_failure(item.pk, "E00100") == (BulkItemResult.MOVED, "")
+        item.refresh_from_db()
+        assert item.result == BulkItemResult.MOVED
 
 
 class TestTasks:

@@ -575,53 +575,103 @@ def _item_error_code(exc):
     return api_errors.INVALID.code
 
 
-def _move_item(job, item, today):
-    """Move one item in its own transaction; return its result and error code."""
+def _move_item(job, item_id, today):
+    """Process one item in its own transaction; return its result and error code.
+
+    The move, the item's result and the parties' notification commit together
+    or not at all: a crash before the commit leaves the item ``PENDING`` and the
+    hearing where it was, and one after it leaves the item finished, so a
+    redelivery neither skips a moved hearing nor moves it twice. The item is
+    locked and re-read, so a second worker on the same job waits for it and
+    then leaves it alone.
+    """
     with transaction.atomic():
         calendar.lock_court(job.court_id)
+        item = BulkRescheduleItem.objects.select_for_update().get(pk=item_id)
+        if item.result != BulkItemResult.PENDING:
+            return item.result, item.error_code
         hearing = lock_hearing(item.hearing_id)
-        started = hearing.status in (HearingStatus.IN_PROGRESS, HearingStatus.COMPLETED) or (
-            hearing.started_at is not None and hearing.started_at > item.hearing_updated_at
-        )
-        if started:
-            return BulkItemResult.SKIPPED_STARTED, "", None
-        # Also covers a hearing cancelled or moved since the preview.
-        if hearing.status not in MOVABLE_STATUSES or hearing.updated_at != item.hearing_updated_at:
-            return BulkItemResult.SKIPPED_CHANGED, "", None
-        problems = calendar.date_problems(job.court_id, item.to_date, today=today)
-        if problems:
-            return BulkItemResult.FAILED, problems[0].error.code, None
-        if other_scheduled(hearing):
-            return BulkItemResult.FAILED, errors.CASE_ALREADY_SCHEDULED.code, None
-        # The preview planned within capacity; the day may have filled since.
-        if conf.capacity_mode() == conf.CAPACITY_BLOCK:
-            _load, full = calendar.capacity_check(job.court_id, item.to_date)
-            if full:
-                return BulkItemResult.FAILED, errors.COURT_DAY_FULL.code, None
-        move(
-            hearing,
-            to_date=item.to_date,
-            to_purpose=hearing.purpose,
-            reason_code=job.reason_code,
-            reason_text=job.reason_text,
-            sought_by=Side.COURT,
-            source=ChangeSource.BULK,
-            source_ref=job.pk,
-            actor=job.confirmed_by,
-            notify=False,
-        )
-        return BulkItemResult.MOVED, "", hearing
+        result, error_code = _apply_item(job, item, hearing, today)
+        item.result, item.error_code = result, error_code
+        item.save()
+        if result == BulkItemResult.MOVED:
+            _notify_once_per_case(job, item, hearing)
+        return result, error_code
+
+
+def _apply_item(job, item, hearing, today):
+    """Check the locked hearing against the preview and move it; return the result."""
+    started = hearing.status in (HearingStatus.IN_PROGRESS, HearingStatus.COMPLETED) or (
+        hearing.started_at is not None and hearing.started_at > item.hearing_updated_at
+    )
+    if started:
+        return BulkItemResult.SKIPPED_STARTED, ""
+    # Also covers a hearing cancelled or moved since the preview.
+    if hearing.status not in MOVABLE_STATUSES or hearing.updated_at != item.hearing_updated_at:
+        return BulkItemResult.SKIPPED_CHANGED, ""
+    problems = calendar.date_problems(job.court_id, item.to_date, today=today)
+    if problems:
+        return BulkItemResult.FAILED, problems[0].error.code
+    if other_scheduled(hearing):
+        return BulkItemResult.FAILED, errors.CASE_ALREADY_SCHEDULED.code
+    # The preview planned within capacity; the day may have filled since.
+    if conf.capacity_mode() == conf.CAPACITY_BLOCK:
+        _load, full = calendar.capacity_check(job.court_id, item.to_date)
+        if full:
+            return BulkItemResult.FAILED, errors.COURT_DAY_FULL.code
+    move(
+        hearing,
+        to_date=item.to_date,
+        to_purpose=hearing.purpose,
+        reason_code=job.reason_code,
+        reason_text=job.reason_text,
+        sought_by=Side.COURT,
+        source=ChangeSource.BULK,
+        source_ref=job.pk,
+        actor=job.confirmed_by,
+        notify=False,
+    )
+    return BulkItemResult.MOVED, ""
+
+
+def _notify_once_per_case(job, item, hearing):
+    """Queue the case's notification, unless another item of this job already moved it.
+
+    Read from the job's items rather than kept in memory, so a redelivered
+    message does not notify a case twice.
+    """
+    already = (
+        job.items.filter(result=BulkItemResult.MOVED, hearing__case_id=hearing.case_id)
+        .exclude(pk=item.pk)
+        .exists()
+    )
+    if not already:
+        notify_rescheduled(hearing, item.from_date, job.reason_code)
+
+
+def _record_failure(item_id, error_code):
+    """Mark a still-pending item ``FAILED`` in its own transaction; return its result.
+
+    An item finished meanwhile, for instance moved by a second worker, keeps
+    its result.
+    """
+    with transaction.atomic():
+        item = BulkRescheduleItem.objects.select_for_update().get(pk=item_id)
+        if item.result == BulkItemResult.PENDING:
+            item.result, item.error_code = BulkItemResult.FAILED, error_code
+            item.save()
+        return item.result, item.error_code
 
 
 def run_bulk(job_id):
     """Run a confirmed bulk move; idempotent (#8.3, ``tasks.run_bulk_reschedule``).
 
-    Processes only items still ``PENDING``, each in its own transaction, so a
-    redelivered message finishes the job instead of repeating it. A hearing
-    started or changed after the preview is skipped; any other failure is
-    recorded with its error code without stopping the job. Notifies once per
-    case. Then blocks the source dates if asked, and ends ``COMPLETED`` or
-    ``PARTIALLY_FAILED``.
+    Processes only items still ``PENDING``, each in its own transaction with
+    its result and notification (``_move_item``), so a redelivered message
+    finishes the job instead of repeating it. A hearing started or changed
+    after the preview is skipped; any other failure is recorded with its error
+    code without stopping the job. Notifies once per case. Then blocks the
+    source dates if asked, and ends ``COMPLETED`` or ``PARTIALLY_FAILED``.
     """
     with transaction.atomic():
         job = BulkRescheduleJob.objects.select_for_update().get(pk=job_id)
@@ -632,35 +682,33 @@ def run_bulk(job_id):
         job.save()
 
     today = calendar.business_date()
-    notified = set()
-    for item in job.items.filter(result=BulkItemResult.PENDING).order_by("to_date", "from_date"):
+    pending = (
+        job.items.filter(result=BulkItemResult.PENDING)
+        .order_by("to_date", "from_date")
+        .values_list("pk", "hearing_id")
+    )
+    for item_id, hearing_id in list(pending):
         try:
-            result, error_code, hearing = _move_item(job, item, today)
+            result, error_code = _move_item(job, item_id, today)
         except (BusinessError, ValidationError) as exc:
-            result, error_code, hearing = BulkItemResult.FAILED, _item_error_code(exc), None
+            result, error_code = _record_failure(item_id, _item_error_code(exc))
         except Exception:
             # Anything unexpected fails this item only; the job carries on (#8.3).
             logger.exception(
                 "event=BULK_RESCHEDULE_ITEM_ERROR job=%s item=%s hearing=%s",
                 job.pk,
-                item.pk,
-                item.hearing_id,
+                item_id,
+                hearing_id,
             )
-            result, error_code, hearing = BulkItemResult.FAILED, api_errors.SERVER_ERROR.code, None
+            result, error_code = _record_failure(item_id, api_errors.SERVER_ERROR.code)
         if result == BulkItemResult.FAILED:
             logger.warning(
                 "event=BULK_RESCHEDULE_ITEM_FAILED job=%s item=%s hearing=%s error=%s",
                 job.pk,
-                item.pk,
-                item.hearing_id,
+                item_id,
+                hearing_id,
                 error_code,
             )
-        item.result = result
-        item.error_code = error_code
-        item.save()
-        if hearing is not None and hearing.case_id not in notified:
-            notified.add(hearing.case_id)
-            notify_rescheduled(hearing, item.from_date, job.reason_code)
 
     if job.block_source_dates:
         _block_source_dates(job, today)
