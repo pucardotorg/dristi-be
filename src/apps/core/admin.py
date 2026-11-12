@@ -170,7 +170,7 @@ class LanguageAdmin(AuditUserAdminMixin, admin.ModelAdmin):
             return False
         return super().has_delete_permission(request, obj)
 
-    @admin.action(description="Make the selected language the default")
+    @admin.action(description="Make the selected language the default", permissions=["change"])
     def make_default(self, request, queryset):
         """Move the default flag to the one selected, active language."""
         if queryset.count() != 1:

@@ -5,6 +5,7 @@ from io import StringIO
 import pytest
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.core.management import call_command
@@ -463,3 +464,20 @@ class TestLanguageAdminViews:
         )
         assert response.status_code == 302
         assert Language.objects.get_default().code == "hi"
+
+    def test_make_default_action_needs_change_permission(self):
+        viewer = User.objects.create_user(
+            mobile_number="+919000000013",
+            name="viewer",
+            email="viewer-languages@example.com",
+            password="x",
+            is_staff=True,
+        )
+        viewer.user_permissions.add(Permission.objects.get(codename="view_language"))
+        client = Client()
+        client.force_login(viewer)
+        hindi = Language.objects.get(code="hi")
+        client.post(
+            self.CHANGELIST, {"action": "make_default", "_selected_action": [str(hindi.pk)]}
+        )
+        assert Language.objects.get_default().code == "en"
