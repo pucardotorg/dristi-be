@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("cases", "0006_witness_side_document_links_jurisdiction"),
+        ("cases", "0008_witness_side_document_links_jurisdiction"),
     ]
 
     operations = [

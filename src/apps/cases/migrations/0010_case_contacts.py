@@ -11,7 +11,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
     dependencies = [
         ("address", "0002_address_police_station_optional"),
-        ("cases", "0007_participant_snapshots_and_affidavits"),
+        ("cases", "0009_participant_snapshots_and_affidavits"),
         ("files", "0001_initial"),
         ("parties", "0007_case_contacts"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
