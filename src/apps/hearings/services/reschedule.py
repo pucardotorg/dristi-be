@@ -141,7 +141,8 @@ def move(
     change.save()
 
     # A purpose-only move keeps its place on the day's board.
-    if to_date != from_date:
+    new_day = to_date != from_date
+    if new_day:
         hearing.sequence = calendar.next_sequence(hearing.court_id, to_date)
         _reset_sitting(hearing)
     hearing.hearing_date = to_date
@@ -149,6 +150,9 @@ def move(
     hearing.status = HearingStatus.SCHEDULED
     hearing.reschedule_count += 1
     save_hearing(hearing, actor, f"{source} {RescheduleReason(reason_code).label}")
+    if new_day:
+        # After the save: marks of a locked hearing refuse to be deleted.
+        HearingAttendance.objects.filter(hearing=hearing).delete()
 
     if to_purpose.pk != from_purpose.pk:
         record_scheduled_on_commit(hearing)
@@ -165,18 +169,20 @@ def move(
 
 
 def _reset_sitting(hearing):
-    """Forget the sitting on the date moved away from: the new date is heard afresh (#6.5).
+    """Forget the sitting on the date moved away from: the new date is heard afresh (#8.2).
 
-    A hearing started, then passed over or abandoned, keeps its start, heard time
-    and attendance on the history table; carried to the new date they would open
-    its roll pre-filled with another day's marks and count it complete (``ATT-04``).
-    Locked marks are the record of a triggered order and are kept.
+    Clears the start, heard time, abandonment, the order passed on the old day
+    and the attendance lock; ``move`` then deletes the marks. The history table
+    keeps the old values. Carried over, the old day's marks would count the new
+    roll complete (``ATT-04``) and its order would refuse the new day's
+    (``attach_order``).
     """
     hearing.started_at = None
     hearing.last_started_at = None
     hearing.heard_duration = datetime.timedelta(0)
-    if hearing.attendance_locked_at is None:
-        HearingAttendance.objects.filter(hearing=hearing).delete()
+    hearing.abandoned_at = None
+    hearing.order_id = None
+    hearing.attendance_locked_at = None
 
 
 def notify_rescheduled(hearing, from_date, reason_code):

@@ -11,7 +11,7 @@ from apps.cases.selectors import get_attendance_roll
 from apps.hearings.enums import HearingStatus, RescheduleReason
 from apps.hearings.exceptions import CaseAlreadyScheduled
 from apps.hearings.models import HearingAttendance
-from apps.hearings.services import courtroom, reschedule
+from apps.hearings.services import courtroom, listing, reschedule
 
 from .factories import MON, TODAY, TUE, code, field, make_case, schedule, set_config
 
@@ -279,18 +279,36 @@ class TestAttendance:
         assert restarted.started_at == restarted.last_started_at
         assert courtroom.attendance_open(restarted)
 
-    def test_abandoned_in_progress_hearing_moved_drops_its_marks(self, case, running):
+    def test_abandoned_hearing_moved_is_heard_afresh(self, case, running):
+        """start -> mark -> order drafted -> abandon -> move -> start -> roll and order."""
         roll = get_attendance_roll(case.pk)
-        courtroom.set_attendance(hearing_id=running.pk, marks=[mark(roll[0])])
+        courtroom.set_attendance(hearing_id=running.pk, marks=[mark(entry) for entry in roll])
+        old_order = uuid.uuid4()
+        listing.attach_order(hearing_id=running.pk, order_id=old_order)
         courtroom.end_day(case.court_id, TODAY)
         set_config("business_date_override", MON.isoformat())
         reschedule.reschedule(
             hearing_id=running.pk, hearing_date=TUE, reason_code=RescheduleReason.NOT_REACHED
         )
         running.refresh_from_db()
-        assert running.started_at is None
-        assert running.abandoned_at is not None
+        assert running.status == HearingStatus.SCHEDULED
+        assert (running.started_at, running.heard_duration, running.abandoned_at) == (
+            None,
+            datetime.timedelta(0),
+            None,
+        )
+        assert running.order_id is None
         assert not HearingAttendance.objects.filter(hearing=running).exists()
+        # The abandoned day stays on the history table.
+        assert running.history.filter(order_id=old_order, abandoned_at__isnull=False).exists()
+
+        set_config("business_date_override", TUE.isoformat())
+        courtroom.start(hearing_id=running.pk)
+        assert courtroom.attendance_complete(running.pk) is False
+        new_order = uuid.uuid4()
+        listing.attach_order(hearing_id=running.pk, order_id=new_order)
+        running.refresh_from_db()
+        assert running.order_id == new_order
 
     def test_purpose_only_move_keeps_the_sitting(self, case, running):
         roll = get_attendance_roll(case.pk)
@@ -306,7 +324,7 @@ class TestAttendance:
         assert running.started_at is not None
         assert HearingAttendance.objects.filter(hearing=running).count() == 1
 
-    def test_locked_marks_survive_a_move(self, case, running):
+    def test_locked_marks_are_cleared_by_a_move(self, case, running):
         roll = get_attendance_roll(case.pk)
         courtroom.set_attendance(hearing_id=running.pk, marks=[mark(entry) for entry in roll])
         courtroom.lock_attendance(running.pk)
@@ -314,7 +332,15 @@ class TestAttendance:
         reschedule.reschedule(
             hearing_id=running.pk, hearing_date=MON, reason_code=RescheduleReason.NOT_REACHED
         )
-        assert HearingAttendance.objects.filter(hearing=running).count() == len(roll)
+        running.refresh_from_db()
+        assert running.attendance_locked_at is None
+        assert not HearingAttendance.objects.filter(hearing=running).exists()
+        assert running.history.filter(attendance_locked_at__isnull=False).exists()
+
+        set_config("business_date_override", MON.isoformat())
+        courtroom.start(hearing_id=running.pk)
+        assert courtroom.attendance_complete(running.pk) is False
+        courtroom.set_attendance(hearing_id=running.pk, marks=[mark(roll[0])])
 
     def test_heard_hearing_until_locked(self, case, running):
         roll = get_attendance_roll(case.pk)
