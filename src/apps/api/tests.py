@@ -5,15 +5,19 @@ import json
 from datetime import datetime
 from unittest.mock import patch
 
+from django.core.cache import caches
+from django.core.cache.backends.redis import RedisCacheClient
 from django.core.management import call_command
 from django.db import OperationalError, connections
+from django.test import override_settings
 from django.urls import reverse
 from redis import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.api.health import REDIS_PROBE_TIMEOUT
+from apps.api.health import PROBE_TIMEOUT, Cache, Database
 from apps.core.models import ApiVersionChangeLog
 from apps.users.models import User
 
@@ -91,8 +95,64 @@ class SystemHealthCheckTests(APITestCase):
         self.assertEqual(len(clients), 2)
         self.assertIsNot(clients[0], clients[1])
         options = clients[0].connection_pool.connection_kwargs
-        self.assertEqual(options["socket_connect_timeout"], REDIS_PROBE_TIMEOUT)
-        self.assertEqual(options["socket_timeout"], REDIS_PROBE_TIMEOUT)
+        self.assertEqual(options["socket_connect_timeout"], PROBE_TIMEOUT)
+        self.assertEqual(options["socket_timeout"], PROBE_TIMEOUT)
+
+    def test_database_probe_gets_its_own_bounded_connection(self):
+        """On PostgreSQL the probe connects with a connect and statement timeout."""
+        app_settings = connections.settings["default"]
+        postgres = {
+            "ENGINE": "django.db.backends.postgresql",
+            "OPTIONS": {"options": "-c search_path=dristi", "pool": True},
+        }
+        with patch.dict(app_settings, postgres):
+            probe = Database()._probe_connection()
+            self.assertIsNot(probe, connections["default"])
+            self.assertEqual(probe.settings_dict["OPTIONS"]["connect_timeout"], PROBE_TIMEOUT)
+            self.assertEqual(
+                probe.settings_dict["OPTIONS"]["options"],
+                f"-c search_path=dristi -c statement_timeout={PROBE_TIMEOUT * 1000}",
+            )
+            self.assertNotIn("pool", probe.settings_dict["OPTIONS"])
+            # The app's connections keep their settings.
+            self.assertEqual(app_settings["OPTIONS"], postgres["OPTIONS"])
+
+    @override_settings(
+        CACHES={
+            "default": {
+                "BACKEND": "django.core.cache.backends.redis.RedisCache",
+                "LOCATION": "redis://localhost:6379/1",
+                "OPTIONS": {"db": 1},
+            }
+        }
+    )
+    def test_cache_probe_gets_its_own_bounded_client(self):
+        """On Redis the cache probe uses a client with finite timeouts."""
+        probe = Cache(cache_key=None)._probe_cache()
+        self.assertIsNot(probe, caches["default"])
+        self.assertEqual(
+            probe._options,
+            {"db": 1, "socket_connect_timeout": PROBE_TIMEOUT, "socket_timeout": PROBE_TIMEOUT},
+        )
+        self.assertEqual(caches["default"]._options, {"db": 1})
+
+    @override_settings(
+        CACHES={
+            "default": {
+                "BACKEND": "django.core.cache.backends.redis.RedisCache",
+                "LOCATION": "redis://localhost:6379/1",
+            }
+        }
+    )
+    @patch.object(Redis, "ping", return_value=True)
+    @patch.object(RedisCacheClient, "set", side_effect=RedisTimeoutError)
+    def test_cache_timeout(self, cache_set, ping):
+        """/health/ returns 500 when the cache's Redis times out."""
+        response = self.client.get("/health/?format=json")
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(
+            response.json()["Cache(alias='default')"], "unavailable: Cache unavailable."
+        )
 
 
 class APIDocumentationTests(APITestCase):
