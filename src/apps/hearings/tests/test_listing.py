@@ -1,5 +1,6 @@
 """The orders contract: hold, change, release, validate, confirm, cancel (spec 0023 #7)."""
 
+import logging
 import uuid
 
 import pytest
@@ -16,7 +17,7 @@ from apps.hearings.enums import (
     Side,
 )
 from apps.hearings.models import CourtCalendarEntry, Hearing, HearingDateChange, HearingPurpose
-from apps.hearings.services import calendar, courtroom, listing
+from apps.hearings.services import calendar, courtroom, listing, reschedule
 from apps.messaging.models import MessageLog
 
 from .factories import (
@@ -72,6 +73,12 @@ class TestHold:
         assert result.load.provisional == 1
         assert received == {}
         assert messages(case, "HEARING_SCHEDULED") == 0
+
+    def test_records_who_held_the_date(self, case, staff):
+        hearing = hold(case, MON, actor=staff).hearing
+        hearing.refresh_from_db()
+        assert hearing.created_by == hearing.updated_by == staff
+        assert hearing.history.get().history_user == staff
 
     def test_refusals(self, case, courtroom):
         unregistered = make_case(courtroom, status=CaseStatus.UNDER_SCRUTINY)
@@ -162,7 +169,16 @@ class TestRelease:
         assert (held.status, held.release_reason) == (HearingStatus.RELEASED, reason)
 
     def test_release_is_idempotent(self, case):
+        order = uuid.uuid4()
+        held = hold(case, MON, order_id=order).hearing
+        listing.release(order_id=order, reason=ReleaseReason.DRAFT_DISCARDED)
+        listing.release(order_id=order, reason=ReleaseReason.DATE_REMOVED)
         listing.release(order_id=uuid.uuid4(), reason=ReleaseReason.DATE_REMOVED)
+        held.refresh_from_db()
+        assert (held.status, held.release_reason) == (
+            HearingStatus.RELEASED,
+            ReleaseReason.DRAFT_DISCARDED,
+        )
 
     def test_hearings_own_reasons_are_refused(self, case):
         with pytest.raises(ValueError):
@@ -194,6 +210,27 @@ class TestConfirm:
         assert again.pk == first.pk
         assert len(received["hearing_scheduled"]) == 1
         assert messages(case, "HEARING_SCHEDULED") == sent
+        assert listing.validate(order_id=order) == []
+
+    def test_a_failing_signal_receiver_does_not_undo_the_hearing(
+        self, case, received, caplog, django_capture_on_commit_callbacks
+    ):
+        def broken(sender, **kwargs):
+            raise RuntimeError("listener down")
+
+        signals.hearing_scheduled.connect(broken, weak=False)
+        try:
+            order = uuid.uuid4()
+            hold(case, MON, order_id=order)
+            with caplog.at_level(logging.ERROR, logger="apps.hearings.services.common"):
+                with django_capture_on_commit_callbacks(execute=True):
+                    hearing = listing.confirm(order_id=order)
+        finally:
+            signals.hearing_scheduled.disconnect(broken)
+        hearing.refresh_from_db()
+        assert hearing.status == HearingStatus.SCHEDULED
+        assert [s["hearing_id"] for s in received["hearing_scheduled"]] == [hearing.pk]
+        assert "HEARING_SIGNAL_RECEIVER_FAILED" in caplog.text
 
     def test_record_hearing_scheduled_is_called_once(
         self, case, monkeypatch, django_capture_on_commit_callbacks
@@ -340,6 +377,38 @@ class TestHeldMove:
         with pytest.raises(exceptions.HearingError):
             listing.change(order_id=order, hearing_date=MON)
 
+    def test_original_cancelled_after_the_hold(self, case):
+        original = schedule(case, MON)
+        order = uuid.uuid4()
+        hold(case, WED, order_id=order, moves_hearing_id=original.pk)
+        listing.cancel_listed_in_error(hearing_id=original.pk)
+        assert [p.error.code for p in listing.validate(order_id=order)] == ["E10001"]
+        with pytest.raises(exceptions.HoldInvalid):
+            listing.confirm(order_id=order)
+
+    def test_original_already_moved_to_the_held_date(self, case):
+        original = schedule(case, MON)
+        order = uuid.uuid4()
+        hold(case, WED, order_id=order, moves_hearing_id=original.pk)
+        reschedule.reschedule(
+            hearing_id=original.pk, hearing_date=WED, reason_code=RescheduleReason.NOT_REACHED
+        )
+        assert [p.error.code for p in listing.validate(order_id=order)] == ["E10012"]
+        with pytest.raises(exceptions.HoldInvalid):
+            listing.confirm(order_id=order)
+
+    def test_case_scheduled_again_while_the_move_was_held(self, case):
+        abandoned = schedule(case, TODAY)
+        courtroom.end_day(case.court_id, TODAY)
+        set_config("business_date_override", MON.isoformat())
+        order = uuid.uuid4()
+        hold(case, WED, order_id=order, moves_hearing_id=abandoned.pk)
+        fresh = schedule(case, TUE)
+        assert [p.error.code for p in listing.validate(order_id=order)] == ["E10004"]
+        with pytest.raises(exceptions.CaseAlreadyScheduled) as excinfo:
+            listing.confirm(order_id=order)
+        assert excinfo.value.hearing_id == fresh.pk
+
     def test_cannot_hold_a_move_of_a_heard_hearing(self, case):
         original = schedule(case, TODAY)
         courtroom.start(hearing_id=original.pk)
@@ -347,6 +416,76 @@ class TestHeldMove:
         with pytest.raises(exceptions.HearingError) as excinfo:
             hold(case, WED, moves_hearing_id=original.pk)
         assert excinfo.value.code == "E10001"
+
+
+class TestConcurrentOrderCalls:
+    """Another worker finishes a call on the same order while this one waits for the court lock.
+
+    The orders module retries a trigger, and a draft can be edited or discarded
+    while it is being triggered; each call re-reads the hold under the lock (#11.5).
+    """
+
+    @pytest.fixture
+    def meanwhile(self, monkeypatch):
+        """Let ``other`` commit between this call's first read of the hold and its lock.
+
+        That is the window a worker holding the court lock leaves open. ``other``
+        runs outside this call's transaction, so its writes stand on their own.
+        """
+
+        def install(other):
+            real_read = listing._current_hold
+            pending = [other]
+
+            def current_hold(order_id, *, lock=False):
+                found = real_read(order_id, lock=lock)
+                if pending and not lock:
+                    pending.pop()()
+                return found
+
+            monkeypatch.setattr(listing, "_current_hold", current_hold)
+
+        return install
+
+    def test_retried_trigger_returns_the_hearing_already_scheduled(
+        self, case, meanwhile, received, django_capture_on_commit_callbacks
+    ):
+        order = uuid.uuid4()
+        hold(case, MON, order_id=order)
+        first = []
+        meanwhile(lambda: first.append(listing.confirm(order_id=order)))
+        with django_capture_on_commit_callbacks(execute=True):
+            retried = listing.confirm(order_id=order)
+        assert retried.pk == first[0].pk
+        assert retried.status == HearingStatus.SCHEDULED
+        assert Hearing.objects.filter(source_order_id=order).count() == 1
+        assert len(received["hearing_scheduled"]) == 1
+
+    def test_trigger_after_the_draft_was_discarded(self, case, meanwhile):
+        order = uuid.uuid4()
+        held = hold(case, MON, order_id=order).hearing
+        meanwhile(lambda: listing.release(order_id=order, reason=ReleaseReason.DRAFT_DISCARDED))
+        with pytest.raises(exceptions.HoldReleased):
+            listing.confirm(order_id=order)
+        held.refresh_from_db()
+        assert held.status == HearingStatus.RELEASED
+
+    def test_draft_edit_after_the_trigger_changes_nothing(self, case, meanwhile):
+        order = uuid.uuid4()
+        hold(case, MON, order_id=order)
+        meanwhile(lambda: listing.confirm(order_id=order))
+        with pytest.raises(exceptions.HoldNotFound):
+            listing.change(order_id=order, hearing_date=TUE)
+        hearing = Hearing.objects.get(source_order_id=order)
+        assert (hearing.status, hearing.hearing_date) == (HearingStatus.SCHEDULED, MON)
+
+    def test_discard_after_the_trigger_leaves_the_hearing_scheduled(self, case, meanwhile):
+        order = uuid.uuid4()
+        hold(case, MON, order_id=order)
+        meanwhile(lambda: listing.confirm(order_id=order))
+        listing.release(order_id=order, reason=ReleaseReason.DRAFT_DISCARDED)
+        hearing = Hearing.objects.get(source_order_id=order)
+        assert (hearing.status, hearing.release_reason) == (HearingStatus.SCHEDULED, "")
 
 
 class TestAttachOrder:

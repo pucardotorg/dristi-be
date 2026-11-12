@@ -14,6 +14,7 @@ from apps.cases.selectors import get_attendance_roll
 from apps.hearings.enums import HearingRole
 from apps.hearings.models import BulkRescheduleJob, CourtCalendarEntry
 from apps.hearings.services import courtroom as court_service
+from apps.hearings.services import listing
 
 from .factories import FRI, MON, SUN, TODAY, TUE, WED, hold, make_case, make_user, schedule
 
@@ -134,6 +135,24 @@ class TestDetail:
         response = client_for(user).get(reverse("hearing-detail", args=[hearing.pk]))
         assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
 
+    def test_unknown_hearing(self, controller):
+        response = client_for(controller).get(reverse("hearing-detail", args=[uuid.uuid4()]))
+        assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
+
+    def test_previous_and_next_hearings(self, case, controller):
+        first = schedule(case, TODAY)
+        court_service.start(hearing_id=first.pk)
+        court_service.end(hearing_id=first.pk)
+        second = schedule(case, MON, previous_hearing_id=first.pk)
+        client = client_for(controller)
+        later = client.get(reverse("hearing-detail", args=[second.pk])).json()
+        earlier = client.get(reverse("hearing-detail", args=[first.pk])).json()
+        assert later["previous_hearing"]["id"] == str(first.pk)
+        assert later["previous_hearing"]["status"] == "COMPLETED"
+        assert later["next_hearing"] is None
+        assert earlier["next_hearing"]["id"] == str(second.pk)
+        assert earlier["next_hearing"]["hearing_date"] == MON.isoformat()
+
 
 class TestBoard:
     def test_board(self, case, other_case, controller, courtroom):
@@ -176,6 +195,16 @@ class TestBoard:
         )
         assert response.status_code == 400
         assert errors_of(response)[0] == expected
+
+    def test_hearings_without_an_order(self, case, other_case, controller, courtroom):
+        with_order = schedule(case, TODAY)
+        without = schedule(other_case, TODAY)
+        listing.attach_order(hearing_id=with_order.pk, order_id=uuid.uuid4())
+        response = client_for(controller).get(
+            reverse("hearing-list"), {"court": courtroom.pk, "has_order": "NONE"}
+        )
+        assert response.status_code == 200
+        assert [h["id"] for h in response.json()["results"]] == [str(without.pk)]
 
     def test_whole_day_page(self, courtroom, controller):
         for _ in range(3):
@@ -256,6 +285,11 @@ class TestCountsQueueCalendarCase:
             client_for(complainant_user).get(reverse("case-hearings-next", args=[case.pk])).json()
         )
         assert tile["hearing"]["id"] == str(listed.pk)
+
+    def test_no_next_hearing(self, case, complainant_user):
+        tile = client_for(complainant_user).get(reverse("case-hearings-next", args=[case.pk]))
+        assert tile.status_code == 200
+        assert tile.json()["hearing"] is None
 
 
 # Actions
@@ -362,6 +396,17 @@ class TestCourtroomActions:
         response = client_for(controller).post(reverse("hearing-bulk-action"), body, format="json")
         assert errors_of(response)[0] == expected
 
+    def test_bulk_action_lists_each_hearing_once(self, hearing, controller, courtroom):
+        body = {
+            "court": str(courtroom.pk),
+            "hearing_ids": [str(hearing.pk), str(hearing.pk).upper()],
+            "action": "END",
+        }
+        response = client_for(controller).post(reverse("hearing-bulk-action"), body, format="json")
+        assert errors_of(response) == [("E00001", "hearing_ids")]
+        hearing.refresh_from_db()
+        assert hearing.status == "SCHEDULED"
+
     def test_reorder(self, case, other_case, controller, setter, courtroom):
         first, second = schedule(case, TODAY), schedule(other_case, TODAY)
         url = reverse("hearing-reorder")
@@ -406,6 +451,7 @@ class TestAttendance:
         [
             ({"participant_id": "00000000-0000-0000-0000-000000000000"}, ("E10011", "marks[0]")),
             ({"appearance_mode": ""}, ("E00001", "marks[0].appearance_mode")),
+            ({"mark": "ABSENT"}, ("E00001", "marks[0].appearance_mode")),
             ({"mark": "LATE"}, ("E00005", "marks[0].mark")),
         ],
     )
@@ -423,6 +469,21 @@ class TestAttendance:
             reverse("hearing-attendance", args=[hearing.pk]), {"marks": [mark]}, format="json"
         )
         assert errors_of(response)[0] == expected
+
+    def test_each_person_marked_once(self, case, hearing, filler):
+        court_service.start(hearing_id=hearing.pk)
+        entry = get_attendance_roll(case.pk)[0]
+        mark = {
+            "attendee_type": entry.type,
+            "participant_id": str(entry.participant_id),
+            "mark": "ABSENT",
+        }
+        response = client_for(filler).put(
+            reverse("hearing-attendance", args=[hearing.pk]),
+            {"marks": [mark, {**mark, "mark": "NOT_REQUIRED"}]},
+            format="json",
+        )
+        assert errors_of(response) == [("E00001", "marks")]
 
     def test_not_started(self, hearing, filler):
         response = client_for(filler).put(

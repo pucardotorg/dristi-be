@@ -1,6 +1,7 @@
 """Reads: the selectors other modules use, the API's queries, the cases contract (spec 0023 #1.1, #10, #11.7)."""
 
 import datetime
+import uuid
 
 import pytest
 from django.db import connection
@@ -8,11 +9,13 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.cases import selectors as cases
-from apps.cases.models import CaseStatus
-from apps.hearings import queries, selectors
+from apps.cases.models import CaseParticipant, CaseStatus, ParticipantRole, Representation
+from apps.hearings import ports, queries, selectors
 from apps.hearings.enums import HearingRole
 from apps.hearings.services import courtroom as court_service
 from apps.hearings.services import listing
+from apps.parties.models import Person
+from apps.parties.tests.factories import make_address
 
 from .factories import MON, TODAY, TUE, WED, hold, make_case, schedule, set_config
 
@@ -36,6 +39,11 @@ class TestSelectors:
         schedule(case, MON)
         assert selectors.next_hearing(case.pk).id == today.pk
         assert selectors.has_scheduled_hearing(case.pk)
+
+    def test_no_next_hearing(self, case):
+        hold(case, MON)
+        assert selectors.next_hearing(case.pk) is None
+        assert not selectors.has_scheduled_hearing(case.pk)
 
     def test_hearings_of_case_hide_holds(self, case):
         schedule(case, MON)
@@ -132,7 +140,6 @@ class TestBoard:
             h.pk for h in queries.board(courtroom.pk, {"date": [MON], "search": case.case_number})
         ] == [mine.pk]
         assert [h.pk for h in queries.board(courtroom.pk, {"case": case.pk})] == [mine.pk]
-        assert len(queries.board(courtroom.pk, {"date": [MON], "has_order": ["NONE"]})) == 2
 
     def test_not_reached_and_changed_since(self, case, other_case):
         abandoned = schedule(case, TODAY)
@@ -230,6 +237,34 @@ class TestCasesContract:
         draft = make_case(courtroom, status=CaseStatus.UNDER_SCRUTINY)
         assert cases.get_listability(registered.pk).listable
         assert cases.get_listability(draft.pk).reason == "NOT_REGISTERED"
+        unknown = cases.get_listability(uuid.uuid4())
+        assert (unknown.listable, unknown.reason, unknown.court_id) == (
+            False,
+            "NOT_REGISTERED",
+            None,
+        )
+
+    def test_one_advocate_for_two_parties_on_a_side_is_listed_once(self, case, advocate_user):
+        second = CaseParticipant.objects.create(
+            case=case,
+            person=Person.objects.create(name="Second complainant", phone_number="+919811111111"),
+            role=ParticipantRole.COMPLAINANT,
+            ordinal=2,
+            name_at_filing="Second complainant",
+            address=make_address(),
+            is_party_in_person=False,
+        )
+        Representation.objects.create(
+            case=case, advocate=advocate_user.advocate_profile, case_participant=second
+        )
+        advocates = [c for c in cases.get_case_contacts(case.pk) if c.kind == "ADVOCATE"]
+        assert [(c.phone, c.side) for c in advocates] == [
+            (advocate_user.mobile_number, "COMPLAINANT")
+        ]
+        refs = cases.get_case_advocates([case.pk])[case.pk]
+        assert [(ref.id, ref.side) for ref in refs] == [
+            (advocate_user.advocate_profile.pk, "COMPLAINANT")
+        ]
 
     def test_contacts_and_summaries(self, case):
         contacts = cases.get_case_contacts(case.pk)
@@ -252,8 +287,25 @@ class TestCasesContract:
         assert list(cases.search_case_ids("advocate", courtroom.pk)) == [case.pk]
         assert case.pk in set(cases.cases_awaiting_hearing(courtroom.pk))
 
+    def test_blank_search_does_not_filter(self, courtroom, case, other_case, foreign_court):
+        make_case(foreign_court)
+        assert set(cases.search_case_ids("   ", courtroom.pk)) == {case.pk, other_case.pk}
+
     def test_filed_before(self, courtroom):
         old = make_case(courtroom, filed_days_ago=30)
         make_case(courtroom, filed_days_ago=1)
         cutoff = timezone.now() - datetime.timedelta(days=10)
         assert list(cases.case_ids_filed_before(cutoff)) == [old.pk]
+
+
+class TestCourtRoles:
+    """The placeholder roles count at the configured establishment only (``ports``)."""
+
+    def test_establishment_itself_and_its_courtrooms(self, establishment, courtroom, controller):
+        assert ports.court_roles(controller, establishment.pk) == {HearingRole.HEARING_CONTROLLER}
+        assert ports.court_roles(controller, courtroom.pk) == {HearingRole.HEARING_CONTROLLER}
+
+    def test_misconfigured_establishment_grants_nothing(self, courtroom, controller, settings):
+        settings.SCRUTINY_ESTABLISHMENT_ID = "not-a-uuid"
+        assert ports.configured_establishment() is None
+        assert ports.court_roles(controller, courtroom.pk) == frozenset()

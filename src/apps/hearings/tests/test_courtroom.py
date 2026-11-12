@@ -8,9 +8,9 @@ from django.utils import timezone
 
 from apps.api.errors import BusinessError
 from apps.cases.selectors import get_attendance_roll
-from apps.hearings.enums import HearingStatus
+from apps.hearings.enums import HearingStatus, RescheduleReason
 from apps.hearings.models import HearingAttendance
-from apps.hearings.services import courtroom
+from apps.hearings.services import courtroom, reschedule
 
 from .factories import MON, TODAY, code, field, make_case, schedule, set_config
 
@@ -210,6 +210,18 @@ class TestAttendance:
             courtroom.set_attendance(
                 hearing_id=running.pk, marks=[mark(roll[0]), mark(roll[0], "ABSENT")]
             )
+
+    def test_closed_once_a_started_hearing_is_moved(self, case, running):
+        roll = get_attendance_roll(case.pk)
+        courtroom.pass_over(hearing_id=running.pk)
+        reschedule.reschedule(
+            hearing_id=running.pk, hearing_date=MON, reason_code=RescheduleReason.NOT_REACHED
+        )
+        with pytest.raises(BusinessError) as excinfo:
+            courtroom.set_attendance(hearing_id=running.pk, marks=[mark(roll[0])])
+        assert code(excinfo) == "E10022"
+        assert "scheduled" in str(excinfo.value.detail)
+        assert not HearingAttendance.objects.filter(hearing=running).exists()
 
     def test_heard_hearing_until_locked(self, case, running):
         roll = get_attendance_roll(case.pk)

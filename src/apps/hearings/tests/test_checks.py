@@ -29,3 +29,17 @@ def test_no_override_in_production_is_fine(monkeypatch):
 
 def test_skipped_without_the_database_tag():
     assert checks.check_business_date_override(None) == []
+
+
+def test_skipped_before_the_tables_exist(monkeypatch):
+    """``check --database`` on a fresh database, before ``migrate``, must not crash."""
+    from django.db import ProgrammingError
+
+    from apps.core.models import Configuration
+
+    def no_table(*args, **kwargs):
+        raise ProgrammingError('relation "core_configuration" does not exist')
+
+    monkeypatch.setattr(conf, "is_production", lambda: True)
+    monkeypatch.setattr(Configuration.objects, "active", no_table)
+    assert checks.check_business_date_override(None, databases=["default"]) == []

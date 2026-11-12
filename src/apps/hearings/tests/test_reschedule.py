@@ -5,10 +5,11 @@ from unittest import mock
 
 import dramatiq
 import pytest
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.api.errors import BusinessError
-from apps.hearings import tasks
+from apps.hearings import errors, tasks
 from apps.hearings.enums import (
     BulkItemResult,
     BulkMode,
@@ -293,6 +294,35 @@ class TestBulkPreview:
         )
         assert result.job.items.count() == 1
 
+    def test_schedule_after_beyond_the_horizon(self, courtroom, case):
+        hearing = schedule(case, MON)
+        set_config("max_days_ahead", "30")
+        with pytest.raises(BusinessError) as excinfo:
+            preview(
+                courtroom,
+                [hearing],
+                mode=BulkMode.NEXT_AVAILABLE,
+                target_date=None,
+                schedule_after=TODAY + datetime.timedelta(days=30),
+            )
+        assert (code(excinfo), field(excinfo)) == ("E10007", "schedule_after")
+        assert not BulkRescheduleJob.objects.exists()
+
+    def test_not_enough_free_places_before_the_horizon(self, courtroom, case, other_case):
+        hearings = [schedule(case, MON), schedule(other_case, MON)]
+        set_config("max_hearings_per_day", "1")
+        set_config("max_days_ahead", "1")
+        with pytest.raises(BusinessError) as excinfo:
+            preview(
+                courtroom,
+                hearings,
+                mode=BulkMode.NEXT_AVAILABLE,
+                target_date=None,
+                schedule_after=TODAY,
+            )
+        assert code(excinfo) == "E10007"
+        assert not BulkRescheduleJob.objects.exists()
+
 
 class TestBulkRun:
     def test_confirm_and_run(
@@ -373,6 +403,65 @@ class TestBulkRun:
             job = run(job, setter)
         results = {item.hearing_id: (item.result, item.error_code) for item in job.items.all()}
         assert results == {good.pk: ("MOVED", ""), bad.pk: ("FAILED", "E00100")}
+
+    @pytest.mark.parametrize(
+        ("raised", "expected"),
+        [
+            (lambda: BusinessError(errors.COURT_DAY_FULL), "E10009"),
+            (lambda: ValidationError({"to_date": "Not allowed."}), "E00001"),
+        ],
+    )
+    def test_a_refused_move_records_its_error_code(
+        self, courtroom, case, other_case, setter, raised, expected
+    ):
+        good, bad = schedule(case, MON), schedule(other_case, MON)
+        job = preview(courtroom, [good, bad]).job
+        real_move = reschedule.move
+
+        def refusing(hearing, **kwargs):
+            if hearing.pk == bad.pk:
+                raise raised()
+            return real_move(hearing, **kwargs)
+
+        with mock.patch.object(reschedule, "move", refusing):
+            job = run(job, setter)
+        results = {item.hearing_id: (item.result, item.error_code) for item in job.items.all()}
+        assert results == {good.pk: ("MOVED", ""), bad.pk: ("FAILED", expected)}
+        assert job.status == BulkRescheduleStatus.PARTIALLY_FAILED
+
+    def test_case_scheduled_again_after_the_preview(self, courtroom, case, setter):
+        abandoned = schedule(case, TODAY)
+        court_service.end_day(case.court_id, TODAY)
+        set_config("business_date_override", MON.isoformat())
+        job = preview(courtroom, [abandoned], target_date=WED).job
+        fresh = schedule(case, TUE)
+        job = run(job, setter)
+        assert (job.items.get().result, job.items.get().error_code) == ("FAILED", "E10004")
+        abandoned.refresh_from_db()
+        fresh.refresh_from_db()
+        assert (abandoned.status, fresh.hearing_date) == (HearingStatus.ABANDONED, TUE)
+
+    def test_blocking_leaves_existing_entries_and_busy_days_alone(
+        self, courtroom, case, other_case, third_case, setter
+    ):
+        moved_from_mon = schedule(case, MON)
+        moved_from_tue = schedule(other_case, TUE)
+        staying_on_tue = schedule(third_case, TUE)
+        calendar.create_entry(
+            court_id=courtroom.pk,
+            date=MON,
+            entry_type=CalendarEntryType.REDUCED_SITTING,
+            reason="Half day",
+            capacity_override=5,
+        )
+        job = preview(courtroom, [moved_from_mon, moved_from_tue], block_source_dates=True).job
+        job = run(job, setter)
+        assert job.status == BulkRescheduleStatus.COMPLETED
+        mon = CourtCalendarEntry.objects.get(court=courtroom, date=MON)
+        assert (mon.entry_type, mon.reason) == (CalendarEntryType.REDUCED_SITTING, "Half day")
+        assert not CourtCalendarEntry.objects.filter(court=courtroom, date=TUE).exists()
+        staying_on_tue.refresh_from_db()
+        assert staying_on_tue.hearing_date == TUE
 
     def test_redelivery_finishes_and_never_repeats(self, courtroom, case, other_case, setter):
         first, second = schedule(case, MON), schedule(other_case, MON)
