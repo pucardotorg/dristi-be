@@ -7,6 +7,9 @@ holding the worker until Gunicorn kills it. The app's own connections keep
 their settings.
 """
 
+import os
+import socket
+import threading
 import uuid
 
 from django.conf import settings
@@ -31,10 +34,23 @@ class Database(DatabaseHeartBeatCheck):
     def check_status(self):
         connection = self._probe_connection()
         try:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT 1")
-                if cursor.fetchone() != (1,):
-                    raise ServiceUnavailable("Database unavailable.")
+            connection.ensure_connection()
+            # connect_timeout ends at connection setup, and statement_timeout
+            # runs on the server, so neither stops a wait for a reply that the
+            # network never delivers. Closing the socket at the deadline does.
+            deadline = None
+            if connection.vendor == "postgresql":
+                deadline = threading.Timer(PROBE_TIMEOUT, self._abort, (connection,))
+                deadline.start()
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                    if cursor.fetchone() != (1,):
+                        raise ServiceUnavailable("Database unavailable.")
+            finally:
+                if deadline:
+                    deadline.cancel()
+                    deadline.join()
         except ServiceUnavailable:
             raise
         except Exception as exc:
@@ -58,6 +74,20 @@ class Database(DatabaseHeartBeatCheck):
             ).strip()
             settings_dict["OPTIONS"] = options
         return backend.DatabaseWrapper(settings_dict, self.alias)
+
+    @staticmethod
+    def _abort(connection):
+        """Shut the probe's socket so a read blocked on it fails at once."""
+        try:
+            # A dup of the descriptor: shutdown() acts on the shared socket,
+            # and closing the dup leaves the driver's descriptor to the driver.
+            with socket.socket(fileno=os.dup(connection.connection.fileno())) as sock:
+                sock.shutdown(socket.SHUT_RDWR)
+        except Exception:
+            # The socket is already gone, for example closed by the server;
+            # the read is not blocked on it. check_status() joins this timer
+            # before closing the connection, so the descriptor is never reused.
+            pass
 
 
 class Cache(CacheBackend):
