@@ -330,6 +330,14 @@ Common to every type:
 
 ```python
 @dataclass(frozen=True)
+class FilerContext:
+    case_id: UUID
+    user_id: UUID
+    side: str | None    # the caller's side as a drafter, None if not one
+    access: CaseAccess   # apps.cases.selectors.case_access(...) (#1.1)
+
+
+@dataclass(frozen=True)
 class FieldProblem:
     field: str          # path under data, e.g. "data.sureties[1].phone"
     code: str           # a registered E13xxx or common code
@@ -367,7 +375,7 @@ From "Every application" in the PRD. Stored as columns, not in `data`.
 | **Raised by** | `raised_by` (User) | One of `advocate_access(case)` on the application's side: an advocate with vakalatnama access, or a party in person. For PoA Change, the caller (the incoming PoA holder). May be empty in a draft; required to proceed (`E13008`). Not one of the options → `400 E13005`. |
 | **Litigant** | `raised_on_behalf_of` (participant id) | One of the litigants represented by *Raised by* (a party in person: themselves). Not one of them → `400 E13006`. Changing *Raised by* to someone who does not represent the chosen litigant clears it. Fixes the application's `side`. |
 | **Application details** | `details` | Rich text: bold, italic, underline, bulleted and numbered lists, alignment. Sanitised on save (#3.3.1). Mandatory to proceed: empty after sanitising → `400 E13007`. The only free-text box: no type has a reason box of its own. Printed as the body of the application. |
-| **Supporting documents** | `ApplicationDocument` rows, `kind = SUPPORTING` | Optional; any number; each needs a name the filer gives (`DSB-02`). |
+| **Supporting documents** | `ApplicationDocument` rows with a blank `field_path` | Optional; any number; each needs a name the filer gives (`DSB-02`). |
 
 **Preselection** (returned by the form endpoint, #6.2, never applied
 silently by the server):
@@ -391,7 +399,7 @@ config `applications.details_max_bytes` after sanitising (`400 E00006`,
 #### 3.4 Type data
 
 `data` keys by type. Every `*_document_id` must be an `ApplicationDocument`
-of this application with `kind = FIELD` and the matching `field_path`
+of this application attached to the matching `field_path`
 (`400 E13011` otherwise). Addresses use the e-filing address composite
 through `apps.address` ([`0020`](0020-person-case-filing-schema.md) §7),
 whose own errors (domain `05`) pass through on the nested path.
@@ -508,11 +516,11 @@ classDiagram
         +application_type FK
         +status
         +side
-        +created_by
         +raised_by
         +raised_on_behalf_of
         +details
         +data
+        +additional_attributes
         +hearing_id
         +objection_to FK self
         +temporary_identifier
@@ -525,19 +533,16 @@ classDiagram
         +decision_mode
         +decision_date
         +objections_invited
-        +objection_deadline
-        +decided_at
         +linked_order_id
         +workflow_status
         +version
     }
     class ApplicationDocument {
         +application FK
-        +kind
         +field_path
         +name
-        +document_type
         +file_id
+        +sequence
     }
     class ApplicationTransition {
         +application FK
@@ -561,8 +566,17 @@ classDiagram
 ```
 
 All models inherit `apps.core.models.BaseModel`. `ApplicationType` and
-`Application` also inherit `BaseAuditableModel`. Every bounded enum is a
-`TextChoices` in `apps/applications/enums.py`.
+`Application` also inherit `BaseAuditableModel`; `Application` also inherits
+`BaseExtendableModel` (#4.2.2). Every bounded enum is a `TextChoices` in
+`apps/applications/enums.py`.
+
+**What is a column and what is not.** A value is a column only when it is
+filtered, constrained, indexed or shown in lists. Everything that records
+*who did something and when* — who onboarded, when it was signed and by which
+method, when and why it expired, what the type's workflow produced — is a row
+of the append-only `ApplicationTransition` log (#4.4), not a column that
+repeats it. Anything computable from another column is computed: the
+objection deadline from the decision date, the fee from the demand.
 
 #### 4.1 `ApplicationType` — `BaseActivatableModel`
 
@@ -577,7 +591,7 @@ All models inherit `apps.core.models.BaseModel`. `ApplicationType` and
 Seeded by data migration from #3.1. Editable in admin: label, description,
 template, sequence, active.
 
-#### 4.2 `Application`
+#### 4.2 `Application` — `BaseModel`, `BaseExtendableModel`, `BaseAuditableModel`
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -589,42 +603,47 @@ template, sequence, active.
 | `raised_by` | `FK(User, null=True, on_delete=PROTECT)` | *Application Raised By* — the signer (`ALC-28`) |
 | `raised_on_behalf_of` | `UUIDField(null=True)` | a `CaseParticipant` id; *Application Raised On Behalf Of* |
 | `details` | `TextField(blank=True)` | sanitised HTML (#3.3.1) |
-| `data` | `JSONField(default=dict)` | the type's fields (#3.4) |
-| `hearing_id` | `UUIDField(null=True, db_index=True)` | Advance / Postpone only |
+| `data` | `JSONField(default=dict)` | the type's fields, validated by the type's spec (#3.4, #4.2.2) |
+| `additional_attributes` | from `BaseExtendableModel` | deployment-declared scalar attributes (#4.2.2) |
+| `hearing_id` | `UUIDField(null=True, db_index=True)` | Advance / Postpone only; a column, not a `data` key, because hearing signals look applications up by it (#13) |
 | `objection_to` | `OneToOneField("self", null=True, on_delete=PROTECT, related_name="objection")` | *Objection To*; the reverse is *Objection (Linked Application)* — at most one (`ALC-24`) |
 | `temporary_identifier` | `CharField(64, null=True)` | allotted at submission (`ALC-02`, #7) |
 | `application_number` | `CharField(64, null=True)` | allotted at onboarding (`ALC-04`, #7) |
-| `signing_file_id` | `CharField(64, blank=True)` | the rendered PDF sent for signature (#6.5) |
-| `signed_file_id` | `CharField(64, blank=True)` | the signed PDF |
-| `signing_method` | `CharField(24, blank=True)` | `AADHAAR_ESIGN`, … (`SGM-`) |
-| `signed_at` | `DateTimeField(null=True)` | |
-| `esign_transaction_id` | `UUIDField(null=True)` | the transaction recorded |
-| `fee_amount` | `DecimalField(18, 2, null=True)` | snapshot at signing; `0` when no fee |
-| `demand_id` | `UUIDField(null=True)` | the `APPLICATION` demand, when a fee is due |
+| `signing_file_id` | `CharField(64, blank=True)` | the rendered PDF sent for signature (#6.5); cleared by back to draft |
+| `signed_file_id` | `CharField(64, blank=True)` | the signed PDF; the document the case file shows |
+| `demand_id` | `UUIDField(null=True)` | the `APPLICATION` demand, when a fee is due; the fee is the demand's amount |
 | `submitted_at` | `DateTimeField(null=True)` | *Date Submitted* |
-| `onboarded_at` / `onboarded_by` | `DateTimeField(null=True)` / `FK(User, null=True)` | *Date Onboarded* |
+| `onboarded_at` | `DateTimeField(null=True)` | *Date Onboarded*; also the visibility test for the other side (#2.3) |
 | `decision_mode` | `CharField(8, choices=DecisionMode, blank=True)` | `NOW`, `ON_DATE`; set at onboarding |
 | `decision_date` | `DateField(null=True)` | *Decision Date*: the onboarding date for `NOW`, the chosen date for `ON_DATE`; moved by `ALC-15` |
 | `objections_invited` | `BooleanField(null=True)` | *Objections Invited*; `null` until onboarded |
-| `objection_deadline` | `DateTimeField(null=True)` | 00:00 IST on `decision_date` — the end of the day before (`ALC-13`) |
-| `decided_at` | `DateTimeField(null=True)` | when the deciding or dismissing order was triggered |
 | `linked_order_id` | `UUIDField(null=True)` | *Linked Order* — the order that dismissed, accepted or rejected it |
-| `expired_at` / `expiry_reason` | `DateTimeField(null=True)` / `CharField(32, blank=True)` | `HEARING_PASSED`, `HEARING_CANCELLED` |
-| `workflow_status` | `CharField(16, choices=WorkflowStatus, default=NOT_APPLICABLE)` | `NOT_APPLICABLE`, `PENDING`, `DONE`, `FAILED` — the type's on-acceptance workflow (#12.1) |
-| `workflow_result` | `JSONField(default=dict, blank=True)` | ids it created (witness ids, bail bond draft id) and the last error code |
+| `workflow_status` | `CharField(16, choices=WorkflowStatus, default=NOT_APPLICABLE)` | `NOT_APPLICABLE`, `PENDING`, `DONE`, `FAILED` — the type's on-acceptance workflow (#12.1); a column so the retry actor and admin can find failures |
 | `version` | `PositiveIntegerField(default=0)` | +1 on every write; the concurrency token (#16.8) |
 
-*Template* is the type's `template_code`. *Application Raised By* is the user
-in `raised_by` once signed.
+Computed, not stored:
+
+| Property | From |
+| --- | --- |
+| *Date Created* | `created_at` (`BaseModel`); the drafter is `created_by` |
+| *Template* | `application_type.template_code` |
+| `objection_deadline` | 00:00 IST on `decision_date`, i.e. the end of the day before (`ALC-13`), when `objections_invited` |
+| fee | the demand's `total_amount`; `0` when there is no demand |
+| signed at, signing method, e-sign transaction | the `SIGN` transition (#4.4) |
+| onboarded by; decided at; expired at and why | the `ONBOARD`, `DISMISS` / `ACCEPT` / `REJECT` and `EXPIRE` transitions |
+| what the type's workflow created, its last error | the latest `WORKFLOW_DONE` / `WORKFLOW_FAILED` transition |
+
+Selectors read these with one prefetch of the application's transitions;
+lists never need them.
 
 Constraints:
 
-* `UniqueConstraint(case, application_number, condition=Q(application_number__isnull=False))`; `UniqueConstraint(case, temporary_identifier, condition=…)`. Where numbering is per court (#7) the counter also makes them unique across cases.
+* `UniqueConstraint(case, application_number, condition=Q(application_number__isnull=False))`; `UniqueConstraint(case, temporary_identifier, condition=Q(temporary_identifier__isnull=False))`. Where numbering is per court (#7) the counter also makes them unique across cases.
 * `CheckConstraint`: `application_number IS NULL OR onboarded_at IS NOT NULL` — no number without onboarding (`ALC-04`).
 * `CheckConstraint`: `status IN (DRAFT, PENDING_SIGNATURE, PENDING_PAYMENT) OR (submitted_at IS NOT NULL AND temporary_identifier IS NOT NULL)` — every status from submission on has both (`ALC-02`).
 * `CheckConstraint`: `status != DISMISSED OR application_number IS NULL` — dismissal comes before onboarding (`ALC-19`).
 * `CheckConstraint`: `status != PENDING_DECISION OR (onboarded_at IS NOT NULL AND decision_date IS NOT NULL)`.
-* `CheckConstraint`: `signed_file_id = '' OR signed_at IS NOT NULL`.
+* `CheckConstraint`: `status IN (DRAFT, PENDING_SIGNATURE) OR signed_file_id != ''` — nothing moves past signature unsigned (`ALC-01`).
 
 Validated in `clean()` (the database cannot see the type's code):
 
@@ -633,17 +652,54 @@ Validated in `clean()` (the database cannot see the type's code):
 
 Indexes: `(case, status)`, `(status, decision_date)`, `(application_type, status)`, `(hearing_id, status)`.
 
+##### 4.2.1 Why one model, not one per type
+
+Sixteen types share every column above and the whole lifecycle; they differ
+only in a handful of fields, most of them nested lists (sureties, witnesses,
+addresses, authorizations). A table per type would repeat the lifecycle
+columns sixteen times or need a join on every read. One model with a
+type-validated `data` keeps one lifecycle, one list query and one set of
+constraints, and a new type is a spec class and a seeded row, not a
+migration.
+
+##### 4.2.2 `data` and `additional_attributes`
+
+The project has two JSON extension patterns, and the application needs both
+for different things:
+
+| | `data` | `additional_attributes` (`BaseExtendableModel`, [`0001`](0001-additional-attributes.md)) |
+| --- | --- | --- |
+| Holds | the type's own fields from the PRD (#3.4) | extra attributes a deployment declares without a release, e.g. a reference number a state's CIS returns for the application |
+| Declared by | the type's spec in code: a JSON Schema plus validators (#3.2) | `AdditionalAttribute` rows for the `Application` content type, in admin or a data migration |
+| Varies by | application type | deployment; the same for every type |
+| Shape | nested objects and lists | scalars only, typed and coerced |
+| Written by | the filer, through the API, draft only | in-process services and admin; read-only over the API |
+| Unknown key | `400 E13009` | refused by `BaseExtendableModel` (`400`, common code) |
+
+`additional_attributes` cannot carry the type fields: it is declared per
+model, not per type, and holds no nested values, so sureties and witnesses
+do not fit. `data` plays the role `additional_details` plays on
+`CaseParticipant` (role-varying details, [`0020`](0020-person-case-filing-schema.md)
+§4.3), but is validated by the type's schema instead of being free-form,
+because it is printed on the signed application and drives the type's
+workflow. No `AdditionalAttribute` rows are seeded; with none, any key is
+refused and the column stays `{}`.
+
 #### 4.3 `ApplicationDocument`
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `application` | `FK(Application, on_delete=CASCADE, related_name="documents")` | |
-| `kind` | `CharField(16, choices=DocumentKind)` | `SUPPORTING` (named by the filer) or `FIELD` (a fixed attachment of a type field) |
-| `field_path` | `CharField(128, blank=True)` | `FIELD` only, e.g. `sureties[0].solvency_document_id` |
-| `name` | `CharField(255)` | `SUPPORTING`: required, the filer's name; `FIELD`: the field's label (`DSB-23`: "a fixed attachment by its field name (Proof of solvency)") |
-| `document_type` | `CharField(64, blank=True)` | Production of Documents' document type |
+| `field_path` | `CharField(128, blank=True)` | blank: a **supporting document** ("Every application", #3.3); set: the type field the file is attached to, e.g. `sureties[0].solvency_document_id` |
+| `name` | `CharField(255)` | supporting: required, the name the filer gives (`DSB-02`); attached to a field: the field's label, set by the server (`DSB-23`: "a fixed attachment by its field name (Proof of solvency)") |
 | `file_id` | `CharField(64)` | `apps.files` id |
 | `sequence` | `PositiveSmallIntegerField` | display order |
+
+A separate `kind` column (`SUPPORTING` / `FIELD`) would only restate whether
+`field_path` is blank, and would need a check constraint to keep the two in
+agreement, so there is none; the API returns `is_supporting` computed from
+`field_path`. Production of Documents' document type is not a column either:
+it is already in `data.documents[].document_type`, next to the document id.
 
 Documents can be added and removed only while the application is a draft.
 After submission they are immutable and are the case file's *Application*
@@ -661,10 +717,19 @@ change status (moving the decision date).
 | `from_status` / `to_status` | `CharField(24)` | equal for `MOVE_DECISION_DATE` |
 | `actor` | `FK(User, null=True, on_delete=PROTECT)` | `NULL` for the system |
 | `order_id` | `UUIDField(null=True)` | for order-driven changes |
-| `metadata` | `JSONField(default=dict)` | e.g. `{"from_date": "2026-11-20", "to_date": "2026-11-27"}` |
+| `metadata` | `JSONField(default=dict)` | per action, below |
+
+| `action` | `metadata` |
+| --- | --- |
+| `SIGN` | `{"method": "AADHAAR_ESIGN", "esign_transaction_id": "…"}` |
+| `ONBOARD` | `{"mode": "ON_DATE", "decision_date": "2026-11-20", "objections_invited": true}` |
+| `MOVE_DECISION_DATE` | `{"from_date": "2026-11-20", "to_date": "2026-11-27"}` |
+| `EXPIRE` | `{"reason": "HEARING_PASSED" \| "HEARING_CANCELLED", "hearing_id": "…"}` |
+| `WORKFLOW_DONE` / `WORKFLOW_FAILED` (no status change) | `{"result": {"witness_ids": ["…"]}}` / `{"error_code": "…", "attempt": 2}` |
 
 `save()` refuses an existing row; admin is read-only. This answers the PRD's
-"Who onboarded / who dismissed / who decided" — each is one row here.
+"Who onboarded / who dismissed / who decided" — each is one row here — and
+holds every timestamp the model does not repeat (#4).
 
 #### 4.5 `ApplicationCounter`
 
@@ -711,7 +776,7 @@ onboarding and no expiry before submission.
 
 `ACCEPTED`, `REJECTED`, `DISMISSED`, `SUBMITTED` and `EXPIRED` are terminal.
 Nothing leaves them, and nothing about the application but `workflow_status`
-and `workflow_result` changes after.
+(and its `WORKFLOW_*` transitions) changes after.
 
 #### 5.2 Every status change
 
@@ -729,6 +794,7 @@ and `workflow_result` changes after.
 | `PENDING_DECISION` | `ACCEPT` (handler) | accepting order triggered | `ACCEPTED` | #11.1 | `ALC-08`, `ALC-09`, `ALC-16` |
 | `PENDING_DECISION` | `REJECT` (handler) | rejecting order triggered | `REJECTED` | #11.1 | `ALC-16` |
 | `PENDING_REVIEW`, `PENDING_DECISION` — Advance / Postpone only | `EXPIRE` | system | `EXPIRED` | #13 | `ALC-30`, `Q-8` |
+| `ACCEPTED` | `WORKFLOW_DONE`, `WORKFLOW_FAILED` (no status change) | system | `ACCEPTED` | #12.1 | `ALC-16` |
 
 The *File objection* task is not a status of this application — it belongs
 to the other side (#10).
@@ -814,13 +880,13 @@ drafting circle and readers were decided on the side.
 #### 6.4 Documents
 
 ```text
-POST   /api/v1/applications/{id}/documents/          multipart: file, kind, name?, field_path?, document_type?
+POST   /api/v1/applications/{id}/documents/          multipart: file, name?, field_path?
 DELETE /api/v1/applications/{id}/documents/{doc_id}/
 ```
 
 * Draft only, drafting circle only.
 * The upload is checked with `apps.files.documents.document_error` ([`0014`](0014-file-storage-service.md) #3.1) before anything is written: PDF, JPEG or PNG within `FILE_MAX_SIZE_BYTES`; Production of Documents accepts PDF and JPEG only. A refusal is `400 E13010`, `field = file`. Stored with `store_documents`, tags `{"module": "applications", "application_id": …}`.
-* `SUPPORTING` needs `name`; `FIELD` needs a `field_path` the type declares. The returned `id` is what `data` references.
+* Without `field_path` it is a supporting document and needs `name`. With one, the path must be a document field the type declares (`400 E13011`, `field = field_path`), and the server names it. The returned `id` is what `data` references.
 * Deleting a document that `data` still references is `409 E13012`; clear the field first.
 * Removed and replaced files are discarded from storage on commit.
 
@@ -869,7 +935,7 @@ transaction_id=None)`, idempotent:
 
 * The transaction is `SUCCESS`, for this application, by this user, on the current `signing_file_id`; a transaction from before a move back to draft, or still pending, is `409 E13015`.
 * Already recorded for this transaction → the application unchanged, `200`.
-* Set `signed_file_id`, `signed_at`, `signing_method`, `esign_transaction_id`; complete *Sign application*; then payment (#6.8).
+* Set `signed_file_id`; write the `SIGN` transition with the method and transaction (#4.4); complete *Sign application*; then payment (#6.8).
 
 `record_signature` takes a signed file and a method and nothing specific to
 e-sign, so mobile OTP, DSC and batch signing (`SGM-01`, `SGM-02`, `SGM-04`,
@@ -879,7 +945,7 @@ e-sign, so mobile OTP, DSC and batch signing (`SGM-01`, `SGM-02`, `SGM-04`,
 
 In the signing transaction:
 
-1. `fee = config applications.<STATE_CODE> / fee.<TYPE_CODE>` (decimal, default `0`), snapshotted in `fee_amount`.
+1. `fee = config applications.<STATE_CODE> / fee.<TYPE_CODE>` (decimal, default `0`). The demand is the snapshot: a later change to the configuration never changes it ([`0017`](0017-orders-management.md) #2.2).
 2. **Fee due** — `DemandService.raise_demand(case=…, reference_type=APPLICATION, reference_id=application.id, items=[{charge_type: APPLICATION_FEE, reference_type: APPLICATION, reference_id: application.id, description: "<type label> — application fee", quantity: 1, unit_amount: fee}], user_id=raised_by)`; store `demand_id`; `status = PENDING_PAYMENT`; open *Pay application fee* for the side (#16.1).
 3. **No fee** — no demand is raised ([`0017`](0017-orders-management.md): "where nothing is due, the raising module raises no demand and skips its payment step") and the application is submitted at once (#6.9). This is the direction pending `Q-11`.
 
@@ -961,7 +1027,7 @@ order is triggered (`ALC-19`, `ALC-22`). The applications handler for
 
 * is available only while the application is `PENDING_REVIEW` (`APPLICATION_ONBOARDED` otherwise);
 * fills `[Application Type]`, `[Party Type]`, `[Party Name]` and `[Filing Date]` from the application — the type label, the side, the litigant's name and `submitted_at` — and **no number**: there is none (`VAR-02`; catalogue #26);
-* on `execute`: `status = DISMISSED`, `decided_at`, `linked_order_id`; complete *Review application*. The application keeps no application number.
+* on `execute`: `status = DISMISSED`, `linked_order_id`; complete *Review application*. The application keeps no application number.
 
 ### 9. Step 3 — Onboarding
 
@@ -975,7 +1041,7 @@ If-Match: 4
 (`403 E13017`). In one transaction, with no order and no signature
 (`ALC-04`):
 
-1. Allot the **application number** (#7); `onboarded_at`, `onboarded_by`.
+1. Allot the **application number** (#7); `onboarded_at`; the `ONBOARD` transition records who.
 2. `status = PENDING_DECISION`; complete *Review application*.
 3. The application becomes visible to the other side (`ALC-17`), whatever is chosen below; notify them (#16.2).
 4. The answer to "now or on a date" (`ALC-07`):
@@ -983,7 +1049,7 @@ If-Match: 4
 | `mode` | Needs | Sets | Opens |
 | --- | --- | --- | --- |
 | `NOW` (3a, `ALC-08`) | — | `decision_date` = business date; `objections_invited = false` (nobody may object, `ALC-11`) | *Decide application*, due today. The response carries `order_preset` for the client to open the order screen with the application in context |
-| `ON_DATE` (3b, `ALC-09`) | also `applications.set_decision_date` (`403 E13017`); `decision_date` after the business date and a sitting day of the courtroom (`400 E13018`, `field = decision_date`) | `decision_date`; `objections_invited` = `invite_objections`, **default `true`** (`ALC-11`, `ALC-25`); `objection_deadline` when invited | *Decide application*, due on `decision_date`; *File objection* when invited (#10) |
+| `ON_DATE` (3b, `ALC-09`) | also `applications.set_decision_date` (`403 E13017`); `decision_date` after the business date and a sitting day of the courtroom (`400 E13018`, `field = decision_date`) | `decision_date`; `objections_invited` = `invite_objections`, **default `true`** (`ALC-11`, `ALC-25`) | *Decide application*, due on `decision_date`; *File objection* when invited (#10) |
 
 `invite_objections` with `NOW` is ignored. Every type is onboarded the same
 way until types carry their own configuration (`ALC-25`); the default is a
@@ -1025,7 +1091,7 @@ Only after `ON_DATE` with objections invited (`ALC-11`, `ALC-12`). Choosing
 
 **The invitation.** At onboarding:
 
-* `objection_deadline` = 00:00 IST on `decision_date`, i.e. the end of the day before: a decision on the 21st puts the deadline at the end of the 20th (`ALC-13`).
+* The deadline (`objection_deadline`, computed, #4.2) is 00:00 IST on `decision_date`, i.e. the end of the day before: a decision on the 21st puts the deadline at the end of the 20th (`ALC-13`).
 * *File objection* opens for the other side — the whole opposing side, not a named person (`ALC-24`) — due `decision_date − 1 day`, `reference = ("APPLICATION", target.id)`; the other side is told plainly that it must object and by when (#16.2).
 * Unchecked: no task and no message; the other side still sees the application (`ALC-12`, `ALC-17`).
 
@@ -1080,7 +1146,7 @@ Registered from `AppConfig.ready()` with the [`0025`](0025-court-order.md)
 * The handler problems are in-process codes; the order module surfaces them on its own endpoints (`E11010`).
 * Combination rule 4 of the catalogue (one decision per application per order) is the order module's `ONE_PER_TARGET` rule.
 * `execute(ctx, values, run_id)` is idempotent on `run_id`: it locks the application; if the application already carries this `linked_order_id`, it returns the first result. If the application is no longer in the status the item needs — it was onboarded after a dismissal order was drafted, or decided by another order — the run is `FAILED` with `error_code = APPLICATION_NOT_IN_STATUS`, logged at error, and the application is unchanged (question 11). The order itself stands; its text is the record.
-* On success: status, `decided_at`, `linked_order_id`; complete *Decide application* (or *Review application* for a dismissal); expire an open *File objection*; one `ApplicationTransition` with `order_id`. On commit, notifications and events (#16.2, #16.3).
+* On success: status and `linked_order_id`; complete *Decide application* (or *Review application* for a dismissal); expire an open *File objection*; one `ApplicationTransition` with `order_id`. On commit, notifications and events (#16.2, #16.3).
 
 *Decide application* closes in the handler, in the order's trigger run, which
 is when the order is both signed and complete ([`0025`](0025-court-order.md)
@@ -1109,7 +1175,7 @@ only a date set under 3b); `applications.set_decision_date` (`403 E13017`);
 the date passes the rules of #9 and differs from the current one
 (`400 E13018`). In one transaction (`ALC-15`):
 
-1. `decision_date` replaced; `objection_deadline` recomputed.
+1. `decision_date` replaced; the objection deadline follows it, being computed.
 2. *Decide application* `reschedule`d to the new date — the same task.
 3. *File objection*, when invited: an open task is rescheduled to the new deadline; if it had already expired at the old deadline and the new deadline is in the future, a new task is opened (a closed task does not reopen, pending tasks §3), and the other side is told the new deadline.
 4. Status unchanged; one `MOVE_DECISION_DATE` transition with both dates.
@@ -1122,8 +1188,8 @@ On `ACCEPTED` the handler sets `workflow_status = PENDING` when the type has
 an on-acceptance workflow (`NOT_APPLICABLE` otherwise), records the decision,
 and in the same order run calls `spec.on_accept(app, order_id, values)`:
 
-* Success → `workflow_status = DONE`, `workflow_result` with what it created.
-* Failure → the decision stands (it is the court's, signed), `workflow_status = FAILED`, `workflow_result.error_code`, logged `APPLICATION_WORKFLOW_FAILED` (`E13029`, logged only); the actor `run_type_workflow(application_id)` retries up to `applications.workflow_max_retries` with backoff; an admin action retries after that.
+* Success → `workflow_status = DONE`; a `WORKFLOW_DONE` transition records what it created.
+* Failure → the decision stands (it is the court's, signed), `workflow_status = FAILED`; a `WORKFLOW_FAILED` transition records the error code and attempt; logged `APPLICATION_WORKFLOW_FAILED` (`E13029`, logged only); the actor `run_type_workflow(application_id)` retries up to `applications.workflow_max_retries` with backoff; an admin action retries after that.
 
 Rejecting runs `on_reject` only where the type needs it (Delay Condonation)
 and never the acceptance workflow (`ALC-16`).
@@ -1132,7 +1198,7 @@ and never the acceptance workflow (`ALC-16`).
 
 | Type | `on_accept` |
 | --- | --- |
-| Bail | Acceptance of bail carries the court's terms of bail and whether to request a bail bond. When requested, `signals.bail_bond_requested(application_id, case_id, order_id, terms)` is sent; the bail bond module creates the bail bond draft from the application's bail type, amount and sureties and opens its own task. Until that module exists, the request is stored in `workflow_result` and `workflow_status` stays `PENDING` (question 12) |
+| Bail | Acceptance of bail carries the court's terms of bail and whether to request a bail bond. When requested, `signals.bail_bond_requested(application_id, case_id, order_id, terms)` is sent; the bail bond module creates the bail bond draft from the application's bail type, amount and sureties and opens its own task. Until that module exists, the request is recorded on the `ACCEPT` transition and `workflow_status` stays `PENDING` (question 12) |
 | Edit Litigant Details | `apps.cases.services.participants.apply_litigant_edit(case, participant_id, data.changes, source=application)` — including a change between individual and institution |
 | Advance / Prepone, Postpone | nothing of its own: the accepting order moved the hearing (#11.1); the handler checks that the hearing's date changed and records it |
 | PoA Change | `apps.cases.services.poa.appoint(case, raised_by, participant_ids, authorization documents, source=application)`; the incoming holder's rights replace the outgoing holder's for those litigants |
@@ -1164,13 +1230,13 @@ expire"):
 | Trigger | Source | Applications looked at |
 | --- | --- | --- |
 | the hearing ends or is abandoned | `apps.hearings.signals.hearing_ended` | `hearing_id` = that hearing, status `PENDING_REVIEW` or `PENDING_DECISION` |
-| the hearing is cancelled | `hearing_cancelled` | same; `expiry_reason = HEARING_CANCELLED` |
+| the hearing is cancelled | `hearing_cancelled` | same; reason `HEARING_CANCELLED` |
 | the hearing's date is before the business date | `expire_hearing_linked_applications`, daily at 00:05 IST (#16.6) | same; catches anything a missed signal left |
 
 For each, under the application lock:
 
 1. **Guard.** If the application is the target of an accept or reject item on a live order of the case — drafted, sent for signing or signed, not yet triggered or discarded — it is left alone: a court that decided it in the hearing's own order must not see the decision fail because the hearing ended before the order was signed. `apps.orders.selectors.live_items_targeting(ids)` answers this. The nightly sweep looks again, and expires it once no live order targets it.
-2. `status = EXPIRED`, `expired_at`, `expiry_reason`; expire *Review application*, *Decide application* and *File objection* with `NO_LONGER_RELEVANT` (`Q-8c` direction); notify (#16.2, `Q-14`).
+2. `status = EXPIRED`; the `EXPIRE` transition records the reason (`HEARING_PASSED`, `HEARING_CANCELLED`); expire *Review application*, *Decide application* and *File objection* with `NO_LONGER_RELEVANT` (`Q-8c` direction); notify (#16.2, `Q-14`).
 
 Rules:
 
@@ -1244,8 +1310,11 @@ several waiting on the same step collapse into one entry with one action:
   "details": "<p>…</p>",
   "data": { "reason_code": "ADVOCATE_UNWELL", "proposed_date": "2026-12-04" },
   "hearing": { "id": "…", "hearing_date": "2026-11-21", "purpose_label": "Appearance" },
-  "documents": [ { "id": "…", "kind": "SUPPORTING", "name": "Medical certificate", "file_id": "…" } ],
+  "documents": [ { "id": "…", "is_supporting": true, "field_path": "", "name": "Medical certificate", "file_id": "…" } ],
   "signed_file_id": "…",
+  "signed_at": "…",
+  "fee": "50.00",
+  "additional_attributes": {},
   "created_at": "…", "submitted_at": "…", "onboarded_at": "…",
   "decision_mode": "ON_DATE", "decision_date": "2026-11-20",
   "objections_invited": true, "objection_deadline": "2026-11-20T00:00:00+05:30",
@@ -1377,10 +1446,10 @@ type's `data_schema`, lengths. Sides, circles, signers, statuses, dates
 against the calendar, availability and completeness are checked in the
 services under the application lock. Read only: `status`, `side`,
 `created_by`, every identifier, every `*_at` and `*_by`, `signing_file_id`,
-`signed_file_id`, `fee_amount`, `demand_id`, `decision_mode`,
-`decision_date`, `objections_invited`, `objection_deadline`,
-`linked_order_id`, `workflow_status`, `workflow_result`, `hearing_id`,
-`version`.
+`signed_file_id`, `fee`, `demand_id`, `decision_mode`, `decision_date`,
+`objections_invited`, `objection_deadline`, `linked_order_id`,
+`workflow_status`, `hearing_id`, `additional_attributes`, `is_supporting`,
+`version`. Computed fields (#4.2) are read from the prefetched transitions.
 
 #### 15.6 Error codes
 
@@ -1403,7 +1472,7 @@ specs.
 | `E13008` | `APPLICATION_INCOMPLETE` | 400 | *Proceed to sign*: one error per gap, each on its path (`raised_by`, `data.sureties[0].phone` …) |
 | `E13009` | `FIELD_NOT_FOR_TYPE` | 400 | a `data` key the type does not define, or one that does not apply to the values chosen (sureties with cash bail); `field = data.<key>` |
 | `E13010` | `DOCUMENT_NOT_ACCEPTED` | 400 | the upload's format or size is refused; `field = file` |
-| `E13011` | `DOCUMENT_NOT_ON_APPLICATION` | 400 | `data` references a document that is not a `FIELD` document of this application for that path |
+| `E13011` | `DOCUMENT_NOT_ON_APPLICATION` | 400 | `data` references a document that is not attached to that path on this application, or an upload names a `field_path` the type does not declare |
 | `E13012` | `DOCUMENT_IN_USE` | 409 | deleting a document `data` still references |
 | `E13013` | `NOT_THE_SIGNER` | 403 | signing by anyone but *Raised by* — another advocate, a clerk or junior (`ALC-28`) |
 | `E13014` | `SIGNING_METHOD_NOT_ENABLED` | 400 | `SGM-05`; `field = method` |
@@ -1527,7 +1596,7 @@ Dramatiq actors in `apps/applications/tasks.py`, ids only, enqueued with
 
 | Actor | Schedule | Notes |
 | --- | --- | --- |
-| `run_type_workflow(application_id)` | — | #12.1; no-op unless `workflow_status = FAILED` or `PENDING` |
+| `run_type_workflow(application_id)` | — | #12.1; no-op unless `workflow_status = FAILED` or `PENDING`; each attempt writes a `WORKFLOW_DONE` or `WORKFLOW_FAILED` transition |
 | `expire_hearing_linked_applications()` | `@cron("35 18 * * *")` — 00:05 IST, `max_retries=0` | #13; bounded by `expiry_batch_size`; re-checks the live-order guard |
 | `close_objection_windows()` | `@cron("35 18 * * *")` — 00:05 IST, `max_retries=0` | expires *File objection* tasks whose deadline has passed (#10) |
 
@@ -1603,7 +1672,7 @@ action), S-other (another courtroom); a scheduled hearing on day D+9.
 | --- | --- | --- |
 | T-21 | Upload a `.exe` renamed `.pdf` | `400 E13010`, `field = file`; nothing stored |
 | T-22 | Supporting document without `name` | `400 E00002`, `field = name` |
-| T-23 | `data` references a document of another application | `400 E13011` |
+| T-23 | `data` references a document of another application, or a supporting document; upload with a `field_path` the type does not declare | `400 E13011` |
 | T-24 | Delete a referenced document | `409 E13012` |
 | T-25 | Upload or delete after submission | `409 E13001` |
 | T-26 | Proceed to sign with no `raised_by`, empty details, no litigant | `400 E13008` × 3 on `raised_by`, `details`, `litigant` |
@@ -1633,7 +1702,7 @@ action), S-other (another courtroom); a scheduled hearing on day D+9.
 | T-45 | Confirm a pending, failed or another user's transaction | `409 E13015` |
 | T-46 | Confirm twice with the same transaction | second `200`, nothing changes, one transition row |
 | T-47 | Direct `/esign/_esign` for an application by C1 | refused by the registered authorizer |
-| T-48 | Sign with fee ₹50 configured | `PENDING_PAYMENT`; one `APPLICATION_FEE` demand, `fee_amount = 50.00`; `pay_application_fee` for the whole side |
+| T-48 | Sign with fee ₹50 configured | `PENDING_PAYMENT`; one `APPLICATION_FEE` demand of `50.00`, shown as `fee`; `SIGN` transition carries method and transaction; `pay_application_fee` for the whole side |
 | T-49 | Sign with no fee configured | straight to `PENDING_REVIEW`; no demand; no pay task (`Q-11` direction) |
 | T-50 | L1 pays; `payment_completed` delivered twice | `PENDING_REVIEW` once; temporary identifier allotted once; pay task completed |
 | T-51 | A payment `PENDING` at the gateway | application stays `PENDING_PAYMENT` |
@@ -1705,7 +1774,7 @@ action), S-other (another courtroom); a scheduled hearing on day D+9.
 | T-97 | Accept Addition of Witness / PoA Change / Production of Documents | witnesses added, PoA appointed, documents added with source *Application* |
 | T-98 | Accept or reject Delay Condonation | `DCA_DECIDED` dispatched in both cases |
 | T-99 | Accept Postpone, order not moving the hearing | `HEARING_MOVE_REQUIRED` at *Mark complete*; with the move, the hearing confirmed with `PARTY_APPLICATION` and the applicant's side |
-| T-100 | Type workflow raises | `ACCEPTED` kept; `workflow_status = FAILED`; retried by `run_type_workflow`; succeeds on retry → `DONE` |
+| T-100 | Type workflow raises | `ACCEPTED` kept; `workflow_status = FAILED` with a `WORKFLOW_FAILED` transition; retried by `run_type_workflow`; succeeds on retry → `DONE` with a `WORKFLOW_DONE` transition |
 | T-101 | Order run redelivered with the same `run_id` | no second transition, no second workflow call |
 | T-102 | Reject | `REJECTED`; `on_accept` never called (`ALC-16`) |
 | T-103 | Dismissal order triggered after the application was onboarded | run `FAILED` `APPLICATION_NOT_IN_STATUS`; application unchanged; logged |
@@ -1718,9 +1787,9 @@ action), S-other (another courtroom); a scheduled hearing on day D+9.
 
 | # | Case | Expected |
 | --- | --- | --- |
-| T-108 | `hearing_ended` with a Postpone in `PENDING_REVIEW` and an Advance in `PENDING_DECISION` | both `EXPIRED`, `HEARING_PASSED`; review, decide and objection tasks expired |
+| T-108 | `hearing_ended` with a Postpone in `PENDING_REVIEW` and an Advance in `PENDING_DECISION` | both `EXPIRED`, `EXPIRE` transition reason `HEARING_PASSED`; review, decide and objection tasks expired |
 | T-109 | Hearing moved (`hearing_rescheduled`) | application unchanged |
-| T-110 | `hearing_cancelled` | `EXPIRED`, `HEARING_CANCELLED` |
+| T-110 | `hearing_cancelled` | `EXPIRED`, transition reason `HEARING_CANCELLED` |
 | T-111 | Hearing ends while a draft order accepting the Postpone is live | not expired; expired by the sweep once that order is discarded; accepted if the order triggers |
 | T-112 | Draft / Pending Signature / Pending Payment Postpone when the hearing passes | status unchanged; proceed and sign `409 E13016`; unpaid demand cancelled, pay task expired |
 | T-113 | Paid after the hearing passed (late callback) | submitted and expired in one transaction |
@@ -1740,7 +1809,8 @@ action), S-other (another courtroom); a scheduled hearing on day D+9.
 | T-122 | Query count for a page of 50 applications | constant (batched summaries) |
 | T-123 | Isolation | `apps.cases`, `apps.workflows`, `apps.payments`, `apps.esign`, `apps.hearings`, `apps.orders` do not import `apps.applications` |
 | T-124 | Every endpoint | `meta` envelope; every code of #15.6 asserted by `code` and `field`; read-only fields ignored on write; Swagger lists the codes |
-| T-125 | Transition log | one append-only row per status change and date move; `save()` on an existing row refused |
+| T-125 | Transition log | one append-only row per status change, date move and workflow attempt; `save()` on an existing row refused; signed at, onboarded by, expiry reason and the objection deadline are returned in the detail without columns of their own, in a fixed number of queries |
+| T-128 | `additional_attributes` | with no `AdditionalAttribute` rows, any key refused; with a declared `cis_reference` (character), stored and coerced; ignored when sent in a PATCH by a filer |
 | T-126 | Scheduling | both cron actors registered with `35 18 * * *` in the schedule inventory test ([`0026`](0026-dramatiq-crontab.md) §8.2) |
 | T-127 | System checks | `applications.E001` for an active type with no spec; `applications.W001` for a state with no number format |
 
@@ -1813,6 +1883,10 @@ cd src && python manage.py check
 | 13 | Objection | a field of the application / an application of its own | An application of type Objection, linked one-to-one (PRD) |
 | 14 | Late objections | refuse / accept and flag | The window governs starting one; a started one may finish and is flagged |
 | 15 | Court reading | everyone / courtroom staff, submitted only | Courtroom staff, from submission, never drafts |
+| 16 | Application model | one table per type / one model with typed `data` | One model (#4.2.1) |
+| 17 | Who-and-when columns (signed at, onboarded by, expired at, workflow result) | columns / the transition log | The transition log; columns only for what is filtered, constrained or listed (#4) |
+| 18 | Extension columns | `BaseExtendableModel` for the type fields / type-validated `data` plus `BaseExtendableModel` for deployment extras | Both, each for its own job (#4.2.2) |
+| 19 | Supporting vs attached document | a `kind` column / blank `field_path` | Blank `field_path`; a `kind` column would restate it (#4.3) |
 
 ---
 
