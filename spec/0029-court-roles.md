@@ -1,13 +1,13 @@
-# 0026 — Court Actions, Roles and Assignments (`apps.organizations`)
+# 0029 — Court Actions, Roles and Assignments (`apps.organizations`)
 
 ## Status
 
 Proposed
 
-Depends on PR #179 (`feat/scrutiny`) only for #10.1: `apps.scrutiny` and its
-`SCRUTINY_ESTABLISHMENT_ID` stop-gap are not on `main` yet. Everything else —
-#1–#9, #11 steps 1–3, #10.2 — builds on `main` without it. #10.1 is done after
-PR #179 merges.
+Builds on `main`. `apps.scrutiny` and its `SCRUTINY_ESTABLISHMENT_ID`
+stop-gap are on `main` (PR #179, merged), so #10.1 can be done with the rest;
+the table in #10.1 matches the code as merged. #10.2 still waits on open
+question P-3.
 
 ## References
 
@@ -604,20 +604,20 @@ courtroom choice after login (`REG-36`) and for deciding first actions
 
 ### 10. Consumers and migration path
 
-#### 10.1 `apps.scrutiny` (replaces the stop-gap; after PR #179)
+#### 10.1 `apps.scrutiny` (replaces the stop-gap)
 
-As built in PR #179, every role call goes through `apps/scrutiny/ports.py`
+On `main` (PR #179), every role call goes through `apps/scrutiny/ports.py`
 and `permissions.py`, and the lists are scoped to one establishment through
 `ports.configured_establishment()`.
 
-| Today (PR #179)                                                                                          | Becomes                                                                                                                               |
+| Today (`main`)                                                                                           | Becomes                                                                                                                               |
 | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps.scrutiny.enums.CourtRole`                                                                        | removed; `apps/scrutiny/court_actions.py` declares the `scrutiny.*` and `registration.*` actions (#3.3)                         |
 | `ports.roles_held(user, establishment_id)` — the user's groups, only at `SCRUTINY_ESTABLISHMENT_ID` | `selectors.actions_of(user, establishment_id)`                                                                                      |
 | `require_role(actor, round_, CourtRole.X)` in `services/rounds.py`, `services/flags.py`            | `access.require(actor, actions.<ACTION>, round_.establishment_id, error=errors.ROLE_REQUIRED)`, one action per check                |
 | `selectors.allowed_actions(round_, roles)` — stage × roles, with SCR-11 inline                       | stage × `actions_of`: each is offered when the caller is allowed it at the round's establishment; SCR-11 as in #7                  |
 | `ports.courtrooms(establishment_id)` — falls back to the establishment itself                         | `selectors.courtrooms(establishment_id)`; the fallback goes                                                                         |
-| `ports.configured_establishment()`                                                                     | removed, with the setting, `apps/scrutiny/system_checks.py` (`scrutiny.W001`, `E001`, `E002`), and its env and README entries |
+| `ports.configured_establishment()`                                                                     | removed, with the setting, `apps/scrutiny/system_checks.py` (`scrutiny.W001`, `E001`, `E002`), and its env, CI and README entries; `E09019` (`SCRUTINY_NOT_CONFIGURED`) is no longer raised and stays defined, never reused |
 | `ports.establishment_id(case)`, `ports.set_court(case, courtroom_id)`                                | unchanged here; they change with #10.3                                                                                                |
 
 Until #10.3, a case's establishment for scrutiny is the round's
@@ -670,7 +670,7 @@ migration command.
 1. **Schema:** `court_level`, `CourtRole`, `CourtRoleAction`, `CourtroomAssignment`, `RoleAssignment` and their historical tables.
 2. **Levels and roles:** set levels in admin or through seeding (0025), per environment. Seed `CourtRole` rows from the PRD's §3 table for the state (a `organizations.CourtRole` seeder, natural key `code` + `establishment`). There is no data migration: establishments and titles differ by environment.
 3. **Test users:** on dev and QA, assign roles to the test accounts in admin (or seed them), in place of their group memberships.
-4. **Switch scrutiny** (#10.1) once PR #179 has merged.
+4. **Switch scrutiny** (#10.1).
 5. **Switch registration approval** (#10.2) once P-3 is answered: a data migration in `apps.dristi_requests` moves the approval steps seeded by `dristi_requests/0002_seed_lawyer_bar_update` and `users/0004_seed_registration_request_types` from the `BAR_ID_APPROVER` group to `court_action = "requests.approve_registration"`.
 6. **Stop reading the groups.** Nothing creates them in a migration; any left on an environment are deleted in admin.
 
@@ -758,12 +758,12 @@ This spec:
 - `src/apps/organizations/migrations/` (schema)
 - `src/apps/organizations/tests/` (including the static no-role-check test)
 - The 0025 seeder registry — an `organizations.CourtRole` seeder, once 0025 is built (until then, roles are entered in admin)
-- Scrutiny, after PR #179 (#10.1):
+- Scrutiny (#10.1):
   - `src/apps/scrutiny/court_actions.py` (new), `ports.py`, `enums.py`, `permissions.py`, `selectors.py`, `services/rounds.py`, `services/flags.py`, `views.py`
   - `src/apps/scrutiny/system_checks.py` (removed) and `apps.py`
   - `src/apps/scrutiny/tests/conftest.py`, `factories.py`, `test_establishment.py`, `test_selectors.py`
 - `src/apps/dristi_requests/court_actions.py` (new), `models.py`, `services.py`, and a data migration for the approval steps (#10.2, #11 step 5)
-- `src/config/settings/base.py`, `.env.example`, `.env.prod.example`, `README.md` (removing `SCRUTINY_ESTABLISHMENT_ID`)
+- `src/config/settings/base.py`, `src/config/settings/test.py`, `.env.example`, `.env.prod.example`, `.env.ci`, `.github/workflows/ci.yml`, `README.md`, the comment in `src/apps/scrutiny/errors.py`, and `spec/0024-scrutiny.md` (removing `SCRUTINY_ESTABLISHMENT_ID`)
 - `spec/0008-organization.md` (out-of-scope note points here)
 
 ## Related specs
