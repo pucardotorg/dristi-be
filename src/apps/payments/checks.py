@@ -11,7 +11,7 @@ from django.core.checks import Error, register
 
 from . import conf
 from .providers import registry
-from .providers.base import ProviderNotConfigured
+from .providers.base import ConfirmationMode, PaymentProvider, ProviderNotConfigured
 
 POSITIVE_INT_SETTINGS = (
     "PAYMENT_STATUS_POLL_INTERVAL_SECONDS",
@@ -48,7 +48,7 @@ def check_payment_settings(app_configs, **kwargs):
     providers = conf.providers()
     for name in providers:
         try:
-            registry.get(name)
+            adapter = registry.get(name)
         except ProviderNotConfigured as exc:
             messages.append(
                 Error(
@@ -58,6 +58,8 @@ def check_payment_settings(app_configs, **kwargs):
                     id="payments.E002",
                 )
             )
+            continue
+        messages.extend(_check_attested_provider(name, adapter))
 
     default = conf.default_provider()
     if default and default not in providers:
@@ -65,6 +67,25 @@ def check_payment_settings(app_configs, **kwargs):
             Error(
                 f"PAYMENT_DEFAULT_PROVIDER {default!r} is not a key of PAYMENT_PROVIDERS.",
                 id="payments.E003",
+            )
+        )
+
+    selectable = conf.selectable_providers()
+    for name in selectable:
+        if name not in providers:
+            messages.append(
+                Error(
+                    f"PAYMENT_SELECTABLE_PROVIDERS names {name!r}, which is not a key of "
+                    "PAYMENT_PROVIDERS.",
+                    id="payments.E008",
+                )
+            )
+    if selectable and default and default not in selectable:
+        messages.append(
+            Error(
+                f"PAYMENT_SELECTABLE_PROVIDERS must include PAYMENT_DEFAULT_PROVIDER {default!r}.",
+                hint="A payer who names no provider gets the default; it must be selectable.",
+                id="payments.E009",
             )
         )
 
@@ -113,3 +134,27 @@ def check_payment_settings(app_configs, **kwargs):
             )
 
     return messages
+
+
+def _check_attested_provider(name: str, adapter: PaymentProvider) -> list[Error]:
+    """An ``ATTESTED`` provider overrides ``attest`` and offers a method (spec 0032 #4.1)."""
+
+    if adapter.confirmation != ConfirmationMode.ATTESTED:
+        return []
+    overrides = all(
+        getattr(type(adapter), method) is not getattr(PaymentProvider, method)
+        for method in ("attest", "attestation_methods")
+    )
+    try:
+        methods = adapter.attestation_methods() if overrides else []
+    except Exception:  # noqa: BLE001 - report a broken provider, never crash the checks
+        methods = []
+    if overrides and methods:
+        return []
+    return [
+        Error(
+            f"Payment provider {name!r} is ATTESTED but does not override attest() and "
+            "attestation_methods(), or offers no collection method.",
+            id="payments.E010",
+        )
+    ]

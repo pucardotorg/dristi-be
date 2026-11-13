@@ -88,7 +88,7 @@ a built-in mock provider.
 * Netting against fees already paid and recalculation on resubmission — the raising module computes the balance and raises a demand for it.
 * Deciding whether a charge is payable, by whom, or by when.
 * Refunds, reversals, settlement, reconciliation with bank statements, and receipts.
-* Offline/cash counter collection in this iteration.
+* Offline/cash counter collection in this iteration — now provided by the offline payment addon, [0032](0032-addon-offline-payment.md).
 * Accounting ledgers, chart of accounts, heads of account and treasury posting.
 * Multi-currency conversion. A demand is single-currency, defaulting to `INR`.
 * Partial payment of a single demand item. Each item is paid in full by one payment.
@@ -638,6 +638,9 @@ This module owns the provider **contract** and everything around it that is not
 specific to one gateway. An addon implements the contract and nothing else, so
 a provider can be added, replaced or removed by configuration alone. The first
 concrete provider is e-GRAS ([`0022`](0022-addon-egras-payment-gateway.md)).
+[`0032`](0032-addon-offline-payment.md) amends this contract with "attested"
+providers completed by authorised staff (`ConfirmationMode`, `attest`), several
+payer-selectable providers, and ships the offline (counter) provider on them.
 
 ```text
 addon.<provider>_payment_gateway  ── imports ──>        apps.payments.providers.base
@@ -1286,7 +1289,7 @@ in the addon's own settings block, not here.
 3. Is `organization_id` sufficient scoping, or does a demand need an explicit court/establishment identifier of its own?
 4. Should demands expire — a `due_date` that auto-cancels unpaid items — or is expiry owned by the raising module?
 5. A payment receipt is needed per case, even when a batch is paid in one transaction. Is generating it (via [`0016`](0016-pdf-services.md)) part of this module's completion flow or the raising module's?
-6. How are counter/offline collections recorded: a `COUNTER` payment mode confirmed by a cashier role, or a separate addon?
+6. ~~How are counter/offline collections recorded: a `COUNTER` payment mode confirmed by a cashier role, or a separate addon?~~ Resolved by [0032](0032-addon-offline-payment.md): a separate addon on a generic "attested" provider capability, recorded by staff holding a permission.
 7. Should `notify_payment_completed` publish a generic signal/event, or call a registered per-`reference_type` handler?
 8. Do any charges need tax or component breakup (base + cess) inside a single line item, or is one item per component sufficient?
 9. What is the retention policy for terminal failed payments?
@@ -1346,7 +1349,7 @@ open points.
 * Witness batta and other amounts paid between parties outside the system.
 * Fee schedules, calculation, exemption, waiver and remission.
 * Receipts, challans and accounting/ledger posting.
-* Offline/cash counter collection in this iteration.
+* Offline/cash counter collection in this iteration — now provided by the offline payment addon, [0032](0032-addon-offline-payment.md).
 * Multi-currency demands and currency conversion.
 * Partial payment of a single demand item.
 * Payment reminders, dunning and auto-expiry of demands.

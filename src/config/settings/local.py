@@ -16,6 +16,7 @@ from .base import (  # noqa: E402,F401
     MESSAGING_BACKENDS,
     MIDDLEWARE,
     PAYMENT_REGISTERED_PROVIDERS,
+    PAYMENT_SELECTABLE_PROVIDERS,
     REST_FRAMEWORK,
     STORAGES,
     env,
@@ -59,12 +60,22 @@ ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockES
 # PAYMENT_DEFAULT_PROVIDER=egras in .env (and the EGRAS_* block), or keep it
 # registered after switching back with PAYMENT_REGISTERED_PROVIDERS=egras; the
 # addon's system checks then require a full EGRAS_* config.
+# The offline addon (spec 0032) is registered the same way when it is the
+# default, registered or in PAYMENT_SELECTABLE_PROVIDERS.
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="mock")
-if "egras" in (PAYMENT_DEFAULT_PROVIDER, *PAYMENT_REGISTERED_PROVIDERS):
-    PAYMENT_PROVIDERS = {
-        "mock": "apps.payments.providers.mock.MockPaymentProvider",
-        "egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider",
-    }
+_LOCAL_ADDON_PROVIDERS = {
+    "egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider",
+    "offline": "addon.offline_payment.provider.OfflinePaymentProvider",
+}
+_wanted_providers = {
+    PAYMENT_DEFAULT_PROVIDER,
+    *PAYMENT_REGISTERED_PROVIDERS,
+    *PAYMENT_SELECTABLE_PROVIDERS,
+}
+PAYMENT_PROVIDERS = {
+    "mock": "apps.payments.providers.mock.MockPaymentProvider",
+    **{name: path for name, path in _LOCAL_ADDON_PROVIDERS.items() if name in _wanted_providers},
+}
 PAYMENT_MOCK_CALLBACK_BASE_URL = env(
     "PAYMENT_MOCK_CALLBACK_BASE_URL", default="http://localhost:8000"
 )

@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "apps.esign",
     "addon.cdac_esign",
     "addon.egras_payment_gateway",
+    "addon.offline_payment",
 ]
 
 MIDDLEWARE = [
@@ -582,6 +583,15 @@ PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="")
 PAYMENT_REGISTERED_PROVIDERS = [
     name.strip() for name in env.list("PAYMENT_REGISTERED_PROVIDERS", default=[]) if name.strip()
 ]
+# Ordered names a payer may choose for a NEW payment (spec 0032 #4.2); empty
+# means "the default only". The environment modules register every name here.
+PAYMENT_SELECTABLE_PROVIDERS = [
+    name.strip() for name in env.list("PAYMENT_SELECTABLE_PROVIDERS", default=[]) if name.strip()
+]
+# Per-user rate of failed collection-desk lookups (spec 0032 #15); blank disables it.
+PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE = env(
+    "PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE", default="120/min"
+)
 PAYMENT_DEFAULT_CURRENCY = env("PAYMENT_DEFAULT_CURRENCY", default="INR")
 # Where the provider callback sends the browser. Server-side only: taking it
 # from the request would make the public callback an open redirect.
@@ -662,6 +672,40 @@ EGRAS_VERIFY_SSL = env.bool("EGRAS_VERIFY_SSL", default=True)
 EGRAS_PENDING_HORIZON = env.int("EGRAS_PENDING_HORIZON", default=9)
 EGRAS_NOT_FOUND_GRACE = env.int("EGRAS_NOT_FOUND_GRACE", default=2)
 EGRAS_ENABLED = env.bool("EGRAS_ENABLED", default=True)
+
+
+# ---------------------------------------------------------------------------
+# Offline payment provider addon (addon.offline_payment, spec 0032 #13)
+# ---------------------------------------------------------------------------
+# Remove this block, the INSTALLED_APPS entry, and PAYMENT_PROVIDERS["offline"]
+# (plus "offline" in PAYMENT_SELECTABLE_PROVIDERS) to remove the integration;
+# apps.payments keeps working on the other providers. The addon's system checks
+# run only when "offline" is in PAYMENT_PROVIDERS.
+OFFLINE_PAYMENT_ENABLED = env.bool("OFFLINE_PAYMENT_ENABLED", default=True)
+OFFLINE_PAYMENT_LABEL = env("OFFLINE_PAYMENT_LABEL", default="Pay at the court counter")
+OFFLINE_PAYMENT_REFERENCE_PREFIX = env("OFFLINE_PAYMENT_REFERENCE_PREFIX", default="OFL")
+OFFLINE_PAYMENT_VALIDITY_DAYS = env.int("OFFLINE_PAYMENT_VALIDITY_DAYS", default=7)
+OFFLINE_PAYMENT_RECORDING_GRACE_HOURS = env.int("OFFLINE_PAYMENT_RECORDING_GRACE_HOURS", default=24)
+# Subset of CASH, DEMAND_DRAFT, POS.
+OFFLINE_PAYMENT_METHODS = env.list("OFFLINE_PAYMENT_METHODS", default=["CASH", "DEMAND_DRAFT"])
+# JSON list of {code, label, address, hours}.
+OFFLINE_PAYMENT_COUNTERS = env.json("OFFLINE_PAYMENT_COUNTERS", default=[])
+OFFLINE_PAYMENT_DEFAULT_COUNTER = env("OFFLINE_PAYMENT_DEFAULT_COUNTER", default="")
+OFFLINE_PAYMENT_INSTRUCTIONS = env(
+    "OFFLINE_PAYMENT_INSTRUCTIONS",
+    default="Quote the payment reference at the counter and keep the receipt.",
+)
+# In whose favour a demand draft is drawn; required when DEMAND_DRAFT is enabled.
+OFFLINE_PAYMENT_PAYABLE_TO = env("OFFLINE_PAYMENT_PAYABLE_TO", default="")
+# Decimal caps; empty means no cap.
+OFFLINE_PAYMENT_MAX_AMOUNT = env("OFFLINE_PAYMENT_MAX_AMOUNT", default="")
+OFFLINE_PAYMENT_CASH_MAX_AMOUNT = env("OFFLINE_PAYMENT_CASH_MAX_AMOUNT", default="")
+# ChargeType values offline may collect; empty allows all.
+OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES = env.list("OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES", default=[])
+OFFLINE_PAYMENT_RECEIPT_PATTERN = env(
+    "OFFLINE_PAYMENT_RECEIPT_PATTERN", default=r"^[A-Z0-9][A-Z0-9/-]{0,63}$"
+)
+OFFLINE_PAYMENT_DD_MAX_AGE_DAYS = env.int("OFFLINE_PAYMENT_DD_MAX_AGE_DAYS", default=90)
 
 
 # ---------------------------------------------------------------------------
@@ -750,6 +794,11 @@ LOGGING = {
             "propagate": False,
         },
         "addon.egras_payment_gateway": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "addon.offline_payment": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

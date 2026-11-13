@@ -68,7 +68,7 @@ def test_every_payments_code_is_declared_on_an_endpoint():
     schema = SchemaGenerator().get_schema(request=None, public=True)
     text = str(schema["paths"])
     codes = [error.code for error in all_errors() if error.domain == "payments"]
-    assert len(codes) == 22
+    assert len(codes) == 28
     in_process_only = {"E06007", "E06008"}
     missing = [code for code in codes if code not in text and code not in in_process_only]
     assert missing == []
