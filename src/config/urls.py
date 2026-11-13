@@ -28,14 +28,14 @@ urlpatterns = [
         HealthCheckView.as_view(
             # Import-string names (3.21+, and the same in 4.x). Bare classes
             # make 3.24 raise TypeError on every request. apps.api.health hides
-            # database errors from the response and gives each Redis probe its
-            # own time-bounded client.
+            # database errors from the response and gives each probe its own
+            # time-bounded connection.
             checks=[
                 "apps.api.health.Database",
                 # cache_key's non-empty default makes 3.x warn on every
                 # request although the check ignores it. 4.x drops the
                 # field, so remove this override with the 4.x upgrade.
-                ("health_check.Cache", {"cache_key": None}),
+                ("apps.api.health.Cache", {"cache_key": None}),
                 # Redis is the Dramatiq broker.
                 "apps.api.health.RedisHealthCheck",
             ]

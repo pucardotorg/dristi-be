@@ -24,6 +24,8 @@ from apps.payments.providers.base import ActionKind
 from apps.payments.services import PaymentService
 from apps.payments.tests.helpers import item_ids
 
+from .base import RESPONSE_FIELDS, encrypt_pay_res
+
 pytestmark = pytest.mark.django_db
 
 
@@ -98,6 +100,23 @@ def test_callback_verifies_to_success(egras, raise_demand, user):
     assert payment.provider_reference == "1231234"
     assert payment.metadata["provider"]["cin"] == "CIN123"
     assert [i.status for i in payment.demand.items.all()] == [DemandItemStatus.PAID]
+
+
+def test_encrypted_callback_verifies_to_success(egras, raise_demand, user):
+    """The v3.7 encrypted payRes callback decrypts, then verifies as usual (#5.4)."""
+    key = egras  # the fixture returns the response key
+    payment = pay(raise_demand(), user=user).payment
+
+    fields = {**RESPONSE_FIELDS, "Applicationnumber": payment.provider_payment_id}
+    pay_res = encrypt_pay_res(fields, key)
+    url = reverse("payments-provider-callback", kwargs={"provider": "egras"})
+    with mock_verify(grn_xml()):
+        response = APIClient(enforce_csrf_checks=True).post(url, {"payRes": pay_res})
+        assert redirect_status(response) == PaymentStatus.SUCCESS
+
+    payment.refresh_from_db()
+    assert payment.status == PaymentStatus.SUCCESS
+    assert payment.provider_reference == "1231234"
 
 
 def test_forged_success_callback_stays_pending(egras, raise_demand, user):

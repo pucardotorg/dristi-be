@@ -177,20 +177,20 @@ class Institution(BaseModel, BaseAuditableModel):
 
         constraints = [
             models.CheckConstraint(
-                check=Q(entity_type__in=EntityType.values),
+                condition=Q(entity_type__in=EntityType.values),
                 name="parties_institution_entity_type_valid",
             ),
             models.CheckConstraint(
-                check=Q(contact_number__isnull=True)
+                condition=Q(contact_number__isnull=True)
                 | Q(contact_number__regex=CONTACT_NUMBER_REGEX),
                 name="parties_institution_contact_number_valid",
             ),
             models.CheckConstraint(
-                check=Q(pan__isnull=True) | Q(pan__regex=PAN_REGEX),
+                condition=Q(pan__isnull=True) | Q(pan__regex=PAN_REGEX),
                 name="parties_institution_pan_valid",
             ),
             models.CheckConstraint(
-                check=Q(cin__isnull=True) | Q(cin__regex=CIN_REGEX),
+                condition=Q(cin__isnull=True) | Q(cin__regex=CIN_REGEX),
                 name="parties_institution_cin_valid",
             ),
         ]
@@ -296,15 +296,15 @@ class Person(BaseModel, BaseAuditableModel):
         verbose_name_plural = "people"
         constraints = [
             models.CheckConstraint(
-                check=Q(phone_number__isnull=True) | Q(phone_number__regex=PHONE_NUMBER_REGEX),
+                condition=Q(phone_number__isnull=True) | Q(phone_number__regex=PHONE_NUMBER_REGEX),
                 name="parties_person_phone_number_valid",
             ),
             models.CheckConstraint(
-                check=Q(verification_level__in=VerificationLevel.values),
+                condition=Q(verification_level__in=VerificationLevel.values),
                 name="parties_person_verification_level_valid",
             ),
             models.CheckConstraint(
-                check=Q(age__isnull=True) | Q(age__lte=MAX_AGE),
+                condition=Q(age__isnull=True) | Q(age__lte=MAX_AGE),
                 name="parties_person_age_valid",
             ),
         ]

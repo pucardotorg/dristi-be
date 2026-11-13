@@ -82,7 +82,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="institution",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("pan__isnull", True),
                     ("pan__regex", "^[A-Z]{5}[0-9]{4}[A-Z]$"),
                     _connector="OR",
@@ -93,7 +93,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="institution",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("cin__isnull", True),
                     ("cin__regex", "^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$"),
                     _connector="OR",

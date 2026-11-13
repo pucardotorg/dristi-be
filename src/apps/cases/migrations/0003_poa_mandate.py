@@ -184,7 +184,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="poamandate",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("poa_participant", models.F("represented_participant")), _negated=True
                 ),
                 name="cases_poa_mandate_not_self",

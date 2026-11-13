@@ -105,6 +105,7 @@ Natural keys below are taken from the current models.
 | `core.BusinessRule` | `code` | — | — | `code` uppercase snake_case. |
 | `core.Configuration` | `(config_set, config_key)` | — | — | Composite key; both normalized by the model. `config_value` is coerced to its stored type (see below). |
 | `core.Language` | `code` | — | — | Added by spec 0030; `supports` is a list of capabilities. |
+| `core.PublicConfiguration` | `(config_set, config_key)` | — | — | Public counterpart of `core.Configuration` (spec 0031). `config_key` is globally unique; `config_value` is coerced to text. |
 | `cms.PageCategory` | `slug` | — | — | `name` also unique. |
 | `cms.Page` | `slug` | `category` → PageCategory.slug | — | Slug lowercased by the model. |
 
@@ -173,7 +174,7 @@ Per file and as a run total: `created`, `unchanged` (already present), `skipped`
 ## Rollout
 
 1. Engine + registry + `locations.Location` and `organizations.Organization` seeders (highest-value, exercise FK + M2M + self-reference).
-2. `core.Configuration`, `core.BusinessRule`.
+2. `core.Configuration`, `core.PublicConfiguration` (spec 0031), `core.BusinessRule`.
 3. `cms.PageCategory`, `cms.Page`.
 4. Document the file format and the external-data-repo layout in `docs/development.md`.
 

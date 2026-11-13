@@ -1,14 +1,63 @@
 """Shared fixtures for the e-GRAS payment gateway addon tests."""
 
+import base64
+import json
+import os
+import tempfile
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.test import override_settings
 
-from addon.egras_payment_gateway import constants
+from addon.egras_payment_gateway import constants, response_crypto
 from addon.egras_payment_gateway.config import BankOption, EGRASConfig
 from apps.payments.providers.base import ChargeLine, InitiationRequest, Payer
+
+# A decrypted encrypted-callback payload (spec 0022 #5.4 / SOP Annexure A).
+RESPONSE_FIELDS = {
+    "GRN": "1234567890",
+    "status": "Success",
+    "Applicationnumber": "DR0F9D3A6C1B2E4F5A7B",
+    "CIN": "CIN12345",
+    "tdate": "01/01/2026",
+    "payment_type": "N",
+    "bankcode": "0001509",
+    "amount": "100",
+}
+
+
+def make_response_key() -> bytes:
+    """A valid AES-256 response key."""
+
+    return AESGCM.generate_key(bit_length=256)
+
+
+def write_key_file(key: bytes) -> str:
+    """Write ``key`` to a temporary file and return its path."""
+
+    fd, path = tempfile.mkstemp(suffix=".key")
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(key)
+    return path
+
+
+def encrypt_pay_res(
+    fields: dict, key: bytes, *, add_checksum: bool = True, nonce: bytes = b""
+) -> str:
+    """Build a ``payRes`` blob the way e-GRAS does: base64(nonce || ciphertext+tag)."""
+
+    data = dict(fields)
+    if add_checksum and "checksum" not in data:
+        data["checksum"] = response_crypto.expected_checksum(data)
+    nonce = nonce or os.urandom(response_crypto.NONCE_LENGTH)
+    ciphertext = AESGCM(key).encrypt(nonce, json.dumps(data).encode(), None)
+    return base64.b64encode(nonce + ciphertext).decode()
+
+
+# A shared, valid response key file for the configured-tests (spec 0022 #5.4).
+RESPONSE_KEY_FILE = write_key_file(make_response_key())
 
 # A complete, valid e-GRAS configuration. Individual tests override one value to
 # exercise a single failure mode.
@@ -24,6 +73,7 @@ VALID_SETTINGS = {
     "EGRAS_DTO": "01",
     "EGRAS_STO": "02",
     "EGRAS_DDO": "DDO1",
+    "EGRAS_RESPONSE_KEY_PATH": RESPONSE_KEY_FILE,
     "EGRAS_SCHEME_MAP": {"COURT_FEE": "0030-01-501-01-00"},
     "EGRAS_BANK_OPTIONS": [
         {"code": "SBI", "label": "State Bank of India", "group": "NET_BANKING"},
