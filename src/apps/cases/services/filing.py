@@ -35,9 +35,11 @@ from ..models import (
     CaseEvidence,
     CaseParticipant,
     CaseStatus,
+    ContactType,
     ParticipantRole,
     PoaMandate,
     Representation,
+    has_visible_text,
     scan_type_message,
 )
 from ..serializers import CasePreviewSerializer
@@ -47,7 +49,9 @@ from .case_types import (
     EvidenceType,
     get_config,
     schema_errors,
+    section_errors,
 )
+from .contacts import contacts_of, first, load_contacts
 from .services import (
     PREVIEW_TTL_SECONDS,
     clear_preview_cache,
@@ -112,7 +116,7 @@ def _load_preview(case_id):
         Prefetch(
             "participants",
             queryset=CaseParticipant.objects.active()
-            .select_related("address", "witness")
+            .select_related("witness", "institution", "person__permanent_address")
             .order_by(*PARTICIPANT_ORDERING),
             to_attr="active_participants",
         ),
@@ -143,6 +147,7 @@ def _load_preview(case_id):
             to_attr="active_documents",
         ),
     ).get(pk=case_id)
+    load_contacts(case.active_participants)
     case.detail_sections = get_detail_sections(case)
     return case
 
@@ -184,6 +189,23 @@ def validation_errors(case):
     if not participants.filter(role=ParticipantRole.ACCUSED).exists():
         error("participants.accused", "At least one active accused is required.")
 
+    # Writes already check these; a rule tightened since then is caught here.
+    # Witnesses are optional, but one who is added needs a name or designation;
+    # every other party needs a name. Each party is served at an address: an
+    # individual their own, an institution its own on this case.
+    for participant in load_contacts(participants.order_by(*PARTICIPANT_ORDERING)):
+        field = f"participants.{participant.id}"
+        label = f"{participant.get_role_display()} #{participant.ordinal}"
+        if participant.role != ParticipantRole.WITNESS:
+            if not participant.name_at_filing:
+                error(field, f"{label} has no name.")
+        elif not (participant.name_at_filing or participant.designation_at_filing):
+            error(field, f"{label} has no name or designation.")
+        own, of_institution = contacts_of(participant)
+        served = of_institution if participant.institution_id else own
+        if not first(served, ContactType.ADDRESS):
+            error(field, f"{label} has no address.")
+
     represented = set(
         Representation.objects.active().filter(case=case).values_list("case_participant", flat=True)
     )
@@ -194,6 +216,19 @@ def validation_errors(case):
                 f"Complainant #{complainant.ordinal} has no advocate and is not marked "
                 "as party-in-person.",
             )
+        if complainant.is_party_in_person and not has_visible_text(
+            complainant.party_in_person_affidavit
+        ):
+            error(
+                f"participants.{complainant.id}",
+                f"Complainant #{complainant.ordinal} appears in person but has no "
+                "party-in-person affidavit.",
+            )
+
+    # Writes refuse empty editor output; this also catches what reached the
+    # database another way (the admin, a shell).
+    if not has_visible_text(case.affidavit):
+        error("affidavit", "The affidavit is required.")
 
     documents = list(
         CaseDocument.objects.active()
@@ -289,7 +324,7 @@ def validation_errors(case):
 
     # An unsaved section is still ``{}``, which fails its required fields here.
     for section, data in get_detail_sections(case).items():
-        for problem in schema_errors(config.section_schemas[section], data):
+        for problem in section_errors(config, section, data):
             error(f"details.{section}", str(problem))
     return problems
 

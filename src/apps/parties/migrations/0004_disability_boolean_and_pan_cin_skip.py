@@ -38,19 +38,14 @@ class Migration(migrations.Migration):
             model_name="institution",
             constraint=models.CheckConstraint(
                 check=models.Q(
-                    models.Q(
-                        ("cin__isnull", True),
-                        ("pan__isnull", True),
-                        ("pan_cin_skip_declared", True),
-                    ),
-                    models.Q(
-                        ("pan_cin_skip_declared", False),
-                        models.Q(("pan__isnull", False), ("cin__isnull", False), _connector="OR"),
-                    ),
+                    ("pan_cin_skip_declared", False),
+                    models.Q(("cin__isnull", True), ("pan__isnull", True)),
                     _connector="OR",
                 ),
-                name="parties_institution_pan_cin_or_skip_declared",
-                violation_error_message="Enter a PAN or a CIN, or declare that neither is given.",
+                name="parties_institution_skip_declared_without_pan_cin",
+                violation_error_message=(
+                    "Leave the PAN and CIN out when declaring that neither is given."
+                ),
             ),
         ),
     ]

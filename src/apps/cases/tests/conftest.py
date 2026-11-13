@@ -118,22 +118,22 @@ CHEQUE_INFO = {
     "ifsc_code": "SBIN0001234",
     "bank_name": "State Bank of India",
     "bank_branch": "MG Road",
+    "bank_account_number": "30012345678",
 }
 
 RETURN_MEMO_INFO = {
     "presentation_date": "2024-01-18",
     "return_date": "2024-01-22",
-    "return_reason": "Funds insufficient",
+    "return_reason": "FUNDS_INSUFFICIENT",
 }
 
 DEMAND_NOTICE_INFO = {
-    "nature_of_debt": "Loan",
-    "cheque_issue_reason": "Repayment of loan",
+    "nature_of_debt": "LOAN_OR_ADVANCE_REPAYMENT",
     "dispatch_date": "2024-02-01",
-    "mode_of_service": "Registered post",
+    "mode_of_service": "REGISTERED_POST",
     "tracking_number": "RR123456789IN",
     "is_delivered": True,
     "delivery_date": "2024-02-05",
     "accused_replied": False,
-    "payment_status": "No payment",
+    "payment_status": "NO_PAYMENT_MADE",
 }

@@ -7,6 +7,7 @@ from apps.core.mixins import AuditUserAdminMixin
 
 from .models import (
     Case,
+    CaseContact,
     CaseDocument,
     CaseEvidence,
     CaseParticipant,
@@ -34,8 +35,19 @@ class CaseParticipantAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
 
     list_display = ("case", "role", "ordinal", "name_at_filing", "is_active", "created_at")
     list_filter = ("role", "is_active", "is_party_in_person", "has_signed")
-    search_fields = ("case__id", "case__filing_number", "name_at_filing", "phone_number_at_filing")
-    raw_id_fields = ("case", "person", "institution", "address")
+    search_fields = ("case__id", "case__filing_number", "name_at_filing")
+    raw_id_fields = ("case", "person", "institution")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(CaseContact)
+class CaseContactAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
+    """Admin configuration for the mobile numbers, emails and addresses of a case's parties."""
+
+    list_display = ("case", "contact_type", "ordinal", "value", "is_active", "created_at")
+    list_filter = ("contact_type", "is_active")
+    search_fields = ("case__id", "case__filing_number", "value")
+    raw_id_fields = ("case", "case_participant", "institution", "address")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
