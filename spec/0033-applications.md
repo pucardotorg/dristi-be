@@ -618,6 +618,7 @@ template, sequence, active.
 | `decision_date` | `DateField(null=True)` | *Decision Date*: the onboarding date for `NOW`, the chosen date for `ON_DATE`; moved by `ALC-15` |
 | `objections_invited` | `BooleanField(null=True)` | *Objections Invited*; `null` until onboarded |
 | `linked_order_id` | `UUIDField(null=True)` | *Linked Order* — the order that dismissed, accepted or rejected it |
+| `decision` | `CharField(24, choices=Decision, blank=True)` | the court's word for the outcome, from the deciding order item (#11.1): `ALLOWED`, `PARTLY_ALLOWED`, `DISALLOWED`, `DISALLOWED_WITH_COST`, `DISPOSED`; empty until decided. A column because the lists and the record show it beside the status |
 | `workflow_status` | `CharField(16, choices=WorkflowStatus, default=NOT_APPLICABLE)` | `NOT_APPLICABLE`, `PENDING`, `DONE`, `FAILED` — the type's on-acceptance workflow (#12.1); a column so the retry actor and admin can find failures |
 | `version` | `PositiveIntegerField(default=0)` | +1 on every write; the concurrency token (#16.8) |
 
@@ -643,6 +644,7 @@ Constraints:
 * `CheckConstraint`: `status IN (DRAFT, PENDING_SIGNATURE, PENDING_PAYMENT) OR (submitted_at IS NOT NULL AND temporary_identifier IS NOT NULL)` — every status from submission on has both (`ALC-02`).
 * `CheckConstraint`: `status != DISMISSED OR application_number IS NULL` — dismissal comes before onboarding (`ALC-19`).
 * `CheckConstraint`: `status != PENDING_DECISION OR (onboarded_at IS NOT NULL AND decision_date IS NOT NULL)`.
+* `CheckConstraint`: `decision = '' OR status IN (ACCEPTED, REJECTED)`; `status = ACCEPTED` only with `ALLOWED` or `PARTLY_ALLOWED`, `status = REJECTED` only with the other three.
 * `CheckConstraint`: `status IN (DRAFT, PENDING_SIGNATURE) OR signed_file_id != ''` — nothing moves past signature unsigned (`ALC-01`).
 
 Validated in `clean()` (the database cannot see the type's code):
@@ -723,7 +725,9 @@ change status (moving the decision date).
 | --- | --- |
 | `SIGN` | `{"method": "AADHAAR_ESIGN", "esign_transaction_id": "…"}` |
 | `ONBOARD` | `{"mode": "ON_DATE", "decision_date": "2026-11-20", "objections_invited": true}` |
-| `MOVE_DECISION_DATE` | `{"from_date": "2026-11-20", "to_date": "2026-11-27"}` |
+| `DEFER_REVIEW` | `{"from_date": "2026-11-13", "to_date": "2026-11-18"}` |
+| `MOVE_DECISION_DATE` | `{"from_date": "2026-11-20", "to_date": "2026-11-27"}`; listing one taken up *now* adds `{"from_mode": "NOW", "objections_invited": true}` (#11.3) |
+| `ACCEPT` / `REJECT` | `{"decision": "PARTLY_ALLOWED", "run_workflow": false}` |
 | `EXPIRE` | `{"reason": "HEARING_PASSED" \| "HEARING_CANCELLED", "hearing_id": "…"}` |
 | `WORKFLOW_DONE` / `WORKFLOW_FAILED` (no status change) | `{"result": {"witness_ids": ["…"]}}` / `{"error_code": "…", "attempt": 2}` |
 
@@ -790,6 +794,7 @@ Nothing leaves them, and nothing about the application but `workflow_status`
 | `PENDING_PAYMENT` | `PAY` (from `payment_completed`) | anyone on the side | `PENDING_REVIEW`; Objection `SUBMITTED` | #6.8, #6.9 | `ALC-01`, `ALC-02`, `ALC-29` |
 | `PENDING_REVIEW` | `ONBOARD` | `applications.take_on_file` (+ `set_decision_date` for *on a date*) | `PENDING_DECISION` | #9 | `ALC-04`, `ALC-07`–`ALC-09` |
 | `PENDING_REVIEW` | `DISMISS` (handler) | dismissal order triggered | `DISMISSED` | #8.2 | `ALC-19` |
+| `PENDING_REVIEW` | `DEFER_REVIEW` (no status change) | `applications.take_on_file` | `PENDING_REVIEW` | #8.1 | frontend, question 25 |
 | `PENDING_DECISION` | `MOVE_DECISION_DATE` (no status change) | `applications.set_decision_date` | `PENDING_DECISION` | #11.3 | `ALC-15` |
 | `PENDING_DECISION` | `ACCEPT` (handler) | accepting order triggered | `ACCEPTED` | #11.1 | `ALC-08`, `ALC-09`, `ALC-16` |
 | `PENDING_DECISION` | `REJECT` (handler) | rejecting order triggered | `REJECTED` | #11.1 | `ALC-16` |
@@ -1071,7 +1076,23 @@ for as long as it is open, and the status stays `PENDING_REVIEW`:
 * **Onboard** — #9, the usual path.
 * **Dismiss** — opens the order screen with the dismissal added in advance: the client calls `POST /api/v1/orders/` with `preset = {"kind": "APPLICATION", "action": "DISMISS", "application_id": …}` ([`0025`](0025-court-order.md) #5.2).
 
-There is no setting a date at this step (PRD v30).
+There is no setting a date at this step in PRD v30–v36. The frontend
+nevertheless offers **Defer review** (product, 2026-10-08): the onboarder
+moves the *Review application* task to a later sitting day, as often as
+needed, and the screen warns when it has been deferred before. This spec
+supports it as a task re-date, not a status:
+
+```json
+POST /api/v1/applications/{id}/defer-review/
+{ "review_on": "2026-11-18" }
+```
+
+`PENDING_REVIEW`; `applications.take_on_file` (`403 E13017`); `review_on`
+after the business date and a sitting day (`400 E13018`, `field = review_on`).
+`TaskService.reschedule` moves the task; one `DEFER_REVIEW` transition
+records both dates; the status does not change. The court view returns
+`review_deferred: true` once the due date differs from the first. Whether
+the PRD keeps or drops deferral is question 25.
 
 #### 8.2 Dismissal
 
@@ -1191,11 +1212,13 @@ Registered from `AppConfig.ready()` with the [`0025`](0025-court-order.md)
 
 | Item | `unavailable_reason` (`ITM-03`) | `validate_target` (`ITM-04`) | `defaults` (`VAR-02`) | `execute` |
 | --- | --- | --- | --- | --- |
-| `ACCEPT_APPLICATION` (#5) | not `PENDING_DECISION` → `APPLICATION_NOT_ONBOARDED` / `APPLICATION_DECIDED`; a Bail application → `USE_ACCEPTANCE_OF_BAIL` | the target is an application of the order's case | `[Application Number]`, `[Application Type]` | `ACCEPTED`, then the type's workflow (#12) |
-| `REJECT_APPLICATION` (#6) | as above, without the Bail rule | same | same | `REJECTED`; `on_reject` |
+| `ACCEPT_APPLICATION` (#5) | not `PENDING_DECISION` → `APPLICATION_NOT_ONBOARDED` / `APPLICATION_DECIDED`; a Bail application → `USE_ACCEPTANCE_OF_BAIL` | the target is an application of the order's case | `[Application Number]`, `[Application Type]`; `decision = ALLOWED`; `run_workflow = true` when the type has a workflow | `ACCEPTED` with `decision`, then the type's workflow when `run_workflow` (#12) |
+| `REJECT_APPLICATION` (#6) | as above, without the Bail rule | same | same; `decision = DISALLOWED` | `REJECTED` with `decision`; `on_reject` |
 | `ACCEPTANCE_OF_BAIL` (#13) | the target is not a Bail application; not `PENDING_DECISION` | same | `[Application Number]` | `ACCEPTED`; bail bond if the terms ask for one (#12.2) |
 | `DISMISS_APPLICATION` (#26) | not `PENDING_REVIEW` → `APPLICATION_ONBOARDED` / `APPLICATION_DECIDED` | same | `[Application Type]`, `[Party Type]`, `[Party Name]`, `[Filing Date]` | `DISMISSED` (#8.2) |
 
+* **The decision's word.** The accept and reject items carry a `decision` field, so the order data records more than yes or no (owner, 2026-10-16, frontend *Application* item): *Allowed* or *Partly allowed* on Accept; *Disallowed*, *Disallowed with cost* or *Disposed* on Reject. A value from the other item is `INVALID_DECISION` on `values.decision`. *Disallowed with cost* does not raise the cost itself: the order also carries a *Cost* item ([`0025`](0025-court-order.md) #9.3), and `validate(complete=True)` reports `COST_ITEM_REQUIRED` without one. Where *Disposed* belongs (rejected, or an outcome of its own) is question 24.
+* **Running the type's workflow.** Accept carries `run_workflow` (yes or no), asked only when the type has an on-acceptance workflow (#12.2) and defaulting to yes. *Partly allowed* typically answers no: the court allowed part of what was asked, and the workflow would carry out all of it. With no, the application is `ACCEPTED` and `workflow_status = NOT_APPLICABLE`; the court gives effect to the part allowed through the order's other items.
 * `validate(complete=True)` for an accept of Advance / Postpone requires the order to move the application's hearing — its next hearing, or a *Rescheduling of hearing date* item on that hearing — so the hearing is moved by the same order; the problem is `HEARING_MOVE_REQUIRED` on `target_id` (question 5). [`0025`](0025-court-order.md) #9.2 then confirms the move with `reason_code = PARTY_APPLICATION` and `sought_by` = the application's side.
 * The handler problems are in-process codes; the order module surfaces them on its own endpoints (`E11010`).
 * Combination rule 4 of the catalogue (one decision per application per order) is the order module's `ONE_PER_TARGET` rule.
@@ -1224,12 +1247,19 @@ If-Match: 6
 { "decision_date": "2026-11-27" }
 ```
 
-`PENDING_DECISION`, `decision_mode = ON_DATE` (`409 E13019`; the PRD moves
-only a date set under 3b); `applications.set_decision_date` (`403 E13017`);
+`PENDING_DECISION`; `applications.set_decision_date` (`403 E13017`);
 the date passes the rules of #9 and differs from the current one
 (`400 E13018`). In one transaction (`ALC-15`):
 
 1. `decision_date` replaced; the objection deadline follows it, being computed.
+   **Listing one taken up now.** An application onboarded with `NOW` and not yet
+   decided may be listed for a date after all: the same call, with
+   `invite_objections` (default `true`, `ALC-25`), sets `decision_mode = ON_DATE`
+   and `objections_invited`, and opens *File objection* when invited
+   (#10). Onboarding stays done; only when it is decided, and whether the other
+   side may object, change. This is the frontend's *List for a date* (owner,
+   2026-10-08: it lowers the cost of choosing "now"). On an application already
+   `ON_DATE`, `invite_objections` is ignored.
 2. *Decide application* `reschedule`d to the new date — the same task.
 3. *File objection*, when invited: an open task is rescheduled to the new deadline; if it had already expired at the old deadline and the new deadline is in the future, a new task is opened (a closed task does not reopen, pending tasks §3), and the other side is told the new deadline.
 4. Status unchanged; one `MOVE_DECISION_DATE` transition with both dates.
@@ -1319,6 +1349,9 @@ Rules:
 | `linked_order` | `{id, number}`; `APP-19` |
 | `objection_due_by`, `decision_date` | for an application the caller's side may object to |
 | `filed_by_id` | the user in `raised_by`, else `created_by`; what the `filed_by` filter takes |
+| `drafted_by` | `created_by`'s name, when it is not the user in *Raised by* (a clerk's draft) |
+| `waiting_on` | in `PENDING_SIGNATURE`, for a reader in the drafting circle who is not the signer: the *Raised by* user's name, so the row says "Waiting for Adv. … to sign" |
+| `decision` | the court's word (#4.2) for a decided application, beside the status: "Partly allowed" |
 | `actions` | what the caller can do now: `continue`, `sign`, `pay`, `back_to_draft`, `discard`, `file_objection` |
 
 `search` matches either identifier. `filed_by` is a user id; the filter's
@@ -1406,6 +1439,7 @@ the other side never sees it.
 
 * `objection` and `objection_to` are `{id, type, label, status, submitted_at}`, where `label` is the application number, else the temporary identifier for readers allowed to see it, else the type label.
 * `linked_order` is `{id, number, title, signed_at, text}` from `apps.orders.selectors`, so the record shows the order without a second call; `text` is the order's decision passage for that application.
+* `orders` lists every order passed on the application, oldest first — the onboarding order where the state onboards by order (question 26), adjournments of the decision, and the deciding order — each `{id, number, title, signed_at, summary}`, where `summary` says what it did to the application ("Listed for 29 Oct; response by 28 Oct"). Read from the transitions carrying an `order_id` (#4.4). The court opens them beside the application's paper.
 * `workflow_summary` is a sentence for what the type's workflow did on acceptance ("Hearing rescheduled to 4 Dec 2026", "Witness added"), from the latest `WORKFLOW_DONE` transition (#4.4); `null` otherwise.
 * `history` is the transition log (#4.4) as a readable timeline, filtered by reader: the other side sees nothing before onboarding, and court staff nothing before submission.
 * `documents` lists every document with `name`, `file_id` and `is_supporting`, plus the signed application itself first, named after its type (`DSB-23`).
@@ -1432,15 +1466,31 @@ lists themselves are the [`0011`](0011-case-workflows.md) task lists of
 
 #### 14.5 Court queues
 
-The court side has two application queues, *Onboard applications* (open
-`review_application` tasks) and *Decide on applications* (open
-`decide_application` tasks), and three older ones that are views of the same
-records: *Rescheduling request* (Advance / Postpone), *Delay condonation* and
-*Other applications* (every other type). Membership still comes from tasks or
-status, never from a separate queue table. One endpoint serves all of them:
+The court works applications from one **Applications** screen, cut by where
+each application stands and worked like a cause list, today first (frontend,
+owner 2026-10-07; *Onboard applications* and *Decide on applications* now
+redirect to it). Every view is derived from tasks, statuses and live orders,
+never stored:
+
+| `view` | Holds | Order |
+| --- | --- | --- |
+| `onboard` | open `review_application` tasks due today or earlier | due date, then filed |
+| `decide` | open `decide_application` tasks due today or earlier, with no live order deciding them | due date |
+| `signing` | applications with a live order carrying a decision item (`pending_order`, #14.4), drafted or awaiting signature. Signed in Sign orders, not here | order drafted |
+| `upcoming` | either task due after today | due date |
+| `all` | `onboard`, `decide`, `signing` and `upcoming`, each row carrying its `band` | band, then due date |
+| `closed` | `ACCEPTED`, `REJECTED`, `DISMISSED` or `EXPIRED` within config `applications.closed_view_days` (default 30) of the order or expiry | newest first |
+| `archive` | the same, older | newest first |
+
+An application with a live order is in `signing` and in no other working view,
+so the bench does not start a second order on it. The older type-cut queues —
+*Rescheduling request* (Advance / Postpone), *Delay condonation* and *Other
+applications* — are the same records filtered by type, and use the same
+endpoint with `queue`:
 
 ```text
-GET /api/v1/applications/court-queue/?court=&queue=review|decide|rescheduling|delay_condonation|other
+GET /api/v1/applications/court-queue/?court=&view=all|onboard|decide|signing|upcoming|closed|archive
+    &queue=rescheduling|delay_condonation|other
     &type=&side=&stage=&search=&ordering=due_date|submitted_at|-submitted_at|next_hearing|-delay_days&page=
 ```
 
@@ -1449,15 +1499,18 @@ GET /api/v1/applications/court-queue/?court=&queue=review|decide|rescheduling|de
 | `application_id`, `type`, `identifier` (number, else temporary identifier with `is_temporary`) | ✓ | |
 | `case`: `id`, `case_number`, cause title, `stage` (key, label), advocates per side | ✓ | |
 | `side`, `filed_by`, `submitted_at` | ✓ | |
-| `task`: `kind`, `due_date`, `overdue`, `due_today` | review, decide | |
-| `pending_order` (#14.4) | review, decide | |
+| `band` (under `all`), `task`: `kind`, `due_date`, `overdue`, `due_today`, `deferred` (a review back after deferral, #8.1) | open views | |
+| `status_line`: `objection_status` (#14.4), `decision_date`, `decision_mode` | open views | |
+| `pending_order` (#14.4) | `signing` | |
+| `outcome`: `status`, `decision` (#4.2), `linked_order` `{id, number, signed_at}` | `closed`, `archive` | |
 | `hearing`: `date`, `purpose_label`; `proposed_date` | | rescheduling |
 | `delay_days` (`JUR-11`), `delay_reason` | | delay condonation |
 
 * `search` matches the type label, cause title, case number and either identifier.
 * `side` filters on the application's side; `stage` on the case's current stage ([`0011`](0011-case-workflows.md) #3.1).
 * Default ordering: `due_date`, then `submitted_at`, for the two task queues; `-submitted_at` for the rest.
-* `GET /api/v1/applications/court-queue/counts/?court=` returns the open count per queue, for the rail; it reads the same tasks as [`0011`](0011-case-workflows.md) `/tasks/counts/`.
+* `GET /api/v1/applications/court-queue/counts/?court=` returns the count per view and per type-cut queue. Only `onboard` and `decide` are work owed today, so the rail badges those two; the rest are for the view pills. It reads the same tasks as [`0011`](0011-case-workflows.md) `/tasks/counts/`.
+* The response carries `today` (the courtroom's business date, [`0023`](0023-hearings.md) #4), which the screen titles itself with and computes *due today* against.
 * `type` facets: the response carries `facets.type` and `facets.stage` (value, label, count) over the unfiltered queue, so filters offer only what is on it.
 
 ### 15. APIs
@@ -1499,6 +1552,7 @@ using `demand_id`.
 | GET | `/applications/court-queue/counts/` | #14.5 |
 | GET | `/applications/{id}/` | #14.4 |
 | POST | `/applications/{id}/onboard/` | #9 |
+| POST | `/applications/{id}/defer-review/` | #8.1 |
 | POST | `/applications/{id}/decision-date/` | #11.3 |
 
 Dismissal, acceptance and rejection have no endpoint here: they are order
@@ -1600,7 +1654,7 @@ specs.
 | `E13016` | `HEARING_NOT_UPCOMING` | 409 | Advance / Postpone: its hearing has passed, or is no longer the case's next hearing |
 | `E13017` | `COURT_ACTION_REQUIRED` | 403 | the caller is not allowed `applications.take_on_file` / `applications.set_decision_date` at the courtroom |
 | `E13018` | `DECISION_DATE_INVALID` | 400 | *On a date* without a date, or with one not after the business date, not a sitting day, or unchanged; `field = decision_date` |
-| `E13019` | `DECISION_NOT_ON_DATE` | 409 | moving the decision date of an application dealt with *now* |
+| `E13019` | `DECISION_NOT_ON_DATE` | 409 | not raised: an application dealt with *now* can be listed for a date (#11.3). Kept so the number is not reused |
 | `E13020` | `OBJECTION_NOT_INVITED` | 409 | an objection where none was invited, or by someone not on the opposing side |
 | `E13021` | `OBJECTION_WINDOW_CLOSED` | 409 | starting an objection after the deadline (`ALC-13`) |
 | `E13022` | `OBJECTION_TAKEN` | 409 | an objection already exists, drafted outside the caller's circle (`ALC-24`) |
@@ -1616,7 +1670,7 @@ Rules:
 
 * Released codes never change meaning and are never reused ([`0000`](0000-api-coding-spec.md) #9.2).
 * Every endpoint declares its business codes with `error_responses(...)`, with the field where it helps, e.g. `errors.DETAILS_REQUIRED.example(field="details")` ([`0000`](0000-api-coding-spec.md) #10.1).
-* Order item handler problems (`APPLICATION_NOT_ONBOARDED`, `APPLICATION_ONBOARDED`, `APPLICATION_DECIDED`, `USE_ACCEPTANCE_OF_BAIL`, `HEARING_MOVE_REQUIRED`) are in-process codes returned to the order module, which reports them under its own codes.
+* Order item handler problems (`APPLICATION_NOT_ONBOARDED`, `APPLICATION_ONBOARDED`, `APPLICATION_DECIDED`, `USE_ACCEPTANCE_OF_BAIL`, `HEARING_MOVE_REQUIRED`, `INVALID_DECISION`, `COST_ITEM_REQUIRED`) are in-process codes returned to the order module, which reports them under its own codes.
 * `apps.payments`, `apps.esign`, `apps.address` and `apps.pdf` errors pass through unchanged on their own endpoints and nested paths.
 
 ### 16. Cross-cutting
@@ -1702,6 +1756,7 @@ read boundary:
 | `applications` | `suggested_by_stage` | `{}` | JSON, `{stage_key: [type codes]}`; orders the type picker only (#6.2) |
 | `applications` | `reschedule_reasons` | `[]` | JSON list of `{code, label}`; question 10 |
 | `applications` | `details_max_bytes` | `65536` | #3.3.1 |
+| `applications` | `closed_view_days` | `30` | #14.5: how long a decided application stays under Closed before the archive |
 | `applications` | `workflow_max_retries` | `3` | #12.1 |
 | `applications` | `expiry_batch_size` | `500` | #16.6 |
 | `signing` | `methods` | `AADHAAR_ESIGN` | shared with orders (`SGM-05`) |
@@ -1901,7 +1956,7 @@ action), S-other (another courtroom); a scheduled hearing on day D+9.
 | T-103 | Dismissal order triggered after the application was onboarded | run `FAILED` `APPLICATION_NOT_IN_STATUS`; application unchanged; logged |
 | T-104 | Move decision date `ON_DATE` | date, deadline, *Decide* and *File objection* re-dated; status unchanged; transition row with both dates |
 | T-105 | Move after the objection window closed to a later date | a new *File objection* opened; other side notified |
-| T-106 | Move date of a `NOW` application | `409 E13019` |
+| T-106 | List a `NOW` application for a date, with and without `invite_objections` | `ON_DATE`; *Decide application* re-dated; *File objection* opened only when invited; transition metadata `from_mode = NOW`; status unchanged |
 | T-107 | Pending list for the order screen | only `PENDING_REVIEW` and `PENDING_DECISION`, with the right `allowed_order_actions` |
 
 #### 17.8 Expiry (`test_expiry.py`)
@@ -1935,6 +1990,12 @@ action), S-other (another courtroom); a scheduled hearing on day D+9.
 | T-130 | Discard a draft / a Pending Signature application / a Pending Payment one | `204` and gone, sign task removed / `204` / `409 E13001` |
 | T-131 | Court queues | `review` and `decide` follow open tasks; `rescheduling`, `delay_condonation` and `other` split by type; search, side, stage and ordering; facets over the unfiltered queue; counts match the rail |
 | T-132 | Court view with a draft dismissal order on the application | `pending_order` set; detail `history` hides pre-onboarding entries from the other side |
+| T-134 | Court views on a fixed business date | review due today in `onboard`, due tomorrow in `upcoming`; an application with a draft accepting order only in `signing`; a decision 31 days old in `archive`; counts per view; rail counts only `onboard` and `decide` |
+| T-135 | Defer review twice | task re-dated each time, two `DEFER_REVIEW` transitions, status unchanged, `review_deferred = true`; a date that is not a sitting day `400 E13018` on `review_on` |
+| T-136 | Accept with `decision = PARTLY_ALLOWED`, `run_workflow = false`; Reject with `ALLOWED` | `ACCEPTED`, `decision` stored, workflow not run, `workflow_status = NOT_APPLICABLE`; `INVALID_DECISION` on `values.decision` |
+| T-137 | Reject with `DISALLOWED_WITH_COST` and no Cost item on the order | `COST_ITEM_REQUIRED` at *Mark complete*; with one, `REJECTED` and the cost demand raised by the order |
+| T-138 | Detail `orders` after an onboarding, a date move by order and a deciding order | three entries, oldest first, each with its summary |
+| T-139 | Clerk's draft in Pending Signature, read by the clerk and by the advocate | clerk's row: `waiting_on` = the advocate, `drafted_by` = the clerk, no `sign` action; advocate's row: `sign` action, no `waiting_on` |
 | T-133 | Type list for a case at appearance; for a disposed case | `suggested` per `applications.suggested_by_stage`; none for the disposed case; every available type still listed |
 | T-128 | `additional_attributes` | with no `AdditionalAttribute` rows, any key refused; with a declared `cis_reference` (character), stored and coerced; ignored when sent in a PATCH by a filer |
 | T-126 | Scheduling | both cron actors registered with `35 18 * * *` in the schedule inventory test ([`0026`](0026-dramatiq-crontab.md) §8.2) |
@@ -2018,6 +2079,9 @@ cd src && python manage.py check
 
 ## Open questions
 
+Questions 24–26 come from the frontend as of 2026-11-13, which has moved past
+PRD v36 on owner decisions not yet in the PRD.
+
 1. **(`Q-5`, blocking in the PRD)** `case-numbers.md` names the at-onboarding number the "CMP number" and the order PRD once used the opposite pairing. This spec follows `application-lifecycle.md`: temporary identifier at filing, application number at onboarding. Confirm, and update `case-numbers.md`.
 2. Where does the delay condonation application that cognizance accepts come from (#12.3)? Is the system-created, system-onboarded application proposed there right, and does it need an application number?
 3. What is the Edit Litigant Details control's real default — which sides may raise it, and whose details may they edit (#3.5)? The original catalog had it complainant-only.
@@ -2040,4 +2104,7 @@ cd src && python manage.py check
 20. **(`Q-8`)** Does an abandoned hearing (not reached, later rescheduled under 0023) expire its Advance / Postpone application, as this spec assumes (#13)?
 21. The application screens offer *upload a signed copy* beside Aadhaar e-sign. Is it a signing method for applications, in which states, and must the reason be recorded as for the complaint (`SIG-10`)?
 22. The current screens collect, for Advance / Postpone, up to five dates the party is available and whether the other side has agreed, and the court's *Rescheduling request* queue filters on that agreement. PRD v36 has one *Proposed hearing date* and no agreement field. Which is right?
-23. The current Bail form asks the petitioner's father's name and whether sureties are added; PRD v36 asks the type of bail (cash or surety) and the bail amount. This spec follows the PRD; confirm.
+23. ~~The current Bail form asks the petitioner's father's name~~ — resolved: the frontend now follows PRD v36 (type of bail, amount, sureties with parent's name, address, ID proof and proof of solvency), as this spec does.
+24. The frontend's deciding item records the outcome as *Allowed*, *Partly allowed*, *Disallowed*, *Disallowed with cost* or *Disposed*, and asks whether the type's workflow was triggered (#11.1). Is *Disposed* a rejection, a dismissal (as the frontend maps it), or an outcome of its own, and does *Disallowed with cost* need the Cost item on the same order?
+25. The frontend offers **Defer review** at the review gate, repeatable with a warning (#8.1); PRD v30–v36 removed setting a date before onboarding. Keep it?
+26. The frontend now treats **onboarding as an order** (owner, 2026-10-21): an *Application* item on the order answers "onboard?", "decided?", and, if not decided, "does the other party respond, by when?" and "when is it brought forward?"; the application moves when that order is triggered. PRD v36 (`ALC-04`, `ALC-22`) makes onboarding a system action with no order. This spec keeps the PRD's system action (#9) and records every order on the application (#14.3 `orders`) so either reading can be served. If the order route is adopted, onboarding moves into an `APPLICATION` order item handled like #11.1, and `/onboard/` is kept for courts that onboard without an order. Which is it, and does it differ by state?
