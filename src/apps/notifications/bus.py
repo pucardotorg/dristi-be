@@ -73,7 +73,19 @@ class RedisStreamBus(BaseNotificationBus):
     def __init__(self):
         import redis
 
-        self._client = redis.Redis.from_url(settings.NOTIFICATIONS_REDIS_URL, decode_responses=True)
+        # Bound both connect and read. Without a socket timeout a blocking
+        # XREAD on a half-open connection (failover, NAT/LB idle drop, network
+        # partition) never returns: the SSE deadline and degraded paths run
+        # only between reads, so the thread would be stuck for good. The socket
+        # timeout must exceed the XREAD BLOCK interval (the heartbeat) so a
+        # healthy blocking read returns first; a startup check enforces that.
+        self._client = redis.Redis.from_url(
+            settings.NOTIFICATIONS_REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=settings.NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT,
+            socket_timeout=settings.NOTIFICATIONS_REDIS_SOCKET_TIMEOUT,
+            socket_keepalive=True,
+        )
 
     def _key(self, user_id) -> str:
         return f"{settings.NOTIFICATIONS_STREAM_PREFIX}:{user_id}"

@@ -92,6 +92,22 @@ def test_list_returns_only_callers_rows_newest_first(client, user, other_user):
     assert titles == ["second", "first"]
 
 
+def test_unfiltered_list_includes_read_rows(client, user):
+    """Regression: an unfiltered list must not silently drop read rows.
+
+    A missing ``is_read`` query param must not be coerced to ``False`` (the
+    QueryDict/BooleanField HTML-form default), which would return unread only.
+    """
+    unread = make_notification(user, title="unread")
+    read = make_notification(user, title="read")
+    services.mark_read(read, actor=user)
+
+    response = client.get(LIST)
+    assert response.status_code == 200
+    ids = {row["id"] for row in response.json()["results"]}
+    assert ids == {str(unread.id), str(read.id)}
+
+
 def test_retrieve_serializer_fields_and_no_recipient(client, user):
     notification = make_notification(user, body="b", data={"k": "v"})
     response = client.get(detail_url(notification.id))

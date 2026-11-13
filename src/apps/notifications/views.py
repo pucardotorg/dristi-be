@@ -54,17 +54,25 @@ class NotificationViewSet(APIModelReadOnlyViewSet):
         return Notification.objects.filter(recipient=self.request.user)
 
     def filter_queryset(self, queryset):
-        """Apply the validated list filters (§6.1)."""
+        """Apply the validated list filters (§6.1).
+
+        Each filter is gated on the parameter actually being present in the
+        query string. DRF treats ``request.query_params`` (a ``QueryDict``) as
+        HTML form input, where a missing ``BooleanField`` defaults to ``False``;
+        without the presence check an unfiltered list would silently return
+        unread rows only.
+        """
         if self.action != "list":
             return queryset
-        serializer = NotificationFilterSerializer(data=self.request.query_params)
+        params = self.request.query_params
+        serializer = NotificationFilterSerializer(data=params)
         serializer.is_valid(raise_exception=True)
         filters = serializer.validated_data
-        if "is_read" in filters:
+        if "is_read" in params:
             queryset = queryset.filter(read_at__isnull=not filters["is_read"])
-        if "event_type" in filters:
+        if "event_type" in params:
             queryset = queryset.filter(event_type=filters["event_type"])
-        if "priority" in filters:
+        if "priority" in params:
             queryset = queryset.filter(priority=filters["priority"])
         return queryset
 

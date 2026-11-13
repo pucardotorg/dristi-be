@@ -1,8 +1,10 @@
 """Event bus tests (spec 0031 §11.3)."""
 
+from unittest import mock
+
 import pytest
 
-from apps.notifications.bus import ZERO_ID, InMemoryNotificationBus, compare_ids
+from apps.notifications.bus import ZERO_ID, InMemoryNotificationBus, RedisStreamBus, compare_ids
 
 pytestmark = pytest.mark.django_db
 
@@ -57,3 +59,16 @@ def test_in_memory_respects_maxlen(settings):
     bus.publish("u1", {"n": 3})
     payloads = [p for _id, p in bus.read("u1", ZERO_ID, 0)]
     assert payloads == [{"n": 2}, {"n": 3}]
+
+
+def test_redis_bus_sets_socket_timeouts(settings):
+    """A dead connection must surface via timeouts, not hang a blocking read."""
+    settings.NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT = 5
+    settings.NOTIFICATIONS_REDIS_SOCKET_TIMEOUT = 20
+    with mock.patch("redis.Redis.from_url") as from_url:
+        RedisStreamBus()
+    kwargs = from_url.call_args.kwargs
+    assert kwargs["socket_connect_timeout"] == 5
+    assert kwargs["socket_timeout"] == 20
+    assert kwargs["socket_keepalive"] is True
+    assert kwargs["decode_responses"] is True

@@ -18,6 +18,8 @@ POSITIVE_INT_SETTINGS = (
     "NOTIFICATIONS_SSE_MAX_DURATION_SECONDS",
     "NOTIFICATIONS_SSE_READ_COUNT",
     "NOTIFICATIONS_TASK_TIME_LIMIT",
+    "NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT",
+    "NOTIFICATIONS_REDIS_SOCKET_TIMEOUT",
 )
 
 
@@ -71,6 +73,23 @@ def check_notification_settings(app_configs, **kwargs):
                 "NOTIFICATIONS_SSE_MAX_DURATION_SECONDS must be greater than "
                 "NOTIFICATIONS_SSE_HEARTBEAT_SECONDS.",
                 id="notifications.E005",
+            )
+        )
+
+    socket_timeout = getattr(settings, "NOTIFICATIONS_REDIS_SOCKET_TIMEOUT", None)
+    if (
+        isinstance(heartbeat, int)
+        and isinstance(socket_timeout, int)
+        and not isinstance(heartbeat, bool)
+        and not isinstance(socket_timeout, bool)
+        and socket_timeout <= heartbeat
+    ):
+        messages.append(
+            Error(
+                "NOTIFICATIONS_REDIS_SOCKET_TIMEOUT must be greater than "
+                "NOTIFICATIONS_SSE_HEARTBEAT_SECONDS so a healthy blocking read "
+                "returns before the socket times out.",
+                id="notifications.E006",
             )
         )
 

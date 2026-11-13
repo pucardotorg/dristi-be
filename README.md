@@ -217,6 +217,8 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
 | `NOTIFICATIONS_REDIS_URL` | Redis database for in-app notification streams (spec 0031). Use a database separate from the cache and broker. | `redis://redis:6379/4` |
 | `NOTIFICATIONS_STREAM_PREFIX` | Key prefix for per-user notification streams | `dristi:notifications` |
+| `NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT` | Redis connect timeout (s) for the notification stream client | `5` |
+| `NOTIFICATIONS_REDIS_SOCKET_TIMEOUT` | Redis socket read timeout (s); must exceed `NOTIFICATIONS_SSE_HEARTBEAT_SECONDS` so a healthy blocking read returns first | `20` |
 | `NOTIFICATIONS_STREAM_MAXLEN` | Approx. entries retained per user for `Last-Event-ID` replay | `1000` |
 | `NOTIFICATIONS_STREAM_TTL_SECONDS` | Replay-tail lifetime, refreshed on every publish | `604800` |
 | `NOTIFICATIONS_SSE_HEARTBEAT_SECONDS` | SSE keep-alive interval; stay below proxy idle timeouts | `15` |

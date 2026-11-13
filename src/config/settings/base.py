@@ -527,6 +527,13 @@ NOTIFICATIONS_STREAM_PREFIX = env(
     "NOTIFICATIONS_STREAM_PREFIX",
     default="dristi:notifications",
 )
+# Redis socket timeouts (seconds). The read timeout must exceed the SSE
+# heartbeat so a healthy blocking XREAD returns before the socket times out; a
+# dead connection then raises instead of hanging a stream thread forever.
+NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT = env.int(
+    "NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT", default=5
+)
+NOTIFICATIONS_REDIS_SOCKET_TIMEOUT = env.int("NOTIFICATIONS_REDIS_SOCKET_TIMEOUT", default=20)
 # Approximate number of entries retained per user for Last-Event-ID replay.
 NOTIFICATIONS_STREAM_MAXLEN = env.int("NOTIFICATIONS_STREAM_MAXLEN", default=1000)
 # Replay tail lifetime, refreshed on every publish (7 days by default).
