@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     "apps.cases",
     "apps.scrutiny",
     "apps.payments",
+    "apps.hearings",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
@@ -327,6 +328,16 @@ SPECTACULAR_SETTINGS = {
         "RoundDecisionEnum": "apps.scrutiny.enums.RoundDecision",
         "DemandStatusEnum": "apps.payments.enums.DemandStatus",
         "DemandItemStatusEnum": "apps.payments.enums.DemandItemStatus",
+        "HearingStatusEnum": "apps.hearings.enums.HearingStatus",
+        "RescheduleReasonEnum": "apps.hearings.enums.RescheduleReason",
+        "BulkRescheduleStatusEnum": "apps.hearings.enums.BulkRescheduleStatus",
+        # Hearings also has `mode`, `reason_code` and side fields; scrutiny's
+        # existing names are pinned so they do not change.
+        "HearingModeEnum": "apps.hearings.enums.HearingMode",
+        "BulkModeEnum": "apps.hearings.enums.BulkMode",
+        "HearingSideEnum": "apps.hearings.enums.Side",
+        "ReasonCodeEnum": "apps.scrutiny.enums.DocumentIssue",
+        "ModeEnum": [("MARKED", "MARKED"), ("ALL", "ALL")],
         "PaymentStatusEnum": "apps.payments.enums.PaymentStatus",
         # Otherwise named after the generic `supports` field.
         "LanguageSupportEnum": "apps.core.models.Language.LanguageSupport",
@@ -401,6 +412,8 @@ CACHALOT_ONLY_CACHABLE_APPS = ("locations", "cms")
 CACHALOT_ONLY_CACHABLE_TABLES = (
     "core_configuration",
     "core_businessrule",
+    # Reference table edited in admin (spec 0023 #11.8).
+    "hearings_hearingpurpose",
     "core_language",
 )
 CACHALOT_UNCACHABLE_TABLES = (
