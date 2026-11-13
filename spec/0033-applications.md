@@ -838,6 +838,14 @@ Hand), the editable litigants with their current details (Edit Litigant
 Details), the case's litigants and whether each already has a PoA holder (PoA
 Change). It refuses an unavailable type (`400 E13002`).
 
+The type list of #6.1 returns, per type, `code`, `label`, `description`
+(the one-line UI description of `ApplicationType`) and `suggested`: whether the
+type is among those most often raised at the case's current stage. The
+suggestion only orders the picker; it never removes a type, and is empty for a
+disposed case. Which types are suggested per stage is configuration,
+`applications` / `suggested_by_stage` (JSON, `{stage_key: [type codes]}`, at
+most three per stage).
+
 ```json
 {
   "type": { "code": "BAIL", "label": "Bail", "template_code": "application-bail-bond" },
@@ -900,6 +908,43 @@ DELETE /api/v1/applications/{id}/documents/{doc_id}/
 4. **Render** — `services.rendering` builds the template data (the case header the PRD lists as "the same for every type": court complex, case and filing number, case name, date, parties with their advocates, offence, application title, petitioner, party type, advocate name and bar registration number, the "Dated this" line) plus `spec.render_context(app)` and the sanitised details, renders the type's template in-process through `apps.pdf`, and stores the PDF with `apps.files`: `signing_file_id`. Types with no template use `application-default`, which prints the header, the title and the details (question 8). A render failure is `500` from `apps.pdf` and nothing changes.
 5. `status = PENDING_SIGNATURE`; open *Sign application* for `raised_by` (#16.1); notify them (#16.2).
 
+#### 6.5a Preview
+
+`GET /api/v1/applications/{id}/preview/` — drafting circle, `DRAFT` or
+`PENDING_SIGNATURE`. Returns the application rendered for reading before it
+is signed: in `DRAFT`, a structured preview built from the current values
+with the same template data as #6.5, and no file stored; in
+`PENDING_SIGNATURE`, the stored `signing_file_id`, which is exactly what will
+be signed. It refuses nothing for incompleteness: a draft previews with its
+gaps.
+
+```json
+{
+  "court": "Before the Judicial First Class Magistrate Court-I, Kollam",
+  "case_number": "ST/6/2026",
+  "matter": "In the matter of Prateek Agrawal v. Deepak Choudhary",
+  "title": "Application for bail",
+  "filed_for": "Deepak Choudhary",
+  "facts": [ { "term": "Complainant", "value": "Prateek Agrawal" }, { "term": "Accused counsel", "value": "Adv. Bijini Rejen" } ],
+  "details": "<p>…</p>",
+  "dated": "2026-11-12",
+  "file_id": null,
+  "meta": { "...": "standard envelope" }
+}
+```
+
+The same structure is returned to court staff as `document` in the court view
+(#14.4), from the signed file's render data, so the bench reads the paper
+without opening the PDF.
+
+#### 6.5b Discard a draft
+
+`DELETE /api/v1/applications/{id}/` — drafting circle, `DRAFT` or
+`PENDING_SIGNATURE` only (`409 E13001` otherwise). The application, its
+documents and its *Sign application* task are removed; nothing is kept,
+because nothing was ever filed. Once signed, an application cannot be
+discarded: question 7 asks whether a filed one can be withdrawn.
+
 #### 6.6 Back to draft
 
 `POST /api/v1/applications/{id}/back-to-draft/` — `PENDING_SIGNATURE` only,
@@ -940,6 +985,15 @@ transaction_id=None)`, idempotent:
 `record_signature` takes a signed file and a method and nothing specific to
 e-sign, so mobile OTP, DSC and batch signing (`SGM-01`, `SGM-02`, `SGM-04`,
 `APP-10`) call it when they land.
+
+The current screens also offer **upload a signed copy**: the signer downloads
+the rendered PDF, signs it on paper and uploads the scan, as e-filing allows
+for the complaint (e-filing `SIG-10`). `signing-methods.md` does not list it
+as a method. Where a state enables it (`UPLOAD_SIGNED_COPY` in
+`signing.methods`), `POST /applications/{id}/sign/upload/` (multipart `file`)
+checks the upload as #6.4, stores it, and calls `record_signature` with that
+method; the caller must still be `raised_by` (`E13013`). Otherwise
+`400 E13014` (question 21).
 
 #### 6.8 Payment
 
@@ -1262,10 +1316,15 @@ Rules:
 | `created_at`, `submitted_at` | `APP-14`, `APP-15` |
 | `decision_date` | when onboarded |
 | `has_objection` | for an onboarded application |
-| `linked_order_id` | `APP-19` |
-| `actions` | what the caller can do now: `continue`, `sign`, `pay`, `back_to_draft`, `file_objection` |
+| `linked_order` | `{id, number}`; `APP-19` |
+| `objection_due_by`, `decision_date` | for an application the caller's side may object to |
+| `filed_by_id` | the user in `raised_by`, else `created_by`; what the `filed_by` filter takes |
+| `actions` | what the caller can do now: `continue`, `sign`, `pay`, `back_to_draft`, `discard`, `file_objection` |
 
-`search` matches either identifier. `filed_by` is a user id. Ordering:
+`search` matches either identifier. `filed_by` is a user id; the filter's
+options come from `GET /api/v1/cases/{case_id}/applications/filers/`, the
+people who have raised a visible application on the case, each with their
+name and side, so the filter offers no one with nothing to show. Ordering:
 `-created_at`; `?ordering=submitted_at` too. Case summaries come from one
 batched `get_case_summaries` call.
 
@@ -1289,7 +1348,15 @@ several waiting on the same step collapse into one entry with one action:
 * `CONTINUE_DRAFT` — drafts in the caller's drafting circle.
 * `ADD_SIGNATURE` — `PENDING_SIGNATURE` where the caller is `raised_by`. Signing them together needs DSC or batch signing (`APP-10`); with Aadhaar e-sign they are signed one at a time.
 * `COMPLETE_PAYMENT` — `PENDING_PAYMENT` on the caller's side; `demand_ids` lets the client pay them in one batch (`APP-11`, 0017 #6.2).
-* `FILE_OBJECTION` — applications with an open *File objection* for the caller's side.
+* `FILE_OBJECTION` — applications with an open *File objection* for the caller's side, each with `type`, `application_number`, `objection_due_by` and `decision_date`, so the task can say "due by the end of the 19th; the court decides on the 20th, with or without an objection". Shown only to a drafter on that side.
+
+Groups are formed per step **and per filer** (`APP-09`): two applications
+awaiting signature by different advocates are two entries. Each group carries
+`filed_by` and, for `COMPLETE_PAYMENT`, `amount` per application and `total`,
+from the demands, so a bulk payment lists each line and one total (`APP-11`).
+`bulk_signing_available` says whether the caller can sign the group in one
+action (a DSC or batch signing enabled for them, `APP-10`); when false, the
+client opens the applications one by one.
 
 #### 14.3 Detail
 
@@ -1320,7 +1387,13 @@ several waiting on the same step collapse into one entry with one action:
   "objections_invited": true, "objection_deadline": "2026-11-20T00:00:00+05:30",
   "objection": null,
   "objection_to": null,
-  "linked_order_id": null,
+  "linked_order": null,
+  "workflow_summary": null,
+  "history": [
+    { "at": "2026-11-03T10:12:00+05:30", "action": "CREATE", "actor": { "name": "Clerk to Adv. Bijini Rejen" }, "text": "Draft started" },
+    { "at": "2026-11-04T16:40:00+05:30", "action": "SIGN", "actor": { "name": "Adv. Bijini Rejen" }, "text": "Signed by Adv. Bijini Rejen" },
+    { "at": "2026-11-12T11:02:00+05:30", "action": "ONBOARD", "actor": { "name": "…" }, "text": "Onboarded as CMP/2/2026; to be decided on 20 Nov 2026, objections invited" }
+  ],
   "workflow_status": "NOT_APPLICABLE",
   "allowed_actions": [],
   "version": 6,
@@ -1331,6 +1404,12 @@ several waiting on the same step collapse into one entry with one action:
 The temporary identifier is returned to the filer side and the court only;
 the other side never sees it.
 
+* `objection` and `objection_to` are `{id, type, label, status, submitted_at}`, where `label` is the application number, else the temporary identifier for readers allowed to see it, else the type label.
+* `linked_order` is `{id, number, title, signed_at, text}` from `apps.orders.selectors`, so the record shows the order without a second call; `text` is the order's decision passage for that application.
+* `workflow_summary` is a sentence for what the type's workflow did on acceptance ("Hearing rescheduled to 4 Dec 2026", "Witness added"), from the latest `WORKFLOW_DONE` transition (#4.4); `null` otherwise.
+* `history` is the transition log (#4.4) as a readable timeline, filtered by reader: the other side sees nothing before onboarding, and court staff nothing before submission.
+* `documents` lists every document with `name`, `file_id` and `is_supporting`, plus the signed application itself first, named after its type (`DSB-23`).
+
 #### 14.4 Court view
 
 The same endpoint, for courtroom staff, adds what `ALC-14` and `ALC-23`
@@ -1340,12 +1419,46 @@ require on opening an application:
 * `objection` — the objection application itself, with its details and documents, when one has been submitted; never a draft;
 * `suggested_decision_date` (#9) while `PENDING_REVIEW`;
 * `allowed_actions` — from the status and the caller's actions: `onboard_now`, `onboard_on_date`, `dismiss` (order), `move_decision_date`, `accept`, `reject` (order) (`RLE-07`);
-* `decision_hint` for Warrant by Hand (#12.2).
+* `decision_hint` for Warrant by Hand (#12.2);
+* `case` with `case_number`, cause title and courtroom, and `next_hearing` (`{date, purpose_label}` from `apps.hearings.selectors.next_hearing`), which the onboarding date picker pre-fills from (`ALC-10`);
+* `task` — the open court task on it, `{kind: "REVIEW" | "DECIDE", due_date, overdue}`;
+* `document` — the structured render of #6.5a, for reading beside the PDF;
+* `pending_order` — `{id, status, item}` of a live order carrying a decision item on this application (drafted, sent for signing or signed but not triggered), from `apps.orders.selectors.live_items_targeting`, so the screen shows "Order awaiting signature" and offers to open it rather than starting a second one.
 
 `GET /api/v1/applications/?court={courtroom_id}&status=&type=&decision_date_before=&page=`
 lists submitted applications across the courtroom's cases for staff; work
 lists themselves are the [`0011`](0011-case-workflows.md) task lists of
 #16.1.
+
+#### 14.5 Court queues
+
+The court side has two application queues, *Onboard applications* (open
+`review_application` tasks) and *Decide on applications* (open
+`decide_application` tasks), and three older ones that are views of the same
+records: *Rescheduling request* (Advance / Postpone), *Delay condonation* and
+*Other applications* (every other type). Membership still comes from tasks or
+status, never from a separate queue table. One endpoint serves all of them:
+
+```text
+GET /api/v1/applications/court-queue/?court=&queue=review|decide|rescheduling|delay_condonation|other
+    &type=&side=&stage=&search=&ordering=due_date|submitted_at|-submitted_at|next_hearing|-delay_days&page=
+```
+
+| Column | All queues | Extra by queue |
+| --- | --- | --- |
+| `application_id`, `type`, `identifier` (number, else temporary identifier with `is_temporary`) | ✓ | |
+| `case`: `id`, `case_number`, cause title, `stage` (key, label), advocates per side | ✓ | |
+| `side`, `filed_by`, `submitted_at` | ✓ | |
+| `task`: `kind`, `due_date`, `overdue`, `due_today` | review, decide | |
+| `pending_order` (#14.4) | review, decide | |
+| `hearing`: `date`, `purpose_label`; `proposed_date` | | rescheduling |
+| `delay_days` (`JUR-11`), `delay_reason` | | delay condonation |
+
+* `search` matches the type label, cause title, case number and either identifier.
+* `side` filters on the application's side; `stage` on the case's current stage ([`0011`](0011-case-workflows.md) #3.1).
+* Default ordering: `due_date`, then `submitted_at`, for the two task queues; `-submitted_at` for the rest.
+* `GET /api/v1/applications/court-queue/counts/?court=` returns the open count per queue, for the rail; it reads the same tasks as [`0011`](0011-case-workflows.md) `/tasks/counts/`.
+* `type` facets: the response carries `facets.type` and `facets.stage` (value, label, count) over the unfiltered queue, so filters offer only what is on it.
 
 ### 15. APIs
 
@@ -1368,7 +1481,11 @@ error shape ([`0000`](0000-api-coding-spec.md)).
 | POST | `/applications/{id}/back-to-draft/` | #6.6 |
 | POST | `/applications/{id}/sign/` | #6.7 |
 | POST | `/applications/{id}/sign/confirm/` | #6.7 |
+| POST | `/applications/{id}/sign/upload/` | #6.7, where enabled |
 | POST | `/applications/{id}/objection/` | #10 |
+| GET | `/applications/{id}/preview/` | #6.5a |
+| DELETE | `/applications/{id}/` | #6.5b |
+| GET | `/cases/{case_id}/applications/filers/` | #14.1 |
 
 Payment is made through the [`0017`](0017-orders-management.md) endpoints,
 using `demand_id`.
@@ -1378,6 +1495,8 @@ using `demand_id`.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/applications/?court=` | #14.4 |
+| GET | `/applications/court-queue/` | #14.5 |
+| GET | `/applications/court-queue/counts/` | #14.5 |
 | GET | `/applications/{id}/` | #14.4 |
 | POST | `/applications/{id}/onboard/` | #9 |
 | POST | `/applications/{id}/decision-date/` | #11.3 |
@@ -1447,7 +1566,8 @@ against the calendar, availability and completeness are checked in the
 services under the application lock. Read only: `status`, `side`,
 `created_by`, every identifier, every `*_at` and `*_by`, `signing_file_id`,
 `signed_file_id`, `fee`, `demand_id`, `decision_mode`, `decision_date`,
-`objections_invited`, `objection_deadline`, `linked_order_id`,
+`objections_invited`, `objection_deadline`, `linked_order`, `history`,
+`workflow_summary`, `document`, `pending_order`,
 `workflow_status`, `hearing_id`, `additional_attributes`, `is_supporting`,
 `version`. Computed fields (#4.2) are read from the prefetched transitions.
 
@@ -1579,6 +1699,7 @@ read boundary:
 | `applications.<STATE_CODE>` | `fee.<TYPE_CODE>` | `0` | `Q-11`; amounts not yet known |
 | `applications.<STATE_CODE>` | `temporary_identifier_format`, `temporary_identifier_scope`, `application_number_format`, `application_number_scope` | Kerala as #7; none elsewhere | #7, `Q-13` |
 | `applications` | `edit_litigant_details` | #3.5 | JSON |
+| `applications` | `suggested_by_stage` | `{}` | JSON, `{stage_key: [type codes]}`; orders the type picker only (#6.2) |
 | `applications` | `reschedule_reasons` | `[]` | JSON list of `{code, label}`; question 10 |
 | `applications` | `details_max_bytes` | `65536` | #3.3.1 |
 | `applications` | `workflow_max_retries` | `3` | #12.1 |
@@ -1802,7 +1923,7 @@ action), S-other (another courtroom); a scheduled hearing on day D+9.
 | --- | --- | --- |
 | T-116 | Case list for A1, L1, B1, S-read | each sees exactly the rows of #2.3; counts match |
 | T-117 | Filters `type`, `status`, `filed_by`, `search` by either identifier; pagination | correct rows; standard paginated shape with `meta` |
-| T-118 | Needs attention for A1 with two drafts, two awaiting A1's signature, one unpaid | three groups; `ADD_SIGNATURE` holds two ids |
+| T-118 | Needs attention for A1 with two drafts, two awaiting A1's signature, one unpaid | three groups; `ADD_SIGNATURE` holds two ids; `COMPLETE_PAYMENT` carries per-line amounts and a total; two applications awaiting signatures by different advocates are two groups |
 | T-119 | Court view | `filed_on`, `objection_status`, the objection itself, `suggested_decision_date`, `allowed_actions` by the caller's actions (S-onb vs S-ord) |
 | T-120 | Warrant by Hand court view | `decision_hint` present |
 | T-121 | Someone removed from the case mid-draft | loses read and every action at once |
@@ -1810,6 +1931,11 @@ action), S-other (another courtroom); a scheduled hearing on day D+9.
 | T-123 | Isolation | `apps.cases`, `apps.workflows`, `apps.payments`, `apps.esign`, `apps.hearings`, `apps.orders` do not import `apps.applications` |
 | T-124 | Every endpoint | `meta` envelope; every code of #15.6 asserted by `code` and `field`; read-only fields ignored on write; Swagger lists the codes |
 | T-125 | Transition log | one append-only row per status change, date move and workflow attempt; `save()` on an existing row refused; signed at, onboarded by, expiry reason and the objection deadline are returned in the detail without columns of their own, in a fixed number of queries |
+| T-129 | Preview of a half-filled draft; of an application in Pending Signature | draft: structured render with gaps, no file stored; pending signature: the stored `signing_file_id` |
+| T-130 | Discard a draft / a Pending Signature application / a Pending Payment one | `204` and gone, sign task removed / `204` / `409 E13001` |
+| T-131 | Court queues | `review` and `decide` follow open tasks; `rescheduling`, `delay_condonation` and `other` split by type; search, side, stage and ordering; facets over the unfiltered queue; counts match the rail |
+| T-132 | Court view with a draft dismissal order on the application | `pending_order` set; detail `history` hides pre-onboarding entries from the other side |
+| T-133 | Type list for a case at appearance; for a disposed case | `suggested` per `applications.suggested_by_stage`; none for the disposed case; every available type still listed |
 | T-128 | `additional_attributes` | with no `AdditionalAttribute` rows, any key refused; with a declared `cis_reference` (character), stored and coerced; ignored when sent in a PATCH by a filer |
 | T-126 | Scheduling | both cron actors registered with `35 18 * * *` in the schedule inventory test ([`0026`](0026-dramatiq-crontab.md) §8.2) |
 | T-127 | System checks | `applications.E001` for an active type with no spec; `applications.W001` for a state with no number format |
@@ -1898,7 +2024,7 @@ cd src && python manage.py check
 4. May an objection started before the deadline still be submitted after it (#10)? May an objection be filed once the deadline has passed if the court has not yet decided?
 5. Must an order accepting an Advance / Postpone application also move the hearing (#11.1), or may it accept and leave the date to a later order (the cut `APL-10`)?
 6. `view-case-handover.md` §9.3 has six filing statuses (`completed` among them); the lifecycle has ten. Which labels do parties see for Pending Review, Pending Decision, Dismissed and Submitted?
-7. Can a draft, or an application awaiting signature or payment, be deleted or withdrawn? The original spec's tasks close on "application deleted"; the current PRD is silent.
+7. Can an application awaiting payment, or a filed one, be withdrawn? This spec lets the drafting circle discard a draft or an application awaiting signature (#6.5b), as the original spec's tasks ("closed on application deleted") and the current frontend do; the current PRD is silent.
 8. Warrant by Hand, Absent Application, Reopen Evidence and Objection have no template. Is a default template that prints the header and the details acceptable for signing (#6.5)?
 9. Which request uses `application-for-checkout-request` (checkout of the hearing date)?
 10. What are the options of *Reason for rescheduling* (Advance / Postpone)?
@@ -1912,3 +2038,6 @@ cd src && python manage.py check
 18. How does an incoming PoA holder who is not yet on the case reach it to raise PoA Change? `JOIN-35` gives a PoA holder immediate access in V1; the proper route is itself an application.
 19. Does a Case Withdrawal application count as accepted when the order carries *Withdrawal of case* (#11) on it, without a separate *Accept application* item?
 20. **(`Q-8`)** Does an abandoned hearing (not reached, later rescheduled under 0023) expire its Advance / Postpone application, as this spec assumes (#13)?
+21. The application screens offer *upload a signed copy* beside Aadhaar e-sign. Is it a signing method for applications, in which states, and must the reason be recorded as for the complaint (`SIG-10`)?
+22. The current screens collect, for Advance / Postpone, up to five dates the party is available and whether the other side has agreed, and the court's *Rescheduling request* queue filters on that agreement. PRD v36 has one *Proposed hearing date* and no agreement field. Which is right?
+23. The current Bail form asks the petitioner's father's name and whether sureties are added; PRD v36 asks the type of bail (cash or surety) and the bail amount. This spec follows the PRD; confirm.
