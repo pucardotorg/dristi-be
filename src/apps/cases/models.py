@@ -41,6 +41,10 @@ class CaseStatus(models.TextChoices):
     PENDING_SIGN = "PENDING_SIGN", "Pending sign"
     PENDING_PAYMENT = "PENDING_PAYMENT", "Pending payment"
     UNDER_SCRUTINY = "UNDER_SCRUTINY", "Under scrutiny"
+    # Sent back by scrutiny or registration; the filer corrects it (spec 0024 #5).
+    PENDING_CORRECTION = "PENDING_CORRECTION", "Pending correction"
+    # Forwarded by the Scrutiny officer to the Case registerer (spec 0024 #6).
+    PENDING_REGISTRATION = "PENDING_REGISTRATION", "Pending registration"
     REGISTERED = "REGISTERED", "Registered"
 
 
@@ -97,6 +101,30 @@ class Case(BaseModel, BaseAuditableModel):
 
     def __str__(self):
         return self.case_number or self.filing_number or f"{self.case_type} draft {self.id}"
+
+
+class CaseNumberSeries(BaseModel):
+    """The last number handed out in one case number series (``services.numbering``).
+
+    One row per registration type and year. Registration locks the row, so two
+    cases registered at once in the same series wait for each other instead of
+    both taking the same number.
+    """
+
+    series = models.CharField(max_length=32)
+    year = models.PositiveIntegerField()
+    last_number = models.PositiveIntegerField(default=0)
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        verbose_name_plural = "case number series"
+        constraints = [
+            models.UniqueConstraint(fields=["series", "year"], name="cases_number_series_unique")
+        ]
+
+    def __str__(self):
+        return f"{self.series}/{self.year}: {self.last_number}"
 
 
 class ParticipantRole(models.TextChoices):
@@ -341,12 +369,12 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
         constraints = [
             models.CheckConstraint(
-                check=Q(person__isnull=False) | Q(institution__isnull=False),
+                condition=Q(person__isnull=False) | Q(institution__isnull=False),
                 name="cases_case_participant_person_or_institution",
                 violation_error_message=PERSON_OR_INSTITUTION_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(institution__isnull=True) | Q(role__in=INSTITUTION_ROLES),
+                condition=Q(institution__isnull=True) | Q(role__in=INSTITUTION_ROLES),
                 name="cases_case_participant_institution_role",
                 violation_error_message=INSTITUTION_ROLE_MESSAGE,
                 violation_error_code=case_errors.INSTITUTION_NOT_ALLOWED.code,
@@ -355,7 +383,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 # An accused institution's officer is liable through their role,
                 # so it is recorded; a complainant's representative needs only
                 # authorisation (spec 0020 §4.2).
-                check=Q(person__isnull=True)
+                condition=Q(person__isnull=True)
                 | Q(institution__isnull=True)
                 | ~Q(role=ParticipantRole.ACCUSED)
                 | Q(designation_at_filing__isnull=False),
@@ -383,6 +411,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             ),
             models.CheckConstraint(
                 check=Q(role__in=ParticipantRole.values),
+                condition=Q(role__in=ParticipantRole.values),
                 name="cases_case_participant_role_valid",
                 violation_error_message=ROLE_VALID_MESSAGE,
             ),
@@ -642,7 +671,7 @@ class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):
         verbose_name = "POA mandate"
         constraints = [
             models.CheckConstraint(
-                check=~Q(poa_participant=F("represented_participant")),
+                condition=~Q(poa_participant=F("represented_participant")),
                 name="cases_poa_mandate_not_self",
                 violation_error_message=PARTICIPANT_MANDATE_FOR_SELF_MESSAGE,
                 violation_error_code=case_errors.SELF_REPRESENTATION.code,

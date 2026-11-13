@@ -8,7 +8,7 @@ This document helps AI coding assistants work effectively inside the **Dristi** 
 - **Code style:** [Ruff](https://docs.astral.sh/ruff/) (replaces flake8, black, isort)
 - **Django settings:** split by environment under `src/config/settings/`
   - `local.py` — development, reads `.env`
-  - `test.py` — CI / unit tests, uses SQLite by default
+  - `test.py` — CI / unit tests; CI runs them on PostgreSQL via `DATABASE_URL`, local runs fall back to SQLite
   - `production.py` — production, relies on injected environment variables
 - **Apps:** live under `src/apps/<app>/`. Always use the full Python path (`apps.<app>`) in `INSTALLED_APPS`, imports, and `AppConfig.name`.
 - **Models:** inherit from `apps.core.models.BaseModel` unless you have a strong reason not to.
@@ -108,6 +108,10 @@ Pluggable third-party integrations live under `src/addon/<name>/` rather than
 2. Use the `@actor` decorator from `dramatiq`.
 3. Keep actors idempotent and transactional when possible.
 4. Add a test that enqueues the message using the stub broker (`config.settings.test`).
+5. To run it periodically, add `@cron("...")` from `dramatiq_crontab` above `@actor`
+   (no-argument, idempotent, `max_retries=0`, UTC) and add it to the inventory in
+   `apps/core/tests/test_schedules.py`. To run it once later, use
+   `send_with_options(delay=...)` inside `transaction.on_commit`. See spec 0026 sections 4 and 5.
 
 ## Docker notes
 

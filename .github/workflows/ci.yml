@@ -14,13 +14,31 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
 
+    # Tests run on PostgreSQL, matching production (docker/docker-compose.prod.yml).
+    # The job runs on the runner, not in a container, so the service is reached
+    # through its mapped port on localhost rather than by its service name.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dristi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     defaults:
       run:
         working-directory: ./src
 
     env:
       DJANGO_SETTINGS_MODULE: config.settings.test
-      DATABASE_URL: "sqlite:///:memory:"
+      DATABASE_URL: "postgres://postgres:postgres@localhost:5432/dristi_test"
 
     steps:
       - name: Checkout repository
@@ -48,6 +66,8 @@ jobs:
         run: python manage.py check --fail-level WARNING
         env:
           DJANGO_SETTINGS_MODULE: config.settings.test
+          # Dummy establishment so scrutiny.W001 does not fail the check; tests set their own.
+          SCRUTINY_ESTABLISHMENT_ID: "00000000-0000-0000-0000-000000000001"
 
       - name: Run Django deployment checks (production settings)
         # Dummy production env lives in the committed .env.ci file. The C-DAC
@@ -71,7 +91,7 @@ jobs:
       - name: Upload coverage to Codecov
         # Upload even when tests fail, so the report shows what was covered.
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           # `uses:` steps ignore the job's working-directory, so the path is from the repo root.
           files: src/coverage.xml

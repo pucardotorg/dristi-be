@@ -167,54 +167,23 @@ The admin picks a location's parent with a search box, and an organization's
 jurisdictions never list pincodes, since the table holds tens of thousands of
 them.
 
-They are loaded from India Post's *All India Pincode Directory* CSV
-(data.gov.in), which has one row per post office:
+Pincodes, and the states and districts above them, are seeded from TOML with
+the `seed` command (spec 0025). India Post's *All India Pincode Directory* CSV
+is converted to TOML out-of-band — the converter (which does the de-duplication
+and name matching) and the generated `states.toml`, `districts.toml` and
+`pincodes.toml` live in the `dristi-be-experiments` repo (issue #196):
 
 ```bash
-python manage.py import_pincodes [CSV] \
-    [--create-districts] [--aliases aliases.json] [--update [--overwrite-edits]] [--dry-run] [-v 2]
+python manage.py seed states.toml districts.toml pincodes.toml
 ```
 
-With no `CSV`, the file is read from
-`src/data/pincodes/all_india_pincode_directory.csv` (git- and docker-ignored),
-and `src/data/pincodes/aliases.json` is used when present and no `--aliases`
-is given.
-
 Loading is part of setting up an environment, done once; the repository ships
-no location data. Pincodes go under existing districts. On an empty database,
-`--create-districts` first creates every state and district the CSV names that
-matches nothing: under the one country location (India is created if there is
-none), named as in the CSV (title case when it is in capitals), with generated
-codes such as `IN_KARNATAKA_MYSURU` (shortened with a hash when over 50
-characters). A district or state an admin has deactivated is never created
-again: its pincodes are reported as under a deactivated location and skipped.
-Rows whose state or district is `NA` are skipped. A dry run rolls
-back everything, created states and districts included.
-
-- **Name matching.** Each office's state and district are matched
-  case-insensitively against the `name` or `short_name` of **active** district
-  locations and their states. A name that matches no district, or several, is
-  reported with its office count and skipped. `--aliases` takes a JSON object
-  whose keys are a CSV state, mapped to a state code (for a state the CSV
-  spells differently), or `"<CSV STATE> / <CSV DISTRICT>"`, mapped to a district
-  code. Every alias must name an existing active location, or the import stops.
-- **District choice.** Offices are grouped by the district they matched, so
-  spellings of one district count together. A pincode goes under the matched
-  district with most of its offices; a tie goes to the district with the
-  higher-ranked office (head office, then sub office (`S.O` or `PO`), then
-  branch office), then to the district name. A pincode none of whose offices
-  matched is not placed. `-v 2` lists pincodes that span districts, with
-  their office counts; an admin repoints any wrong one.
-- **Re-import.** An existing pincode keeps its parent; the summary says how many
-  now differ from the CSV (`-v 2` lists them). `--update` repoints them, except
-  pincodes an admin has edited (`updated_by` set), which need
-  `--overwrite-edits` too. Rows the import repoints have `updated_by` cleared.
-  Pincodes in the database but not in the CSV are reported, never removed.
-- **Bad input.** Rows with a malformed pincode or no state or district are
-  counted and reported. A file with no usable rows, a missing column, or a
-  file that is not UTF-8 stops the import with an error, and nothing is saved.
-  A location of another type already holding a `PIN_` code is reported and
-  that pincode skipped.
+no location data. The files load in that order (a district's `parent` is a
+state code, a pincode's `parent` is a district code), each row is matched by
+its `code` and only missing rows are inserted, so re-running is safe. Seeding
+is insert-only: existing rows are never changed, and nothing is deleted. The
+`Location` model's `clean()` still enforces the hierarchy — a pincode's parent
+must be a district — so a malformed row is rejected rather than stored.
 
 ## Example data
 
@@ -239,9 +208,10 @@ A location `code` may include the parent code for readability (e.g. `IN_BR_PATNA
 - `src/apps/locations/urls.py`
 - `src/apps/locations/tests/test_location.py`
 - `src/apps/locations/migrations/0003_location_type_pincode.py`
-- `src/apps/locations/management/commands/import_pincodes.py`
 - `src/apps/locations/admin.py`, `src/apps/organizations/admin.py`
-- `src/apps/locations/tests/test_import_pincodes.py`
+
+Pincodes were originally loaded by a dedicated `import_pincodes` command; it was
+removed in favour of the generic `seed` command (spec 0025, issue #196).
 
 ## Open questions
 

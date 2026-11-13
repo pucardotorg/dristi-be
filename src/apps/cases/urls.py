@@ -112,6 +112,11 @@ urlpatterns = [
         name="case-document-detail",
     ),
     path(
+        "case-documents/<uuid:case_document_id>/replace/",
+        views.CaseDocumentReplaceView.as_view(),
+        name="case-document-replace",
+    ),
+    path(
         "case-evidence/<uuid:case_evidence_id>/",
         views.CaseEvidenceDetailView.as_view(),
         name="case-evidence-detail",

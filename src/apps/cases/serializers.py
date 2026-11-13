@@ -224,6 +224,12 @@ class CaseDocumentUpdateSerializer(PartialUpdateSerializer):
     display_name = serializers.CharField(
         max_length=255, required=False, allow_null=True, allow_blank=True
     )
+class CaseDocumentReplaceSerializer(serializers.Serializer):
+    """Multipart body of POST /case-documents/{id}/replace; the new file keeps the old one's type."""
+
+    file = UploadField()
+
+    validate_file = CaseDocumentUploadSerializer.validate_file
 
 
 class CaseDocumentSerializer(serializers.ModelSerializer):

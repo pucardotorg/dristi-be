@@ -60,7 +60,7 @@ class MessageTemplate(BaseModel, BaseActivatableModel):
                 name="unique_message_key_type",
             ),
             models.CheckConstraint(
-                check=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
+                condition=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
                 name="messagetemplate_message_key_upper_snake",
             ),
         ]
@@ -153,7 +153,7 @@ class MessageLog(BaseModel):
 
         constraints = [
             models.CheckConstraint(
-                check=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
+                condition=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
                 name="messagelog_message_key_upper_snake",
             ),
         ]

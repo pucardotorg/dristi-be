@@ -44,6 +44,7 @@ from .serializers import (
     AdvocateCreateSerializer,
     CaseAffidavitReadSerializer,
     CaseAffidavitSerializer,
+    CaseDocumentReplaceSerializer,
     CaseDocumentSerializer,
     CaseDocumentUpdateSerializer,
     CaseDocumentUploadSerializer,
@@ -222,6 +223,7 @@ class CaseDocumentListView(generics.ListAPIView):
                 errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="document_type"),
                 *DOCUMENT_LINK_ERRORS,
                 errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
@@ -269,11 +271,46 @@ class CaseDocumentDetailView(APIView):
         )
         return Response(CaseDocumentSerializer(document).data)
 
-    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
+    @extend_schema(
+        tags=TAGS,
+        responses={
+            204: None,
+            **error_responses(errors.CASE_NOT_EDITABLE, errors.FIELD_NOT_OPEN_FOR_CORRECTION),
+        },
+    )
     def delete(self, request, case_document_id):
         """Remove a document from its case."""
         services.remove_document(case_document_id, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(tags=TAGS)
+class CaseDocumentReplaceView(APIView):
+    """POST /case-documents/{case_document_id}/replace — upload a new file in its place."""
+
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        tags=TAGS,
+        request=CaseDocumentReplaceSerializer,
+        responses={
+            201: CaseDocumentSerializer,
+            **error_responses(
+                errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION.example(
+                    "Only a flagged document may be replaced."
+                ),
+            ),
+        },
+    )
+    def post(self, request, case_document_id):
+        """Replace a document, keeping its type; its evidence links move to the new one."""
+        serializer = CaseDocumentReplaceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        document = services.replace_document(
+            case_document_id, request.user, serializer.validated_data["file"]
+        )
+        return Response(CaseDocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
 
 @extend_schema(tags=TAGS)
@@ -319,6 +356,7 @@ class CaseDetailsSectionView(APIView):
                 errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="section"),
                 api_errors.INCORRECT_TYPE.example("Expected a JSON object.", field="data"),
                 errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
@@ -390,6 +428,7 @@ class CaseEvidenceListView(generics.ListAPIView):
                 errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="evidence_type"),
                 *SCAN_LINK_ERRORS,
                 errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
@@ -415,6 +454,7 @@ class CaseEvidenceDetailView(APIView):
             **error_responses(
                 *SCAN_LINK_ERRORS,
                 errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
@@ -426,7 +466,13 @@ class CaseEvidenceDetailView(APIView):
         evidence = services.update_evidence(evidence, request.user, **serializer.validated_data)
         return Response(CaseEvidenceSerializer(evidence).data)
 
-    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
+    @extend_schema(
+        tags=TAGS,
+        responses={
+            204: None,
+            **error_responses(errors.CASE_NOT_EDITABLE, errors.FIELD_NOT_OPEN_FOR_CORRECTION),
+        },
+    )
     def delete(self, request, case_evidence_id):
         """Remove evidence from its case."""
         evidence = services.get_evidence(case_evidence_id, request.user)
@@ -464,6 +510,7 @@ class _ParticipantCreateView(APIView):
                     field="person",
                 ),
                 errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
@@ -510,6 +557,7 @@ class WitnessCreateView(APIView):
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.FIELD_NOT_ACCEPTED.example(field="institution"),
                 errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
@@ -588,6 +636,7 @@ class CaseParticipantDetailView(APIView):
                     POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
                 ),
                 errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
@@ -603,7 +652,14 @@ class CaseParticipantDetailView(APIView):
 
     @extend_schema(
         tags=TAGS,
-        responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)},
+        responses={
+            204: None,
+            **error_responses(
+                errors.CALLS_ACTIVE_WITNESS,
+                errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
+            ),
+        },
     )
     def delete(self, request, case_participant_id):
         """Remove the party; the rest of the role is renumbered."""
@@ -638,6 +694,7 @@ class PoaHolderCreateView(APIView):
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.FIELD_NOT_ACCEPTED.example(field="institution"),
                 errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
@@ -683,7 +740,13 @@ class PoaMandateListView(generics.ListAPIView):
 class PoaMandateDetailView(APIView):
     """DELETE /poa-mandates/{poa_mandate_id}."""
 
-    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
+    @extend_schema(
+        tags=TAGS,
+        responses={
+            204: None,
+            **error_responses(errors.CASE_NOT_EDITABLE, errors.FIELD_NOT_OPEN_FOR_CORRECTION),
+        },
+    )
     def delete(self, request, poa_mandate_id):
         """Revoke the mandate; a holder left acting for no one is removed too."""
         mandate = participants.get_mandate(poa_mandate_id, request.user)
@@ -724,6 +787,7 @@ class AdvocateCreateView(APIView):
                     field="client_participant_ids",
                 ),
                 errors.CASE_NOT_EDITABLE,
+                errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
@@ -767,7 +831,13 @@ class RepresentationListView(generics.ListAPIView):
 class RepresentationDetailView(APIView):
     """DELETE /representations/{representation_id}."""
 
-    @extend_schema(tags=TAGS, responses={204: None, **error_responses(errors.CASE_NOT_EDITABLE)})
+    @extend_schema(
+        tags=TAGS,
+        responses={
+            204: None,
+            **error_responses(errors.CASE_NOT_EDITABLE, errors.FIELD_NOT_OPEN_FOR_CORRECTION),
+        },
+    )
     def delete(self, request, representation_id):
         """End the representation; the row is kept."""
         representation = participants.get_representation(representation_id, request.user)

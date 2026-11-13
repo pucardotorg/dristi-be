@@ -5,8 +5,10 @@ The case row and its type-specific detail row are created by the first save
 that carries data, in the same transaction as that data (spec 0021 §9.1).
 
 Every write is refused once the case has left ``DRAFT_IN_PROGRESS``: what the
-court reviews must not change underneath it. Every write also touches the
-case's ``updated_at``, which listings show and concurrent-edit checks use.
+court reviews must not change underneath it. The one exception is a case sent
+back for correction, which takes writes inside the scope the court opened
+(``correction.check_write``). Every write also touches the case's
+``updated_at``, which listings show and concurrent-edit checks use.
 """
 
 import logging
@@ -41,6 +43,9 @@ from ..models import (
     link_type_errors,
 )
 from .case_types import CASE_TYPES, get_config, schema_errors, section_errors
+from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
+from . import correction
+from .case_types import DOCUMENTS_PART, get_config, schema_errors
 
 logger = logging.getLogger(__name__)
 
@@ -263,8 +268,12 @@ def get_or_create_case(case_or_draft_id, user):
 
 
 def ensure_editable(case):
-    """Raise ``CASE_NOT_EDITABLE`` unless the case is still a draft."""
-    if case.status != CaseStatus.DRAFT_IN_PROGRESS:
+    """Raise ``CASE_NOT_EDITABLE`` unless the case is a draft or sent back for correction.
+
+    A case in correction takes only writes inside its scope: each write
+    checks that with ``correction.check_write`` once the case is locked.
+    """
+    if case.status not in (CaseStatus.DRAFT_IN_PROGRESS, CaseStatus.PENDING_CORRECTION):
         raise BusinessError(errors.CASE_NOT_EDITABLE)
 
 
@@ -505,6 +514,53 @@ def remove_document(case_document_id, user):
         document = get_active_case_item(CaseDocument, case_document_id, user)
         deactivate(document, user)
         unlink(document.evidence.active(), "case_document", user)
+    document = get_active_case_item(CaseDocument, case_document_id, user)
+    with editing(document.case, user) as case:
+        correction.check_write(case, user, DOCUMENTS_PART, whole=True)
+        deactivate(document, user)
+        _relink_evidence(document, None, user)
+
+
+def replace_document(case_document_id, user, upload):
+    """File ``upload`` in place of a case document, of the same type; return the new document.
+
+    The old document is soft-deleted, its file kept, and the evidence linked
+    to it is linked to the new one. In correction this is how a flagged
+    document is re-uploaded (spec 0024 #5.2); an unflagged one may be replaced
+    only when the documents section is open.
+    """
+    old = get_active_case_item(CaseDocument, case_document_id, user)
+    ensure_editable(old.case)
+    file_id = _store_file(upload, user, old.case.case_type)
+    try:
+        with editing(old.case, user) as case:
+            # Re-read under the lock: a concurrent write may have removed it.
+            old = get_active_case_item(CaseDocument, case_document_id, user)
+            document = CaseDocument.objects.create(
+                case=case,
+                document_id=file_id,
+                document_type=old.document_type,
+                created_by=user,
+                updated_by=user,
+            )
+            correction.check_replacement(case, user, old, document)
+            deactivate(old, user)
+            _relink_evidence(old, document, user)
+        return document
+    except Exception:
+        documents.discard_documents([file_id])
+        raise
+
+
+def _relink_evidence(old, new, user):
+    """Point the active evidence linked to document ``old`` at ``new`` (None unlinks it).
+
+    One save per row, not ``update()``, so each change is kept in history.
+    """
+    for evidence in old.evidence.active():
+        evidence.case_document = new
+        evidence.updated_by = user
+        evidence.save(update_fields=["case_document", "updated_by", "updated_at"])
 
 
 def _store_file(upload, user, case_type):
@@ -557,12 +613,21 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
     # The case lock serialises ordinal assignment.
     with editing_or_creating(case_or_draft_id, user) as case:
         evidence = CaseEvidence(
+        ordinal = next_ordinal(
+            CaseEvidence.objects.active().filter(case=case, evidence_type=evidence_type)
+        )
+        added = correction.changes(
+            case, evidence_type, {}, evidence_info, index=ordinal - 1, field="evidence_info"
+        )
+        correction.check_write(case, user, evidence_type, added, whole=True, field="evidence_type")
+        if case_document_id is not None:
+            _require_case_document(case, case_document_id)
+
+        evidence = CaseEvidence.objects.create(
             case=case,
             case_document_id=case_document_id,
             evidence_type=evidence_type,
-            ordinal=next_ordinal(
-                CaseEvidence.objects.active().filter(case=case, evidence_type=evidence_type)
-            ),
+            ordinal=ordinal,
             evidence_info=evidence_info,
             created_by=user,
             updated_by=user,
@@ -598,6 +663,10 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
         evidence.updated_by = user
         validated_save(evidence, update_fields=fields, renamed=EVIDENCE_FIELD_NAMES)
     return evidence
+
+
+def _str_or_none(value):
+    return None if value is None else str(value)
 
 
 def remove_evidence(evidence, user):
@@ -655,11 +724,12 @@ def save_details_section(case_or_draft_id, user, section, data):
     with transaction.atomic():
         case = get_or_create_case(case_or_draft_id, user)
         detail = _get_or_create_detail_row(case, user)
+        changed = correction.changes(case, section, getattr(detail, section), data, field="data")
+        correction.check_write(case, user, section, changed)
         setattr(detail, section, data)
         detail.updated_by = user
         detail.save(update_fields=[section, "updated_by", "updated_at"])
-        touch(case, user)
-        return case
+    return case
 
 
 def _get_or_create_detail_row(case, user):

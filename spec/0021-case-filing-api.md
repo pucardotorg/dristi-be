@@ -62,6 +62,8 @@ PLEASE NOTE: This "case number"
 
 Shows the user's earlier filings and lets them create a new draft.
 
+![Start a filing sequence](../docs/sequence-diagrams/0021-case-filing-api/start-a-filing.svg)
+
 ```
 GET  /cases?status=DRAFT_IN_PROGRESS,PENDING_SIGN&created_by=me
 POST /cases
@@ -188,6 +190,8 @@ Once a case is created (after the first data entry), all subsequent endpoints us
 
 Every upload requires a case ID and a `document_type`. Only **case-level documents** use these endpoints. Vakalatnamas and POA documents are uploaded here too, as case documents (§3.4).
 
+![Upload documents sequence](../docs/sequence-diagrams/0021-case-filing-api/upload-documents.svg)
+
 ### 3.1 Upload Document
 
 ```
@@ -313,6 +317,24 @@ create returns 404.
 **Implementation:**
 Soft delete: sets `is_active = false`. The underlying `document` row is not deleted (spec 0017 §8.4). Evidence linked to the document is unlinked (`case_document_id` set to null) in the same transaction, so no evidence points at a document that is no longer part of the case.
 
+### 3.3a Replace Document
+
+```
+POST /case-documents/{case_document_id}/replace
+Content-Type: multipart/form-data
+
+file: <binary>
+```
+
+**Response (201 Created):** the new document, as in §3.1.
+
+Files a new upload in place of the document: a new `CaseDocument` of the same
+`document_type` is created, the old one is soft-deleted (its file kept), and
+the evidence linked to the old one is linked to the new one, in one
+transaction. The upload is checked as in §3.1. This is how a filer re-uploads a
+document the court flagged (spec 0024 #5.2); in correction only a flagged
+document may be replaced, unless the documents section is open (`E07029`).
+
 ### 3.4 Document Type Enum
 
 The `document_type` must be one of:
@@ -350,6 +372,8 @@ endpoint.
 
 Complainants, accused, witnesses and POA holders are all rows in `case_participant` (spec 0020 §4), differing by `role`; witnesses also have a `witness` row (spec 0020 §4.5). Advocates are `representation` rows (spec 0020 §6) and POA authority is `poa_mandate` rows (spec 0020 §5).
 
+![Parties sequence](../docs/sequence-diagrams/0021-case-filing-api/parties.svg)
+
 Adding a party uses a **per-role endpoint** under the case, for frontend clarity (see §9.2). Like documents and evidence, the case id in the path may be a draft session id: adding the first party creates the case (§9.1). Once something exists it is changed by its own id, which is unique across cases, so item endpoints are flat:
 
 ```
@@ -371,7 +395,7 @@ DELETE /poa-mandates/{poa_mandate_id}
 
 **Rules for every party write:**
 - Only the filer (the case's `created_by`) can add, change or remove parties; other users' cases and items return 404.
-- Writes are refused with `409 Conflict` (`E07001`) once the case has left `DRAFT_IN_PROGRESS` (§7).
+- Writes are refused with `409 Conflict` (`E07001`) once the case has left `DRAFT_IN_PROGRESS`, except inside the correction scope of a case sent back (`E07029` outside it, §7).
 - All rows a write creates or changes (person, institution, address, participant, witness, mandate, representation) are saved in one transaction: all of them, or none.
 - Every successful write sets the case's `updated_at` and `updated_by`.
 - Responses never include `created_by` / `updated_by`, nor the stored details of a reused institution (spec 0020 §3.4).
@@ -712,6 +736,8 @@ One POA acting for 2 of 3 complainants = 2 `poa_mandate` rows pointing to the sa
 Revokes the mandate: `is_active = false`, `revoked_at = now()`. Revoking a holder's last active mandate also removes the holder's participant row (§4.1 DELETE), since a POA holder with no one to act for is no longer a party.
 
 ## 5. Step 3: Case Details and Evidence
+
+![Cheque and case details sequence](../docs/sequence-diagrams/0021-case-filing-api/cheque-and-case-details.svg)
 
 ### 5.1 Evidence (Sections 1 & 2: Cheques, Notices)
 
@@ -1225,6 +1251,8 @@ Promote to columns (option b) only if query performance requires it.
 
 ## 6. Preview and Validation
 
+![Preview and submit sequence](../docs/sequence-diagrams/0021-case-filing-api/preview-and-submit.svg)
+
 ### 6.1 Full Assembled Filing
 
 ```
@@ -1428,7 +1456,15 @@ Client calls this before attempting to submit for signing. Invalid cases cannot 
 
 Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle requires additional endpoints.
 
-**Only drafts can be changed.** Every write (uploading or removing a document, adding, changing or removing evidence, saving a details section) is refused with `409 Conflict` and code `E07001` once the case has left `DRAFT_IN_PROGRESS`, so what the court reviews cannot change underneath it. Reads are unaffected. Every successful write also sets the case's `updated_at` (and `updated_by`), which listings show and the concurrent-modification check (§10.4) relies on.
+**Only drafts can be changed.** Every write (uploading, replacing or removing a document, adding, changing or removing evidence or a party, saving a details section) is refused with `409 Conflict` and code `E07001` once the case has left `DRAFT_IN_PROGRESS`, so what the court reviews cannot change underneath it. Reads are unaffected.
+
+**Correction.** A case the court sent back (`PENDING_CORRECTION`, spec 0024 #5) also takes writes, but only inside the correction scope stored on it by `services.correction.open_for_correction`. The case type maps each part of the filing to the court's section code (`correction_sections`: evidence type, details section, participant role, documents, advocates) and each value the court flags on its own to its field id (`correction_fields`: `CHEQUE.amount` → `CHQ-3`, indexed by record as `CHQ-3[0]`). With `mode = ALL` everything is open. With `mode = MARKED`:
+
+- a value may change when its ref is in `fields` or `required`, or its section is in `sections`;
+- adding or removing an item, changing a party, or changing a value with no field id needs its whole section in `sections`; an item may also be added when one of its own values is in `fields` (a return memo the court flagged as missing, `CHQ-8[0]`);
+- a document may be replaced (§3.3a) when it is in `documents` or the documents section is open.
+
+Anything else is refused with `409 Conflict` and `E07029`, on the request field outside the scope (`evidence_info.cheque_number`, `data.other_complaints_pending`). A write that changes nothing passes. Each accepted write marks the scope `changed` and, in the write's transaction, sends `signals.case_field_changed(case_id, field_ref, section, old, new, actor)` once per changed value (`field_ref` is null for a change with no field id) or `signals.case_document_replaced(case_id, old_document_id, new_document_id, actor)`; scrutiny records the filer's answers from them. Once the case returns to `PENDING_SIGN` it is read-only again. Every successful write also sets the case's `updated_at` (and `updated_by`), which listings show and the concurrent-modification check (§10.4) relies on.
 
 **Error codes** (domain `07`, spec 0000 §9). Errors use the standard body; besides the common codes, the case filing endpoints return:
 
@@ -1438,7 +1474,7 @@ Draft creation sets `status = 'DRAFT_IN_PROGRESS'`. Moving through the lifecycle
 | `E07002` | 400 | A document type, evidence type or details section this case's type does not accept (`field` names which). |
 | `E07003` | 400 | `case_document_id` is not an active document of the same case. |
 | `E07004` | 409 | The case is not in the status this step starts from (§7, §8). |
-| `E07005` | 400 | Submit for signing: the filing is incomplete. One error per gap, on its part of the filing (`participants.accused`, `documents.VAKALATNAMA` …), as `POST /validate` lists them (§6.3). |
+| `E07005` | 400 | Submit for signing, or a correction returned to signing (§7): the filing is incomplete. One error per gap, on its part of the filing (`participants.accused`, `documents.VAKALATNAMA` …), as `POST /validate` lists them (§6.3). |
 | `E07006` | 400 | Submit for payment: a signer has not signed. One error per signer, on `participants.<id>`. |
 | `E07007` | 409 | The participant has already signed (§8). |
 | `E07008` | 400 | Only complainants and POA holders sign the filing (§8). |
@@ -1483,6 +1519,7 @@ Each transition validates preconditions and updates `cases.status`:
 - `submit-for-signing`: Requires validation to pass (§6.3)
 - `submit-for-payment`: Requires all participants to have `has_signed = true`
 - `submit-for-scrutiny`: Requires payment confirmation
+- `return_to_signing(case)` (a service, not an endpoint; scrutiny calls it when the filer submits a correction, spec 0024 #5.3): requires `PENDING_CORRECTION` (`E07004` otherwise) and validation to pass again (§6.3, `E07005`), since correction can remove parties, evidence and documents; then moves the case to `PENDING_SIGN` with every signature cleared (§8)
 
 **(b) Delegate to workflow service:**
 Call the existing workflow service (spec 0011) with a transition event. The workflow service owns status changes and enforces state machine rules.
@@ -1519,13 +1556,15 @@ Integration with eSign service (spec 0015) is assumed to happen before this call
 
 The call sets `case_participant.has_signed = true` and stores the file as `case_participant.signature_document_id` (spec 0020 §4), so each signed copy stays linked to the participant who signed it. When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here; the response's `signed_at` is read from it.
 
-Only complainants and POA holders sign; the accused and witnesses never do, so signing one of them is `400` (`E07008`). Signing is accepted only while the case is `PENDING_SIGN` (`409`, `E07004` otherwise), and once per participant (`409`, `E07007`). A document no matching e-sign transaction produced is `400` (`E07009`).
+Only complainants and POA holders sign; the accused and witnesses never do, so signing one of them is `400` (`E07008`). Signing is accepted only while the case is `PENDING_SIGN` (`409`, `E07004` otherwise), and once per participant each time the case is sent for signing (`409`, `E07007`). A document no matching e-sign transaction produced is `400` (`E07009`).
 
 One e-signed document stands for one signer, so a matching transaction is still refused when:
 
 - the document is already recorded as another participant's `signature_document_id` (`400`, `E07026`);
 - the participant's person has a user account and the transaction's `signer` is a different user (`400`, `E07027`); a person without an account is not matched;
-- the transaction's `completed_at` is before the case entered `PENDING_SIGN` (`400`, `E07028`), so a signature of an earlier draft is never accepted.
+- the transaction's `completed_at` is before the case last entered `PENDING_SIGN` (`400`, `E07028`), so a signature of an earlier draft is never accepted.
+
+A corrected case returns to `PENDING_SIGN` through `return_to_signing` (§7), which clears every signature in the same transaction (`has_signed = false`, `signature_document_id = null`; spec 0024 `LIFE-13`, `SIG-07`). Every signer then signs the corrected filing again, and `E07028` refuses an e-signature completed before that return. Clearing signatures is owned here, not by scrutiny: a case is never back in `PENDING_SIGN` with an earlier signature still counted. The earlier e-sign transactions are kept.
 
 When every active complainant and POA holder has `has_signed = true`, the case can advance to `PENDING_PAYMENT`.
 

@@ -2,7 +2,7 @@
 
 A Django-based API project template using:
 
-- **Django 5** + **Django REST Framework** for the API
+- **Django 5.2 LTS** + **Django REST Framework** for the API
 - **Dramatiq** for background jobs (Redis broker)
 - **Redis** for cache and the task queue
 - **PostgreSQL** for the database
@@ -30,7 +30,7 @@ A Django-based API project template using:
    docker compose --env-file .env -f docker/docker-compose.yml up -d --build
    ```
 
-   This starts: PostgreSQL, Redis, Django dev server, Dramatiq workers, Rustfs (S3-compatible storage), MailHog, Adminer, and monitoring dashboards.
+   This starts: PostgreSQL, Redis, Django dev server, Dramatiq workers and scheduler, Rustfs (S3-compatible storage), MailHog, Adminer, and monitoring dashboards.
 
 3. **Create an admin user** (first time only):
 
@@ -80,11 +80,65 @@ make format      # Format code with ruff
 
 Run `make help` to see all available commands.
 
-Pincode pre-fill needs location data, which the repository does not ship: put
-the India Post CSV in `src/data/pincodes/`, then run
-`python manage.py import_pincodes --create-districts` in the `web` container,
-which also creates the states and districts (see
-[src/data/pincodes/README.md](src/data/pincodes/README.md)).
+Pincode pre-fill needs location data, which the repository does not ship. The
+states, districts and pincodes are seeded from TOML with the `seed` command
+(`python manage.py seed states.toml districts.toml pincodes.toml`); the data and
+its CSV-to-TOML converter live in the
+[`dristi-be-experiments`](https://github.com/pucardotorg/dristi-be-experiments)
+repo (see [data/seed/README.md](data/seed/README.md)).
+
+## Scheduled and delayed jobs
+
+Background jobs are Dramatiq actors in `src/apps/<app>/tasks.py`, run by the
+`worker` service. Two kinds of jobs run later rather than now. Both are
+specified in [spec/0026-dramatiq-crontab.md](spec/0026-dramatiq-crontab.md).
+
+**Periodic job (on a timetable).** Add `@cron(...)` from
+[`dramatiq-crontab`](https://github.com/voiio/dramatiq-crontab) on top of the
+actor. A separate `scheduler` service (`python manage.py crontab`) enqueues it
+on each tick, and the worker runs it:
+
+```python
+from dramatiq import actor
+from dramatiq_crontab import cron
+
+
+@cron("*/5 * * * *")  # every 5 minutes, UTC
+@actor(max_retries=0)
+def expire_stale_transactions() -> int: ...
+```
+
+A scheduled actor must:
+
+- live in `<app>/tasks.py` of an installed app;
+- take no arguments;
+- be idempotent and safe to run twice at once;
+- process a bounded batch per run;
+- use `max_retries=0`.
+
+Cron expressions are in UTC, and the day of week must be a name (`Sun`), not a
+number. Schedules are read when the scheduler starts, so restart it after a
+change. See spec 0026 §4 for the full checklist.
+
+**One-off delayed job (for example, "run once, 30 minutes from now").** No
+scheduler is needed. Send a delayed message after the transaction commits:
+
+```python
+from datetime import timedelta
+from functools import partial
+
+from django.db import transaction
+
+transaction.on_commit(
+    partial(my_actor.send_with_options, args=(str(obj.pk),), delay=timedelta(minutes=30))
+)
+```
+
+The message is kept in Redis and runs no earlier than the delay. Delivery is at
+least once, and the delay must be under 7 days. To make the job run exactly
+once, have the actor re-read the row under `select_for_update` and do nothing
+unless the row is still in the state the job was scheduled for. Rescheduling or
+cancelling is done by changing that state. See spec 0026 §5.
 
 ## Pre-commit hooks
 
@@ -179,6 +233,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `OTP_MAX_ATTEMPTS` | Wrong guesses allowed against one OTP before it is destroyed | `5` |
 | `ADVOCATE_SEARCH_THROTTLE_RATE` | Per-user rate of `GET /advocates?search=` (finding an advocate to add to a case); blank disables it | `60/min` |
 | `PASSWORD_RESET_WINDOW_SECONDS` | How long a verified password-reset code allows the new password to be set, in seconds | `600` |
+| `SCRUTINY_ESTABLISHMENT_ID` | Organization id of the one court establishment this deployment scrutinises and registers for. Court roles count only there; empty closes every scrutiny and registration endpoint, and a paid case cannot be submitted for scrutiny (`503 E09019`). | `3f2b…-uuid` |
 | `CDAC_SMS_URL` | CDAC gateway endpoint (required when the CDAC backend is active) | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
 | `CDAC_SMS_USERNAME` | CDAC username | `dristi` |
 | `CDAC_SMS_PASSWORD` | CDAC password; hashed (SHA-1) before transmission, never sent in plaintext | secret |
@@ -238,6 +293,7 @@ The Docker Compose stack includes:
 - **Adminer** - Database management UI
 - **Dramatiq Dashboard** - Background job monitoring
 - **httpbin** - HTTP testing service (for dummy SMS backend)
+| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives | `10485760` |
 | `ESIGN_PROVIDER` | Dotted path of the active eSign provider. The mock provider needs no C-DAC credentials and is the local/CI default. | `addon.cdac_esign.provider.CDACESignProvider` |
 | `ESIGN_ENABLED` | Kill switch; initiation returns 503 when disabled | `True` |
 | `ESIGN_TRANSACTION_TTL` | Seconds a transaction waits for the ESP callback | `900` |
@@ -265,9 +321,73 @@ The Docker Compose stack includes:
 | `CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE` | Verify the response XMLDSig; rejected as `False` in production | `True` |
 | `CDAC_ESIGN_ALLOW_SHA1_RESPONSE` | Also accept RSA-SHA1 / SHA-1 response signatures. C-DAC signs eSign 2.1 responses with SHA-1, so it must be `True` for them to verify | `False` |
 | `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
-| `PDF_SIGNATURE_HASH_ALGORITHM` | Digest the PDF service computes over the signing ByteRange | `SHA256` |
-| `PDF_SIGNATURE_CONTAINER_BYTES` | Bytes reserved for the PKCS#7 signature container | `16384` |
-| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted for in-process signing | `20971520` |
+| `PAYMENT_DEFAULT_PROVIDER` | Name (a key of the `PAYMENT_PROVIDERS` setting) of the provider new payments are started with; empty leaves payments `INITIATED` for an operator. Payments in flight keep their own provider. | `mock` locally, empty in production until a gateway addon ships |
+| `PAYMENT_REGISTERED_PROVIDERS` | Comma-separated provider names kept registered besides the default, so payments still pending at a provider that is no longer the default keep resolving through its callback and poller | empty; `egras` while switching away from e-GRAS |
+| `PAYMENT_DEFAULT_CURRENCY` | Currency a demand is raised in when none is given | `INR` |
+| `PAYMENT_UI_REDIRECT_URL` | Server-side redirect target of the provider callback; `https://` in production | `https://app.example.com/payments/return` |
+| `PAYMENT_CALLBACK_THROTTLE_RATE` | Per-IP throttle for the public callback; blank disables it | `60/min` |
+| `PAYMENT_CALLBACK_MAX_BODY_BYTES` | Largest callback body accepted | `65536` |
+| `PAYMENT_STATUS_POLL_INTERVAL_SECONDS` | First status-poll interval for a pending payment; doubles each poll | `300` |
+| `PAYMENT_STATUS_POLL_MAX_INTERVAL_SECONDS` | Cap of the doubling poll interval | `21600` |
+| `PAYMENT_STATUS_POLL_BATCH_SIZE` | Provider transactions checked per poller run | `200` |
+| `PAYMENT_BATCH_MAX_DEMANDS` | Most demands one cross-demand payment may cover | `50` |
+| `PAYMENT_MOCK_CALLBACK_BASE_URL` | API origin the mock provider's form posts back to (local only) | `http://localhost:8000` |
+
+## Services included
+
+The Docker Compose stack includes:
+
+- **PostgreSQL 16** - Primary database
+- **Redis 7** - Cache and message broker for Dramatiq
+- **Rustfs** - S3-compatible object storage for media files
+- **MailHog** - Email testing (catches all outgoing emails)
+- **Adminer** - Database management UI
+- **Dramatiq Dashboard** - Background job monitoring
+- **httpbin** - HTTP testing service (for dummy SMS backend)
+
+### e-GRAS payment gateway addon (spec 0022)
+
+The e-GRAS addon (`addon.egras_payment_gateway`) is the real payment provider.
+It is enabled from the environment: set `PAYMENT_DEFAULT_PROVIDER=egras` and
+`config.settings.production` (and `config.settings.local`) registers `"egras"`
+in `PAYMENT_PROVIDERS` for you. The addon's system checks require every value
+below only when `"egras"` is a registered provider, so a deployment that is not
+yet onboarded with NIC leaves `PAYMENT_DEFAULT_PROVIDER` empty — no provider is
+registered, the checks stay silent, and the app boots normally. Local and CI
+need no e-GRAS codes.
+
+To stop new e-GRAS payments, or to move to another gateway, change
+`PAYMENT_DEFAULT_PROVIDER` but set `PAYMENT_REGISTERED_PROVIDERS=egras` until
+`python manage.py payments_provider_usage egras` shows nothing pending (at most
+`EGRAS_PENDING_HORIZON` days). Unregistering e-GRAS earlier strands those
+payments: their callbacks return 404 and the poller cannot verify them.
+`EGRAS_ENABLED=False` is the quicker kill switch and keeps verification running. Removing the `EGRAS_*` block and the `INSTALLED_APPS`
+entry removes the integration entirely.
+
+| Variable | Purpose | Example |
+| --- | --- | --- |
+| `EGRAS_PAYMENT_URL` | NIC e-Challan posting URL the browser submits the form to | `https://egras.<state>.gov.in/echallan` |
+| `EGRAS_VERIFY_URL` | SOAP GRN status service used for server-to-server verification | `https://egras.<state>.gov.in/grnstatus` |
+| `EGRAS_RETURN_URL` | Absolute `https://` callback URL; must end `/api/v1/payments/providers/egras/_callback` | `https://api.example.com/api/v1/payments/providers/egras/_callback` |
+| `EGRAS_DEPT_CODE` | 3-character department code from the budget | `DRI` |
+| `EGRAS_DTO` / `EGRAS_STO` | 2-digit treasury / sub-treasury codes | `01` / `02` |
+| `EGRAS_DDO` | 4-character drawing & disbursing officer code | `DDO1` |
+| `EGRAS_OFFICE_NAME` | 8-character office name; defaults to `DTO+STO+DDO` | `0102DDO1` |
+| `EGRAS_RESPONSE_KEY_PATH` | Path to the NIC-issued key file for decrypting the encrypted callback (`payRes`); decodes to 16/24/32 bytes | `/run/secrets/egras-response.key` |
+| `EGRAS_RESPONSE_KEY_FORMAT` | How the key file stores the key — `raw` bytes (default, matching NIC's reference), or `base64` / `hex` text (whitespace trimmed). Confirm the format with NIC | `raw` |
+| `EGRAS_USER_ID` | e-GRAS user id | `guest` |
+| `EGRAS_SCHEME_MAP` | JSON: `account_head` or `charge_type` → 17-character scheme code `NNNN-NN-NNN-NN-NN` | `{"COURT_FEE": "0030-01-501-01-00"}` |
+| `EGRAS_MAX_SCHEMES` | Government-charge scheme slots per transaction. Keep `1` until NIC confirms the field names of the second and later heads (spec 0022 Q-3); up to `4` once confirmed | `1` |
+| `EGRAS_BANK_OPTIONS` | JSON list of `{code, label, group}` bank/UPI choices issued by NIC | `[{"code": "SBI", "label": "State Bank of India", "group": "NET_BANKING"}]` |
+| `EGRAS_DEFAULT_BANK` | Bank code used when the client sends none; must be one of the options | `SBI` |
+| `EGRAS_APPLICATION_PREFIX` | ≤ 2 alphanumeric characters prefixing the application number | `DR` |
+| `EGRAS_REMARKS_TEMPLATE` | Remarks template; `{demand_numbers}` is filled in | `Dristi {demand_numbers}` |
+| `EGRAS_PAYER_FALLBACK_CITY` / `_ADDRESS` / `_PINCODE` | Fallbacks when a payer field is empty after sanitisation | `NA` / `NA` / `000000` |
+| `EGRAS_TIMEOUT` | Verification connect/read timeout in seconds | `15` |
+| `EGRAS_VERIFY_SSL` | TLS certificate verification for the SOAP call; rejected as `False` in production | `True` |
+| `EGRAS_PENDING_HORIZON` | Days a payment may stay pending (≥ 8; e-GRAS fails on the 8th day) | `9` |
+| `EGRAS_NOT_FOUND_GRACE` | Hours a missing GRN stays `NOT_FOUND` before it is final | `2` |
+| `EGRAS_ENABLED` | Kill switch; `False` refuses new payments while verification keeps resolving in-flight ones | `True` |
 
 ## Docker dependency profiles
 

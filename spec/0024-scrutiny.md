@@ -157,7 +157,7 @@ Rules:
 
 * Scrutiny learns that a case entered `scrutiny` or `registration` from [`0011`](0011-case-workflows.md) `state_entered`. It never polls.
 * Scrutiny learns that the filer changed a field or replaced a document from the `case_field_changed` and `case_document_replaced` signals that `apps.cases` sends. Cases never calls scrutiny.
-* Correction scope is stored on the case by `apps.cases.services.open_for_correction()`; the filing endpoints of [`0021`](0021-case-filing-api.md) check it there.
+* Correction scope is stored on the case by `apps.cases.services.correction.open_for_correction()`; the filing endpoints of [`0021`](0021-case-filing-api.md) check it there (0021 §7).
 * The case number is assigned by `apps.cases.services.register_case()`; scrutiny calls it.
 * An isolation test asserts the import rules.
 
@@ -178,7 +178,8 @@ Rules:
 | `selectors.registration_types(establishment_id)` | the state's registration types (`SCR-13`) |
 | `selectors.oath_required(case_id)`, `selectors.oaths(case_id)` | whether the state requires an oath; each oath with complainant, recorded by, recorded at, and the round it was recorded in (`SCR-14`, `OTH-2`) |
 | `selectors.paper_upload_reason(case_id)` | the reason given for not e-signing and when (`SCR-15`, `SIG-10`) |
-| `services.open_for_correction(case_id, scope, round_id)` / `close_correction(case_id)` | correction scope (#5) |
+| `correction.open_for_correction(case, scope, round_id)` / `close_correction(case)` / `get_scope(case)` | correction scope (#5) |
+| `filing.return_to_signing(case)` | *Submit correction* (#5.3): moves the corrected case from `PENDING_CORRECTION` to `PENDING_SIGN` and clears every signature in one step (`LIFE-13`, `SIG-07`); scrutiny decides when, cases owns how |
 | `services.register_case(case_id, registration_type, actor)` | records the final registration type, assigns the case number from that type's series and `registered_at`; dispatches `CASE_REGISTERED` |
 | `services.set_case_title(case_id, complainant, accused, actor)` | *Edit case title* |
 | `services.set_court(case_id, courtroom_id, actor)` | the courtroom the Scrutiny officer chose (`SCR-16`); cases stores, scrutiny decides |
@@ -321,6 +322,12 @@ rule's schemas by 0019 and again by this module.
 field and in the *What to check* panel; the officer decides whether to mark the
 field (`SCR-02`, `SCR-05a`). No alert blocks an action.
 
+A cheque filed without its dishonour details (no return memo, or a memo
+missing its presentation date, return date or reason) cannot be checked, so it
+is left out of the input rather than breaking the contract for the whole case.
+Code adds a `DISHONOUR_DETAILS_MISSING` warning for it under `CHQ-8[i]` and
+`CHQ-9[i]`; those fields are shown empty and can be flagged as missing.
+
 The checks the national default ships with:
 
 | Code | Rule | Source |
@@ -361,6 +368,13 @@ Each state deployment has one court establishment in this version
 belongs to that establishment and has **no courtroom**. Its *Scrutinise case*
 task goes to the establishment's `SCRUTINY_OFFICER` holders, due `+0`,
 visible to Only Users (`SCR-09`).
+
+The establishment is the one `SCRUTINY_ESTABLISHMENT_ID` names, never the
+`court_id` the filer gave the draft: that may be missing, a courtroom or another
+court, and is ignored until the courtroom is chosen. Where no establishment is
+configured, the submission is refused (`503 E09019`) and the case stays in
+`PENDING_PAYMENT`, rather than entering scrutiny with no round that anyone can
+see. A case returning to a stage keeps the establishment of its previous round.
 
 The Scrutiny officer chooses the courtroom, from the establishment's
 courtrooms, as part of **Forward for registration** or **Register at Scrutiny**
@@ -457,7 +471,7 @@ Constraints: `UniqueConstraint(case, stage, number)`;
 | `target_type` | `CharField(16, choices=FlagTarget)` | `FIELD`, `SECTION`, `DOCUMENT`, `OATH` |
 | `target_ref` | `CharField(128)` | `FIELD`: PRD field id with record index, e.g. `CHQ-9[0]` (cheque 1's return date), `ACC-1[1]` (accused 2's name); `SECTION`: section code, e.g. `LDN`, `JUR`; `DOCUMENT`: `case_document_id`; `OATH`: the oath id, one per complainant (`SCR-14`) |
 | `target_label` | `CharField(255)` | snapshot for history, e.g. "Cheque amount" |
-| `section_id` | `CharField(16)` | the section the target sits in, for grouping |
+| `section_id` | `CharField(16, blank=True)` | the section the target sits in, for grouping; empty for `OATH` |
 | `reason_code` | `CharField(32, choices=DocumentIssue, blank=True)` | documents only: `BLURRY_UNREADABLE`, `PAGE_MISSING`, `WRONG_DOCUMENT`, `OTHER` |
 | `note` | `TextField(blank=True)` | the note for the advocate |
 | `value_at_flag` | `JSONField(null=True)` | the field's value when flagged, so history shows "₹52,05,000 → ₹50,25,000" |
@@ -661,12 +675,16 @@ Registration opens everything except the oath (`REF-02`, `OTH-5`). While the
 case is in `pending_correction`, the filing endpoints accept writes only inside
 the scope and refuse the rest with the cases module's own
 `FIELD_NOT_OPEN_FOR_CORRECTION` error. A flagged document may be replaced; an
-unflagged one may not.
+unflagged one may not. The case type translates each write into these refs
+(0021 §7): a value with no field id of its own, a party, and adding or removing
+an item need their whole section open. A document is replaced through
+`POST /case-documents/{id}/replace` (0021 §3.3a).
 
 #### 5.2 Responses
 
-* Each write by the filer to an open field sends `case_field_changed(case_id, field_ref, old, new, actor)`. The receiver records a `CORRECTED` response on the matching raised flag (or the section flag that contains it) and moves the flag to `RESPONDED`.
+* Each write by the filer to an open field sends `case_field_changed(case_id, field_ref, section, old, new, actor)`. The receiver records a `CORRECTED` response on the matching raised field flag, or else on the flag on `section`, and moves the flag to `RESPONDED`. `field_ref` is null for a change with no field of its own, which only a section flag answers.
 * Replacing a flagged document sends `case_document_replaced(case_id, old_document_id, new_document_id, actor)` → `REUPLOADED`.
+* Both are sent inside the write's transaction, so a response is recorded or rolled back with the write. Cases marks the scope `changed` on every accepted write, which is what lets a `mode = ALL` correction be resubmitted (#5.3).
 * The filer may answer a flag without changing anything: `POST /cases/{case_id}/corrections/{flag_id}/explain/` with a `note` → `EXPLAINED`.
 
 #### 5.3 Resubmission
@@ -676,7 +694,8 @@ about flags):
 
 1. The case is in `pending_correction` and its latest round was sent back at Scrutiny or at Registration.
 2. At least one flag has a response, or, for `mode = ALL`, at least one change (`409 E09012`). Unanswered flags may remain; they travel to re-scrutiny as unanswered.
-3. Complete *Correct defects*; `move_case(case, "submit_correction")` → `pending_signature`.
+   The corrected filing must also pass the completeness check of spec 0021 §6.3 (`400 E07005`, one error per gap), because correction can remove parties, evidence and documents. `return_to_signing` runs it before anything changes, so a refused submission keeps the case in `pending_correction` with its signatures as they were.
+3. Complete *Correct defects*; `apps.cases.services.filing.return_to_signing(case)` → `pending_signature`. Cases clears every signature in the same step (`has_signed = false`, `signature_document_id = null`), so no earlier signature counts for the corrected filing and an e-signature completed before this step is refused (`E07028`, spec 0021 §8). Scrutiny only decides when; it never touches signing state. Until 0011 lands, the call goes through `ports.send_to_signing`.
 
 What follows is the engine's ([`0011`](0011-case-workflows.md) #10.2): every
 signatory signs again as at filing (`LIFE-13`, `SIG-07`), then `ALL_SIGNED`
@@ -913,6 +932,10 @@ POST /api/v1/scrutiny/{case_id}/flags/
 too (*Save both*). The response lists every flag created, including
 auto-marked dates.
 
+![Scrutiny queue, open and start sequence](../docs/sequence-diagrams/0024-scrutiny/queue-open-and-start.svg)
+
+![Scrutiny flag and decide sequence](../docs/sequence-diagrams/0024-scrutiny/flag-and-decide.svg)
+
 #### 8.2 Registration
 
 | Method | Path | Purpose |
@@ -923,6 +946,8 @@ auto-marked dates.
 | POST | `/registration/{case_id}/register/` | #6.1 |
 | POST | `/registration/{case_id}/send-back/` | #6.2 |
 
+![Registration sequence](../docs/sequence-diagrams/0024-scrutiny/registration.svg)
+
 #### 8.3 Filer side
 
 | Method | Path | Purpose |
@@ -932,11 +957,13 @@ auto-marked dates.
 | POST | `/cases/{case_id}/corrections/submit/` | #5.3 |
 | GET | `/cases/{case_id}/scrutiny-history/` | #7.5, filer view |
 
+![Correct and resubmit sequence](../docs/sequence-diagrams/0024-scrutiny/correct-and-resubmit.svg)
+
 #### 8.4 Permissions
 
 * **Court roles.** Every action needs a role held at the case's court establishment (#2.2, `RLE-02c`): `SCRUTINY_OFFICER` for scrutiny actions; `CASE_REGISTERER` for registration; both for Register at Scrutiny; Forward for a `SCRUTINY_OFFICER` who does not hold `CASE_REGISTERER` (`SCR-06`, `SCR-08`, `SCR-11`). Checked server-side on every request (`RLE-04`); never by staff title (`RLE-08`).
 * **Reading.** Holders of the establishment's roles see its cases before a courtroom is chosen (`RLE-06`).
-* **Filing side** — the e-filing scope predicates (`ROLE-01`–`ROLE-05`): corrections, explain, submit, history. A clerk may do all of these (`ROLE-08` restricts only signing).
+* **Filing side** — the e-filing scope predicates (`ROLE-01`–`ROLE-05`): corrections, explain, submit, history. A clerk may do all of these (`ROLE-08` restricts only signing). Staff holding `cases.view_case` may read corrections and history, but explain and submit are for the filing side only: to anyone else they answer `404 E00105`.
 * Anyone else: `404 E00105`. Staff of another establishment: `404 E00105`. Missing role: `403 E09008`.
 
 #### 8.5 Error codes
@@ -958,12 +985,15 @@ Domain prefix `09` in `apps.api.errors.DOMAINS`, recorded in
 | `E09010` | `SEND_BACK_COMMENT_REQUIRED` | 400 | registration send back without a comment, or with flags |
 | `E09011` | `EXPLANATION_REQUIRED` | 400 | `EXPLAINED` without a note |
 | `E09012` | `NOTHING_TO_RESUBMIT` | 409 | resubmission with no response and no change |
+| `E07005` | `FILING_INCOMPLETE` (spec 0021) | 400 | resubmission of a corrected filing that fails the completeness check |
 | `E09013` | `GENERATED_DOCUMENT_NOT_FLAGGABLE` | 400 | flagging the synopsis or complaint PDF |
 | `E09014` | `CHECKS_NOT_BOUND` | 500 | logged, never returned: no binding resolves for `CHECKS`, or the bound rule is missing or inactive (#2.4) |
 | `E09015` | `CHECKS_EVALUATION_FAILED` | 500 | logged, never returned: the checks rule failed or broke its contract (#2.4) |
 | `E09016` | `OATH_NOT_REQUIRED` | 400 | flagging an oath where the state requires none (`OTH-2`) |
 | `E09017` | `COURTROOM_REQUIRED` | 400 | Forward or Register without a courtroom, or with one not in the establishment (`SCR-16`); `field = courtroom_id` |
 | `E09018` | `REGISTRATION_TYPE_REQUIRED` | 400 | Forward or Register without a registration type where the state has several, or with an unknown one (`SCR-13`); `field = registration_type` |
+| `E09019` | `SCRUTINY_NOT_CONFIGURED` | 503 | a case enters scrutiny or registration with no establishment configured (#2.5); the submission is rolled back |
+| `E09020` | `CASE_NUMBER_TAKEN` | 409 | Register or Register at Scrutiny: the number the series gave was taken by a write outside numbering at the same moment; the decision is rolled back and can be retried |
 
 Workflow errors (`E08xxx`) from [`0011`](0011-case-workflows.md) pass through
 unchanged — a stale version is `412 E08005`.
@@ -1015,6 +1045,7 @@ change.
 * Every decision locks the round, then the workflow instance (through `move_case`).
 * Flag drafting locks the round, so two officers drafting on the same target produce one flag (`E09009`) rather than two.
 * `If-Match` on decisions: two officers deciding the same file — one succeeds, the other gets `412 E08005`.
+* Registering two cases at once in the same series: the series counter row (`CaseNumberSeries`) is locked, so they get consecutive numbers; a number taken by a write outside numbering is skipped, or refused `409 E09020` if taken at the same moment.
 
 ### 10. Testing
 

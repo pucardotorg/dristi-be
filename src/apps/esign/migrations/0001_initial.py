@@ -144,7 +144,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="esigntransaction",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     models.Q(("status", "SUCCESS"), _negated=True),
                     models.Q(("signed_file_id", ""), _negated=True),
                     _connector="OR",
@@ -155,7 +155,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="esigntransaction",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     models.Q(("status", "SIGNING"), _negated=True),
                     models.Q(("placeholder_file_id", ""), _negated=True),
                     _connector="OR",
