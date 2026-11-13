@@ -24,6 +24,7 @@ urlpatterns = [
     path("api/v1/", include("apps.esign.urls")),
     path("api/v1/", include("apps.cms.urls")),
     path("api/v1/", include("apps.payments.urls")),
+    path("api/v1/", include("apps.notifications.urls")),
     path(
         "health/",
         HealthCheckView.as_view(
