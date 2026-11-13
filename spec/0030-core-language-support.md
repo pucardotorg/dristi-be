@@ -172,7 +172,7 @@ language** per request, from the first source that yields an active language:
 
 1. `lang` query parameter, e.g. `?lang=ml`. Matched case-insensitively against
    active `Language.code`. If present but not an active language code, the
-   request fails with `400` and `E10001` (`field: "lang"`). An explicit choice
+   request fails with `400` and `E11001` (`field: "lang"`). An explicit choice
    is never silently ignored.
 2. `Accept-Language` request header. Parsed per RFC 9110 with quality values;
    for each tag in descending `q` order, try an exact match, then its primary
@@ -193,7 +193,7 @@ defined by the consuming spec (spec 0018 section 6.1 for CMS pages).
 
 The `lang` parameter is declared in OpenAPI by each consuming endpoint
 (`OpenApiParameter("lang", str, OpenApiParameter.QUERY, ...)`), with the
-`E10001` example attached via `error_responses(...)`.
+`E11001` example attached via `error_responses(...)`.
 
 ### 6. Serializer contract
 
@@ -240,7 +240,7 @@ illustrated on a CMS endpoint)
 ```json
 {
   "errors": [
-    {"code": "E10001", "message": "Language \"xx\" is not supported.", "field": "lang"}
+    {"code": "E11001", "message": "Language \"xx\" is not supported.", "field": "lang"}
   ],
   "meta": {
     "timestamp": "2026-10-13T12:30:00+05:30",
@@ -252,12 +252,12 @@ illustrated on a CMS endpoint)
 
 ### 8. Error codes
 
-Allocate domain `10` → `core` in `apps.api.errors.DOMAINS` and in the table in
+Allocate domain `11` → `core` in `apps.api.errors.DOMAINS` and in the table in
 spec 0000 section 9.2. Define codes in `src/apps/core/errors.py`:
 
 | Code | Status | Default message | When |
 |---|---|---|---|
-| `E10001` | 400 | `Language is not supported.` | `lang` query parameter is not an active language code (`field: "lang"`). |
+| `E11001` | 400 | `Language is not supported.` | `lang` query parameter is not an active language code (`field: "lang"`). |
 
 ### 9. URL routing and wiring
 
@@ -268,10 +268,18 @@ any feature-app prefix.
 
 ### 10. Migrations and seed data
 
-1. `core/0007_language` — create `apps.core.models.Language` (including
-   `supports`) and its constraints.
-2. `core/0008_seed_languages` (data migration, reversible) — seed the languages
-   below.
+`core/0007_language` creates `apps.core.models.Language` (including `supports`)
+and its constraints. It is the only migration: reference data is not seeded by
+data migrations.
+
+The initial languages are seeded with the `seed` command (spec 0025) from
+`data/seed/core/languages.toml`, registered as `core.Language` (natural key
+`code`) in `apps.core.seeding.specs`. Every environment runs it once after
+migrating:
+
+```sh
+python manage.py seed ../data/seed/core/languages.toml   # from src/; /data/seed/core/ in the image
+```
 
 | `code` | `name` | `native_name` | `is_default` | `sort_order` | `is_active` | `supports` |
 |---|---|---|---|---|---|---|
@@ -282,7 +290,10 @@ any feature-app prefix.
 All seeded languages declare only `ui` at first; `translation` and `ocr` are
 added later from admin as those capabilities actually ship for a language.
 
-Seeding uses `update_or_create(code=...)` so it is idempotent.
+Seeding is insert-only and idempotent (spec 0025 section 5): re-running the
+file creates nothing and never overwrites a language changed in admin. Until it
+has run there is no default language, and language resolution raises
+`ImproperlyConfigured`.
 
 ### 11. Tests
 
@@ -298,16 +309,17 @@ Add model and API tests covering at least:
 4. `?supports=ui` returns only languages declaring `ui`; `?supports=bogus`
    returns `400` with code `E00005` and field `supports`.
 5. Resolution order: `lang` beats `Accept-Language`; `Accept-Language` beats the default; `q` values are honoured; `en-IN` matches `en`; unknown or malformed `Accept-Language` falls back to the default without error.
-6. `?lang=xx` and `?lang=<inactive code>` return `400` with code `E10001` and field `lang`.
+6. `?lang=xx` and `?lang=<inactive code>` return `400` with code `E11001` and field `lang`.
 7. cachalot behavior for language reads + invalidation on `Language` writes.
-8. Seeded languages are present with the codes, flags and `supports` values above.
+8. Seeding `languages.toml` creates the codes, flags and `supports` values
+   above; re-seeding creates nothing and leaves admin edits untouched.
 9. Schema contains the `Core` tag and `/api/v1/languages/`.
 
 ## Affected files
 
 - `src/config/settings/base.py` (add `core_language` to `CACHALOT_ONLY_CACHABLE_TABLES`)
 - `src/apps/api/urls.py` (register the `languages` route)
-- `src/apps/api/errors.py` (allocate domain `10` → `core`)
+- `src/apps/api/errors.py` (allocate domain `11` → `core`)
 - `spec/0000-api-coding-spec.md` (domain table, section 9.2)
 - `src/apps/core/models.py` (`Language`)
 - `src/apps/core/admin.py` (`LanguageAdmin`)
@@ -316,10 +328,12 @@ Add model and API tests covering at least:
 - `src/apps/core/serializers.py` (`LanguageSerializer`)
 - `src/apps/core/views.py` (`LanguageViewSet`)
 - `src/apps/core/migrations/0007_language.py`
-- `src/apps/core/migrations/0008_seed_languages.py`
+- `src/apps/core/seeding/specs.py` (register `core.Language`)
+- `data/seed/core/languages.toml`
 - `src/apps/core/tests/test_languages.py`
 - `src/apps/core/tests/test_languages_api.py`
 - `src/apps/core/tests/test_language_resolution.py`
+- `src/apps/core/tests/conftest.py` (`languages` fixture)
 
 ## Dependencies
 

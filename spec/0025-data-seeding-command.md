@@ -104,6 +104,7 @@ Natural keys below are taken from the current models.
 | `organizations.Organization` | `code` | `parent` → Organization.code | `locations` → Location.code | `code` is uppercase snake_case. |
 | `core.BusinessRule` | `code` | — | — | `code` uppercase snake_case. |
 | `core.Configuration` | `(config_set, config_key)` | — | — | Composite key; both normalized by the model. `config_value` is coerced to its stored type (see below). |
+| `core.Language` | `code` | — | — | Added by spec 0030; `supports` is a list of capabilities. |
 | `core.PublicConfiguration` | `(config_set, config_key)` | — | — | Public counterpart of `core.Configuration` (spec 0031). `config_key` is globally unique; `config_value` is coerced to text. |
 | `cms.PageCategory` | `slug` | — | — | `name` also unique. |
 | `cms.Page` | `slug` | `category` → PageCategory.slug | — | Slug lowercased by the model. |

@@ -46,6 +46,8 @@ DOMAINS = {
     "07": "cases",
     "08": "workflows",
     "09": "scrutiny",
+    "10": "hearings",
+    "11": "core",
 }
 
 
