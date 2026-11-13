@@ -6,6 +6,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.files.documents import (
+    CASE_DOCUMENT_FORMATS,
     discard_documents,
     document_error,
     file_type_for,
@@ -17,6 +18,8 @@ from apps.files.tests.factories import make_user
 PDF = b"%PDF-1.4 test"
 JPEG = b"\xff\xd8\xff\xe0 test"
 PNG = b"\x89PNG\r\n\x1a\n test"
+WEBP = b"RIFF\x10\x00\x00\x00WEBPVP8 test"
+HEIC = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic"
 
 
 @pytest.fixture(autouse=True)
@@ -72,6 +75,36 @@ class TestDocumentError:
         settings.FILE_MAX_SIZE_BYTES = 5
 
         assert document_error(upload()) == "exceeds the 5 byte limit."
+
+    @pytest.mark.parametrize(
+        ("name", "content", "content_type"),
+        [
+            ("photo.webp", WEBP, "image/webp"),
+            ("photo.heic", HEIC, "image/heic"),
+            ("photo.heif", HEIC, "image/heif"),
+        ],
+    )
+    def test_phone_photos_only_where_the_caller_accepts_them(self, name, content, content_type):
+        document = upload(name, content, content_type)
+
+        assert "upload a PDF, JPEG or PNG file" in document_error(document)
+        assert document_error(document, CASE_DOCUMENT_FORMATS) is None
+        assert file_type_for(document) == FileType.IMAGE
+
+    def test_a_webp_needs_its_brand_not_just_riff(self):
+        """RIFF also starts WAV and AVI files; WebP is marked at byte 8."""
+        wav = upload("photo.webp", b"RIFF\x10\x00\x00\x00WAVEfmt ", "image/webp")
+
+        assert document_error(wav, CASE_DOCUMENT_FORMATS) == (
+            "the file content does not match its type."
+        )
+
+    def test_the_message_names_what_the_caller_accepts(self):
+        document = upload("notes.txt", b"hello", "text/plain")
+
+        assert "upload a PDF, JPEG, PNG, WebP or HEIC file" in document_error(
+            document, CASE_DOCUMENT_FORMATS
+        )
 
     def test_leaves_the_upload_rewound(self):
         document = upload()

@@ -12,11 +12,10 @@ from .models import Institution, Person
 class InstitutionAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for institutions."""
 
-    list_display = ("entity_name", "entity_type", "pan", "cin", "contact_number", "created_at")
-    list_filter = ("entity_type",)
-    search_fields = ("entity_name", "pan", "cin", "contact_number", "email_address")
+    list_display = ("entity_name", "entity_type", "pan", "cin", "created_at")
+    list_filter = ("entity_type", "pan_cin_skip_declared")
+    search_fields = ("entity_name", "pan", "cin")
     readonly_fields = ("id", "created_at", "updated_at")
-    raw_id_fields = ("address",)
 
 
 @admin.register(Person)

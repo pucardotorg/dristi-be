@@ -8,10 +8,12 @@ from django.urls import reverse
 from apps.cases import signals
 from apps.cases.models import (
     Case,
+    CaseContact,
     CaseDocument,
     CaseEvidence,
     CaseParticipant,
     CaseStatus,
+    ContactType,
     ParticipantRole,
 )
 from apps.cases.services import correction
@@ -22,7 +24,12 @@ from .test_rules import add_cheque, upload
 
 pytestmark = pytest.mark.django_db
 
-JURISDICTION = {"cheque_deposited_by_payee": False, "cause_of_action_date": "2024-03-01"}
+JURISDICTION = {
+    "cheque_deposited_by_payee": False,
+    "drawer_bank_police_station": "Ernakulam Central",
+    "cause_of_action_date": "2024-03-01",
+    "complaint_filing_date": "2024-03-05",
+}
 
 
 @pytest.fixture
@@ -166,13 +173,21 @@ class TestMarkedScope:
 
     def test_a_details_value_outside_the_scope_is_refused(self, client, filing):
         send_back(filing["case"], fields=["JUR-9"])
-        changed = {**JURISDICTION, "other_complaints_pending": True}
+        changed = {
+            **JURISDICTION,
+            "other_complaints_pending": True,
+            "other_complaints": [{"court": "JMFC Kochi", "case_number": "CC 12/2024"}],
+        }
 
         response = client.put(
             details_url(filing["case"], "jurisdiction_limitation"), changed, format="json"
         )
 
-        assert error_codes(response) == {"data.other_complaints_pending": ["E07029"]}
+        # Refused on a field it changed outside the scope; one is reported.
+        assert response.status_code == 409
+        codes = error_codes(response)
+        assert set(codes) <= {"data.other_complaints_pending", "data.other_complaints"}
+        assert codes and all(found == ["E07029"] for found in codes.values())
 
     def test_relinking_evidence_needs_its_section(self, client, filing):
         send_back(filing["case"], fields=["CHQ-3[0]"])
@@ -230,7 +245,13 @@ class TestMarkedScope:
             role=ParticipantRole.COMPLAINANT,
             ordinal=1,
             name_at_filing="Prateek",
+        )
+        CaseContact.objects.create(
+            case_id=filing["case"],
+            case_participant=participant,
+            contact_type=ContactType.ADDRESS,
             address=make_address(),
+            ordinal=1,
         )
         url = reverse("case-participant-detail", args=[participant.pk])
         body = {"name_at_filing": "Prateek Agrawal"}

@@ -7,6 +7,7 @@ from apps.core.mixins import AuditUserAdminMixin
 
 from .models import (
     Case,
+    CaseContact,
     CaseDocument,
     CaseEvidence,
     CaseNumberSeries,
@@ -48,8 +49,19 @@ class CaseParticipantAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
 
     list_display = ("case", "role", "ordinal", "name_at_filing", "is_active", "created_at")
     list_filter = ("role", "is_active", "is_party_in_person", "has_signed")
-    search_fields = ("case__id", "case__filing_number", "name_at_filing", "phone_number_at_filing")
-    raw_id_fields = ("case", "person", "institution", "address")
+    search_fields = ("case__id", "case__filing_number", "name_at_filing")
+    raw_id_fields = ("case", "person", "institution")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(CaseContact)
+class CaseContactAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
+    """Admin configuration for the mobile numbers, emails and addresses of a case's parties."""
+
+    list_display = ("case", "contact_type", "ordinal", "value", "is_active", "created_at")
+    list_filter = ("contact_type", "is_active")
+    search_fields = ("case__id", "case__filing_number", "value")
+    raw_id_fields = ("case", "case_participant", "institution", "address")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
@@ -57,15 +69,24 @@ class CaseParticipantAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
 class WitnessAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for witnesses."""
 
-    list_display = ("case_participant", "called_by_participant", "created_at")
+    list_display = ("case_participant", "side", "created_at")
+    list_filter = ("side",)
     search_fields = (
         "case_participant__case__id",
         "case_participant__case__filing_number",
         "case_participant__name_at_filing",
-        "called_by_participant__name_at_filing",
     )
-    raw_id_fields = ("case_participant", "called_by_participant")
+    raw_id_fields = ("case_participant",)
     readonly_fields = ("created_at", "updated_at")
+
+    def get_readonly_fields(self, request, obj=None):
+        """Lock ``case_participant`` once the row exists.
+
+        It is the primary key, so changing it would make Django overwrite the
+        witness row of the participant chosen instead of this one.
+        """
+        fields = super().get_readonly_fields(request, obj)
+        return (*fields, "case_participant") if obj is not None else fields
 
 
 @admin.register(PoaMandate)
@@ -119,9 +140,11 @@ class RepresentationAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
 class CaseDocumentAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     """Admin configuration for case documents."""
 
-    list_display = ("case", "document_type", "is_active", "created_at")
+    list_display = ("case", "document_type", "case_participant", "case_evidence", "is_active")
     list_filter = ("document_type", "is_active")
-    raw_id_fields = ("case", "document")
+    # The links are nullable, so the admin's own select_related leaves them out.
+    list_select_related = ("case", "case_participant", "case_evidence")
+    raw_id_fields = ("case", "document", "case_participant", "case_evidence")
     readonly_fields = ("id", "created_at", "updated_at")
 
 

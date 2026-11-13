@@ -13,11 +13,16 @@ Adding a document or evidence type: add it to the enum below (the shared
 vocabulary, with its label), then list it under each case type that accepts it.
 """
 
+from calendar import monthrange
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 
 import jsonschema
 from django.apps import apps
 from django.db import models
+
+from apps.api import errors as api_errors
 
 
 class CaseType(models.TextChoices):
@@ -43,6 +48,9 @@ class DocumentType(models.TextChoices):
     VAKALATNAMA = "VAKALATNAMA", "Vakalatnama"
     POA_DOCUMENT = "POA_DOCUMENT", "POA document"
     OTHER_SUPPORTING_DOCUMENT = "OTHER_SUPPORTING_DOCUMENT", "Other supporting document"
+    IDENTITY_PROOF = "IDENTITY_PROOF", "Identity proof"
+    # A loan agreement, invoice or ledger showing the transaction behind the debt.
+    PROOF_OF_TRANSACTION = "PROOF_OF_TRANSACTION", "Proof of transaction"
 
 
 class EvidenceType(models.TextChoices):
@@ -51,6 +59,89 @@ class EvidenceType(models.TextChoices):
     CHEQUE = "CHEQUE", "Cheque"
     RETURN_MEMO = "RETURN_MEMO", "Return memo"
     LEGAL_DEMAND_NOTICE = "LEGAL_DEMAND_NOTICE", "Legal demand notice"
+
+
+# The type an evidence item's own scan must be (spec 0020 §11.4).
+EVIDENCE_SCAN_TYPES = {
+    EvidenceType.CHEQUE: DocumentType.BOUNCED_CHEQUE,
+    EvidenceType.RETURN_MEMO: DocumentType.RETURN_MEMO,
+    EvidenceType.LEGAL_DEMAND_NOTICE: DocumentType.LEGAL_DEMAND_NOTICE,
+}
+
+# Documents that belong to one party, with the roles that party may hold. Role
+# codes, not ``ParticipantRole``, which is defined in the models.
+PARTY_DOCUMENT_ROLES = {
+    DocumentType.IDENTITY_PROOF: ("COMPLAINANT",),
+    DocumentType.VAKALATNAMA: ("COMPLAINANT", "ACCUSED"),
+    DocumentType.POA_DOCUMENT: ("COMPLAINANT", "ACCUSED"),
+}
+
+# Documents that support one evidence item, with the evidence types it may be:
+# a demand notice's dispatch, delivery or reply papers. An evidence item's own
+# scan is linked the other way, by ``case_evidence.case_document``
+# (``EVIDENCE_SCAN_TYPES``), so it is recorded in one place only.
+EVIDENCE_DOCUMENT_TYPES = {
+    DocumentType.PROOF_OF_DISPATCH: (EvidenceType.LEGAL_DEMAND_NOTICE,),
+    DocumentType.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE: (EvidenceType.LEGAL_DEMAND_NOTICE,),
+    DocumentType.REPLY_TO_DEMAND_NOTICE: (EvidenceType.LEGAL_DEMAND_NOTICE,),
+}
+
+
+class ReturnReason(models.TextChoices):
+    """Why the bank returned the cheque unpaid, from the return memo."""
+
+    FUNDS_INSUFFICIENT = "FUNDS_INSUFFICIENT", "Funds insufficient"
+    EXCEEDS_ARRANGEMENT = "EXCEEDS_ARRANGEMENT", "Exceeds arrangement"
+    ACCOUNT_CLOSED = "ACCOUNT_CLOSED", "Account closed"
+    PAYMENT_STOPPED_BY_DRAWER = "PAYMENT_STOPPED_BY_DRAWER", "Payment stopped by drawer"
+    SIGNATURE_DIFFERS = "SIGNATURE_DIFFERS", "Drawer's signature differs / incomplete"
+    AMOUNT_MISMATCH = "AMOUNT_MISMATCH", "Amount in words and figures differ"
+    REFER_TO_DRAWER = "REFER_TO_DRAWER", "Refer to drawer"
+    POST_DATED_OR_STALE = "POST_DATED_OR_STALE", "Cheque post-dated / stale"
+
+
+class NatureOfDebt(models.TextChoices):
+    """The debt or liability the cheque was given for."""
+
+    LOAN_OR_ADVANCE_REPAYMENT = "LOAN_OR_ADVANCE_REPAYMENT", "Loan / advance repayment"
+    GOODS_SUPPLIED = "GOODS_SUPPLIED", "Payment for goods supplied"
+    SERVICES_RENDERED = "SERVICES_RENDERED", "Payment for services rendered"
+    BUSINESS_OR_TRADE_TRANSACTION = "BUSINESS_OR_TRADE_TRANSACTION", "Business / trade transaction"
+    BORROWED_MONEY_REPAYMENT = "BORROWED_MONEY_REPAYMENT", "Repayment of borrowed money"
+    OTHER_LIABILITY = "OTHER_LIABILITY", "Other liability"
+
+
+class ModeOfService(models.TextChoices):
+    """How the legal demand notice was sent."""
+
+    REGISTERED_POST = "REGISTERED_POST", "Registered post (RPAD)"
+    SPEED_POST = "SPEED_POST", "Speed post"
+    COURIER = "COURIER", "Courier"
+    EMAIL = "EMAIL", "Email"
+    HAND_DELIVERY = "HAND_DELIVERY", "Hand delivery"
+    FAX = "FAX", "Fax"
+
+
+class NonDeliveryReason(models.TextChoices):
+    """Why the legal demand notice came back undelivered."""
+
+    ADDRESSEE_NOT_AVAILABLE = "ADDRESSEE_NOT_AVAILABLE", "Addressee not available"
+    REFUSED = "REFUSED", "Refused to accept"
+    ADDRESS_INCOMPLETE_OR_INCORRECT = (
+        "ADDRESS_INCOMPLETE_OR_INCORRECT",
+        "Address incomplete / incorrect",
+    )
+    LEFT_WITHOUT_INSTRUCTIONS = "LEFT_WITHOUT_INSTRUCTIONS", "Left without instructions"
+    UNCLAIMED = "UNCLAIMED", "Unclaimed"
+    LOST_IN_TRANSIT = "LOST_IN_TRANSIT", "Item lost in transit"
+    OTHER = "OTHER", "Other"
+
+
+class PaymentStatus(models.TextChoices):
+    """Whether the drawer has paid part of the cheque amount."""
+
+    PART_PAYMENT = "PART_PAYMENT", "Part Payment"
+    NO_PAYMENT_MADE = "NO_PAYMENT_MADE", "No Payment Made"
 
 
 # Parts of a filing that are neither an evidence type, a details section nor a
@@ -64,9 +155,10 @@ class CaseTypeConfig:
     """What one case type accepts.
 
     ``document_types`` are the types uploadable through the case documents
-    endpoint. VAKALATNAMA and POA_DOCUMENT are uploaded there too (spec 0021
-    §3.4): they are linked to the case only, not to the representation or
-    mandate they belong to.
+    endpoint, VAKALATNAMA and POA_DOCUMENT included (spec 0021 §3.4). A
+    document can be linked to the party it belongs to (``PARTY_DOCUMENT_ROLES``)
+    or the evidence item it supports (``EVIDENCE_DOCUMENT_TYPES``), or be an
+    evidence item's own scan (``EVIDENCE_SCAN_TYPES``).
     """
 
     detail_model: str
@@ -74,9 +166,16 @@ class CaseTypeConfig:
     section_schemas: dict[str, dict]
     document_types: tuple[str, ...]
     evidence_schemas: dict[str, dict] = field(default_factory=dict)
+    # Details section -> rules JSON Schema cannot express, called with the
+    # section's data; returns ``SchemaError``s.
+    section_checks: dict[str, Callable[[dict], list]] = field(default_factory=dict)
     # The completeness check (spec 0021 §6.3) requires at least one of each.
     required_document_types: tuple[str, ...] = ()
     required_evidence_types: tuple[str, ...] = ()
+    # Where the date the cause of action arose is stored, which the cases list
+    # shows: (lookup from a case to a JSON field, key in it); ``None`` when the
+    # case type records none.
+    cause_of_action_date_key: tuple[str, str] | None = None
     # What the court's correction scope (spec 0024 #5.1) names. Each part of the
     # filing a write changes (an evidence type, a details section, a participant
     # role, ``DOCUMENTS_PART`` or ``ADVOCATES_PART``) -> the court's section code.
@@ -99,8 +198,19 @@ def _date():
     return {"type": "string", "format": "date"}
 
 
+# Matches text with at least one visible character; ``schema_errors`` reports a
+# mismatch as a blank field.
+_NOT_BLANK = r"\S"
+
+
 def _text():
-    return {"type": "string", "minLength": 1}
+    """Free text with at least one visible character, so a blank answer is not one."""
+    return {"type": "string", "pattern": _NOT_BLANK}
+
+
+def _choice(choices):
+    """One of ``choices``' codes; each option carries its label as ``title``, for clients."""
+    return {"oneOf": [{"const": value, "title": label} for value, label in choices.choices]}
 
 
 def _ifsc():
@@ -112,10 +222,14 @@ def _rich_text():
     return {"type": "string"}
 
 
-def _required_when_true(flag, fields):
-    """Require ``fields`` when the boolean ``flag`` is true."""
+def _required_when(field, value, fields):
+    """Require ``fields`` when ``field`` is ``value``.
+
+    Several rules on one object go in an ``allOf`` list, since an object has
+    only one ``if``.
+    """
     return {
-        "if": {"properties": {flag: {"const": True}}, "required": [flag]},
+        "if": {"properties": {field: {"const": value}}, "required": [field]},
         "then": {"required": fields},
     }
 
@@ -131,13 +245,64 @@ def _object(required, properties, **extra):
     }
 
 
+# A cheque bounce complaint is due within one month of the cause of action
+# (NI Act s.142(b)); one filed later needs a reason for the court to condone the delay.
+
+
+def limitation_deadline(arose):
+    """Return the last day to file without condonation: one calendar month after ``arose``.
+
+    The same day of the next month, or that month's last day when it is
+    shorter (31 January gives 28 or 29 February).
+    """
+    year, month = (arose.year + 1, 1) if arose.month == 12 else (arose.year, arose.month + 1)
+    return date(year, month, min(arose.day, monthrange(year, month)[1]))
+
+
+def _limitation_errors(data):
+    """Check the complaint filing date against the cause of action.
+
+    The complaint cannot be filed before the cause of action arose, and one
+    filed after the limitation period needs a ``condonation_reason``.
+    """
+    try:
+        arose = date.fromisoformat(data["cause_of_action_date"])
+        filed = date.fromisoformat(data["complaint_filing_date"])
+    except (KeyError, TypeError, ValueError):
+        # Missing or malformed: the schema reports it.
+        return []
+    if filed < arose:
+        return [
+            SchemaError(
+                "complaint_filing_date",
+                "The complaint filing date cannot be before the cause of action date.",
+                "minimum",
+            )
+        ]
+    if filed <= limitation_deadline(arose) or "condonation_reason" in data:
+        return []
+    return [
+        SchemaError(
+            "",
+            "'condonation_reason' is a required property: the complaint is filed more "
+            "than one month after the cause of action.",
+            "required",
+        )
+    ]
+
+
 CASE_TYPES = {
     CaseType.CHEQUE_BOUNCE: CaseTypeConfig(
         detail_model="cases.ChequeBounceCase",
+        cause_of_action_date_key=("cheque_bounce__jurisdiction_limitation", "cause_of_action_date"),
         section_schemas={
             # Which court can hear the case, and whether the complaint is in time.
             "jurisdiction_limitation": _object(
-                required=["cheque_deposited_by_payee", "cause_of_action_date"],
+                required=[
+                    "cheque_deposited_by_payee",
+                    "cause_of_action_date",
+                    "complaint_filing_date",
+                ],
                 properties={
                     # Jurisdiction follows the branch where the cheque was
                     # presented and the complainant holds the account.
@@ -145,20 +310,43 @@ CASE_TYPES = {
                     "payee_ifsc_code": _ifsc(),
                     "payee_bank_name": _text(),
                     "payee_bank_branch": _text(),
-                    "bank_police_station": _text(),
-                    # Another S.138 complaint pending between the same parties.
+                    # Police station of the payee's branch when the payee
+                    # deposited the cheque, otherwise of the drawer's.
+                    "payee_bank_police_station": _text(),
+                    "drawer_bank_police_station": _text(),
+                    # Another S.138 complaint pending between the same parties,
+                    # and each one's court and case number (PRD JUR-7/8).
                     "other_complaints_pending": {"type": "boolean"},
+                    "other_complaints": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": _object(
+                            required=["court", "case_number"],
+                            properties={"court": _text(), "case_number": _text()},
+                        ),
+                    },
                     "cause_of_action_date": _date(),
+                    "complaint_filing_date": _date(),
+                    # Why the complaint is late; required when it is filed
+                    # after the limitation period (``_limitation_errors``).
+                    "condonation_reason": _text(),
                 },
-                **_required_when_true(
-                    "cheque_deposited_by_payee",
-                    [
-                        "payee_ifsc_code",
-                        "payee_bank_name",
-                        "payee_bank_branch",
-                        "bank_police_station",
-                    ],
-                ),
+                allOf=[
+                    _required_when(
+                        "cheque_deposited_by_payee",
+                        True,
+                        [
+                            "payee_ifsc_code",
+                            "payee_bank_name",
+                            "payee_bank_branch",
+                            "payee_bank_police_station",
+                        ],
+                    ),
+                    _required_when(
+                        "cheque_deposited_by_payee", False, ["drawer_bank_police_station"]
+                    ),
+                    _required_when("other_complaints_pending", True, ["other_complaints"]),
+                ],
             ),
             # Willingness to settle, other details for the court, and the relief sought.
             "adr_other_prayer": _object(
@@ -171,6 +359,7 @@ CASE_TYPES = {
                 },
             ),
         },
+        section_checks={"jurisdiction_limitation": _limitation_errors},
         document_types=(
             DocumentType.BOUNCED_CHEQUE,
             DocumentType.RETURN_MEMO,
@@ -183,7 +372,12 @@ CASE_TYPES = {
             DocumentType.VAKALATNAMA,
             DocumentType.POA_DOCUMENT,
             DocumentType.OTHER_SUPPORTING_DOCUMENT,
+            DocumentType.IDENTITY_PROOF,
+            DocumentType.PROOF_OF_TRANSACTION,
         ),
+        # At least one of each. The per-party and per-notice rules (identity
+        # proof, vakalatnama, POA document, proof of delivery) are in the
+        # completeness check (spec 0021 §6.3).
         required_document_types=(
             DocumentType.BOUNCED_CHEQUE,
             DocumentType.RETURN_MEMO,
@@ -195,10 +389,11 @@ CASE_TYPES = {
             EvidenceType.RETURN_MEMO,
             EvidenceType.LEGAL_DEMAND_NOTICE,
         ),
-        # One RETURN_MEMO and one LEGAL_DEMAND_NOTICE per cheque, matched to it
-        # by ordinal: cheque #1, return memo #1, demand notice #1.
+        # One RETURN_MEMO per cheque, matched to it by ordinal: cheque #1, return
+        # memo #1. A LEGAL_DEMAND_NOTICE is not tied to any cheque: one notice
+        # may cover several cheques, and the count need not match.
         evidence_schemas={
-            # As written on the cheque leaf, plus the drawer's bank.
+            # As written on the cheque leaf, plus the drawer's bank and account.
             EvidenceType.CHEQUE: _object(
                 required=[
                     "cheque_date",
@@ -216,6 +411,9 @@ CASE_TYPES = {
                     "ifsc_code": _ifsc(),
                     "bank_name": _text(),
                     "bank_branch": _text(),
+                    # The drawer's account the cheque is drawn on. Optional until
+                    # the form asks for it (PRD CHQ-7a).
+                    "bank_account_number": {"type": "string", "pattern": "^[0-9]{9,18}$"},
                 },
             ),
             # From the memo the bank issued when the cheque was dishonoured.
@@ -224,13 +422,12 @@ CASE_TYPES = {
                 properties={
                     "presentation_date": _date(),
                     "return_date": _date(),
-                    "return_reason": _text(),
+                    "return_reason": _choice(ReturnReason),
                 },
             ),
             EvidenceType.LEGAL_DEMAND_NOTICE: _object(
                 required=[
                     "nature_of_debt",
-                    "cheque_issue_reason",
                     "dispatch_date",
                     "mode_of_service",
                     "is_delivered",
@@ -238,21 +435,31 @@ CASE_TYPES = {
                 ],
                 properties={
                     # Nature of debt
-                    "nature_of_debt": _text(),
-                    "cheque_issue_reason": _text(),
+                    "nature_of_debt": _choice(NatureOfDebt),
                     # Legal demand notice
                     "dispatch_date": _date(),
-                    "mode_of_service": _text(),
+                    "mode_of_service": _choice(ModeOfService),
                     "tracking_number": _text(),
                     "is_delivered": {"type": "boolean"},
                     # The 15-day payment window runs from this date.
                     "delivery_date": _date(),
+                    # When an undelivered notice came back to the delivery agency.
+                    "return_date": _date(),
+                    "non_delivery_reason": _choice(NonDeliveryReason),
                     "accused_replied": {"type": "boolean"},
                     # Payment against the cheque
-                    "payment_status": _text(),
+                    "payment_status": _choice(PaymentStatus),
+                    "part_payment_amount": {"type": "number", "exclusiveMinimum": 0},
                 },
-                # A delivered notice needs its delivery date.
-                **_required_when_true("is_delivered", ["delivery_date"]),
+                allOf=[
+                    # A delivered notice needs its delivery date; an undelivered
+                    # one, when it came back and why.
+                    _required_when("is_delivered", True, ["delivery_date"]),
+                    _required_when("is_delivered", False, ["return_date", "non_delivery_reason"]),
+                    _required_when(
+                        "payment_status", PaymentStatus.PART_PAYMENT.value, ["part_payment_amount"]
+                    ),
+                ],
             ),
         },
         # Participant roles are spelt out: the models import this module.
@@ -313,10 +520,27 @@ def schema_errors(schema, data):
     enforces the same rules).
     """
     validator = jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
-    return [
-        SchemaError(_path(error.absolute_path), error.message, error.validator)
-        for error in validator.iter_errors(data)
-    ]
+    return [_schema_error(error) for error in validator.iter_errors(data)]
+
+
+def _schema_error(error):
+    """Convert a jsonschema error, reporting blank text as such rather than as a regex mismatch."""
+    path = _path(error.absolute_path)
+    if error.validator == "pattern" and error.validator_value == _NOT_BLANK:
+        return SchemaError(path, api_errors.BLANK.message, "blank")
+    return SchemaError(path, error.message, error.validator)
+
+
+def section_errors(config, section, data):
+    """Return every way ``data`` breaks ``section``'s schema and checks; empty when it fits.
+
+    The checks run only on data that fits the schema's shape (an object).
+    """
+    problems = schema_errors(config.section_schemas[section], data)
+    check = config.section_checks.get(section)
+    if check and isinstance(data, dict):
+        problems += check(data)
+    return problems
 
 
 def _path(parts):
@@ -343,6 +567,7 @@ def get_description(case_type):
             {"code": code, "label": DocumentType(code).label} for code in config.document_types
         ],
         "required_document_types": list(config.required_document_types),
+        "required_evidence_types": list(config.required_evidence_types),
         "evidence_types": [
             {"code": code, "label": EvidenceType(code).label, "schema": schema}
             for code, schema in config.evidence_schemas.items()

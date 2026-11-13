@@ -10,7 +10,15 @@ from uuid import UUID
 
 from django.db.models import Exists, OuterRef, Q
 
-from .models import Case, CaseParticipant, CaseStatus, ParticipantRole, Representation
+from .models import (
+    Case,
+    CaseParticipant,
+    CaseStatus,
+    ContactType,
+    ParticipantRole,
+    Representation,
+)
+from .services.contacts import contacts_of, first, load_contacts
 
 # The parties on an attendance roll, in the order the roll lists them.
 ROLL_PARTY_ROLES = (
@@ -141,14 +149,22 @@ class Contact:
     kind: str
 
 
+def _value(contacts, contact_type):
+    """Return the primary contact of ``contact_type`` among ``contacts``, or ``""``."""
+    row = first(contacts, contact_type)
+    return row.value if row else ""
+
+
 def get_case_contacts(case_id) -> list[Contact]:
-    """Return the case's active parties and advocates with how to reach them. Two queries.
+    """Return the case's active parties and advocates with how to reach them. Three queries.
 
     A party's current phone and email come from its person, falling back to
-    the phone given at filing. Witnesses are not parties and are left out.
+    the primary mobile number and email given on the case: the person's own,
+    or for an institution with no person, the institution's (spec 0020 §4.6).
+    Witnesses are not parties and are left out.
     """
     contacts = []
-    parties = (
+    parties = load_contacts(
         CaseParticipant.objects.active()
         .filter(case_id=case_id, role__in=list(PARTY_SIDES))
         .select_related("person")
@@ -156,11 +172,15 @@ def get_case_contacts(case_id) -> list[Contact]:
     )
     for party in parties:
         person = party.person
+        own, of_institution = contacts_of(party)
+        on_case = own if person else of_institution
         contacts.append(
             Contact(
                 name=party.name_at_filing,
-                phone=(person.phone_number if person else "") or party.phone_number_at_filing or "",
-                email=(person.email_address if person else "") or "",
+                phone=(person.phone_number if person else "")
+                or _value(on_case, ContactType.MOBILE_NUMBER),
+                email=(person.email_address if person else "")
+                or _value(on_case, ContactType.EMAIL),
                 side=PARTY_SIDES[party.role],
                 kind=party.role,
             )

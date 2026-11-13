@@ -12,7 +12,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import generics, status
 from rest_framework.exceptions import NotFound
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -24,8 +24,10 @@ from .models import (
     ADDRESS_REQUIRED_MESSAGE,
     EVIDENCE_ORDERING,
     JOINABLE_STATUSES,
+    PARTICIPANT_LINK_MESSAGE,
     PARTICIPANT_ORDERING,
     POA_MANDATE_ORDERING,
+    POLICE_STATION_REQUIRED_MESSAGE,
     REPRESENTATION_ORDERING,
     Case,
     CaseDocument,
@@ -35,14 +37,19 @@ from .models import (
     ParticipantRole,
     PoaMandate,
     Representation,
+    scan_type_message,
 )
 from .serializers import (
     AdvocateCreatedSerializer,
     AdvocateCreateSerializer,
+    CaseAffidavitReadSerializer,
+    CaseAffidavitSerializer,
     CaseDocumentReplaceSerializer,
     CaseDocumentSerializer,
+    CaseDocumentUpdateSerializer,
     CaseDocumentUploadSerializer,
     CaseEvidenceSerializer,
+    CaseListItemSerializer,
     CaseParticipantSerializer,
     CasePreviewSerializer,
     CaseSerializer,
@@ -63,8 +70,33 @@ from .serializers import (
     WitnessCreateSerializer,
 )
 from .services import case_types, filing, participants, services
+from .services.case_types import DocumentType
+from .services.contacts import load_contacts
 
 TAGS = ["cases"]
+
+# Request bodies are JSON, except a document upload. A form body would read a
+# boolean left out as false, so a PATCH would change what it did not send.
+JSON_ONLY = [JSONParser]
+
+# What a document link can be refused with, on upload and on PATCH.
+DOCUMENT_LINK_ERRORS = (
+    errors.DOCUMENT_LINK_NOT_ALLOWED.example(PARTICIPANT_LINK_MESSAGE, field="case_participant_id"),
+    errors.WRONG_ROLE.example("Must be a complainant.", field="case_participant_id"),
+    errors.PARTICIPANT_NOT_ON_CASE.example(field="case_participant_id"),
+    errors.DOCUMENT_TYPE_MISMATCH.example(
+        "Must be a legal demand notice.", field="case_evidence_id"
+    ),
+    errors.EVIDENCE_NOT_ON_CASE.example(field="case_evidence_id"),
+)
+
+# What an evidence item's scan can be refused with.
+SCAN_LINK_ERRORS = (
+    errors.DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
+    errors.DOCUMENT_TYPE_MISMATCH.example(
+        scan_type_message(DocumentType.BOUNCED_CHEQUE), field="case_document_id"
+    ),
+)
 
 
 @extend_schema(tags=TAGS)
@@ -113,10 +145,10 @@ class CaseTypeDetailView(APIView):
 class CaseListView(generics.ListAPIView):
     """GET /cases — the caller's cases. POST /cases — start a draft session."""
 
-    serializer_class = CaseSerializer
+    serializer_class = CaseListItemSerializer
 
     def get_queryset(self):
-        """Return the caller's cases, optionally filtered by status."""
+        """Return the caller's cases, optionally filtered by status, with their list fields."""
         params = self.request.query_params
         if params.get("created_by") not in (None, "me"):
             raise api_errors.INVALID_CHOICE.validation_error(
@@ -132,7 +164,7 @@ class CaseListView(generics.ListAPIView):
                     {"status": [f"Unknown status: {', '.join(unknown)}."]}
                 )
             queryset = queryset.filter(status__in=statuses)
-        return queryset
+        return services.with_list_fields(queryset)
 
     @extend_schema(
         tags=TAGS,
@@ -189,23 +221,55 @@ class CaseDocumentListView(generics.ListAPIView):
             201: CaseDocumentSerializer,
             **error_responses(
                 errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="document_type"),
+                *DOCUMENT_LINK_ERRORS,
                 errors.CASE_NOT_EDITABLE,
                 errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
     def post(self, request, case_id):
-        """Upload a case document; the first save on a draft creates the case."""
+        """Upload a case document; the first save on a draft creates the case.
+
+        ``case_participant_id`` links an identity proof, vakalatnama or POA
+        document to its party; ``case_evidence_id`` links a document to the
+        evidence item it supports, such as a demand notice's proof of delivery.
+        """
         serializer = CaseDocumentUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        document = services.add_document(case_id, request.user, data["file"], data["document_type"])
+        data = dict(serializer.validated_data)
+        document = services.add_document(
+            case_id, request.user, data.pop("file"), data.pop("document_type"), **data
+        )
         return Response(CaseDocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
 
 @extend_schema(tags=TAGS)
 class CaseDocumentDetailView(APIView):
-    """DELETE /case-documents/{case_document_id} — soft delete."""
+    """PATCH /case-documents/{case_document_id} — links and details. DELETE — soft delete."""
+
+    parser_classes = JSON_ONLY
+
+    @extend_schema(
+        request=CaseDocumentUpdateSerializer,
+        responses={
+            200: CaseDocumentSerializer,
+            **error_responses(
+                errors.FIELD_NOT_ACCEPTED.example(
+                    "This field cannot be changed.", field="document_type"
+                ),
+                *DOCUMENT_LINK_ERRORS,
+                errors.CASE_NOT_EDITABLE,
+            ),
+        },
+    )
+    def patch(self, request, case_document_id):
+        """Link a document to its party or evidence item, or change its details."""
+        serializer = CaseDocumentUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        document = services.update_document(
+            case_document_id, request.user, serializer.validated_data
+        )
+        return Response(CaseDocumentSerializer(document).data)
 
     @extend_schema(
         tags=TAGS,
@@ -263,7 +327,23 @@ class CaseDetailsView(APIView):
 
 @extend_schema(tags=TAGS)
 class CaseDetailsSectionView(APIView):
-    """PUT /cases/{case_id}/details/{section} — replace one section."""
+    """GET /cases/{case_id}/details/{section} — one section. PUT — replace it."""
+
+    parser_classes = JSON_ONLY
+
+    @extend_schema(
+        tags=TAGS,
+        # GET /cases/{id}/details would otherwise take the same generated id.
+        operation_id="v1_cases_details_section_retrieve",
+        responses={
+            200: DetailsSectionSerializer,
+            **error_responses(errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="section")),
+        },
+    )
+    def get(self, request, case_id, section):
+        """Return one section as saved; ``{}`` before it is first saved."""
+        data = services.get_details_section(case_id, request.user, section)
+        return Response({"case_id": case_id, "section": section, "data": data})
 
     @extend_schema(
         tags=TAGS,
@@ -288,20 +368,55 @@ class CaseDetailsSectionView(APIView):
         return Response({"case_id": case.id, "section": section, "data": request.data})
 
 
+class CaseAffidavitView(APIView):
+    """GET /cases/{case_id}/affidavit — the case's affidavit. PUT — replace it."""
+
+    @extend_schema(responses={200: CaseAffidavitReadSerializer})
+    def get(self, request, case_id):
+        """Return the affidavit as saved; ``null`` before it is first saved."""
+        case = services.get_case(case_id, request.user)
+        return Response({"case_id": case.id, "affidavit": case.affidavit})
+
+    @extend_schema(
+        request=CaseAffidavitSerializer,
+        responses={200: CaseAffidavitSerializer, **error_responses(errors.CASE_NOT_EDITABLE)},
+    )
+    def put(self, request, case_id):
+        """Replace the affidavit; the first save on a draft creates the case."""
+        serializer = CaseAffidavitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        case = services.save_affidavit(
+            case_id, request.user, serializer.validated_data["affidavit"]
+        )
+        return Response(
+            CaseAffidavitSerializer({"case_id": case.id, **serializer.validated_data}).data
+        )
+
+
 @extend_schema_view(
-    get=extend_schema(tags=TAGS, parameters=[OpenApiParameter("evidence_type", str)])
+    get=extend_schema(
+        tags=TAGS,
+        parameters=[
+            OpenApiParameter(
+                "evidence_type", str, description="One type, or several separated by commas."
+            )
+        ],
+    )
 )
 class CaseEvidenceListView(generics.ListAPIView):
     """GET /cases/{case_id}/evidence — active evidence. POST — add evidence."""
 
     serializer_class = CaseEvidenceSerializer
+    parser_classes = JSON_ONLY
 
     def get_queryset(self):
         """Return the case's active evidence, optionally of one type."""
         case = services.get_case(self.kwargs["case_id"], self.request.user)
         queryset = CaseEvidence.objects.active().filter(case=case).order_by(*EVIDENCE_ORDERING)
         if self.request.query_params.get("evidence_type"):
-            queryset = queryset.filter(evidence_type=self.request.query_params["evidence_type"])
+            # One type, or several separated by commas: CHEQUE,RETURN_MEMO.
+            types = self.request.query_params["evidence_type"].split(",")
+            queryset = queryset.filter(evidence_type__in=types)
         return queryset
 
     @extend_schema(
@@ -311,7 +426,7 @@ class CaseEvidenceListView(generics.ListAPIView):
             201: CaseEvidenceSerializer,
             **error_responses(
                 errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="evidence_type"),
-                errors.DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
+                *SCAN_LINK_ERRORS,
                 errors.CASE_NOT_EDITABLE,
                 errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
@@ -329,13 +444,15 @@ class CaseEvidenceListView(generics.ListAPIView):
 class CaseEvidenceDetailView(APIView):
     """PATCH or DELETE /case-evidence/{case_evidence_id}."""
 
+    parser_classes = JSON_ONLY
+
     @extend_schema(
         tags=TAGS,
         request=EvidenceUpdateSerializer,
         responses={
             200: CaseEvidenceSerializer,
             **error_responses(
-                errors.DOCUMENT_NOT_ON_CASE.example(field="case_document_id"),
+                *SCAN_LINK_ERRORS,
                 errors.CASE_NOT_EDITABLE,
                 errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
@@ -367,6 +484,7 @@ class _ParticipantCreateView(APIView):
     """Adds a party in ``role``; the first save on a draft creates the case."""
 
     role = None
+    parser_classes = JSON_ONLY
 
     @extend_schema(
         tags=TAGS,
@@ -374,9 +492,15 @@ class _ParticipantCreateView(APIView):
         responses={
             201: CaseParticipantSerializer,
             **error_responses(
-                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="address"),
+                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="addresses"),
+                api_errors.REQUIRED.example(
+                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
+                ),
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.SELF_AS_ACCUSED.example(field="self"),
+                errors.FIELD_NOT_APPLICABLE.example(
+                    "Only for an accused.", field="resides_within_jurisdiction"
+                ),
                 errors.INSTITUTION_NOT_ALLOWED.example(field="institution"),
                 errors.ROLE_ALREADY_HELD.example(
                     "This person is already a complainant on this case.", field="person"
@@ -418,15 +542,18 @@ class AccusedCreateView(_ParticipantCreateView):
 class WitnessCreateView(APIView):
     """POST /cases/{case_id}/witnesses — add a witness; the first save on a draft creates the case."""
 
+    parser_classes = JSON_ONLY
+
     @extend_schema(
         tags=TAGS,
         request=WitnessCreateSerializer,
         responses={
             201: CaseParticipantSerializer,
             **error_responses(
-                errors.PARTICIPANT_NOT_ON_CASE.example(field="called_by_participant_id"),
-                errors.WRONG_ROLE.example(field="called_by_participant_id"),
-                errors.WITNESS_ALREADY_CALLED.example(field="called_by_participant_id"),
+                errors.WITNESS_ALREADY_ON_SIDE.example(field="side"),
+                api_errors.REQUIRED.example(
+                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
+                ),
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.FIELD_NOT_ACCEPTED.example(field="institution"),
                 errors.CASE_NOT_EDITABLE,
@@ -435,7 +562,7 @@ class WitnessCreateView(APIView):
         },
     )
     def post(self, request, case_id):
-        """Add the witness; send ``person`` or ``"self": true``, and the party calling them."""
+        """Add the witness; send ``person`` or ``"self": true``, and which side calls them."""
         serializer = WitnessCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         participant = participants.add_witness(case_id, request.user, serializer.validated_data)
@@ -465,7 +592,7 @@ class CaseParticipantListView(generics.ListAPIView):
         queryset = (
             CaseParticipant.objects.active()
             .filter(case=case)
-            .select_related("witness")
+            .select_related("witness", "institution")
             .order_by(*PARTICIPANT_ORDERING)
         )
         role = self.request.query_params.get("role")
@@ -477,10 +604,17 @@ class CaseParticipantListView(generics.ListAPIView):
             queryset = queryset.filter(role=role)
         return queryset
 
+    def paginate_queryset(self, queryset):
+        """Load the page's contacts in one query."""
+        page = super().paginate_queryset(queryset)
+        return load_contacts(page) if page is not None else None
+
 
 @extend_schema(tags=TAGS)
 class CaseParticipantDetailView(APIView):
     """PATCH or DELETE /case-participants/{case_participant_id}."""
+
+    parser_classes = JSON_ONLY
 
     @extend_schema(
         tags=TAGS,
@@ -495,14 +629,19 @@ class CaseParticipantDetailView(APIView):
                 errors.PARTY_IN_PERSON.example(
                     "Remove this party's advocates first.", field="is_party_in_person"
                 ),
-                errors.PARTICIPANT_NOT_ON_CASE.example(field="called_by_participant_id"),
+                errors.ROLE_ALREADY_HELD.example(field="institution"),
+                errors.BOTH_SIDES.example(field="institution"),
+                errors.WITNESS_ALREADY_ON_SIDE.example(field="side"),
+                api_errors.REQUIRED.example(
+                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
+                ),
                 errors.CASE_NOT_EDITABLE,
                 errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
         },
     )
     def patch(self, request, case_participant_id):
-        """Change the case's copy of the party's details; never the person or institution."""
+        """Change the case's copy of the party's details; never the person or institution rows."""
         participant = participants.get_participant(case_participant_id, request.user)
         serializer = ParticipantUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -533,13 +672,15 @@ class CaseParticipantDetailView(APIView):
 class PoaHolderCreateView(APIView):
     """POST /cases/{case_id}/poa-holders — add a POA holder and their mandates."""
 
+    parser_classes = JSON_ONLY
+
     @extend_schema(
         tags=TAGS,
         request=PoaHolderCreateSerializer,
         responses={
             201: PoaHolderCreatedSerializer,
             **error_responses(
-                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="address"),
+                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="addresses"),
                 errors.DUPLICATE_PARTICIPANT.example(field="represented_participant_ids"),
                 errors.PARTICIPANT_NOT_ON_CASE.example(
                     "Must be active participants of the same case.",
@@ -616,6 +757,8 @@ class PoaMandateDetailView(APIView):
 @extend_schema(tags=TAGS)
 class AdvocateCreateView(APIView):
     """POST /cases/{case_id}/advocates — add an advocate for one or more clients."""
+
+    parser_classes = JSON_ONLY
 
     @extend_schema(
         tags=TAGS,

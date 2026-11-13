@@ -9,15 +9,22 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.cases import selectors as cases
-from apps.cases.models import CaseParticipant, CaseStatus, ParticipantRole, Representation
+from apps.cases.models import (
+    CaseContact,
+    CaseParticipant,
+    CaseStatus,
+    ContactType,
+    ParticipantRole,
+    Representation,
+)
 from apps.hearings import ports, queries, selectors
 from apps.hearings.enums import HearingRole
 from apps.hearings.services import courtroom as court_service
 from apps.hearings.services import listing
 from apps.parties.models import Person
-from apps.parties.tests.factories import make_address
+from apps.parties.tests.factories import make_institution
 
-from .factories import MON, TODAY, TUE, WED, hold, make_case, schedule, set_config
+from .factories import MON, TODAY, TUE, WED, add_address, hold, make_case, schedule, set_config
 
 pytestmark = pytest.mark.django_db
 
@@ -251,9 +258,9 @@ class TestCasesContract:
             role=ParticipantRole.COMPLAINANT,
             ordinal=2,
             name_at_filing="Second complainant",
-            address=make_address(),
             is_party_in_person=False,
         )
+        add_address(second)
         Representation.objects.create(
             case=case, advocate=advocate_user.advocate_profile, case_participant=second
         )
@@ -275,6 +282,43 @@ class TestCasesContract:
         }
         summary = cases.get_case_summaries([case.pk])[case.pk]
         assert summary.title.startswith("Complainant") and " v. Accused" in summary.title
+
+    def test_contacts_fall_back_to_those_given_on_the_case(self, case):
+        """A person with no phone of their own, or an institution with no person (spec 0020 §4.6)."""
+        accused = CaseParticipant.objects.get(case=case, role=ParticipantRole.ACCUSED)
+        Person.objects.filter(pk=accused.person_id).update(phone_number=None)
+        CaseContact.objects.create(
+            case=case,
+            case_participant=accused,
+            contact_type=ContactType.MOBILE_NUMBER,
+            value="+919800000001",
+            ordinal=1,
+        )
+        company = make_institution(entity_name="ABC Pvt Ltd")
+        CaseParticipant.objects.create(
+            case=case,
+            institution=company,
+            role=ParticipantRole.ACCUSED,
+            ordinal=2,
+            name_at_filing="ABC Pvt Ltd",
+            entity_name_at_filing="ABC Pvt Ltd",
+            resides_within_jurisdiction=True,
+        )
+        for contact_type, value in (
+            (ContactType.MOBILE_NUMBER, "080-22334455"),
+            (ContactType.EMAIL, "legal@abc.in"),
+        ):
+            CaseContact.objects.create(
+                case=case, institution=company, contact_type=contact_type, value=value, ordinal=1
+            )
+
+        by_name = {c.name: c for c in cases.get_case_contacts(case.pk)}
+
+        assert by_name[accused.name_at_filing].phone == "+919800000001"
+        assert (by_name["ABC Pvt Ltd"].phone, by_name["ABC Pvt Ltd"].email) == (
+            "080-22334455",
+            "legal@abc.in",
+        )
 
     def test_visibility(self, case, complainant_user, advocate_user, stranger):
         assert case.pk in set(cases.case_ids_visible_to(complainant_user))

@@ -9,7 +9,14 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
 
-from apps.parties.models import Institution, Person, VerificationLevel, age_on, today_in_india
+from apps.parties.models import (
+    Institution,
+    Person,
+    VerificationLevel,
+    age_on,
+    contact_number_validator,
+    today_in_india,
+)
 from apps.parties.tests.factories import make_address, make_institution, make_person
 from apps.users.models import User
 
@@ -176,9 +183,8 @@ class TestInstitution:
         ],
     )
     def test_contact_number_accepts_phone_lines(self, number):
-        institution = make_institution(contact_number=number)
-
-        institution.full_clean()
+        """An institution's number on a case (``cases.CaseContact``) may be any phone line."""
+        contact_number_validator(number)
 
     @pytest.mark.parametrize(
         "number",
@@ -195,36 +201,39 @@ class TestInstitution:
         ],
     )
     def test_contact_number_rejects_letters_and_symbols(self, number):
-        institution = Institution(
-            entity_type="PRIVATE_LIMITED_COMPANY", entity_name="ABC", contact_number=number
-        )
+        with pytest.raises(ValidationError):
+            contact_number_validator(number)
 
-        with pytest.raises(ValidationError) as exc:
-            institution.full_clean()
-
-        assert "contact_number" in exc.value.message_dict
-
-    def test_database_rejects_letters_in_contact_number(self):
-        institution = make_institution()
-
-        with pytest.raises(IntegrityError), transaction.atomic():
-            Institution.objects.filter(pk=institution.pk).update(contact_number="abc")
-
-    @pytest.mark.parametrize("blank", ["", "   "])
-    def test_blank_contact_number_is_stored_as_no_number(self, blank):
-        institution = make_institution(contact_number=blank)
-
-        institution.full_clean()
-        institution.save()
-
-        institution.refresh_from_db()
-        assert institution.contact_number is None
-
-    def test_pan_and_cin_are_optional(self):
-        institution = make_institution()
+    def test_pan_and_cin_may_both_be_left_out_with_the_declaration(self):
+        institution = make_institution(pan_cin_skip_declared=True)
 
         assert institution.pan is None
         assert institution.cin is None
+
+    def test_an_institution_may_have_none_of_the_three(self):
+        """An accused institution: only a complainant's party write requires one."""
+        institution = make_institution(pan_cin_skip_declared=False)
+
+        assert (institution.pan, institution.cin, institution.pan_cin_skip_declared) == (
+            None,
+            None,
+            False,
+        )
+
+    def test_the_database_refuses_the_declaration_with_a_pan(self):
+        institution = make_institution(pan="AAACA1234A")
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Institution.objects.filter(pk=institution.pk).update(pan_cin_skip_declared=True)
+
+    @pytest.mark.parametrize(
+        "identifier", [{"pan": "AAACA1234A"}, {"cin": "U72200KA2010PTC052651"}]
+    )
+    def test_the_declaration_cannot_come_with_a_pan_or_cin(self, identifier):
+        with pytest.raises(ValidationError) as exc:
+            make_institution(pan_cin_skip_declared=True, **identifier)
+
+        assert exc.value.error_dict["pan_cin_skip_declared"][0].code == "E00001"
 
     def test_pan_and_cin_are_stored_uppercase_without_spaces(self):
         institution = make_institution(pan=" aaaca 1234 a ", cin="u72200 ka2010 ptc052651")
@@ -325,16 +334,16 @@ class TestRulesOnEveryWrite:
 
     def test_plain_create_cannot_store_an_invalid_institution(self):
         with pytest.raises(ValidationError):
-            Institution.objects.create(entity_type="LLP", entity_name="X", contact_number="abc")
+            Institution.objects.create(entity_type="LLP", entity_name="X", pan="NOTAPAN")
 
         assert Institution.objects.count() == 0
 
     @pytest.mark.parametrize("blank", ["", "   "])
-    def test_person_name_cannot_be_blank(self, blank):
-        with pytest.raises(ValidationError) as exc:
-            Person(name=blank).full_clean()
+    def test_a_blank_person_name_is_stored_as_none(self, blank):
+        """Optional on the person: each case role decides whether a name is needed."""
+        person = Person.objects.create(name=blank)
 
-        assert "name" in exc.value.message_dict
+        assert person.name is None
 
     @pytest.mark.parametrize("blank", ["", "   "])
     def test_institution_name_cannot_be_blank(self, blank):
@@ -352,43 +361,30 @@ class TestRulesOnEveryWrite:
 
 
 @pytest.mark.django_db
-class TestInstitutionAddress:
-    def test_institution_has_a_registered_address(self):
-        address = make_address()
-        institution = make_institution(address=address)
-
-        assert Institution.objects.get(pk=institution.pk).address == address
-
-    def test_address_is_optional(self):
-        assert make_institution().address is None
-
-    def test_address_in_use_by_an_institution_cannot_be_deleted(self):
-        address = make_address()
-        make_institution(address=address)
-
-        with pytest.raises(Exception):  # noqa: B017 - immutability or PROTECT, either blocks it
-            address.delete()
-
-
-@pytest.mark.django_db
 class TestDisabilityStatus:
-    def test_defaults_to_none(self):
-        assert make_person().disability_status == "NONE"
+    def test_defaults_to_not_answered(self):
+        assert make_person().disability_status is None
 
-    @pytest.mark.parametrize("missing", [None, "", "   "])
-    def test_missing_value_is_stored_as_none(self, missing):
+    @pytest.mark.parametrize("missing", [None, ""])
+    def test_missing_value_is_stored_as_not_answered(self, missing):
         person = make_person(disability_status=missing)
 
-        assert Person.objects.get(pk=person.pk).disability_status == "NONE"
+        assert Person.objects.get(pk=person.pk).disability_status is None
 
-    def test_a_given_status_is_kept(self):
-        person = make_person(disability_status="VISUAL")
+    def test_false_is_kept(self):
+        person = make_person(disability_status=False)
 
-        assert Person.objects.get(pk=person.pk).disability_status == "VISUAL"
+        assert Person.objects.get(pk=person.pk).disability_status is False
 
-    def test_unknown_status_is_rejected(self):
+    def test_true_is_kept(self):
+        person = make_person(disability_status=True)
+
+        assert Person.objects.get(pk=person.pk).disability_status is True
+
+    @pytest.mark.parametrize("value", ["VISUAL", "maybe"])
+    def test_a_non_boolean_is_rejected(self, value):
         with pytest.raises(ValidationError) as exc:
-            Person(name="Ravi", disability_status="BLIND").full_clean()
+            Person(name="Ravi", disability_status=value).full_clean()
 
         assert "disability_status" in exc.value.message_dict
 
