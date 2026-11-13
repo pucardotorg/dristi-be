@@ -215,6 +215,17 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `RULES_MAX_CONCURRENT_EVALUATIONS` | Per-process, per-engine limit on business rule evaluations in flight, including timed-out GoRules evaluations still finishing in the background. Further evaluations fail fast until a slot frees. | `16` |
 | `RULES_ADMIN_DRY_RUN_REQUIRED` | Require a passing sample evaluation (dry run) before a business rule can be saved in admin. | `True` |
 | `DRAMATIQ_BROKER_URL` | Redis connection for Dramatiq | `redis://redis:6379/2` |
+| `NOTIFICATIONS_REDIS_URL` | Redis database for in-app notification streams (spec 0031). Use a database separate from the cache and broker. | `redis://redis:6379/4` |
+| `NOTIFICATIONS_STREAM_PREFIX` | Key prefix for per-user notification streams | `dristi:notifications` |
+| `NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT` | Redis connect timeout (s) for the notification stream client | `5` |
+| `NOTIFICATIONS_REDIS_SOCKET_TIMEOUT` | Redis socket read timeout (s); must exceed `NOTIFICATIONS_SSE_HEARTBEAT_SECONDS` so a healthy blocking read returns first | `20` |
+| `NOTIFICATIONS_STREAM_MAXLEN` | Approx. entries retained per user for `Last-Event-ID` replay | `1000` |
+| `NOTIFICATIONS_STREAM_TTL_SECONDS` | Replay-tail lifetime, refreshed on every publish | `604800` |
+| `NOTIFICATIONS_SSE_HEARTBEAT_SECONDS` | SSE keep-alive interval; stay below proxy idle timeouts | `15` |
+| `NOTIFICATIONS_SSE_RETRY_MS` | SSE client reconnect hint | `3000` |
+| `NOTIFICATIONS_SSE_MAX_DURATION_SECONDS` | Max lifetime of one SSE connection before the client reconnects | `1800` |
+| `NOTIFICATIONS_SSE_READ_COUNT` | Max entries read from the stream per poll | `100` |
+| `NOTIFICATIONS_TASK_TIME_LIMIT` | Dramatiq time limit (ms) for the publish actor | `60000` |
 | `EMAIL_URL` | Email backend URL | `smtp://user:pass@smtp:587` |
 | `MESSAGING_TEMPLATE_ENGINE` | Template engine for message rendering (`jinja2` or `mustache`) | `jinja2` |
 | `MESSAGING_DUMMY_SMS_ENDPOINT` | HTTP endpoint for the dummy SMS backend | `http://httpbin:8080/post` |

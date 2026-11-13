@@ -61,6 +61,9 @@ PAYMENT_PROVIDERS = {"mock": "apps.payments.providers.mock.MockPaymentProvider"}
 PAYMENT_DEFAULT_PROVIDER = "mock"
 PAYMENT_CALLBACK_THROTTLE_RATE = ""
 
+# No Redis in tests: the notification event bus is process-local (spec 0031).
+NOTIFICATIONS_EVENT_BUS = "apps.notifications.bus.InMemoryNotificationBus"
+
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # The OTP code and its resend cooldown both live in the cache, so tests need a

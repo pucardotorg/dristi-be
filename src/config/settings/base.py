@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "apps.scrutiny",
     "apps.payments",
     "apps.hearings",
+    "apps.notifications",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
@@ -513,6 +514,45 @@ MESSAGING_RETRY_DELAY_MAX = env.int("MESSAGING_RETRY_DELAY_MAX", default=3600)
 # greater than any gateway HTTP timeout so a network hang surfaces as a clean
 # transient failure instead of a worker kill.
 MESSAGING_TASK_TIME_LIMIT = env.int("MESSAGING_TASK_TIME_LIMIT", default=600000)
+
+
+# ---------------------------------------------------------------------------
+# In-app notifications (spec 0031)
+# ---------------------------------------------------------------------------
+NOTIFICATIONS_REDIS_URL = env(
+    "NOTIFICATIONS_REDIS_URL",
+    default="redis://localhost:6379/4",
+)
+# Dotted path to the event-bus implementation. Code-level setting; tests use
+# the in-memory bus.
+NOTIFICATIONS_EVENT_BUS = "apps.notifications.bus.RedisStreamBus"
+NOTIFICATIONS_STREAM_PREFIX = env(
+    "NOTIFICATIONS_STREAM_PREFIX",
+    default="dristi:notifications",
+)
+# Redis socket timeouts (seconds). The read timeout must exceed the SSE
+# heartbeat so a healthy blocking XREAD returns before the socket times out; a
+# dead connection then raises instead of hanging a stream thread forever.
+NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT = env.int(
+    "NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT", default=5
+)
+NOTIFICATIONS_REDIS_SOCKET_TIMEOUT = env.int("NOTIFICATIONS_REDIS_SOCKET_TIMEOUT", default=20)
+# Approximate number of entries retained per user for Last-Event-ID replay.
+NOTIFICATIONS_STREAM_MAXLEN = env.int("NOTIFICATIONS_STREAM_MAXLEN", default=1000)
+# Replay tail lifetime, refreshed on every publish (7 days by default).
+NOTIFICATIONS_STREAM_TTL_SECONDS = env.int(
+    "NOTIFICATIONS_STREAM_TTL_SECONDS", default=7 * 24 * 60 * 60
+)
+# Comment frame interval; must stay below proxy/load-balancer idle timeouts.
+NOTIFICATIONS_SSE_HEARTBEAT_SECONDS = env.int("NOTIFICATIONS_SSE_HEARTBEAT_SECONDS", default=15)
+NOTIFICATIONS_SSE_RETRY_MS = env.int("NOTIFICATIONS_SSE_RETRY_MS", default=3000)
+# Bounds a single SSE connection; browsers reconnect and resume.
+NOTIFICATIONS_SSE_MAX_DURATION_SECONDS = env.int(
+    "NOTIFICATIONS_SSE_MAX_DURATION_SECONDS", default=1800
+)
+# Max entries read from the stream per XREAD.
+NOTIFICATIONS_SSE_READ_COUNT = env.int("NOTIFICATIONS_SSE_READ_COUNT", default=100)
+NOTIFICATIONS_TASK_TIME_LIMIT = env.int("NOTIFICATIONS_TASK_TIME_LIMIT", default=60000)
 
 
 # ---------------------------------------------------------------------------
