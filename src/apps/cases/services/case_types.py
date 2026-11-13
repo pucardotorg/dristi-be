@@ -142,6 +142,8 @@ class PaymentStatus(models.TextChoices):
 
     PART_PAYMENT = "PART_PAYMENT", "Part Payment"
     NO_PAYMENT_MADE = "NO_PAYMENT_MADE", "No Payment Made"
+
+
 # Parts of a filing that are neither an evidence type, a details section nor a
 # participant role, as ``CaseTypeConfig.correction_sections`` names them.
 DOCUMENTS_PART = "DOCUMENTS"

@@ -281,19 +281,6 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `PDF_SIGNATURE_CONTAINER_BYTES` | Signature container reserved by `prepare_for_signing`; must exceed the largest ESP PKCS#7 | `16384` |
 | `PDF_SIGNATURE_HASH_ALGORITHM` | ByteRange digest algorithm (`SHA256`, `SHA384`, `SHA512`); must match the ESP request | `SHA256` |
 | `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives; keep it at or above `FILE_MAX_SIZE_BYTES`, or an accepted upload cannot be signed | `20971520` |
-
-## Services included
-
-The Docker Compose stack includes:
-
-- **PostgreSQL 16** - Primary database
-- **Redis 7** - Cache and message broker for Dramatiq
-- **Rustfs** - S3-compatible object storage for media files
-- **MailHog** - Email testing (catches all outgoing emails)
-- **Adminer** - Database management UI
-- **Dramatiq Dashboard** - Background job monitoring
-- **httpbin** - HTTP testing service (for dummy SMS backend)
-| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives | `10485760` |
 | `ESIGN_PROVIDER` | Dotted path of the active eSign provider. The mock provider needs no C-DAC credentials and is the local/CI default. | `addon.cdac_esign.provider.CDACESignProvider` |
 | `ESIGN_ENABLED` | Kill switch; initiation returns 503 when disabled | `True` |
 | `ESIGN_TRANSACTION_TTL` | Seconds a transaction waits for the ESP callback | `900` |

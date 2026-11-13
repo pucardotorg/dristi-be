@@ -184,11 +184,6 @@ class Institution(BaseModel, BaseAuditableModel):
                 name="parties_institution_entity_type_valid",
             ),
             models.CheckConstraint(
-                condition=Q(contact_number__isnull=True)
-                | Q(contact_number__regex=CONTACT_NUMBER_REGEX),
-                name="parties_institution_contact_number_valid",
-            ),
-            models.CheckConstraint(
                 condition=Q(pan__isnull=True) | Q(pan__regex=PAN_REGEX),
                 name="parties_institution_pan_valid",
             ),
@@ -199,7 +194,7 @@ class Institution(BaseModel, BaseAuditableModel):
             # ``clean`` reports the same rule on its field; this guards writes
             # that skip ``save``, such as ``update()`` and ``bulk_create``.
             models.CheckConstraint(
-                check=Q(pan_cin_skip_declared=False) | Q(pan__isnull=True, cin__isnull=True),
+                condition=Q(pan_cin_skip_declared=False) | Q(pan__isnull=True, cin__isnull=True),
                 name="parties_institution_skip_declared_without_pan_cin",
                 violation_error_message=PAN_CIN_SKIP_CONFLICT_MESSAGE,
             ),

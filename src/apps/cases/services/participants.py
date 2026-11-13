@@ -44,6 +44,8 @@ from ..models import (
     Witness,
     police_station_problems,
 )
+from . import correction
+from .case_types import ADVOCATES_PART
 from .contacts import (
     CONTACT_LISTS,
     contacts_of,
@@ -51,8 +53,6 @@ from .contacts import (
     replace_contacts,
     save_addresses,
 )
-from . import correction
-from .case_types import ADVOCATES_PART
 from .services import (
     clear_preview_cache,
     deactivate,
@@ -556,20 +556,16 @@ def update_participant(participant, user, data):
     if problems:
         raise serializers.ValidationError(problems)
 
-    with editing(participant.case, user):
+    with editing(participant.case, user) as case:
+        correction.check_write(case, user, participant.role, whole=True)
         # Read again under the case lock: a concurrent removal is not undone.
         participant = get_participant(participant.pk, user)
-        case = participant.case
         old_institution_id = participant.institution_id
         if institution_fields is not None:
             if _identified_by_nothing(participant.institution, institution_fields):
                 _edit_institution(participant, user, institution_fields, data)
             else:
                 _relink_institution(participant, user, institution_fields, data)
-    with editing(participant.case, user) as case:
-        correction.check_write(case, user, participant.role, whole=True)
-        if "address" in data:
-            participant.address = _save_address(data.pop("address"), user)
         for field, value in data.items():
             setattr(participant, field, value)
         participant.updated_by = user
@@ -778,12 +774,10 @@ def remove_participant(participant, user):
     they no longer act for anyone.
     """
     ensure_editable(participant.case)
-    with editing(participant.case, user):
-        # Read again under the case lock, so a second removal finds nothing.
-        _remove(get_participant(participant.pk, user), user, timezone.now())
     with editing(participant.case, user) as case:
         correction.check_write(case, user, participant.role, whole=True)
-        _remove(participant, user, timezone.now())
+        # Read again under the case lock, so a second removal finds nothing.
+        _remove(get_participant(participant.pk, user), user, timezone.now())
 
 
 def _remove(participant, user, now):

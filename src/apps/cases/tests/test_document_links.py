@@ -73,7 +73,7 @@ class TestEvidenceScanType:
             )
 
         assert response.status_code == 400
-        assert error_codes(response) == {"case_document_id": ["E07029"]}
+        assert error_codes(response) == {"case_document_id": ["E07030"]}
         assert not CaseEvidence.objects.filter(case_id=draft, evidence_type=evidence_type).exists()
 
     def test_relinking_to_another_type_is_refused(self, client, draft, pdf):
@@ -87,7 +87,7 @@ class TestEvidenceScanType:
         )
 
         assert response.status_code == 400
-        assert error_codes(response) == {"case_document_id": ["E07029"]}
+        assert error_codes(response) == {"case_document_id": ["E07030"]}
         assert CaseEvidence.objects.get(pk=cheque["case_evidence_id"]).case_document_id is None
 
     def test_the_model_refuses_it_too(self, client, draft, pdf):
@@ -99,7 +99,7 @@ class TestEvidenceScanType:
         with pytest.raises(ValidationError) as exc:
             evidence.full_clean()
 
-        assert exc.value.error_dict["case_document"][0].code == "E07029"
+        assert exc.value.error_dict["case_document"][0].code == "E07030"
 
 
 class TestParticipantLinks:
@@ -150,7 +150,7 @@ class TestParticipantLinks:
         )
 
         assert response.status_code == 400
-        assert error_codes(response) == {"case_participant_id": ["E07030"]}
+        assert error_codes(response) == {"case_participant_id": ["E07031"]}
 
     def test_a_participant_of_another_case_is_refused_and_nothing_is_kept(self, client, draft, pdf):
         add_complainant(client, draft)
@@ -221,7 +221,7 @@ class TestEvidenceLinks:
         )
 
         assert response.status_code == 400
-        assert error_codes(response) == {"case_evidence_id": ["E07029"]}
+        assert error_codes(response) == {"case_evidence_id": ["E07030"]}
 
     def test_a_type_with_no_evidence_cannot_be_linked(self, client, draft, pdf):
         notice = add_notice(client, draft)
@@ -235,7 +235,7 @@ class TestEvidenceLinks:
         )
 
         assert response.status_code == 400
-        assert error_codes(response) == {"case_evidence_id": ["E07030"]}
+        assert error_codes(response) == {"case_evidence_id": ["E07031"]}
 
     def test_an_unknown_evidence_id_is_refused(self, client, draft, pdf):
         response = upload(
@@ -243,7 +243,7 @@ class TestEvidenceLinks:
         )
 
         assert response.status_code == 400
-        assert error_codes(response) == {"case_evidence_id": ["E07031"]}
+        assert error_codes(response) == {"case_evidence_id": ["E07032"]}
 
     def test_a_scan_is_linked_from_its_evidence_not_here_and_no_file_is_stored(
         self, client, draft, pdf
@@ -256,7 +256,7 @@ class TestEvidenceLinks:
         )
 
         assert response.status_code == 400
-        assert error_codes(response) == {"case_evidence_id": ["E07030"]}
+        assert error_codes(response) == {"case_evidence_id": ["E07031"]}
         assert File.objects.count() == files_before
 
     def test_removing_the_evidence_unlinks_its_papers(self, client, draft, pdf):
@@ -280,7 +280,7 @@ class TestEvidenceLinks:
         )
 
         assert response.status_code == 400
-        assert error_codes(response) == {"case_evidence_id": ["E07031"]}
+        assert error_codes(response) == {"case_evidence_id": ["E07032"]}
 
 
 class TestDocumentDetails:
@@ -389,7 +389,7 @@ class TestChangeDocument:
         )
 
         assert response.status_code == 400
-        assert error_codes(response) == {"case_participant_id": ["E07030"]}
+        assert error_codes(response) == {"case_participant_id": ["E07031"]}
         stored = CaseDocument.objects.get(pk=document["case_document_id"])
         assert (stored.case_participant_id, stored.additional_details) == (None, {})
 

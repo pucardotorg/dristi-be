@@ -82,20 +82,21 @@ SIGNED_BEFORE_SUBMISSION = define(
     "E07028", "This document was e-signed before the case was submitted for signing."
 )
 
-# Document links (spec 0021 §3, §5)
-# A cheque's scan must be a bounced cheque, a proof of dispatch must belong to
-# a demand notice, and so on.
-DOCUMENT_TYPE_MISMATCH = define("E07029", "This document's type does not fit what it is linked to.")
-DOCUMENT_LINK_NOT_ALLOWED = define("E07030", "This document type cannot be linked here.")
-EVIDENCE_NOT_ON_CASE = define("E07031", "No active evidence with this id on this case.")
-
-# Witnesses (spec 0020 §4.5)
-WITNESS_ALREADY_ON_SIDE = define("E07032", "This person is already a witness for this side.")
-
-# Contacts (spec 0020 §4.6)
-DUPLICATE_CONTACT = define("E07033", "This contact is given more than once.")
 # Correction (spec 0024 #5.1): a case sent back accepts writes only inside the
 # scope the court opened. The field is the part of the request outside it.
 FIELD_NOT_OPEN_FOR_CORRECTION = define(
     "E07029", "This part of the filing is not open for correction.", status=409
 )
+
+# Document links (spec 0021 §3, §5)
+# A cheque's scan must be a bounced cheque, a proof of dispatch must belong to
+# a demand notice, and so on.
+DOCUMENT_TYPE_MISMATCH = define("E07030", "This document's type does not fit what it is linked to.")
+DOCUMENT_LINK_NOT_ALLOWED = define("E07031", "This document type cannot be linked here.")
+EVIDENCE_NOT_ON_CASE = define("E07032", "No active evidence with this id on this case.")
+
+# Witnesses (spec 0020 §4.5)
+WITNESS_ALREADY_ON_SIDE = define("E07033", "This person is already a witness for this side.")
+
+# Contacts (spec 0020 §4.6)
+DUPLICATE_CONTACT = define("E07034", "This contact is given more than once.")

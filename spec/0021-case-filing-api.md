@@ -246,8 +246,8 @@ If document upload is the first action, the case must exist before we can link t
 
 **Error Responses:**
 - `400 Bad Request`: Unknown `document_type`, or the file fails the shared `apps.files` check: it must be a PDF, JPEG, PNG, WebP or HEIC/HEIF (phone photos) whose content matches its type (leading bytes), with a matching extension, within the size limit (`FILE_MAX_SIZE_BYTES`, 15 MB by default). Other uploads in the system (registration, requests) take PDF, JPEG and PNG only. The declared content type and the file name are only hints, so a renamed or mislabelled file is refused.
-- `400 Bad Request`: a link that does not fit: a type that cannot be linked there (`E07030`), a participant of the wrong role (`E07016`) or not on the case (`E07010`), evidence of the wrong type (`E07029`) or not on the case (`E07031`)
-- `409 Conflict` (`E07001`): the case has been submitted (§7)
+- `400 Bad Request`: a link that does not fit: a type that cannot be linked there (`E07031`), a participant of the wrong role (`E07016`) or not on the case (`E07010`), evidence of the wrong type (`E07030`) or not on the case (`E07032`)
+- `409 Conflict` (`E07001`): the case has been submitted (§7); `E07029` in correction, outside the scope the court opened (§7)
 - `404 Not Found`: Neither case nor draft session exists for the provided ID
 - `413 Payload Too Large`: File exceeds size limit
 
@@ -298,7 +298,7 @@ or to correct an "Other document"'s name. Any of these may be sent:
 ```
 
 - A field left out is kept; `null` removes a link or a detail. A blank `display_name` removes it too, and a name is trimmed.
-- The links are checked exactly as on upload (§3.1 errors: `E07030`, `E07016`, `E07010`, `E07029`, `E07031`).
+- The links are checked exactly as on upload (§3.1 errors: `E07031`, `E07016`, `E07010`, `E07030`, `E07032`).
 - The file and `document_type` cannot change (`E07024` on the field); upload a new document instead.
 - An empty body is refused (`E00002`). Only drafts can be changed (`E07001`, §7).
 
@@ -464,7 +464,7 @@ POST /cases/{case_id_or_draft_session_id}/complainants
 
 **Contacts** (spec 0020 §4.6): `mobile_numbers`, `email_addresses` and `addresses` are lists, in order; the first of each is the primary. At the top level they are the individual's; inside `institution`, the institution's own **for this case** (a reused institution's contacts in other cases are never shown or changed). Every party, every role, has the same lists:
 - An individual needs at least one address (`E00002` on `addresses`). An institution needs at least one of its own (`E00002` on `institution.addresses`); the person acting for it may give theirs too. An institution with no person has no top-level lists (`E07023`).
-- A person's mobile numbers are in E.164 form; an institution's may be landlines (`E00001` on `mobile_numbers[1]`, say). Nothing may appear twice in one list, emails compared ignoring case (`E07033` on the repeat).
+- A person's mobile numbers are in E.164 form; an institution's may be landlines (`E00001` on `mobile_numbers[1]`, say). Nothing may appear twice in one list, emails compared ignoring case (`E07034` on the repeat).
 - Every address of an accused or witness, their institution's included, needs a `police_station` (`E00002` on `addresses[0].police_station` or `institution.addresses[0].police_station`).
 - A new person keeps the first mobile number, email and address as their own (`person.phone_number`, `email_address`, `correspondence_address`).
 
@@ -614,7 +614,7 @@ POST /cases/{case_id_or_draft_session_id}/witnesses
 - `what_will_witness_prove` is optional; left out or blank, it is stored empty.
 - A witness is always an individual: `institution` is not accepted. `"self": true` is. `is_party_in_person` does not apply to a witness and is refused.
 - At least one address is required (`E00002` on `addresses`), each with a `police_station`.
-- A complainant or accused may also be a witness. The same person may be a witness more than once on a case (a witness recalled by the other side is a new participant, spec 0020 §4.5.3), but not twice for the same side while active (`E07032`).
+- A complainant or accused may also be a witness. The same person may be a witness more than once on a case (a witness recalled by the other side is a new participant, spec 0020 §4.5.3), but not twice for the same side while active (`E07033`).
 - `additional_details` is stored on the `witness` row; the participant's own `additional_details` stays `{}`. On PATCH, a witness's `additional_details` likewise changes the `witness` row.
 
 **Response (201 Created):** the participant, as in §4.1, with a `witness` block (`null` for every other role, here and in `GET /cases/{id}/participants`):
@@ -846,7 +846,7 @@ any cheque; one notice may cover several cheques, and nothing links them.
 New case types add new `evidence_type` values and their schemas, not new endpoints or tables. This replaces type-specific calls like `POST /cheque_bounce`.
 
 **PATCH:**
-Updates `evidence_info`, `case_document_id`, or both; at least one must be sent (`E00002`), and nothing else (`E07024`). `case_document_id` links a document uploaded after the evidence was entered (spec 0020 §11.4), and `null` unlinks it; leaving it out keeps the current link. The document must be an active document of the same case (`E07003`, also for an unknown id), of the evidence's scan type (`E07029`). This is the only way a scan is linked: the document side does not record it (spec 0020 §9.3). Changing `evidence_type` is not allowed; delete and recreate instead.
+Updates `evidence_info`, `case_document_id`, or both; at least one must be sent (`E00002`), and nothing else (`E07024`). `case_document_id` links a document uploaded after the evidence was entered (spec 0020 §11.4), and `null` unlinks it; leaving it out keeps the current link. The document must be an active document of the same case (`E07003`, also for an unknown id), of the evidence's scan type (`E07030`). This is the only way a scan is linked: the document side does not record it (spec 0020 §9.3). Changing `evidence_type` is not allowed; delete and recreate instead.
 
 **DELETE:**
 Soft delete: sets `is_active = false`. Documents linked to it (a notice's dispatch, delivery or reply papers) are unlinked, and stay on the case.
@@ -1486,7 +1486,7 @@ Anything else is refused with `409 Conflict` and `E07029`, on the request field 
 | `E07014` | 400 | The person or institution would be both a complainant and an accused, or the advocate would represent both. |
 | `E07015` | — | Retired (a witness was called by a party, now by a side). Never reused. |
 | `E07016` | 400 | The participant does not have the role this needs (a complainant or an accused; a witness; a POA holder). |
-| `E07017` | — | Retired ("already a witness called by this party"), replaced by `E07032`. Never reused. |
+| `E07017` | — | Retired ("already a witness called by this party"), replaced by `E07033`. Never reused. |
 | `E07018` | 400 | A party cannot act for themselves (a POA holder for themselves, an advocate for themselves). |
 | `E07019` | 400 | The filer cannot name themselves as accused. |
 | `E07020` | 400 | The POA holder or advocate already acts for this party. |
@@ -1497,12 +1497,13 @@ Anything else is refused with `409 Conflict` and `E07029`, on the request field 
 | `E07025` | 400 | Both `person` and `"self": true` were sent. |
 | `E07026` | 400 | The signed document is already recorded for another participant (§8). |
 | `E07027` | 400 | The e-sign transaction's signer is not the participant's user account (§8). |
-| `E07028` | 400 | The e-signature was completed before the case entered `PENDING_SIGN` (§8). |
-| `E07029` | 400 | A document's type does not fit what it is linked to: an evidence scan of another type (a proof of dispatch as a cheque's scan), or a document linked to evidence of the wrong type (§3, §5). |
-| `E07030` | 400 | This document type cannot be linked there (a cheque scan to a participant or to evidence: a scan is linked from its evidence; an "other document" to evidence). |
-| `E07031` | 400 | The linked evidence is not an active evidence item of this case. |
-| `E07032` | 400 | The person is already a witness for this side. |
-| `E07033` | 400 | A mobile number, email or address is given more than once in one list (spec 0020 §4.6). |
+| `E07028` | 400 | The e-signature was completed before the case last entered `PENDING_SIGN` (§8). |
+| `E07029` | 409 | The case is in correction and this write is outside the scope the court opened (§7). `field` names the part of the request outside it. |
+| `E07030` | 400 | A document's type does not fit what it is linked to: an evidence scan of another type (a proof of dispatch as a cheque's scan), or a document linked to evidence of the wrong type (§3, §5). |
+| `E07031` | 400 | This document type cannot be linked there (a cheque scan to a participant or to evidence: a scan is linked from its evidence; an "other document" to evidence). |
+| `E07032` | 400 | The linked evidence is not an active evidence item of this case. |
+| `E07033` | 400 | The person is already a witness for this side. |
+| `E07034` | 400 | A mobile number, email or address is given more than once in one list (spec 0020 §4.6). |
 
 A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00004` blank text, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
 

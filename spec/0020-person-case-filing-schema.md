@@ -629,7 +629,7 @@ New case types add new enums without altering the table structure.
 | `VAKALATNAMA`, `POA_DOCUMENT` | COMPLAINANT or ACCUSED (the party represented) | — |
 | `PROOF_OF_DISPATCH`, `PROOF_OF_DELIVERY_OF_DEMAND_NOTICE`, `REPLY_TO_DEMAND_NOTICE` | — | LEGAL_DEMAND_NOTICE |
 
-An evidence item's own scan (`BOUNCED_CHEQUE`, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE`) is not linked here but from the evidence, `case_evidence.case_document_id` (§11), so it is recorded in one place and two links can never disagree. Any other link is refused (`E07030`), before the file is stored; so is a participant of the wrong role (`E07016`), or one that is unknown, on another case or removed (`E07010`), and evidence of the wrong type (`E07029`), or unknown, on another case or removed (`E07031`). Removing a participant or an evidence item unlinks the documents linked to it; they stay on the case. The completeness check counts a per-party or per-notice document only when it is linked (spec 0021 §6.3). A vakalatnama is still linked to the party, not to one `representation`; a POA document to the represented party, not to one `poa_mandate`.
+An evidence item's own scan (`BOUNCED_CHEQUE`, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE`) is not linked here but from the evidence, `case_evidence.case_document_id` (§11), so it is recorded in one place and two links can never disagree. Any other link is refused (`E07031`), before the file is stored; so is a participant of the wrong role (`E07016`), or one that is unknown, on another case or removed (`E07010`), and evidence of the wrong type (`E07030`), or unknown, on another case or removed (`E07032`). Removing a participant or an evidence item unlinks the documents linked to it; they stay on the case. The completeness check counts a per-party or per-notice document only when it is linked (spec 0021 §6.3). A vakalatnama is still linked to the party, not to one `representation`; a POA document to the represented party, not to one `poa_mandate`.
 
 ### 9.4 Design Decisions
 
@@ -714,7 +714,7 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | |
-| `case_document_id` | uuid | FK → case_document, NULLABLE | The evidence's own scan; must be of its type: `BOUNCED_CHEQUE` for a cheque, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE` (`E07029` otherwise) |
+| `case_document_id` | uuid | FK → case_document, NULLABLE | The evidence's own scan; must be of its type: `BOUNCED_CHEQUE` for a cheque, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE` (`E07030` otherwise) |
 | `evidence_type` | varchar(64) | NOT NULL | CHEQUE, RETURN_MEMO, LEGAL_DEMAND_NOTICE, etc. |
 | `ordinal` | smallint | NOT NULL | Cheque #1, cheque #2, demand notice #1 |
 | `evidence_info` | jsonb | NOT NULL, default '{}' | Type-specific details, see §11.3 |

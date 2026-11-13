@@ -42,10 +42,8 @@ from ..models import (
     ParticipantRole,
     link_type_errors,
 )
-from .case_types import CASE_TYPES, get_config, schema_errors, section_errors
-from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
 from . import correction
-from .case_types import DOCUMENTS_PART, get_config, schema_errors
+from .case_types import CASE_TYPES, DOCUMENTS_PART, get_config, schema_errors, section_errors
 
 logger = logging.getLogger(__name__)
 
@@ -436,8 +434,8 @@ def add_document(
     details = _with_details({}, is_digital=is_digital, display_name=display_name)
     file_id = _store_file(upload, user, case_type)
     try:
-        with transaction.atomic():
-            case = get_or_create_case(case_or_draft_id, user)
+        with editing_or_creating(case_or_draft_id, user) as case:
+            correction.check_write(case, user, DOCUMENTS_PART, whole=True, field="document_type")
             document = CaseDocument(
                 case=case,
                 document_id=file_id,
@@ -449,8 +447,7 @@ def add_document(
                 updated_by=user,
             )
             validated_save(document, renamed=DOCUMENT_FIELD_NAMES)
-            touch(case, user)
-            return document
+        return document
     except Exception:
         documents.discard_documents([file_id])
         raise
@@ -510,13 +507,10 @@ def remove_document(case_document_id, user):
     same document.
     """
     case = get_active_case_item(CaseDocument, case_document_id, user).case
-    with editing(case, user):
-        document = get_active_case_item(CaseDocument, case_document_id, user)
-        deactivate(document, user)
-        unlink(document.evidence.active(), "case_document", user)
-    document = get_active_case_item(CaseDocument, case_document_id, user)
-    with editing(document.case, user) as case:
+    with editing(case, user) as case:
         correction.check_write(case, user, DOCUMENTS_PART, whole=True)
+        # Re-read under the lock: a concurrent write may have removed it.
+        document = get_active_case_item(CaseDocument, case_document_id, user)
         deactivate(document, user)
         _relink_evidence(document, None, user)
 
@@ -536,13 +530,18 @@ def replace_document(case_document_id, user, upload):
         with editing(old.case, user) as case:
             # Re-read under the lock: a concurrent write may have removed it.
             old = get_active_case_item(CaseDocument, case_document_id, user)
-            document = CaseDocument.objects.create(
+            # The new file takes the old one's place, links and details included.
+            document = CaseDocument(
                 case=case,
                 document_id=file_id,
                 document_type=old.document_type,
+                case_participant_id=old.case_participant_id,
+                case_evidence_id=old.case_evidence_id,
+                additional_details=old.additional_details,
                 created_by=user,
                 updated_by=user,
             )
+            validated_save(document, renamed=DOCUMENT_FIELD_NAMES)
             correction.check_replacement(case, user, old, document)
             deactivate(old, user)
             _relink_evidence(old, document, user)
@@ -612,7 +611,6 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
     validate_evidence(get_case_type(case_or_draft_id, user), evidence_type, evidence_info)
     # The case lock serialises ordinal assignment.
     with editing_or_creating(case_or_draft_id, user) as case:
-        evidence = CaseEvidence(
         ordinal = next_ordinal(
             CaseEvidence.objects.active().filter(case=case, evidence_type=evidence_type)
         )
@@ -620,10 +618,7 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
             case, evidence_type, {}, evidence_info, index=ordinal - 1, field="evidence_info"
         )
         correction.check_write(case, user, evidence_type, added, whole=True, field="evidence_type")
-        if case_document_id is not None:
-            _require_case_document(case, case_document_id)
-
-        evidence = CaseEvidence.objects.create(
+        evidence = CaseEvidence(
             case=case,
             case_document_id=case_document_id,
             evidence_type=evidence_type,
@@ -651,15 +646,35 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
     ensure_editable(evidence.case)
     if evidence_info is not _UNSET:
         validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
-    with editing(evidence.case, user):
+    with editing(evidence.case, user) as case:
+        # Re-read under the lock: a concurrent removal is not undone, and the
+        # change is measured against what is stored.
         evidence = get_active_case_item(CaseEvidence, evidence.pk, user)
-        fields = ["updated_by", "updated_at"]
+        fields, changed = ["updated_by", "updated_at"], []
         if evidence_info is not _UNSET:
+            changed += correction.changes(
+                case,
+                evidence.evidence_type,
+                evidence.evidence_info,
+                evidence_info,
+                index=evidence.ordinal - 1,
+                field="evidence_info",
+            )
             evidence.evidence_info = evidence_info
             fields.append("evidence_info")
         if case_document_id is not _UNSET:
+            if case_document_id != evidence.case_document_id:
+                changed.append(
+                    correction.Change(
+                        None,
+                        "case_document_id",
+                        _str_or_none(evidence.case_document_id),
+                        _str_or_none(case_document_id),
+                    )
+                )
             evidence.case_document_id = case_document_id
             fields.append("case_document")
+        correction.check_write(case, user, evidence.evidence_type, changed)
         evidence.updated_by = user
         validated_save(evidence, update_fields=fields, renamed=EVIDENCE_FIELD_NAMES)
     return evidence
@@ -672,7 +687,8 @@ def _str_or_none(value):
 def remove_evidence(evidence, user):
     """Soft-delete evidence; documents that supported it are unlinked, as on removing a document."""
     ensure_editable(evidence.case)
-    with editing(evidence.case, user):
+    with editing(evidence.case, user) as case:
+        correction.check_write(case, user, evidence.evidence_type, whole=True)
         evidence = get_active_case_item(CaseEvidence, evidence.pk, user)
         deactivate(evidence, user)
         unlink(evidence.documents.active(), "case_evidence", user)
@@ -721,8 +737,7 @@ def save_details_section(case_or_draft_id, user, section, data):
     config = get_config(case_type)
     _require_allowed(section, config.sections, "section", case_type)
     _raise_schema_errors(section_errors(config, section, data), "data")
-    with transaction.atomic():
-        case = get_or_create_case(case_or_draft_id, user)
+    with editing_or_creating(case_or_draft_id, user) as case:
         detail = _get_or_create_detail_row(case, user)
         changed = correction.changes(case, section, getattr(detail, section), data, field="data")
         correction.check_write(case, user, section, changed)

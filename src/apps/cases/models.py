@@ -392,7 +392,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 violation_error_code=api_errors.REQUIRED.code,
             ),
             models.CheckConstraint(
-                check=(
+                condition=(
                     Q(role=ParticipantRole.ACCUSED, resides_within_jurisdiction__isnull=False)
                     | (
                         ~Q(role=ParticipantRole.ACCUSED)
@@ -405,12 +405,12 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             models.CheckConstraint(
                 # That no mobile number or email is given is checked against the
                 # participant's contacts, in the party write and at validation.
-                check=Q(contact_details_unknown_declared=False) | Q(role=ParticipantRole.ACCUSED),
+                condition=Q(contact_details_unknown_declared=False)
+                | Q(role=ParticipantRole.ACCUSED),
                 name="cases_case_participant_contact_unknown_accused_only",
                 violation_error_message=CONTACT_UNKNOWN_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(role__in=ParticipantRole.values),
                 condition=Q(role__in=ParticipantRole.values),
                 name="cases_case_participant_role_valid",
                 violation_error_message=ROLE_VALID_MESSAGE,
@@ -578,7 +578,7 @@ class Witness(BaseModel, BaseAuditableModel):
         verbose_name_plural = "witnesses"
         constraints = [
             models.CheckConstraint(
-                check=Q(side__in=WitnessSide.values),
+                condition=Q(side__in=WitnessSide.values),
                 name="cases_witness_side_valid",
                 violation_error_message="Choose a valid side.",
             ),
@@ -934,12 +934,14 @@ class CaseContact(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
         constraints = [
             models.CheckConstraint(
-                check=Q(case_participant__isnull=False) | Q(institution__isnull=False),
+                condition=Q(case_participant__isnull=False) | Q(institution__isnull=False),
                 name="cases_case_contact_owner",
                 violation_error_message=CONTACT_OWNER_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(contact_type=ContactType.ADDRESS, address__isnull=False, value__isnull=True)
+                condition=Q(
+                    contact_type=ContactType.ADDRESS, address__isnull=False, value__isnull=True
+                )
                 | Q(
                     contact_type__in=VALUE_CONTACT_TYPES,
                     address__isnull=True,

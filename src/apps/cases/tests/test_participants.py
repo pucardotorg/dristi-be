@@ -899,7 +899,7 @@ class TestUpdate:
 
         response = patch(client, body["case_participant_id"], change)
 
-        assert error_codes(response) == {field: ["E07033"]}
+        assert error_codes(response) == {field: ["E07034"]}
 
     def test_an_individual_cannot_be_left_without_an_address(self, client, draft):
         body = add_complainant(client, draft)
@@ -1266,7 +1266,7 @@ class TestAddWitness:
         with pytest.raises(ValidationError) as exc:
             participant.full_clean()
 
-        assert exc.value.error_dict["person"][0].code == "E07032"
+        assert exc.value.error_dict["person"][0].code == "E07033"
 
     def test_creates_a_participant_and_a_witness_row(self, client, draft):
         response = add_witness(client, draft, additional_details={"lang": "kn"})
@@ -1302,7 +1302,7 @@ class TestAddWitness:
         again = add_witness(client, draft, "COMPLAINANT", self=True, person=None)
 
         assert again.status_code == 400
-        assert error_codes(again) == {"side": ["E07032"]}
+        assert error_codes(again) == {"side": ["E07033"]}
 
     @pytest.mark.parametrize("statement", [None, "", "   "])
     def test_what_the_witness_will_prove_is_optional(self, client, draft, statement):
