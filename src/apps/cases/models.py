@@ -263,12 +263,12 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
         constraints = [
             models.CheckConstraint(
-                check=Q(person__isnull=False) | Q(institution__isnull=False),
+                condition=Q(person__isnull=False) | Q(institution__isnull=False),
                 name="cases_case_participant_person_or_institution",
                 violation_error_message=PERSON_OR_INSTITUTION_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(institution__isnull=True) | Q(role__in=INSTITUTION_ROLES),
+                condition=Q(institution__isnull=True) | Q(role__in=INSTITUTION_ROLES),
                 name="cases_case_participant_institution_role",
                 violation_error_message=INSTITUTION_ROLE_MESSAGE,
                 violation_error_code=case_errors.INSTITUTION_NOT_ALLOWED.code,
@@ -277,7 +277,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 # An accused institution's officer is liable through their role,
                 # so it is recorded; a complainant's representative needs only
                 # authorisation (spec 0020 §4.2).
-                check=Q(person__isnull=True)
+                condition=Q(person__isnull=True)
                 | Q(institution__isnull=True)
                 | ~Q(role=ParticipantRole.ACCUSED)
                 | Q(designation_at_filing__isnull=False),
@@ -286,7 +286,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 violation_error_code=api_errors.REQUIRED.code,
             ),
             models.CheckConstraint(
-                check=Q(role__in=ParticipantRole.values),
+                condition=Q(role__in=ParticipantRole.values),
                 name="cases_case_participant_role_valid",
                 violation_error_message=ROLE_VALID_MESSAGE,
             ),
@@ -511,7 +511,7 @@ class PoaMandate(BaseModel, BaseActivatableModel, BaseAuditableModel):
         verbose_name = "POA mandate"
         constraints = [
             models.CheckConstraint(
-                check=~Q(poa_participant=F("represented_participant")),
+                condition=~Q(poa_participant=F("represented_participant")),
                 name="cases_poa_mandate_not_self",
                 violation_error_message=PARTICIPANT_MANDATE_FOR_SELF_MESSAGE,
                 violation_error_code=case_errors.SELF_REPRESENTATION.code,

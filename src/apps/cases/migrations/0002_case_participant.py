@@ -289,7 +289,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="caseparticipant",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("person__isnull", False), ("institution__isnull", False), _connector="OR"
                 ),
                 name="cases_case_participant_person_or_institution",
@@ -299,7 +299,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="caseparticipant",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("institution__isnull", True),
                     ("role__in", ("COMPLAINANT", "ACCUSED")),
                     _connector="OR",
@@ -312,7 +312,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="caseparticipant",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("person__isnull", True),
                     ("institution__isnull", True),
                     models.Q(("role", "ACCUSED"), _negated=True),
@@ -329,7 +329,9 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="caseparticipant",
             constraint=models.CheckConstraint(
-                check=models.Q(("role__in", ["COMPLAINANT", "ACCUSED", "WITNESS", "POA_HOLDER"])),
+                condition=models.Q(
+                    ("role__in", ["COMPLAINANT", "ACCUSED", "WITNESS", "POA_HOLDER"])
+                ),
                 name="cases_case_participant_role_valid",
                 violation_error_message="Choose a valid role.",
             ),

@@ -2,18 +2,24 @@
 
 import io
 import json
+import socket
+import time
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+from django.core.cache import caches
+from django.core.cache.backends.redis import RedisCacheClient
 from django.core.management import call_command
 from django.db import OperationalError, connections
+from django.test import override_settings
 from django.urls import reverse
-from redis import Redis
+from redis import ConnectionPool, Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.api.health import REDIS_PROBE_TIMEOUT
+from apps.api.health import PROBE_TIMEOUT, Cache, Database
 from apps.core.models import ApiVersionChangeLog
 from apps.users.models import User
 
@@ -91,8 +97,141 @@ class SystemHealthCheckTests(APITestCase):
         self.assertEqual(len(clients), 2)
         self.assertIsNot(clients[0], clients[1])
         options = clients[0].connection_pool.connection_kwargs
-        self.assertEqual(options["socket_connect_timeout"], REDIS_PROBE_TIMEOUT)
-        self.assertEqual(options["socket_timeout"], REDIS_PROBE_TIMEOUT)
+        self.assertEqual(options["socket_connect_timeout"], PROBE_TIMEOUT)
+        self.assertEqual(options["socket_timeout"], PROBE_TIMEOUT)
+
+    def test_database_probe_gets_its_own_bounded_connection(self):
+        """On PostgreSQL the probe connects with a connect and statement timeout."""
+        app_settings = connections.settings["default"]
+        postgres = {
+            "ENGINE": "django.db.backends.postgresql",
+            "OPTIONS": {"options": "-c search_path=dristi", "pool": True},
+        }
+        with patch.dict(app_settings, postgres):
+            probe = Database()._probe_connection()
+            self.assertIsNot(probe, connections["default"])
+            self.assertEqual(probe.settings_dict["OPTIONS"]["connect_timeout"], PROBE_TIMEOUT)
+            self.assertEqual(
+                probe.settings_dict["OPTIONS"]["options"],
+                f"-c search_path=dristi -c statement_timeout={PROBE_TIMEOUT * 1000}",
+            )
+            self.assertNotIn("pool", probe.settings_dict["OPTIONS"])
+            # The app's connections keep their settings.
+            self.assertEqual(app_settings["OPTIONS"], postgres["OPTIONS"])
+
+    @patch("apps.api.health.PROBE_TIMEOUT", 0.2)
+    def test_database_probe_stops_waiting_for_a_reply_at_the_deadline(self):
+        """A query whose reply never arrives fails at PROBE_TIMEOUT, not when the network gives up."""
+        client, server = socket.socketpair()
+        self.addCleanup(server.close)
+        self.addCleanup(client.close)
+
+        def execute(sql):
+            # Like the driver: block reading the reply, fail when the socket closes.
+            if not client.recv(1):
+                raise OperationalError("server closed the connection unexpectedly")
+
+        connection = MagicMock(vendor="postgresql")
+        connection.connection.fileno.return_value = client.fileno()
+        connection.cursor.return_value.__enter__.return_value.execute.side_effect = execute
+        check = Database()
+        with (
+            patch.object(Database, "_probe_connection", return_value=connection),
+            self.assertLogs("health-check", "ERROR"),
+        ):
+            start = time.monotonic()
+            check.run_check()
+        self.assertLess(time.monotonic() - start, 2)
+        self.assertEqual([str(e) for e in check.errors], ["unavailable: Database unavailable."])
+        connection.close.assert_called_once()
+
+    @override_settings(
+        CACHES={
+            "default": {
+                "BACKEND": "django.core.cache.backends.redis.RedisCache",
+                "LOCATION": "redis://localhost:6379/1",
+                "OPTIONS": {"db": 1},
+            }
+        }
+    )
+    def test_cache_probe_gets_its_own_bounded_client(self):
+        """On Redis the cache probe uses a client with finite timeouts."""
+        probe = Cache(cache_key=None)._probe_cache()
+        self.assertIsNot(probe, caches["default"])
+        self.assertEqual(
+            probe._options,
+            {"db": 1, "socket_connect_timeout": PROBE_TIMEOUT, "socket_timeout": PROBE_TIMEOUT},
+        )
+        self.assertEqual(caches["default"]._options, {"db": 1})
+
+    @override_settings(
+        CACHES={
+            "default": {
+                "BACKEND": "django.core.cache.backends.redis.RedisCache",
+                "LOCATION": "redis://localhost:6379/1",
+            }
+        }
+    )
+    @patch.object(Redis, "ping", return_value=True)
+    @patch.object(RedisCacheClient, "set", side_effect=RedisTimeoutError)
+    def test_cache_timeout(self, cache_set, ping):
+        """/health/ returns 500 when the cache's Redis times out."""
+        response = self.client.get("/health/?format=json")
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(
+            response.json()["Cache(alias='default')"], "unavailable: Cache unavailable."
+        )
+
+    @override_settings(
+        CACHES={"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+    )
+    def test_cache_that_does_not_keep_values(self):
+        """The cache check fails when the value does not read back (CACHE_ENABLED=False)."""
+        check = Cache(cache_key=None)
+        with self.assertLogs("health-check", "ERROR"):
+            check.run_check()
+        self.assertEqual([str(e) for e in check.errors], ["unavailable: Cache unavailable."])
+
+    @override_settings(
+        CACHES={
+            "default": {
+                "BACKEND": "django.core.cache.backends.redis.RedisCache",
+                "LOCATION": "redis://localhost:6379/1",
+            }
+        }
+    )
+    @patch.object(ConnectionPool, "disconnect")
+    @patch.object(RedisCacheClient, "get", return_value="itworks")
+    @patch.object(Redis, "delete")
+    @patch.object(Redis, "set")
+    def test_cache_probe_releases_its_connections(
+        self, redis_set, redis_delete, cache_get, disconnect
+    ):
+        """The cache probe's connection pool is disconnected after the check."""
+        check = Cache(cache_key=None)
+        check.run_check()
+        self.assertEqual(check.errors, [])
+        redis_set.assert_called_once()
+        disconnect.assert_called_once()
+
+    def test_database_probe_unexpected_result(self):
+        """SELECT 1 returning anything but (1,) fails the database check."""
+        connection = MagicMock(vendor="sqlite")
+        connection.cursor.return_value.__enter__.return_value.fetchone.return_value = None
+        check = Database()
+        with (
+            patch.object(Database, "_probe_connection", return_value=connection),
+            self.assertLogs("health-check", "ERROR"),
+        ):
+            check.run_check()
+        self.assertEqual([str(e) for e in check.errors], ["unavailable: Database unavailable."])
+        connection.close.assert_called_once()
+
+    def test_database_abort_ignores_a_socket_that_is_already_gone(self):
+        """The deadline does not raise when the probe's socket no longer exists."""
+        connection = MagicMock()
+        connection.connection.fileno.side_effect = OSError
+        Database._abort(connection)
 
 
 class APIDocumentationTests(APITestCase):

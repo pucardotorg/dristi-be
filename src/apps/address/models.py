@@ -144,13 +144,13 @@ class Address(models.Model):
         constraints = [
             # A 6-digit pincode not starting with 0.
             models.CheckConstraint(
-                check=Q(pincode__regex=PINCODE_REGEX),
+                condition=Q(pincode__regex=PINCODE_REGEX),
                 name="address_pincode_valid",
             ),
             # A row written without its hash (raw SQL, a bypassed save) is
             # refused rather than stored undeduplicatable.
             models.CheckConstraint(
-                check=Q(hash__regex=r"^[0-9a-f]{64}$"),
+                condition=Q(hash__regex=r"^[0-9a-f]{64}$"),
                 name="address_hash_is_sha256",
             ),
         ]

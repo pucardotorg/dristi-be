@@ -248,11 +248,11 @@ class PDFJob(BaseModel):
         ]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(status__in=PDFJobStatus.values),
+                condition=models.Q(status__in=PDFJobStatus.values),
                 name="pdf_job_status_valid",
             ),
             models.CheckConstraint(
-                check=~models.Q(status=PDFJobStatus.PARTIAL_SUCCESS) | models.Q(is_bulk=True),
+                condition=~models.Q(status=PDFJobStatus.PARTIAL_SUCCESS) | models.Q(is_bulk=True),
                 name="pdf_job_partial_success_only_bulk",
             ),
         ]
@@ -327,7 +327,7 @@ class PDFJobRecord(BaseModel):
         constraints = [
             models.UniqueConstraint(fields=["job", "sequence"], name="pdf_job_record_unique_seq"),
             models.CheckConstraint(
-                check=models.Q(status__in=PDFJobRecordStatus.values),
+                condition=models.Q(status__in=PDFJobRecordStatus.values),
                 name="pdf_job_record_status_valid",
             ),
         ]
