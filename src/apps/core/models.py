@@ -6,8 +6,9 @@ import uuid
 
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import models
+from django.db.models import Q
 from simple_history.models import HistoricalRecords
 
 from .validators import (
@@ -373,3 +374,203 @@ class BusinessRule(BaseModel, BaseActivatableModel, BaseAuditableModel):
         """Validate the model before saving, so no write path stores a broken rule."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+# BCP 47 tag, lowercase. Used with fullmatch(): "$" would also accept a trailing newline.
+LANGUAGE_CODE_RE = re.compile(r"[a-z]{2,3}(-[a-z0-9]{2,8})*")
+
+
+def validate_language_code(value):
+    """Reject anything but a lowercase BCP 47 tag such as ``en`` or ``en-in``."""
+    if not isinstance(value, str) or not LANGUAGE_CODE_RE.fullmatch(value):
+        raise ValidationError(
+            "Use a lowercase BCP 47 language tag, for example 'en', 'ml' or 'en-in'.",
+            code="invalid",
+        )
+
+
+class LanguageQuerySet(ActivatableQuerySet):
+    """QuerySet for supported languages."""
+
+    def get_default(self):
+        """Return the default (fallback) language.
+
+        Raises ``ImproperlyConfigured`` when none is marked default: every
+        language-aware endpoint falls back to it, so it must always exist.
+        """
+        try:
+            return self.get(is_default=True)
+        except self.model.DoesNotExist:
+            raise ImproperlyConfigured("No default language is configured.") from None
+
+    def bulk_create(self, objs, *args, **kwargs):
+        """Normalise each language as ``save()`` does; bulk inserts skip ``save()``."""
+        objs = list(objs)
+        for obj in objs:
+            obj.normalize()
+        return super().bulk_create(objs, *args, **kwargs)
+
+    def delete(self):
+        """Refuse a bulk delete that includes the default language."""
+        Language.check_deletable(self.filter(is_default=True).first())
+        return super().delete()
+
+    delete.alters_data = True
+    delete.queryset_only = True
+
+
+class Language(BaseModel, BaseActivatableModel):
+    """A language Dristi supports, managed in admin (spec 0030).
+
+    Shared reference data: consumers such as CMS (spec 0018) import it from
+    here. Exactly one active row is the default, the fallback when a request
+    names no supported language. ``supports`` lists the capabilities this
+    language has; it is metadata for clients and features and does not gate
+    language resolution, which only considers ``is_active``.
+    """
+
+    class LanguageSupport(models.TextChoices):
+        """Capabilities a language can declare in ``supports``."""
+
+        UI = "ui", "UI"
+        TRANSLATION = "translation", "Translation"
+        OCR = "ocr", "OCR"
+
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+        db_index=True,
+        validators=[validate_language_code],
+        help_text="Lowercase BCP 47 tag, for example 'en', 'ml' or 'en-in'.",
+    )
+    name = models.CharField(max_length=100, help_text="English name, for example 'Malayalam'.")
+    native_name = models.CharField(
+        max_length=100, help_text="Name in the language itself, shown in language pickers."
+    )
+    is_default = models.BooleanField(
+        default=False, help_text="The fallback language. Exactly one language is the default."
+    )
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    supports = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Capabilities this language has. Empty means content-only.",
+    )
+
+    objects = LanguageQuerySet.as_manager()
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("sort_order", "code")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_default"],
+                condition=Q(is_default=True),
+                name="core_language_single_default",
+                violation_error_message=(
+                    "Another language is already the default. Use the "
+                    "'Make default' action to switch the default language."
+                ),
+            ),
+            models.CheckConstraint(
+                condition=Q(is_default=False) | Q(is_active=True),
+                name="core_language_default_is_active",
+                violation_error_message="The default language must be active.",
+            ),
+        ]
+        verbose_name = "Language"
+        verbose_name_plural = "Languages"
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+    @classmethod
+    def normalize_supports(cls, value):
+        """Return ``value`` deduplicated and in ``LanguageSupport`` order.
+
+        Raises ``ValidationError`` for non-list input or unknown capabilities.
+        """
+        if not isinstance(value, list):
+            raise ValidationError({"supports": "Must be a list of capabilities."})
+        unknown = [item for item in value if item not in cls.LanguageSupport.values]
+        if unknown:
+            raise ValidationError(
+                {
+                    "supports": (
+                        f"Unknown capabilities: {', '.join(map(str, unknown))}. Use: "
+                        f"{', '.join(cls.LanguageSupport.values)}."
+                    )
+                }
+            )
+        return [item for item in cls.LanguageSupport.values if item in value]
+
+    def full_clean(self, *args, **kwargs):
+        """Lowercase the code before field validation, so 'en-IN' is accepted as 'en-in'."""
+        self._normalize_code()
+        super().full_clean(*args, **kwargs)
+
+    def clean(self):
+        """Normalise the code and validate ``supports`` and the default language's state."""
+        super().clean()
+        self._normalize_code()
+        errors = {}
+
+        try:
+            supports = self.normalize_supports(self.supports)
+        except ValidationError as exc:
+            errors.update(exc.message_dict)
+        else:
+            if len(supports) != len(self.supports):
+                errors["supports"] = "Each capability may be listed only once."
+            else:
+                self.supports = supports
+
+        if self.is_default and not self.is_active:
+            errors["is_active"] = "The default language cannot be deactivated."
+        if (
+            not self.is_default
+            and not self._state.adding
+            and Language.objects.filter(pk=self.pk, is_default=True).exists()
+        ):
+            errors["is_default"] = (
+                "This is the default language. Make another language the default instead."
+            )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        """Normalise before writing; ``bulk_create`` does the same."""
+        self.normalize()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Refuse to delete the default language.
+
+        Checked against the database: this instance's ``is_default`` may be
+        stale if the default moved after it was loaded.
+        """
+        self.check_deletable(Language.objects.filter(pk=self.pk, is_default=True).first())
+        return super().delete(*args, **kwargs)
+
+    def normalize(self):
+        """Lowercase the code and put ``supports`` in enum order, deduplicated.
+
+        Raises ``ValidationError`` for unknown capabilities or non-list ``supports``.
+        """
+        self._normalize_code()
+        self.supports = self.normalize_supports(self.supports)
+
+    @staticmethod
+    def check_deletable(default):
+        """Raise ``ProtectedError`` if ``default`` (the default language, or None) would go."""
+        if default is not None:
+            raise models.ProtectedError(
+                "The default language cannot be deleted. Make another language the default first.",
+                {default},
+            )
+
+    def _normalize_code(self):
+        if isinstance(self.code, str):
+            self.code = self.code.strip().lower()

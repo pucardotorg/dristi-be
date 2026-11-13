@@ -36,6 +36,18 @@ docker compose -f docker/docker-compose.yml exec web python manage.py shell
 docker compose -f docker/docker-compose.yml exec web python manage.py makemigrations
 ```
 
+### Seeding initial data
+
+Reference data the application needs in every environment is seeded with the
+`seed` command (spec 0025), not data migrations. Run it once after migrating;
+it is insert-only, so re-running is safe:
+
+```bash
+docker compose -f docker/docker-compose.yml exec web python manage.py seed /data/seed/core/
+```
+
+See [data/seed/README.md](../data/seed/README.md) for what `core/` contains.
+
 ### Loading location data (pincode pre-fill)
 
 The repository ships no location data. Address forms pre-fill district and
@@ -82,11 +94,12 @@ Once the stack is running:
 
 2. Copy `.env.example` to `.env` and start PostgreSQL, Redis, and an S3-compatible object store locally (for example, Rustfs or any S3-compatible service).
 
-3. Run migrations and start the dev server:
+3. Run migrations, seed the initial data and start the dev server:
 
    ```bash
    cd src
    python manage.py migrate
+   python manage.py seed ../data/seed/core/
    python manage.py runserver
    ```
 

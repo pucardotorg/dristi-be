@@ -8,10 +8,17 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from apps.api import errors
+from apps.api.schema import error_responses
 from apps.api.viewsets import APIModelReadOnlyViewSet
+from apps.api.viewsets.base import APIBaseViewSet, APIListMixin
 
-from .models import ApiVersionChangeLog
-from .serializers import ApiVersionChangeLogSerializer
+from .models import ApiVersionChangeLog, Language
+from .serializers import (
+    ApiVersionChangeLogSerializer,
+    LanguageFilterSerializer,
+    LanguageSerializer,
+)
 
 
 def index(request):
@@ -58,3 +65,38 @@ class ApiVersionChangeLogViewSet(APIModelReadOnlyViewSet):
         """Return changelog entries in model default ordering."""
 
         return super().get_queryset()
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="List supported languages",
+        description=(
+            "Return the active languages, ordered for display. Language-aware "
+            "endpoints accept these codes in their `lang` query parameter."
+        ),
+        parameters=[LanguageFilterSerializer],
+        responses=error_responses(
+            errors.INVALID_CHOICE.example('"bogus" is not a valid choice.', field="supports"),
+        ),
+    ),
+)
+class LanguageViewSet(APIListMixin, APIBaseViewSet):
+    """Public, read-only list of supported languages (spec 0030 section 4).
+
+    List only: clients address languages by code, so no id-based ``retrieve``
+    route is exposed. Languages are managed in admin.
+    """
+
+    permission_classes = [AllowAny]
+    queryset = Language.objects.active()
+    serializer_class = LanguageSerializer
+
+    def get_queryset(self):
+        """Return active languages, narrowed by the validated ``supports`` filter."""
+        queryset = super().get_queryset()
+        filters = LanguageFilterSerializer(data=self.request.query_params)
+        filters.is_valid(raise_exception=True)
+        supports = filters.validated_data.get("supports")
+        if supports:
+            queryset = queryset.filter(supports__contains=[supports])
+        return queryset

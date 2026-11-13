@@ -339,6 +339,8 @@ SPECTACULAR_SETTINGS = {
         "ReasonCodeEnum": "apps.scrutiny.enums.DocumentIssue",
         "ModeEnum": [("MARKED", "MARKED"), ("ALL", "ALL")],
         "PaymentStatusEnum": "apps.payments.enums.PaymentStatus",
+        # Otherwise named after the generic `supports` field.
+        "LanguageSupportEnum": "apps.core.models.Language.LanguageSupport",
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
@@ -412,6 +414,7 @@ CACHALOT_ONLY_CACHABLE_TABLES = (
     "core_businessrule",
     # Reference table edited in admin (spec 0023 #11.8).
     "hearings_hearingpurpose",
+    "core_language",
 )
 CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
