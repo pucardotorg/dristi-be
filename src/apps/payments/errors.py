@@ -69,3 +69,20 @@ DEMAND_NOT_CANCELLABLE = define(
 NOT_DEMAND_CREATOR = define(
     "E06022", "Only the user who raised this demand can cancel it.", status=403
 )
+# Spec 0032 #4.6: provider choice and attested (staff-recorded) collections.
+PROVIDER_NOT_AVAILABLE = define("E06023", "This payment provider is not available.")
+COLLECTION_DETAILS_INVALID = define("E06024", "A recorded collection detail is not valid.")
+COLLECTION_NOT_OPEN = define(
+    "E06025",
+    "This payment request is already paid, failed, cancelled or recorded differently.",
+    status=409,
+)
+RECEIPT_NUMBER_USED = define(
+    "E06026", "This receipt number was already recorded for another payment.", status=409
+)
+COLLECTOR_IS_PAYER = define(
+    "E06027", "A collection cannot be recorded by the person who made the payment.", status=403
+)
+COLLECTION_REJECTED = define(
+    "E06028", "The payment provider refused this collection record.", status=422
+)

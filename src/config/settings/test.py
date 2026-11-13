@@ -60,6 +60,7 @@ ESIGN_CALLBACK_THROTTLE_RATE = ""
 PAYMENT_PROVIDERS = {"mock": "apps.payments.providers.mock.MockPaymentProvider"}
 PAYMENT_DEFAULT_PROVIDER = "mock"
 PAYMENT_CALLBACK_THROTTLE_RATE = ""
+PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE = ""
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 

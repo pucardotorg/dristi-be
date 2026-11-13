@@ -1,5 +1,6 @@
 """The provider boundary (spec 0017 #9, #18 "Provider contract", "Outcome application")."""
 
+from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
@@ -121,7 +122,9 @@ class TestReplay:
         assert not again.created
         assert again.action == first.action
         assert len(FakeProvider.initiate_calls) == 2
-        assert FakeProvider.initiate_calls[0] == FakeProvider.initiate_calls[1]
+        first_call, replay_call = FakeProvider.initiate_calls
+        assert (first_call.replay, replay_call.replay) == (False, True)
+        assert replace(replay_call, replay=False) == first_call
 
     def test_replay_mismatch_is_a_conflict(self, raise_demand, user, fake_provider):
         demand = raise_demand()

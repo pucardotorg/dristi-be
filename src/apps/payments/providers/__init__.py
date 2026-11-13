@@ -5,8 +5,13 @@ Never a real gateway: those ship as ``addon.<provider>_payment_gateway``.
 
 from . import registry
 from .base import (
+    ActionDetail,
     ActionKind,
+    Attestation,
+    AttestationField,
+    AttestationMethod,
     ChargeLine,
+    ConfirmationMode,
     InitiationRequest,
     Payer,
     PaymentOption,
@@ -24,8 +29,13 @@ from .base import (
 )
 
 __all__ = [
+    "ActionDetail",
     "ActionKind",
+    "Attestation",
+    "AttestationField",
+    "AttestationMethod",
     "ChargeLine",
+    "ConfirmationMode",
     "InitiationRequest",
     "Payer",
     "PaymentOption",

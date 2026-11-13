@@ -6,7 +6,10 @@ Every path that moves money goes through ``PaymentService``:
   payment rows, then initiate with the default provider after commit;
 * ``confirm_payment`` is the only place a balance is credited;
 * ``apply_provider_status`` is the only consumer of a provider's verdict —
-  callback, poll and cancel all go through it.
+  callback, poll, cancel and a recorded collection all go through it;
+* ``record_collection`` is the only way an ``ATTESTED`` provider's payment is
+  completed: an authorised person's record, validated by the provider (spec
+  0032 #4.4).
 
 Lock order is always payments, then demands, then items, each by primary key,
 so the services can never deadlock against each other.
@@ -16,7 +19,7 @@ import logging
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -30,17 +33,29 @@ from ..enums import (
     FAILURE_NOT_FOUND_AT_PROVIDER,
     FAILURE_PROVIDER_ERROR,
     FAILURE_PROVIDER_FAILED,
+    FAILURE_PROVIDER_ID_COLLISION,
     OPEN_PAYMENT_STATUSES,
+    AttestationOutcome,
     DemandItemStatus,
     PaymentStatus,
 )
 from ..exceptions import PaymentNotConfirmable
-from ..models import ZERO, Demand, DemandItem, Payment, PaymentDemandItem
+from ..models import (
+    ZERO,
+    Demand,
+    DemandItem,
+    Payment,
+    PaymentAttestation,
+    PaymentDemandItem,
+)
 from ..providers import registry
 from ..providers.base import (
+    Attestation,
     ChargeLine,
+    ConfirmationMode,
     InitiationRequest,
     Payer,
+    PaymentProvider,
     ProviderAction,
     ProviderError,
     ProviderNotConfigured,
@@ -55,10 +70,17 @@ logger = logging.getLogger(__name__)
 
 PAYER_FIELDS = ("name", "email", "phone", "address", "city", "pincode")
 UNAVAILABLE_MESSAGE = "The payment provider could not be reached."
+COLLISION_MESSAGE = "The payment provider issued a reference already in use; please retry."
+# Where the provider a payer chose is remembered on each row (spec 0032 #4.2).
+REQUESTED_PROVIDER_KEY = "requested_provider"
 
 
 class _KeyAlreadyUsed(Exception):  # noqa: N818
     """A concurrent request with the same key committed while this one waited for the lock."""
+
+
+class _ProviderIdCollision(Exception):  # noqa: N818
+    """``mark_pending`` found the provider id held by another payment group."""
 
 
 @dataclass(frozen=True)
@@ -96,6 +118,21 @@ class Collection:
         """What the provider is asked to collect."""
 
         return sum((payment.amount for payment in self.payments), ZERO)
+
+
+@dataclass(frozen=True)
+class CollectionResult:
+    """The outcome of ``record_collection`` (spec 0032 #4.4)."""
+
+    payments: list[Payment]
+    attestation: PaymentAttestation
+    created: bool  # False for an identical replay
+
+
+def normalise_receipt(value) -> str:
+    """A receipt number as stored: trimmed and upper-cased (spec 0032 #4.3)."""
+
+    return str(value or "").strip().upper()
 
 
 def payer_snapshot(payer: Mapping | None, actor) -> dict:
@@ -154,9 +191,14 @@ class PaymentService:
         payer: Mapping | None = None,
         provider_options: Mapping | None = None,
         payment_mode: str = "",
+        provider: str | None = None,
         actor=None,
     ) -> Collection:
-        """Pay the selected items of one demand (one item, a subset or all)."""
+        """Pay the selected items of one demand (one item, a subset or all).
+
+        ``provider`` names one of the selectable providers; empty means the
+        default (spec 0032 #4.2).
+        """
 
         selection = Selection(demand=demand, demand_item_ids=tuple(demand_item_ids))
         return cls._collect(
@@ -166,6 +208,7 @@ class PaymentService:
             payer=payer,
             provider_options=provider_options,
             payment_mode=payment_mode,
+            provider=provider,
             actor=actor,
         )
 
@@ -178,6 +221,7 @@ class PaymentService:
         payer: Mapping | None = None,
         provider_options: Mapping | None = None,
         payment_mode: str = "",
+        provider: str | None = None,
         actor=None,
     ) -> Collection:
         """Pay across demands in one provider transaction; all or nothing.
@@ -217,19 +261,36 @@ class PaymentService:
             payer=payer,
             provider_options=provider_options,
             payment_mode=payment_mode,
+            provider=provider,
             actor=actor,
         )
 
     @classmethod
     def _collect(
-        cls, selections, *, batch, client_request_id, payer, provider_options, payment_mode, actor
+        cls,
+        selections,
+        *,
+        batch,
+        client_request_id,
+        payer,
+        provider_options,
+        payment_mode,
+        provider=None,
+        actor,
     ) -> Collection:
         if not client_request_id:
             raise BusinessError(api_errors.REQUIRED, field="client_request_id")
+        requested = (provider or "").strip()
 
-        existing = cls._find_existing(selections, client_request_id, batch=batch)
+        existing = cls._find_existing(
+            selections, client_request_id, batch=batch, requested_provider=requested
+        )
         if existing is not None:
             return cls._replay(existing)
+
+        # Refuse a provider the payer may not choose before writing anything.
+        if requested and requested not in registry.selectable_names():
+            raise BusinessError(errors.PROVIDER_NOT_AVAILABLE, field="provider")
 
         try:
             with transaction.atomic():
@@ -240,20 +301,25 @@ class PaymentService:
                     payer=payer_snapshot(payer, actor),
                     provider_options={str(k): str(v) for k, v in (provider_options or {}).items()},
                     payment_mode=payment_mode or "",
+                    requested_provider=requested,
                     actor=actor,
                 )
         except (IntegrityError, _KeyAlreadyUsed):
             # A concurrent request with the same key won the race (spec 0017 #7).
-            existing = cls._find_existing(selections, client_request_id, batch=batch)
+            existing = cls._find_existing(
+                selections, client_request_id, batch=batch, requested_provider=requested
+            )
             if existing is None:
                 raise
             return cls._replay(existing)
 
-        action = cls._initiate(payments)
+        action = cls._initiate(payments, requested_provider=requested)
         return Collection(payments=payments, created=True, action=action)
 
     @staticmethod
-    def _find_existing(selections, client_request_id, *, batch) -> list[Payment] | None:
+    def _find_existing(
+        selections, client_request_id, *, batch, requested_provider=""
+    ) -> list[Payment] | None:
         """The payments a replayed ``client_request_id`` already created, if any."""
 
         demand_ids = [selection.demand.pk for selection in selections]
@@ -282,6 +348,9 @@ class PaymentService:
             actual[_payment_demand(payments, row.payment_id)].add(row.demand_item_id)
         if requested != actual:
             raise BusinessError(errors.CLIENT_REQUEST_ID_REUSED, field="client_request_id")
+        # A replay must ask for the same provider as the first request.
+        if not all(_same_provider(payment, requested_provider) for payment in payments):
+            raise BusinessError(errors.CLIENT_REQUEST_ID_REUSED, field="client_request_id")
         return payments
 
     @classmethod
@@ -296,7 +365,15 @@ class PaymentService:
 
     @staticmethod
     def _create_rows(
-        selections, *, batch, client_request_id, payer, provider_options, payment_mode, actor
+        selections,
+        *,
+        batch,
+        client_request_id,
+        payer,
+        provider_options,
+        payment_mode,
+        requested_provider="",
+        actor,
     ) -> list[Payment]:
         demand_ids = sorted(selection.demand.pk for selection in selections)
         demands = {
@@ -359,6 +436,8 @@ class PaymentService:
         batch_id = uuid.uuid4() if batch else None
         now = timezone.now()
         metadata = {"provider_options": provider_options} if provider_options else {}
+        if requested_provider:
+            metadata[REQUESTED_PROVIDER_KEY] = requested_provider
         payments = []
         for demand, picked in chosen:
             payment = Payment.objects.create(
@@ -389,7 +468,7 @@ class PaymentService:
 
     # -- initiation (spec 0017 #9.4) ----------------------------------------
     @staticmethod
-    def initiation_request(payments: list[Payment]) -> InitiationRequest:
+    def initiation_request(payments: list[Payment], *, replay: bool = False) -> InitiationRequest:
         """Build the provider request from the stored snapshot; replayable."""
 
         payments = sorted(payments, key=lambda payment: payment.payment_number)
@@ -422,16 +501,28 @@ class PaymentService:
             payer=Payer(**payer),
             initiated_at=first.initiated_at,
             options=dict(first.metadata.get("provider_options") or {}),
+            replay=replay,
         )
 
     @classmethod
-    def _initiate(cls, payments: list[Payment]) -> ProviderAction | None:
-        """Hand freshly created payments to the default provider."""
+    def _initiate(
+        cls, payments: list[Payment], *, requested_provider: str = ""
+    ) -> ProviderAction | None:
+        """Hand freshly created payments to the chosen, or default, provider."""
 
         try:
-            provider = registry.get_default()
+            provider = registry.get_for_new_payment(requested_provider)
+        except BusinessError:
+            # Withdrawn from the selectable list after the rows were written:
+            # fail them, so their items are not blocked.
+            cls.fail_payment(
+                payments[0],
+                failure_code=FAILURE_PROVIDER_ERROR,
+                failure_message="This payment provider is no longer available.",
+            )
+            raise
         except ProviderNotConfigured:
-            logger.exception("The default payment provider is not configured.")
+            logger.exception("The payment provider for new payments is not configured.")
             cls.fail_payment(
                 payments[0],
                 failure_code=FAILURE_PROVIDER_ERROR,
@@ -462,12 +553,26 @@ class PaymentService:
             cls.fail_payment(payments[0], failure_code=code, failure_message=UNAVAILABLE_MESSAGE)
             raise BusinessError(errors.PROVIDER_UNAVAILABLE) from exc
 
-        cls.mark_pending(
-            payments,
-            provider=provider.name,
-            provider_payment_id=initiation.provider_payment_id,
-            metadata=initiation.metadata,
-        )
+        try:
+            cls.mark_pending(
+                payments,
+                provider=provider.name,
+                provider_payment_id=initiation.provider_payment_id,
+                metadata=initiation.metadata,
+            )
+        except _ProviderIdCollision:
+            logger.error(
+                "event=PROVIDER_ID_COLLISION provider=%s provider_payment_id=%s payment_id=%s",
+                provider.name,
+                initiation.provider_payment_id,
+                payments[0].pk,
+            )
+            cls.fail_payment(
+                payments[0],
+                failure_code=FAILURE_PROVIDER_ID_COLLISION,
+                failure_message=COLLISION_MESSAGE,
+            )
+            raise BusinessError(errors.PROVIDER_UNAVAILABLE) from None
         for payment in payments:
             payment.refresh_from_db()
         return initiation.action
@@ -479,7 +584,7 @@ class PaymentService:
         first = payments[0]
         try:
             provider = registry.get(first.provider)
-            initiation = provider.initiate(cls.initiation_request(payments))
+            initiation = provider.initiate(cls.initiation_request(payments, replay=True))
         except ProviderPermanentError as exc:
             raise BusinessError(errors.PROVIDER_REJECTED) from exc
         except (ProviderError, ProviderNotConfigured) as exc:
@@ -497,7 +602,12 @@ class PaymentService:
 
     @staticmethod
     def mark_pending(payments, *, provider: str, provider_payment_id: str, metadata=None):
-        """Record that ``payments`` were handed to ``provider``."""
+        """Record that ``payments`` were handed to ``provider``.
+
+        Refuses (``_ProviderIdCollision``) a ``provider_payment_id`` already
+        held by another payment group of the same provider, so two requests
+        are never merged into one (spec 0032 #4.2).
+        """
 
         with transaction.atomic():
             locked = list(
@@ -505,6 +615,17 @@ class PaymentService:
                 .filter(pk__in=[payment.pk for payment in payments])
                 .order_by("pk")
             )
+            # ``payments`` is always a whole group (a single payment or every
+            # payment of a batch), so any other holder of the id is a collision.
+            if (
+                provider_payment_id
+                and Payment.objects.filter(
+                    provider=provider, provider_payment_id=provider_payment_id
+                )
+                .exclude(pk__in=[payment.pk for payment in locked])
+                .exists()
+            ):
+                raise _ProviderIdCollision
             for payment in locked:
                 if payment.status != PaymentStatus.INITIATED:
                     continue
@@ -569,6 +690,8 @@ class PaymentService:
                         "provider": {**(p.metadata.get("provider") or {}), **metadata},
                     }
                 p.updated_by = actor or p.updated_by
+                if actor is not None:
+                    p._history_user = actor  # history names the person, not the request
                 p.save(
                     update_fields=[
                         "status",
@@ -634,6 +757,8 @@ class PaymentService:
                 p.failure_code = FAILURE_CANCELLED
                 p.failure_message = reason
                 p.updated_by = actor or p.updated_by
+                if actor is not None:
+                    p._history_user = actor
                 p.save(
                     update_fields=[
                         "status",
@@ -655,7 +780,14 @@ class PaymentService:
         if not payment.is_open:
             raise BusinessError(errors.PAYMENT_NOT_CANCELLABLE)
 
-        if payment.status == PaymentStatus.PENDING and payment.provider:
+        # Nobody outside Dristi can complete an attested payment: completion
+        # goes through record_collection, which takes the same row locks, so
+        # the lock decides between cancel and record (spec 0032 #4.5).
+        if (
+            payment.status == PaymentStatus.PENDING
+            and payment.provider
+            and not registry.is_attested(payment.provider)
+        ):
             try:
                 provider = registry.get(payment.provider)
                 status = provider.fetch_status(provider_payment_id=payment.provider_payment_id)
@@ -681,6 +813,250 @@ class PaymentService:
 
         return cls.cancel_payment(payment, reason=reason, actor=actor)
 
+    @classmethod
+    def pending_action(cls, payment: Payment, *, actor) -> ProviderAction:
+        """Rebuild the provider action of a pending payment for its payer (spec 0032 #4.8)."""
+
+        if payment.created_by_id != getattr(actor, "pk", None):
+            raise BusinessError(
+                errors.NOT_PAYMENT_CREATOR,
+                "Only the user who started a payment can see its instructions.",
+            )
+        if payment.status != PaymentStatus.PENDING or not payment.provider:
+            raise BusinessError(errors.COLLECTION_NOT_OPEN)
+        return cls._rebuild_action(cls.provider_group(payment))
+
+    # -- attested collections (spec 0032 #4.4, #4.5) -------------------------
+    @staticmethod
+    def attested_provider(provider: str) -> PaymentProvider:
+        """The registered ``ATTESTED`` provider called ``provider``, else ``404``."""
+
+        try:
+            adapter = registry.get(provider)
+        except ProviderNotConfigured:
+            raise BusinessError(api_errors.NOT_FOUND) from None
+        if adapter.confirmation != ConfirmationMode.ATTESTED:
+            raise BusinessError(api_errors.NOT_FOUND)
+        return adapter
+
+    @staticmethod
+    def _locked_request(provider: str, provider_payment_id: str) -> list[Payment]:
+        """Lock the payment group of one request; ``404`` when there is none."""
+
+        if not provider_payment_id:
+            raise BusinessError(api_errors.NOT_FOUND)
+        group = list(
+            Payment.objects.select_for_update()
+            .filter(provider=provider, provider_payment_id=provider_payment_id)
+            .order_by("pk")
+        )
+        if not group:
+            raise BusinessError(api_errors.NOT_FOUND)
+        batch_ids = {payment.batch_id for payment in group}
+        if len(batch_ids) > 1 or (None in batch_ids and len(group) > 1):
+            # Two groups share one reference: never credit either by guesswork.
+            logger.error(
+                "event=PROVIDER_ID_COLLISION provider=%s provider_payment_id=%s",
+                provider,
+                provider_payment_id,
+            )
+            raise BusinessError(api_errors.CONFLICT)
+        return group
+
+    @classmethod
+    def record_collection(
+        cls,
+        *,
+        provider: str,
+        provider_payment_id: str,
+        amount,
+        method: str,
+        receipt_number: str,
+        collected_at,
+        details: Mapping | None = None,
+        remarks: str = "",
+        late: bool = False,
+        actor,
+    ) -> CollectionResult:
+        """Record that a person received the money of one attested request.
+
+        Permission checks are the caller's (spec 0032 #4.7); everything else —
+        separation of duties, receipt uniqueness, whether the request is open,
+        and the provider's validation — is decided here, under the row locks.
+        One transaction: an attestation never exists without its credit or
+        flag, and a credit never exists without its attestation.
+        """
+
+        adapter = cls.attested_provider(provider)
+        receipt = normalise_receipt(receipt_number)
+        method = _canonical_method(adapter, method)
+        try:
+            amount = Decimal(str(amount))
+        except (InvalidOperation, ValueError):
+            raise BusinessError(errors.COLLECTION_DETAILS_INVALID, field="amount") from None
+        if not amount.is_finite() or amount <= 0:
+            raise BusinessError(errors.COLLECTION_DETAILS_INVALID, field="amount")
+        collected_at = collected_at or timezone.now()
+        details = {
+            str(key): "" if value is None else str(value) for key, value in (details or {}).items()
+        }
+
+        with transaction.atomic():
+            group = cls._locked_request(provider, provider_payment_id)
+            existing = PaymentAttestation.objects.filter(
+                provider=provider, provider_payment_id=provider_payment_id
+            ).first()
+            if existing is not None:
+                if (
+                    existing.receipt_number == receipt
+                    and existing.amount == amount
+                    and existing.method == method
+                ):
+                    logger.info(
+                        "event=PAYMENT_COLLECTION_REPLAYED provider=%s provider_payment_id=%s "
+                        "receipt_number=%s recorded_by=%s",
+                        provider,
+                        provider_payment_id,
+                        receipt,
+                        getattr(actor, "pk", ""),
+                    )
+                    return CollectionResult(payments=group, attestation=existing, created=False)
+                raise BusinessError(errors.COLLECTION_NOT_OPEN)
+
+            if any(payment.created_by_id == getattr(actor, "pk", None) for payment in group):
+                raise BusinessError(errors.COLLECTOR_IS_PAYER)
+            if (
+                receipt
+                and PaymentAttestation.objects.filter(
+                    provider=provider, receipt_number=receipt
+                ).exists()
+            ):
+                raise BusinessError(errors.RECEIPT_NUMBER_USED, field="receipt_number")
+
+            is_open = all(payment.is_open for payment in group)
+            closed = any(
+                payment.status in (PaymentStatus.FAILED, PaymentStatus.CANCELLED)
+                for payment in group
+            )
+            if not is_open and not (closed and late):
+                raise BusinessError(errors.COLLECTION_NOT_OPEN)
+
+            expected = sum((payment.amount for payment in group), ZERO)
+            status = cls._attest(
+                adapter,
+                Attestation(
+                    provider_payment_id=provider_payment_id,
+                    expected_amount=expected,
+                    currency=group[0].currency,
+                    initiated_at=min(payment.initiated_at for payment in group),
+                    amount=amount,
+                    method=method,
+                    receipt_number=receipt_number,
+                    collected_at=collected_at,
+                    details=details,
+                    remarks=remarks or "",
+                    late=not is_open,
+                ),
+            )
+            credited = is_open and status.amount is not None and Decimal(status.amount) == expected
+            try:
+                with transaction.atomic():
+                    attestation = PaymentAttestation(
+                        provider=provider,
+                        provider_payment_id=provider_payment_id,
+                        receipt_number=receipt,
+                        amount=amount,
+                        currency=group[0].currency,
+                        method=method,
+                        details=_validated_details(details, status),
+                        collected_at=collected_at,
+                        remarks=remarks or "",
+                        outcome=AttestationOutcome.CREDITED
+                        if credited
+                        else AttestationOutcome.FLAGGED,
+                        created_by=actor,
+                        updated_by=actor,
+                    )
+                    attestation._history_user = actor
+                    attestation.save(force_insert=True)
+            except IntegrityError:
+                # A concurrent record won: of this request (only possible where
+                # row locks are not enforced), or of another with this receipt.
+                if PaymentAttestation.objects.filter(
+                    provider=provider, provider_payment_id=provider_payment_id
+                ).exists():
+                    raise BusinessError(errors.COLLECTION_NOT_OPEN) from None
+                raise BusinessError(errors.RECEIPT_NUMBER_USED, field="receipt_number") from None
+
+            payments = cls.apply_provider_status(group, status, actor=actor, attested=True)
+            logger.info(
+                "event=PAYMENT_COLLECTION_RECORDED provider=%s provider_payment_id=%s "
+                "payment_id=%s receipt_number=%s method=%s amount=%s recorded_by=%s outcome=%s",
+                provider,
+                provider_payment_id,
+                ",".join(str(payment.pk) for payment in group),
+                receipt,
+                method,
+                amount,
+                getattr(actor, "pk", ""),
+                attestation.outcome,
+            )
+            return CollectionResult(payments=payments, attestation=attestation, created=True)
+
+    @staticmethod
+    def _attest(adapter: PaymentProvider, attestation: Attestation) -> ProviderStatus:
+        """Ask the provider to validate a record; map its refusal onto API codes."""
+
+        try:
+            status = adapter.attest(attestation)
+        except ProviderPermanentError as exc:
+            if exc.field:
+                raise BusinessError(
+                    errors.COLLECTION_DETAILS_INVALID, exc.message, field=exc.field
+                ) from exc
+            raise BusinessError(errors.COLLECTION_REJECTED, exc.message) from exc
+        except ProviderError as exc:
+            logger.warning("Provider %s could not validate a collection: %s", adapter.name, exc)
+            raise BusinessError(errors.PROVIDER_UNAVAILABLE) from exc
+
+        if (
+            status.outcome != ProviderOutcome.SUCCESS
+            or status.provider_payment_id != attestation.provider_payment_id
+        ):
+            logger.error(
+                "event=PAYMENT_ATTESTATION_UNEXPECTED provider=%s provider_payment_id=%s "
+                "outcome=%s",
+                adapter.name,
+                attestation.provider_payment_id,
+                status.outcome,
+            )
+            raise BusinessError(errors.COLLECTION_REJECTED)
+        return status
+
+    @classmethod
+    def cancel_collection(
+        cls, *, provider: str, provider_payment_id: str, reason: str, actor
+    ) -> list[Payment]:
+        """Staff cancel an open attested request on the payer's behalf (spec 0032 #4.5).
+
+        The creator check of spec 0017 #13 does not apply; the caller holds
+        ``payments.cancel_payment_collection``.
+        """
+
+        cls.attested_provider(provider)
+        with transaction.atomic():
+            group = cls._locked_request(provider, provider_payment_id)
+            payments = cls.cancel_payment(group[0], reason=reason, actor=actor)
+            logger.info(
+                "event=PAYMENT_COLLECTION_CANCELLED provider=%s provider_payment_id=%s "
+                "cancelled_by=%s reason=%s",
+                provider,
+                provider_payment_id,
+                getattr(actor, "pk", ""),
+                reason,
+            )
+            return payments
+
     # -- provider verdicts (spec 0017 #9.5) ---------------------------------
     @staticmethod
     def provider_group(payment: Payment) -> list[Payment]:
@@ -696,9 +1072,28 @@ class PaymentService:
 
     @classmethod
     def apply_provider_status(
-        cls, payments: list[Payment], status: ProviderStatus
+        cls, payments: list[Payment], status: ProviderStatus, *, actor=None, attested=False
     ) -> list[Payment]:
-        """Act on a provider's verdict for ``payments`` (one provider transaction)."""
+        """Act on a provider's verdict for ``payments`` (one provider transaction).
+
+        ``actor`` is the person behind the verdict, when there is one (a
+        recorded collection, spec 0032 #4.4); otherwise the system.
+        ``attested`` is set only by ``record_collection``: a ``SUCCESS`` for an
+        ``ATTESTED`` provider is applied only then (spec 0032 #4.1 rule 11).
+        """
+
+        if (
+            status.outcome == ProviderOutcome.SUCCESS
+            and not attested
+            and payments
+            and registry.is_attested(payments[0].provider)
+        ):
+            logger.error(
+                "event=PAYMENT_ATTESTED_PROVIDER_SUCCESS provider=%s provider_payment_id=%s",
+                payments[0].provider,
+                status.provider_payment_id,
+            )
+            return list(payments)
 
         with transaction.atomic():
             locked = list(
@@ -708,13 +1103,15 @@ class PaymentService:
             )
             if not locked:
                 return []
-            applied = cls._apply_locked(locked, status)
+            applied = cls._apply_locked(locked, status, actor=actor)
             if status.reconciliation_code:
                 applied = cls._flag_provider_anomaly(locked, status)
             return applied
 
     @classmethod
-    def _apply_locked(cls, locked: list[Payment], status: ProviderStatus) -> list[Payment]:
+    def _apply_locked(
+        cls, locked: list[Payment], status: ProviderStatus, *, actor=None
+    ) -> list[Payment]:
         """The table of spec 0017 #9.5, on payments already locked by the caller."""
 
         outcome = status.outcome
@@ -737,12 +1134,14 @@ class PaymentService:
                     locked[0],
                     provider_reference=status.provider_reference,
                     metadata=status.metadata,
+                    actor=actor,
                 )
             if outcome == ProviderOutcome.FAILED:
                 return cls.fail_payment(
                     locked[0],
                     failure_code=status.failure_code or FAILURE_PROVIDER_FAILED,
                     failure_message=status.failure_message,
+                    actor=actor,
                 )
             if outcome == ProviderOutcome.NOT_FOUND and cls._not_found_is_final(locked):
                 return cls.fail_payment(
@@ -874,6 +1273,48 @@ class PaymentService:
         provider = registry.get(payment.provider)
         status = provider.fetch_status(provider_payment_id=payment.provider_payment_id)
         return cls.apply_provider_status(cls.provider_group(payment), status)
+
+
+def _canonical_method(adapter: PaymentProvider, method) -> str:
+    """``method`` spelled as the provider's code, so totals and replays never split on case."""
+
+    method = str(method or "").strip()
+    for offered in adapter.attestation_methods():
+        if offered.code.upper() == method.upper():
+            return offered.code
+    return method
+
+
+def _same_provider(payment: Payment, requested: str) -> bool:
+    """Whether a replay asking for ``requested`` ("" = the default) matches ``payment``.
+
+    Only an explicit choice is stored (``requested_provider``). A request that
+    named none went to the default of its time, so a replay naming none still
+    matches after the default changes (it is rebuilt by ``Payment.provider``),
+    and a replay naming the provider it actually went to matches too.
+    """
+
+    from .. import conf
+
+    chosen = payment.metadata.get(REQUESTED_PROVIDER_KEY) or ""
+    if not chosen:
+        return not requested or requested == payment.provider
+    return chosen == (requested or conf.default_provider())
+
+
+def _validated_details(details: Mapping[str, str], status: ProviderStatus) -> dict:
+    """The recorded details as the provider validated them (spec 0032 #4.3).
+
+    A value the provider echoed back in its status metadata (e.g. trimmed) wins;
+    empty optional values are dropped.
+    """
+
+    validated = {}
+    for key, value in details.items():
+        value = str(status.metadata.get(key, value) or "").strip()
+        if value:
+            validated[key] = value
+    return validated
 
 
 def _payment_demand(payments: list[Payment], payment_id) -> uuid.UUID:

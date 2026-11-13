@@ -309,6 +309,8 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
 | `PAYMENT_DEFAULT_PROVIDER` | Name (a key of the `PAYMENT_PROVIDERS` setting) of the provider new payments are started with; empty leaves payments `INITIATED` for an operator. Payments in flight keep their own provider. | `mock` locally, empty in production until a gateway addon ships |
 | `PAYMENT_REGISTERED_PROVIDERS` | Comma-separated provider names kept registered besides the default, so payments still pending at a provider that is no longer the default keep resolving through its callback and poller | empty; `egras` while switching away from e-GRAS |
+| `PAYMENT_SELECTABLE_PROVIDERS` | Comma-separated, ordered provider names a payer may choose per payment (`provider` on create); empty means the default only. Must include `PAYMENT_DEFAULT_PROVIDER`; every name is registered (spec 0032 #4.2) | `egras,offline` |
+| `PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE` | Per-user rate of failed collection-desk lookups; blank disables it (spec 0032 #15) | `120/min` |
 | `PAYMENT_DEFAULT_CURRENCY` | Currency a demand is raised in when none is given | `INR` |
 | `PAYMENT_UI_REDIRECT_URL` | Server-side redirect target of the provider callback; `https://` in production | `https://app.example.com/payments/return` |
 | `PAYMENT_CALLBACK_THROTTLE_RATE` | Per-IP throttle for the public callback; blank disables it | `60/min` |
@@ -374,6 +376,43 @@ entry removes the integration entirely.
 | `EGRAS_PENDING_HORIZON` | Days a payment may stay pending (≥ 8; e-GRAS fails on the 8th day) | `9` |
 | `EGRAS_NOT_FOUND_GRACE` | Hours a missing GRN stays `NOT_FOUND` before it is final | `2` |
 | `EGRAS_ENABLED` | Kill switch; `False` refuses new payments while verification keeps resolving in-flight ones | `True` |
+
+### Offline payment addon (spec 0032)
+
+The offline addon (`addon.offline_payment`) lets a payer pay in person at a
+court counter — cash, demand draft or card/UPI — and court staff record it.
+Offer it next to e-GRAS with `PAYMENT_SELECTABLE_PROVIDERS=egras,offline`
+(payers then send `"provider": "offline"`); the environment settings register
+it. Staff need the `payments.view_payment_collection` /
+`record_payment_collection` (and optionally `record_late_payment_collection`,
+`cancel_payment_collection`) permissions, usually through a Django group, and
+use the collection APIs under `/api/v1/payments/collections/` or the
+"Record collection" button in the payment admin.
+
+To stop offering it, remove `offline` from `PAYMENT_SELECTABLE_PROVIDERS` but
+keep `PAYMENT_REGISTERED_PROVIDERS=offline` until
+`python manage.py payments_provider_usage offline` shows nothing pending (at
+most validity + grace + 1 day). `OFFLINE_PAYMENT_ENABLED=False` refuses new
+requests while open ones can still be recorded. Removing the `OFFLINE_PAYMENT_*`
+block and the `INSTALLED_APPS` entry removes the integration entirely.
+
+| Variable | Purpose | Example |
+| --- | --- | --- |
+| `OFFLINE_PAYMENT_ENABLED` | Kill switch for new requests; recording keeps working | `True` |
+| `OFFLINE_PAYMENT_LABEL` | Name shown in the provider list | `Pay at the court counter` |
+| `OFFLINE_PAYMENT_REFERENCE_PREFIX` | 2–4 upper-case letters starting every payment reference | `OFL` |
+| `OFFLINE_PAYMENT_VALIDITY_DAYS` | Days after the issue date the payer may pay (1–90) | `7` |
+| `OFFLINE_PAYMENT_RECORDING_GRACE_HOURS` | Hours after validity staff may still record money collected in time (0–168) | `24` |
+| `OFFLINE_PAYMENT_METHODS` | Comma-separated subset of `CASH`, `DEMAND_DRAFT`, `POS` | `CASH,DEMAND_DRAFT` |
+| `OFFLINE_PAYMENT_COUNTERS` | JSON list of `{code, label, address, hours}` where money is accepted | `[{"code": "EKM-CJM", "label": "CJM Court, Ernakulam"}]` |
+| `OFFLINE_PAYMENT_DEFAULT_COUNTER` | Counter used when the payer picks none; one of the codes | `EKM-CJM` |
+| `OFFLINE_PAYMENT_INSTRUCTIONS` | Instructions shown to the payer (≤ 500 characters) | `Quote the payment reference at the counter and keep the receipt.` |
+| `OFFLINE_PAYMENT_PAYABLE_TO` | In whose favour a demand draft is drawn; required with `DEMAND_DRAFT` | `Chief Judicial Magistrate, Ernakulam` |
+| `OFFLINE_PAYMENT_MAX_AMOUNT` | Largest request offered offline; empty for no cap | `50000.00` |
+| `OFFLINE_PAYMENT_CASH_MAX_AMOUNT` | Largest amount accepted in cash; empty for no cap | `199999.00` |
+| `OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES` | Comma-separated `ChargeType` values offline may collect; empty allows all | `COURT_FEE,PROCESS_COURT_FEE` |
+| `OFFLINE_PAYMENT_RECEIPT_PATTERN` | Regex a receipt number must match after trimming and upper-casing | `^[A-Z0-9][A-Z0-9/-]{0,63}$` |
+| `OFFLINE_PAYMENT_DD_MAX_AGE_DAYS` | Oldest demand draft accepted, in days before collection | `90` |
 
 ## Docker dependency profiles
 

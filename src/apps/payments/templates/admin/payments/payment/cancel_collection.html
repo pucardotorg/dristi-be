@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% comment %}Cancel attested payment requests on the payer's behalf (spec 0032 #4.5).{% endcomment %}
+{% block content %}
+<div id="content-main">
+  <p>Cancel these open payment requests? Their items become payable again.</p>
+  <ul>{% for payment in payments %}<li>{{ payment.payment_number }} — {{ payment.provider_payment_id }}</li>{% empty %}<li>No open request selected.</li>{% endfor %}</ul>
+  <form method="post">{% csrf_token %}
+    {% for pk in selected %}<input type="hidden" name="_selected_action" value="{{ pk }}">{% endfor %}
+    <input type="hidden" name="action" value="{{ action }}">
+    <input type="hidden" name="apply" value="1">
+    {{ form.as_p }}
+    <input type="submit" class="default" value="Cancel requests">
+  </form>
+</div>
+{% endblock %}

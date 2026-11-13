@@ -13,10 +13,11 @@ from apps.payments.enums import ReferenceType
 from apps.payments.providers import registry
 from apps.payments.services import DemandService
 
-from .fakes import FakeProvider
+from .fakes import FakeAttestedProvider, FakeProvider
 from .helpers import item
 
 FAKE_PATH = "apps.payments.tests.fakes.FakeProvider"
+ATTESTED_PATH = "apps.payments.tests.fakes.FakeAttestedProvider"
 MOCK_PATH = "apps.payments.providers.mock.MockPaymentProvider"
 
 _mobile = itertools.count(1)
@@ -28,9 +29,11 @@ def fresh_providers():
 
     registry.reset_cache()
     FakeProvider.reset()
+    FakeAttestedProvider.reset()
     yield
     registry.reset_cache()
     FakeProvider.reset()
+    FakeAttestedProvider.reset()
 
 
 @pytest.fixture
@@ -154,3 +157,42 @@ def fake_provider(settings):
     settings.PAYMENT_DEFAULT_PROVIDER = "fake"
     registry.reset_cache()
     return FakeProvider
+
+
+@pytest.fixture
+def attested_provider(settings):
+    """The fake gateway (default) and the fake attested provider, both selectable."""
+
+    settings.PAYMENT_PROVIDERS = {"fake": FAKE_PATH, "counter": ATTESTED_PATH, "mock": MOCK_PATH}
+    settings.PAYMENT_DEFAULT_PROVIDER = "fake"
+    settings.PAYMENT_SELECTABLE_PROVIDERS = ["fake", "counter"]
+    registry.reset_cache()
+    return FakeAttestedProvider
+
+
+@pytest.fixture
+def grant():
+    """Give a user payments permissions by codename; returns a fresh instance."""
+
+    from django.contrib.auth.models import Permission
+
+    def factory(user, *codenames):
+        user.user_permissions.add(
+            *Permission.objects.filter(content_type__app_label="payments", codename__in=codenames)
+        )
+        return type(user).objects.get(pk=user.pk)  # drop the cached permissions
+
+    return factory
+
+
+@pytest.fixture
+def clerk(make_user, grant):
+    """Court staff who may view, record, late-record and cancel collections."""
+
+    return grant(
+        make_user("Suresh K"),
+        "view_payment_collection",
+        "record_payment_collection",
+        "record_late_payment_collection",
+        "cancel_payment_collection",
+    )
