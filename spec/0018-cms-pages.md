@@ -252,7 +252,7 @@ Authentication/permission decision:
 Both page endpoints resolve the requested language with
 `apps.core.languages.resolve_request_language` (spec 0030 section 5): `lang`
 query parameter, then `Accept-Language` header, then the default language. An
-unknown or inactive `lang` value fails with `400` / `E10001`
+unknown or inactive `lang` value fails with `400` / `E11001`
 (`field: "lang"`).
 
 Content is then served per object, with fallback:
@@ -274,7 +274,7 @@ differs from the requested language when a fallback happened (section 7.2).
 
 The `lang` parameter is declared once in OpenAPI
 (`OpenApiParameter("lang", str, OpenApiParameter.QUERY, ...)`) on both page
-endpoints, with the `E10001` example attached via `error_responses(...)`.
+endpoints, with the `E11001` example attached via `error_responses(...)`.
 
 #### 6.2 Page list behavior
 
@@ -415,13 +415,13 @@ The `privacy` page has no Malayalam translation, so it is served in English
 
 #### 8.3 Unsupported language
 
-`GET /api/v1/cms/pages/slug/terms/?lang=xx` → `400` (`E10001` is defined in
+`GET /api/v1/cms/pages/slug/terms/?lang=xx` → `400` (`E11001` is defined in
 spec 0030 section 8)
 
 ```json
 {
   "errors": [
-    {"code": "E10001", "message": "Language \"xx\" is not supported.", "field": "lang"}
+    {"code": "E11001", "message": "Language \"xx\" is not supported.", "field": "lang"}
   ],
   "meta": {
     "timestamp": "2026-10-13T12:30:00+05:30",
@@ -434,7 +434,7 @@ spec 0030 section 8)
 ### 9. Error codes
 
 CMS defines no codes of its own for this feature. The unsupported-language
-error `E10001` belongs to the `core` domain (spec 0030 section 8).
+error `E11001` belongs to the `core` domain (spec 0030 section 8).
 
 Unknown slugs keep returning the common `404` (`E00105`).
 
@@ -503,7 +503,7 @@ resolver and seed tests live in `apps.core`, spec 0030 section 11):
 
 Language support:
 
-8. `?lang=xx` and `?lang=<inactive code>` return `400` with code `E10001` and field `lang` on both page endpoints.
+8. `?lang=xx` and `?lang=<inactive code>` return `400` with code `E11001` and field `lang` on both page endpoints.
 9. `Accept-Language` selects the language when no `lang` parameter is given; `lang` wins over the header.
 10. Fallback: a page without a translation in the requested language is served in the default language with `language` set accordingly; category names fall back to `PageCategory.name`.
 11. A page without a default-language translation is absent from the list and 404 on the slug endpoint.

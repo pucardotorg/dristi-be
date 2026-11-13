@@ -123,7 +123,7 @@ class TestUnsupportedLangParam:
         response = call_view({"lang": value})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         [error] = response.data["errors"]
-        assert error["code"] == "E10001"
+        assert error["code"] == "E11001"
         assert error["field"] == "lang"
 
     def test_message_names_the_requested_code(self):
@@ -131,7 +131,7 @@ class TestUnsupportedLangParam:
         assert response.data["errors"][0]["message"] == 'Language "xx" is not supported.'
 
     def test_error_code_is_registered_in_core_domain(self):
-        error = get_error("E10001")
+        error = get_error("E11001")
         assert error.domain == "core"
         assert error.status == status.HTTP_400_BAD_REQUEST
 
@@ -140,7 +140,7 @@ class TestUnsupportedLangParam:
         response = call_view({"lang": "hi"}, "ml")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         [error] = response.data["errors"]
-        assert error["code"] == "E10001"
+        assert error["code"] == "E11001"
         assert error["field"] == "lang"
 
 

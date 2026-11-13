@@ -33,7 +33,7 @@ def resolve_request_language(request) -> Language:
     The first source that yields an active language wins:
 
     1. the ``lang`` query parameter, matched case-insensitively; an inactive
-       or unknown code raises ``BusinessError(E10001)`` on field ``lang``;
+       or unknown code raises ``BusinessError(E11001)`` on field ``lang``;
     2. the ``Accept-Language`` header, by descending quality, each tag tried
        exactly and then by its primary subtag (``en-IN`` -> ``en``); unknown
        or malformed tags are skipped;
