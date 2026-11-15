@@ -313,6 +313,10 @@ class TestPublicServices:
         make(config_key="page_size", config_value=" 25 ", value_type="integer")
         assert services.get_public_int("ui_feature_flag", "page_size") == 25
 
+    def test_get_public_int_is_exact_above_float_precision(self):
+        make(config_key="big", config_value="9007199254740993", value_type="integer")
+        assert services.get_public_int("ui_feature_flag", "big") == 9007199254740993
+
     @pytest.mark.parametrize(
         ("raw", "expected"), [("true", True), ("Yes", True), ("ON", True), ("0", False)]
     )

@@ -87,6 +87,11 @@ def coerce_integer(value: Any) -> int:
             return int(value)
         raise ValidationError(f"Cannot coerce non-whole decimal {value!r} to integer.")
     if isinstance(value, str):
+        # Parse integer text exactly; going through float rounds above 2**53.
+        try:
+            return int(value)
+        except ValueError:
+            pass
         try:
             parsed = float(value)
         except ValueError as exc:
