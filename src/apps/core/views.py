@@ -14,7 +14,7 @@ from apps.api.schema import error_responses
 from apps.api.viewsets import APIModelReadOnlyViewSet
 from apps.api.viewsets.base import APIBaseViewSet, APIListMixin
 
-from .models import ApiVersionChangeLog, PublicConfiguration, normalize_config_name, Language
+from .models import ApiVersionChangeLog, Language, PublicConfiguration, normalize_config_name
 from .serializers import (
     ApiVersionChangeLogSerializer,
     LanguageFilterSerializer,
