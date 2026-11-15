@@ -227,6 +227,7 @@ class PaymentAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
     def get_search_results(self, request, queryset, search_term):
         """Also find an attested request by a reference typed in any form (spec 0032 #10)."""
 
+        filtered = queryset  # the list filters already applied (e.g. "Awaiting collection")
         queryset, may_have_duplicates = super().get_search_results(request, queryset, search_term)
         term = (search_term or "").strip()
         if not term:
@@ -238,7 +239,7 @@ class PaymentAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
             except (ProviderError, ProviderNotConfigured):
                 continue
         for name, reference in references:
-            queryset |= self.model.objects.filter(provider=name, provider_payment_id=reference)
+            queryset |= filtered.filter(provider=name, provider_payment_id=reference)
         return queryset, may_have_duplicates or bool(references)
 
     # -- collection desk in the admin (spec 0032 #10) ------------------------
@@ -304,7 +305,12 @@ class PaymentAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
         """
 
         with timezone.override(selectors.IST):
-            return self._collection_view_in_court_time(request, object_id, late=late)
+            response = self._collection_view_in_court_time(request, object_id, late=late)
+            # A TemplateResponse renders lazily; render here so the pre-filled
+            # time is shown in IST too, not in the server's time zone.
+            if isinstance(response, TemplateResponse):
+                response.render()
+            return response
 
     def _collection_view_in_court_time(self, request, object_id, *, late: bool):
         payment = self.get_object(request, str(object_id))
@@ -383,12 +389,13 @@ class PaymentAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
         )
         form = CancelCollectionForm(request.POST if "apply" in request.POST else None)
         if form.is_bound and form.is_valid():
-            done = set()
+            seen = set()
+            cancelled = 0
             for payment in selected:
                 key = (payment.provider, payment.provider_payment_id)
-                if key in done:
+                if key in seen:  # the other payments of a batch
                     continue
-                done.add(key)
+                seen.add(key)
                 try:
                     PaymentService.cancel_collection(
                         provider=payment.provider,
@@ -402,7 +409,9 @@ class PaymentAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
                         f"{payment.payment_number}: {_business_error(exc)[1]}",
                         level=messages.WARNING,
                     )
-            self.message_user(request, f"Cancelled {len(done)} collection request(s).")
+                else:
+                    cancelled += 1
+            self.message_user(request, f"Cancelled {cancelled} collection request(s).")
             return None
         context = {
             **self.admin_site.each_context(request),
@@ -412,6 +421,7 @@ class PaymentAdmin(ReadOnlyAdminMixin, SimpleHistoryAdmin):
             "form": form,
             "action": "cancel_collection_request",
             "selected": request.POST.getlist(admin.helpers.ACTION_CHECKBOX_NAME),
+            "select_across": request.POST.get("select_across", "0"),
         }
         return TemplateResponse(request, "admin/payments/payment/cancel_collection.html", context)
 

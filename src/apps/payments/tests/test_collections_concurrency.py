@@ -44,12 +44,18 @@ def race(*calls):
         finally:
             connections.close_all()
 
-    threads = [threading.Thread(target=run, args=(i, c)) for i, c in enumerate(calls)]
+    threads = [threading.Thread(target=run, args=(i, c), daemon=True) for i, c in enumerate(calls)]
     for thread in threads:
         thread.start()
     for thread in threads:
-        thread.join(timeout=30)
+        thread.join(timeout=RACE_TIMEOUT_SECONDS)
+    stuck = [thread for thread in threads if thread.is_alive()]
+    # Never hand back unfinished results, or let teardown overlap a worker.
+    assert not stuck, f"{len(stuck)} worker(s) still running after {RACE_TIMEOUT_SECONDS}s"
     return results
+
+
+RACE_TIMEOUT_SECONDS = 30
 
 
 def codes(results):
@@ -140,12 +146,18 @@ def test_con_05_record_vs_poller_expiry(make_request, clerk):
         recorder(payment, clerk, "R-1"),
         lambda: PaymentService.apply_provider_status([payment], expiry),
     )
+    recorded, polled = results
+    # The poller never fails: it either fails the payment or finds it paid.
+    assert not isinstance(polled, BaseException), polled
     payment.refresh_from_db()
-    assert payment.status in (PaymentStatus.SUCCESS, PaymentStatus.FAILED)
-    if payment.status == PaymentStatus.FAILED:
-        assert errors.COLLECTION_NOT_OPEN.code in codes(results)
-    else:
+    if payment.status == PaymentStatus.SUCCESS:
+        assert not isinstance(recorded, BaseException), recorded
         assert PaymentAttestation.objects.count() == 1
+    else:
+        assert payment.status == PaymentStatus.FAILED
+        assert isinstance(recorded, BusinessError)
+        assert recorded.error is errors.COLLECTION_NOT_OPEN
+        assert not PaymentAttestation.objects.exists()
 
 
 def test_con_06_batch_record_vs_create_payment(raise_demand, user, attested_provider, clerk):
@@ -178,3 +190,36 @@ def test_con_06_batch_record_vs_create_payment(raise_demand, user, attested_prov
     assert all(not isinstance(r, BaseException) for r in results), results
     shared.refresh_from_db()
     assert shared.paid_amount == Decimal("12.50")
+
+
+def test_two_groups_racing_for_one_provider_id(raise_demand, user, attested_provider):
+    """Only one group may hold an id, even when both check at once (spec 0032 #4.2)."""
+
+    from apps.payments.services.payments import _ProviderIdCollision
+
+    groups = []
+    for n in range(2):
+        demand = raise_demand(reference_id=f"race-{n}")
+        groups.append(
+            Payment.objects.create(
+                payment_number=f"PAY-RACE-{n}",
+                demand=demand,
+                amount=Decimal("37.50"),
+                currency="INR",
+                client_request_id=f"race-{n}",
+                initiated_at=timezone.now(),
+            )
+        )
+
+    results = race(
+        *(
+            lambda payment=payment: PaymentService.mark_pending(
+                [payment], provider="counter", provider_payment_id="CTR-SHARED"
+            )
+            for payment in groups
+        )
+    )
+    assert sorted(type(r).__name__ for r in results) == sorted(
+        ["list", _ProviderIdCollision.__name__]
+    )
+    assert Payment.objects.filter(provider_payment_id="CTR-SHARED").count() == 1

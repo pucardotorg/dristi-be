@@ -239,7 +239,11 @@ def _amount(raw) -> Decimal | None:
         value = Decimal(text)
     except InvalidOperation:
         return None
-    if not value.is_finite() or value <= 0 or value != value.quantize(Decimal("0.01")):
+    # The exponent test, not quantize(): quantize raises InvalidOperation for a
+    # value beyond the context precision (e.g. "1e100").
+    if not value.is_finite() or value <= 0 or value.as_tuple().exponent < -2:
+        return None
+    if value.adjusted() >= 16:  # fits MONEY (18 digits, 2 decimals)
         return None
     return value
 

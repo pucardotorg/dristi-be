@@ -65,6 +65,8 @@ def test_silent_when_not_registered(settings):
         ({"OFFLINE_PAYMENT_MAX_AMOUNT": "-1"}, "E006"),
         ({"OFFLINE_PAYMENT_MAX_AMOUNT": "10.001"}, "E006"),
         ({"OFFLINE_PAYMENT_CASH_MAX_AMOUNT": "abc"}, "E006"),
+        ({"OFFLINE_PAYMENT_MAX_AMOUNT": "1e100"}, "E006"),
+        ({"OFFLINE_PAYMENT_CASH_MAX_AMOUNT": "1E+16"}, "E006"),
         ({"OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES": ["COURT_FEE", "PARKING"]}, "E007"),
         ({"OFFLINE_PAYMENT_RECEIPT_PATTERN": "(["}, "E008"),
         ({"OFFLINE_PAYMENT_DD_MAX_AGE_DAYS": 0}, "E009"),

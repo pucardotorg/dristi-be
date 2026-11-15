@@ -21,7 +21,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 
 from apps.api import errors as api_errors
@@ -610,6 +610,9 @@ class PaymentService:
         """
 
         with transaction.atomic():
+            # Two groups locking different rows could otherwise both pass the
+            # check below and commit the same id: serialize on the id itself.
+            _lock_provider_id(provider, provider_payment_id)
             locked = list(
                 Payment.objects.select_for_update()
                 .filter(pk__in=[payment.pk for payment in payments])
@@ -1273,6 +1276,23 @@ class PaymentService:
         provider = registry.get(payment.provider)
         status = provider.fetch_status(provider_payment_id=payment.provider_payment_id)
         return cls.apply_provider_status(cls.provider_group(payment), status)
+
+
+def _lock_provider_id(provider: str, provider_payment_id: str) -> None:
+    """Hold a transaction-scoped lock on one provider id (spec 0032 #4.2).
+
+    PostgreSQL: an advisory lock on a hash of the id, released at commit, so
+    the collision check and the assignment of an id are one critical section.
+    Other databases serialize writing transactions already.
+    """
+
+    if not provider_payment_id or connection.vendor != "postgresql":
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            [f"payments:provider-id:{provider}:{provider_payment_id}"],
+        )
 
 
 def _canonical_method(adapter: PaymentProvider, method) -> str:

@@ -144,6 +144,16 @@ def test_collected_at_is_entered_in_ist(pending, staff):
     assert PaymentAttestation.objects.get().collected_at == now_ist
 
 
+def test_default_collected_at_is_shown_in_ist(pending, staff, settings):
+    """The pre-filled time must round-trip: shown in IST, read back as IST."""
+
+    settings.TIME_ZONE = "UTC"
+    response = browser(staff("record_payment_collection")).get(record_url(pending))
+    shown = response.content.decode()
+    now_ist = timezone.localtime(timezone.now(), timezone=IST)
+    assert now_ist.strftime("%Y-%m-%d %H:") in shown
+
+
 def test_detail_fields_of_the_chosen_method_are_sent(pending, staff, attested_provider):
     clerk = staff("record_payment_collection")
     browser(clerk).post(
@@ -266,3 +276,88 @@ def test_attestation_admin_is_read_only(pending, staff, make_user, grant):
     response = browser(superuser).get(reverse("admin:payments_paymentattestation_changelist"))
     assert response.status_code == 200
     assert "R-1" in response.content.decode()
+
+
+def test_reference_search_keeps_the_active_filter(pending, staff):
+    """A cancelled request found by reference must not appear under "Awaiting collection"."""
+
+    PaymentService.cancel_payment(pending)
+    response = browser(staff()).get(
+        CHANGELIST, {"awaiting_collection": "yes", "q": pending.provider_payment_id.lower()}
+    )
+    assert list(response.context["cl"].result_list) == []
+
+
+def test_cancel_counts_only_successful_cancellations(pending, staff, raise_demand, user):
+    other_demand = raise_demand(reference_id="second")
+    other = PaymentService.create_payment(
+        demand=other_demand,
+        demand_item_ids=item_ids(other_demand),
+        client_request_id="k2",
+        provider="counter",
+        actor=user,
+    ).payment
+    client = browser(staff("cancel_payment_collection"))
+    selected = [str(pending.pk), str(other.pk)]
+
+    from unittest import mock
+
+    from apps.api.errors import BusinessError
+    from apps.payments import errors
+
+    original = PaymentService.cancel_collection
+
+    def one_lost_the_race(**kwargs):
+        if kwargs["provider_payment_id"] == other.provider_payment_id:
+            raise BusinessError(errors.PAYMENT_NOT_CANCELLABLE)
+        return original(**kwargs)
+
+    with mock.patch.object(PaymentService, "cancel_collection", side_effect=one_lost_the_race):
+        response = client.post(
+            CHANGELIST,
+            {
+                "action": "cancel_collection_request",
+                "_selected_action": selected,
+                "apply": "1",
+                "reason": "Payer asked",
+            },
+            follow=True,
+        )
+    shown = [str(m) for m in response.context["messages"]]
+    assert "Cancelled 1 collection request(s)." in shown
+    assert any(other.payment_number in m for m in shown)
+
+
+def test_cancel_select_across_cancels_every_open_request(pending, staff, raise_demand, user):
+    other_demand = raise_demand(reference_id="second")
+    other = PaymentService.create_payment(
+        demand=other_demand,
+        demand_item_ids=item_ids(other_demand),
+        client_request_id="k2",
+        provider="counter",
+        actor=user,
+    ).payment
+    client = browser(staff("cancel_payment_collection"))
+    # "Select all" with only one row ticked on the page.
+    page = client.post(
+        CHANGELIST,
+        {
+            "action": "cancel_collection_request",
+            "_selected_action": [str(pending.pk)],
+            "select_across": "1",
+        },
+    )
+    assert 'name="select_across" value="1"' in page.content.decode()
+    client.post(
+        CHANGELIST,
+        {
+            "action": "cancel_collection_request",
+            "_selected_action": [str(pending.pk)],
+            "select_across": "1",
+            "apply": "1",
+            "reason": "Closing the counter",
+        },
+    )
+    pending.refresh_from_db()
+    other.refresh_from_db()
+    assert pending.status == other.status == PaymentStatus.CANCELLED
