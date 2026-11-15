@@ -1,4 +1,4 @@
-# 0031 — Public Configuration Store (part of `apps.core`)
+# 0034 — Public Configuration Store (part of `apps.core`)
 
 ## Status
 
@@ -153,9 +153,19 @@ A `(config_set, config_key)` pair MUST NOT exist in both `Configuration` and
 * The backend may read a public value through the public service interface.
   It must not copy the same key into the private table.
 
-This cannot be enforced by a single-table constraint. It is a review and
-seeding rule in this iteration; a system check or cross-table validation MAY be
-added later if duplication becomes a problem.
+This cannot be enforced by a single-table constraint, so both models enforce it
+in `clean()` through `apps.core.models.check_other_config_store`:
+
+* Saving a `PublicConfiguration` whose normalized pair exists in
+  `Configuration` is a `ValidationError` on `config_key`, and vice versa.
+* Inactive rows count, as they do for uniqueness: deactivating a row does not
+  free its pair for the other store.
+* Because `save()` calls `full_clean()`, the rule applies to admin saves,
+  seeded rows (the row is skipped and reported), and code.
+* It is application-level validation, not a database constraint: two
+  concurrent saves of the same pair into both tables are not prevented, and
+  `bulk_create` / `update()` bypass it. That is acceptable for admin-edited,
+  low-churn data.
 
 ### 1.4 Secrets are forbidden
 
@@ -196,9 +206,9 @@ class PublicConfiguration(BaseModel, BaseActivatableModel):
 | `value_type` | Required content of `config_value` |
 | --- | --- |
 | `string` | Any text, including the empty string. Default. |
-| `integer` | A value accepted by `apps.core.validators.coerce_integer`. |
+| `integer` | An optional sign and ASCII digits, surrounding whitespace allowed (`^\s*[+-]?[0-9]+\s*$`), so a client's `Number()` reads the same value. Forms `coerce_integer` also accepts (`1_000`, `1e3`, `1.0`, non-ASCII digits) are rejected. |
 | `boolean` | A value accepted by the boolean rules in section 2: `true/false`, `1/0`, `yes/no`, `on/off`, case-insensitive. |
-| `json` | Valid JSON text (object, array, string, number, boolean, or `null`). |
+| `json` | Valid JSON text (object, array, string, number, boolean, or `null`) that a client's `JSON.parse` accepts; Python's non-standard `NaN` / `Infinity` / `-Infinity` are rejected. |
 
 * `save()` MUST call `full_clean()` so the type check runs on every write,
   including admin saves and seeded rows.
@@ -605,8 +615,9 @@ Required coverage:
 * Empty `config_value` is allowed for `string` and rejected for the other
   types.
 * A `(config_set, config_key)` pair MUST NOT exist in both `Configuration`
-  and `PublicConfiguration`. If that rule is not enforced in code yet, the
-  test documents the intended behavior.
+  and `PublicConfiguration`: saving either side when the other holds the pair
+  (after normalization, including an inactive row) is rejected; the same key
+  in another set is allowed; existing rows can still be updated.
 * Secret-like keys (`gateway.password`, `auth.token`, `esign.private_key`,
   exactly `api_key`) are rejected.
 * A non-secret key containing a secret word as a prefix
@@ -659,12 +670,13 @@ Required coverage:
 * A structured value seeded with `value_type = "json"` is readable through
   `get_public_json`.
 * A secret-like key in a seed file is skipped/reported rather than stored.
+* A row whose pair already exists in `Configuration` is skipped/reported.
 
 ---
 
 ## 8. Relationship to spec 0018
 
-| | `Configuration` (0018) | `PublicConfiguration` (0031) |
+| | `Configuration` (0018) | `PublicConfiguration` (0034) |
 | --- | --- | --- |
 | Audience | Backend process only | Internet / frontend |
 | API | None | Two read-only `GET` endpoints |
@@ -699,9 +711,9 @@ two stores stay separate.
 
 ## 10. Open questions
 
-1. **Duplicate keys across stores.** Cross-table duplication cannot be enforced
-   by a normal Django constraint. Is a system check or a model-level
-   cross-table validation needed now, or is review sufficient?
+1. **Duplicate keys across stores.** *Resolved:* model-level cross-table
+   validation in both models (section 1.3). A database-level guarantee
+   (e.g. a trigger) is not planned.
 2. **Description exposure.** This spec keeps `description` admin-only. If the
    frontend needs human-readable labels per key, add explicit `label` and
    `help_text` fields later rather than exposing operator notes.

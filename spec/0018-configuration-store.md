@@ -33,10 +33,14 @@ not know what `max_records_per_pdf` means, and it MUST NOT grow conditional logi
 **This store is internal use only and will never have a public API.** It is
 consumed in-process by backend modules through service-level functions only.
 Values that the frontend or any internet client must fetch belong in
-`apps.core.models.PublicConfiguration` ([`0031`](0031-public-configuration-store.md)),
+`apps.core.models.PublicConfiguration` ([`0034`](0034-public-configuration-store.md)),
 not here. Do not add an HTTP API, serializer, viewset, or route for this
 module; exposing it would turn every backend-only operational value into part
 of the public surface.
+
+A `(config_set, config_key)` pair belongs to exactly one of the two stores.
+`Configuration.clean()` rejects a pair that already exists in
+`PublicConfiguration`, active or not (spec 0034 section 1.3).
 
 ## Goals
 
@@ -367,7 +371,7 @@ licence to pull domain logic into core.
 ## 10. Out of scope
 
 * Read-only REST API for this store. Frontend/public values belong in
-  `PublicConfiguration` ([`0031`](0031-public-configuration-store.md)); this
+  `PublicConfiguration` ([`0034`](0034-public-configuration-store.md)); this
   store is internal use only.
 * Write API with admin-only permissions.
 * `simple_history` tracking and a config diff view.

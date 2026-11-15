@@ -1,6 +1,7 @@
 """Shared base model used across the project."""
 
 import copy
+import json
 import re
 import uuid
 
@@ -13,7 +14,9 @@ from simple_history.models import HistoricalRecords
 
 from .validators import (
     DATA_TYPE_CHOICES,
+    coerce_integer,
     coerce_value,
+    parse_config_bool,
     validate_attribute_name,
     validate_default_value,
 )
@@ -224,9 +227,44 @@ class ApiVersionChangeLog(BaseExtendableModel, BaseModel, BaseActivatableModel, 
 CONFIG_NAME_PATTERN = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)*$")
 
 
+CONFIG_NAME_MESSAGE = (
+    "Use lowercase letters, numbers, and underscores, optionally "
+    "grouped with dots (for example 'gateway.cdac.timeout')."
+)
+
+
 def normalize_config_name(value: str) -> str:
     """Return a configuration set/key trimmed and lowercased."""
     return value.strip().lower() if isinstance(value, str) else value
+
+
+def clean_config_names(instance) -> dict[str, str]:
+    """Normalize ``config_set`` / ``config_key`` in place; return format errors by field."""
+    errors = {}
+    for field in ("config_set", "config_key"):
+        value = normalize_config_name(getattr(instance, field))
+        setattr(instance, field, value)
+        if not CONFIG_NAME_PATTERN.match(value or ""):
+            errors[field] = CONFIG_NAME_MESSAGE
+    return errors
+
+
+def check_other_config_store(instance, other_model, errors: dict[str, str]) -> None:
+    """Add an error when the set/key pair already exists in ``other_model``.
+
+    A pair belongs to exactly one of ``Configuration`` and
+    ``PublicConfiguration`` (spec 0034 section 1.3). Inactive rows count, as
+    they do for uniqueness. Application-level only: two concurrent saves of
+    the same pair into both tables are not prevented.
+    """
+    if errors.keys() & {"config_set", "config_key"}:
+        return
+    pair = {"config_set": instance.config_set, "config_key": instance.config_key}
+    if other_model.objects.filter(**pair).exists():
+        errors["config_key"] = (
+            f"{instance.config_set}.{instance.config_key} already exists in "
+            f"{other_model._meta.verbose_name}; a key belongs to exactly one store."
+        )
 
 
 class Configuration(BaseModel, BaseActivatableModel):
@@ -261,17 +299,150 @@ class Configuration(BaseModel, BaseActivatableModel):
         return f"{self.config_set}.{self.config_key}"
 
     def clean(self):
-        """Normalize the set and key, then validate their format."""
+        """Normalize and validate the set and key; reject a pair held in PublicConfiguration."""
         super().clean()
-        self.config_set = normalize_config_name(self.config_set)
-        self.config_key = normalize_config_name(self.config_key)
-        errors = {}
+        errors = clean_config_names(self)
+        check_other_config_store(self, PublicConfiguration, errors)
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        """Validate the model before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+PUBLIC_CONFIGURATION_WARNING = "Everything in this table is public and visible to internet clients."
+
+# Names that suggest a secret. A public set or key equal to one of these, or
+# ending with one as a dotted or underscored segment, is rejected (spec 0034
+# section 1.4). Defence in depth only: a human still reviews every value.
+SECRET_CONFIG_NAMES = frozenset(
+    {
+        "secret",
+        "secrets",
+        "password",
+        "passwd",
+        "token",
+        "api_key",
+        "apikey",
+        "private_key",
+        "credential",
+        "credentials",
+    }
+)
+
+
+def is_secret_config_name(name: str) -> bool:
+    """Whether a normalized set/key looks like it names a secret."""
+    return any(
+        name == secret or name.endswith((f".{secret}", f"_{secret}"))
+        for secret in SECRET_CONFIG_NAMES
+    )
+
+
+# A public integer is an optional sign and ASCII digits, so a client's
+# ``Number()`` reads the same value; ``coerce_integer`` alone also accepts
+# "1_000", "1e3" and non-ASCII digits.
+PUBLIC_INTEGER_PATTERN = re.compile(r"^\s*[+-]?[0-9]+\s*$")
+
+
+def _validate_integer(value: str) -> None:
+    if not PUBLIC_INTEGER_PATTERN.match(value):
+        raise ValueError(value)
+    coerce_integer(value)
+
+
+def _reject_json_constant(name: str) -> None:
+    raise ValueError(f"{name} is not valid JSON.")
+
+
+def _validate_json(value: str) -> None:
+    # Python accepts NaN / Infinity, but a client's JSON.parse does not.
+    json.loads(value, parse_constant=_reject_json_constant)
+
+
+class PublicConfiguration(BaseModel, BaseActivatableModel):
+    """A runtime-editable configuration entry served to clients (spec 0034).
+
+    Every row is public: it is returned by an unauthenticated, internet-facing
+    API. Secrets MUST NOT be stored here; backend-only values belong in
+    ``Configuration``. Read values in-process through ``apps.core.services``.
+    """
+
+    class ValueType(models.TextChoices):
+        """How clients interpret ``config_value``; storage is always text."""
+
+        STRING = "string", "String"
+        INTEGER = "integer", "Integer"
+        BOOLEAN = "boolean", "Boolean"
+        JSON = "json", "JSON"
+
+    # Parsers that a value of each non-string type must pass.
+    VALUE_PARSERS = {
+        ValueType.INTEGER: _validate_integer,
+        ValueType.BOOLEAN: parse_config_bool,
+        ValueType.JSON: _validate_json,
+    }
+
+    config_set = models.CharField(max_length=100)
+    config_key = models.CharField(max_length=255)
+    config_value = models.TextField(blank=True, help_text=PUBLIC_CONFIGURATION_WARNING)
+    value_type = models.CharField(
+        max_length=16,
+        choices=ValueType.choices,
+        default=ValueType.STRING,
+        help_text="How clients interpret the value. It must parse as this type.",
+    )
+    description = models.TextField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Admin-only note; not returned by the API, but write it as if it "
+            "could be read by anyone."
+        ),
+    )
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("config_set", "config_key")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("config_set", "config_key"),
+                name="core_publicconfiguration_unique_set_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("config_set",), name="core_public_config_set_idx"),
+        ]
+        verbose_name = "Public Configuration"
+        verbose_name_plural = "Public Configurations"
+
+    def __str__(self):
+        return f"{self.config_set}.{self.config_key}"
+
+    def clean(self):
+        """Vet the set and key, type-check the value, and reject a pair held in Configuration."""
+        super().clean()
+        errors = clean_config_names(self)
         for field in ("config_set", "config_key"):
-            if not CONFIG_NAME_PATTERN.match(getattr(self, field) or ""):
+            if field not in errors and is_secret_config_name(getattr(self, field)):
                 errors[field] = (
-                    "Use lowercase letters, numbers, and underscores, optionally "
-                    "grouped with dots (for example 'gateway.cdac.timeout')."
+                    "This name looks like a secret. Public configuration is visible "
+                    "to internet clients; keep secrets in environment variables."
                 )
+
+        parse = self.VALUE_PARSERS.get(self.value_type)
+        if parse is not None:
+            try:
+                parse(self.config_value or "")
+            except (ValidationError, ValueError):
+                errors["value_type"] = (
+                    f"The value does not parse as {self.get_value_type_display()}."
+                )
+
+        check_other_config_store(self, Configuration, errors)
         if errors:
             raise ValidationError(errors)
 

@@ -1,10 +1,11 @@
 """Core app API views and viewsets."""
 
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, extend_schema_view, inline_serializer
 from rest_framework import serializers
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -13,12 +14,17 @@ from apps.api.schema import error_responses
 from apps.api.viewsets import APIModelReadOnlyViewSet
 from apps.api.viewsets.base import APIBaseViewSet, APIListMixin
 
-from .models import ApiVersionChangeLog, Language
+from .models import ApiVersionChangeLog, PublicConfiguration, normalize_config_name, Language
 from .serializers import (
     ApiVersionChangeLogSerializer,
     LanguageFilterSerializer,
     LanguageSerializer,
+    PublicConfigurationSerializer,
 )
+
+# Dotted names (gateway.cdac.timeout) are allowed in both path parameters.
+CONFIG_SET_URL_PATH = r"(?P<config_set>[^/]+)"
+CONFIG_KEY_URL_PATH = CONFIG_SET_URL_PATH + r"/(?P<config_key>[^/]+)"
 
 
 def index(request):
@@ -100,3 +106,52 @@ class LanguageViewSet(APIListMixin, APIBaseViewSet):
         if supports:
             queryset = queryset.filter(supports__contains=[supports])
         return queryset
+
+
+@extend_schema_view(
+    by_set=extend_schema(
+        summary="List public configuration in a set",
+        description="Return the active entries of one set, ordered by key. An unknown set "
+        "returns an empty page.",
+    ),
+    by_key=extend_schema(
+        summary="Retrieve a public configuration entry",
+        description="Return one active entry by its set and key. `config_value` is always "
+        "a string; interpret it by `value_type`.",
+    ),
+)
+class PublicConfigurationViewSet(APIBaseViewSet):
+    """Public, read-only API over ``PublicConfiguration`` (spec 0034 section 3).
+
+    Exactly two GET routes: a set listing and a set + key detail. There is no
+    ``list`` or id-based ``retrieve``, no filtering or ordering parameters, and
+    this view never reads ``Configuration``.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    filter_backends = []
+    queryset = PublicConfiguration.objects.active()
+    serializer_class = PublicConfigurationSerializer
+    list_actions = {"by_set"}
+
+    @action(detail=False, methods=["get"], url_path=CONFIG_SET_URL_PATH, url_name="by-set")
+    def by_set(self, request, config_set=None):
+        """Return a page of the active entries in one set."""
+        entries = (
+            self.get_queryset()
+            .filter(config_set=normalize_config_name(config_set))
+            .order_by("config_key")
+        )
+        page = self.paginate_queryset(entries)
+        return self.get_paginated_response(self.get_serializer(page, many=True).data)
+
+    @action(detail=False, methods=["get"], url_path=CONFIG_KEY_URL_PATH, url_name="by-key")
+    def by_key(self, request, config_set=None, config_key=None):
+        """Return one active entry matching both the set and the key."""
+        entry = get_object_or_404(
+            self.get_queryset(),
+            config_set=normalize_config_name(config_set),
+            config_key=normalize_config_name(config_key),
+        )
+        return Response(self.get_serializer(entry).data)
