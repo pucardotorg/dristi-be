@@ -1,8 +1,12 @@
 """Human-readable request numbers, ``KL-REQ-00001`` (spec 0010 section 1.1)."""
 
 import json
+from unittest.mock import patch
 
 import pytest
+from django.contrib import admin
+from django.db.models import QuerySet
+from django.test import RequestFactory
 from django.urls import reverse
 
 from apps.api.errors import BusinessError
@@ -77,6 +81,31 @@ class TestRequestNumber:
         make_user("late-approver@example.com", groups=["LEVEL_ONE"])
 
         assert create(simple_type, requester).request_number == "KL-REQ-00001"
+
+    def test_counter_row_created_concurrently(self, state_code):
+        # Another transaction creates the row (drawing 00001) after this one's
+        # UPDATE found nothing, so this one's INSERT hits the unique prefix.
+        RequestNumberSequence.objects.create(prefix="KL-REQ", value=1)
+        real_update = QuerySet.update
+        missed = []
+
+        def first_update_misses(queryset, **kwargs):
+            if not missed:
+                missed.append(True)
+                return 0
+            return real_update(queryset, **kwargs)
+
+        with patch.object(QuerySet, "update", first_update_misses):
+            number = next_request_number()
+
+        assert number == "KL-REQ-00002"
+        assert str(RequestNumberSequence.objects.get()) == "KL-REQ: 2"
+
+    def test_admin_cannot_add_requests(self, make_user):
+        http_request = RequestFactory().get("/")
+        http_request.user = make_user("admin@example.com", is_staff=True, is_superuser=True)
+
+        assert admin.site._registry[Request].has_add_permission(http_request) is False
 
     def test_state_code_is_normalised(self, state_code):
         state_code.config_value = " kl "

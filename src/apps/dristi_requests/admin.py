@@ -81,6 +81,10 @@ class RequestAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     readonly_fields = ("id", "request_number", "created_at", "updated_at")
     inlines = [RequestDocumentInline, RequestApprovalInline]
 
+    def has_add_permission(self, request):
+        """Requests are created by ``services.create_request`` only, which numbers them."""
+        return False
+
 
 @admin.register(RequestApproval)
 class RequestApprovalAdmin(AuditUserAdminMixin, admin.ModelAdmin):
