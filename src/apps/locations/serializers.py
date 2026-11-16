@@ -2,7 +2,30 @@
 
 from rest_framework import serializers
 
+from apps.core.fields import StrictBooleanField
+
 from .models import Location
+
+
+class LocationFilterSerializer(serializers.Serializer):
+    """Validates and normalizes query params for GET /locations/ and lookups."""
+
+    location_type = serializers.ChoiceField(choices=Location.LocationType.choices, required=False)
+    parent_id = serializers.UUIDField(required=False)
+    parent_code = serializers.CharField(required=False)
+    is_active = StrictBooleanField(required=False)
+
+    def validate_parent_code(self, value):
+        """Reject codes that match no location."""
+        if not Location.objects.filter(code=value).exists():
+            raise serializers.ValidationError(f"No location exists with code {value!r}.")
+        return value
+
+    def validate(self, attrs):
+        """Enforce parent_id/parent_code exclusivity."""
+        if "parent_id" in attrs and "parent_code" in attrs:
+            raise serializers.ValidationError("parent_id and parent_code are mutually exclusive.")
+        return attrs
 
 
 class LocationSerializer(serializers.ModelSerializer):

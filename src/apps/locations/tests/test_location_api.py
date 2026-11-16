@@ -20,6 +20,14 @@ class LocationAPITestCase(APITestCase):
         self.india, self.bihar, self.patna = make_hierarchy()
         self.goa = make_state(parent=self.india, code="GA", name="Goa", is_active=False)
 
+    def assert_errors(self, response, expected):
+        """Assert a 400 whose errors are exactly ``expected`` (code, field) pairs."""
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [(e["code"], e.get("field")) for e in response.json()["errors"]],
+            expected,
+        )
+
     def assert_meta(self, payload):
         """Assert the API response includes the required metadata envelope."""
         self.assertIn("meta", payload)
@@ -79,7 +87,7 @@ class LocationListTests(LocationAPITestCase):
             {"parent_id": str(self.india.pk), "parent_code": "IN"},
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_errors(response, [(errors.INVALID.code, None)])
 
     def test_rejects_unknown_location_type(self):
         response = self.client.get(reverse("location-list"), {"location_type": "tehsil"})
@@ -93,17 +101,62 @@ class LocationListTests(LocationAPITestCase):
     def test_rejects_malformed_parent_id(self):
         response = self.client.get(reverse("location-list"), {"parent_id": "not-a-uuid"})
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_errors(response, [(errors.INVALID.code, "parent_id")])
 
     def test_rejects_unknown_parent_code(self):
         response = self.client.get(reverse("location-list"), {"parent_code": "NOPE"})
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_errors(response, [(errors.INVALID.code, "parent_code")])
 
     def test_rejects_non_boolean_is_active(self):
-        response = self.client.get(reverse("location-list"), {"is_active": "maybe"})
+        for value in ("maybe", "1", "yes"):
+            with self.subTest(value=value):
+                response = self.client.get(reverse("location-list"), {"is_active": value})
+
+                self.assert_errors(response, [(errors.INVALID.code, "is_active")])
+
+    def test_empty_filter_values_are_ignored(self):
+        response = self.client.get(
+            reverse("location-list"),
+            {"location_type": "", "parent_id": "", "is_active": ""},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["count"], 4)
+
+    def test_is_active_is_case_and_whitespace_insensitive(self):
+        for value in ("FALSE", " false "):
+            with self.subTest(value=value):
+                response = self.client.get(reverse("location-list"), {"is_active": value})
+
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                codes = [row["code"] for row in response.json()["results"]]
+                self.assertEqual(codes, ["GA"])
+
+    def test_reports_every_invalid_filter_at_once(self):
+        response = self.client.get(
+            reverse("location-list"),
+            {"location_type": "tehsil", "parent_id": "bad", "is_active": "maybe"},
+        )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            {(e["code"], e.get("field")) for e in response.json()["errors"]},
+            {
+                (errors.INVALID_CHOICE.code, "location_type"),
+                (errors.INVALID.code, "parent_id"),
+                (errors.INVALID.code, "is_active"),
+            },
+        )
+
+    def test_filters_apply_to_detail_lookup_by_id(self):
+        url = reverse("location-detail", args=[self.goa.pk])
+
+        self.assertEqual(self.client.get(url, {"is_active": "false"}).status_code, 200)
+        self.assertEqual(self.client.get(url, {"is_active": "true"}).status_code, 404)
+        self.assert_errors(
+            self.client.get(url, {"is_active": "maybe"}), [(errors.INVALID.code, "is_active")]
+        )
 
 
 class LocationRetrieveTests(LocationAPITestCase):
@@ -242,6 +295,14 @@ class LocationAncestorsTests(LocationAPITestCase):
                         ],
                         [{"code": errors.INVALID.code, "field": "is_active"}],
                     )
+
+    def test_invalid_filters_are_rejected_on_both_routes(self):
+        for url in self.ancestors_urls(self.patna):
+            with self.subTest(url=url):
+                self.assert_errors(
+                    self.client.get(url, {"location_type": "tehsil"}),
+                    [(errors.INVALID_CHOICE.code, "location_type")],
+                )
 
     def test_is_active_true_needs_an_active_location_on_both_routes(self):
         for url in self.ancestors_urls(self.patna):

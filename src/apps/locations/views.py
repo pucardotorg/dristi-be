@@ -1,26 +1,24 @@
 """Locations API views."""
 
-import uuid
-
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
 from apps.api import errors
 from apps.api.schema import error_responses
 from apps.api.viewsets import APIModelReadOnlyViewSet
+from apps.core.fields import StrictBooleanField
 
 from .models import Location
-from .serializers import LocationSerializer
+from .serializers import LocationFilterSerializer, LocationSerializer
 
 UUID_REGEX = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 CODE_URL_PATH = r"code/(?P<code>[^/.]+)"
-BOOLEAN_VALUES = {"true": True, "false": False}
-IS_ACTIVE_MESSAGE = "Must be 'true' or 'false'."
+IS_ACTIVE_MESSAGE = StrictBooleanField.default_error_messages["invalid"]
 # The pincode pre-fill asks for an all-active chain (spec 0007 section 7).
 ANCESTORS_IS_ACTIVE = OpenApiParameter(
     "is_active",
@@ -37,33 +35,15 @@ ANCESTORS_SCHEMA = extend_schema(
 )
 
 
-def parse_is_active(params):
-    """Return the ``is_active`` query parameter as a bool, or None when absent.
-
-    Raises a 400 for any other value, so a typo is never silently ignored.
-    """
-    value = params.get("is_active")
-    if value is None:
-        return None
-    if value.lower() not in BOOLEAN_VALUES:
-        raise ValidationError({"is_active": IS_ACTIVE_MESSAGE})
-    return BOOLEAN_VALUES[value.lower()]
-
-
 @extend_schema_view(
-    # Query parameters are validated in get_queryset(), outside any serializer.
+    # Query parameters are validated by LocationFilterSerializer.
     list=extend_schema(
         responses=error_responses(
-            errors.INVALID_CHOICE.example(
-                f"Must be one of: {', '.join(Location.LocationType.values)}.",
-                field="location_type",
-            ),
+            errors.INVALID_CHOICE.example('"XX" is not a valid choice.', field="location_type"),
             errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
             errors.INVALID.example("No location exists with code 'XX'.", field="parent_code"),
             errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active"),
-            errors.INVALID.example(
-                "parent_id and parent_code are mutually exclusive; supply only one."
-            ),
+            errors.INVALID.example("parent_id and parent_code are mutually exclusive."),
         )
     ),
 )
@@ -80,45 +60,24 @@ class LocationViewSet(APIModelReadOnlyViewSet):
     unpaginated_actions = {"ancestors", "ancestors_by_code"}
 
     def get_queryset(self):
-        """Apply the location_type, parent and is_active query filters."""
+        """Apply the location_type, parent and is_active query filters.
+
+        They apply to every route built on this queryset, detail lookups
+        included, so a lookup by id honours ``is_active`` too.
+        """
         queryset = super().get_queryset()
-        params = self.request.query_params
+        filters = LocationFilterSerializer(data=self.request.query_params)
+        filters.is_valid(raise_exception=True)
+        params = filters.validated_data
 
-        location_type = params.get("location_type")
-        if location_type is not None:
-            if location_type not in Location.LocationType.values:
-                raise errors.INVALID_CHOICE.validation_error(
-                    {
-                        "location_type": (
-                            f"Must be one of: {', '.join(Location.LocationType.values)}."
-                        )
-                    }
-                )
-            queryset = queryset.filter(location_type=location_type)
-
-        parent_id = params.get("parent_id")
-        parent_code = params.get("parent_code")
-        if parent_id is not None and parent_code is not None:
-            raise ValidationError(
-                "parent_id and parent_code are mutually exclusive; supply only one."
-            )
-        if parent_id is not None:
-            try:
-                parent_uuid = uuid.UUID(parent_id)
-            except (ValueError, AttributeError, TypeError) as exc:
-                raise ValidationError({"parent_id": "Must be a valid UUID."}) from exc
-            queryset = queryset.filter(parent_id=parent_uuid)
-        if parent_code is not None:
-            parent = Location.objects.filter(code=parent_code).first()
-            if parent is None:
-                raise ValidationError(
-                    {"parent_code": f"No location exists with code {parent_code!r}."}
-                )
-            queryset = queryset.filter(parent_id=parent.pk)
-
-        is_active = parse_is_active(params)
-        if is_active is not None:
-            queryset = queryset.filter(is_active=is_active)
+        if "location_type" in params:
+            queryset = queryset.filter(location_type=params["location_type"])
+        if "parent_id" in params:
+            queryset = queryset.filter(parent_id=params["parent_id"])
+        if "parent_code" in params:
+            queryset = queryset.filter(parent__code=params["parent_code"])
+        if "is_active" in params:
+            queryset = queryset.filter(is_active=params["is_active"])
 
         return queryset
 
@@ -143,7 +102,9 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         With ``is_active=false`` an active location is not found, as the id
         route's queryset filter already does. Any other value is a 400.
         """
-        is_active = parse_is_active(self.request.query_params)
+        filters = LocationFilterSerializer(data=self.request.query_params)
+        filters.is_valid(raise_exception=True)
+        is_active = filters.validated_data.get("is_active")
         ancestors = location.get_ancestors()
         if is_active and not all(link.is_active for link in [location, *ancestors]):
             raise NotFound("No active location with an active ancestor chain was found.")
