@@ -26,6 +26,7 @@ from rest_framework.exceptions import NotFound
 from apps.api.errors import BusinessError
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
+from apps.parties.models import PAN_CIN_REQUIRED_MESSAGE
 
 from .. import errors
 from ..models import (
@@ -33,6 +34,7 @@ from ..models import (
     FILING_SIDE_ROLES,
     PARTICIPANT_ORDERING,
     POA_MANDATE_ORDERING,
+    POLICE_STATION_ROLES,
     REPRESENTATION_ORDERING,
     SIGNING_ROLES,
     Case,
@@ -52,8 +54,8 @@ from .case_types import (
     EVIDENCE_SCAN_TYPES,
     DocumentType,
     EvidenceType,
+    evidence_errors,
     get_config,
-    schema_errors,
     section_errors,
 )
 from .contacts import contacts_of, first, load_contacts
@@ -212,11 +214,13 @@ def validation_errors(case):
     if not participants.filter(role=ParticipantRole.ACCUSED).exists():
         error("participants.accused", "At least one active accused is required.")
 
-    # Writes already check these; a rule tightened since then is caught here.
+    # A draft may be saved without any of these; they are asked for only here.
     # Witnesses are optional, but one who is added needs a name or designation;
     # every other party needs a name. Each party is served at an address: an
-    # individual their own, an institution its own on this case.
-    for participant in load_contacts(participants.order_by(*PARTICIPANT_ORDERING)):
+    # individual their own, an institution its own on this case. Notice to an
+    # accused or a witness goes through the police station of each address.
+    ordered = participants.select_related("institution").order_by(*PARTICIPANT_ORDERING)
+    for participant in load_contacts(ordered):
         field = f"participants.{participant.id}"
         label = f"{participant.get_role_display()} #{participant.ordinal}"
         if participant.role != ParticipantRole.WITNESS:
@@ -228,6 +232,24 @@ def validation_errors(case):
         served = of_institution if participant.institution_id else own
         if not first(served, ContactType.ADDRESS):
             error(field, f"{label} has no address.")
+        if participant.role in POLICE_STATION_ROLES and any(
+            row.address_id and not row.address.police_station for row in [*own, *of_institution]
+        ):
+            error(field, f"{label} has an address with no police station.")
+        if (
+            participant.role == ParticipantRole.ACCUSED
+            and participant.person_id
+            and participant.institution_id
+            and not participant.designation_at_filing
+        ):
+            error(field, f"{label} acts for an institution but has no designation.")
+        institution = participant.institution
+        if (
+            participant.role == ParticipantRole.COMPLAINANT
+            and institution is not None
+            and not (institution.pan or institution.cin or institution.pan_cin_skip_declared)
+        ):
+            error(field, f"{label}: {PAN_CIN_REQUIRED_MESSAGE}")
 
     represented = set(
         Representation.objects.active().filter(case=case).values_list("case_participant", flat=True)
@@ -248,8 +270,7 @@ def validation_errors(case):
                 "party-in-person affidavit.",
             )
 
-    # Writes refuse empty editor output; this also catches what reached the
-    # database another way (the admin, a shell).
+    # A draft may save empty editor output, or none; it is asked for only here.
     if not has_visible_text(case.affidavit):
         error("affidavit", "The affidavit is required.")
 
@@ -340,8 +361,10 @@ def validation_errors(case):
                 f"evidence.{item.evidence_type}",
                 f"{label} #{item.ordinal}: {scan_type_message(scan_type)}",
             )
-        schema = config.evidence_schemas.get(item.evidence_type)
-        for problem in schema_errors(schema, item.evidence_info) if schema else []:
+        has_schema = item.evidence_type in config.evidence_schemas
+        for problem in (
+            evidence_errors(config, item.evidence_type, item.evidence_info) if has_schema else []
+        ):
             label = EvidenceType(item.evidence_type).label
             error(f"evidence.{item.evidence_type}", f"{label} #{item.ordinal}: {problem}")
 

@@ -21,13 +21,11 @@ from apps.api.schema import error_responses
 
 from . import errors
 from .models import (
-    ADDRESS_REQUIRED_MESSAGE,
     EVIDENCE_ORDERING,
     JOINABLE_STATUSES,
     PARTICIPANT_LINK_MESSAGE,
     PARTICIPANT_ORDERING,
     POA_MANDATE_ORDERING,
-    POLICE_STATION_REQUIRED_MESSAGE,
     REPRESENTATION_ORDERING,
     Case,
     CaseDocument,
@@ -492,10 +490,6 @@ class _ParticipantCreateView(APIView):
         responses={
             201: CaseParticipantSerializer,
             **error_responses(
-                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="addresses"),
-                api_errors.REQUIRED.example(
-                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
-                ),
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.SELF_AS_ACCUSED.example(field="self"),
                 errors.FIELD_NOT_APPLICABLE.example(
@@ -551,9 +545,6 @@ class WitnessCreateView(APIView):
             201: CaseParticipantSerializer,
             **error_responses(
                 errors.WITNESS_ALREADY_ON_SIDE.example(field="side"),
-                api_errors.REQUIRED.example(
-                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
-                ),
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.FIELD_NOT_ACCEPTED.example(field="institution"),
                 errors.CASE_NOT_EDITABLE,
@@ -632,9 +623,6 @@ class CaseParticipantDetailView(APIView):
                 errors.ROLE_ALREADY_HELD.example(field="institution"),
                 errors.BOTH_SIDES.example(field="institution"),
                 errors.WITNESS_ALREADY_ON_SIDE.example(field="side"),
-                api_errors.REQUIRED.example(
-                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
-                ),
                 errors.CASE_NOT_EDITABLE,
                 errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
@@ -680,7 +668,6 @@ class PoaHolderCreateView(APIView):
         responses={
             201: PoaHolderCreatedSerializer,
             **error_responses(
-                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="addresses"),
                 errors.DUPLICATE_PARTICIPANT.example(field="represented_participant_ids"),
                 errors.PARTICIPANT_NOT_ON_CASE.example(
                     "Must be active participants of the same case.",

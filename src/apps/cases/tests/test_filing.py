@@ -199,12 +199,13 @@ class TestAffidavit:
 
         assert Case.objects.get(pk=draft).affidavit == "<p>Corrected.</p>"
 
-    @pytest.mark.parametrize("affidavit", ["  ", "<p><br></p>", "<p>&nbsp;</p>"])
-    def test_an_empty_affidavit_is_400_and_creates_nothing(self, client, draft, affidavit):
+    @pytest.mark.parametrize("affidavit", ["", "  ", "<p><br></p>", "<p>&nbsp;</p>", None])
+    def test_an_empty_affidavit_is_saved_and_validate_asks_for_one(self, client, draft, affidavit):
         response = put_affidavit(client, draft, affidavit)
 
-        assert error_codes(response) == {"affidavit": ["E00004"]}
-        assert not Case.objects.exists()
+        assert response.status_code == 200, response.json()
+        assert Case.objects.get(pk=draft).affidavit == response.json()["affidavit"]
+        assert "affidavit" in fields_of(validate(client, draft))
 
     def test_a_submitted_case_cannot_change(self, client, draft):
         put_affidavit(client, draft)
@@ -436,6 +437,110 @@ class TestPreview:
         assert client.get(reverse("case-detail", args=[draft])).status_code == 404
 
 
+class TestPartialDraft:
+    """Every part of a filing can be saved half-filled; validate is what asks for the rest."""
+
+    def test_a_draft_saved_piece_by_piece_with_gaps_is_not_ready(self, client, draft):
+        responses = [
+            add(client, draft, person={"gender": "MALE"}, addresses=[]),
+            add(client, draft, "accused", person={}, addresses=[]),
+            add_witness(client, draft, person={}, addresses=[]),
+            add_evidence(client, draft, "CHEQUE", {}),
+            put_section(client, draft, "jurisdiction_limitation", {}),
+            put_section(client, draft, "adr_other_prayer", {}),
+            put_affidavit(client, draft, ""),
+        ]
+
+        assert [response.status_code for response in responses] == [
+            201,
+            201,
+            201,
+            201,
+            200,
+            200,
+            200,
+        ]
+        body = validate(client, draft)
+        assert body["is_valid"] is False
+        messages = {error["message"] for error in body["errors"]}
+        assert {
+            "Complainant #1 has no name.",
+            "Complainant #1 has no address.",
+            "Accused #1 has no name.",
+            "Accused #1 has no address.",
+            "Witness #1 has no name or designation.",
+            "Witness #1 has no address.",
+            "The affidavit is required.",
+            "'final_relief' is a required property",
+            "Cheque #1: 'amount' is a required property",
+        } <= messages
+        assert submit(client, draft, "signing").status_code == 400
+        assert Case.objects.get(pk=draft).status == CaseStatus.DRAFT_IN_PROGRESS
+
+    def test_an_accused_address_without_a_police_station_blocks_filing(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        accused = CaseParticipant.objects.get(case_id=draft, role=ParticipantRole.ACCUSED)
+        no_police_station = {k: v for k, v in ADDRESS_DEFAULTS.items() if k != "police_station"}
+        url = reverse("case-participant-detail", args=[accused.pk])
+        assert (
+            client.patch(url, {"addresses": [no_police_station]}, format="json").status_code == 200
+        )
+
+        body = validate(client, draft)
+
+        assert body["errors"] == [
+            {
+                "field": f"participants.{accused.pk}",
+                "message": "Accused #1 has an address with no police station.",
+            }
+        ]
+        response = submit(client, draft, "signing")
+        assert response.status_code == 400
+        assert error_codes(response) == {f"participants.{accused.pk}": ["E07005"]}
+
+    def test_an_accused_institutions_officer_needs_a_designation(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        response = add(client, draft, "accused", institution=INSTITUTION, person=PERSON)
+        assert response.status_code == 201, response.json()
+        participant_id = response.json()["case_participant_id"]
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{participant_id}",
+                "message": "Accused #2 acts for an institution but has no designation.",
+            }
+        ]
+
+    def test_a_complainant_institution_needs_a_pan_a_cin_or_the_declaration(
+        self, client, draft, pdf
+    ):
+        make_complete_case(client, draft, pdf)
+        no_identifier = {k: v for k, v in INSTITUTION.items() if k != "pan"}
+        response = add(client, draft, institution=no_identifier, is_party_in_person=True)
+        assert response.status_code == 201, response.json()
+        participant_id = response.json()["case_participant_id"]
+
+        messages = [
+            error["message"]
+            for error in validate(client, draft)["errors"]
+            if error["field"] == f"participants.{participant_id}"
+        ]
+
+        assert "Complainant #2: Enter a PAN or a CIN, or declare that neither is given." in (
+            messages
+        )
+
+    def test_a_late_filing_without_a_condonation_reason_blocks_filing(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        late = {**JURISDICTION, "complaint_filing_date": "2024-04-30"}
+        assert put_section(client, draft, "jurisdiction_limitation", late).status_code == 200
+
+        body = validate(client, draft)
+
+        assert fields_of(body) == {"details.jurisdiction_limitation"}
+        assert "condonation_reason" in body["errors"][0]["message"]
+
+
 class TestValidate:
     def test_a_complete_case_is_valid(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)
@@ -493,8 +598,7 @@ class TestValidate:
     @pytest.mark.parametrize("affidavit", [None, "<p><br></p>"])
     def test_the_case_affidavit_is_required(self, client, draft, pdf, affidavit):
         make_complete_case(client, draft, pdf)
-        # Stored another way than the API, which refuses empty editor output.
-        Case.objects.filter(pk=draft).update(affidavit=affidavit)
+        assert put_affidavit(client, draft, affidavit).status_code == 200
 
         assert fields_of(validate(client, draft)) == {"affidavit"}
 

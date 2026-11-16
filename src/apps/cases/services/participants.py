@@ -10,14 +10,13 @@ A party's details have no field the court flags on its own, so in correction
 a party write needs its whole section open (``correction.check_write``).
 """
 
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.address.models import Address
 from apps.api import errors as api_errors
-from apps.parties.models import normalize_identifier, pan_cin_errors
+from apps.parties.models import normalize_identifier
 from apps.parties.services import (
     create_asserted_person,
     get_or_create_institution,
@@ -27,7 +26,6 @@ from apps.users.models import AdvocateProfile
 
 from .. import errors, models
 from ..models import (
-    ADDRESS_REQUIRED_MESSAGE,
     COMPLAINANT_ONLY_MESSAGE,
     DESIGNATION_NOT_ALLOWED_MESSAGE,
     INSTITUTION_CONTACTS_MESSAGE,
@@ -42,7 +40,6 @@ from ..models import (
     PoaMandate,
     Representation,
     Witness,
-    police_station_problems,
 )
 from . import correction
 from .case_types import ADVOCATES_PART
@@ -264,11 +261,7 @@ def _create_participant(case, user, role, data):
             if field in institution_fields
         }
         with errors_under("institution"):
-            institution = get_or_create_institution(
-                user,
-                institution_fields,
-                require_identifier=role == ParticipantRole.COMPLAINANT,
-            )
+            institution = get_or_create_institution(user, institution_fields)
 
     # An individual complainant or POA holder has a permanent address: the
     # one sent when it differs from their first address, else that address.
@@ -430,9 +423,10 @@ def update_participant(participant, user, data):
     only they or their advocate on this case may change it.
     ``mobile_numbers``, ``email_addresses`` and ``addresses`` each replace the
     participant's list; inside ``institution``, the institution's own in this
-    case (``contacts.replace_contacts``). Accused and witness addresses need a
-    police station. A witness's side, statement and ``additional_details``
-    are on its ``Witness`` row.
+    case (``contacts.replace_contacts``). Any of them may be left empty; the
+    completeness check reports a missing address or police station. A
+    witness's side, statement and ``additional_details`` are on its
+    ``Witness`` row.
     ``institution`` re-links an institution participant (``_relink_institution``);
     switching between an individual and an institution is a remove and re-add.
     """
@@ -515,9 +509,7 @@ def update_participant(participant, user, data):
         problems["institution_contacts"] = [
             errors.coded(api_errors.INVALID, INSTITUTION_CONTACTS_TWICE_MESSAGE)
         ]
-    problems.update(
-        _contact_problems(participant, own_lists, institution_lists, data, institution_lists_field)
-    )
+    problems.update(_contact_problems(participant, own_lists, institution_lists, data))
     if person_fields:
         if not participant.person_id:
             problems["disability_status"] = [
@@ -613,11 +605,7 @@ def _relink_institution(participant, user, fields, data):
     name.
     """
     with errors_under("institution"):
-        participant.institution = get_or_create_institution(
-            user,
-            fields,
-            require_identifier=participant.role == ParticipantRole.COMPLAINANT,
-        )
+        participant.institution = get_or_create_institution(user, fields)
     _name_from(participant, fields, data)
 
 
@@ -645,14 +633,10 @@ def _edit_institution(participant, user, fields, data):
     as on a re-link.
     """
     institution = participant.institution
-    skip_declared = fields.get("pan_cin_skip_declared", False)
-    required = participant.role == ParticipantRole.COMPLAINANT
     with errors_under("institution"):
-        if problems := pan_cin_errors(None, None, skip_declared, required=required):
-            raise DjangoValidationError(problems)
         institution.entity_type = fields["entity_type"]
         institution.entity_name = fields["entity_name"]
-        institution.pan_cin_skip_declared = skip_declared
+        institution.pan_cin_skip_declared = fields.get("pan_cin_skip_declared", False)
         institution.updated_by = user
         institution.save()
     _name_from(participant, fields, data)
@@ -704,33 +688,22 @@ def _first_address(participant):
     return row.address if row else None
 
 
-def _contact_problems(participant, own_lists, institution_lists, data, institution_field):
+def _contact_problems(participant, own_lists, institution_lists, data):
     """Return the problems with the contact lists a PATCH sends, as ``{field: …}``.
 
     Only a person has contacts of their own; an institution's go under
-    ``institution_field`` (``institution`` or ``institution_contacts``). Whoever is served must keep an address: an individual
-    their own, an institution its own. Accused and witness addresses need a
-    police station. Contact details can be declared unknown only while no
-    mobile number or email is left.
+    ``institution`` or ``institution_contacts``. A missing address or police
+    station is not a problem here: the completeness check reports it. Contact
+    details can be declared unknown only while no mobile number or email is
+    left.
     """
     problems = {}
-    role = participant.role
     if own_lists and not participant.person_id:
         for field in own_lists:
             problems[field] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, INSTITUTION_CONTACTS_MESSAGE)
             ]
         return problems
-    if own_lists.get("addresses") == [] and not participant.institution_id:
-        problems["addresses"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
-    elif problem := police_station_problems(role, own_lists.get("addresses")):
-        problems["addresses"] = problem
-    if institution_lists.get("addresses") == []:
-        problems[institution_field] = {
-            "addresses": [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
-        }
-    elif problem := police_station_problems(role, institution_lists.get("addresses")):
-        problems[institution_field] = {"addresses": problem}
     declared = data.get(
         "contact_details_unknown_declared", participant.contact_details_unknown_declared
     )

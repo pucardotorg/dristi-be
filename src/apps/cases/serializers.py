@@ -20,17 +20,12 @@ from apps.parties.models import (
 
 from . import errors
 from .models import (
-    ADDRESS_REQUIRED_MESSAGE,
     COMPLAINANT_ONLY_MESSAGE,
     CONTACT_UNKNOWN_MESSAGE,
     DESIGNATION_NOT_ALLOWED_MESSAGE,
-    DESIGNATION_REQUIRED_MESSAGE,
-    EMPTY_TEXT_MESSAGE,
     INSTITUTION_CONTACTS_MESSAGE,
     INSTITUTION_ROLES,
-    NAME_REQUIRED_MESSAGE,
     PERMANENT_ADDRESS_MESSAGE,
-    WITNESS_NAME_OR_DESIGNATION_MESSAGE,
     Case,
     CaseDocument,
     CaseEvidence,
@@ -41,8 +36,6 @@ from .models import (
     Representation,
     Witness,
     WitnessSide,
-    has_visible_text,
-    police_station_problems,
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
 from .services.contacts import contacts_of, first
@@ -82,13 +75,6 @@ class PartialUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializer):
         if not attrs:
             raise api_errors.REQUIRED.validation_error("Send at least one field to change.")
         return attrs
-
-
-def _require_visible_text(html):
-    """Refuse rich text that renders as nothing; ``None`` (cleared) passes."""
-    if html is not None and not has_visible_text(html):
-        raise api_errors.BLANK.validation_error(EMPTY_TEXT_MESSAGE)
-    return html
 
 
 def _require_each_once(ids):
@@ -356,14 +342,12 @@ class CaseAffidavitSerializer(serializers.Serializer):
     """Body and response of PUT /cases/{id}/affidavit: the case's affidavit.
 
     Rich-text editor output, stored as sent; it replaces what was stored.
+    It may be empty while the case is being drafted: the completeness check
+    asks for an affidavit with text in it.
     """
 
     case_id = serializers.UUIDField(read_only=True)
-    affidavit = serializers.CharField()
-
-    def validate_affidavit(self, value):
-        """Refuse editor output with no text in it."""
-        return _require_visible_text(value)
+    affidavit = serializers.CharField(allow_blank=True, allow_null=True)
 
 
 class CaseAffidavitReadSerializer(serializers.Serializer):
@@ -396,8 +380,8 @@ class AddressInputSerializer(serializers.Serializer):
     pincode = serializers.CharField(max_length=16)
     district = serializers.CharField(max_length=100)
     state = serializers.CharField(max_length=100)
-    # Optional here; ``models.police_station_error`` requires it for an accused
-    # or a witness.
+    # Optional on save; the completeness check requires it for an accused or a
+    # witness.
     police_station = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
 
@@ -488,9 +472,10 @@ class InstitutionInputSerializer(ContactListsSerializer, serializers.ModelSerial
     PAN and CIN are not checked for uniqueness: an existing institution with
     either is reused rather than refused (spec 0020 §3.4). Their format is
     checked by the model, after spaces are removed and letters uppercased.
-    One of them, or ``pan_cin_skip_declared``, is required, and the
-    declaration cannot come with either (``parties.models.pan_cin_errors``).
-    Its mobile numbers may be landlines.
+    The declaration cannot come with either (``parties.models.pan_cin_errors``).
+    All three may be left out while drafting: the completeness check asks a
+    complainant institution for one of them. Its mobile numbers may be
+    landlines.
     """
 
     mobile_number_validator = contact_number_validator
@@ -522,13 +507,11 @@ class PartySerializer(ContactListsSerializer):
     """Base body of a party write.
 
     The individual is ``person`` (someone the filer names) or ``"self": true``
-    (the filer). ``self`` is returned as ``is_self``. A named person needs a
-    name unless ``person_name_required`` is off (a witness, who may give a
-    designation instead). ``mobile_numbers``, ``email_addresses`` and
-    ``addresses`` are the individual's.
+    (the filer). ``self`` is returned as ``is_self``. ``mobile_numbers``,
+    ``email_addresses`` and ``addresses`` are the individual's. Every detail
+    may be left out while the case is drafted; the completeness check reports
+    what is missing (a name, an address).
     """
-
-    person_name_required = True
 
     person = PersonInputSerializer(required=False)
     additional_details = serializers.DictField(default=dict)
@@ -540,26 +523,22 @@ class PartySerializer(ContactListsSerializer):
         return fields
 
     def validate(self, attrs):
-        """Return ``self`` as ``is_self``; require a named person's name."""
+        """Return ``self`` as ``is_self``."""
         attrs = super().validate(attrs)
         attrs["is_self"] = attrs.pop("self")
-        person = attrs.get("person")
-        if self.person_name_required and person is not None and not person.get("name"):
-            raise api_errors.REQUIRED.validation_error(
-                {"person": {"name": [NAME_REQUIRED_MESSAGE]}}
-            )
         return attrs
 
 
 class ParticipantCreateSerializer(PartySerializer):
     """Body of POST /cases/{id}/complainants and /accused (spec 0021 §4.1, §4.2).
 
-    Either individual may be left out when ``institution`` is given. An
-    individual needs at least one address; an institution needs at least one
-    of its own, and the person acting for it may give theirs.
-    ``institution_id`` adds another representative to an institution already
-    accused on the case, which keeps its details and contacts; it needs the
-    ``person``. The role being added is passed in the context as ``role``.
+    Either individual may be left out when ``institution`` is given. Addresses
+    may be left out while drafting: the completeness check asks for an
+    individual's own, or an institution's own (the person acting for it may
+    give theirs too). ``institution_id`` adds another representative to an
+    institution already accused on the case, which keeps its details and
+    contacts; it needs the ``person``. The role being added is passed in the
+    context as ``role``.
     """
 
     institution = InstitutionInputSerializer(required=False)
@@ -574,11 +553,9 @@ class ParticipantCreateSerializer(PartySerializer):
     # Accused only: the filer does not know their phone number or email.
     contact_details_unknown_declared = serializers.BooleanField(required=False)
     # Complainants only; rich-text editor output.
-    party_in_person_affidavit = serializers.CharField(required=False, allow_null=True)
-
-    def validate_party_in_person_affidavit(self, value):
-        """Refuse editor output with no text in it."""
-        return _require_visible_text(value)
+    party_in_person_affidavit = serializers.CharField(
+        required=False, allow_null=True, allow_blank=True
+    )
 
     def validate(self, attrs):
         """Check the fields that only make sense together, for the role being added."""
@@ -608,15 +585,6 @@ class ParticipantCreateSerializer(PartySerializer):
             problems["institution_id"] = [
                 errors.coded(api_errors.INVALID, "Send institution or institution_id, not both.")
             ]
-        if (
-            role == ParticipantRole.ACCUSED
-            and has_individual
-            and has_institution
-            and not attrs.get("designation")
-        ):
-            problems["designation"] = [
-                errors.coded(api_errors.REQUIRED, DESIGNATION_REQUIRED_MESSAGE)
-            ]
         if attrs.get("designation") and not (has_individual and has_institution):
             problems["designation"] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, DESIGNATION_NOT_ALLOWED_MESSAGE)
@@ -639,17 +607,6 @@ class ParticipantCreateSerializer(PartySerializer):
                     problems[field] = [
                         errors.coded(errors.FIELD_NOT_APPLICABLE, INSTITUTION_CONTACTS_MESSAGE)
                     ]
-        if problem := police_station_problems(role, attrs.get("addresses")):
-            problems["addresses"] = problem
-        if institution is not None and "institution" not in problems:
-            if not institution.get("addresses"):
-                problems["institution"] = {
-                    "addresses": [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
-                }
-            elif problem := police_station_problems(role, institution["addresses"]):
-                problems["institution"] = {"addresses": problem}
-        elif institution is None and not joins and not attrs.get("addresses"):
-            problems["addresses"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
         if (
             "contact_details_unknown_declared" not in problems
             and attrs.get("contact_details_unknown_declared")
@@ -695,42 +652,23 @@ class WitnessCreateSerializer(IndividualPartySerializer):
     """Body of POST /cases/{id}/witnesses (spec 0021 §4.3).
 
     ``side`` says whether the complainant or the accused calls the witness.
-    At least one address is required, each with a police station. ``designation`` is the
-    witness's job title, kept on the participant; a named person needs a name
-    or a designation. The mobile number is optional. ``additional_details`` is
-    stored on the witness row.
+    ``designation`` is the witness's job title, kept on the participant. A
+    name or designation, and an address with a police station, are asked for
+    by the completeness check, not here. ``additional_details`` is stored on
+    the witness row.
     """
-
-    person_name_required = False
 
     side = serializers.ChoiceField(choices=WitnessSide.choices)
     what_will_witness_prove = serializers.CharField(required=False, allow_blank=True)
     designation = serializers.CharField(max_length=128, required=False, allow_null=True)
 
-    def validate(self, attrs):
-        """Require a name or designation, and an address with a police station."""
-        attrs = super().validate(attrs)
-        problems = {}
-        person = attrs.get("person")
-        if person is not None and not (person.get("name") or attrs.get("designation")):
-            problems["person"] = {
-                "name": [errors.coded(api_errors.REQUIRED, WITNESS_NAME_OR_DESIGNATION_MESSAGE)]
-            }
-        if not attrs.get("addresses"):
-            problems["addresses"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
-        elif problem := police_station_problems(ParticipantRole.WITNESS, attrs["addresses"]):
-            problems["addresses"] = problem
-        if problems:
-            raise serializers.ValidationError(problems)
-        return attrs
-
 
 class PoaHolderCreateSerializer(IndividualPartySerializer):
     """Body of POST /cases/{id}/poa-holders (spec 0021 §4.5).
 
-    At least one address is required. One mandate is created per represented party;
-    whether each is an active complainant or accused of the case is checked
-    when saving.
+    The address may be left out while drafting. One mandate is created per
+    represented party; whether each is an active complainant or accused of the
+    case is checked when saving.
     """
 
     represented_participant_ids = serializers.ListField(
@@ -742,13 +680,6 @@ class PoaHolderCreateSerializer(IndividualPartySerializer):
     def validate_represented_participant_ids(self, value):
         """Require each represented party once."""
         return _require_each_once(value)
-
-    def validate(self, attrs):
-        """Require an address."""
-        attrs = super().validate(attrs)
-        if not attrs.get("addresses"):
-            raise api_errors.REQUIRED.validation_error({"addresses": [ADDRESS_REQUIRED_MESSAGE]})
-        return attrs
 
 
 class PoaHolderCreatedSerializer(serializers.Serializer):
@@ -872,7 +803,9 @@ class ParticipantUpdateSerializer(ContactListsSerializer, PartialUpdateSerialize
     resides_within_jurisdiction = serializers.BooleanField(required=False)
     contact_details_unknown_declared = serializers.BooleanField(required=False)
     # Complainants only; ``null`` clears it.
-    party_in_person_affidavit = serializers.CharField(required=False, allow_null=True)
+    party_in_person_affidavit = serializers.CharField(
+        required=False, allow_null=True, allow_blank=True
+    )
     additional_details = serializers.DictField(required=False)
     # Institution participants only. ``institution`` re-links the participant;
     # ``institution_contacts`` changes only the institution's contacts here.
@@ -881,10 +814,6 @@ class ParticipantUpdateSerializer(ContactListsSerializer, PartialUpdateSerialize
     # Witnesses only (spec 0021 §4.3); they change the witness row.
     side = serializers.ChoiceField(choices=WitnessSide.choices, required=False)
     what_will_witness_prove = serializers.CharField(required=False, allow_blank=True)
-
-    def validate_party_in_person_affidavit(self, value):
-        """Refuse editor output with no text in it; ``null`` clears it."""
-        return _require_visible_text(value)
 
 
 class WitnessSerializer(serializers.ModelSerializer):

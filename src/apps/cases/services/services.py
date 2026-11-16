@@ -43,7 +43,7 @@ from ..models import (
     link_type_errors,
 )
 from . import correction
-from .case_types import CASE_TYPES, DOCUMENTS_PART, get_config, schema_errors, section_errors
+from .case_types import CASE_TYPES, DOCUMENTS_PART, evidence_errors, get_config, section_errors
 
 logger = logging.getLogger(__name__)
 
@@ -576,10 +576,15 @@ def _store_file(upload, user, case_type):
 
 
 def validate_evidence(case_type, evidence_type, evidence_info):
-    """Raise a 400 unless ``case_type`` accepts ``evidence_type`` and the info fits its schema."""
-    schemas = get_config(case_type).evidence_schemas
-    _require_allowed(evidence_type, tuple(schemas), "evidence_type", case_type)
-    _raise_schema_errors(schema_errors(schemas[evidence_type], evidence_info), "evidence_info")
+    """Raise a 400 unless ``case_type`` accepts ``evidence_type`` and the info is well-formed.
+
+    Missing values are allowed: the completeness check reports them.
+    """
+    config = get_config(case_type)
+    _require_allowed(evidence_type, tuple(config.evidence_schemas), "evidence_type", case_type)
+    _raise_schema_errors(
+        evidence_errors(config, evidence_type, evidence_info, complete=False), "evidence_info"
+    )
 
 
 def _raise_schema_errors(problems, field):
@@ -736,7 +741,7 @@ def save_details_section(case_or_draft_id, user, section, data):
     case_type = get_case_type(case_or_draft_id, user)
     config = get_config(case_type)
     _require_allowed(section, config.sections, "section", case_type)
-    _raise_schema_errors(section_errors(config, section, data), "data")
+    _raise_schema_errors(section_errors(config, section, data, complete=False), "data")
     with editing_or_creating(case_or_draft_id, user) as case:
         detail = _get_or_create_detail_row(case, user)
         changed = correction.changes(case, section, getattr(detail, section), data, field="data")

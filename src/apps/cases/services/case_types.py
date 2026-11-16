@@ -167,8 +167,11 @@ class CaseTypeConfig:
     document_types: tuple[str, ...]
     evidence_schemas: dict[str, dict] = field(default_factory=dict)
     # Details section -> rules JSON Schema cannot express, called with the
-    # section's data; returns ``SchemaError``s.
+    # section's data; returns ``SchemaError``s. ``section_checks`` hold on every
+    # save; ``section_completeness_checks`` only in the completeness check, as
+    # they ask for something missing.
     section_checks: dict[str, Callable[[dict], list]] = field(default_factory=dict)
+    section_completeness_checks: dict[str, Callable[[dict], list]] = field(default_factory=dict)
     # The completeness check (spec 0021 §6.3) requires at least one of each.
     required_document_types: tuple[str, ...] = ()
     required_evidence_types: tuple[str, ...] = ()
@@ -259,19 +262,22 @@ def limitation_deadline(arose):
     return date(year, month, min(arose.day, monthrange(year, month)[1]))
 
 
-def _limitation_errors(data):
-    """Check the complaint filing date against the cause of action.
-
-    The complaint cannot be filed before the cause of action arose, and one
-    filed after the limitation period needs a ``condonation_reason``.
-    """
+def _filing_dates(data):
+    """Return ``(arose, filed)`` from ``data``, or ``None`` when either is missing or malformed."""
     try:
-        arose = date.fromisoformat(data["cause_of_action_date"])
-        filed = date.fromisoformat(data["complaint_filing_date"])
+        return (
+            date.fromisoformat(data["cause_of_action_date"]),
+            date.fromisoformat(data["complaint_filing_date"]),
+        )
     except (KeyError, TypeError, ValueError):
         # Missing or malformed: the schema reports it.
-        return []
-    if filed < arose:
+        return None
+
+
+def _filing_date_errors(data):
+    """Refuse a complaint filing date before the cause of action: the two contradict each other."""
+    dates = _filing_dates(data)
+    if dates and dates[1] < dates[0]:
         return [
             SchemaError(
                 "complaint_filing_date",
@@ -279,6 +285,15 @@ def _limitation_errors(data):
                 "minimum",
             )
         ]
+    return []
+
+
+def _condonation_errors(data):
+    """Require a ``condonation_reason`` for a complaint filed after the limitation period."""
+    dates = _filing_dates(data)
+    if dates is None or dates[1] < dates[0]:
+        return []
+    arose, filed = dates
     if filed <= limitation_deadline(arose) or "condonation_reason" in data:
         return []
     return [
@@ -328,7 +343,7 @@ CASE_TYPES = {
                     "cause_of_action_date": _date(),
                     "complaint_filing_date": _date(),
                     # Why the complaint is late; required when it is filed
-                    # after the limitation period (``_limitation_errors``).
+                    # after the limitation period (``_condonation_errors``).
                     "condonation_reason": _text(),
                 },
                 allOf=[
@@ -359,7 +374,8 @@ CASE_TYPES = {
                 },
             ),
         },
-        section_checks={"jurisdiction_limitation": _limitation_errors},
+        section_checks={"jurisdiction_limitation": _filing_date_errors},
+        section_completeness_checks={"jurisdiction_limitation": _condonation_errors},
         document_types=(
             DocumentType.BOUNCED_CHEQUE,
             DocumentType.RETURN_MEMO,
@@ -531,16 +547,52 @@ def _schema_error(error):
     return SchemaError(path, error.message, error.validator)
 
 
-def section_errors(config, section, data):
+def draft_schema(schema):
+    """Return ``schema`` without its ``required`` rules, to check data still being filled in.
+
+    A filer may save any part of a section or evidence item (spec 0021 §6.3):
+    what is sent must be well-formed, but nothing has to be sent. ``required``
+    lists are dropped at every level, and so is ``allOf``, which holds only the
+    conditional ``_required_when`` rules. The completeness check uses the full
+    schema.
+    """
+    if isinstance(schema, list):
+        return [draft_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    return {
+        key: draft_schema(value)
+        for key, value in schema.items()
+        if key not in ("required", "allOf")
+    }
+
+
+def section_errors(config, section, data, *, complete=True):
     """Return every way ``data`` breaks ``section``'s schema and checks; empty when it fits.
 
-    The checks run only on data that fits the schema's shape (an object).
+    With ``complete`` off, as on a save, missing values are not errors: only
+    the draft schema and the checks that hold on every save apply. The checks
+    run only on data that fits the schema's shape (an object).
     """
-    problems = schema_errors(config.section_schemas[section], data)
-    check = config.section_checks.get(section)
-    if check and isinstance(data, dict):
+    schema = config.section_schemas[section]
+    problems = schema_errors(schema if complete else draft_schema(schema), data)
+    if not isinstance(data, dict):
+        return problems
+    checks = [config.section_checks.get(section)]
+    if complete:
+        checks.append(config.section_completeness_checks.get(section))
+    for check in filter(None, checks):
         problems += check(data)
     return problems
+
+
+def evidence_errors(config, evidence_type, evidence_info, *, complete=True):
+    """Return every way ``evidence_info`` breaks its evidence type's schema; empty when it fits.
+
+    With ``complete`` off, as on a save, missing values are not errors.
+    """
+    schema = config.evidence_schemas[evidence_type]
+    return schema_errors(schema if complete else draft_schema(schema), evidence_info)
 
 
 def _path(parts):

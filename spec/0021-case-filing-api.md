@@ -463,12 +463,12 @@ POST /cases/{case_id_or_draft_session_id}/complainants
 ```
 
 **Contacts** (spec 0020 §4.6): `mobile_numbers`, `email_addresses` and `addresses` are lists, in order; the first of each is the primary. At the top level they are the individual's; inside `institution`, the institution's own **for this case** (a reused institution's contacts in other cases are never shown or changed). Every party, every role, has the same lists:
-- An individual needs at least one address (`E00002` on `addresses`). An institution needs at least one of its own (`E00002` on `institution.addresses`); the person acting for it may give theirs too. An institution with no person has no top-level lists (`E07023`).
+- Addresses may be left out while the case is drafted (§6.4). To be filed, an individual needs at least one address and an institution at least one of its own; the person acting for it may give theirs too. The completeness check (§6.3) asks for them. An institution with no person has no top-level lists (`E07023`).
 - A person's mobile numbers are in E.164 form; an institution's may be landlines (`E00001` on `mobile_numbers[1]`, say). Nothing may appear twice in one list, emails compared ignoring case (`E07034` on the repeat).
-- Every address of an accused or witness, their institution's included, needs a `police_station` (`E00002` on `addresses[0].police_station` or `institution.addresses[0].police_station`).
+- Every address of an accused or witness, their institution's included, needs a `police_station` to be filed; it may be left blank while drafting, and the completeness check (§6.3) asks for it.
 - A new person keeps the first mobile number, email and address as their own (`person.phone_number`, `email_address`, `correspondence_address`).
 
-Exactly one of `person` or `self` describes the individual, and either may be left out when `institution` is given. `designation` is accepted only when both an individual and an institution are given; it is optional for a complainant and required for an accused (spec 0020 §4.2). `date_of_birth` and `age` are both optional.
+Exactly one of `person` or `self` describes the individual, and either may be left out when `institution` is given. `designation` is accepted only when both an individual and an institution are given; it is optional for a complainant and, for an accused, required to file (spec 0020 §4.2; asked for by §6.3, not on save). `date_of_birth` and `age` are both optional. `person.name` may be left out while drafting; every party but a witness needs a name to file.
 
 `permanent_address` (an address, optional) is accepted only for an individual complainant (`E07023` otherwise): send it when the permanent address differs from their first address. Left out, the person's permanent address is that first address, except that the filer's own person (`"self": true`) keeps a permanent address they already have: the first address only fills one they lack. It is saved on the person, not on the participant. PATCH `/case-participants/{id}` may send `permanent_address` for an individual complainant or POA holder to set it on the person; the participant's contacts and snapshot are unchanged. `null` makes it the participant's first address again (after any change to `addresses` in the same request), as when it is left out on create; for a party with no permanent address, `null` is accepted and changes nothing. It is refused (`E07023`) for any other participant, and for a person another user has registered and claimed, unless the filer is that user, an advocate actively representing the participant on this case, or an active complainant on this case.
 
@@ -512,10 +512,10 @@ Exactly one of `person` or `self` describes the individual, and either may be le
 
 4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created. A reused institution's row is not changed.
    - A `pan` and a `cin` that belong to two different institutions are refused (400).
-   - For a **complainant** institution, at least one of `pan`, `cin` or `"pan_cin_skip_declared": true` is required (`E00002` on `institution.pan`); an accused institution needs none of them. For any institution, the declaration with a `pan` or `cin` is refused (`E00001` on `institution.pan_cin_skip_declared`). The same applies to `institution` in PATCH (re-link).
+   - For a **complainant** institution, at least one of `pan`, `cin` or `"pan_cin_skip_declared": true` is required to file, and asked for by the completeness check (§6.3), not on save; an accused institution needs none of them. For any institution, the declaration with a `pan` or `cin` is refused (`E00001` on `institution.pan_cin_skip_declared`). The same applies to `institution` in PATCH (re-link).
    - The same institution cannot be both complainant and accused, nor hold one role twice, on one case.
 
-5. **Write the addresses** through the address service (spec 0020 §7): an identical address reuses its row. District and state are not looked up here; the client pre-fills them from `GET /pincodes/{pincode}`. A newly created person also gets the first as their `correspondence_address`; an existing person's addresses are unchanged. When the filer adds themselves without an address, it will come from their profile once profiles carry one; until then it must be sent.
+5. **Write the addresses** through the address service (spec 0020 §7): an identical address reuses its row. District and state are not looked up here; the client pre-fills them from `GET /pincodes/{pincode}`. A newly created person also gets the first as their `correspondence_address`; an existing person's addresses are unchanged. When the filer adds themselves without an address, it will come from their profile once profiles carry one; until then they have none until one is sent, and the completeness check (§6.3) asks for it.
 
 6. **Create the participant:**
    - `role = 'COMPLAINANT'`, the next free `ordinal` for this role on this case
@@ -548,9 +548,9 @@ Updates only the participant's own data. The `person` and `institution` rows are
 }
 ```
 
-- **`institution_contacts`** replaces the institution's own lists in this case and changes nothing else: the participant stays linked to the same institution. Use it to edit a company's mobile numbers, emails or addresses. `institution` is for correcting *which* company the party is (it re-links, and without a PAN or CIN always creates a new institution row, since there is nothing to match). `institution_contacts` is accepted only for a participant with an institution (`E07023`), its errors are reported under it (`institution_contacts.addresses[0].police_station`), and a list may not be sent both here and inside `institution` (`E00001`).
+- **`institution_contacts`** replaces the institution's own lists in this case and changes nothing else: the participant stays linked to the same institution. Use it to edit a company's mobile numbers, emails or addresses. `institution` is for correcting *which* company the party is (it re-links, and without a PAN or CIN always creates a new institution row, since there is nothing to match). `institution_contacts` is accepted only for a participant with an institution (`E07023`), its errors are reported under it (`institution_contacts.addresses[0].pincode`), and a list may not be sent both here and inside `institution` (`E00001`).
 
-- A contact list sent **replaces** that whole list: the old rows are deactivated (kept in history) and the new ones written in order. A list left out is unchanged, and a list sent unchanged writes nothing. Inside `institution`, the lists replace the institution's own in this case. The rules on create apply: a party keeps an address (`E00002` on `addresses: []`), accused and witness addresses need a police station, nothing twice. An accused may keep `contact_details_unknown_declared` only while no mobile number or email is left.
+- A contact list sent **replaces** that whole list: the old rows are deactivated (kept in history) and the new ones written in order. A list left out is unchanged, and a list sent unchanged writes nothing. Inside `institution`, the lists replace the institution's own in this case. The rules on create apply: nothing twice, and a list may be emptied (`addresses: []`) or hold an address with no police station while drafting; the completeness check (§6.3) asks for them. An accused may keep `contact_details_unknown_declared` only while no mobile number or email is left.
 - `side` and `what_will_witness_prove` apply only to witnesses (§4.3) and update the `witness` row.
 - `institution` **re-links** a participant that already has an institution, for example after a mistyped PAN or CIN. It is resolved exactly as on create (step 4): an existing institution with the `pan` or `cin` is linked, otherwise a new one is created. Neither institution row, nor the person acting for it, is changed. The participant keeps its id and ordinal, so its representations, mandates and linked documents stay in place, and the case's contacts of the old institution move to the new one. `entity_name_at_filing` is taken from the `institution` sent, and for an institution with no person so is `name_at_filing`, as on create, unless the same request sets them. A person acting for the institution keeps their own name and contacts. The role checks apply to the new institution (`E07013`, `E07014` on `institution`).
 - `role` and `person` cannot be changed, and an individual cannot become an institution or the reverse (`E07023` on `institution`); remove the participant and add it again instead.
@@ -559,7 +559,7 @@ Updates only the participant's own data. The `person` and `institution` rows are
 - `disability_status` is accepted only for a participant with a person (`E07023` otherwise, and for a person another user has claimed, as for `permanent_address`) and is set on the person; `null` means not answered. On create it is `person.disability_status`, null when left out.
 - `contact_details_unknown_declared` is accepted only for an accused (`E07023` otherwise), and only while it has no phone number or email (`E00001`).
 - `entity_name_at_filing` is accepted only when the participant has an institution (`E07023` otherwise).
-- `party_in_person_affidavit` (rich text) is accepted only for a complainant (`E07023` otherwise), here and when the complainant is added; `null` clears it. It is stored whether or not the complainant is party-in-person, and required by the completeness check (§6.3) only when they are. For an institution with no person acting for it, `name_at_filing` and `entity_name_at_filing` are the same value: changing one changes the other.
+- `party_in_person_affidavit` (rich text) is accepted only for a complainant (`E07023` otherwise), here and when the complainant is added; `null` clears it, and empty editor output is stored as sent. It is stored whether or not the complainant is party-in-person, and required by the completeness check (§6.3) only when they are. For an institution with no person acting for it, `name_at_filing` and `entity_name_at_filing` are the same value: changing one changes the other.
 
 **DELETE `/case-participants/{case_participant_id}`:**
 Soft delete: sets `is_active = false`, `end_date = now()`. Then, in the same transaction:
@@ -582,7 +582,7 @@ Same contract as complainants (§4.1), but `role = 'ACCUSED'`.
 1. `"self": true` is not accepted: a filer cannot name themselves as accused.
 2. The accused is always a **new** `person` at `ASSERTED`; they are named by the complainant, not self-identifying.
 3. An institution may be accused, with or without a person acting for it. Unlike a complainant institution, it may be accused **more than once**: once for each person summoned for it (its representatives, any number, of the same designation or not), plus at most one participant for the institution with no person (`E07013` for a second). All of them share one `institution_id`, so its contacts on this case are theirs together. This is the only way an accused person and institution are linked.
-4. A person acting for an accused institution needs a `designation`: the officer is liable through that role. Clearing it later with PATCH is refused (`E00002`).
+4. A person acting for an accused institution needs a `designation` to be filed: the officer is liable through that role. It may be left out or cleared while drafting; the completeness check (§6.3) asks for it.
 5. **Another representative** of an institution already accused on the case is added with `institution_id` in place of `institution`: `{"institution_id": "uuid", "person": {...}, "designation": "Director"}`. The institution, the case's name for it (`entity_name_at_filing`) and its contacts are reused; `person` is required (`E00002`). The id must be an institution accused on this case (`E00011` otherwise); `institution_id` is refused for any other role (`E07023`), and with `institution` (`E00001`). The frontend has the id from any participant response.
 6. **Changing the institution** with PATCH `institution` changes it for everyone summoned for it. One with no PAN or CIN, sent without one, is edited in place (type, name, skip declaration): no other filing can ever match it, so it keeps its id and no row is left behind. Otherwise the participant is re-linked as for a complainant, and the institution's other participants on the case follow it. A change to `entity_name_at_filing` is likewise applied to all of them.
 7. `resides_within_jurisdiction` (boolean, optional, default `true`) records the filer's answer to "Does the accused reside within the jurisdiction of this court?" (BNSS s.225; the court decides jurisdiction on the facts). It can be changed with PATCH. It is accepted only for an accused (`E07023` for any other role), and is `null` for every other role.
@@ -610,10 +610,10 @@ POST /cases/{case_id_or_draft_session_id}/witnesses
 **Implementation:**
 - Same steps as §4.1, with `role = 'WITNESS'`, plus a `witness` row (spec 0020 §4.5) holding `side`, `what_will_witness_prove` and `additional_details`.
 - `side` is required: `COMPLAINANT` (the complainant's witness) or `ACCUSED` (the accused's witness).
-- `designation` is optional (the witness's job title) and is kept as `designation_at_filing`. A named `person` needs a `name` or a `designation` (`E00002` on `person.name`); `mobile_numbers` is optional. On PATCH, `name_at_filing` may be cleared (`null`) only while the witness has a `designation_at_filing`; `mobile_numbers` may be emptied.
+- `designation` is optional (the witness's job title) and is kept as `designation_at_filing`. To be filed, a witness needs a `name` or a `designation`; either may be left out or cleared while drafting (§6.3 asks for one). `mobile_numbers` is optional and may be emptied.
 - `what_will_witness_prove` is optional; left out or blank, it is stored empty.
 - A witness is always an individual: `institution` is not accepted. `"self": true` is. `is_party_in_person` does not apply to a witness and is refused.
-- At least one address is required (`E00002` on `addresses`), each with a `police_station`.
+- To be filed, a witness needs at least one address, each with a `police_station`; while drafting either may be left out (§6.3 asks for them).
 - A complainant or accused may also be a witness. The same person may be a witness more than once on a case (a witness recalled by the other side is a new participant, spec 0020 §4.5.3), but not twice for the same side while active (`E07033`).
 - `additional_details` is stored on the `witness` row; the participant's own `additional_details` stays `{}`. On PATCH, a witness's `additional_details` likewise changes the `witness` row.
 
@@ -719,7 +719,7 @@ DELETE /poa-mandates/{poa_mandate_id}
 
 **Validation** (spec 0020 §5), before anything is written:
 - Each represented participant is an active COMPLAINANT or ACCUSED on this case, and is not the holder's own person.
-- A POA holder is always an individual: `institution` is not accepted. At least one address is required. `permanent_address` works as for a complainant (§4.1): left out, it is their first address.
+- A POA holder is always an individual: `institution` is not accepted. An address and a name are needed to file, not to save (§6.3). `permanent_address` works as for a complainant (§4.1): left out, it is their first address.
 
 **Transaction Steps:**
 1. Get or create the case (same as §3.1, step 1).
@@ -830,7 +830,7 @@ any cheque; one notice may cover several cheques, and nothing links them.
 **Transaction Steps:**
 1. Resolve the case type from the `case_id` or the draft session (404 if neither belongs to the caller).
 
-2. Validate before writing anything: the case type must accept `evidence_type`, and `evidence_info` must match its schema (§5.2). A failure is a 400 and creates no case.
+2. Validate before writing anything: the case type must accept `evidence_type`, and what is sent in `evidence_info` must be well-formed for its schema (§5.2). Missing values are allowed (§6.4). A failure is a 400 and creates no case.
 
 3. **Get or create the case:**
    - If path parameter is a valid `case_id`, proceed with existing case
@@ -856,7 +856,9 @@ Lists evidence, optionally filtered by `evidence_type`.
 
 ### 5.2 Evidence Info Schemas
 
-Each `evidence_type` has a required schema validated on POST/PATCH. The
+Each `evidence_type` has a schema. On POST/PATCH it is applied without its
+`required` rules (§6.4): what is sent must be well-formed, but any value may be
+left out. The completeness check (§6.3) applies it in full. The
 schemas live in code, in the case type registry
 (`apps/cases/services/case_types.py`), and are served to clients by
 `GET /case-types/{case_type}` so forms are built from the same source the
@@ -1064,7 +1066,7 @@ is not merged with it.
 
 2. Validate before writing anything (a failure is a 400 and creates no case):
    - `{section}` must be one of the case type's sections. For `CHEQUE_BOUNCE`: `jurisdiction_limitation`, `adr_other_prayer`.
-   - The body must match that section's schema (below). Errors are reported under `data`.
+   - What the body holds must be well-formed for that section's schema (below), whose `required` rules are left to the completeness check (§6.4). Errors are reported under `data`.
 
 3. **Get or create the case:**
    - If path parameter is a valid `case_id`, proceed with existing case
@@ -1147,9 +1149,9 @@ delay. One month runs to the same day of the next month, or to that month's last
 day when it is shorter (31 January to 28 or 29 February). A filing date within
 it needs no reason (one may still be sent). JSON Schema cannot compare or subtract dates, so the schema
 served to clients lists these fields but not these two rules; the server
-applies them on every save and again in the completeness check (§6.3). A missing
-reason is a 400 with code `E00002` on `data`, like other missing required
-fields.
+applies them. A filing date before the cause of action is refused on every
+save; a missing `condonation_reason`, like other missing required fields, is
+reported only by the completeness check (§6.3).
 
 `other_complaints_pending` records whether another Section 138 complaint is
 pending between the same parties.
@@ -1177,9 +1179,6 @@ rendered (preview, PDFs).
   if police stations become master data they should hold the station's id.
 - `complaint_filing_date` is entered by the filer and not compared with
   `filed_at` or with today.
-- Required fields are enforced on every save, so a section cannot be saved
-  half-filled. If the client autosaves drafts, required fields may need to move
-  to the completeness check (§6.3) instead.
 
 **Why section-based:**
 The endpoint doesn't mention "cheque bounce," so a second dispute type (e.g., civil suit) reuses the same endpoint with its own sections.
@@ -1217,7 +1216,7 @@ what was stored:
 ```
 
 As with the details sections, the first save on a draft session creates the
-case; a blank affidavit is a 400 (`E00004`) and creates nothing; a submitted
+case; a blank or `null` affidavit is saved as sent (§6.4); a submitted
 case is a 409. The text is rich-text editor output, stored as sent and
 sanitized wherever it is rendered. It is returned in the preview
 (`GET /cases/{id}`, `affidavit`) and required by the completeness check
@@ -1414,7 +1413,11 @@ POST /cases/{case_id}/validate
    - At least one active accused (`role = 'ACCUSED'`, `is_active = true`)
    - Each active complainant, accused and POA holder has a `name_at_filing`.
    - Witnesses are optional. Each active witness has a `name_at_filing` or a `designation_at_filing`; the mobile number is optional.
-   - Every active party has an address contact: an individual their own, an institution its own on this case ("Accused #2 has no address."). The writes already refuse a party missing these; this catches rows saved before the rules or outside the API.
+   - Every active party has an address contact: an individual their own, an institution its own on this case ("Accused #2 has no address.").
+   - Every address of an active accused or witness, their institution's included, has a `police_station` ("Accused #1 has an address with no police station.").
+   - A person acting for an accused institution has a `designation_at_filing` ("Accused #2 acts for an institution but has no designation.").
+   - A complainant institution has a `pan`, a `cin` or `pan_cin_skip_declared` ("Complainant #1: Enter a PAN or a CIN, or declare that neither is given.").
+   - None of these is checked on save (§6.4).
 
 2. **Representation:**
    - Each complainant either:
@@ -1448,6 +1451,26 @@ POST /cases/{case_id}/validate
 
 7. **Affidavit:**
    - The case has an `affidavit` (§5.4); reported on the field `affidavit`.
+
+### 6.4 Saving a Partly Filled Filing
+
+A filer may save any part of the filing with as much of it as they have
+filled in: every save checks only that what is sent is well-formed (types,
+formats, choice codes, unknown keys, fields that do not apply to the role,
+contradictions such as a filing date before the cause of action). Nothing a
+filing must have is required on save: a party's name, address or police
+station, an accused institution's officer's designation, a complainant
+institution's PAN/CIN, any `required` key of a details section or of
+`evidence_info` (and the conditional ones), the condonation reason, the
+case affidavit or the party-in-person affidavit. The completeness check
+(§6.3) reports each one, and submit-for-signing refuses the case until it
+passes.
+
+What still has to be sent is what says what is being saved: `case_type`,
+`evidence_type`, a witness's `side`, a party's `person`, `self` or
+`institution`, an institution's `entity_type` and `entity_name`, the
+represented and client participant ids, and every field of an address that
+is sent (an address is all or nothing, as it is a shared, deduplicated row).
 
 **When to call:**
 Client calls this before attempting to submit for signing. Invalid cases cannot advance to `PENDING_SIGN`.
@@ -1505,7 +1528,7 @@ Anything else is refused with `409 Conflict` and `E07029`, on the request field 
 | `E07033` | 400 | The person is already a witness for this side. |
 | `E07034` | 400 | A mobile number, email or address is given more than once in one list (spec 0020 §4.6). |
 
-A details section or `evidence_info` that breaks its schema is reported with common codes (`E00002` missing key, `E00004` blank text, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`.
+A details section or `evidence_info` that breaks its schema is reported with common codes (`E00004` blank text, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`. A missing key is not an error on save (§6.4); the completeness check reports it.
 
 ```
 POST /cases/{case_id}/submit-for-signing
@@ -1693,9 +1716,9 @@ Every error uses the standard body of spec 0000 §9.1: an `errors` array of
 `{code, message, field}` items plus `meta`. The case filing codes (domain `07`)
 are listed in §7.
 
-A missing address for service of notice, a missing designation for a person
-acting for an accused institution, or a party
-write naming no one is `E00002` (required) on that field. Format errors (a
+A party write naming no one is `E00002` (required) on that field. A missing
+address, police station or designation is not an error on save (§6.4); the
+completeness check reports it. Format errors (a
 phone number, a PAN, a pincode) keep the common field codes.
 
 Request bodies are JSON (`application/json`), except a document upload, which

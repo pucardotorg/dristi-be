@@ -52,9 +52,10 @@ def pan_cin_errors(pan, cin, skip_declared, *, required=False):
 
     The declaration cannot come with a PAN or CIN, which it contradicts: that
     holds for every institution. Only a complainant institution must have one
-    of the three (``required``; PRD LIT-18a): an accused's form asks for no
-    PAN or CIN, and one institution can be complainant in one case and accused
-    in another. ``pan`` and ``cin`` are stored values.
+    of the three (``required``; PRD LIT-18a), and only once the case is filed:
+    the case filing completeness check asks for it. An accused's form asks for
+    no PAN or CIN, and one institution can be complainant in one case and
+    accused in another. ``pan`` and ``cin`` are stored values.
     """
     if skip_declared and (pan or cin):
         return {
@@ -221,7 +222,7 @@ class Institution(BaseModel, BaseAuditableModel):
         """Refuse the skip declaration with a PAN or CIN.
 
         Whether one of the three is required depends on the party's role, so
-        the party write checks that (``get_or_create_institution``).
+        the case filing completeness check asks for that.
         """
         super().clean()
         if problems := pan_cin_errors(self.pan, self.cin, self.pan_cin_skip_declared):

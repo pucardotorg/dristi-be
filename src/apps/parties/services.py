@@ -55,13 +55,14 @@ def create_asserted_person(
     )
 
 
-def get_or_create_institution(user, fields, *, require_identifier=False):
+def get_or_create_institution(user, fields):
     """Return the institution with the PAN or CIN in ``fields``, or create one.
 
     A match is returned as is: none of ``fields`` is applied to it. A PAN and a CIN
     belonging to two different institutions are refused, since either could
-    be the one meant. ``require_identifier`` refuses an institution with no
-    PAN, no CIN and no skip declaration: a complainant's (spec 0020 §3.4).
+    be the one meant. A complainant's institution needs a PAN, a CIN or the
+    skip declaration (spec 0020 §3.4), but only to be filed: the case filing
+    completeness check asks for it, not this write.
     """
     # Normalized as the model stores them, so they match. Their format is
     # checked once, by the model, if a new institution is created.
@@ -69,7 +70,7 @@ def get_or_create_institution(user, fields, *, require_identifier=False):
     cin = normalize_identifier(fields.get("cin"))
     # Checked before matching too: a match is returned without saving it.
     skip_declared = fields.get("pan_cin_skip_declared", False)
-    if problems := pan_cin_errors(pan, cin, skip_declared, required=require_identifier):
+    if problems := pan_cin_errors(pan, cin, skip_declared):
         raise ValidationError(problems)
 
     found = _find_institution(pan, cin)

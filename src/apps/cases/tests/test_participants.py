@@ -19,7 +19,12 @@ from apps.cases.models import (
     Witness,
 )
 from apps.cases.services import services
-from apps.parties.models import Institution, Person, VerificationLevel
+from apps.parties.models import (
+    PAN_CIN_REQUIRED_MESSAGE,
+    Institution,
+    Person,
+    VerificationLevel,
+)
 from apps.parties.tests.factories import ADDRESS_DEFAULTS, make_institution
 from apps.users.models import AdvocateProfile, ApprovalStatus
 
@@ -72,6 +77,14 @@ def patch(client, participant_id, body):
 
 def remove(client, participant_id):
     return client.delete(reverse("case-participant-detail", args=[participant_id]))
+
+
+def completeness(client, case_id, participant_id):
+    """Return what the completeness check reports on one participant of the case."""
+    response = client.post(reverse("case-validate", args=[case_id]))
+    assert response.status_code == 200
+    field = f"participants.{participant_id}"
+    return [error["message"] for error in response.json()["errors"] if error["field"] == field]
 
 
 def make_participant(case, role, ordinal=1, **fields):
@@ -163,16 +176,17 @@ class TestAddComplainant:
     def test_nobody_named_is_400(self, client, draft):
         assert add(client, draft).status_code == 400
 
-    def test_address_is_required(self, client, draft):
+    def test_address_may_be_left_out_until_filing(self, client, draft):
         response = client.post(
             reverse("case-complainant-list", args=[draft]),
             {"person": PERSON},
             format="json",
         )
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"addresses": ["E00002"]}
-        assert not Case.objects.exists()
+        assert response.status_code == 201, response.json()
+        assert response.json()["addresses"] == []
+        participant_id = response.json()["case_participant_id"]
+        assert "Complainant #1 has no address." in completeness(client, draft, participant_id)
 
     def test_invalid_mobile_number_is_400_and_creates_nothing(self, client, draft):
         response = add(client, draft, person=PERSON, mobile_numbers=[MOBILE, "98765"])
@@ -195,7 +209,7 @@ class TestAddComplainant:
             "<p>I request to appear in person.</p>"
         )
 
-    def test_an_empty_party_in_person_affidavit_is_400(self, client, draft):
+    def test_an_empty_party_in_person_affidavit_is_saved_until_filing(self, client, draft):
         response = add(
             client,
             draft,
@@ -204,7 +218,11 @@ class TestAddComplainant:
             party_in_person_affidavit="<p><br></p>",
         )
 
-        assert error_codes(response) == {"party_in_person_affidavit": ["E00004"]}
+        assert response.status_code == 201, response.json()
+        assert (
+            "Complainant #1 appears in person but has no party-in-person affidavit."
+            in completeness(client, draft, response.json()["case_participant_id"])
+        )
 
     def test_gender_outside_the_list_is_400(self, client, draft):
         response = add(client, draft, person={**PERSON, "gender": "PREFER_NOT_TO_SAY"})
@@ -238,12 +256,23 @@ class TestInstitutions:
             True,
         )
 
-    def test_a_pan_a_cin_or_the_declaration_is_required(self, client, draft):
+    def test_a_pan_a_cin_or_the_declaration_is_required_to_file(self, client, draft):
         response = add(client, draft, institution=self.NO_IDENTIFIER)
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"institution.pan": ["E00002"]}
-        assert not Institution.objects.exists()
+        assert response.status_code == 201, response.json()
+        participant_id = response.json()["case_participant_id"]
+        assert f"Complainant #1: {PAN_CIN_REQUIRED_MESSAGE}" in completeness(
+            client, draft, participant_id
+        )
+
+        patch(
+            client,
+            participant_id,
+            {"institution": {**self.NO_IDENTIFIER, "pan_cin_skip_declared": True}},
+        )
+        assert f"Complainant #1: {PAN_CIN_REQUIRED_MESSAGE}" not in completeness(
+            client, draft, participant_id
+        )
 
     def test_an_accused_institution_needs_no_pan_cin_or_declaration(self, client, draft):
         """The accused's form asks for neither (PRD LIT-18a is the complainant's)."""
@@ -307,11 +336,14 @@ class TestInstitutions:
         assert str(person.institution_id) == body["institution_id"]
         assert person.designation == "Director"
 
-    def test_designation_is_required_with_a_person(self, client, draft):
+    def test_designation_is_required_with_a_person_to_file(self, client, draft):
         response = add(client, draft, role="accused", institution=INSTITUTION, person=PERSON)
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"designation": ["E00002"]}
+        assert response.status_code == 201, response.json()
+        assert response.json()["designation_at_filing"] is None
+        assert "Accused #1 acts for an institution but has no designation." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
     def test_designation_is_optional_for_a_complainant(self, client, draft):
         response = add(client, draft, institution=INSTITUTION, person=PERSON)
@@ -665,7 +697,7 @@ class TestContacts:
         assert first["institution"]["mobile_numbers"] == ["080-22334455"]
         assert other["institution"]["mobile_numbers"] == ["080-99998888"]
 
-    def test_an_institution_alone_needs_its_own_address(self, client, draft):
+    def test_an_institution_alone_has_no_addresses_of_its_own_person(self, client, draft):
         response = add(
             client,
             draft,
@@ -674,18 +706,26 @@ class TestContacts:
         )
 
         assert response.status_code == 400
-        assert error_codes(response) == {
-            "institution.addresses": ["E00002"],
-            "addresses": ["E07023"],
-        }
+        assert error_codes(response) == {"addresses": ["E07023"]}
 
-    def test_an_accused_institutions_address_needs_a_police_station(self, client, draft):
+    def test_an_institution_alone_needs_its_own_address_to_file(self, client, draft):
+        response = add(client, draft, institution={**INSTITUTION, "addresses": []})
+
+        assert response.status_code == 201, response.json()
+        assert "Complainant #1 has no address." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
+
+    def test_an_accused_institutions_address_needs_a_police_station_to_file(self, client, draft):
         add_complainant(client, draft)
         institution = {**INSTITUTION, "addresses": [{**ADDRESS_DEFAULTS, "police_station": ""}]}
 
         response = add(client, draft, role="accused", institution=institution)
 
-        assert error_codes(response) == {"institution.addresses[0].police_station": ["E00002"]}
+        assert response.status_code == 201, response.json()
+        assert "Accused #1 has an address with no police station." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
     def test_institution_contacts_change_without_re_linking(self, client, draft):
         """An accused company with no PAN or CIN keeps its row: nothing to match a new one by."""
@@ -716,9 +756,10 @@ class TestContacts:
             {"institution_contacts": {"addresses": [{**ADDRESS_DEFAULTS, "police_station": ""}]}},
         )
 
-        assert error_codes(response) == {
-            "institution_contacts.addresses[0].police_station": ["E00002"]
-        }
+        assert response.status_code == 200, response.json()
+        assert "Accused #1 has an address with no police station." in completeness(
+            client, draft, accused["case_participant_id"]
+        )
 
     def test_institution_contacts_are_only_for_an_institution(self, client, draft):
         body = add_complainant(client, draft)
@@ -776,37 +817,50 @@ class TestContacts:
 
 
 class TestNameRequired:
-    """Only a witness may be named by designation alone; every other party needs a name."""
+    """Only a witness may be named by designation alone; every other party needs a name.
+
+    A party may be saved without one while the case is drafted; the
+    completeness check asks for it.
+    """
 
     NAMELESS = {key: value for key, value in PERSON.items() if key != "name"}
 
-    @pytest.mark.parametrize("role", ["complainant", "accused"])
+    @pytest.mark.parametrize(
+        ("role", "label"), [("complainant", "Complainant"), ("accused", "Accused")]
+    )
     @pytest.mark.parametrize("name", [None, "", "   "])
-    def test_a_party_needs_a_name(self, client, draft, role, name):
+    def test_a_party_needs_a_name_to_file(self, client, draft, role, label, name):
         person = self.NAMELESS if name is None else {**self.NAMELESS, "name": name}
 
         response = add(client, draft, role=role, person=person)
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"person.name": ["E00002"]}
+        assert response.status_code == 201, response.json()
+        assert response.json()["name_at_filing"] is None
+        assert f"{label} #1 has no name." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
-    def test_a_poa_holder_needs_a_name(self, client, draft):
+    def test_a_poa_holder_needs_a_name_to_file(self, client, draft):
         complainant = add_complainant(client, draft)
 
         response = add_poa_holder(
             client, draft, [complainant["case_participant_id"]], person=self.NAMELESS
         )
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"person.name": ["E00002"]}
+        assert response.status_code == 201, response.json()
+        assert "POA holder #1 has no name." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
-    def test_a_party_name_cannot_be_cleared(self, client, draft):
+    def test_a_party_name_may_be_cleared_until_filing(self, client, draft):
         body = add_complainant(client, draft)
 
         response = patch(client, body["case_participant_id"], {"name_at_filing": None})
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"name_at_filing": ["E00002"]}
+        assert response.status_code == 200, response.json()
+        assert "Complainant #1 has no name." in completeness(
+            client, draft, body["case_participant_id"]
+        )
 
 
 class TestListing:
@@ -848,7 +902,7 @@ class TestUpdate:
         assert changed.json()["party_in_person_affidavit"] == "<p>Text.</p>"
         assert cleared.json()["party_in_person_affidavit"] is None
         empty = patch(client, participant_id, {"party_in_person_affidavit": "<p>&nbsp;</p>"})
-        assert error_codes(empty) == {"party_in_person_affidavit": ["E00004"]}
+        assert empty.status_code == 200, empty.json()
 
     def test_only_a_complainant_has_a_party_in_person_affidavit(self, client, draft):
         accused = add(
@@ -901,12 +955,16 @@ class TestUpdate:
 
         assert error_codes(response) == {field: ["E07034"]}
 
-    def test_an_individual_cannot_be_left_without_an_address(self, client, draft):
+    def test_an_individual_may_be_left_without_an_address_until_filing(self, client, draft):
         body = add_complainant(client, draft)
 
         response = patch(client, body["case_participant_id"], {"addresses": []})
 
-        assert error_codes(response) == {"addresses": ["E00002"]}
+        assert response.status_code == 200, response.json()
+        assert response.json()["addresses"] == []
+        assert "Complainant #1 has no address." in completeness(
+            client, draft, body["case_participant_id"]
+        )
 
     def test_an_institution_alone_has_no_contacts_of_its_own(self, client, draft):
         body = add(client, draft, institution=INSTITUTION).json()
@@ -1057,14 +1115,16 @@ class TestInstitutionRelink:
         assert response.status_code == 200, response.json()
         assert response.json()["institution_id"] != accused["institution_id"]
 
-    def test_a_complainant_institution_still_needs_one_when_relinked(self, client, draft):
+    def test_a_complainant_institution_still_needs_one_to_file_when_relinked(self, client, draft):
         body = add(client, draft, institution=INSTITUTION).json()
         renamed = {k: v for k, v in INSTITUTION.items() if k != "pan"}
 
         response = patch(client, body["case_participant_id"], {"institution": renamed})
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"institution.pan": ["E00002"]}
+        assert response.status_code == 200, response.json()
+        assert f"Complainant #1: {PAN_CIN_REQUIRED_MESSAGE}" in completeness(
+            client, draft, body["case_participant_id"]
+        )
 
     def test_a_corrected_pan_links_a_new_institution_and_keeps_the_participant(
         self, client, make_user, draft
@@ -1336,13 +1396,15 @@ class TestAddWitness:
         assert Person.objects.get(pk=response.json()["person_id"]).name is None
 
     @pytest.mark.parametrize("name", [None, "", "   "])
-    def test_a_witness_needs_a_name_or_designation(self, client, draft, name):
+    def test_a_witness_needs_a_name_or_designation_to_file(self, client, draft, name):
         person = {} if name is None else {"name": name}
 
         response = add_witness(client, draft, person=person)
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"person.name": ["E00002"]}
+        assert response.status_code == 201, response.json()
+        assert "Witness #1 has no name or designation." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
     def test_the_mobile_number_is_optional(self, client, draft):
         response = add_witness(client, draft, mobile_numbers=[])
@@ -1350,24 +1412,27 @@ class TestAddWitness:
         assert response.status_code == 201, response.json()
         assert response.json()["mobile_numbers"] == []
 
-    def test_a_witness_needs_an_address(self, client, draft):
+    def test_a_witness_needs_an_address_to_file(self, client, draft):
         response = client.post(
             reverse("case-witness-list", args=[draft]),
             {"person": {**PERSON, "name": "Meena Rao"}, "side": "COMPLAINANT"},
             format="json",
         )
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"addresses": ["E00002"]}
-        assert not CaseParticipant.objects.filter(role=ParticipantRole.WITNESS).exists()
+        assert response.status_code == 201, response.json()
+        assert "Witness #1 has no address." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
-    def test_a_witness_address_needs_a_police_station(self, client, draft):
+    def test_a_witness_address_needs_a_police_station_to_file(self, client, draft):
         address = {**ADDRESS_DEFAULTS, "police_station": ""}
 
         response = add_witness(client, draft, addresses=[address])
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"addresses[0].police_station": ["E00002"]}
+        assert response.status_code == 201, response.json()
+        assert "Witness #1 has an address with no police station." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
     @pytest.mark.parametrize(
         "change, field, code",
@@ -1431,11 +1496,6 @@ class TestWitnessUpdate:
         [
             ({"side": "JUDGE"}, "side", "E00005"),
             ({"is_party_in_person": True}, "is_party_in_person", "E07023"),
-            (
-                {"addresses": [{**ADDRESS_DEFAULTS, "police_station": ""}]},
-                "addresses[0].police_station",
-                "E00002",
-            ),
         ],
     )
     def test_invalid_changes_are_400(self, client, witness, change, field, code):
@@ -1454,11 +1514,13 @@ class TestWitnessUpdate:
         assert response.status_code == 200, response.json()
         assert response.json()["name_at_filing"] is None
 
-    def test_a_witness_keeps_a_name_or_designation(self, client, witness):
+    def test_a_witness_needs_a_name_or_designation_to_file(self, client, draft, witness):
         response = patch(client, witness["case_participant_id"], {"name_at_filing": None})
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"name_at_filing": ["E00002"]}
+        assert response.status_code == 200, response.json()
+        assert "Witness #1 has no name or designation." in completeness(
+            client, draft, witness["case_participant_id"]
+        )
 
     def test_the_mobile_number_may_be_cleared(self, client, witness):
         response = patch(client, witness["case_participant_id"], {"mobile_numbers": []})
@@ -1598,7 +1660,7 @@ class TestAddPoaHolder:
         assert response.status_code == 400
         assert error_codes(response) == {field: [code]}
 
-    def test_address_is_required(self, client, draft):
+    def test_address_may_be_left_out_until_filing(self, client, draft):
         complainant = add_complainant(client, draft)
         url = reverse("case-poa-holder-list", args=[draft])
         body = {
@@ -1608,8 +1670,10 @@ class TestAddPoaHolder:
 
         response = client.post(url, body, format="json")
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"addresses": ["E00002"]}
+        assert response.status_code == 201, response.json()
+        assert "POA holder #1 has no address." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
     def test_a_party_listed_twice_is_400(self, client, draft):
         complainant = add_complainant(client, draft)
@@ -2292,27 +2356,32 @@ class TestPoliceStation:
             {**ADDRESS_DEFAULTS, "police_station": "\u200b\ufeff"},
         ],
     )
-    def test_an_accused_address_needs_it(self, client, draft, address):
+    def test_an_accused_address_needs_it_to_file(self, client, draft, address):
         add_complainant(client, draft)
 
         response = add(
             client, draft, "accused", person={**PERSON, "name": "Suresh"}, addresses=[address]
         )
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"addresses[0].police_station": ["E00002"]}
+        assert response.status_code == 201, response.json()
+        assert "Accused #1 has an address with no police station." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
-    def test_changing_an_accused_address_needs_it(self, client, draft):
+    def test_changing_an_accused_address_needs_it_to_file(self, client, draft):
         add_complainant(client, draft)
         accused = add(client, draft, "accused", person={**PERSON, "name": "Suresh"}).json()
+        assert completeness(client, draft, accused["case_participant_id"]) == []
 
         response = patch(client, accused["case_participant_id"], {"addresses": [NO_POLICE_STATION]})
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"addresses[0].police_station": ["E00002"]}
+        assert response.status_code == 200, response.json()
+        assert "Accused #1 has an address with no police station." in completeness(
+            client, draft, accused["case_participant_id"]
+        )
 
-    def test_the_model_refuses_an_accused_without_one(self, client, draft):
-        """The admin runs ``full_clean``, so it cannot give an accused such an address either."""
+    def test_the_model_allows_an_accused_without_one(self, client, draft):
+        """The admin may save a draft's address without one, as the API does."""
         complainant = add(client, draft, person=PERSON, addresses=[NO_POLICE_STATION]).json()
         CaseParticipant.objects.filter(pk=complainant["case_participant_id"]).update(
             role=ParticipantRole.ACCUSED, resides_within_jurisdiction=True
@@ -2321,10 +2390,7 @@ class TestPoliceStation:
             case_participant_id=complainant["case_participant_id"], contact_type="ADDRESS"
         )
 
-        with pytest.raises(ValidationError) as exc:
-            contact.full_clean()
-
-        assert exc.value.error_dict["address"][0].code == "E00002"
+        contact.full_clean()
 
 
 class TestDisabilityStatus:

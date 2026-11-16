@@ -454,6 +454,13 @@ def put_section(client, case_id, section, data):
     return client.put(reverse("case-details-section", args=[case_id, section]), data, format="json")
 
 
+def validation_messages(client, case_id, field):
+    """Return what the completeness check reports on ``field`` of the case."""
+    response = client.post(reverse("case-validate", args=[case_id]))
+    assert response.status_code == 200
+    return [error["message"] for error in response.json()["errors"] if error["field"] == field]
+
+
 class TestDetails:
     def test_first_put_on_a_draft_creates_the_case(self, client, draft):
         section = JURISDICTION
@@ -483,50 +490,12 @@ class TestDetails:
     @pytest.mark.parametrize(
         ("section", "data"),
         [
-            # Deposited by the payee, but no payee bank details.
-            (
-                "jurisdiction_limitation",
-                {
-                    "cheque_deposited_by_payee": True,
-                    "payee_bank_police_station": "Ernakulam Central",
-                    "cause_of_action_date": "2024-02-21",
-                    "complaint_filing_date": "2024-03-05",
-                },
-            ),
-            # Deposited by the payee, but no police station for the payee's branch.
-            (
-                "jurisdiction_limitation",
-                {
-                    key: value
-                    for key, value in JURISDICTION.items()
-                    if key != "payee_bank_police_station"
-                },
-            ),
-            # Not deposited by the payee, but no police station for the drawer's branch.
-            (
-                "jurisdiction_limitation",
-                {
-                    "cheque_deposited_by_payee": False,
-                    "cause_of_action_date": "2024-02-21",
-                    "complaint_filing_date": "2024-03-05",
-                },
-            ),
             # The old shared key is gone.
             ("jurisdiction_limitation", {**JURISDICTION, "bank_police_station": "Kochi"}),
             ("jurisdiction_limitation", {**JURISDICTION, "condonation_reason": ""}),
-            # No filing date.
-            (
-                "jurisdiction_limitation",
-                {
-                    key: value
-                    for key, value in JURISDICTION.items()
-                    if key != "complaint_filing_date"
-                },
-            ),
             ("jurisdiction_limitation", {**JURISDICTION, "complaint_filing_date": "05/03/2024"}),
             ("jurisdiction_limitation", {**JURISDICTION, "payee_ifsc_code": "HDFC512"}),
             ("jurisdiction_limitation", {**JURISDICTION, "limitation_notes": "typo"}),
-            ("adr_other_prayer", {"adr_preference": "YES"}),  # no final relief
             ("adr_other_prayer", {"adr_preference": "SOMETIMES", "final_relief": "Convict"}),
         ],
     )
@@ -536,6 +505,64 @@ class TestDetails:
         assert response.status_code == 400
         assert error_roots(response) == {"data"}
         assert Case.objects.count() == 0
+
+    @pytest.mark.parametrize(
+        ("section", "data", "missing"),
+        [
+            # Deposited by the payee, but no payee bank details.
+            (
+                "jurisdiction_limitation",
+                {
+                    "cheque_deposited_by_payee": True,
+                    "payee_bank_police_station": "Ernakulam Central",
+                    "cause_of_action_date": "2024-02-21",
+                    "complaint_filing_date": "2024-03-05",
+                },
+                ["payee_ifsc_code", "payee_bank_name", "payee_bank_branch"],
+            ),
+            # Deposited by the payee, but no police station for the payee's branch.
+            (
+                "jurisdiction_limitation",
+                {
+                    key: value
+                    for key, value in JURISDICTION.items()
+                    if key != "payee_bank_police_station"
+                },
+                ["payee_bank_police_station"],
+            ),
+            # Not deposited by the payee, but no police station for the drawer's branch.
+            (
+                "jurisdiction_limitation",
+                {
+                    "cheque_deposited_by_payee": False,
+                    "cause_of_action_date": "2024-02-21",
+                    "complaint_filing_date": "2024-03-05",
+                },
+                ["drawer_bank_police_station"],
+            ),
+            (
+                "jurisdiction_limitation",
+                {
+                    key: value
+                    for key, value in JURISDICTION.items()
+                    if key != "complaint_filing_date"
+                },
+                ["complaint_filing_date"],
+            ),
+            ("jurisdiction_limitation", {}, ["cheque_deposited_by_payee", "cause_of_action_date"]),
+            ("adr_other_prayer", {"adr_preference": "YES"}, ["final_relief"]),
+        ],
+    )
+    def test_a_partly_filled_section_is_saved_and_validate_reports_the_rest(
+        self, client, draft, section, data, missing
+    ):
+        response = put_section(client, draft, section, data)
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["data"] == data
+        messages = validation_messages(client, draft, f"details.{section}")
+        for key in missing:
+            assert f"'{key}' is a required property" in messages
 
     def test_payee_bank_details_not_needed_when_not_deposited_by_payee(self, client, draft):
         data = {
@@ -563,24 +590,31 @@ class TestDetails:
         saved = ChequeBounceCase.objects.get(case_id=draft).jurisdiction_limitation
         assert saved["other_complaints"] == data["other_complaints"]
 
-    @pytest.mark.parametrize(
-        ("change", "field"),
-        [
-            ({"other_complaints_pending": True}, "data"),
-            ({"other_complaints_pending": True, "other_complaints": []}, "data.other_complaints"),
-            (
-                {"other_complaints_pending": True, "other_complaints": [{"court": "JMFC-II"}]},
-                "data.other_complaints[0]",
-            ),
-        ],
-    )
-    def test_a_pending_complaint_needs_its_court_and_case_number(
-        self, client, draft, change, field
-    ):
+    def test_an_empty_list_of_pending_complaints_is_400(self, client, draft):
+        change = {"other_complaints_pending": True, "other_complaints": []}
+
         response = put_section(client, draft, "jurisdiction_limitation", {**JURISDICTION, **change})
 
         assert response.status_code == 400
-        assert set(error_codes(response)) == {field}
+        assert error_codes(response) == {"data.other_complaints": ["E00001"]}
+
+    @pytest.mark.parametrize(
+        ("change", "message"),
+        [
+            ({"other_complaints_pending": True}, "'other_complaints' is a required property"),
+            (
+                {"other_complaints_pending": True, "other_complaints": [{"court": "JMFC-II"}]},
+                "other_complaints[0]: 'case_number' is a required property",
+            ),
+        ],
+    )
+    def test_a_pending_complaint_needs_its_court_and_case_number_to_be_filed(
+        self, client, draft, change, message
+    ):
+        response = put_section(client, draft, "jurisdiction_limitation", {**JURISDICTION, **change})
+
+        assert response.status_code == 200, response.json()
+        assert message in validation_messages(client, draft, "details.jurisdiction_limitation")
 
     def test_condonation_reason_required_when_filed_past_the_limitation_period(self, client, draft):
         # A day past one month after the cause of action (2024-02-21).
@@ -588,13 +622,14 @@ class TestDetails:
 
         response = put_section(client, draft, "jurisdiction_limitation", data)
 
-        assert response.status_code == 400
-        assert error_codes(response) == {"data": ["E00002"]}
-        assert "condonation_reason" in response.json()["errors"][0]["message"]
-        assert Case.objects.count() == 0
+        # Saved, but not ready to file without the reason.
+        assert response.status_code == 200
+        messages = validation_messages(client, draft, "details.jurisdiction_limitation")
+        assert any("condonation_reason" in message for message in messages)
 
         data["condonation_reason"] = "The complainant was hospitalised."
         assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
+        assert validation_messages(client, draft, "details.jurisdiction_limitation") == []
 
     @pytest.mark.parametrize("reason", ["", " ", "\t\n"])
     def test_a_blank_condonation_reason_does_not_excuse_a_late_filing(self, client, draft, reason):
@@ -731,7 +766,6 @@ class TestEvidence:
     @pytest.mark.parametrize(
         "evidence_info",
         [
-            {key: value for key, value in CHEQUE_INFO.items() if key != "amount"},
             {**CHEQUE_INFO, "amount": -1},
             {**CHEQUE_INFO, "cheque_date": "15/01/2024"},
             {**CHEQUE_INFO, "cheque_number": "1234567"},
@@ -752,6 +786,28 @@ class TestEvidence:
         assert response.status_code == 400
         assert error_roots(response) == {"evidence_info"}
         assert Case.objects.count() == 0
+
+    def test_a_partly_filled_cheque_is_saved_and_validate_reports_the_rest(self, client, draft):
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "CHEQUE", "evidence_info": {"cheque_number": "123456"}},
+            format="json",
+        )
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["evidence_info"] == {"cheque_number": "123456"}
+        messages = validation_messages(client, draft, "evidence.CHEQUE")
+        for key in ("cheque_date", "amount", "ifsc_code", "bank_name", "bank_branch"):
+            assert f"Cheque #1: '{key}' is a required property" in messages
+
+    def test_evidence_info_can_be_saved_empty(self, client, draft):
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "RETURN_MEMO", "evidence_info": {}},
+            format="json",
+        )
+
+        assert response.status_code == 201, response.json()
 
     def test_the_bank_account_number_is_optional(self, client, draft):
         info = {key: value for key, value in CHEQUE_INFO.items() if key != "bank_account_number"}
@@ -799,16 +855,12 @@ class TestEvidence:
     @pytest.mark.parametrize(
         "evidence_info",
         [
-            # Delivered, but no delivery date.
-            {k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"},
             {**DEMAND_NOTICE_INFO, "is_delivered": "yes"},
             {**DEMAND_NOTICE_INFO, "mode_of_service": ""},
             # Labels, not codes.
             {**DEMAND_NOTICE_INFO, "mode_of_service": "Registered post (RPAD)"},
             {**DEMAND_NOTICE_INFO, "nature_of_debt": "Loan"},
             {**DEMAND_NOTICE_INFO, "payment_status": "No payment"},
-            # Part payment, but no amount.
-            {**DEMAND_NOTICE_INFO, "payment_status": "PART_PAYMENT"},
             {**DEMAND_NOTICE_INFO, "payment_status": "PART_PAYMENT", "part_payment_amount": 0},
         ],
     )
@@ -836,14 +888,49 @@ class TestEvidence:
             )
 
         missing = post(undelivered)
-        accepted = post(
-            {**undelivered, "return_date": "2024-02-10", "non_delivery_reason": "UNCLAIMED"}
+
+        # Saved; validate reports one error per missing key.
+        assert missing.status_code == 201, missing.json()
+        messages = validation_messages(client, draft, "evidence.LEGAL_DEMAND_NOTICE")
+        assert "Legal demand notice #1: 'return_date' is a required property" in messages
+        assert "Legal demand notice #1: 'non_delivery_reason' is a required property" in messages
+        assert not any("delivery_date" in message for message in messages)
+
+        evidence_id = missing.json()["case_evidence_id"]
+        completed = {**undelivered, "return_date": "2024-02-10", "non_delivery_reason": "UNCLAIMED"}
+        response = client.patch(
+            reverse("case-evidence-detail", args=[evidence_id]),
+            {"evidence_info": completed},
+            format="json",
+        )
+        assert response.status_code == 200
+        assert validation_messages(client, draft, "evidence.LEGAL_DEMAND_NOTICE") == []
+
+    @pytest.mark.parametrize(
+        ("evidence_info", "message"),
+        [
+            (
+                {k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"},
+                "'delivery_date' is a required property",
+            ),
+            (
+                {**DEMAND_NOTICE_INFO, "payment_status": "PART_PAYMENT"},
+                "'part_payment_amount' is a required property",
+            ),
+        ],
+    )
+    def test_conditional_demand_notice_values_are_asked_for_by_validate(
+        self, client, draft, evidence_info, message
+    ):
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "LEGAL_DEMAND_NOTICE", "evidence_info": evidence_info},
+            format="json",
         )
 
-        assert missing.status_code == 400
-        # One "required" error per missing key: return_date and non_delivery_reason.
-        assert error_codes(missing) == {"evidence_info": ["E00002", "E00002"]}
-        assert accepted.status_code == 201
+        assert response.status_code == 201, response.json()
+        messages = validation_messages(client, draft, "evidence.LEGAL_DEMAND_NOTICE")
+        assert f"Legal demand notice #1: {message}" in messages
 
     def test_payment_status_outside_the_list_is_an_invalid_choice(self, client, draft):
         response = client.post(
