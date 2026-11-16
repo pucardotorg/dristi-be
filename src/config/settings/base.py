@@ -416,6 +416,7 @@ CACHALOT_ONLY_CACHABLE_APPS = ("locations", "cms")
 # core app so AdditionalAttribute and the history tables stay uncached.
 CACHALOT_ONLY_CACHABLE_TABLES = (
     "core_configuration",
+    "core_publicconfiguration",
     "core_businessrule",
     # Reference table edited in admin (spec 0023 #11.8).
     "hearings_hearingpurpose",

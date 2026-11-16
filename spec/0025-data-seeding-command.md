@@ -105,7 +105,7 @@ Natural keys below are taken from the current models.
 | `core.BusinessRule` | `code` | — | — | `code` uppercase snake_case. |
 | `core.Configuration` | `(config_set, config_key)` | — | — | Composite key; both normalized by the model. `config_value` is coerced to its stored type (see below). |
 | `core.Language` | `code` | — | — | Added by spec 0030; `supports` is a list of capabilities. |
-| `core.PublicConfiguration` | `(config_set, config_key)` | — | — | Public counterpart of `core.Configuration` (spec 0031). `config_key` is globally unique; `config_value` is coerced to text. |
+| `core.PublicConfiguration` | `(config_set, config_key)` | — | — | Public counterpart of `core.Configuration` (spec 0034). Composite key, normalized by the model; `config_value` is coerced to text. |
 | `cms.PageCategory` | `slug` | — | — | `name` also unique. |
 | `cms.Page` | `slug` | `category` → PageCategory.slug | — | Slug lowercased by the model. |
 
@@ -120,7 +120,7 @@ For each row the engine computes the natural key and looks up an existing record
 - **Not found** → create it (collecting for a `bulk_create`, or `create()` where a model needs `save()` side effects / `full_clean`).
 - **Found** → count as *unchanged* and skip. The engine never writes to an existing row. This is **insert-only**: a field changed in the file after first load will **not** propagate — updates and deletes are done manually in the admin, per the ticket. Reporting surfaces the skip so it is not silently surprising.
 
-Re-running any file therefore converges to zero writes. A composite key (Configuration) is matched on the tuple.
+Re-running any file therefore converges to zero writes. A composite key (Configuration) is matched on the tuple. A key the model normalizes on save (e.g. a lowercased `config_set`) is matched again after `full_clean()` normalizes it, so `UI_Flags` in the file finds the stored `ui_flags` row.
 
 ### 6. Relationship resolution
 
@@ -174,7 +174,7 @@ Per file and as a run total: `created`, `unchanged` (already present), `skipped`
 ## Rollout
 
 1. Engine + registry + `locations.Location` and `organizations.Organization` seeders (highest-value, exercise FK + M2M + self-reference).
-2. `core.Configuration`, `core.PublicConfiguration` (spec 0031), `core.BusinessRule`.
+2. `core.Configuration`, `core.PublicConfiguration` (spec 0034), `core.BusinessRule`.
 3. `cms.PageCategory`, `cms.Page`.
 4. Document the file format and the external-data-repo layout in `docs/development.md`.
 

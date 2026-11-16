@@ -1,4 +1,4 @@
-# 0031 — Public Configuration Store (part of `apps.core`)
+# 0034 — Public Configuration Store (part of `apps.core`)
 
 ## Status
 
@@ -153,9 +153,21 @@ A `(config_set, config_key)` pair MUST NOT exist in both `Configuration` and
 * The backend may read a public value through the public service interface.
   It must not copy the same key into the private table.
 
-This cannot be enforced by a single-table constraint. It is a review and
-seeding rule in this iteration; a system check or cross-table validation MAY be
-added later if duplication becomes a problem.
+This cannot be enforced by a single-table constraint, so both models enforce it
+in `clean()` through `apps.core.models.check_other_config_store`:
+
+* Saving a `PublicConfiguration` whose normalized pair exists in
+  `Configuration` is a `ValidationError` on `config_key`, and vice versa.
+* Inactive rows count, as they do for uniqueness: deactivating a row does not
+  free its pair for the other store.
+* Because `save()` calls `full_clean()`, the rule applies to admin saves,
+  seeded rows (the row is skipped and reported), and code.
+* It is application-level validation, not a database constraint: two
+  concurrent saves of the same pair into both tables are not prevented, and
+  `bulk_create` / `update()` bypass it. That is acceptable for admin-edited,
+  low-churn data.
+* The check runs only for a new row or a changed pair, so a row whose pair
+  ended up in both stores anyway can still be edited or deactivated.
 
 ### 1.4 Secrets are forbidden
 
@@ -163,15 +175,23 @@ Because every row is internet-visible, the model MUST reject obvious
 secret-like names at validation time. This is defence in depth, not a proof
 that a value is safe.
 
-Reject a normalized `config_set` or `config_key` when:
+Reject a normalized `config_set` or `config_key` when any dotted part
+contains one of these names as an underscored run of words: `secret`,
+`secrets`, `password`, `passwd`, `token`, `api_key`, `apikey`, `private_key`,
+`secret_key`, `access_key`, `secret_access_key`, `client_secret`,
+`credential`, `credentials`, `connection_string`, `dsn`. For example
+`gateway.password`, `auth.token`, `esign.private_key`, `client_secret_value`
+and `aws.secret_access_key` are rejected.
 
-* it is exactly one of `secret`, `secrets`, `password`, `passwd`, `token`,
-  `api_key`, `apikey`, `private_key`, `credential`, `credentials`; or
-* it ends with one of those names as a dotted or underscored segment, for
-  example `gateway.password`, `auth.token`, `esign.private_key`.
+The one exception is a name that only leads a dotted part as a qualifier:
+`token_expiry_minutes`, `auth.token_ttl` and `password_min_length` remain
+allowed because they describe a setting about the secret, not the secret value.
+Names that merely contain the letters, such as `secretariat`, are allowed.
 
-Names such as `token_expiry_minutes` remain allowed because they describe a
-duration, not a secret value.
+This also rejects harmless names that mention a secret word after their first
+word, such as `enable_password_reset` or `max_token_count`. Such keys must be
+named with the word first (`password_reset_enabled`, `token_max_count`). The
+false positive is accepted so that names like `client_secret_value` are caught.
 
 The value itself is still reviewed by a human. A public key named
 `gateway.endpoint` may legitimately hold a public URL; the same field must not
@@ -196,9 +216,9 @@ class PublicConfiguration(BaseModel, BaseActivatableModel):
 | `value_type` | Required content of `config_value` |
 | --- | --- |
 | `string` | Any text, including the empty string. Default. |
-| `integer` | A value accepted by `apps.core.validators.coerce_integer`. |
+| `integer` | An optional sign and ASCII digits, surrounding whitespace allowed (`^\s*[+-]?[0-9]+\s*$`), so a client's `Number()` reads the same value. Forms `coerce_integer` also accepts (`1_000`, `1e3`, `1.0`, non-ASCII digits) are rejected. |
 | `boolean` | A value accepted by the boolean rules in section 2: `true/false`, `1/0`, `yes/no`, `on/off`, case-insensitive. |
-| `json` | Valid JSON text (object, array, string, number, boolean, or `null`). |
+| `json` | Valid JSON text (object, array, string, number, boolean, or `null`) that a client's `JSON.parse` accepts; Python's non-standard `NaN` / `Infinity` / `-Infinity` are rejected. |
 
 * `save()` MUST call `full_clean()` so the type check runs on every write,
   including admin saves and seeded rows.
@@ -605,8 +625,9 @@ Required coverage:
 * Empty `config_value` is allowed for `string` and rejected for the other
   types.
 * A `(config_set, config_key)` pair MUST NOT exist in both `Configuration`
-  and `PublicConfiguration`. If that rule is not enforced in code yet, the
-  test documents the intended behavior.
+  and `PublicConfiguration`: saving either side when the other holds the pair
+  (after normalization, including an inactive row) is rejected; the same key
+  in another set is allowed; existing rows can still be updated.
 * Secret-like keys (`gateway.password`, `auth.token`, `esign.private_key`,
   exactly `api_key`) are rejected.
 * A non-secret key containing a secret word as a prefix
@@ -659,12 +680,13 @@ Required coverage:
 * A structured value seeded with `value_type = "json"` is readable through
   `get_public_json`.
 * A secret-like key in a seed file is skipped/reported rather than stored.
+* A row whose pair already exists in `Configuration` is skipped/reported.
 
 ---
 
 ## 8. Relationship to spec 0018
 
-| | `Configuration` (0018) | `PublicConfiguration` (0031) |
+| | `Configuration` (0018) | `PublicConfiguration` (0034) |
 | --- | --- | --- |
 | Audience | Backend process only | Internet / frontend |
 | API | None | Two read-only `GET` endpoints |
@@ -699,9 +721,9 @@ two stores stay separate.
 
 ## 10. Open questions
 
-1. **Duplicate keys across stores.** Cross-table duplication cannot be enforced
-   by a normal Django constraint. Is a system check or a model-level
-   cross-table validation needed now, or is review sufficient?
+1. **Duplicate keys across stores.** *Resolved:* model-level cross-table
+   validation in both models (section 1.3). A database-level guarantee
+   (e.g. a trigger) is not planned.
 2. **Description exposure.** This spec keeps `description` admin-only. If the
    frontend needs human-readable labels per key, add explicit `label` and
    `help_text` fields later rather than exposing operator notes.

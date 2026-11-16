@@ -1,9 +1,10 @@
 """Configuration store services and exceptions.
 
 Consumers read runtime configuration through these functions and never query
-``Configuration.objects`` directly, so the active-only rule, normalization,
-and caching stay in one place. Read values at the point of use, not at import
-time, or admin edits will not be picked up.
+``Configuration.objects`` (spec 0018) or ``PublicConfiguration.objects``
+(spec 0034) directly, so the active-only rule, normalization, and caching stay
+in one place. Read values at the point of use, not at import time, or admin
+edits will not be picked up.
 """
 
 import json
@@ -12,13 +13,10 @@ from typing import Any
 
 from django.core.exceptions import ValidationError
 
-from .models import Configuration, normalize_config_name
-from .validators import coerce_integer
+from .models import Configuration, PublicConfiguration, normalize_config_name
+from .validators import coerce_integer, parse_config_bool
 
 _UNSET = object()
-
-_TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
-_FALSE_VALUES = frozenset({"false", "0", "no", "off"})
 
 
 class ConfigurationError(Exception):
@@ -33,10 +31,10 @@ class ConfigurationValueError(ConfigurationError):
     """Raised when a stored value cannot be parsed into the requested type."""
 
 
-def _lookup(config_set: str, config_key: str) -> str | None:
+def _lookup(config_set: str, config_key: str, model=Configuration) -> str | None:
     """Return the active value for a set/key, or ``None`` when absent."""
     return (
-        Configuration.objects.active()
+        model.objects.active()
         .filter(
             config_set=normalize_config_name(config_set),
             config_key=normalize_config_name(config_key),
@@ -54,10 +52,15 @@ def _missing(config_set: str, config_key: str, default: Any) -> Any:
 
 
 def _get_parsed(
-    config_set: str, config_key: str, default: Any, parse: Callable[[str], Any], type_name: str
+    config_set: str,
+    config_key: str,
+    default: Any,
+    parse: Callable[[str], Any],
+    type_name: str,
+    model=Configuration,
 ) -> Any:
     """Return the parsed value; a malformed value raises instead of using ``default``."""
-    value = _lookup(config_set, config_key)
+    value = _lookup(config_set, config_key, model)
     if value is None:
         return _missing(config_set, config_key, default)
     try:
@@ -68,30 +71,29 @@ def _get_parsed(
         ) from exc
 
 
-def get(config_set: str, config_key: str, default: Any = _UNSET) -> str:
-    """Return the raw string value of an active entry."""
-    value = _lookup(config_set, config_key)
+def _get_raw(config_set: str, config_key: str, default: Any, model) -> str:
+    value = _lookup(config_set, config_key, model)
     if value is None:
         return _missing(config_set, config_key, default)
     return value
 
 
-def get_set(config_set: str) -> dict[str, str]:
-    """Return ``{config_key: config_value}`` for the active entries of a set."""
+def _get_set(config_set: str, model) -> dict[str, str]:
     return dict(
-        Configuration.objects.active()
+        model.objects.active()
         .filter(config_set=normalize_config_name(config_set))
         .values_list("config_key", "config_value")
     )
 
 
-def _parse_bool(value: str) -> bool:
-    normalized = value.strip().lower()
-    if normalized in _TRUE_VALUES:
-        return True
-    if normalized in _FALSE_VALUES:
-        return False
-    raise ValueError(value)
+def get(config_set: str, config_key: str, default: Any = _UNSET) -> str:
+    """Return the raw string value of an active entry."""
+    return _get_raw(config_set, config_key, default, Configuration)
+
+
+def get_set(config_set: str) -> dict[str, str]:
+    """Return ``{config_key: config_value}`` for the active entries of a set."""
+    return _get_set(config_set, Configuration)
 
 
 def get_int(config_set: str, config_key: str, default: Any = _UNSET) -> int:
@@ -101,12 +103,46 @@ def get_int(config_set: str, config_key: str, default: Any = _UNSET) -> int:
 
 def get_bool(config_set: str, config_key: str, default: Any = _UNSET) -> bool:
     """Return an active entry parsed as a boolean (true/false, 1/0, yes/no, on/off)."""
-    return _get_parsed(config_set, config_key, default, _parse_bool, "boolean")
+    return _get_parsed(config_set, config_key, default, parse_config_bool, "boolean")
 
 
 def get_json(config_set: str, config_key: str, default: Any = _UNSET) -> Any:
     """Return an active entry parsed as JSON."""
     return _get_parsed(config_set, config_key, default, json.loads, "JSON value")
+
+
+# Public configuration (spec 0034): the same rules, reading only PublicConfiguration.
+
+
+def get_public(config_set: str, config_key: str, default: Any = _UNSET) -> str:
+    """Return the raw string value of an active public entry."""
+    return _get_raw(config_set, config_key, default, PublicConfiguration)
+
+
+def get_public_set(config_set: str) -> dict[str, str]:
+    """Return ``{config_key: config_value}`` for the active public entries of a set."""
+    return _get_set(config_set, PublicConfiguration)
+
+
+def get_public_int(config_set: str, config_key: str, default: Any = _UNSET) -> int:
+    """Return an active public entry parsed as an integer."""
+    return _get_parsed(
+        config_set, config_key, default, coerce_integer, "integer", PublicConfiguration
+    )
+
+
+def get_public_bool(config_set: str, config_key: str, default: Any = _UNSET) -> bool:
+    """Return an active public entry parsed as a boolean (true/false, 1/0, yes/no, on/off)."""
+    return _get_parsed(
+        config_set, config_key, default, parse_config_bool, "boolean", PublicConfiguration
+    )
+
+
+def get_public_json(config_set: str, config_key: str, default: Any = _UNSET) -> Any:
+    """Return an active public entry parsed as JSON."""
+    return _get_parsed(
+        config_set, config_key, default, json.loads, "JSON value", PublicConfiguration
+    )
 
 
 class ConfigurationService:
@@ -117,3 +153,13 @@ class ConfigurationService:
     get_int = staticmethod(get_int)
     get_bool = staticmethod(get_bool)
     get_json = staticmethod(get_json)
+
+
+class PublicConfigurationService:
+    """Namespace for the public configuration read functions."""
+
+    get_public = staticmethod(get_public)
+    get_public_set = staticmethod(get_public_set)
+    get_public_int = staticmethod(get_public_int)
+    get_public_bool = staticmethod(get_public_bool)
+    get_public_json = staticmethod(get_public_json)

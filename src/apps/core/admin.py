@@ -10,11 +10,13 @@ from simple_history.admin import SimpleHistoryAdmin
 
 from .mixins import AuditUserAdminMixin
 from .models import (
+    PUBLIC_CONFIGURATION_WARNING,
     AdditionalAttribute,
     ApiVersionChangeLog,
     BusinessRule,
     Configuration,
     Language,
+    PublicConfiguration,
 )
 from .rules.forms import BusinessRuleAdminForm
 
@@ -61,6 +63,40 @@ class ConfigurationAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     list_filter = ("config_set", "is_active")
     search_fields = ("config_key", "description")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(PublicConfiguration)
+class PublicConfigurationAdmin(AuditUserAdminMixin, admin.ModelAdmin):
+    """Admin configuration for public (internet-visible) configuration entries."""
+
+    list_display = (
+        "config_set",
+        "config_key",
+        "value_type",
+        "config_value",
+        "is_active",
+        "updated_at",
+    )
+    list_filter = ("config_set", "value_type", "is_active")
+    search_fields = ("config_key", "description")
+    readonly_fields = ("id", "created_at", "updated_at")
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "config_set",
+                    "config_key",
+                    "value_type",
+                    "config_value",
+                    "description",
+                    "is_active",
+                ),
+                "description": PUBLIC_CONFIGURATION_WARNING,
+            },
+        ),
+        ("Audit", {"fields": ("id", "created_at", "updated_at", "created_by", "updated_by")}),
+    )
 
 
 @admin.register(BusinessRule)
