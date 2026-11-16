@@ -24,6 +24,10 @@ def make_institution(**kwargs):
     defaults = {
         "entity_type": EntityType.PRIVATE_LIMITED_COMPANY,
         "entity_name": "ABC Pvt Ltd",
+        # An institution needs a PAN, a CIN or the declaration that neither is given.
+        "pan_cin_skip_declared": not any(
+            (kwargs.get(field) or "").strip() for field in ("pan", "cin")
+        ),
     }
     return Institution.objects.create(**{**defaults, **kwargs})
 

@@ -109,6 +109,8 @@ def involve(db):
             role=role,
             ordinal=ordinal,
             name_at_filing=person.name,
+            # Recorded for an accused, and only for one (a database rule).
+            resides_within_jurisdiction=True if role == ParticipantRole.ACCUSED else None,
         )
 
     return factory

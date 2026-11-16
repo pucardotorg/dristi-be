@@ -213,7 +213,7 @@ if all([S3_API_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY]):
 # S3-compatible bucket above once S3_* is configured.
 STORAGES["files"] = STORAGES["default"]
 
-FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=10 * 1024 * 1024)
+FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=15 * 1024 * 1024)
 FILE_MAX_COUNT_PER_UPLOAD = env.int("FILE_MAX_COUNT_PER_UPLOAD", default=10)
 FILE_MAX_READ_BYTES = env.int("FILE_MAX_READ_BYTES", default=FILE_MAX_SIZE_BYTES)
 # User that background/system uploads are attributed to (spec 0014 #10): the
@@ -249,7 +249,6 @@ PDF_TASK_TIME_LIMIT_MS = env.int("PDF_TASK_TIME_LIMIT_MS", default=600000)
 # Signing primitives consumed by eSign (spec 0016 #14).
 PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
 PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
-PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=FILE_MAX_SIZE_BYTES)
 # Service credentials external API mappings may reference by name, e.g.
 # {"hrms": {"Authorization": "Bearer ..."}}. Configure in code or via the
 # environment-specific settings module; never stored on jobs.
@@ -336,6 +335,8 @@ SPECTACULAR_SETTINGS = {
         "HearingModeEnum": "apps.hearings.enums.HearingMode",
         "BulkModeEnum": "apps.hearings.enums.BulkMode",
         "HearingSideEnum": "apps.hearings.enums.Side",
+        # A witness's side and the side of a hearing's party share these two values.
+        "PartySideEnum": "apps.cases.models.WitnessSide",
         "ReasonCodeEnum": "apps.scrutiny.enums.DocumentIssue",
         "ModeEnum": [("MARKED", "MARKED"), ("ALL", "ALL")],
         "PaymentStatusEnum": "apps.payments.enums.PaymentStatus",
@@ -371,6 +372,10 @@ OTP_MAX_ATTEMPTS = env.int("OTP_MAX_ATTEMPTS", default=5)
 
 # How long a verified password-reset code lets the session set a new password.
 PASSWORD_RESET_WINDOW_SECONDS = env.int("PASSWORD_RESET_WINDOW_SECONDS", default=600)
+
+# Per-user rate of GET /advocates/?search= (finding an advocate to add to a
+# case); blank disables it. Limits scraping the list of advocates.
+ADVOCATE_SEARCH_THROTTLE_RATE = env("ADVOCATE_SEARCH_THROTTLE_RATE", default="60/min")
 
 
 # ---------------------------------------------------------------------------
@@ -671,6 +676,7 @@ EGRAS_ENABLED = env.bool("EGRAS_ENABLED", default=True)
 # module tells the ESP about is the one the PDF Service digests with.
 PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
 PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
+# Keep at or above FILE_MAX_SIZE_BYTES, or an accepted upload cannot be signed.
 PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=20971520)
 
 

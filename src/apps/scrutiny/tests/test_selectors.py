@@ -21,7 +21,6 @@ from apps.cases.models import (
 from apps.cases.services.case_types import EvidenceType
 from apps.organizations.models import Organization, OrganizationType
 from apps.parties.models import Person
-from apps.parties.tests.factories import make_address
 from apps.scrutiny import case_selectors, permissions, ports, selectors
 from apps.scrutiny.enums import CourtRole, FlagStatus, FlagTarget, RoundStage, RoutingReason
 from apps.scrutiny.models import ScrutinyFlag, ScrutinyRound
@@ -29,6 +28,7 @@ from apps.scrutiny.services import flags, responses, rounds
 from apps.users.models import AdvocateProfile, ApprovalStatus
 
 from .factories import (
+    add_address,
     add_courtroom,
     code,
     correct_amount,
@@ -61,14 +61,16 @@ def send_back_and_resubmit(case, officer, filer, explain=True):
 
 
 def add_party(case, role, name, ordinal):
-    return CaseParticipant.objects.create(
+    participant = CaseParticipant.objects.create(
         case=case,
         person=Person.objects.create(name=name),
         role=role,
         ordinal=ordinal,
         name_at_filing=name,
-        address=make_address(),
+        resides_within_jurisdiction=True if role == ParticipantRole.ACCUSED else None,
     )
+    add_address(participant)
+    return participant
 
 
 # Access (#8.4)

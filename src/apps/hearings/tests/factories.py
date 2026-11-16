@@ -13,7 +13,15 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.utils import timezone
 
-from apps.cases.models import Case, CaseParticipant, CaseStatus, ParticipantRole, Representation
+from apps.cases.models import (
+    Case,
+    CaseContact,
+    CaseParticipant,
+    CaseStatus,
+    ContactType,
+    ParticipantRole,
+    Representation,
+)
 from apps.cases.services.case_types import CaseType
 from apps.core.models import Configuration
 from apps.hearings.services import listing
@@ -53,7 +61,7 @@ def make_court(name, parent=None):
 
 
 def _party(case, role, name, user=None, in_person=True):
-    return CaseParticipant.objects.create(
+    party = CaseParticipant.objects.create(
         case=case,
         person=Person.objects.create(
             name=name, user=user, phone_number=f"+9198{next(_numbers):08d}"
@@ -61,8 +69,22 @@ def _party(case, role, name, user=None, in_person=True):
         role=role,
         ordinal=1,
         name_at_filing=name,
-        address=make_address(),
         is_party_in_person=in_person,
+        # Recorded for an accused, and only for one (a database rule).
+        resides_within_jurisdiction=True if role == ParticipantRole.ACCUSED else None,
+    )
+    add_address(party)
+    return party
+
+
+def add_address(party):
+    """Give ``party`` an address on its case, as a party write would (spec 0020 §4.6)."""
+    CaseContact.objects.create(
+        case=party.case,
+        case_participant=party,
+        contact_type=ContactType.ADDRESS,
+        address=make_address(),
+        ordinal=1,
     )
 
 

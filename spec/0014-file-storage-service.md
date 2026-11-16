@@ -579,7 +579,7 @@ Settings are read in `config.settings.base`, documented in `.env.example`, `.env
 | --- | --- | --- |
 | `STORAGES["files"]` | follows `STORAGES["default"]` | Backend for file content (§4). Not an env var. |
 | `S3_API_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | unset | When all four are set, `default` (and so `files`) becomes the S3-compatible backend. |
-| `FILE_MAX_SIZE_BYTES` | `10485760` (10 MiB) | Largest single file `upload_file` accepts. Also used by `apps.files.documents`. |
+| `FILE_MAX_SIZE_BYTES` | `15728640` (15 MiB) | Largest single file `upload_file` accepts. Also used by `apps.files.documents`. |
 | `FILE_MAX_COUNT_PER_UPLOAD` | `10` | Most entries in one `upload_file` call |
 | `FILE_MAX_READ_BYTES` | `FILE_MAX_SIZE_BYTES` | Largest file `get_file_content()` will open. Keep it ≥ `FILE_MAX_SIZE_BYTES`, or files this module accepted become unreadable. |
 | `FILE_SYSTEM_USER_ID` | `""` (`.env.example`: `system@dristi.internal`) | System account for uploads with no interactive user |
