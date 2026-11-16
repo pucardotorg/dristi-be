@@ -121,6 +121,7 @@ class TestModuleIsDomainAgnostic:
             "RequestType",
             "ApprovalStep",
             "Request",
+            "RequestNumberSequence",
             "RequestDocument",
             "RequestApproval",
         }

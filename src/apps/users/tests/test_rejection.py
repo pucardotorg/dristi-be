@@ -8,6 +8,7 @@ from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 
+from apps.core.models import Configuration
 from apps.dristi_requests.models import Request, RequestApproval
 from apps.dristi_requests.services import decide
 from apps.files.models import File
@@ -33,6 +34,9 @@ class RejectionTestCase(OTPTestCase):
         super().setUp()
         self.approver = User.objects.create_user(mobile_number=APPROVER_MOBILE)
         Group.objects.get(name="BAR_ID_APPROVER").user_set.add(self.approver)
+        Configuration.objects.create(
+            config_set="tenant", config_key="state_code", config_value="KL"
+        )
         dramatiq.get_broker().flush_all()
 
     def register(self, role=Role.ADVOCATE, document=True, mobile_number=MOBILE, number=None):

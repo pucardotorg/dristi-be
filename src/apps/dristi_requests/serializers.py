@@ -139,6 +139,7 @@ class RequestSerializer(serializers.ModelSerializer):
         model = Request
         fields = [
             "id",
+            "request_number",
             "request_type",
             "requester",
             "data",

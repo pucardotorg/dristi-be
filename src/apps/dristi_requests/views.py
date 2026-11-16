@@ -34,6 +34,12 @@ from .serializers import (
 # be read as a request id instead of a 404 from the right route.
 UUID_REGEX = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
+REQUEST_NUMBER_PARAMETER = OpenApiParameter(
+    name="request_number",
+    type=OpenApiTypes.STR,
+    description="Filter by request number (exact, case-insensitive), e.g. KL-REQ-00001.",
+)
+
 
 class DocumentTooLargeToServe(APIException):  # noqa: N818
     """Raised when a stored document exceeds the configured read limit."""
@@ -54,6 +60,7 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
 
 
 @extend_schema_view(
+    list=extend_schema(parameters=[REQUEST_NUMBER_PARAMETER]),
     retrieve=extend_schema(responses=RequestDetailSerializer),
     create=extend_schema(
         responses={
@@ -68,6 +75,7 @@ class RequestTypeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, views
                 errors.APPROVAL_ROUTING.example(
                     "No eligible approver found for step 1 of LEAVE_REQUEST."
                 ),
+                errors.REQUEST_NUMBERING_NOT_CONFIGURED,
             ),
         },
     ),
@@ -124,6 +132,9 @@ class RequestViewSet(
         user = getattr(self.request, "user", None)
         if user is None or not user.is_authenticated:
             return queryset.none()
+        request_number = self.request.query_params.get("request_number")
+        if self.action == "list" and request_number:
+            queryset = queryset.filter(request_number__iexact=request_number.strip())
         if user.is_staff or user.is_superuser:
             return queryset
         return queryset.filter(requester=user)
@@ -193,7 +204,8 @@ class RequestViewSet(
                 enum=[choice.value for choice in RequestApproval.Status],
                 description="Filter by approval status; repeat for multiple values. "
                 "Defaults to pending.",
-            )
+            ),
+            REQUEST_NUMBER_PARAMETER,
         ],
     ),
     retrieve=extend_schema(responses=RequestApprovalDetailSerializer),
@@ -241,6 +253,9 @@ class RequestApprovalViewSet(
             queryset = queryset.filter(status__in=statuses)
         elif self.action == "list":
             queryset = queryset.filter(status=RequestApproval.Status.PENDING)
+        request_number = self.request.query_params.get("request_number")
+        if self.action == "list" and request_number:
+            queryset = queryset.filter(request__request_number__iexact=request_number.strip())
         return queryset
 
     def get_serializer_class(self):
