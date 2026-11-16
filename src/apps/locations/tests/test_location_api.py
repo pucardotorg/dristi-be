@@ -161,7 +161,7 @@ class LocationChildrenTests(LocationAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.json()
         codes = {row["code"] for row in body["results"]}
-        self.assertEqual(codes, {"BR", "GA"})
+        self.assertEqual(codes, {"BR"})
         self.assert_meta(body)
 
     def test_children_by_code(self):
@@ -169,7 +169,7 @@ class LocationChildrenTests(LocationAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         codes = {row["code"] for row in response.json()["results"]}
-        self.assertEqual(codes, {"BR", "GA"})
+        self.assertEqual(codes, {"BR"})
 
     def test_children_are_direct_only(self):
         response = self.client.get(reverse("location-by-code-children", args=["IN"]))
@@ -203,7 +203,7 @@ class LocationChildrenTests(LocationAPITestCase):
 
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 codes = {row["code"] for row in response.json()["results"]}
-                self.assertEqual(codes, {"BR", "GA"})
+                self.assertEqual(codes, {"BR"})
 
     def test_children_filter_by_location_type_may_narrow_to_none(self):
         for url in self.children_urls(self.bihar):
@@ -213,16 +213,10 @@ class LocationChildrenTests(LocationAPITestCase):
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertEqual(response.json()["count"], 0)
 
-    def test_children_filter_by_is_active_on_both_routes(self):
-        expected = {"true": ["BR"], "false": ["GA"]}
-        for url in self.children_urls(self.india):
-            for value, codes in expected.items():
-                with self.subTest(url=url, is_active=value):
-                    response = self.client.get(url, {"is_active": value})
-
-                    self.assertEqual(response.status_code, status.HTTP_200_OK)
-                    results = response.json()["results"]
-                    self.assertEqual([row["code"] for row in results], codes)
+    def test_children_of_inactive_parent_are_not_found_on_both_routes(self):
+        for url in self.children_urls(self.goa):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, status.HTTP_404_NOT_FOUND)
 
     def test_children_reject_invalid_location_type_on_both_routes(self):
         for url in self.children_urls(self.india):
@@ -238,23 +232,13 @@ class LocationChildrenTests(LocationAPITestCase):
                     [{"code": "E00005", "field": "location_type"}],
                 )
 
-    def test_children_reject_invalid_is_active_on_both_routes(self):
+    def test_children_reject_unsupported_filters_on_both_routes(self):
         for url in self.children_urls(self.india):
-            with self.subTest(url=url):
-                response = self.client.get(url, {"is_active": "maybe"})
-
-                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-                self.assertEqual(
-                    [
-                        {"code": e["code"], "field": e.get("field")}
-                        for e in response.json()["errors"]
-                    ],
-                    [{"code": errors.INVALID.code, "field": "is_active"}],
-                )
-
-    def test_children_reject_parent_filters_on_both_routes(self):
-        for url in self.children_urls(self.india):
-            for params in ({"parent_id": str(self.bihar.pk)}, {"parent_code": "BR"}):
+            for params in (
+                {"parent_id": str(self.bihar.pk)},
+                {"parent_code": "BR"},
+                {"is_active": "false"},
+            ):
                 with self.subTest(url=url, params=params):
                     response = self.client.get(url, params)
 

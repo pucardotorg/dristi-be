@@ -35,8 +35,9 @@ ANCESTORS_SCHEMA = extend_schema(
     parameters=[ANCESTORS_IS_ACTIVE],
     responses=error_responses(errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active")),
 )
-PARENT_FILTERS_NOT_HERE = (
-    "parent_id and parent_code are not filters here; the parent is identified by the URL path."
+UNSUPPORTED_CHILDREN_FILTERS = (
+    "Only location_type filters the children; the parent is identified by the URL path "
+    "and inactive children are never listed."
 )
 CHILDREN_SCHEMA = extend_schema(
     parameters=[
@@ -44,13 +45,7 @@ CHILDREN_SCHEMA = extend_schema(
             "location_type",
             str,
             enum=Location.LocationType.values,
-            description="Only children of this type.",
-        ),
-        OpenApiParameter(
-            "is_active",
-            str,
-            enum=["true", "false"],
-            description="Only children with this active state.",
+            description="Only children of this type; inactive children are never listed.",
         ),
     ],
     responses=error_responses(
@@ -58,8 +53,7 @@ CHILDREN_SCHEMA = extend_schema(
             f"Must be one of: {', '.join(Location.LocationType.values)}.",
             field="location_type",
         ),
-        errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active"),
-        errors.INVALID.example(PARENT_FILTERS_NOT_HERE),
+        errors.INVALID.example(UNSUPPORTED_CHILDREN_FILTERS),
     ),
 )
 
@@ -114,7 +108,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
             # the query filters describe the children and are applied in
             # _children_response(), not on the parent's lookup.
             return queryset
-        queryset = self._apply_collection_filters(queryset)
+        queryset = self._apply_location_type_filter(queryset)
         params = self.request.query_params
 
         parent_id = params.get("parent_id")
@@ -137,13 +131,15 @@ class LocationViewSet(APIModelReadOnlyViewSet):
                 )
             queryset = queryset.filter(parent_id=parent.pk)
 
+        is_active = parse_is_active(params)
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active)
+
         return queryset
 
-    def _apply_collection_filters(self, queryset):
-        """Filter a location collection by the location_type and is_active query params."""
-        params = self.request.query_params
-
-        location_type = params.get("location_type")
+    def _apply_location_type_filter(self, queryset):
+        """Filter a location collection by the location_type query param."""
+        location_type = self.request.query_params.get("location_type")
         if location_type is not None:
             if location_type not in Location.LocationType.values:
                 raise errors.INVALID_CHOICE.validation_error(
@@ -154,11 +150,6 @@ class LocationViewSet(APIModelReadOnlyViewSet):
                     }
                 )
             queryset = queryset.filter(location_type=location_type)
-
-        is_active = parse_is_active(params)
-        if is_active is not None:
-            queryset = queryset.filter(is_active=is_active)
-
         return queryset
 
     def _get_by_code(self, code):
@@ -166,17 +157,19 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         return get_object_or_404(Location.objects.select_related("parent"), code=code)
 
     def _children_response(self, location):
-        """Return a paginated response of the location's direct children.
+        """Return a paginated response of the location's active direct children.
 
-        ``location_type`` and ``is_active`` filter the children, like on the
-        list endpoint. The parent filters are rejected rather than ignored:
-        the parent is already given by the URL path.
+        An inactive parent is not found and inactive children are never
+        listed. ``location_type`` is the only filter; the parent and
+        ``is_active`` filters are rejected rather than ignored.
         """
         params = self.request.query_params
-        if params.get("parent_id") is not None or params.get("parent_code") is not None:
-            raise ValidationError(PARENT_FILTERS_NOT_HERE)
-        children = self._apply_collection_filters(
-            location.children.select_related("parent")
+        if any(param in params for param in ("parent_id", "parent_code", "is_active")):
+            raise ValidationError(UNSUPPORTED_CHILDREN_FILTERS)
+        if not location.is_active:
+            raise NotFound("No active location matches the given query.")
+        children = self._apply_location_type_filter(
+            location.children.filter(is_active=True).select_related("parent")
         ).order_by("code")
         page = self.paginate_queryset(children)
         if page is not None:

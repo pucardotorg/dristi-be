@@ -122,8 +122,8 @@ final security model for the API.
 | GET | `/locations/` | List locations. Supports filtering by `location_type`, `parent_id`, and `parent_code`. |
 | GET | `/locations/{id}/` | Retrieve a location by its `id`. |
 | GET | `/locations/code/{code}/` | Retrieve a location by its unique `code`. |
-| GET | `/locations/{id}/children/` | List direct children of a location identified by `id`. Supports filtering by `location_type` and `is_active`. |
-| GET | `/locations/code/{code}/children/` | List direct children of a location identified by `code`. Supports filtering by `location_type` and `is_active`. |
+| GET | `/locations/{id}/children/` | List active direct children of a location identified by `id`. Supports filtering by `location_type`. 404 unless the parent itself is active. |
+| GET | `/locations/code/{code}/children/` | List active direct children of a location identified by `code`. Supports filtering by `location_type`. 404 unless the parent itself is active. |
 | GET | `/locations/{id}/ancestors/` | List ancestor chain from root to immediate parent, identified by `id`. |
 | GET | `/locations/code/{code}/ancestors/` | List ancestor chain from root to immediate parent, identified by `code`. |
 
@@ -135,10 +135,10 @@ Query examples:
 - `GET /locations/?parent_code=IN` — list all direct children of the location whose code is `IN`.
 - `GET /locations/?parent_id=<state-uuid>&location_type=district` — list all districts under a given state.
 - `GET /locations/?is_active=false` — list disabled locations.
-- `GET /locations/code/IN/children?location_type=state&is_active=true` — list the active states under India.
+- `GET /locations/code/IN/children?location_type=state` — list the states under India.
 
 `parent_id` and `parent_code` are explicit, mutually-exclusive filters. Validation rejects requests that supply both. `is_active` filtering is provided because `Location` uses `BaseActivatableModel`.
-On the two `children` endpoints the parent is already identified by the URL path, so `location_type` and `is_active` filter the children and supplying `parent_id` or `parent_code` is rejected.
+On the two `children` endpoints the parent is identified by the URL path and must be active (404 otherwise), and inactive children are never listed: `location_type` is the only filter, and supplying `parent_id`, `parent_code` or `is_active` is rejected.
 
 ### 7. Pincodes
 
