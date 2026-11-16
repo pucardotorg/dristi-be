@@ -8,7 +8,7 @@ import threading
 from decimal import Decimal
 
 import pytest
-from django.db import connection, connections
+from django.db import connection, connections, transaction
 from django.utils import timezone
 
 from apps.api.errors import BusinessError
@@ -211,15 +211,66 @@ def test_two_groups_racing_for_one_provider_id(raise_demand, user, attested_prov
             )
         )
 
-    results = race(
-        *(
-            lambda payment=payment: PaymentService.mark_pending(
-                [payment], provider="counter", provider_payment_id="CTR-SHARED"
+    # Deterministic schedule: A takes the id and stays uncommitted; B starts only
+    # then; A commits only once PostgreSQL shows B waiting on the id's lock.
+    # Without the lock B never waits, reads no committed owner and also takes
+    # the id, so the assertions below fail.
+    first, second = groups
+    a_holds_id = threading.Event()
+    results = [None, None]
+
+    def holder():
+        try:
+            with transaction.atomic():
+                results[0] = PaymentService.mark_pending(
+                    [first], provider="counter", provider_payment_id="CTR-SHARED"
+                )
+                a_holds_id.set()
+                _wait_for_blocked_advisory_lock()
+        except BaseException as exc:  # noqa: BLE001 - reported to the test
+            results[0] = exc
+        finally:
+            a_holds_id.set()
+            connections.close_all()
+
+    def contender():
+        try:
+            assert a_holds_id.wait(RACE_TIMEOUT_SECONDS), "holder never took the id"
+            results[1] = PaymentService.mark_pending(
+                [second], provider="counter", provider_payment_id="CTR-SHARED"
             )
-            for payment in groups
-        )
-    )
-    assert sorted(type(r).__name__ for r in results) == sorted(
-        ["list", _ProviderIdCollision.__name__]
-    )
+        except BaseException as exc:  # noqa: BLE001 - reported to the test
+            results[1] = exc
+        finally:
+            connections.close_all()
+
+    threads = [threading.Thread(target=f, daemon=True) for f in (holder, contender)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=RACE_TIMEOUT_SECONDS)
+    assert not any(thread.is_alive() for thread in threads), "worker still running"
+
+    assert isinstance(results[0], list), results[0]
+    assert isinstance(results[1], _ProviderIdCollision), results[1]
     assert Payment.objects.filter(provider_payment_id="CTR-SHARED").count() == 1
+
+
+def _wait_for_blocked_advisory_lock(timeout=5.0):
+    """Wait, bounded, until another backend is waiting on an advisory lock.
+
+    Returns quietly on timeout, so a missing lock shows up as a failed
+    assertion in the test rather than a hang.
+    """
+
+    import time
+
+    deadline = time.monotonic() + timeout
+    with connection.cursor() as cursor:
+        while time.monotonic() < deadline:
+            cursor.execute(
+                "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+            )
+            if cursor.fetchone()[0]:
+                return
+            time.sleep(0.02)
