@@ -860,14 +860,39 @@
     "case-file.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WBYZ9C_w-f",
       "title": "Case File",
-      "contentHash": "985ec7090369",
-      "pageUpdatedAt": 1793798207.909,
+      "contentHash": "6eb7310c9a1c",
+      "pageUpdatedAt": 1794829893.843,
       "calloutElementId": "cl-I3IpwuxKBN",
       "sections": [
         {
           "key": "# Case File",
-          "elementId": "cl-GSkCgbIWO9",
-          "hash": "985ec7090369"
+          "elementId": "cl-qY0hryLEqy",
+          "hash": "2397648d90fa"
+        },
+        {
+          "key": "# 1. Categories",
+          "elementId": "cl-jOD22BF4Yr",
+          "hash": "d2ac9c6703d7"
+        },
+        {
+          "key": "# 2. How the case file is ordered",
+          "elementId": "cl-FJKwEc7VFj",
+          "hash": "ac81cfb7b2c1"
+        },
+        {
+          "key": "# 3. Downloading",
+          "elementId": "cl-6kAga1WHPz",
+          "hash": "1cda325981ce"
+        },
+        {
+          "key": "# 4. Configuration by state",
+          "elementId": "cl-bk8i8cfCSO",
+          "hash": "db453fa2736a"
+        },
+        {
+          "key": "# 5. Open questions",
+          "elementId": "cl-alBx96e3yA",
+          "hash": "c7ed818f9c15"
         }
       ]
     },
