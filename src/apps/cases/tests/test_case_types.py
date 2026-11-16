@@ -100,7 +100,8 @@ def test_an_empty_section_or_evidence_item_is_a_valid_draft_but_not_complete(cas
 
     for section, schema in config.section_schemas.items():
         assert section_errors(config, section, {}, complete=False) == []
-        assert section_errors(config, section, {}) == [] or schema.get("required")
+        if schema.get("required"):
+            assert section_errors(config, section, {})
     for evidence_type in config.evidence_schemas:
         assert evidence_errors(config, evidence_type, {}, complete=False) == []
         assert evidence_errors(config, evidence_type, {})
