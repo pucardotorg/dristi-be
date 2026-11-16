@@ -14,8 +14,8 @@
     "efiling.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing",
-      "contentHash": "10c6b4f2ca08",
-      "pageUpdatedAt": 1794292859.206,
+      "contentHash": "a506d3ca6bc4",
+      "pageUpdatedAt": 1794814826.316,
       "calloutElementId": "cl-sUwstgBvn-",
       "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed."
     },
@@ -572,9 +572,10 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "e5ec543f5e93",
-      "pageUpdatedAt": 1793796960.458,
-      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded."
+      "contentHash": "294ae4f48ae2",
+      "pageUpdatedAt": 1794814793.129,
+      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded.",
+      "calloutElementId": "cl-e-XQNr8pNU"
     },
     "office-management.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-lxUEhfnjuv",
@@ -714,37 +715,36 @@
     "bulk-filing.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
       "title": "Bulk Filing",
-      "contentHash": "9b53d47fedb9",
-      "pageUpdatedAt": 1794292873.303,
+      "contentHash": "03c495d2e252",
+      "pageUpdatedAt": 1794814617.145,
       "calloutElementId": "cl-IwwclcUBOf",
       "sections": [
         {
-          "key": "# Bulk Filing — Developer & Agent Handover",
-          "elementId": "cl-huKkmfPrla",
-          "hash": "41d626eb67a2"
+          "key": "# Bulk Filing",
+          "elementId": "cl-qzt7FS0LID",
+          "hash": "725f7609f032"
         },
         {
-          "key": "# 1. What bulk filing is",
-          "elementId": "cl-ZcdvAcOTex",
-          "hash": "4c25b208bc48"
-        },
-        {
-          "key": "# 2. The batch",
-          "elementId": "cl-S40Vb7zJdl",
-          "hash": "dba12f2d80b5"
+          "key": "v8.10 — 2026-11-13; **§3 lists every step before the batch is created**: Excel f",
+          "elementId": "cl-ST_XjpuF-d",
+          "hash": "1af07c5b15ba"
         },
         {
           "key": "# 3. From upload to filing",
-          "elementId": "cl-_QhA1KaHOY",
-          "hash": "4cc99ee1b0d6"
+          "elementId": "cl-dVJyo9ojiq",
+          "hash": "6cf70c2821cb"
         },
         {
-          "key": "# 4. The Excel format",
-          "elementId": "cl-UZiRGu77Bn",
-          "hash": "00ce141e31d3"
+          "key": "## 3.7 Case details",
+          "elementId": "cl--1rJZh7UxV",
+          "hash": "4ef11cceaee4"
+        },
+        {
+          "key": "## 4.3 Columns",
+          "elementId": "cl-fxonpXdd2H",
+          "hash": "4fc345c51cb6"
         }
-      ],
-      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed."
+      ]
     },
     "evidence-marking.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-uJ7EU__l31",
