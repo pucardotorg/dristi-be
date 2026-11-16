@@ -827,19 +827,19 @@
     "payment-logic.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-690VkCoSSB",
       "title": "Payment Logic",
-      "contentHash": "9c37034bb360",
-      "pageUpdatedAt": 1793865866.98,
+      "contentHash": "1f14926b5654",
+      "pageUpdatedAt": 1794808815.947,
       "calloutElementId": "cl-N8Oug4EJ6b",
       "sections": [
         {
           "key": "# Payment Logic",
           "elementId": "cl-2TEVGygvLY",
-          "hash": "5b06ff91c361"
+          "hash": "9572d3ee585b"
         },
         {
           "key": "### 3.1 Kerala",
           "elementId": "cl-dXn3_eq1nl",
-          "hash": "e71ce7895a39"
+          "hash": "5ec634679193"
         }
       ]
     },
