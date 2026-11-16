@@ -256,10 +256,18 @@ def check_other_config_store(instance, other_model, errors: dict[str, str]) -> N
     ``PublicConfiguration`` (spec 0034 section 1.3). Inactive rows count, as
     they do for uniqueness. Application-level only: two concurrent saves of
     the same pair into both tables are not prevented.
+
+    Only a new row or a changed pair is checked, so a row whose pair already
+    ended up in both stores (bulk writes, a race, a manual fix) can still be
+    edited or deactivated rather than only deleted.
     """
     if errors.keys() & {"config_set", "config_key"}:
         return
     pair = {"config_set": instance.config_set, "config_key": instance.config_key}
+    if not instance._state.adding:
+        stored = type(instance).objects.filter(pk=instance.pk).values(*pair).first()
+        if stored == pair:
+            return
     if other_model.objects.filter(**pair).exists():
         errors["config_key"] = (
             f"{instance.config_set}.{instance.config_key} already exists in "
@@ -314,9 +322,17 @@ class Configuration(BaseModel, BaseActivatableModel):
 
 PUBLIC_CONFIGURATION_WARNING = "Everything in this table is public and visible to internet clients."
 
-# Names that suggest a secret. A public set or key equal to one of these, or
-# ending with one as a dotted or underscored segment, is rejected (spec 0034
-# section 1.4). Defence in depth only: a human still reviews every value.
+# Names that suggest a secret (spec 0034 section 1.4). Within each dotted part
+# of a public set or key, one of these as an underscored run of words is
+# rejected unless it only leads the part as a qualifier: ``client_secret_value``
+# and ``gateway.password`` are rejected, ``token_expiry_minutes`` is not.
+# Defence in depth only: a human still reviews every value.
+#
+# Consequence: a harmless name that mentions a secret word after its first
+# word is rejected too, for example ``enable_password_reset`` or
+# ``max_token_count``. Rename such a key so the word leads its part
+# (``password_reset_enabled``, ``token_max_count``).
+# This false positive is accepted over letting ``client_secret_value`` through.
 SECRET_CONFIG_NAMES = frozenset(
     {
         "secret",
@@ -327,18 +343,31 @@ SECRET_CONFIG_NAMES = frozenset(
         "api_key",
         "apikey",
         "private_key",
+        "secret_key",
+        "access_key",
+        "secret_access_key",
+        "client_secret",
         "credential",
         "credentials",
+        "connection_string",
+        "dsn",
     }
 )
 
 
+_SECRET_NAME_WORDS = tuple(tuple(secret.split("_")) for secret in SECRET_CONFIG_NAMES)
+
+
 def is_secret_config_name(name: str) -> bool:
     """Whether a normalized set/key looks like it names a secret."""
-    return any(
-        name == secret or name.endswith((f".{secret}", f"_{secret}"))
-        for secret in SECRET_CONFIG_NAMES
-    )
+    for part in name.split("."):
+        words = tuple(part.split("_"))
+        for secret in _SECRET_NAME_WORDS:
+            for start in range(len(words) - len(secret) + 1):
+                end = start + len(secret)
+                if words[start:end] == secret and (start > 0 or end == len(words)):
+                    return True
+    return False
 
 
 # A public integer is an optional sign and ASCII digits, so a client's

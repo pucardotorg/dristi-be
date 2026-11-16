@@ -189,6 +189,12 @@ class TestPublicConfigurationModel:
             "gateway_apikey",
             "sms.passwd",
             "access_token",
+            "secret_key",
+            "aws.secret_access_key",
+            "client_secret_value",
+            "access_key",
+            "sentry.dsn",
+            "db.connection_string",
         ],
     )
     def test_secret_like_key_rejected(self, name):
@@ -206,10 +212,26 @@ class TestPublicConfigurationModel:
             make_string(config_key="  Gateway.PASSWORD ")
 
     @pytest.mark.parametrize(
-        "name", ["token_expiry_minutes", "password_min_length", "secretariat", "gateway.endpoint"]
+        "name",
+        [
+            "token_expiry_minutes",
+            "auth.token_ttl",
+            "password_min_length",
+            "password_reset_enabled",
+            "token_max_count",
+            "secretariat",
+            "gateway.endpoint",
+        ],
     )
     def test_names_merely_containing_a_secret_word_accepted(self, name):
         make_string(config_key=name)
+
+    @pytest.mark.parametrize("name", ["enable_password_reset", "max_token_count"])
+    def test_secret_word_after_the_first_word_rejected(self, name):
+        # Known false positive (see SECRET_CONFIG_NAMES): the word must lead its part.
+        with pytest.raises(ValidationError) as exc:
+            make_string(config_key=name)
+        assert "config_key" in exc.value.message_dict
 
     def test_str(self):
         assert str(make()) == "ui_feature_flag.enable_dark_mode"
@@ -260,6 +282,24 @@ class TestOneStorePerKey:
         private.save()
         public.config_value = "true"
         public.save()
+
+    def test_rows_in_both_stores_can_be_deactivated(self):
+        # bulk_create bypasses clean(), as a race or manual fix could.
+        pair = {"config_set": "dup", "config_key": "k", "config_value": "1"}
+        private = Configuration.objects.bulk_create([Configuration(**pair)])[0]
+        public = PublicConfiguration.objects.bulk_create([PublicConfiguration(**pair)])[0]
+        public.is_active = False
+        public.save()
+        private.is_active = False
+        private.save()
+
+    def test_changing_pair_into_other_store_rejected(self):
+        Configuration.objects.create(config_set="pdf", config_key="max", config_value="1")
+        public = make_string(config_set="pdf", config_key="min")
+        public.config_key = "max"
+        with pytest.raises(ValidationError) as exc:
+            public.save()
+        assert "config_key" in exc.value.message_dict
 
 
 @pytest.mark.django_db

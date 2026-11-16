@@ -166,6 +166,8 @@ in `clean()` through `apps.core.models.check_other_config_store`:
   concurrent saves of the same pair into both tables are not prevented, and
   `bulk_create` / `update()` bypass it. That is acceptable for admin-edited,
   low-churn data.
+* The check runs only for a new row or a changed pair, so a row whose pair
+  ended up in both stores anyway can still be edited or deactivated.
 
 ### 1.4 Secrets are forbidden
 
@@ -173,15 +175,23 @@ Because every row is internet-visible, the model MUST reject obvious
 secret-like names at validation time. This is defence in depth, not a proof
 that a value is safe.
 
-Reject a normalized `config_set` or `config_key` when:
+Reject a normalized `config_set` or `config_key` when any dotted part
+contains one of these names as an underscored run of words: `secret`,
+`secrets`, `password`, `passwd`, `token`, `api_key`, `apikey`, `private_key`,
+`secret_key`, `access_key`, `secret_access_key`, `client_secret`,
+`credential`, `credentials`, `connection_string`, `dsn`. For example
+`gateway.password`, `auth.token`, `esign.private_key`, `client_secret_value`
+and `aws.secret_access_key` are rejected.
 
-* it is exactly one of `secret`, `secrets`, `password`, `passwd`, `token`,
-  `api_key`, `apikey`, `private_key`, `credential`, `credentials`; or
-* it ends with one of those names as a dotted or underscored segment, for
-  example `gateway.password`, `auth.token`, `esign.private_key`.
+The one exception is a name that only leads a dotted part as a qualifier:
+`token_expiry_minutes`, `auth.token_ttl` and `password_min_length` remain
+allowed because they describe a setting about the secret, not the secret value.
+Names that merely contain the letters, such as `secretariat`, are allowed.
 
-Names such as `token_expiry_minutes` remain allowed because they describe a
-duration, not a secret value.
+This also rejects harmless names that mention a secret word after their first
+word, such as `enable_password_reset` or `max_token_count`. Such keys must be
+named with the word first (`password_reset_enabled`, `token_max_count`). The
+false positive is accepted so that names like `client_secret_value` are caught.
 
 The value itself is still reviewed by a human. A public key named
 `gateway.endpoint` may legitimately hold a public URL; the same field must not
