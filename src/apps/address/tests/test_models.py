@@ -3,11 +3,17 @@
 import unicodedata
 
 import pytest
-from django.core.exceptions import ValidationError
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 
-from apps.address.models import Address, AddressImmutableError, address_hash, normalize_field
+from apps.address.models import (
+    EMPTY_ADDRESS_MESSAGE,
+    Address,
+    AddressImmutableError,
+    address_hash,
+    normalize_field,
+)
 from apps.parties.tests.factories import ADDRESS_DEFAULTS, make_address
 from apps.users.models import User
 
@@ -77,9 +83,9 @@ class TestNormalization:
 
 @pytest.mark.django_db
 class TestValidation:
-    """Pincode and required-field validation."""
+    """Pincode validation, and what may be left blank."""
 
-    @pytest.mark.parametrize("pincode", ["012345", "56001", "5600011", "56000A", ""])
+    @pytest.mark.parametrize("pincode", ["012345", "56001", "5600011", "56000A"])
     def test_invalid_pincode_is_rejected(self, pincode):
         with pytest.raises(ValidationError) as exc:
             make_address(pincode=pincode)
@@ -91,13 +97,32 @@ class TestValidation:
 
         assert address.pincode == "560001"
 
-    def test_missing_required_field_is_rejected(self):
+    def test_a_field_left_out_is_stored_blank(self):
         values = {k: v for k, v in ADDRESS_DEFAULTS.items() if k != "district"}
 
-        with pytest.raises(ValidationError) as exc:
-            Address.objects.get_or_create_address(**values)
+        address, _ = Address.objects.get_or_create_address(**values)
 
-        assert "district" in exc.value.message_dict
+        assert address.district == ""
+        assert address.missing_fields == ["district"]
+
+    def test_only_a_pincode_is_an_address(self):
+        address, _ = Address.objects.get_or_create_address(pincode="560001")
+
+        assert address.missing_fields == ["line1", "city", "state", "district"]
+        assert str(address) == "560001"
+
+    @pytest.mark.parametrize("value", [None, "", "   ", "\u200b"])
+    def test_an_address_with_nothing_in_it_is_rejected(self, value):
+        with pytest.raises(ValidationError) as exc:
+            Address.objects.get_or_create_address(**dict.fromkeys(Address.CONTENT_FIELDS, value))
+
+        assert exc.value.message_dict == {NON_FIELD_ERRORS: [EMPTY_ADDRESS_MESSAGE]}
+
+    def test_a_complete_address_has_nothing_missing(self):
+        assert make_address().missing_fields == []
+
+    def test_the_database_accepts_a_blank_pincode(self):
+        Address.objects.create(**{**ADDRESS_DEFAULTS, "pincode": ""})
 
     def test_unknown_field_is_rejected(self):
         with pytest.raises(ValueError):
@@ -186,17 +211,24 @@ class TestDeduplication:
 
         Address(**{**ADDRESS_DEFAULTS, "line1": "99 Brigade Road"}).full_clean()
 
-    @pytest.mark.parametrize(
-        "field", [field for field in Address.CONTENT_FIELDS if field != "police_station"]
-    )
+    @pytest.mark.parametrize("field", Address.CONTENT_FIELDS)
     @pytest.mark.parametrize("missing", [None, "", "   "])
-    def test_full_clean_reports_a_missing_field_instead_of_crashing(self, field, missing):
+    def test_any_one_field_may_be_blank(self, field, missing):
         address = Address(**{**ADDRESS_DEFAULTS, field: missing})
 
-        with pytest.raises(ValidationError) as exc:
-            address.full_clean()
+        address.full_clean()
+        address.save()
 
-        assert field in exc.value.message_dict
+        assert getattr(address, field) == ""
+
+    def test_addresses_known_equally_far_share_a_row(self):
+        first, created = Address.objects.get_or_create_address(pincode="560001", city="Bengaluru")
+        second, created_again = Address.objects.get_or_create_address(
+            pincode="560 001", city="Bengaluru", line1=None
+        )
+
+        assert (created, created_again) == (True, False)
+        assert first.pk == second.pk
 
     def test_police_station_may_be_left_out(self):
         address, _ = Address.objects.get_or_create_address(
@@ -220,11 +252,10 @@ class TestDeduplication:
 
         assert "This address already exists." in str(exc.value)
 
-    def test_a_null_required_field_is_reported_not_hashed(self):
-        with pytest.raises(ValidationError) as exc:
-            Address.objects.get_or_create_address(**{**ADDRESS_DEFAULTS, "line1": None})
+    def test_a_null_field_is_stored_blank(self):
+        address, _ = Address.objects.get_or_create_address(**{**ADDRESS_DEFAULTS, "line1": None})
 
-        assert "line1" in exc.value.message_dict
+        assert address.line1 == ""
 
     def test_a_null_police_station_is_stored_blank(self):
         address, _ = Address.objects.get_or_create_address(

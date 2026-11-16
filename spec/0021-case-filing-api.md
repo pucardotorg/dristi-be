@@ -463,7 +463,7 @@ POST /cases/{case_id_or_draft_session_id}/complainants
 ```
 
 **Contacts** (spec 0020 §4.6): `mobile_numbers`, `email_addresses` and `addresses` are lists, in order; the first of each is the primary. At the top level they are the individual's; inside `institution`, the institution's own **for this case** (a reused institution's contacts in other cases are never shown or changed). Every party, every role, has the same lists:
-- Addresses may be left out while the case is drafted (§6.4). To be filed, an individual needs at least one address and an institution at least one of its own; the person acting for it may give theirs too. The completeness check (§6.3) asks for them. An institution with no person has no top-level lists (`E07023`).
+- Addresses may be left out, or partly filled in, while the case is drafted (§6.4). To be filed, an individual needs at least one address and an institution at least one of its own; the person acting for it may give theirs too. The completeness check (§6.3) asks for them. An institution with no person has no top-level lists (`E07023`).
 - A person's mobile numbers are in E.164 form; an institution's may be landlines (`E00001` on `mobile_numbers[1]`, say). Nothing may appear twice in one list, emails compared ignoring case (`E07034` on the repeat).
 - Every address of an accused or witness, their institution's included, needs a `police_station` to be filed; it may be left blank while drafting, and the completeness check (§6.3) asks for it.
 - A new person keeps the first mobile number, email and address as their own (`person.phone_number`, `email_address`, `correspondence_address`).
@@ -1415,6 +1415,8 @@ POST /cases/{case_id}/validate
    - Witnesses are optional. Each active witness has a `name_at_filing` or a `designation_at_filing`; the mobile number is optional.
    - Every active party has an address contact: an individual their own, an institution its own on this case ("Accused #2 has no address.").
    - Every address of an active accused or witness, their institution's included, has a `police_station` ("Accused #1 has an address with no police station.").
+   - Every address of an active party (their own, their institution's on this case, and an individual's permanent address) has `line1`, `city`, `state`, `pincode` and `district` ("Complainant #1 has an incomplete address (missing city, pincode).").
+   - An individual complainant or POA holder who has an address has a permanent address ("Complainant #1 has no permanent address."). One with no address is reported as having none, and giving one fills it (§6.4).
    - A person acting for an accused institution has a `designation_at_filing` ("Accused #2 acts for an institution but has no designation.").
    - A complainant institution has a `pan`, a `cin` or `pan_cin_skip_declared` ("Complainant #1: Enter a PAN or a CIN, or declare that neither is given.").
    - None of these is checked on save (§6.4).
@@ -1459,18 +1461,27 @@ filled in: every save checks only that what is sent is well-formed (types,
 formats, choice codes, unknown keys, fields that do not apply to the role,
 contradictions such as a filing date before the cause of action). Nothing a
 filing must have is required on save: a party's name, address or police
-station, an accused institution's officer's designation, a complainant
+station, any field of an address, an accused institution's officer's
+designation, a complainant
 institution's PAN/CIN, any `required` key of a details section or of
 `evidence_info` (and the conditional ones), the condonation reason, the
 case affidavit or the party-in-person affidavit. The completeness check
 (§6.3) reports each one, and submit-for-signing refuses the case until it
 passes.
 
+When a party's `addresses` are replaced and their permanent address was their
+first address (none of its own was given), the permanent address follows the
+new first address, so completing a partly entered address completes both. A
+party saved with no address has no permanent address yet; the first address
+later sent fills it, as on create.
+
 What still has to be sent is what says what is being saved: `case_type`,
 `evidence_type`, a witness's `side`, a party's `person`, `self` or
 `institution`, an institution's `entity_type` and `entity_name`, the
-represented and client participant ids, and every field of an address that
-is sent (an address is all or nothing, as it is a shared, deduplicated row).
+represented and client participant ids, and at least one field of an address
+that is sent (`E00002` on `addresses[0]` for an address with nothing in it).
+An address may be partly filled in: its blank fields are stored as `""`
+(spec 0020 §7.2), and a pincode that is given must still be valid.
 
 **When to call:**
 Client calls this before attempting to submit for signing. Invalid cases cannot advance to `PENDING_SIGN`.

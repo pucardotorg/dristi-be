@@ -14,6 +14,10 @@ PINCODE_REGEX = r"^[1-9][0-9]{5}$"
 # Fields that describe the address itself: hashed for deduplication and
 # copied into a revision. ``created_by`` is deliberately not one of them.
 CONTENT_FIELDS = ("line1", "city", "state", "pincode", "district", "police_station")
+# What a postal address needs to be complete. Any of them may be blank while a
+# filing is drafted; the case filing completeness check asks for the rest.
+POSTAL_FIELDS = ("line1", "city", "state", "pincode", "district")
+EMPTY_ADDRESS_MESSAGE = "Enter at least one address field."
 
 
 class AddressImmutableError(Exception):
@@ -72,7 +76,7 @@ class AddressManager(models.Manager):
         if unknown:
             raise ValueError(f"Not address fields: {sorted(unknown)}")
 
-        # ``None`` is read as blank, so a required field is reported, not hashed.
+        # ``None`` is stored blank, as a value left out.
         values = {
             field: normalize_field(field, fields.get(field) or "") for field in CONTENT_FIELDS
         }
@@ -108,22 +112,29 @@ class Address(models.Model):
 
     Identical addresses share one row: create them through
     ``Address.objects.get_or_create_address`` rather than ``create``.
+
+    Any field may be blank, so an address can be recorded as far as it is
+    known (``missing_fields``); an address with every field blank is refused.
+    A blank value is part of the content like any other, so two addresses
+    known equally far share a row, as two complete ones do.
     """
 
     CONTENT_FIELDS = CONTENT_FIELDS
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    line1 = models.CharField(max_length=255)
-    city = models.CharField(max_length=100)
-    state = models.CharField(max_length=100)
+    line1 = models.CharField(max_length=255, blank=True)
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=100, blank=True)
+    # Checked only when given: an empty value is not run through validators.
     pincode = models.CharField(
         max_length=6,
+        blank=True,
         db_index=True,
         validators=[
             RegexValidator(PINCODE_REGEX, "Enter a valid 6-digit pincode not starting with 0.")
         ],
     )
-    district = models.CharField(max_length=100)
+    district = models.CharField(max_length=100, blank=True)
     # Blank when not given: complainant and POA holder addresses may leave it out.
     police_station = models.CharField(max_length=255, blank=True)
     # SHA-256 of the canonical content; the unique index is what deduplicates.
@@ -146,9 +157,9 @@ class Address(models.Model):
         # Newest first, as for BaseModel subclasses.
         ordering = ("-created_at",)
         constraints = [
-            # A 6-digit pincode not starting with 0.
+            # A 6-digit pincode not starting with 0, or none yet.
             models.CheckConstraint(
-                condition=Q(pincode__regex=PINCODE_REGEX),
+                condition=Q(pincode="") | Q(pincode__regex=PINCODE_REGEX),
                 name="address_pincode_valid",
             ),
             # A row written without its hash (raw SQL, a bypassed save) is
@@ -160,8 +171,16 @@ class Address(models.Model):
         ]
 
     def __str__(self):
-        """Return a readable label for admin and logs."""
-        return f"{self.line1}, {self.city}, {self.district}, {self.state} - {self.pincode}"
+        """Return a readable label for admin and logs, leaving out blank parts."""
+        place = ", ".join(
+            part for part in (self.line1, self.city, self.district, self.state) if part
+        )
+        return f"{place} - {self.pincode}" if place and self.pincode else place or self.pincode
+
+    @property
+    def missing_fields(self):
+        """Return the postal fields still blank, in ``POSTAL_FIELDS`` order."""
+        return [field for field in POSTAL_FIELDS if not getattr(self, field)]
 
     def save(self, *args, **kwargs):
         """Insert a new address; refuse to update an existing one.
@@ -185,10 +204,16 @@ class Address(models.Model):
         """Validate the values as they will be stored.
 
         Normalizing first means a whitespace-only value is checked as the empty
-        string it would be saved as, so "required" rejects it.
+        string it would be saved as.
         """
         self._normalize()
         super().clean_fields(exclude=exclude)
+
+    def clean(self):
+        """Refuse an address with nothing in it."""
+        super().clean()
+        if not any(normalize_field(field, getattr(self, field)) for field in CONTENT_FIELDS):
+            raise ValidationError({NON_FIELD_ERRORS: [EMPTY_ADDRESS_MESSAGE]})
 
     def validate_constraints(self, exclude=None):
         """Leave the hash check to the database.
@@ -205,18 +230,15 @@ class Address(models.Model):
         without this the admin would hit the unique index and return a 500.
 
         The hash needs every content field, so the check is skipped while any
-        is missing or excluded: ``full_clean`` excludes fields that already
-        failed, and reports those errors instead. A blank police station is a
-        value, not a missing field: it may be left out.
+        is ``None`` or excluded: ``full_clean`` excludes fields that already
+        failed, and reports those errors instead. A blank value is a value,
+        not a missing field: every field may be left blank.
         """
         super().validate_unique(exclude=exclude)
         if not self._state.adding or set(CONTENT_FIELDS) & set(exclude or ()):
             return
         self._normalize()
-        if any(
-            value is None or (value == "" and not self._meta.get_field(field).blank)
-            for field, value in self._content().items()
-        ):
+        if any(value is None for value in self._content().values()):
             return
         if Address.objects.filter(hash=address_hash(self._content())).exists():
             raise ValidationError({NON_FIELD_ERRORS: ["This address already exists."]})
@@ -241,6 +263,6 @@ class Address(models.Model):
         return {field: getattr(self, field) for field in CONTENT_FIELDS}
 
     def _normalize(self):
-        """Rewrite the content fields into their canonical stored form."""
+        """Rewrite the content fields into their canonical stored form; ``None`` is stored blank."""
         for field in CONTENT_FIELDS:
-            setattr(self, field, normalize_field(field, getattr(self, field)))
+            setattr(self, field, normalize_field(field, getattr(self, field) or ""))

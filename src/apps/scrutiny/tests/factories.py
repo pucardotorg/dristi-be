@@ -123,14 +123,20 @@ def enter(case, status):
 
 
 def add_address(participant):
-    """Give ``participant`` an address on its case, as a party write would (spec 0020 §4.6)."""
+    """Give ``participant`` an address on its case, as a party write would (spec 0020 §4.6).
+
+    An individual complainant's is their permanent address too.
+    """
+    address = make_address()
     CaseContact.objects.create(
         case=participant.case,
         case_participant=participant,
         contact_type=ContactType.ADDRESS,
-        address=make_address(),
+        address=address,
         ordinal=1,
     )
+    if participant.role == ParticipantRole.COMPLAINANT and participant.person_id:
+        Person.objects.filter(pk=participant.person_id).update(permanent_address=address)
 
 
 def complete_filing(case, filer):

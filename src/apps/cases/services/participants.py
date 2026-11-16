@@ -35,7 +35,9 @@ from ..models import (
     PERMANENT_ADDRESS_MESSAGE,
     PERSON_OF_ANOTHER_USER_MESSAGE,
     PERSON_ONLY_MESSAGE,
+    CaseContact,
     CaseParticipant,
+    ContactType,
     ParticipantRole,
     PoaMandate,
     Representation,
@@ -567,10 +569,29 @@ def update_participant(participant, user, data):
             move_institution_contacts(case, user, old_institution_id, participant.institution)
         if old_institution_id:
             _align_representatives(participant, user, old_institution_id)
+        # A permanent address that was only the first address follows it, so
+        # completing a partly entered address completes both. One never set,
+        # as for a party saved with no address, is filled from the first
+        # address, as on create.
+        permanent_address_id = (
+            participant.person.permanent_address_id if has_permanent_address else None
+        )
+        follows_first = (
+            has_permanent_address
+            and "addresses" in own_lists
+            and not sends_permanent_address
+            and (
+                permanent_address_id is None
+                or permanent_address_id == _stored_first_address_id(participant)
+            )
+            and _may_change_person(participant, user)
+        )
         if participant.person_id:
             replace_contacts(
                 case, user, own_lists, participant=participant, institution=participant.institution
             )
+        if follows_first and (first_id := _stored_first_address_id(participant)) is not None:
+            person_fields["permanent_address_id"] = first_id
         if participant.institution_id:
             replace_contacts(
                 case,
@@ -679,6 +700,17 @@ def _align_representatives(participant, user, old_institution_id):
             setattr(other, field, value)
         other.updated_by = user
         validated_save(other)
+
+
+def _stored_first_address_id(participant):
+    """Return the id of the participant's own primary address as stored now, or ``None``."""
+    return (
+        CaseContact.objects.active()
+        .filter(case_participant=participant, contact_type=ContactType.ADDRESS)
+        .order_by("ordinal")
+        .values_list("address_id", flat=True)
+        .first()
+    )
 
 
 def _first_address(participant):

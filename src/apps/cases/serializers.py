@@ -5,7 +5,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from apps.address.models import Address
+from apps.address.models import EMPTY_ADDRESS_MESSAGE, Address
 from apps.api import errors as api_errors
 from apps.files import documents
 from apps.organizations.models import Organization
@@ -373,16 +373,23 @@ class AddressInputSerializer(serializers.Serializer):
 
     Only the shape is checked here; the address service normalizes the values
     and applies the address rules (pincode format and so on) when saving.
+    Every field may be left out or blank while the case is drafted, but not
+    all of them: the completeness check asks for the rest, and for a police
+    station on an accused's or a witness's address.
     """
 
-    line1 = serializers.CharField(max_length=255)
-    city = serializers.CharField(max_length=100)
-    pincode = serializers.CharField(max_length=16)
-    district = serializers.CharField(max_length=100)
-    state = serializers.CharField(max_length=100)
-    # Optional on save; the completeness check requires it for an accused or a
-    # witness.
+    line1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    pincode = serializers.CharField(max_length=16, required=False, allow_blank=True)
+    district = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    state = serializers.CharField(max_length=100, required=False, allow_blank=True)
     police_station = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        """Refuse an address with nothing in it."""
+        if not any(attrs.values()):
+            raise api_errors.REQUIRED.validation_error(EMPTY_ADDRESS_MESSAGE)
+        return attrs
 
 
 class PersonInputSerializer(serializers.ModelSerializer):

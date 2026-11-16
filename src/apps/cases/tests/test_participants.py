@@ -2125,6 +2125,90 @@ class TestContactDetailsUnknown:
             )
 
 
+class TestPartialAddresses:
+    """An address may be saved as far as it is known; validate asks for the rest."""
+
+    def test_a_partial_address_is_saved_and_reported_as_incomplete(self, client, draft):
+        response = add(client, draft, person=PERSON, addresses=[{"pincode": "560001"}])
+
+        assert response.status_code == 201, response.json()
+        address = response.json()["addresses"][0]
+        assert (address["pincode"], address["line1"], address["city"]) == ("560001", "", "")
+        assert (
+            "Complainant #1 has an incomplete address (missing line1, city, state, district)."
+            in completeness(client, draft, response.json()["case_participant_id"])
+        )
+
+    def test_a_completed_address_is_no_longer_reported(self, client, draft):
+        body = add(client, draft, person=PERSON, addresses=[{"line1": "12 MG Road"}]).json()
+
+        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        assert response.status_code == 200, response.json()
+        assert not any(
+            "incomplete" in message
+            for message in completeness(client, draft, body["case_participant_id"])
+        )
+
+    def test_a_permanent_address_that_was_the_first_address_follows_it(self, client, draft):
+        body = add(client, draft, person=PERSON, addresses=[{"line1": "12 MG Road"}]).json()
+
+        patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        person = Person.objects.get(pk=body["person_id"])
+        assert person.permanent_address.missing_fields == []
+        assert person.permanent_address.line1 == ADDRESS_DEFAULTS["line1"]
+
+    def test_a_permanent_address_of_its_own_stays(self, client, draft):
+        elsewhere = {**ADDRESS_DEFAULTS, "line1": "7 Temple Street"}
+        body = add(
+            client,
+            draft,
+            person=PERSON,
+            addresses=[{"line1": "12 MG Road"}],
+            permanent_address=elsewhere,
+        ).json()
+
+        patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        person = Person.objects.get(pk=body["person_id"])
+        assert person.permanent_address.line1 == "7 Temple Street"
+
+    def test_an_institutions_partial_address_is_reported(self, client, draft):
+        response = add(
+            client, draft, institution={**INSTITUTION, "addresses": [{"city": "Bengaluru"}]}
+        )
+
+        assert response.status_code == 201, response.json()
+        assert (
+            "Complainant #1 has an incomplete address (missing line1, state, pincode, district)."
+            in completeness(client, draft, response.json()["case_participant_id"])
+        )
+
+    def test_a_partial_permanent_address_is_reported(self, client, draft):
+        response = add(client, draft, person=PERSON, permanent_address={"state": "Karnataka"})
+
+        assert response.status_code == 201, response.json()
+        assert (
+            "Complainant #1 has an incomplete permanent address "
+            "(missing line1, city, pincode, district)."
+            in completeness(client, draft, response.json()["case_participant_id"])
+        )
+
+    @pytest.mark.parametrize("address", [{}, {"line1": "", "city": "   "}])
+    def test_an_address_with_nothing_in_it_is_400(self, client, draft, address):
+        response = add(client, draft, person=PERSON, addresses=[address])
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"addresses[0]": ["E00002"]}
+        assert not Case.objects.exists()
+
+    def test_a_partial_address_still_needs_a_valid_pincode(self, client, draft):
+        response = add(client, draft, person=PERSON, addresses=[{"pincode": "012345"}])
+
+        assert error_codes(response) == {"addresses[0].pincode": ["E00001"]}
+
+
 class TestPermanentAddress:
     """The person's permanent address: the residential one unless a different one is sent."""
 
@@ -2321,6 +2405,163 @@ class TestPermanentAddress:
 
         assert response.status_code == 400
         assert error_codes(response) == {"permanent_address.pincode": ["E00001"]}
+
+    def add_without_address(self, client, draft, **body):
+        """Add a complainant with no address, as a draft may be saved."""
+        url = reverse("case-complainant-list", args=[draft])
+        response = client.post(url, {"person": PERSON, **body}, format="json")
+        assert response.status_code == 201, response.json()
+        return response.json()
+
+    def test_none_is_set_without_an_address(self, client, draft):
+        body = self.add_without_address(client, draft)
+
+        assert self.person_of(body).permanent_address_id is None
+
+    def test_an_address_sent_later_fills_it(self, client, draft):
+        body = self.add_without_address(client, draft)
+
+        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        assert response.status_code == 200, response.json()
+        first_id = response.json()["addresses"][0]["address_id"]
+        assert str(self.person_of(body).permanent_address_id) == first_id
+
+    def test_a_partial_address_sent_later_fills_it_and_completing_it_follows(self, client, draft):
+        body = self.add_without_address(client, draft)
+        patch(client, body["case_participant_id"], {"addresses": [{"line1": "12 MG Road"}]})
+
+        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        assert response.status_code == 200, response.json()
+        first_id = response.json()["addresses"][0]["address_id"]
+        assert str(self.person_of(body).permanent_address_id) == first_id
+        assert self.person_of(body).permanent_address.missing_fields == []
+
+    def test_a_poa_holder_without_an_address_gets_it_later(self, client, draft):
+        complainant = add_complainant(client, draft)
+        response = add_poa_holder(
+            client, draft, [complainant["case_participant_id"]], addresses=None
+        )
+        assert response.status_code == 201, response.json()
+        holder = response.json()["case_participant_id"]
+
+        response = patch(client, holder, {"addresses": [ADDRESS_DEFAULTS]})
+
+        assert response.status_code == 200, response.json()
+        person = CaseParticipant.objects.get(pk=holder).person
+        assert str(person.permanent_address_id) == response.json()["addresses"][0]["address_id"]
+
+    def test_a_self_filer_without_one_gets_the_address_sent_later(self, client, user, draft):
+        url = reverse("case-complainant-list", args=[draft])
+        body = client.post(url, {"self": True}, format="json").json()
+
+        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        assert response.status_code == 200, response.json()
+        first_id = response.json()["addresses"][0]["address_id"]
+        assert str(Person.objects.get(user=user).permanent_address_id) == first_id
+
+    def test_a_self_filer_keeps_theirs_when_an_address_is_sent_later(self, client, user, draft):
+        add(client, draft, self=True, permanent_address=self.ELSEWHERE)
+        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+        url = reverse("case-complainant-list", args=[other_draft])
+        body = client.post(url, {"self": True}, format="json").json()
+
+        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        assert response.status_code == 200, response.json()
+        assert Person.objects.get(user=user).permanent_address.line1 == "7 Temple Street"
+
+    def test_one_sent_with_the_later_address_wins(self, client, draft):
+        body = self.add_without_address(client, draft)
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {"addresses": [ADDRESS_DEFAULTS], "permanent_address": self.ELSEWHERE},
+        )
+
+        assert response.status_code == 200, response.json()
+        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
+
+    def test_an_emptied_list_leaves_it_unset(self, client, draft):
+        body = self.add_without_address(client, draft)
+
+        response = patch(client, body["case_participant_id"], {"addresses": []})
+
+        assert response.status_code == 200, response.json()
+        assert self.person_of(body).permanent_address_id is None
+
+    def test_other_changes_leave_it_unset(self, client, draft):
+        body = self.add_without_address(client, draft)
+
+        response = patch(client, body["case_participant_id"], {"mobile_numbers": [MOBILE]})
+
+        assert response.status_code == 200, response.json()
+        assert self.person_of(body).permanent_address_id is None
+
+    def test_a_person_another_user_has_claimed_is_not_filled(self, client, other_user, draft):
+        body = self.add_without_address(client, draft)
+        Person.objects.filter(pk=body["person_id"]).update(user=other_user)
+
+        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        assert response.status_code == 200, response.json()
+        assert self.person_of(body).permanent_address_id is None
+        assert "Complainant #1 has no permanent address." in completeness(
+            client, draft, body["case_participant_id"]
+        )
+
+    @pytest.mark.parametrize(
+        ("role", "body", "lists"),
+        [
+            ("accused", {"person": PERSON}, {"addresses": [ADDRESS_DEFAULTS]}),
+            (
+                "complainant",
+                {"institution": INSTITUTION},
+                {"institution_contacts": {"addresses": [ADDRESS_DEFAULTS]}},
+            ),
+        ],
+    )
+    def test_other_parties_never_get_one(self, client, draft, role, body, lists):
+        add_complainant(client, draft, name="First")
+        url = reverse(f"case-{role}-list", args=[draft])
+        participant = client.post(url, body, format="json").json()
+
+        response = patch(client, participant["case_participant_id"], lists)
+
+        assert response.status_code == 200, response.json()
+        row = CaseParticipant.objects.get(pk=participant["case_participant_id"])
+        assert row.person is None or row.person.permanent_address_id is None
+        assert not any(
+            "permanent" in message
+            for message in completeness(client, draft, participant["case_participant_id"])
+        )
+
+    def test_validate_reports_one_missing_once_there_is_an_address(self, client, draft):
+        body = add_complainant(client, draft)
+        Person.objects.filter(pk=body["person_id"]).update(permanent_address=None)
+
+        assert "Complainant #1 has no permanent address." in completeness(
+            client, draft, body["case_participant_id"]
+        )
+
+    def test_validate_asks_only_for_the_address_while_there_is_none(self, client, draft):
+        body = self.add_without_address(client, draft)
+
+        messages = completeness(client, draft, body["case_participant_id"])
+
+        assert "Complainant #1 has no address." in messages
+        assert not any("permanent" in message for message in messages)
+
+    def test_validate_is_satisfied_once_the_address_fills_it(self, client, draft):
+        body = self.add_without_address(client, draft)
+
+        patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        messages = completeness(client, draft, body["case_participant_id"])
+        assert not any("address" in message for message in messages)
 
     def test_a_witness_cannot_send_one(self, client, draft):
         response = add_witness(client, draft, permanent_address=self.ELSEWHERE)

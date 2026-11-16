@@ -455,18 +455,25 @@ A single recorded address. Rows are **immutable snapshots**: once written, never
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
-| `line1` | varchar(255) | NOT NULL | Street address / locality |
-| `city` | varchar(100) | NOT NULL | City or town |
-| `pincode` | varchar(6) | NOT NULL | Indian postal code |
-| `district` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
-| `state` | varchar(100) | NOT NULL | Auto-filled from pincode, then stored |
-| `police_station` | varchar(255) | NOT NULL, may be blank | Police station with jurisdiction over the address, needed for service of notice. Required for accused and witness addresses, as stored (a value of only invisible characters is blank), and enforced on the participant for every writer, the admin included; complainant and POA holder addresses may leave it blank |
+| `line1` | varchar(255) | NOT NULL, may be blank | Street address / locality |
+| `city` | varchar(100) | NOT NULL, may be blank | City or town |
+| `pincode` | varchar(6) | NOT NULL, may be blank | Indian postal code |
+| `district` | varchar(100) | NOT NULL, may be blank | Auto-filled from pincode, then stored |
+| `state` | varchar(100) | NOT NULL, may be blank | Auto-filled from pincode, then stored |
+| `police_station` | varchar(255) | NOT NULL, may be blank | Police station with jurisdiction over the address, needed for service of notice. Required to file for accused and witness addresses, as stored (a value of only invisible characters is blank), by the case filing completeness check (spec 0021 §6.3); complainant and POA holder addresses may leave it blank |
 | `hash` | varchar(64) | NOT NULL, UNIQUE | SHA-256 of the canonical form, see §7.4 |
 | `created_at` | timestamp | NOT NULL, default now() | Creation timestamp only, no `updated_at` |
 | `created_by` | uuid | FK → app_user, NULLABLE, ON DELETE PROTECT | Who first recorded the address; no `updated_by` |
 
 **Constraints:**
-- `CHECK (pincode ~ '^[1-9][0-9]{5}$')` — 6 digits, not starting with 0
+- `CHECK (pincode = '' OR pincode ~ '^[1-9][0-9]{5}$')` — 6 digits, not starting with 0, or none yet
+
+**Partial addresses:** any content field may be blank (`""`, never null), so a
+party can be saved with an address known only in part while a case is drafted;
+the case filing completeness check (spec 0021 §6.3) asks for the rest. An
+address with every field blank is refused. A blank value is hashed like any
+other (§7.4), so two addresses known equally far share a row, as two complete
+ones do, and completing one creates a new row rather than changing it.
 - `UNIQUE (hash)` — one row per distinct address
 - `CHECK (hash ~ '^[0-9a-f]{64}$')` — a row written without its hash is refused
 - Index on `pincode` for geolocation queries

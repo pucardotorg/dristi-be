@@ -59,6 +59,7 @@ from .case_types import (
     section_errors,
 )
 from .contacts import contacts_of, first, load_contacts
+from .participants import PERMANENT_ADDRESS_ROLES
 from .services import (
     PREVIEW_TTL_SECONDS,
     clear_preview_cache,
@@ -217,9 +218,12 @@ def validation_errors(case):
     # A draft may be saved without any of these; they are asked for only here.
     # Witnesses are optional, but one who is added needs a name or designation;
     # every other party needs a name. Each party is served at an address: an
-    # individual their own, an institution its own on this case. Notice to an
+    # individual their own, an institution its own on this case, and every
+    # address given (a permanent one included) is complete. Notice to an
     # accused or a witness goes through the police station of each address.
-    ordered = participants.select_related("institution").order_by(*PARTICIPANT_ORDERING)
+    ordered = participants.select_related("institution", "person__permanent_address").order_by(
+        *PARTICIPANT_ORDERING
+    )
     for participant in load_contacts(ordered):
         field = f"participants.{participant.id}"
         label = f"{participant.get_role_display()} #{participant.ordinal}"
@@ -232,6 +236,27 @@ def validation_errors(case):
         served = of_institution if participant.institution_id else own
         if not first(served, ContactType.ADDRESS):
             error(field, f"{label} has no address.")
+        addresses = [row.address for row in [*own, *of_institution] if row.address_id]
+        for address in addresses:
+            if missing := address.missing_fields:
+                error(field, f"{label} has an incomplete address (missing {', '.join(missing)}).")
+        permanent = participant.person.permanent_address if participant.person_id else None
+        # An individual complainant or POA holder has one; it is reported only
+        # once they have an address, since giving one fills it.
+        if (
+            permanent is None
+            and participant.role in PERMANENT_ADDRESS_ROLES
+            and participant.person_id
+            and not participant.institution_id
+            and first(own, ContactType.ADDRESS)
+        ):
+            error(field, f"{label} has no permanent address.")
+        if permanent is not None and permanent not in addresses and permanent.missing_fields:
+            error(
+                field,
+                f"{label} has an incomplete permanent address "
+                f"(missing {', '.join(permanent.missing_fields)}).",
+            )
         if participant.role in POLICE_STATION_ROLES and any(
             row.address_id and not row.address.police_station for row in [*own, *of_institution]
         ):
