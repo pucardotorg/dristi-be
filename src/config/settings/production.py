@@ -32,6 +32,10 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = "DENY"
 
+# Routing assigns the first eligible BAR_ID_APPROVER by mobile number, so a
+# superuser added there could take requests meant for the real approvers.
+SEED_SUPERUSER_APPROVERS = env.bool("SEED_SUPERUSER_APPROVERS", default=False)
+
 
 # ---------------------------------------------------------------------------
 # Addon guards

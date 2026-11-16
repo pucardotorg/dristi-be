@@ -4,7 +4,9 @@
 `username` argument, so the constructors have to be defined here.
 """
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import BaseUserManager
+from django.db import transaction
 
 
 class UserManager(BaseUserManager):
@@ -25,8 +27,27 @@ class UserManager(BaseUserManager):
         # set_password(None) marks the password unusable, which is the correct
         # state for an account created from an OTP before the wizard finishes.
         user.set_password(password)
-        user.save(using=self._db)
+        with transaction.atomic(using=self._db):
+            user.save(using=self._db)
+            self._make_approver_if_superuser(user)
         return user
+
+    def _make_approver_if_superuser(self, user):
+        """Add a new superuser to BAR_ID_APPROVER where that is enabled (issue #260).
+
+        Covers ``create_user(is_superuser=True)`` too, not only
+        ``create_superuser``. Skipped for the historical model a migration
+        hands this manager, which cannot mix with the real ``Group``.
+        """
+        from django.contrib.auth.models import Group
+
+        from . import approvers
+
+        if not user.is_superuser or not approvers.enabled():
+            return
+        if self.model is not get_user_model():
+            return
+        approvers.add_to_bar_id_approvers([user], group_model=Group, using=self._db or "default")
 
     def create_user(self, mobile_number, password=None, **extra_fields):
         """Create a regular account."""

@@ -26,7 +26,7 @@ Common management commands:
 # Run migrations
 docker compose -f docker/docker-compose.yml exec web python manage.py migrate
 
-# Create a superuser
+# Create a superuser (also made a BAR_ID_APPROVER, see SEED_SUPERUSER_APPROVERS)
 docker compose -f docker/docker-compose.yml exec web python manage.py createsuperuser
 
 # Open a Django shell
