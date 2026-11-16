@@ -18,6 +18,34 @@ router.register(r"payments", views.PaymentViewSet, basename="payments-payment")
 router.register(r"batches", views.BatchViewSet, basename="payments-batch")
 
 app_urlpatterns = [
+    path("providers/", views.ProviderListView.as_view(), name="payments-providers"),
+    # Collection desk (spec 0032 #9.2, #9.3); fixed segments before the lookup.
+    path("collections/", views.CollectionListView.as_view(), name="payments-collections"),
+    path(
+        "collections/methods/",
+        views.CollectionMethodsView.as_view(),
+        name="payments-collection-methods",
+    ),
+    path(
+        "collections/register/",
+        views.CollectionRegisterView.as_view(),
+        name="payments-collection-register",
+    ),
+    path(
+        "collections/<str:provider>/<str:reference>/",
+        views.CollectionDetailView.as_view(),
+        name="payments-collection-detail",
+    ),
+    path(
+        "collections/<str:provider>/<str:reference>/confirm/",
+        views.CollectionConfirmView.as_view(),
+        name="payments-collection-confirm",
+    ),
+    path(
+        "collections/<str:provider>/<str:reference>/cancel/",
+        views.CollectionCancelView.as_view(),
+        name="payments-collection-cancel",
+    ),
     path(
         "providers/options/",
         views.ProviderOptionsView.as_view(),

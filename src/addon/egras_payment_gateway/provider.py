@@ -33,6 +33,7 @@ class EGRASPaymentProvider(PaymentProvider):
     """Collect payments into government heads of account through e-GRAS."""
 
     name = constants.PROVIDER_NAME
+    label = "Pay online (net banking / UPI)"  # shown in the provider list (spec 0032 #9.1.1)
 
     @property
     def pending_horizon(self):

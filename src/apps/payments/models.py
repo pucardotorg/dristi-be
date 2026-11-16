@@ -17,6 +17,7 @@ from django.db.models import F, Q
 from apps.core.models import BaseAuditableModel, BaseModel
 
 from .enums import (
+    AttestationOutcome,
     ChargeType,
     DemandItemStatus,
     DemandStatus,
@@ -34,6 +35,13 @@ class UndeletableQuerySet(models.QuerySet):
 
     def delete(self):
         raise ImmutableRecordError(f"{self.model.__name__} rows are never deleted.")
+
+
+class ImmutableQuerySet(UndeletableQuerySet):
+    """Also refuses bulk updates, which bypass ``Model.save()``."""
+
+    def update(self, **kwargs):
+        raise ImmutableRecordError(f"{self.model.__name__} rows are never changed.")
 
 
 class SnapshotMixin(models.Model):
@@ -294,6 +302,14 @@ class Payment(SnapshotMixin, BaseModel, BaseAuditableModel):
             ("confirm_payment_manually", "Can confirm a payment collected outside a provider"),
             ("resolve_payment_reconciliation", "Can mark a payment's reconciliation resolved"),
             ("recheck_payment_status", "Can re-check a payment's status with its provider"),
+            # Attested (staff-recorded) collections, spec 0032 #4.7.
+            ("view_payment_collection", "Can look up attested payment requests"),
+            ("record_payment_collection", "Can record that an attested payment was collected"),
+            (
+                "record_late_payment_collection",
+                "Can record a collection against a request that is no longer open",
+            ),
+            ("cancel_payment_collection", "Can cancel an open attested payment request"),
         ]
 
     def __str__(self):
@@ -365,3 +381,67 @@ class PaymentDemandItem(BaseModel, BaseAuditableModel):
         """Rows are never deleted."""
 
         raise ImmutableRecordError("Payment items are never deleted.")
+
+
+class PaymentAttestation(BaseModel, BaseAuditableModel):
+    """A person's record that the money of one payment request was received (spec 0032 #4.3).
+
+    One row per request (``provider`` + ``provider_payment_id``, the same key
+    that groups a batch) and per receipt number; both are unique in the
+    database, so two clerks cannot credit one request or reuse one receipt even
+    when they race. ``created_by`` is the person who recorded it. Written once,
+    in the same transaction as the credit or flag it caused; never edited or
+    deleted.
+    """
+
+    Outcome = AttestationOutcome
+
+    objects = ImmutableQuerySet.as_manager()
+
+    provider = models.CharField(max_length=32)
+    provider_payment_id = models.CharField(max_length=128)
+    receipt_number = models.CharField(max_length=64)
+    amount = models.DecimalField(**MONEY)
+    currency = models.CharField(max_length=3)
+    method = models.CharField(max_length=32)
+    details = models.JSONField(default=dict, blank=True)
+    collected_at = models.DateTimeField()
+    remarks = models.TextField(blank=True)
+    outcome = models.CharField(max_length=16, choices=AttestationOutcome.choices)
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "receipt_number"],
+                name="payments_attestation_unique_receipt",
+            ),
+            models.UniqueConstraint(
+                fields=["provider", "provider_payment_id"],
+                name="payments_attestation_unique_request",
+            ),
+            models.CheckConstraint(
+                condition=Q(amount__gt=0), name="payments_attestation_amount_positive"
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["provider", "collected_at"], name="payments_attestation_collected"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.provider}:{self.provider_payment_id} receipt {self.receipt_number}"
+
+    def save(self, *args, **kwargs):
+        """Rows are written once."""
+
+        if not self._state.adding:
+            raise ImmutableRecordError("A recorded collection cannot be changed.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Rows are never deleted."""
+
+        raise ImmutableRecordError("Recorded collections are never deleted.")
