@@ -1,6 +1,6 @@
 # Payment Logic
 
-**Status:** v2.5 — 2026-11-17; Punjab & Haryana application fee is ₹20 per application (§4); `Q-3` now asks only for Kerala's. v2.4 — 2026-11-17; every payment receipt has a **receipt number**, which is its title wherever it is shown (`PMT-15`, new, §1); who issues it and in what format is open (`Q-16`, new). v2.3 — 2026-11-16; **no process court fee in Gujarat or Punjab & Haryana**: Gujarat's court fee per process type is now ₹0 (§4, was ₹3), and upfront process payment is off in Gujarat (`PMT-14`, new) as it already was in Punjab & Haryana. Both states' upfront court-fee tables now show 0 rounds payable for every process type (§3.2, §3.3). `Q-2` (Gujarat upfront on or off) answered and removed. `PMT-09` now says Talwana is ₹50 whatever the number of accused, addresses and rounds, and covers every process for the life of the case; `Q-8` answered and removed. v2.2 — 2026-11-05; **Punjab & Haryana account heads added** (§3.3), from the Treasury Officer, Panchkula (No. 1493, 15-09-2026) and the District Bar Association, Panchkula (Ref. 1099/26, 22-10-2026), forwarded by the District & Sessions Judge, Panchkula (No. 15480, 30-10-2026): Court Fee and Process Fees (Talwana) go to receipt head 0030-01-101-99-51 (Pasting/Court Fees); Advocate Welfare Fund goes to the Panchkula Bar Association's account, at filing and join a case. `Q-12`–`Q-15` new: other districts' welfare fund accounts, collecting the fund through eGRAS, the 17-character head code, and the head for Vakalatnama Court Fee and Delay Condonation Application Fee. v2.1 — 2026-11-04; `PMT-12` (channel-fee rounds capped at court-fee rounds) dropped, to [`dropped-ideas.md`](dropped-ideas.md). v2 — 2026-11-04; **upfront channel fee added**, configured separately from the upfront court fee, per state and process type (`PMT-10`–`PMT-13`, new; `Q-11`, new): expected optional everywhere, never more rounds than the court fee, none at launch. Each state now has a court-fee table and a channel-fee table. v1.9 — 2026-11-04; Kerala upfront warrant and notice are charged × selected addresses, like summons, following e-filing `PAY-12`. v1.8 — 2026-11-04; `PMT-06` now says no minimum rounds apply, following the change to e-filing `PAY-10`. v1.7 — 2026-11-04; [`efiling.md`](efiling.md) §19 no longer repeats fee figures and links here; `Q-4` (Kerala ₹2 vs ₹12.50) removed — e-filing no longer states a figure. v1.6 — 2026-11-04; Gujarat Court Fee no longer says it is charged as stamps on the main complaint; `Q-5` removed with it. v1.5 — 2026-11-04; the fee tables' third column is now "Logic", not "Applies when"; conditions read "Applies if …"; join-a-case caps say "per complainant", as at filing. v1.4 — 2026-11-04; **which process types are offered upfront is a choice, not a consequence of a zero fee** (`PMT-08`, now `[OWNER]`): rounds payable upfront are set per process type; 0 means not offered. Kerala's table now lists proclamation, attachment and custom process at 0 rounds. v1.3 — 2026-11-04; every amount shown with ₹; "(INR)" dropped from column headings. v1.2 — 2026-11-04; `PMT-07`'s example is ePost, not eSeva. v1.1 — 2026-11-04; **a different fee per application type is a configuration change, not a new capability** (`PMT-03a`, new). v1 — 2026-11-04; first draft, from the *Payment Logic - New* Google Doc. Fee heads, amounts and conditions per state for case filing, join a case, a new application and a new process (§2–§4). **Upfront process payment is switched on or off per state; when off, the step is not shown at e-filing** (`PMT-05`–`PMT-09`). A state turns it off because its process court fee is zero, or because the court does not want it; the first may turn it on once a channel fee applies. Punjab & Haryana is off — its process fee is collected as one flat amount at filing. Blank cells are not known yet (§5). v0 — 2026-10-30; placeholder, not written yet.
+**Status:** v2.7 — 2026-11-17; missing account details (account no., head of account, account type, head ID) and Kerala's application fee are highlighted as *Not known*. v2.6 — 2026-11-17; the upfront process payment tables that were empty or all zero are removed: the channel-fee tables for all three states (none at launch, `PMT-13`) and the court-fee tables for Gujarat and Punjab & Haryana, where it is off (`PMT-09`, `PMT-14`); Kerala's court-fee table stays. The Complaint Fee row (Nil) is removed from Gujarat's and Punjab & Haryana's case filing; the heads need not match from state to state. v2.5 — 2026-11-17; Punjab & Haryana application fee is ₹20 per application (§4); `Q-3` now asks only for Kerala's. v2.4 — 2026-11-17; every payment receipt has a **receipt number**, which is its title wherever it is shown (`PMT-15`, new, §1); who issues it and in what format is open (`Q-16`, new). v2.3 — 2026-11-16; **no process court fee in Gujarat or Punjab & Haryana**: Gujarat's court fee per process type is now ₹0 (§4, was ₹3), and upfront process payment is off in Gujarat (`PMT-14`, new) as it already was in Punjab & Haryana. Both states' upfront court-fee tables now show 0 rounds payable for every process type (§3.2, §3.3). `Q-2` (Gujarat upfront on or off) answered and removed. `PMT-09` now says Talwana is ₹50 whatever the number of accused, addresses and rounds, and covers every process for the life of the case; `Q-8` answered and removed. v2.2 — 2026-11-05; **Punjab & Haryana account heads added** (§3.3), from the Treasury Officer, Panchkula (No. 1493, 15-09-2026) and the District Bar Association, Panchkula (Ref. 1099/26, 22-10-2026), forwarded by the District & Sessions Judge, Panchkula (No. 15480, 30-10-2026): Court Fee and Process Fees (Talwana) go to receipt head 0030-01-101-99-51 (Pasting/Court Fees); Advocate Welfare Fund goes to the Panchkula Bar Association's account, at filing and join a case. `Q-12`–`Q-15` new: other districts' welfare fund accounts, collecting the fund through eGRAS, the 17-character head code, and the head for Vakalatnama Court Fee and Delay Condonation Application Fee. v2.1 — 2026-11-04; `PMT-12` (channel-fee rounds capped at court-fee rounds) dropped, to [`dropped-ideas.md`](dropped-ideas.md). v2 — 2026-11-04; **upfront channel fee added**, configured separately from the upfront court fee, per state and process type (`PMT-10`–`PMT-13`, new; `Q-11`, new): expected optional everywhere, never more rounds than the court fee, none at launch. Each state now has a court-fee table and a channel-fee table. v1.9 — 2026-11-04; Kerala upfront warrant and notice are charged × selected addresses, like summons, following e-filing `PAY-12`. v1.8 — 2026-11-04; `PMT-06` now says no minimum rounds apply, following the change to e-filing `PAY-10`. v1.7 — 2026-11-04; [`efiling.md`](efiling.md) §19 no longer repeats fee figures and links here; `Q-4` (Kerala ₹2 vs ₹12.50) removed — e-filing no longer states a figure. v1.6 — 2026-11-04; Gujarat Court Fee no longer says it is charged as stamps on the main complaint; `Q-5` removed with it. v1.5 — 2026-11-04; the fee tables' third column is now "Logic", not "Applies when"; conditions read "Applies if …"; join-a-case caps say "per complainant", as at filing. v1.4 — 2026-11-04; **which process types are offered upfront is a choice, not a consequence of a zero fee** (`PMT-08`, now `[OWNER]`): rounds payable upfront are set per process type; 0 means not offered. Kerala's table now lists proclamation, attachment and custom process at 0 rounds. v1.3 — 2026-11-04; every amount shown with ₹; "(INR)" dropped from column headings. v1.2 — 2026-11-04; `PMT-07`'s example is ePost, not eSeva. v1.1 — 2026-11-04; **a different fee per application type is a configuration change, not a new capability** (`PMT-03a`, new). v1 — 2026-11-04; first draft, from the *Payment Logic - New* Google Doc. Fee heads, amounts and conditions per state for case filing, join a case, a new application and a new process (§2–§4). **Upfront process payment is switched on or off per state; when off, the step is not shown at e-filing** (`PMT-05`–`PMT-09`). A state turns it off because its process court fee is zero, or because the court does not want it; the first may turn it on once a channel fee applies. Punjab & Haryana is off — its process fee is collected as one flat amount at filing. Blank cells are not known yet (§5). v0 — 2026-10-30; placeholder, not written yet.
 **Audience:** developers and agents building fees and payments
 
 Every fee the system collects, by state and by the moment it is collected: case filing,
@@ -11,7 +11,7 @@ payment screen, resubmission — is owned elsewhere and linked, not restated: fi
 in [`application-lifecycle.md`](application-lifecycle.md), joining in
 [`join-a-case.md`](join-a-case.md).
 
-A blank cell in this document means the value is not known yet. Do not fill it in.
+A blank cell in this document means the value is not known yet. Do not fill it in. Amounts and account details still to be found are also highlighted: <mark>Not known</mark>.
 
 ---
 
@@ -33,7 +33,7 @@ The upfront mechanism — rounds, defaults, addresses, the per-accused choice �
 
 Upfront process payment has two parts, configured separately: the **court fee** for each
 process, and the **channel fee** a delivery channel charges on top ([`process.md`](process.md)
-`FEE-02`). Each state has a table for each (§3).
+`FEE-02`). §3 gives each state's settings.
 
 | ID | Requirement |
 |---|---|
@@ -44,7 +44,7 @@ process, and the **channel fee** a delivery channel charges on top ([`process.md
 | `PMT-09` | **[OWNER]** Punjab & Haryana: off. Process fees are collected as one flat amount at filing (Process Fees (Talwana), §3.3), and every process type's court fee is zero. Talwana is ₹50 whatever the number of accused, addresses and rounds, and it covers every process for the life of the case. |
 | `PMT-10` | **[OWNER]** The upfront channel fee is configured separately from the upfront court fee, per state and per process type: rounds payable upfront, default and what is charged. |
 | `PMT-11` | **[OWNER]** The upfront channel fee is expected to be optional in every state — lowest rounds 0 — but each state sets its own range and default. |
-| `PMT-13` | No channel fee is collected at launch. Only e-Post has one, and it comes after launch ([`process.md`](process.md) §13.1). The channel-fee tables in §3 are empty until then. |
+| `PMT-13` | No channel fee is collected at launch. Only e-Post has one, and it comes after launch ([`process.md`](process.md) §13.1). |
 | `PMT-14` | **[OWNER]** Gujarat: off. Every process type's court fee is zero (§4). |
 
 ## 3. Case filing and join a case
@@ -55,13 +55,13 @@ process, and the **channel fee** a delivery channel charges on top ([`process.md
 
 | Head | Amount | Logic | Type | Account no. | Head of account | Account type | Head ID |
 |---|---|---|---|---|---|---|---|
-| Court Fee | ₹12.5 | Applies if at least one advocate is in the case | | | | | |
-| Legal Benefit Fee | ₹12.5 | Applies if at least one advocate is in the case | | | | | |
+| Court Fee | ₹12.5 | Applies if at least one advocate is in the case | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Legal Benefit Fee | ₹12.5 | Applies if at least one advocate is in the case | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
 | Advocate Welfare Fund | ₹100 per advocate, calculated per complainant | Capped at ₹300 per complainant | TSB | 799010100175123 | 8031-00-102-94-07-00-00-N-V | 01 | 56685 |
 | Stipend Stamp | ₹25 per advocate, calculated per complainant | Capped at ₹75 per complainant | TSB | 799010100175123 | 8031-00-102-94-07-00-00-N-V | 01 | 56685 |
-| Advocate Clerk Welfare Fund | ₹20 | Applies if at least one advocate is in the case | | | | | |
-| Delay Condonation Application Fee | ₹20 | Applies if a Delay Condonation Application is attached | | | | | |
-| Complaint Fee | By cheque amount: up to 50k → ₹250 · 50k–2L → ₹500 · 2L–5L → ₹750 · 5L–10L → ₹1,000 · 10L–20L → ₹2,000 · 20L–50L → ₹5,000 · above 50L → ₹10,000 | With more than one cheque, the slab applies to the sum of all cheque amounts | | | | | |
+| Advocate Clerk Welfare Fund | ₹20 | Applies if at least one advocate is in the case | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Delay Condonation Application Fee | ₹20 | Applies if a Delay Condonation Application is attached | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Complaint Fee | By cheque amount: up to 50k → ₹250 · 50k–2L → ₹500 · 2L–5L → ₹750 · 5L–10L → ₹1,000 · 10L–20L → ₹2,000 · 20L–50L → ₹5,000 · above 50L → ₹10,000 | With more than one cheque, the slab applies to the sum of all cheque amounts | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
 
 **Upfront process payment — court fee**
 
@@ -79,24 +79,15 @@ offered (`PMT-08`).
 
 **Upfront process payment — channel fee** — none at launch (`PMT-13`); figures not known yet (`Q-11`). The channel fee comes from the fee service ([`process.md`](process.md) `FEE-03`).
 
-| Process | Rounds payable upfront | Default | Charged |
-|---|---|---|---|
-| Summons | | | Channel fee × rounds × selected addresses |
-| Warrant | | | Channel fee × rounds × selected addresses |
-| Notice | | | Channel fee × rounds × selected addresses |
-| Proclamation | | | Channel fee × rounds × selected addresses |
-| Attachment | | | Channel fee × rounds × selected addresses |
-| Custom process | | | Channel fee × rounds × selected addresses |
-
 **Join a case**
 
 | Head | Amount | Logic | Type | Account no. | Head of account | Account type | Head ID |
 |---|---|---|---|---|---|---|---|
-| Court Fee | ₹12.5 | Applies if the joining advocate says they are not part of a previous vakalatnama | | | | | |
-| Legal Benefit Fee | ₹12.5 | Applies if the joining advocate says they are not part of a previous vakalatnama | | | | | |
+| Court Fee | ₹12.5 | Applies if the joining advocate says they are not part of a previous vakalatnama | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Legal Benefit Fee | ₹12.5 | Applies if the joining advocate says they are not part of a previous vakalatnama | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
 | Advocate Welfare Fund | ₹100 per advocate, calculated per complainant | Capped at ₹300 per complainant | TSB | 799010100175123 | 8031-00-102-94-07-00-00-N-V | 01 | 56685 |
 | Stipend Stamp | ₹25 per advocate, calculated per complainant | Capped at ₹75 per complainant | TSB | 799010100175123 | 8031-00-102-94-07-00-00-N-V | 01 | 56685 |
-| Advocate Clerk Welfare Fund | ₹20 | Applies if at least one advocate is in the case | TSB | 701011400000051 | | | |
+| Advocate Clerk Welfare Fund | ₹20 | Applies if at least one advocate is in the case | TSB | 701011400000051 | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
 
 ### 3.2 Gujarat
 
@@ -104,41 +95,22 @@ offered (`PMT-08`).
 
 | Head | Amount | Logic | Type | Account no. | Head of account | Account type | Head ID |
 |---|---|---|---|---|---|---|---|
-| Court Fee | ₹3 | | | | | | |
-| Advocate Welfare Fund | ₹20, whatever the number of advocates | | | | | | |
-| Vakalatnama Court Fee | ₹2 per advocate | | | | | | |
-| Delay Condonation Application Fee | ₹3 | Applies if a Delay Condonation Application is attached | | | | | |
-| Complaint Fee | Nil | | | | | | |
-| Affidavit Fee | ₹2 per affidavit | | | | | | |
+| Court Fee | ₹3 | | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Advocate Welfare Fund | ₹20, whatever the number of advocates | | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Vakalatnama Court Fee | ₹2 per advocate | | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Delay Condonation Application Fee | ₹3 | Applies if a Delay Condonation Application is attached | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Affidavit Fee | ₹2 per affidavit | | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
 
 **Upfront process payment — court fee** — off (`PMT-14`). No process type is offered.
 
-| Process | Rounds payable upfront | Default | Charged |
-|---|---|---|---|
-| Summons | 0 | 0 | — |
-| Warrant | 0 | 0 | — |
-| Notice | 0 | 0 | — |
-| Proclamation | 0 | 0 | — |
-| Attachment | 0 | 0 | — |
-| Custom process | 0 | 0 | — |
-
 **Upfront process payment — channel fee** — none at launch (`PMT-13`); figures not known yet (`Q-11`). The channel fee comes from the fee service ([`process.md`](process.md) `FEE-03`).
-
-| Process | Rounds payable upfront | Default | Charged |
-|---|---|---|---|
-| Summons | | | Channel fee × rounds × selected addresses |
-| Warrant | | | Channel fee × rounds × selected addresses |
-| Notice | | | Channel fee × rounds × selected addresses |
-| Proclamation | | | Channel fee × rounds × selected addresses |
-| Attachment | | | Channel fee × rounds × selected addresses |
-| Custom process | | | Channel fee × rounds × selected addresses |
 
 **Join a case**
 
 | Head | Amount | Logic | Type | Account no. | Head of account | Account type | Head ID |
 |---|---|---|---|---|---|---|---|
-| Vakalatnama Court Fee | ₹2 per advocate | | | | | | |
-| Advocate Welfare Fund | ₹50, whatever the number of advocates | | | | | | |
+| Vakalatnama Court Fee | ₹2 per advocate | | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Advocate Welfare Fund | ₹50, whatever the number of advocates | | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
 
 ### 3.3 Punjab & Haryana
 
@@ -146,42 +118,23 @@ offered (`PMT-08`).
 
 | Head | Amount | Logic | Type | Account no. | Head of account | Account type | Head ID |
 |---|---|---|---|---|---|---|---|
-| Court Fee | ₹10 | Applies if at least one advocate is in the case | | | 0030-01-101-99-51 (Pasting/Court Fees) | | |
-| Advocate Welfare Fund | ₹50, whatever the number of advocates | | | Panchkula: 0988102100001192 (Punjab National Bank, IFSC PUNB0098810). Other districts not known yet (`Q-12`) | | | |
-| Vakalatnama Court Fee | ₹2 per advocate | | | | | | |
-| Delay Condonation Application Fee | ₹20 | Applies if a Delay Condonation Application is attached | | | | | |
-| Complaint Fee | Nil | | | | | | |
-| Process Fees (Talwana) | ₹50 | | | | 0030-01-101-99-51 (Pasting/Court Fees) | | |
+| Court Fee | ₹10 | Applies if at least one advocate is in the case | | <mark>Not known</mark> | 0030-01-101-99-51 (Pasting/Court Fees) | <mark>Not known</mark> | <mark>Not known</mark> |
+| Advocate Welfare Fund | ₹50, whatever the number of advocates | | | Panchkula: 0988102100001192 (Punjab National Bank, IFSC PUNB0098810). Other districts not known yet (`Q-12`) | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Vakalatnama Court Fee | ₹2 per advocate | | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Delay Condonation Application Fee | ₹20 | Applies if a Delay Condonation Application is attached | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Process Fees (Talwana) | ₹50 | | | <mark>Not known</mark> | 0030-01-101-99-51 (Pasting/Court Fees) | <mark>Not known</mark> | <mark>Not known</mark> |
 
 **Upfront process payment — court fee** — off (`PMT-09`). No process type is offered.
 Process fees are collected in full through Process Fees (Talwana).
 
-| Process | Rounds payable upfront | Default | Charged |
-|---|---|---|---|
-| Summons | 0 | 0 | — |
-| Warrant | 0 | 0 | — |
-| Notice | 0 | 0 | — |
-| Proclamation | 0 | 0 | — |
-| Attachment | 0 | 0 | — |
-| Custom process | 0 | 0 | — |
-
 **Upfront process payment — channel fee** — none at launch (`PMT-13`). Punjab & Haryana may turn upfront payment on for channel fees alone (`PMT-07`); figures not known yet (`Q-11`). The channel fee comes from the fee service ([`process.md`](process.md) `FEE-03`).
-
-| Process | Rounds payable upfront | Default | Charged |
-|---|---|---|---|
-| Summons | | | Channel fee × rounds × selected addresses |
-| Warrant | | | Channel fee × rounds × selected addresses |
-| Notice | | | Channel fee × rounds × selected addresses |
-| Proclamation | | | Channel fee × rounds × selected addresses |
-| Attachment | | | Channel fee × rounds × selected addresses |
-| Custom process | | | Channel fee × rounds × selected addresses |
 
 **Join a case**
 
 | Head | Amount | Logic | Type | Account no. | Head of account | Account type | Head ID |
 |---|---|---|---|---|---|---|---|
-| Vakalatnama Court Fee | ₹2 per advocate | | | | | | |
-| Advocate Welfare Fund | ₹50, whatever the number of advocates | | | Panchkula: 0988102100001192 (Punjab National Bank, IFSC PUNB0098810). Other districts not known yet (`Q-12`) | | | |
+| Vakalatnama Court Fee | ₹2 per advocate | | | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
+| Advocate Welfare Fund | ₹50, whatever the number of advocates | | | Panchkula: 0988102100001192 (Punjab National Bank, IFSC PUNB0098810). Other districts not known yet (`Q-12`) | <mark>Not known</mark> | <mark>Not known</mark> | <mark>Not known</mark> |
 
 ## 4. New application and new process
 
@@ -189,7 +142,7 @@ Process fees are collected in full through Process Fees (Talwana).
 
 | State | Amount |
 |---|---|
-| Kerala | |
+| Kerala | <mark>Not known</mark> |
 | Gujarat | ₹3 per application |
 | Punjab & Haryana | ₹20 per application |
 
