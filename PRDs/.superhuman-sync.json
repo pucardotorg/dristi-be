@@ -14,10 +14,10 @@
     "efiling.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing",
-      "contentHash": "a506d3ca6bc4",
-      "pageUpdatedAt": 1794814826.316,
+      "contentHash": "c7c15640af4f",
+      "pageUpdatedAt": 1794924332.469,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed."
+      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed. 2026-11-17 v50.16: Status line, callout and DCM-12 cells (grid-TpBE7PtM6j) patched in place."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -715,14 +715,14 @@
     "bulk-filing.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
       "title": "Bulk Filing",
-      "contentHash": "03c495d2e252",
-      "pageUpdatedAt": 1794814617.145,
+      "contentHash": "0df1b66aa654",
+      "pageUpdatedAt": 1794924263.375,
       "calloutElementId": "cl-IwwclcUBOf",
       "sections": [
         {
           "key": "# Bulk Filing",
           "elementId": "cl-qzt7FS0LID",
-          "hash": "725f7609f032"
+          "hash": "e8955be967a6"
         },
         {
           "key": "v8.10 — 2026-11-13; **§3 lists every step before the batch is created**: Excel f",
@@ -732,7 +732,7 @@
         {
           "key": "# 3. From upload to filing",
           "elementId": "cl-dVJyo9ojiq",
-          "hash": "6cf70c2821cb"
+          "hash": "57e8ea6a129b"
         },
         {
           "key": "## 3.7 Case details",
@@ -744,7 +744,8 @@
           "elementId": "cl-fxonpXdd2H",
           "hash": "4fc345c51cb6"
         }
-      ]
+      ],
+      "note": "2026-11-17 v8.22: Status line, callout and the Vakalatnamas cell (grid-F3TEvMilyT) patched in place; section hashes recomputed by key."
     },
     "evidence-marking.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-uJ7EU__l31",
