@@ -159,14 +159,14 @@
     "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
       "title": "View Case",
-      "contentHash": "1ecff247d8fa",
-      "pageUpdatedAt": 1794894866.004,
+      "contentHash": "59c6c7418ca6",
+      "pageUpdatedAt": 1794917407.064,
       "calloutElementId": "cl-i2jpMT8bMh",
       "sections": [
         {
           "key": "# View Case",
           "elementId": "cl-MPobgQF3Nq",
-          "hash": "4929df94a060"
+          "hash": "d266871f082a"
         },
         {
           "key": "1",
@@ -191,7 +191,7 @@
         {
           "key": "# 3. Case detail — header",
           "elementId": "cl-RuE4BUsg4d",
-          "hash": "1a2278df96ba"
+          "hash": "0d4e795a03a7"
         },
         {
           "key": "# 4. Section navigation",
@@ -249,7 +249,7 @@
           "hash": "d6c79bfaee81"
         }
       ],
-      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block."
+      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key."
     },
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
@@ -572,9 +572,9 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "294ae4f48ae2",
-      "pageUpdatedAt": 1794814793.129,
-      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded.",
+      "contentHash": "cc0b13518cc6",
+      "pageUpdatedAt": 1794917550.026,
+      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded.",
       "calloutElementId": "cl-e-XQNr8pNU"
     },
     "office-management.md": {
@@ -635,42 +635,42 @@
     "document-submission.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-A_B7aTjEeJ",
       "title": "Document Submission",
-      "contentHash": "774e3f9d2a2f",
-      "pageUpdatedAt": 1794143931.553,
-      "calloutElementId": "cl-EB0O_W8ymk",
+      "contentHash": "85204bcda99f",
+      "pageUpdatedAt": 1794917494.751,
+      "calloutElementId": "cl-ata4on1p56",
       "sections": [
         {
           "key": "# Document Submission",
-          "elementId": "cl-HzRiRKvUiR",
-          "hash": "dd99a94510b8"
+          "elementId": "cl-gxiYsdbv4s",
+          "hash": "d7bbc0efcf64"
         },
         {
           "key": "# 1. Submitting documents",
-          "elementId": "cl-fPDV_ROb54",
-          "hash": "55b435c6333a"
+          "elementId": "cl-sgMF5ll1IZ",
+          "hash": "bdeb4f3b7259"
         },
         {
           "key": "# 2. Statuses",
-          "elementId": "cl-mLQE6O5yEy",
+          "elementId": "cl-JRWsDXJd-K",
           "hash": "a7319e6cb476"
         },
         {
           "key": "# 3. Documents tab",
-          "elementId": "cl-2bPrmPb7ti",
-          "hash": "e266a56dbda6"
+          "elementId": "cl-XqCQbcXao0",
+          "hash": "8c2cd55d1d86"
         },
         {
           "key": "# 4. Marking evidence",
-          "elementId": "cl-ILZ9cPjdjS",
+          "elementId": "cl-ezPjMmwwiC",
           "hash": "c5e69683a2a0"
         },
         {
           "key": "# 5. Open questions",
-          "elementId": "cl-9mPUKRAwF5",
-          "hash": "a1f6f5b38935"
+          "elementId": "cl-_3ENsUU2oX",
+          "hash": "585e9592a6bb"
         }
       ],
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed."
+      "note": "Rebuilt 2026-11-17 at v8 (no comments on the page): callout and body replaced. Section elementIds are each chunk's first block."
     },
     "signing-methods.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
@@ -860,41 +860,52 @@
     "case-file.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WBYZ9C_w-f",
       "title": "Case File",
-      "contentHash": "6eb7310c9a1c",
-      "pageUpdatedAt": 1794829893.843,
+      "contentHash": "030770e6dbd1",
+      "pageUpdatedAt": 1794917333.127,
       "calloutElementId": "cl-I3IpwuxKBN",
       "sections": [
         {
           "key": "# Case File",
-          "elementId": "cl-qY0hryLEqy",
-          "hash": "2397648d90fa"
+          "elementId": "cl-zMzgoojkww",
+          "hash": "9ab70db7b1c0"
         },
         {
           "key": "# 1. Categories",
-          "elementId": "cl-jOD22BF4Yr",
-          "hash": "d2ac9c6703d7"
+          "elementId": "cl-zyXUh5_2V0",
+          "hash": "926b1cb44bf6"
         },
         {
           "key": "# 2. How the case file is ordered",
-          "elementId": "cl-FJKwEc7VFj",
-          "hash": "ac81cfb7b2c1"
+          "elementId": "cl-30lbHxMQFe",
+          "hash": "4cfe702a0734"
         },
         {
-          "key": "# 3. Downloading",
-          "elementId": "cl-6kAga1WHPz",
-          "hash": "1cda325981ce"
+          "key": "# 3. Viewing the case file",
+          "elementId": "cl-QLArNMKYeQ",
+          "hash": "50e634ab4b98"
         },
         {
-          "key": "# 4. Configuration by state",
-          "elementId": "cl-bk8i8cfCSO",
-          "hash": "db453fa2736a"
+          "key": "# 4. Marking as evidence",
+          "elementId": "cl-gg3iRJbVlU",
+          "hash": "5eb39d523bdb"
         },
         {
-          "key": "# 5. Open questions",
-          "elementId": "cl-alBx96e3yA",
-          "hash": "c7ed818f9c15"
+          "key": "# 5. Downloading",
+          "elementId": "cl-knJtmkYOBl",
+          "hash": "639fbd0838bd"
+        },
+        {
+          "key": "# 6. Configuration by state",
+          "elementId": "cl-s_zMoT5XHh",
+          "hash": "9d220c4fee67"
+        },
+        {
+          "key": "# 7. Open questions",
+          "elementId": "cl-xjU3TCz9LV",
+          "hash": "ec64f2caa4a4"
         }
-      ]
+      ],
+      "note": "Body below the callout replaced 2026-11-17 at v15 (no comments on the page). Section elementIds are each chunk's first block."
     },
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
