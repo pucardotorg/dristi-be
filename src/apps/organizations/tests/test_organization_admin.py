@@ -4,7 +4,7 @@ import pytest
 from django.contrib.admin.sites import AdminSite
 
 from apps.locations.models import Location
-from apps.locations.tests.factories import make_hierarchy
+from apps.locations.tests.factories import make_bank, make_hierarchy
 from apps.organizations.admin import OrganizationAdmin, OrganizationAdminForm
 from apps.organizations.models import Organization, OrganizationType
 
@@ -80,8 +80,9 @@ class TestOrganizationAdminConfiguration:
 
 
 @pytest.mark.django_db
-def test_jurisdiction_choices_leave_out_pincodes(admin_instance, rf):
+def test_jurisdiction_choices_leave_out_pincodes_and_banks(admin_instance, rf):
     _, _, patna = make_hierarchy()
+    make_bank(patna)
     Location.objects.create(
         code="PIN_800001",
         name="800001",
@@ -95,3 +96,4 @@ def test_jurisdiction_choices_leave_out_pincodes(admin_instance, rf):
     codes = set(formfield.queryset.values_list("code", flat=True))
     assert "PATNA" in codes
     assert "PIN_800001" not in codes
+    assert "SBIN0001234" not in codes

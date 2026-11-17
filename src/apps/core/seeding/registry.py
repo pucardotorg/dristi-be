@@ -18,6 +18,9 @@ class FkRef:
 
     model_label: str
     key: str = "code"
+    # Match by the model's natural key instead of ``key``, written dotted in
+    # the file: a content type is "app_label.model", e.g. "locations.location".
+    natural_key: bool = False
 
     def get_model(self) -> type[Model]:
         """Return the related model class."""
@@ -35,6 +38,11 @@ class SeedSpec:
     m2m_by_code: dict[str, FkRef] = field(default_factory=dict)
     # Relative load order across files (low first), so referents load first.
     order: int = 0
+    # Insert in batches (``bulk_create``) instead of saving row by row, for
+    # tables seeded with tens of thousands of rows. Needs a single-field key,
+    # no many-to-many or natural-key fields, and a clean() that never rewrites
+    # the key.
+    bulk: bool = False
 
     def get_model(self) -> type[Model]:
         """Return the target model class."""

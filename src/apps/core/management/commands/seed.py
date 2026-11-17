@@ -25,13 +25,27 @@ from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models, transaction
 
+from apps.core.models import cached_attribute_definitions
 from apps.core.seeding import specs  # noqa: F401  (import populates the registry)
 from apps.core.seeding.registry import all_specs, lookup
 
 # Values treated as "absent" for a nullable field or an optional key.
 EMPTY = (None, "")
+# Rows read, validated and inserted together by a bulk spec.
+BULK_BATCH_SIZE = 1000
+# Scalar TOML values a natural key or code reference can take.
+KEY_TYPES = (str, int)
 # Text-like fields TOML non-strings are stringified for (e.g. config_value).
 TEXT_FIELDS = (models.CharField, models.TextField)
+
+
+def _values(rows, name):
+    """Return the distinct, non-empty scalar values of ``name`` across ``rows``."""
+    return {
+        row.get(name)
+        for row in rows
+        if isinstance(row, dict) and isinstance(row.get(name), KEY_TYPES)
+    } - set(EMPTY)
 
 
 class RowError(Exception):
@@ -159,13 +173,31 @@ class Command(BaseCommand):
     def _load(self, document, options, totals):
         """Insert the missing rows of one document and report its counts."""
         spec = document["spec"]
-        model = spec.get_model()
         verbose = options["verbosity"] >= 2
+        bulk_ready = (
+            len(document["key"]) == 1
+            and not spec.m2m_by_code
+            and not any(ref.natural_key for ref in spec.fk_by_code.values())
+        )
+        if spec.bulk and bulk_ready:
+            created, unchanged, skipped = self._load_bulk(document, verbose)
+        else:
+            created, unchanged, skipped = self._load_rows(document, verbose)
+
+        totals["created"] += created
+        totals["unchanged"] += unchanged
+        totals["skipped"] += skipped
+        self.stdout.write(
+            f"{document['path']}: created {created}, unchanged {unchanged}, skipped {skipped}."
+        )
+
+    def _load_rows(self, document, verbose):
+        """Save the document's missing rows one at a time; return the counts."""
+        spec = document["spec"]
+        model = spec.get_model()
         created = unchanged = skipped = 0
         for index, row in enumerate(document["rows"], start=1):
             try:
-                if not isinstance(row, dict):
-                    raise RowError("row is not a table")
                 outcome, label = self._seed_row(model, spec, document["key"], row)
             except RowError as exc:
                 skipped += 1
@@ -177,26 +209,131 @@ class Command(BaseCommand):
                     self.stdout.write(f"  + {spec.model_label} {label}")
             else:
                 unchanged += 1
+        return created, unchanged, skipped
 
-        totals["created"] += created
-        totals["unchanged"] += unchanged
-        totals["skipped"] += skipped
-        self.stdout.write(
-            f"{document['path']}: created {created}, unchanged {unchanged}, skipped {skipped}."
-        )
+    def _load_bulk(self, document, verbose):
+        """Insert the document's missing rows in batches; return the counts.
 
-    def _seed_row(self, model, spec, key, row):
-        """Insert one row, or report it unchanged. Raise RowError to skip it."""
+        Same outcome as ``_load_rows`` with a fixed number of queries per batch
+        instead of several per row: existing keys and referenced rows are read
+        once per batch, each row is validated in memory, and the batch is
+        written with one ``bulk_create``. A row may reference one created
+        earlier in the same file, in this batch or an earlier one.
+        """
+        spec = document["spec"]
+        model = spec.get_model()
+        (key,) = document["key"]
+        rows = document["rows"]
+        # Rows this file references, kept once created so later rows resolve them.
+        referenced = {name: _values(rows, name) for name in spec.fk_by_code}
+        resolved = {name: {} for name in spec.fk_by_code}
+        seen = set()
+        created = unchanged = skipped = 0
+        with cached_attribute_definitions():
+            for start in range(0, len(rows), BULK_BATCH_SIZE):
+                batch = list(enumerate(rows[start : start + BULK_BATCH_SIZE], start=start + 1))
+                existing = self._existing_keys(model, key, batch)
+                self._fetch_references(spec, batch, resolved)
+                pending = []
+                for index, row in batch:
+                    try:
+                        instance = self._build_row(
+                            model, spec, key, row, (existing, seen), resolved
+                        )
+                    except RowError as exc:
+                        skipped += 1
+                        self._warn(f"{document['path']} row {index}: skipped — {exc}")
+                        continue
+                    if instance is None:
+                        unchanged += 1
+                        continue
+                    value = getattr(instance, key)
+                    seen.add(value)
+                    pending.append(instance)
+                    for name, ref in spec.fk_by_code.items():
+                        target = getattr(instance, ref.key, None)
+                        if ref.get_model() is model and target in referenced[name]:
+                            resolved[name][target] = instance
+                    if verbose:
+                        self.stdout.write(f"  + {spec.model_label} {key}={value}")
+                model.objects.bulk_create(pending)
+                created += len(pending)
+        return created, unchanged, skipped
+
+    def _existing_keys(self, model, key, batch):
+        """Return the batch's key values that are already in the database."""
+        values = _values((row for _, row in batch), key)
+        return set(model.objects.filter(**{f"{key}__in": values}).values_list(key, flat=True))
+
+    def _fetch_references(self, spec, batch, resolved):
+        """Read the rows the batch references that are not resolved yet."""
+        for name, ref in spec.fk_by_code.items():
+            wanted = _values((row for _, row in batch), name) - set(resolved[name])
+            if wanted:
+                related = ref.get_model().objects.filter(**{f"{ref.key}__in": wanted})
+                for obj in related:
+                    resolved[name][getattr(obj, ref.key)] = obj
+
+    def _build_row(self, model, spec, key, row, known_keys, resolved):
+        """Return an unsaved, validated instance, or None when the key exists.
+
+        ``known_keys`` holds the keys already in the database and those created
+        earlier in this file. Raise RowError to skip the row.
+        """
+        self._check_row(spec, (key,), row)
+        if not isinstance(row[key], KEY_TYPES):
+            raise RowError(f"{key}: expected a single value")
+        if any(row[key] in keys for keys in known_keys):
+            return None
+        instance = model()
+        for name in spec.fields:
+            if name in row:
+                setattr(instance, name, self._coerce(model, name, row[name]))
+        for name, ref in spec.fk_by_code.items():
+            value = row.get(name)
+            if value in EMPTY:
+                continue
+            obj = resolved[name].get(value) if isinstance(value, KEY_TYPES) else None
+            if obj is None:
+                raise RowError(f"{name}: no {ref.model_label} with {ref.key}={value!r}")
+            setattr(instance, name, obj)
+        try:
+            # Foreign keys were resolved above, possibly to a row created in
+            # this batch and not saved yet, and keys already checked: skip the
+            # per-row existence and uniqueness queries.
+            instance.full_clean(exclude=list(spec.fk_by_code), validate_unique=False)
+        except ValidationError as exc:
+            raise RowError(self._describe(exc)) from exc
+        return instance
+
+    def _check_row(self, spec, key, row):
+        """Raise RowError for a row that is not a table, has unknown fields or lacks its key."""
+        if not isinstance(row, dict):
+            raise RowError("row is not a table")
         unknown = set(row) - spec.allowed
         if unknown:
             raise RowError(f"unknown field(s): {', '.join(sorted(unknown))}")
         missing_key = [name for name in key if row.get(name) in EMPTY]
         if missing_key:
             raise RowError(f"missing key field(s): {', '.join(missing_key)}")
+
+    def _seed_row(self, model, spec, key, row):
+        """Insert one row, or report it unchanged. Raise RowError to skip it."""
+        self._check_row(spec, key, row)
         label = ", ".join(f"{name}={row[name]}" for name in key)
 
         # Idempotency: a row with this natural key is left exactly as it is.
-        if model.objects.filter(**{name: row[name] for name in key}).exists():
+        # A key field that is a foreign key (an attribute's content type) is
+        # matched by the object it names.
+        key_filter = {
+            name: (
+                self._lookup(name, spec.fk_by_code[name], row[name])
+                if name in spec.fk_by_code
+                else row[name]
+            )
+            for name in key
+        }
+        if model.objects.filter(**key_filter).exists():
             return "unchanged", label
 
         # Resolve relationships first: an unresolved one skips the whole row,
@@ -233,11 +370,21 @@ class Command(BaseCommand):
             value = row.get(name)
             if value in EMPTY:
                 continue  # nullable / optional reference
-            obj = ref.get_model().objects.filter(**{ref.key: value}).first()
-            if obj is None:
-                raise RowError(f"{name}: no {ref.model_label} with {ref.key}={value!r}")
-            resolved[name] = obj
+            resolved[name] = self._lookup(name, ref, value)
         return resolved
+
+    def _lookup(self, name, ref, value):
+        """Return the object ``ref`` names by ``value``; raise RowError if there is none."""
+        model = ref.get_model()
+        if ref.natural_key:
+            try:
+                return model._default_manager.get_by_natural_key(*str(value).split("."))
+            except (model.DoesNotExist, TypeError) as exc:
+                raise RowError(f"{name}: no {ref.model_label} with natural key {value!r}") from exc
+        obj = model.objects.filter(**{ref.key: value}).first()
+        if obj is None:
+            raise RowError(f"{name}: no {ref.model_label} with {ref.key}={value!r}")
+        return obj
 
     def _resolve_m2ms(self, spec, row):
         """Resolve each many-to-many list of codes to its related objects."""

@@ -55,6 +55,10 @@ seeded instead of shipped as data migrations:
 
 - `core/languages.toml` — the supported languages and the default one
   (spec 0030). Language resolution fails until it is loaded.
+- `core/additional_attributes.toml` — the additional attributes each model
+  accepts, e.g. a bank location's `address` (issue #249). A row's
+  `additional_attributes` are rejected until their keys are defined, so this
+  loads before other models whatever order the files are given in.
 
 ```sh
 python manage.py seed data/seed/core/
@@ -75,3 +79,23 @@ python manage.py seed states.toml districts.toml pincodes.toml
 
 `states.toml` must load first, then `districts.toml` (whose `parent` is a state
 code), then `pincodes.toml` (whose `parent` is a district code).
+
+## Loading banks
+
+Bank branches (issue #249, spec 0007 section 8) are `bank` locations keyed by
+IFSC, converted from [razorpay/ifsc](https://github.com/razorpay/ifsc) and
+loaded after `core/additional_attributes.toml` (which defines `address`) and
+the states or districts they point at:
+
+```toml
+[[rows]]
+code = "ICIC0000002"
+name = "ICICI Bank - BANGALORE M G ROAD"
+short_name = "ICIC0000002"
+location_type = "bank"
+parent = "IN_KA"
+additional_attributes = { address = "ICICI BANK LTD., 1, SHOBHA PEARL, ..." }
+```
+
+Locations load in batches, so the full list (about 1.8 lakh rows) takes about a
+minute.

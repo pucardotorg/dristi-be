@@ -108,6 +108,7 @@ Natural keys below are taken from the current models.
 | `core.PublicConfiguration` | `(config_set, config_key)` | — | — | Public counterpart of `core.Configuration` (spec 0034). Composite key, normalized by the model; `config_value` is coerced to text. |
 | `cms.PageCategory` | `slug` | — | — | `name` also unique. |
 | `cms.Page` | `slug` | `category` → PageCategory.slug | — | Slug lowercased by the model. |
+| `core.AdditionalAttribute` | `(content_type, name)` | `content_type` → ContentType natural key | — | `content_type` is written `"app_label.model"` (lowercase), e.g. `"locations.location"`. Loads before every other model, since a row's `additional_attributes` only accept defined keys. |
 
 "Permissions" from the ticket are **out of scope** for now (confirmed by @thejeshgn); current `users.Role` is a code-level `TextChoices`, not a seedable row set.
 
@@ -120,12 +121,15 @@ For each row the engine computes the natural key and looks up an existing record
 - **Not found** → create it (collecting for a `bulk_create`, or `create()` where a model needs `save()` side effects / `full_clean`).
 - **Found** → count as *unchanged* and skip. The engine never writes to an existing row. This is **insert-only**: a field changed in the file after first load will **not** propagate — updates and deletes are done manually in the admin, per the ticket. Reporting surfaces the skip so it is not silently surprising.
 
+A spec marked `bulk` (`locations.Location`, for pincodes and banks) gets the same outcome in batches of 1,000 rows: existing keys and referenced rows are read once per batch, each row is validated in memory (`full_clean` without the per-row uniqueness and foreign-key queries, those being checked in bulk), and the batch is written with one `bulk_create`. The query count no longer grows with the row count; 1.8 lakh banks load in about a minute instead of over an hour. Bulk needs a single-field key, no M2M fields and a `clean()` that never rewrites the key.
+
 Re-running any file therefore converges to zero writes. A composite key (Configuration) is matched on the tuple. A key the model normalizes on save (e.g. a lowercased `config_set`) is matched again after `full_clean()` normalizes it, so `UI_Flags` in the file finds the stored `ui_flags` row.
 
 ### 6. Relationship resolution
 
 - FK fields named in `fk_by_code` take a code string in the file and resolve to the related object by its key. A referent may be defined earlier **in the same file** (rows are processed in file order, and self-referential parents are loaded parent-before-child) or already exist in the DB.
 - M2M fields (`Organization.locations`) take a list of codes, resolved and set after the owning row is created.
+- A reference marked `natural_key` resolves through the related model's `get_by_natural_key()`, written dotted in the file (a content type is `"app_label.model"`). A key field that is a foreign key is resolved before the existing-row check, so the key matches on the related object.
 - An unresolved reference is reported per `(file, row key, field, value)` and that row is skipped; it is never silently created as a stub.
 
 ### 7. Load order across files

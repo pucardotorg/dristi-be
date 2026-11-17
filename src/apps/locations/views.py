@@ -37,6 +37,29 @@ ANCESTORS_SCHEMA = extend_schema(
 )
 
 
+LOCATION_TYPE_MESSAGE = f"Must be one of: {', '.join(Location.LocationType.values)}."
+BY_CODE_SCHEMA = extend_schema(
+    parameters=[
+        OpenApiParameter(
+            "location_type",
+            str,
+            enum=Location.LocationType.values,
+            description="Not found unless the location is of this type.",
+        ),
+        OpenApiParameter(
+            "is_active",
+            str,
+            enum=["true", "false"],
+            description="Not found unless the location's own is_active matches.",
+        ),
+    ],
+    responses=error_responses(
+        errors.INVALID_CHOICE.example(LOCATION_TYPE_MESSAGE, field="location_type"),
+        errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active"),
+    ),
+)
+
+
 def parse_is_active(params):
     """Return the ``is_active`` query parameter as a bool, or None when absent.
 
@@ -54,10 +77,7 @@ def parse_is_active(params):
     # Query parameters are validated in get_queryset(), outside any serializer.
     list=extend_schema(
         responses=error_responses(
-            errors.INVALID_CHOICE.example(
-                f"Must be one of: {', '.join(Location.LocationType.values)}.",
-                field="location_type",
-            ),
+            errors.INVALID_CHOICE.example(LOCATION_TYPE_MESSAGE, field="location_type"),
             errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
             errors.INVALID.example("No location exists with code 'XX'.", field="parent_code"),
             errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active"),
@@ -88,11 +108,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         if location_type is not None:
             if location_type not in Location.LocationType.values:
                 raise errors.INVALID_CHOICE.validation_error(
-                    {
-                        "location_type": (
-                            f"Must be one of: {', '.join(Location.LocationType.values)}."
-                        )
-                    }
+                    {"location_type": LOCATION_TYPE_MESSAGE}
                 )
             queryset = queryset.filter(location_type=location_type)
 
@@ -162,10 +178,17 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         """List the ancestors of a location identified by id."""
         return self._ancestors_response(self.get_object())
 
+    @BY_CODE_SCHEMA
     @action(detail=False, methods=["get"], url_path=CODE_URL_PATH, url_name="by-code")
     def by_code(self, request, code=None, *args, **kwargs):
-        """Retrieve a location by its unique code."""
-        return Response(self.get_serializer(self._get_by_code(code)).data)
+        """Retrieve a location by its unique code.
+
+        ``location_type`` and ``is_active`` narrow the match as they do on the
+        list, so an IFSC lookup with ``location_type=bank&is_active=true`` is
+        not found for a closed branch or for a code that is not a bank.
+        """
+        location = get_object_or_404(self.get_queryset(), code=code)
+        return Response(self.get_serializer(location).data)
 
     @action(
         detail=False,

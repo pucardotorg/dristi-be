@@ -4,6 +4,8 @@ import copy
 import json
 import re
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
@@ -80,6 +82,26 @@ class BaseModel(models.Model):
         ordering = ("-created_at",)
 
 
+# Attribute definitions by content type id, while ``cached_attribute_definitions``
+# is active; None otherwise, so every validation reads them fresh.
+_attribute_definitions = ContextVar("attribute_definitions", default=None)
+
+
+@contextmanager
+def cached_attribute_definitions():
+    """Read each model's additional attribute definitions once inside the block.
+
+    A bulk load validates thousands of rows of one model; without this each
+    row's ``full_clean`` queries the same definitions again. Use it only where
+    definitions do not change inside the block.
+    """
+    token = _attribute_definitions.set({})
+    try:
+        yield
+    finally:
+        _attribute_definitions.reset(token)
+
+
 class BaseExtendableModel(models.Model):
     """Abstract base model that supports typed additional attributes."""
 
@@ -103,10 +125,15 @@ class BaseExtendableModel(models.Model):
     def _clean_additional_attributes(self):
         """Return a cleaned dict of additional attributes for this instance."""
         content_type = ContentType.objects.get_for_model(self)
-        definitions = {
-            attr.name: attr
-            for attr in AdditionalAttribute.objects.filter(content_type=content_type)
-        }
+        cache = _attribute_definitions.get()
+        definitions = cache.get(content_type.pk) if cache is not None else None
+        if definitions is None:
+            definitions = {
+                attr.name: attr
+                for attr in AdditionalAttribute.objects.filter(content_type=content_type)
+            }
+            if cache is not None:
+                cache[content_type.pk] = definitions
 
         unknown = sorted(key for key in self.additional_attributes if key not in definitions)
         if unknown:
