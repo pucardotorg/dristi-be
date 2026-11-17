@@ -1,0 +1,19 @@
+# Public configuration every environment starts with (spec 0034). Each row is
+# a per-state switch: seeding is insert-only, so a state that needs a different
+# value changes the row in the admin after the first seed.
+#
+# Every row here is PUBLIC: it is served to internet clients without
+# authentication. Never put secrets, passwords, tokens or credentials here.
+[seed]
+model = "core.PublicConfiguration"
+
+# E-filing Documents screen: ask, per uploaded document, whether it is
+# natively digital (born digital, not a scan), and print the Natively Digital
+# column in the complaint PDF's list of documents. On for Kerala; a state that
+# does not need it sets it to false. A missing row counts as off.
+[[rows]]
+config_set = "ui_efiling"
+config_key = "natively_digital_document_submission_on"
+value_type = "boolean"
+config_value = "true"
+description = "Show the natively digital question per uploaded document and the Natively Digital column in the complaint PDF. On for Kerala; set false for states that do not need it."
