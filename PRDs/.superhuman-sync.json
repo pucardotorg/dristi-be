@@ -159,14 +159,14 @@
     "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
       "title": "View Case",
-      "contentHash": "59c6c7418ca6",
-      "pageUpdatedAt": 1794917407.064,
+      "contentHash": "6204f1d83654",
+      "pageUpdatedAt": 1794930222.951,
       "calloutElementId": "cl-i2jpMT8bMh",
       "sections": [
         {
           "key": "# View Case",
           "elementId": "cl-MPobgQF3Nq",
-          "hash": "d266871f082a"
+          "hash": "b4490223177e"
         },
         {
           "key": "1",
@@ -226,7 +226,7 @@
         {
           "key": "# 10. Documents",
           "elementId": "cl-zMm1auWWbw",
-          "hash": "70b4dc90ea4e"
+          "hash": "df4f9b8de720"
         },
         {
           "key": "# 11. Parties",
@@ -241,7 +241,7 @@
         {
           "key": "# 13. Open questions",
           "elementId": "cl-PHWcX66f3y",
-          "hash": "2e749bc90d80"
+          "hash": "72b7f22c7cdc"
         },
         {
           "key": "# 14. Enhancements",
@@ -249,7 +249,7 @@
           "hash": "d6c79bfaee81"
         }
       ],
-      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key."
+      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key. 2026-11-17 v1.74: §10.1 rows (grid-FwlcgeGjmr), DOC-10/12/13 cells (grid-ZQe0bbC4g7), Q-12 and Q-14 rows (grid-ECWU9NBzz9), Status and callout patched."
     },
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
