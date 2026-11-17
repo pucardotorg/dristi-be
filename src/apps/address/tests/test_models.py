@@ -132,6 +132,12 @@ class TestValidation:
         with pytest.raises(IntegrityError), transaction.atomic():
             Address.objects.create(**{**ADDRESS_DEFAULTS, "pincode": "012345"})
 
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_database_rejects_an_address_with_nothing_in_it(self, value):
+        """``create()`` skips ``full_clean``; the constraint refuses it instead."""
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Address.objects.create(**dict.fromkeys(Address.CONTENT_FIELDS, value))
+
 
 @pytest.mark.django_db
 class TestDeduplication:
@@ -283,6 +289,12 @@ class TestBulkCreate:
 
         assert not created
         assert Address.objects.count() == 1
+
+    def test_database_rejects_an_address_with_nothing_in_it(self):
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Address.objects.bulk_create([Address()])
+
+        assert not Address.objects.exists()
 
     def test_database_rejects_a_row_without_its_hash(self):
         make_address()

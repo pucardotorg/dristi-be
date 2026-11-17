@@ -4,7 +4,8 @@ import uuid
 
 import pytest
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from apps.cases.models import (
@@ -242,6 +243,7 @@ class TestAddComplainant:
 
 class TestInstitutions:
     NO_IDENTIFIER = {k: v for k, v in INSTITUTION.items() if k != "pan"}
+    NO_TYPE = {k: v for k, v in INSTITUTION.items() if k != "entity_type"}
 
     def test_the_filer_may_declare_they_give_no_pan_or_cin(self, client, draft):
         response = add(
@@ -287,6 +289,63 @@ class TestInstitutions:
             None,
             False,
         )
+
+    def test_the_entity_type_may_be_left_out_until_validate(self, client, draft):
+        response = add(client, draft, institution=self.NO_TYPE)
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["institution"]["entity_type"] is None
+        assert "Complainant #1's institution has no entity type." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
+
+    def test_an_accused_institution_needs_an_entity_type_to_file(self, client, draft):
+        response = add(client, draft, role="accused", institution=self.NO_TYPE)
+
+        assert response.status_code == 201, response.json()
+        assert "Accused #1's institution has no entity type." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
+
+    def test_an_entity_type_sent_later_fills_the_matched_institution(self, client, draft):
+        """The institution is matched again by its PAN, and only its missing type is set."""
+        participant_id = add(client, draft, institution=self.NO_TYPE).json()["case_participant_id"]
+
+        response = patch(
+            client, participant_id, {"institution": {**INSTITUTION, "entity_type": "LLP"}}
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution"]["entity_type"] == "LLP"
+        assert Institution.objects.count() == 1
+        assert not any(
+            "entity type" in message for message in completeness(client, draft, participant_id)
+        )
+
+    def test_a_stored_entity_type_is_never_replaced(self, client, draft):
+        """Other filings share the institution; its type is filled, not changed."""
+        make_institution(pan=INSTITUTION["pan"], entity_type="LLP")
+
+        response = add(client, draft, institution=INSTITUTION)
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["institution"]["entity_type"] == "LLP"
+
+    def test_an_institution_edited_in_place_may_drop_its_entity_type(self, client, draft):
+        participant_id = add(client, draft, institution=self.NO_IDENTIFIER).json()[
+            "case_participant_id"
+        ]
+        no_type = {k: v for k, v in self.NO_IDENTIFIER.items() if k != "entity_type"}
+
+        response = patch(client, participant_id, {"institution": no_type})
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution"]["entity_type"] is None
+
+    def test_an_unknown_entity_type_is_still_refused(self, client, draft):
+        response = add(client, draft, institution={**INSTITUTION, "entity_type": "GUILD"})
+
+        assert error_codes(response) == {"institution.entity_type": ["E00005"]}
 
     def test_the_declaration_with_a_pan_is_refused_even_when_the_pan_exists(self, client, draft):
         """A match is reused without being saved, so the rule is checked before matching."""
@@ -2195,6 +2254,30 @@ class TestPartialAddresses:
             in completeness(client, draft, response.json()["case_participant_id"])
         )
 
+    @pytest.mark.parametrize("role", ["complainant", "witness"])
+    def test_a_permanent_address_from_another_case_is_not_reported(self, client, user, draft, role):
+        """The filer's partial permanent address, given on another case, is not this party's.
+
+        As a witness, or acting for an institution, they cannot change it here.
+        """
+        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+        add(client, other_draft, self=True, permanent_address={"state": "Karnataka"})
+        if role == "witness":
+            add_complainant(client, draft)
+            response = client.post(
+                reverse("case-witness-list", args=[draft]),
+                {"self": True, "side": "COMPLAINANT", "addresses": [ADDRESS_DEFAULTS]},
+                format="json",
+            )
+        else:
+            response = add(client, draft, self=True, institution=INSTITUTION, designation="CEO")
+
+        assert response.status_code == 201, response.json()
+        assert not any(
+            "permanent address" in message
+            for message in completeness(client, draft, response.json()["case_participant_id"])
+        )
+
     @pytest.mark.parametrize("address", [{}, {"line1": "", "city": "   "}])
     def test_an_address_with_nothing_in_it_is_400(self, client, draft, address):
         response = add(client, draft, person=PERSON, addresses=[address])
@@ -2216,6 +2299,37 @@ class TestPermanentAddress:
 
     def person_of(self, body):
         return Person.objects.get(pk=body["person_id"])
+
+    def person_locks(self, queries):
+        """Return the queries that lock a person row."""
+        table = Person._meta.db_table
+        return [
+            q["sql"] for q in queries if f'FROM "{table}"' in q["sql"] and "FOR UPDATE" in q["sql"]
+        ]
+
+    @pytest.mark.skipif(
+        not connection.features.has_select_for_update, reason="needs row locks (PostgreSQL)"
+    )
+    def test_patch_locks_the_person_before_filling_it(self, client, draft):
+        """Drafts on other cases may change the same person; the case lock does not cover them."""
+        body = add(client, draft, person=PERSON, addresses=[{"line1": "12 MG Road"}]).json()
+
+        with CaptureQueriesContext(connection) as queries:
+            response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        assert response.status_code == 200, response.json()
+        assert self.person_locks(queries)
+
+    @pytest.mark.skipif(
+        not connection.features.has_select_for_update, reason="needs row locks (PostgreSQL)"
+    )
+    def test_a_self_filer_is_locked_before_filling_it(self, client, draft):
+        """The filer's person is shared by all their cases."""
+        with CaptureQueriesContext(connection) as queries:
+            response = add(client, draft, self=True)
+
+        assert response.status_code == 201, response.json()
+        assert self.person_locks(queries)
 
     def test_the_same_address_is_the_same_row(self, client, draft):
         person = self.person_of(add_complainant(client, draft))
@@ -2295,6 +2409,48 @@ class TestPermanentAddress:
         assert response.status_code == 200, response.json()
         assert response.json()["addresses"] == body["addresses"]
         assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
+
+    OFFICE = {**ADDRESS_DEFAULTS, "line1": "Office, 9 Brigade Road"}
+
+    def test_the_filers_own_stays_when_their_case_address_changes(self, client, user, draft):
+        """Theirs on every case: as on create, the case's address does not replace it."""
+        body = add(client, draft, self=True).json()
+
+        response = patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
+
+        assert response.status_code == 200, response.json()
+        assert Person.objects.get(user=user).permanent_address.line1 == ADDRESS_DEFAULTS["line1"]
+
+    def test_the_filers_own_is_not_moved_by_another_case(self, client, user, draft):
+        add(client, draft, self=True)
+        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+        other = add(client, other_draft, self=True).json()
+
+        patch(client, other["case_participant_id"], {"addresses": [self.OFFICE]})
+
+        assert Person.objects.get(user=user).permanent_address.line1 == ADDRESS_DEFAULTS["line1"]
+
+    def test_the_filers_missing_one_is_filled_by_a_later_address(self, client, user, draft):
+        body = client.post(
+            reverse("case-complainant-list", args=[draft]), {"self": True}, format="json"
+        ).json()
+        assert Person.objects.get(user=user).permanent_address_id is None
+
+        response = patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
+
+        assert response.status_code == 200, response.json()
+        assert Person.objects.get(user=user).permanent_address.line1 == self.OFFICE["line1"]
+
+    def test_a_claimed_persons_stays_when_the_case_address_changes(self, client, other_user, draft):
+        """Once a user claims the person, it is theirs on every case, like the filer's own."""
+        add(client, draft, self=True)  # an active complainant may change the claimed person
+        body = add(client, draft, person={**PERSON, "name": "Second"}).json()
+        Person.objects.filter(pk=body["person_id"]).update(user=other_user)
+
+        response = patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
+
+        assert response.status_code == 200, response.json()
+        assert self.person_of(body).permanent_address.line1 == ADDRESS_DEFAULTS["line1"]
 
     def test_patch_sets_the_filers_own(self, client, user, draft):
         body = add(client, draft, self=True).json()

@@ -16,7 +16,7 @@ from rest_framework import serializers
 
 from apps.address.models import Address
 from apps.api import errors as api_errors
-from apps.parties.models import normalize_identifier
+from apps.parties.models import Person, normalize_identifier
 from apps.parties.services import (
     create_asserted_person,
     get_or_create_institution,
@@ -278,6 +278,10 @@ def _create_participant(case, user, role, data):
     if data["is_self"]:
         with errors_under("self"):
             person = get_or_create_self_person(user)
+        if permanent_address is not None:
+            # Shared with the filer's other cases, which this case's lock
+            # does not serialise.
+            person = _lock_person(person.pk)
         # The filer's own person row takes the permanent address they just
         # gave (spec 0020 §2.5). Falling back to ``address`` only fills one
         # they lack; it never replaces theirs.
@@ -388,6 +392,15 @@ def _may_change_person(participant, user):
     )
 
 
+def _lock_person(person_id):
+    """Return the person row, locked until the caller's transaction ends.
+
+    Taken after the case lock, never before, so writes on two cases sharing
+    a person cannot deadlock.
+    """
+    return Person.objects.select_for_update().get(pk=person_id)
+
+
 def _change_person(person, user, **fields):
     """Set ``fields`` on the person row, saving only what differs.
 
@@ -425,10 +438,8 @@ def update_participant(participant, user, data):
     only they or their advocate on this case may change it.
     ``mobile_numbers``, ``email_addresses`` and ``addresses`` each replace the
     participant's list; inside ``institution``, the institution's own in this
-    case (``contacts.replace_contacts``). Any of them may be left empty; the
-    completeness check reports a missing address or police station. A
-    witness's side, statement and ``additional_details`` are on its
-    ``Witness`` row.
+    case (``contacts.replace_contacts``). A witness's side, statement and
+    ``additional_details`` are on its ``Witness`` row.
     ``institution`` re-links an institution participant (``_relink_institution``);
     switching between an individual and an institution is a remove and re-add.
     """
@@ -554,6 +565,10 @@ def update_participant(participant, user, data):
         correction.check_write(case, user, participant.role, whole=True)
         # Read again under the case lock: a concurrent removal is not undone.
         participant = get_participant(participant.pk, user)
+        if has_permanent_address or person_fields:
+            # The person may be on other cases, which this case's lock does
+            # not serialise.
+            participant.person = _lock_person(participant.person_id)
         old_institution_id = participant.institution_id
         if institution_fields is not None:
             if _identified_by_nothing(participant.institution, institution_fields):
@@ -569,10 +584,8 @@ def update_participant(participant, user, data):
             move_institution_contacts(case, user, old_institution_id, participant.institution)
         if old_institution_id:
             _align_representatives(participant, user, old_institution_id)
-        # A permanent address that was only the first address follows it, so
-        # completing a partly entered address completes both. One never set,
-        # as for a party saved with no address, is filled from the first
-        # address, as on create.
+        # Spec 0021 §6.4. Compared with the first address before the lists
+        # are replaced.
         permanent_address_id = (
             participant.person.permanent_address_id if has_permanent_address else None
         )
@@ -582,7 +595,10 @@ def update_participant(participant, user, data):
             and not sends_permanent_address
             and (
                 permanent_address_id is None
-                or permanent_address_id == _stored_first_address_id(participant)
+                or (
+                    participant.person.user_id is None
+                    and permanent_address_id == _stored_first_address_id(participant)
+                )
             )
             and _may_change_person(participant, user)
         )
@@ -655,7 +671,7 @@ def _edit_institution(participant, user, fields, data):
     """
     institution = participant.institution
     with errors_under("institution"):
-        institution.entity_type = fields["entity_type"]
+        institution.entity_type = fields.get("entity_type")
         institution.entity_name = fields["entity_name"]
         institution.pan_cin_skip_declared = fields.get("pan_cin_skip_declared", False)
         institution.updated_by = user
@@ -724,10 +740,8 @@ def _contact_problems(participant, own_lists, institution_lists, data):
     """Return the problems with the contact lists a PATCH sends, as ``{field: …}``.
 
     Only a person has contacts of their own; an institution's go under
-    ``institution`` or ``institution_contacts``. A missing address or police
-    station is not a problem here: the completeness check reports it. Contact
-    details can be declared unknown only while no mobile number or email is
-    left.
+    ``institution`` or ``institution_contacts``. Contact details can be
+    declared unknown only while no mobile number or email is left.
     """
     problems = {}
     if own_lists and not participant.person_id:

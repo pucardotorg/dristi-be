@@ -117,7 +117,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
-| `entity_type` | varchar(32) | NOT NULL | See §3.3 |
+| `entity_type` | varchar(32) | NULLABLE | See §3.3. May be left out while a filing is drafted; the case filing completeness check asks for it (spec 0021 §6.3). A reused institution with none takes the type the next filer sends; one stored is never replaced |
 | `entity_name` | varchar(256) | NOT NULL | Registered / legal name |
 | `pan` | varchar(10) | NULLABLE, UNIQUE | Permanent Account Number, e.g. `AAACA1234A`; uppercase, `^[A-Z]{5}[0-9]{4}[A-Z]$` |
 | `cin` | varchar(21) | NULLABLE, UNIQUE | Corporate Identification Number, companies only, e.g. `U72200KA2010PTC052651`; uppercase, `^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$` |
@@ -128,7 +128,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 | `updated_at` | timestamp | NOT NULL, auto | From BaseModel (spec 0002) |
 
 **Constraints:**
-- `CHECK (entity_type IN (...))` — values from §3.3
+- `CHECK (entity_type IS NULL OR entity_type IN (...))` — values from §3.3
 - `CHECK` on the `pan` and `cin` patterns when not null; both are stored uppercase with spaces removed
 - `UNIQUE (pan)` and `UNIQUE (cin)` where not null
 - `CHECK`: when `pan_cin_skip_declared` is true, `pan` and `cin` are both null

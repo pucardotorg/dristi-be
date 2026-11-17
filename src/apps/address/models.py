@@ -168,6 +168,14 @@ class Address(models.Model):
                 condition=Q(hash__regex=r"^[0-9a-f]{64}$"),
                 name="address_hash_is_sha256",
             ),
+            # At least one field filled in. Checked by ``full_clean`` too, and
+            # it also refuses ``create()``, ``bulk_create()`` and raw inserts,
+            # which skip it.
+            models.CheckConstraint(
+                condition=~Q(**dict.fromkeys(CONTENT_FIELDS, "")),
+                name="address_not_empty",
+                violation_error_message=EMPTY_ADDRESS_MESSAGE,
+            ),
         ]
 
     def __str__(self):
@@ -208,12 +216,6 @@ class Address(models.Model):
         """
         self._normalize()
         super().clean_fields(exclude=exclude)
-
-    def clean(self):
-        """Refuse an address with nothing in it."""
-        super().clean()
-        if not any(normalize_field(field, getattr(self, field)) for field in CONTENT_FIELDS):
-            raise ValidationError({NON_FIELD_ERRORS: [EMPTY_ADDRESS_MESSAGE]})
 
     def validate_constraints(self, exclude=None):
         """Leave the hash check to the database.

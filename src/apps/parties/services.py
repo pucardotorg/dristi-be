@@ -58,7 +58,8 @@ def create_asserted_person(
 def get_or_create_institution(user, fields):
     """Return the institution with the PAN or CIN in ``fields``, or create one.
 
-    A match is returned as is: none of ``fields`` is applied to it. A PAN and a CIN
+    A match is returned as is, except that a type left out when it was
+    created is filled from ``fields`` (``_fill_entity_type``). A PAN and a CIN
     belonging to two different institutions are refused, since either could
     be the one meant. A complainant's institution needs a PAN, a CIN or the
     skip declaration (spec 0020 §3.4), but only to be filed: the case filing
@@ -75,7 +76,7 @@ def get_or_create_institution(user, fields):
 
     found = _find_institution(pan, cin)
     if found is not None:
-        return found
+        return _fill_entity_type(found, user, fields.get("entity_type"))
     try:
         # A savepoint, so a concurrent insert of the same PAN or CIN can be
         # recovered from without aborting the caller's transaction.
@@ -85,7 +86,25 @@ def get_or_create_institution(user, fields):
         found = _find_institution(pan, cin)
         if found is None:
             raise
-        return found
+        return _fill_entity_type(found, user, fields.get("entity_type"))
+
+
+def _fill_entity_type(institution, user, entity_type):
+    """Give ``institution`` the ``entity_type`` sent when it has none yet; return it.
+
+    A type may be left out while a filing is drafted, and the institution is
+    matched again by its PAN or CIN when the filer sends it later, so this is
+    how the type is completed. A stored type is never replaced: other filings
+    share the row. The row is locked, so a concurrent filer's type is kept.
+    """
+    if not entity_type or institution.entity_type:
+        return institution
+    institution = Institution.objects.select_for_update().get(pk=institution.pk)
+    if institution.entity_type is None:
+        institution.entity_type = entity_type
+        institution.updated_by = user
+        institution.save(update_fields=["entity_type", "updated_by", "updated_at"])
+    return institution
 
 
 def _find_institution(pan, cin):

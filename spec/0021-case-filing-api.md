@@ -510,7 +510,7 @@ Exactly one of `person` or `self` describes the individual, and either may be le
    - `person`: a new `person` at `ASSERTED`, with no attempt to match. When given together with an institution, it is created with `institution_id` and `designation` set.
    - The same person cannot be both complainant and accused, nor complainant twice, on one case.
 
-4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created. A reused institution's row is not changed.
+4. **Resolve the institution**, when given (spec 0020 §3.4): an existing institution with the same `pan` or `cin` is linked; otherwise a new one is created. A reused institution's row is not changed, except that one stored with no `entity_type` takes the one sent.
    - A `pan` and a `cin` that belong to two different institutions are refused (400).
    - For a **complainant** institution, at least one of `pan`, `cin` or `"pan_cin_skip_declared": true` is required to file, and asked for by the completeness check (§6.3), not on save; an accused institution needs none of them. For any institution, the declaration with a `pan` or `cin` is refused (`E00001` on `institution.pan_cin_skip_declared`). The same applies to `institution` in PATCH (re-link).
    - The same institution cannot be both complainant and accused, nor hold one role twice, on one case.
@@ -1415,9 +1415,10 @@ POST /cases/{case_id}/validate
    - Witnesses are optional. Each active witness has a `name_at_filing` or a `designation_at_filing`; the mobile number is optional.
    - Every active party has an address contact: an individual their own, an institution its own on this case ("Accused #2 has no address.").
    - Every address of an active accused or witness, their institution's included, has a `police_station` ("Accused #1 has an address with no police station.").
-   - Every address of an active party (their own, their institution's on this case, and an individual's permanent address) has `line1`, `city`, `state`, `pincode` and `district` ("Complainant #1 has an incomplete address (missing city, pincode).").
+   - Every address of an active party (their own, their institution's on this case, and an individual complainant's or POA holder's permanent address) has `line1`, `city`, `state`, `pincode` and `district` ("Complainant #1 has an incomplete address (missing city, pincode).").
    - An individual complainant or POA holder who has an address has a permanent address ("Complainant #1 has no permanent address."). One with no address is reported as having none, and giving one fills it (§6.4).
    - A person acting for an accused institution has a `designation_at_filing` ("Accused #2 acts for an institution but has no designation.").
+   - Every institution of an active party has an `entity_type` ("Accused #1's institution has no entity type.").
    - A complainant institution has a `pan`, a `cin` or `pan_cin_skip_declared` ("Complainant #1: Enter a PAN or a CIN, or declare that neither is given.").
    - None of these is checked on save (§6.4).
 
@@ -1463,7 +1464,7 @@ formats, choice codes, unknown keys, fields that do not apply to the role,
 contradictions such as a filing date before the cause of action). Nothing a
 filing must have is required on save: a party's name, address or police
 station, any field of an address, an accused institution's officer's
-designation, a complainant
+designation, an institution's `entity_type`, a complainant
 institution's PAN/CIN, any `required` key of a details section or of
 `evidence_info` (and the conditional ones), the condonation reason, the
 case affidavit or the party-in-person affidavit. The completeness check
@@ -1473,12 +1474,15 @@ passes.
 When a party's `addresses` are replaced and their permanent address was their
 first address (none of its own was given), the permanent address follows the
 new first address, so completing a partly entered address completes both. A
+registered user's person (the filer's own, `"self": true`, or one a user has
+claimed) is the exception: it is theirs on every case, so, as on create, it
+keeps the permanent address it has, and only `permanent_address` changes it. A
 party saved with no address has no permanent address yet; the first address
-later sent fills it, as on create.
+later sent fills it, as on create, for every party.
 
 What still has to be sent is what says what is being saved: `case_type`,
 `evidence_type`, a witness's `side`, a party's `person`, `self` or
-`institution`, an institution's `entity_type` and `entity_name`, the
+`institution`, an institution's `entity_name`, the
 represented and client participant ids, and at least one field of an address
 that is sent (`E00002` on `addresses[0]` for an address with nothing in it).
 An address may be partly filled in: its blank fields are stored as `""`

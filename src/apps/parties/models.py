@@ -160,7 +160,9 @@ class Institution(BaseModel, BaseAuditableModel):
     hierarchy, so a court can never be recorded as a party by mistake.
     """
 
-    entity_type = models.CharField(max_length=32, choices=EntityType.choices)
+    # May be left out while a filing is drafted; the case filing completeness
+    # check asks for it.
+    entity_type = models.CharField(max_length=32, choices=EntityType.choices, null=True, blank=True)
     entity_name = models.CharField(max_length=256, db_index=True)
     # Its phone numbers, emails and addresses are recorded per case, as
     # ``cases.CaseContact`` rows: one institution is shared between filings.
@@ -181,7 +183,7 @@ class Institution(BaseModel, BaseAuditableModel):
 
         constraints = [
             models.CheckConstraint(
-                condition=Q(entity_type__in=EntityType.values),
+                condition=Q(entity_type__isnull=True) | Q(entity_type__in=EntityType.values),
                 name="parties_institution_entity_type_valid",
             ),
             models.CheckConstraint(
@@ -209,11 +211,12 @@ class Institution(BaseModel, BaseAuditableModel):
         """Validate values as they will be stored.
 
         The name is trimmed, so a whitespace-only name is rejected as missing,
-        and a blank PAN or CIN is stored as none. PAN and CIN
+        and a blank type, PAN or CIN is stored as none. PAN and CIN
         are stored uppercase without spaces, so "aaaca 1234 a" matches
         "AAACA1234A" when an institution is looked up again.
         """
         self.entity_name = _strip(self.entity_name)
+        self.entity_type = self.entity_type or None
         self.pan = normalize_identifier(self.pan)
         self.cin = normalize_identifier(self.cin)
         super().clean_fields(exclude=exclude)

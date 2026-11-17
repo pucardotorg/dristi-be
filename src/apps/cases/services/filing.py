@@ -215,12 +215,6 @@ def validation_errors(case):
     if not participants.filter(role=ParticipantRole.ACCUSED).exists():
         error("participants.accused", "At least one active accused is required.")
 
-    # A draft may be saved without any of these; they are asked for only here.
-    # Witnesses are optional, but one who is added needs a name or designation;
-    # every other party needs a name. Each party is served at an address: an
-    # individual their own, an institution its own on this case, and every
-    # address given (a permanent one included) is complete. Notice to an
-    # accused or a witness goes through the police station of each address.
     ordered = participants.select_related("institution", "person__permanent_address").order_by(
         *PARTICIPANT_ORDERING
     )
@@ -240,16 +234,14 @@ def validation_errors(case):
         for address in addresses:
             if missing := address.missing_fields:
                 error(field, f"{label} has an incomplete address (missing {', '.join(missing)}).")
-        permanent = participant.person.permanent_address if participant.person_id else None
-        # An individual complainant or POA holder has one; it is reported only
-        # once they have an address, since giving one fills it.
-        if (
-            permanent is None
-            and participant.role in PERMANENT_ADDRESS_ROLES
+        has_permanent_address = (
+            participant.role in PERMANENT_ADDRESS_ROLES
             and participant.person_id
             and not participant.institution_id
-            and first(own, ContactType.ADDRESS)
-        ):
+        )
+        permanent = participant.person.permanent_address if has_permanent_address else None
+        # Giving an address fills it (§6.4), so it is missing only once there is one.
+        if permanent is None and has_permanent_address and first(own, ContactType.ADDRESS):
             error(field, f"{label} has no permanent address.")
         if permanent is not None and permanent not in addresses and permanent.missing_fields:
             error(
@@ -269,6 +261,8 @@ def validation_errors(case):
         ):
             error(field, f"{label} acts for an institution but has no designation.")
         institution = participant.institution
+        if institution is not None and not institution.entity_type:
+            error(field, f"{label}'s institution has no entity type.")
         if (
             participant.role == ParticipantRole.COMPLAINANT
             and institution is not None
@@ -295,7 +289,6 @@ def validation_errors(case):
                 "party-in-person affidavit.",
             )
 
-    # A draft may save empty editor output, or none; it is asked for only here.
     if not has_visible_text(case.affidavit):
         error("affidavit", "The affidavit is required.")
 
