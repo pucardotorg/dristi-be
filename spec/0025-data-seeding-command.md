@@ -108,7 +108,13 @@ Natural keys below are taken from the current models.
 | `core.PublicConfiguration` | `(config_set, config_key)` | — | — | Public counterpart of `core.Configuration` (spec 0034). Composite key, normalized by the model; `config_value` is coerced to text. |
 | `cms.PageCategory` | `slug` | — | — | `name` also unique. |
 | `cms.Page` | `slug` | `category` → PageCategory.slug | — | Slug lowercased by the model. |
-| `users.User_groups` | `(user, group)` | `user` → User.mobile_number, `group` → Group.name | — | Adds an existing user to an existing group (e.g. `BAR_ID_APPROVER`, issue #260). The key is matched on the resolved objects, so an unknown user or group skips the row. Never removes a membership. |
+| `auth.Group` | `name` | — | — | Added by spec 0036. Loads first (order 5). |
+| `messaging.MessageTemplate` | `(message_key, message_type)` | — | — | Added by spec 0036. Composite key. |
+| `hearings.HearingPurpose` | `code` | — | — | Added by spec 0036. |
+| `dristi_requests.RequestType` | `code` | — | — | Added by spec 0036. |
+| `dristi_requests.ApprovalStep` | `(request_type, order)` | `request_type` → RequestType.code, `approver_group` → Group.name | — | Added by spec 0036. FK in the key (see §5). |
+| `scrutiny.ScrutinyRuleBinding` | `(decision, organization)` | `organization` → Organization.code | — | Added by spec 0036. Empty `organization` is the national default (see §5). |
+| `users.User_groups` | `(user, group)` | `user` → User.mobile_number, `group` → Group.name | — | Adds an existing user to an existing group (e.g. `BAR_ID_APPROVER`, issue #260). The key is matched by mobile number and group name, so an unknown user or group skips the row. Never removes a membership. |
 
 "Permissions" from the ticket are **out of scope** for now (confirmed by @thejeshgn); current `users.Role` is a code-level `TextChoices`, not a seedable row set.
 
@@ -122,6 +128,8 @@ For each row the engine computes the natural key and looks up an existing record
 - **Found** → count as *unchanged* and skip. The engine never writes to an existing row. This is **insert-only**: a field changed in the file after first load will **not** propagate — updates and deletes are done manually in the admin, per the ticket. Reporting surfaces the skip so it is not silently surprising.
 
 Re-running any file therefore converges to zero writes. A composite key (Configuration) is matched on the tuple. A key the model normalizes on save (e.g. a lowercased `config_set`) is matched again after `full_clean()` normalizes it, so `UI_Flags` in the file finds the stored `ui_flags` row.
+
+A key field that is also in `fk_by_code` is matched by the related row's key (`request_type` → `request_type__code`). If that FK is nullable, the key field may be empty and is matched as NULL (`organization__isnull=True`), so the national scrutiny binding is found on a re-run. Any other empty key field still skips the row (spec 0036).
 
 ### 6. Relationship resolution
 

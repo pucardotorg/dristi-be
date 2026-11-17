@@ -190,28 +190,25 @@ class Command(BaseCommand):
         unknown = set(row) - spec.allowed
         if unknown:
             raise RowError(f"unknown field(s): {', '.join(sorted(unknown))}")
-        missing_key = [name for name in key if row.get(name) in EMPTY]
+        missing_key = [
+            name
+            for name in key
+            if row.get(name) in EMPTY and not self._is_nullable_fk(model, spec, name)
+        ]
         if missing_key:
             raise RowError(f"missing key field(s): {', '.join(missing_key)}")
-        label = ", ".join(f"{name}={row[name]}" for name in key)
+        label = ", ".join(f"{name}={row.get(name)}" for name in key)
 
-        # A natural key that includes a foreign key (e.g. a user-group
-        # membership's user and group) is matched on the related objects, so
-        # those are resolved before the existence check. Other specs keep
-        # matching on raw values and resolve their references afterwards.
-        fk_values = None
-        if any(name in spec.fk_by_code for name in key):
-            fk_values = self._resolve_fks(spec, row)
-        lookup = {name: fk_values[name] if name in spec.fk_by_code else row[name] for name in key}
-
-        # Idempotency: a row with this natural key is left exactly as it is.
-        if model.objects.filter(**lookup).exists():
+        # Idempotency: a row with this natural key is left exactly as it is. A
+        # foreign key in the key (e.g. a user-group membership's user and group)
+        # is matched by the related row's code; an unknown one matches nothing
+        # and is reported by _resolve_fks below.
+        if model.objects.filter(**self._key_lookup(spec, key, row)).exists():
             return "unchanged", label
 
         # Resolve relationships first: an unresolved one skips the whole row,
         # so a half-built row is never saved.
-        if fk_values is None:
-            fk_values = self._resolve_fks(spec, row)
+        fk_values = self._resolve_fks(spec, row)
         m2m_values = self._resolve_m2ms(spec, row)
 
         instance = model()
@@ -235,6 +232,24 @@ class Command(BaseCommand):
         for name, objects in m2m_values.items():
             getattr(instance, name).set(objects)
         return "created", label
+
+    def _is_nullable_fk(self, model, spec, name):
+        """Whether ``name`` is a nullable FK, so an empty key value means NULL."""
+        return name in spec.fk_by_code and model._meta.get_field(name).null
+
+    def _key_lookup(self, spec, key, row):
+        """Build the natural-key filter; an FK in the key matches by the related code."""
+        lookup = {}
+        for name in key:
+            value = row.get(name)
+            ref = spec.fk_by_code.get(name)
+            if ref is None:
+                lookup[name] = value
+            elif value in EMPTY:
+                lookup[f"{name}__isnull"] = True
+            else:
+                lookup[f"{name}__{ref.key}"] = value
+        return lookup
 
     def _resolve_fks(self, spec, row):
         """Resolve each foreign key in the row to its related object, by code."""

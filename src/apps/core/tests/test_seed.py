@@ -11,8 +11,12 @@ from django.core.management import CommandError, call_command
 from apps.cms.models import Page
 from apps.core import services
 from apps.core.models import Configuration, PublicConfiguration
+from apps.dristi_requests.models import ApprovalStep
+from apps.hearings.models import HearingPurpose
 from apps.locations.models import Location
+from apps.messaging.models import MessageTemplate
 from apps.organizations.models import Organization
+from apps.scrutiny.models import ScrutinyRuleBinding
 
 EXAMPLE_DIR = settings.BASE_DIR.parent / "data" / "seed" / "example"
 LOCAL_DIR = settings.BASE_DIR.parent / "data" / "seed" / "local"
@@ -64,6 +68,17 @@ class TestListing:
         assert "core.Configuration" in output
         assert "core.PublicConfiguration" in output
         assert "config_set, config_key" in output  # composite key is shown
+        for label in (
+            "auth.Group",
+            "messaging.MessageTemplate",
+            "hearings.HearingPurpose",
+            "dristi_requests.RequestType",
+            "dristi_requests.ApprovalStep",
+            "scrutiny.ScrutinyRuleBinding",
+        ):
+            assert label in output
+        # Groups load before the approval steps that point at them.
+        assert output.index("auth.Group") < output.index("dristi_requests.ApprovalStep")
 
 
 @pytest.mark.django_db
@@ -336,6 +351,178 @@ rule_output_schema = { type = "object", properties = { fee = { type = "number" }
         rule = BusinessRule.objects.get(code="COURT_FEE")
         assert rule.engine == "rule_engine"
         assert rule.rule_input_schema["required"] == ["case_value", "case_type"]
+
+
+# Codes below are prefixed TEST_ so they never collide with the rows the data
+# migrations still insert into the test database (spec 0036 phase 1).
+TEMPLATES = """
+[seed]
+model = "messaging.MessageTemplate"
+
+[[rows]]
+message_key = "TEST_OTP_SMS"
+message_type = "sms"
+subject = ""
+content = "Use OTP {{otp}} - On Courts"
+data_schema = { type = "object", properties = { otp = { type = "string" } }, required = ["otp"], additionalProperties = false }
+priority = "MEDIUM"
+category = "OTP"
+max_retries = 1
+
+[[rows]]
+message_key = "TEST_OTP_SMS"
+message_type = "email"
+subject = "Your OTP"
+content = "Use OTP {{otp}}"
+"""
+
+REQUESTS = (
+    """
+[seed]
+model = "auth.Group"
+
+[[rows]]
+name = "TEST_APPROVER"
+""",
+    """
+[seed]
+model = "dristi_requests.RequestType"
+
+[[rows]]
+code = "TEST_UPDATE"
+name = "Test update"
+schema = { type = "object", required = ["name"], properties = { name = { type = "string", minLength = 1 } } }
+min_documents = 1
+is_active = true
+""",
+    """
+[seed]
+model = "dristi_requests.ApprovalStep"
+
+[[rows]]
+request_type = "TEST_UPDATE"
+order = 0
+approver_role = "TEST_APPROVER"
+approver_group = "TEST_APPROVER"
+condition = {}
+""",
+)
+
+BINDINGS = """
+[seed]
+model = "scrutiny.ScrutinyRuleBinding"
+
+[[rows]]
+decision = "CHECKS"
+rule_code = "TEST_CHECKS"
+note = "National default."
+
+[[rows]]
+decision = "CHECKS"
+organization = "TEST_HC"
+rule_code = "TEST_CHECKS_HC"
+"""
+
+
+@pytest.mark.django_db
+class TestReferenceData:
+    """Models the data migrations seeded, now loadable by the command (spec 0036)."""
+
+    def test_message_templates_by_composite_key(self, tmp_path):
+        path = write(tmp_path, "templates.toml", TEMPLATES)
+        assert "created 2, unchanged 0, skipped 0" in run(path)
+        sms = MessageTemplate.objects.get(message_key="TEST_OTP_SMS", message_type="sms")
+        assert sms.category == "OTP"
+        assert sms.max_retries == 1
+        assert sms.data_schema["required"] == ["otp"]
+        assert "created 0, unchanged 2, skipped 0" in run(path, "--strict")
+
+    def test_existing_template_is_left_untouched(self, tmp_path):
+        MessageTemplate.objects.create(
+            message_key="TEST_OTP_SMS", message_type="sms", content="Original {{otp}}"
+        )
+        run(write(tmp_path, "templates.toml", TEMPLATES))
+        sms = MessageTemplate.objects.get(message_key="TEST_OTP_SMS", message_type="sms")
+        assert sms.content == "Original {{otp}}"
+
+    def test_invalid_template_is_skipped(self, tmp_path):
+        toml = (
+            '[seed]\nmodel = "messaging.MessageTemplate"\n\n'
+            '[[rows]]\nmessage_key = "lower_key"\nmessage_type = "sms"\ncontent = "x"\n'
+        )
+        output = run(write(tmp_path, "templates.toml", toml))
+        assert "skipped 1" in output
+        assert "message_key" in output
+        assert not MessageTemplate.objects.filter(message_key="lower_key").exists()
+
+    def test_hearing_purposes(self, tmp_path):
+        toml = (
+            '[seed]\nmodel = "hearings.HearingPurpose"\n\n'
+            '[[rows]]\ncode = "TEST_PURPOSE"\nlabel = "Test purpose"\nsequence = 99\n'
+        )
+        path = write(tmp_path, "purposes.toml", toml)
+        assert "created 1, unchanged 0, skipped 0" in run(path)
+        assert HearingPurpose.objects.get(code="TEST_PURPOSE").sequence == 99
+        assert "created 0, unchanged 1, skipped 0" in run(path)
+
+    def test_existing_purpose_is_unchanged(self, tmp_path):
+        # APPEARANCE is inserted by the hearings data migration today.
+        assert HearingPurpose.objects.filter(code="APPEARANCE").exists()
+        toml = (
+            '[seed]\nmodel = "hearings.HearingPurpose"\n\n'
+            '[[rows]]\ncode = "APPEARANCE"\nlabel = "Changed"\nsequence = 5\n'
+        )
+        assert "created 0, unchanged 1, skipped 0" in run(write(tmp_path, "p.toml", toml))
+        assert HearingPurpose.objects.get(code="APPEARANCE").label == "Appearance"
+
+    def test_request_type_with_approval_step(self, tmp_path):
+        paths = [write(tmp_path, f"{i}.toml", text) for i, text in enumerate(REQUESTS)]
+        # Passed in reverse: load order still puts groups and types first.
+        output = run(*reversed(paths), "--strict")
+        assert "skipped 0" in output
+        step = ApprovalStep.objects.get(request_type__code="TEST_UPDATE", order=0)
+        assert step.approver_group == Group.objects.get(name="TEST_APPROVER")
+        assert step.request_type.min_documents == 1
+        # The FK in the natural key is matched by the request type's code.
+        output = run(*paths, "--strict")
+        assert "created 0, unchanged 1, skipped 0" in output
+        assert ApprovalStep.objects.filter(request_type__code="TEST_UPDATE").count() == 1
+
+    def test_existing_group_is_unchanged(self, tmp_path):
+        Group.objects.create(name="TEST_APPROVER")
+        output = run(write(tmp_path, "groups.toml", REQUESTS[0]))
+        assert "created 0, unchanged 1, skipped 0" in output
+
+    def test_unresolved_fk_in_key_skips_row(self, tmp_path):
+        path = write(tmp_path, "steps.toml", REQUESTS[2].replace("TEST_APPROVER", "TEST_X"))
+        output = run(path)
+        assert "skipped 1" in output
+        assert "request_type: no dristi_requests.RequestType with code='TEST_UPDATE'" in output
+        with pytest.raises(CommandError, match="skipped"):
+            run(path, strict=True)
+
+    def test_rule_bindings_national_and_scoped(self, tmp_path):
+        # Drop the national default the scrutiny data migration inserts.
+        ScrutinyRuleBinding.objects.all().delete()
+        Organization.objects.create(
+            code="TEST_HC", name="Test High Court", organization_type="high_court"
+        )
+        path = write(tmp_path, "bindings.toml", BINDINGS)
+        assert "created 2, unchanged 0, skipped 0" in run(path, "--strict")
+        national = ScrutinyRuleBinding.objects.get(organization__isnull=True)
+        assert national.rule_code == "TEST_CHECKS"
+        scoped = ScrutinyRuleBinding.objects.get(organization__code="TEST_HC")
+        assert scoped.rule_code == "TEST_CHECKS_HC"
+        # An empty organization is matched as NULL, so the rerun is a no-op.
+        assert "created 0, unchanged 2, skipped 0" in run(path, "--strict")
+
+    def test_empty_non_fk_key_is_still_rejected(self, tmp_path):
+        toml = (
+            '[seed]\nmodel = "scrutiny.ScrutinyRuleBinding"\n\n'
+            '[[rows]]\nrule_code = "TEST_CHECKS"\n'
+        )
+        output = run(write(tmp_path, "bindings.toml", toml))
+        assert "missing key field(s): decision" in output
 
 
 @pytest.mark.django_db
