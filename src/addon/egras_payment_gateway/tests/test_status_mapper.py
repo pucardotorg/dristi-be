@@ -5,7 +5,11 @@ from decimal import Decimal
 from django.test import SimpleTestCase
 
 from addon.egras_payment_gateway import constants
-from addon.egras_payment_gateway.status_mapper import map_grn_details, map_grn_records
+from addon.egras_payment_gateway.status_mapper import (
+    map_grn_details,
+    map_grn_records,
+    map_status_text,
+)
 from apps.payments.providers.base import ProviderOutcome, ProviderTransientError
 
 PROVIDER_PAYMENT_ID = "DR0F9D3A6C1B2E4F5A7B"
@@ -36,6 +40,13 @@ class StatusMapperTests(SimpleTestCase):
         self.assertEqual(status.amount, Decimal("775"))
         self.assertEqual(status.metadata["cin"], "CIN123")
         self.assertIsNotNone(status.paid_at)
+
+    def test_every_documented_success_spelling_maps_to_success(self):
+        """NIC uses Successful / Successfull / Success across docs (#6.3)."""
+        for spelling in ("Successful", "Successfull", "Success", "SUCCESSFUL"):
+            with self.subTest(spelling=spelling):
+                self.assertEqual(mapped(Status=spelling).outcome, ProviderOutcome.SUCCESS)
+                self.assertEqual(map_status_text(spelling), ProviderOutcome.SUCCESS)
 
     def test_success_without_grn_is_incomplete_pending(self):
         status = mapped(GRN="")

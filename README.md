@@ -2,7 +2,7 @@
 
 A Django-based API project template using:
 
-- **Django 5** + **Django REST Framework** for the API
+- **Django 5.2 LTS** + **Django REST Framework** for the API
 - **Dramatiq** for background jobs (Redis broker)
 - **Redis** for cache and the task queue
 - **PostgreSQL** for the database
@@ -89,7 +89,7 @@ states, districts and pincodes are seeded from TOML with the `seed` command
 (`python manage.py seed states.toml districts.toml pincodes.toml`); the data and
 its CSV-to-TOML converter live in the
 [`dristi-be-experiments`](https://github.com/pucardotorg/dristi-be-experiments)
-repo (see [src/data/seed/README.md](src/data/seed/README.md)).
+repo (see [data/seed/README.md](data/seed/README.md)).
 
 ## Scheduled and delayed jobs
 
@@ -235,6 +235,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `MESSAGING_RETRY_DELAY_MAX` | Maximum retry delay in seconds | `3600` |
 | `MESSAGING_TASK_TIME_LIMIT` | Dramatiq time limit for `send_message` in milliseconds; must exceed any gateway timeout | `600000` |
 | `OTP_MAX_ATTEMPTS` | Wrong guesses allowed against one OTP before it is destroyed | `5` |
+| `ADVOCATE_SEARCH_THROTTLE_RATE` | Per-user rate of `GET /advocates?search=` (finding an advocate to add to a case); blank disables it | `60/min` |
 | `PASSWORD_RESET_WINDOW_SECONDS` | How long a verified password-reset code allows the new password to be set, in seconds | `600` |
 | `SEED_SUPERUSER_APPROVERS` | Add every superuser to the `BAR_ID_APPROVER` group (on `migrate` and when one is created), so registration and bar-ID requests have an approver. Defaults to `True`, and to `False` in production, where real approvers should be assigned. | `True` |
 | `SCRUTINY_ESTABLISHMENT_ID` | Organization id of the one court establishment this deployment scrutinises and registers for. Court roles count only there; empty closes every scrutiny and registration endpoint, and a paid case cannot be submitted for scrutiny (`503 E09019`). | `3f2b…-uuid` |
@@ -261,9 +262,9 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `S3_BUCKET` | S3 bucket for media uploads | `dristi-media` |
 | `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
 | `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
-| `FILE_MAX_SIZE_BYTES` | Largest single file `apps.files` will accept | `10485760` |
+| `FILE_MAX_SIZE_BYTES` | Largest single file `apps.files` will accept (15 MB) | `15728640` |
 | `FILE_MAX_COUNT_PER_UPLOAD` | Most files allowed in one `upload_file` call | `10` |
-| `FILE_MAX_READ_BYTES` | Largest file `get_file_content()` will open into memory. Defaults to `FILE_MAX_SIZE_BYTES`. | `10485760` |
+| `FILE_MAX_READ_BYTES` | Largest file `get_file_content()` will open into memory. Defaults to `FILE_MAX_SIZE_BYTES`. | `15728640` |
 | `FILE_SYSTEM_USER_ID` | System account (email, mobile number or pk) that background uploads such as generated PDFs are attributed to | `system@dristi.internal` |
 | `PDF_EXTERNAL_API_TIMEOUT_SECONDS` | Connect/read timeout for external API and localization calls made by PDF mappings | `10` |
 | `PDF_EXTERNAL_API_MAX_RETRIES` | In-call retries for external API / localization / image fetches on timeouts and 5xx | `2` |
@@ -284,7 +285,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `PDF_TASK_TIME_LIMIT_MS` | Dramatiq time limit for PDF actors in milliseconds | `600000` |
 | `PDF_SIGNATURE_CONTAINER_BYTES` | Signature container reserved by `prepare_for_signing`; must exceed the largest ESP PKCS#7 | `16384` |
 | `PDF_SIGNATURE_HASH_ALGORITHM` | ByteRange digest algorithm (`SHA256`, `SHA384`, `SHA512`); must match the ESP request | `SHA256` |
-| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives | `10485760` |
+| `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives; keep it at or above `FILE_MAX_SIZE_BYTES`, or an accepted upload cannot be signed | `20971520` |
 | `ESIGN_PROVIDER` | Dotted path of the active eSign provider. The mock provider needs no C-DAC credentials and is the local/CI default. | `addon.cdac_esign.provider.CDACESignProvider` |
 | `ESIGN_ENABLED` | Kill switch; initiation returns 503 when disabled | `True` |
 | `ESIGN_TRANSACTION_TTL` | Seconds a transaction waits for the ESP callback | `900` |
@@ -314,6 +315,8 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
 | `PAYMENT_DEFAULT_PROVIDER` | Name (a key of the `PAYMENT_PROVIDERS` setting) of the provider new payments are started with; empty leaves payments `INITIATED` for an operator. Payments in flight keep their own provider. | `mock` locally, empty in production until a gateway addon ships |
 | `PAYMENT_REGISTERED_PROVIDERS` | Comma-separated provider names kept registered besides the default, so payments still pending at a provider that is no longer the default keep resolving through its callback and poller | empty; `egras` while switching away from e-GRAS |
+| `PAYMENT_SELECTABLE_PROVIDERS` | Comma-separated, ordered provider names a payer may choose per payment (`provider` on create); empty means the default only. Must include `PAYMENT_DEFAULT_PROVIDER`; every name is registered (spec 0032 #4.2) | `egras,offline` |
+| `PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE` | Per-user rate of failed collection-desk lookups; blank disables it (spec 0032 #15) | `120/min` |
 | `PAYMENT_DEFAULT_CURRENCY` | Currency a demand is raised in when none is given | `INR` |
 | `PAYMENT_UI_REDIRECT_URL` | Server-side redirect target of the provider callback; `https://` in production | `https://app.example.com/payments/return` |
 | `PAYMENT_CALLBACK_THROTTLE_RATE` | Per-IP throttle for the public callback; blank disables it | `60/min` |
@@ -364,6 +367,8 @@ entry removes the integration entirely.
 | `EGRAS_DTO` / `EGRAS_STO` | 2-digit treasury / sub-treasury codes | `01` / `02` |
 | `EGRAS_DDO` | 4-character drawing & disbursing officer code | `DDO1` |
 | `EGRAS_OFFICE_NAME` | 8-character office name; defaults to `DTO+STO+DDO` | `0102DDO1` |
+| `EGRAS_RESPONSE_KEY_PATH` | Path to the NIC-issued key file for decrypting the encrypted callback (`payRes`); decodes to 16/24/32 bytes | `/run/secrets/egras-response.key` |
+| `EGRAS_RESPONSE_KEY_FORMAT` | How the key file stores the key — `raw` bytes (default, matching NIC's reference), or `base64` / `hex` text (whitespace trimmed). Confirm the format with NIC | `raw` |
 | `EGRAS_USER_ID` | e-GRAS user id | `guest` |
 | `EGRAS_SCHEME_MAP` | JSON: `account_head` or `charge_type` → 17-character scheme code `NNNN-NN-NNN-NN-NN` | `{"COURT_FEE": "0030-01-501-01-00"}` |
 | `EGRAS_MAX_SCHEMES` | Government-charge scheme slots per transaction. Keep `1` until NIC confirms the field names of the second and later heads (spec 0022 Q-3); up to `4` once confirmed | `1` |
@@ -377,6 +382,43 @@ entry removes the integration entirely.
 | `EGRAS_PENDING_HORIZON` | Days a payment may stay pending (≥ 8; e-GRAS fails on the 8th day) | `9` |
 | `EGRAS_NOT_FOUND_GRACE` | Hours a missing GRN stays `NOT_FOUND` before it is final | `2` |
 | `EGRAS_ENABLED` | Kill switch; `False` refuses new payments while verification keeps resolving in-flight ones | `True` |
+
+### Offline payment addon (spec 0032)
+
+The offline addon (`addon.offline_payment`) lets a payer pay in person at a
+court counter — cash, demand draft or card/UPI — and court staff record it.
+Offer it next to e-GRAS with `PAYMENT_SELECTABLE_PROVIDERS=egras,offline`
+(payers then send `"provider": "offline"`); the environment settings register
+it. Staff need the `payments.view_payment_collection` /
+`record_payment_collection` (and optionally `record_late_payment_collection`,
+`cancel_payment_collection`) permissions, usually through a Django group, and
+use the collection APIs under `/api/v1/payments/collections/` or the
+"Record collection" button in the payment admin.
+
+To stop offering it, remove `offline` from `PAYMENT_SELECTABLE_PROVIDERS` but
+keep `PAYMENT_REGISTERED_PROVIDERS=offline` until
+`python manage.py payments_provider_usage offline` shows nothing pending (at
+most validity + grace + 1 day). `OFFLINE_PAYMENT_ENABLED=False` refuses new
+requests while open ones can still be recorded. Removing the `OFFLINE_PAYMENT_*`
+block and the `INSTALLED_APPS` entry removes the integration entirely.
+
+| Variable | Purpose | Example |
+| --- | --- | --- |
+| `OFFLINE_PAYMENT_ENABLED` | Kill switch for new requests; recording keeps working | `True` |
+| `OFFLINE_PAYMENT_LABEL` | Name shown in the provider list | `Pay at the court counter` |
+| `OFFLINE_PAYMENT_REFERENCE_PREFIX` | 2–4 upper-case letters starting every payment reference | `OFL` |
+| `OFFLINE_PAYMENT_VALIDITY_DAYS` | Days after the issue date the payer may pay (1–90) | `7` |
+| `OFFLINE_PAYMENT_RECORDING_GRACE_HOURS` | Hours after validity staff may still record money collected in time (0–168) | `24` |
+| `OFFLINE_PAYMENT_METHODS` | Comma-separated subset of `CASH`, `DEMAND_DRAFT`, `POS` | `CASH,DEMAND_DRAFT` |
+| `OFFLINE_PAYMENT_COUNTERS` | JSON list of `{code, label, address, hours}` where money is accepted | `[{"code": "EKM-CJM", "label": "CJM Court, Ernakulam"}]` |
+| `OFFLINE_PAYMENT_DEFAULT_COUNTER` | Counter used when the payer picks none; one of the codes | `EKM-CJM` |
+| `OFFLINE_PAYMENT_INSTRUCTIONS` | Instructions shown to the payer (≤ 500 characters) | `Quote the payment reference at the counter and keep the receipt.` |
+| `OFFLINE_PAYMENT_PAYABLE_TO` | In whose favour a demand draft is drawn; required with `DEMAND_DRAFT` | `Chief Judicial Magistrate, Ernakulam` |
+| `OFFLINE_PAYMENT_MAX_AMOUNT` | Largest request offered offline; empty for no cap | `50000.00` |
+| `OFFLINE_PAYMENT_CASH_MAX_AMOUNT` | Largest amount accepted in cash; empty for no cap | `199999.00` |
+| `OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES` | Comma-separated `ChargeType` values offline may collect; empty allows all | `COURT_FEE,PROCESS_COURT_FEE` |
+| `OFFLINE_PAYMENT_RECEIPT_PATTERN` | Regex a receipt number must match after trimming and upper-casing | `^[A-Z0-9][A-Z0-9/-]{0,63}$` |
+| `OFFLINE_PAYMENT_DD_MAX_AGE_DAYS` | Oldest demand draft accepted, in days before collection | `90` |
 
 ## Docker dependency profiles
 

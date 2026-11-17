@@ -40,12 +40,23 @@ from ..models import (
     CaseEvidence,
     CaseParticipant,
     CaseStatus,
+    ContactType,
     ParticipantRole,
     PoaMandate,
     Representation,
+    has_visible_text,
+    scan_type_message,
 )
 from ..serializers import CasePreviewSerializer
-from .case_types import DocumentType, EvidenceType, get_config, schema_errors
+from .case_types import (
+    EVIDENCE_SCAN_TYPES,
+    DocumentType,
+    EvidenceType,
+    get_config,
+    schema_errors,
+    section_errors,
+)
+from .contacts import contacts_of, first, load_contacts
 from .services import (
     PREVIEW_TTL_SECONDS,
     clear_preview_cache,
@@ -128,7 +139,7 @@ def _load_preview(case_id):
         Prefetch(
             "participants",
             queryset=CaseParticipant.objects.active()
-            .select_related("address", "witness")
+            .select_related("witness", "institution", "person__permanent_address")
             .order_by(*PARTICIPANT_ORDERING),
             to_attr="active_participants",
         ),
@@ -159,6 +170,7 @@ def _load_preview(case_id):
             to_attr="active_documents",
         ),
     ).get(pk=case_id)
+    load_contacts(case.active_participants)
     case.detail_sections = get_detail_sections(case)
     return case
 
@@ -200,6 +212,23 @@ def validation_errors(case):
     if not participants.filter(role=ParticipantRole.ACCUSED).exists():
         error("participants.accused", "At least one active accused is required.")
 
+    # Writes already check these; a rule tightened since then is caught here.
+    # Witnesses are optional, but one who is added needs a name or designation;
+    # every other party needs a name. Each party is served at an address: an
+    # individual their own, an institution its own on this case.
+    for participant in load_contacts(participants.order_by(*PARTICIPANT_ORDERING)):
+        field = f"participants.{participant.id}"
+        label = f"{participant.get_role_display()} #{participant.ordinal}"
+        if participant.role != ParticipantRole.WITNESS:
+            if not participant.name_at_filing:
+                error(field, f"{label} has no name.")
+        elif not (participant.name_at_filing or participant.designation_at_filing):
+            error(field, f"{label} has no name or designation.")
+        own, of_institution = contacts_of(participant)
+        served = of_institution if participant.institution_id else own
+        if not first(served, ContactType.ADDRESS):
+            error(field, f"{label} has no address.")
+
     represented = set(
         Representation.objects.active().filter(case=case).values_list("case_participant", flat=True)
     )
@@ -210,19 +239,66 @@ def validation_errors(case):
                 f"Complainant #{complainant.ordinal} has no advocate and is not marked "
                 "as party-in-person.",
             )
+        if complainant.is_party_in_person and not has_visible_text(
+            complainant.party_in_person_affidavit
+        ):
+            error(
+                f"participants.{complainant.id}",
+                f"Complainant #{complainant.ordinal} appears in person but has no "
+                "party-in-person affidavit.",
+            )
 
-    # Vakalatnamas and POA documents belong to the case, not to one
-    # representation or mandate (spec 0021 §3.4), so one of each is enough.
-    uploaded = set(
-        CaseDocument.objects.active().filter(case=case).values_list("document_type", flat=True)
+    # Writes refuse empty editor output; this also catches what reached the
+    # database another way (the admin, a shell).
+    if not has_visible_text(case.affidavit):
+        error("affidavit", "The affidavit is required.")
+
+    documents = list(
+        CaseDocument.objects.active()
+        .filter(case=case)
+        .only("id", "document_type", "case_participant_id", "case_evidence_id")
     )
-    if represented and DocumentType.VAKALATNAMA not in uploaded:
-        error("documents.VAKALATNAMA", "A vakalatnama is required when an advocate is engaged.")
-    if (
-        PoaMandate.objects.active().filter(case=case).exists()
-        and DocumentType.POA_DOCUMENT not in uploaded
-    ):
-        error("documents.POA_DOCUMENT", "A POA document is required when a POA holder acts.")
+    uploaded = {document.document_type for document in documents}
+
+    def linked(document_type, link):
+        """Return the ids that active documents of ``document_type`` are linked to by ``link``."""
+        return {
+            getattr(document, link)
+            for document in documents
+            if document.document_type == document_type and getattr(document, link)
+        }
+
+    # Per-party documents must be linked to their party (spec 0021 §6.3).
+    with_identity = linked(DocumentType.IDENTITY_PROOF, "case_participant_id")
+    with_vakalatnama = linked(DocumentType.VAKALATNAMA, "case_participant_id")
+    for complainant in complainants:
+        if complainant.id not in with_identity:
+            error(
+                "documents.IDENTITY_PROOF",
+                f"Complainant #{complainant.ordinal} has no identity proof.",
+            )
+        if complainant.id in represented and complainant.id not in with_vakalatnama:
+            error(
+                "documents.VAKALATNAMA",
+                f"Complainant #{complainant.ordinal} has an advocate but no vakalatnama.",
+            )
+    with_poa_document = linked(DocumentType.POA_DOCUMENT, "case_participant_id")
+    acting_for = (
+        CaseParticipant.objects.active()
+        .filter(
+            case=case,
+            pk__in=PoaMandate.objects.active().filter(case=case).values("represented_participant"),
+        )
+        .only("id", "role", "ordinal")
+        .order_by(*PARTICIPANT_ORDERING)
+    )
+    for party in acting_for:
+        if party.id not in with_poa_document:
+            error(
+                "documents.POA_DOCUMENT",
+                f"{party.get_role_display()} #{party.ordinal} acts through a POA holder "
+                "but has no POA document.",
+            )
     for document_type in config.required_document_types:
         if document_type not in uploaded:
             error(
@@ -236,8 +312,34 @@ def validation_errors(case):
         if evidence_type not in present:
             label = EvidenceType(evidence_type).label.lower()
             error(f"evidence.{evidence_type}", f"At least one {label} evidence is required.")
-    # Writes already check these; a schema tightened since then is caught here.
+    # A delivered notice needs its proof of delivery; an undelivered one has none.
+    with_delivery_proof = linked(
+        DocumentType.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE, "case_evidence_id"
+    )
     for item in evidence:
+        if (
+            item.evidence_type == EvidenceType.LEGAL_DEMAND_NOTICE
+            and item.evidence_info.get("is_delivered") is True
+            and item.id not in with_delivery_proof
+        ):
+            error(
+                "documents.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
+                f"Demand notice #{item.ordinal} was delivered but has no proof of delivery.",
+            )
+    # Writes already check these; a rule tightened since then is caught here.
+    document_types = {document.id: document.document_type for document in documents}
+    for item in evidence:
+        scan_type = EVIDENCE_SCAN_TYPES.get(item.evidence_type)
+        if (
+            item.case_document_id
+            and scan_type
+            and document_types.get(item.case_document_id) != scan_type
+        ):
+            label = EvidenceType(item.evidence_type).label
+            error(
+                f"evidence.{item.evidence_type}",
+                f"{label} #{item.ordinal}: {scan_type_message(scan_type)}",
+            )
         schema = config.evidence_schemas.get(item.evidence_type)
         for problem in schema_errors(schema, item.evidence_info) if schema else []:
             label = EvidenceType(item.evidence_type).label
@@ -245,7 +347,7 @@ def validation_errors(case):
 
     # An unsaved section is still ``{}``, which fails its required fields here.
     for section, data in get_detail_sections(case).items():
-        for problem in schema_errors(config.section_schemas[section], data):
+        for problem in section_errors(config, section, data):
             error(f"details.{section}", str(problem))
     return problems
 

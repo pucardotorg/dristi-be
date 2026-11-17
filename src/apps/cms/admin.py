@@ -1,6 +1,7 @@
 """CMS admin configuration."""
 
 from django.contrib import admin
+from django.db import models
 
 from apps.core.mixins import AuditUserAdminMixin
 
@@ -17,6 +18,8 @@ class PageAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     filter_horizontal = ("categories",)
     readonly_fields = ("id", "created_at", "updated_at")
     ordering = ("title", "slug")
+    # Django 6.0's default; passing it now silences RemovedInDjango60Warning.
+    formfield_overrides = {models.URLField: {"assume_scheme": "https"}}
 
 
 @admin.register(PageCategory)

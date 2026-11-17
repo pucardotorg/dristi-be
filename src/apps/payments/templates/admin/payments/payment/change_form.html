@@ -1,0 +1,7 @@
+{% extends "admin/change_form.html" %}
+{% block object-tools-items %}
+  {% for label, url in collection_buttons %}
+    <li><a href="{{ url }}">{{ label }}</a></li>
+  {% endfor %}
+  {{ block.super }}
+{% endblock %}

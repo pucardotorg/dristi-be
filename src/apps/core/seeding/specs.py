@@ -73,6 +73,22 @@ register(
 
 register(
     SeedSpec(
+        model_label="core.PublicConfiguration",
+        key=("config_set", "config_key"),
+        fields=(
+            "config_set",
+            "config_key",
+            "value_type",
+            "config_value",
+            "description",
+            "is_active",
+        ),
+        order=30,
+    )
+)
+
+register(
+    SeedSpec(
         model_label="cms.PageCategory",
         key=("slug",),
         fields=("name", "slug"),
@@ -87,5 +103,22 @@ register(
         fields=("slug", "title", "sub_title", "main_image_url", "content_type", "content"),
         m2m_by_code={"categories": FkRef("cms.PageCategory", "slug")},
         order=50,
+    )
+)
+
+register(
+    SeedSpec(
+        model_label="core.Language",
+        key=("code",),
+        fields=(
+            "code",
+            "name",
+            "native_name",
+            "is_default",
+            "sort_order",
+            "is_active",
+            "supports",
+        ),
+        order=30,
     )
 )

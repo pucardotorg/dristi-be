@@ -89,6 +89,9 @@ CALLBACK_BANKCODE = "bankcode"
 CALLBACK_AMOUNT = "amount"
 CALLBACK_TDATE = "tdate"
 CALLBACK_PAYMENT_TYPE = "payment_type"
+# e-GRAS v3.7 sends the whole response as one encrypted field instead of the
+# plain fields above (spec 0022 #5.4). Present => decrypt it first.
+CALLBACK_PAYRES = "payres"
 
 # SOAP GRN status service (spec 0022 #6.1). The operation looks a transaction
 # up by *our own* identity — never by a callback-supplied GRN. These values are
@@ -116,7 +119,11 @@ BANKDATE_ELEMENT = "Bankdate"
 # ---------------------------------------------------------------------------
 # e-GRAS status vocabulary (spec 0022 #6.3), matched case-insensitively.
 # ---------------------------------------------------------------------------
-STATUS_SUCCESS = {"successfull", "success"}
+# NIC is inconsistent across docs/samples: the v3.6 GrnDetails sample says
+# "Successfull", the v3.7 Process doc says "Successful", and the callback table
+# says "Success". Accept all three so a real success is never missed (a missed
+# success would strand a debited payer at PENDING until the horizon).
+STATUS_SUCCESS = {"successful", "successfull", "success"}
 STATUS_FAILURE = "failure"
 STATUS_PENDING = "pending"
 STATUS_NOT_FOUND = "not found"
@@ -142,6 +149,12 @@ EGRAS_VERIFY_EMPTY = "EGRAS_VERIFY_EMPTY"
 EGRAS_PAYMENT_FAILED = "EGRAS_PAYMENT_FAILED"
 EGRAS_SUCCESS_INCOMPLETE = "EGRAS_SUCCESS_INCOMPLETE"
 EGRAS_UNKNOWN_STATUS = "EGRAS_UNKNOWN_STATUS"
+# The encrypted callback (payRes) could not be decrypted: uncorrelatable, so the
+# poller resolves the payment instead (spec 0022 #5.4).
+EGRAS_RESPONSE_DECRYPT_FAILED = "EGRAS_RESPONSE_DECRYPT_FAILED"
+# The decrypted callback's checksum did not match (logged, not enforced: AES-GCM
+# already authenticates the payload, and verification is the real gate).
+EGRAS_CHECKSUM_MISMATCH = "EGRAS_CHECKSUM_MISMATCH"
 # ``ProviderStatus.reconciliation_code`` when one Applicationnumber has more
 # than one successful GRN (a double payment): credited once, flagged.
 EGRAS_MULTIPLE_SUCCESS = "EGRAS_MULTIPLE_SUCCESS"

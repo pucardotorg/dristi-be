@@ -87,7 +87,7 @@ class ScrutinyRound(BaseModel, BaseAuditableModel):
                 violation_error_message="This case already has an open round.",
             ),
             models.CheckConstraint(
-                check=Q(number__gte=1),
+                condition=Q(number__gte=1),
                 name="scrutiny_round_number_positive",
                 violation_error_message="Round numbers start at 1.",
             ),

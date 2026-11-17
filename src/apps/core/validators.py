@@ -22,6 +22,10 @@ VALID_DATA_TYPES = [
 ]
 DATA_TYPE_CHOICES = [(dt, dt) for dt in VALID_DATA_TYPES]
 
+# Spellings accepted for a boolean configuration value, compared case-insensitively.
+CONFIG_TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
+CONFIG_FALSE_VALUES = frozenset({"false", "0", "no", "off"})
+
 
 def validate_attribute_name(name: str) -> None:
     """Validate an attribute name against the project naming convention."""
@@ -55,6 +59,19 @@ def coerce_boolean(value: Any) -> bool:
     raise ValidationError(f"Cannot coerce {value!r} to boolean.")
 
 
+def parse_config_bool(value: str) -> bool:
+    """Parse a configuration value as true/false, 1/0, yes/no or on/off.
+
+    Raises ``ValueError`` for anything else.
+    """
+    normalized = value.strip().lower()
+    if normalized in CONFIG_TRUE_VALUES:
+        return True
+    if normalized in CONFIG_FALSE_VALUES:
+        return False
+    raise ValueError(value)
+
+
 def coerce_integer(value: Any) -> int:
     """Coerce a value to an integer, rejecting bools and non-numeric data."""
     if isinstance(value, bool):
@@ -70,6 +87,11 @@ def coerce_integer(value: Any) -> int:
             return int(value)
         raise ValidationError(f"Cannot coerce non-whole decimal {value!r} to integer.")
     if isinstance(value, str):
+        # Parse integer text exactly; going through float rounds above 2**53.
+        try:
+            return int(value)
+        except ValueError:
+            pass
         try:
             parsed = float(value)
         except ValueError as exc:

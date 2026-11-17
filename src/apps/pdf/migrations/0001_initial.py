@@ -304,7 +304,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="pdfjobrecord",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     (
                         "status__in",
                         ["PENDING", "QUEUED", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"],
@@ -342,7 +342,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="pdfjob",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     (
                         "status__in",
                         [
@@ -362,7 +362,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="pdfjob",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     models.Q(("status", "PARTIAL_SUCCESS"), _negated=True),
                     ("is_bulk", True),
                     _connector="OR",

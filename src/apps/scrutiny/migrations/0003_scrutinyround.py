@@ -338,7 +338,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="scrutinyround",
             constraint=models.CheckConstraint(
-                check=models.Q(("number__gte", 1)),
+                condition=models.Q(("number__gte", 1)),
                 name="scrutiny_round_number_positive",
                 violation_error_message="Round numbers start at 1.",
             ),

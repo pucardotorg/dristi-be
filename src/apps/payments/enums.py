@@ -70,6 +70,13 @@ class PaymentStatus(models.TextChoices):
     CANCELLED = "CANCELLED", "Cancelled"
 
 
+class AttestationOutcome(models.TextChoices):
+    """What a recorded collection did to its payment request (spec 0032 #4.3)."""
+
+    CREDITED = "CREDITED", "Credited"  # the request was open; its items are paid
+    FLAGGED = "FLAGGED", "Flagged"  # not credited; an operator must reconcile it
+
+
 # A payment in one of these may still collect money; its items are in flight.
 OPEN_PAYMENT_STATUSES = (PaymentStatus.INITIATED, PaymentStatus.PENDING)
 TERMINAL_PAYMENT_STATUSES = (
@@ -84,3 +91,4 @@ FAILURE_NOT_FOUND_AT_PROVIDER = "PAYMENT_NOT_FOUND_AT_PROVIDER"
 FAILURE_PROVIDER_FAILED = "PAYMENT_FAILED_AT_PROVIDER"
 FAILURE_PROVIDER_ERROR = "PROVIDER_ERROR"
 FAILURE_CANCELLED = "PAYMENT_CANCELLED"
+FAILURE_PROVIDER_ID_COLLISION = "PROVIDER_ID_COLLISION"

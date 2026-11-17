@@ -54,12 +54,15 @@ ESIGN_PROVIDER = "apps.esign.providers.mock.MockESignProvider"
 # The public callback throttle shares the process cache across tests, so it
 # is off by default and switched on by the test that asserts it.
 ESIGN_CALLBACK_THROTTLE_RATE = ""
+# Off by default; the test that asserts it switches it on.
+ADVOCATE_SEARCH_THROTTLE_RATE = ""
 
 # Payments run on the mock provider in tests; the public callback throttle is
 # off by default for the same reason as eSign's.
 PAYMENT_PROVIDERS = {"mock": "apps.payments.providers.mock.MockPaymentProvider"}
 PAYMENT_DEFAULT_PROVIDER = "mock"
 PAYMENT_CALLBACK_THROTTLE_RATE = ""
+PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE = ""
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 

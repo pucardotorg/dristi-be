@@ -469,6 +469,40 @@ believed, a forged callback with a known application number would unlock a
 case, a process or a join-a-case access gate without any money moving. Trust
 comes only from #6.
 
+### 5.4 Encrypted callback (`payRes`)
+
+From e-GRAS v3.7 (SOP "Implementation of Encrypted Payment Response"), the
+return-URL form carries a **single `payRes` field** instead of the plain fields
+of #5.1 — an AES-GCM-encrypted, base64 string. `callback_parser` decrypts it
+back into the same fields and then follows #5.2 unchanged:
+
+- **Cipher.** AES-GCM, 128-bit tag. The blob is
+  `base64( nonce[16] ‖ ciphertext‖tag )`; associated data is empty. The key is a
+  shared symmetric secret NIC issues (decodes to 16/24/32 bytes), read from
+  `EGRAS_RESPONSE_KEY_PATH` in the `EGRAS_RESPONSE_KEY_FORMAT` encoding (`raw`
+  bytes, or `base64`/`hex` text — text is whitespace-trimmed so a stray newline
+  is harmless) and cached (`config.load_response_key`). It is the addon's only
+  credential: the key bytes are never logged.
+- **Authenticity.** AES-GCM is authenticated encryption, so a `payRes` tampered
+  in transit fails to decrypt. A successful decryption already proves integrity
+  under the key; the response's `checksum` (SHA-256 of
+  `GRN|status|Applicationnumber|CIN|tdate|payment_type|bankcode|amount`) is a
+  redundant extra check — computed and logged on mismatch, not enforced. The
+  decrypted fields remain a *hint*: #5.3 and #6 still apply.
+- **Backward compatible.** When `payRes` is absent the parser uses the plain
+  path, so the cutover needs no flag.
+- **Failure is graceful.** A blob that cannot be decrypted (missing/wrong key,
+  tampered, malformed JSON) raises `ProviderCallbackMalformed`
+  (`EGRAS_RESPONSE_DECRYPT_FAILED`): `apps.payments` redirects `status=UNKNOWN`
+  and the poller (#6.4, 0017 #9.7) resolves the payment by its stored
+  application number. So even an unreadable callback never strands or
+  mis-credits a payment; it only loses the instant confirmation.
+
+A missing `EGRAS_RESPONSE_KEY_PATH` is a startup warning
+(`egras_payment_gateway.W002`), or an error in production
+(`egras_payment_gateway.E009`); a key that is set but unreadable or the wrong
+length is always an error.
+
 ---
 
 ## 6. Verification

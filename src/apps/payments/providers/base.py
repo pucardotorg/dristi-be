@@ -24,10 +24,25 @@ class ProviderOutcome(StrEnum):
     NOT_FOUND = "NOT_FOUND"  # provider has no record of this transaction
 
 
+class ConfirmationMode(StrEnum):
+    """Who declares that the money was received (spec 0032 #4.1).
+
+    ``ATTESTED`` providers are completed only by an authorised person through
+    ``PaymentService.record_collection``; their ``fetch_status`` never credits.
+    By convention an ``ATTESTED`` provider writes ``valid_until`` (an ISO-8601
+    datetime) into the initiation metadata, so the collection desk can show
+    until when the request may be paid without knowing the provider.
+    """
+
+    PROVIDER = "PROVIDER"  # the provider reports the outcome; fetch_status is authoritative
+    ATTESTED = "ATTESTED"  # authorised staff record the collection through apps.payments
+
+
 class ActionKind(StrEnum):
     """What the client does with ``provider_action``."""
 
     REDIRECT_FORM = "REDIRECT_FORM"  # browser posts form_fields to url
+    SHOW_INSTRUCTIONS = "SHOW_INSTRUCTIONS"  # show details; nothing to submit
     NONE = "NONE"  # nothing for the client to do
 
 
@@ -69,6 +84,19 @@ class InitiationRequest:
     payer: Payer
     initiated_at: datetime  # Payment.initiated_at, never now()
     options: Mapping[str, str]  # opaque provider_options from the client
+    # True when apps.payments re-runs initiate for a payment already pending
+    # (spec 0017 #9.4). A provider may then skip checks that only gate NEW
+    # payments (a kill switch, a cap); it must still return the same id.
+    replay: bool = False
+
+
+@dataclass(frozen=True)
+class ActionDetail:
+    """One label/value line of a ``SHOW_INSTRUCTIONS`` action."""
+
+    key: str  # stable machine key, e.g. "reference"; lets a client add a copy button
+    label: str  # human label, rendered as-is
+    value: str
 
 
 @dataclass(frozen=True)
@@ -79,6 +107,7 @@ class ProviderAction:
     url: str = ""
     method: str = "POST"
     form_fields: Mapping[str, str] = field(default_factory=dict)
+    details: tuple[ActionDetail, ...] = ()  # ordered; for SHOW_INSTRUCTIONS
 
 
 @dataclass(frozen=True)
@@ -124,6 +153,45 @@ class PaymentOption:
     group: str  # e.g. "NET_BANKING", "UPI"; display only
 
 
+@dataclass(frozen=True)
+class AttestationField:
+    """One input a staff form renders for a collection method."""
+
+    key: str  # sent back in Attestation.details
+    label: str
+    kind: str  # "text" | "digits" | "date"
+    required: bool = True
+    max_length: int = 64
+
+
+@dataclass(frozen=True)
+class AttestationMethod:
+    """How money can be handed over to staff."""
+
+    code: str  # opaque, e.g. "CASH"
+    label: str
+    fields: tuple[AttestationField, ...] = ()
+
+
+@dataclass(frozen=True)
+class Attestation:
+    """What staff recorded, plus what ``apps.payments`` knows of the request."""
+
+    provider_payment_id: str
+    expected_amount: Decimal  # sum of Payment.amount over the group
+    currency: str
+    initiated_at: datetime  # earliest Payment.initiated_at of the group
+    amount: Decimal  # what staff say they received
+    method: str
+    receipt_number: str
+    collected_at: datetime
+    details: Mapping[str, str]  # instrument fields keyed by AttestationField.key
+    remarks: str
+    # True when apps.payments records against a request that is no longer open
+    # (spec 0032 #8.5); the provider then skips its recording deadline.
+    late: bool = False
+
+
 class ProviderError(Exception):
     """Base of every provider failure.
 
@@ -156,9 +224,18 @@ class ProviderNotConfigured(Exception):  # noqa: N818
 
 
 class PaymentProvider(ABC):
-    """A payment gateway adapter. Rules every provider honours: spec 0017 #9.2."""
+    """A payment gateway adapter. Rules every provider honours: spec 0017 #9.2.
+
+    Added by spec 0032 #4.1: ``attest`` is pure (it validates and maps, stores
+    nothing and calls no network); an ``ATTESTED`` provider's ``fetch_status``
+    never returns ``SUCCESS``; it overrides ``attest`` and
+    ``attestation_methods``; and its ``parse_callback`` always raises
+    ``ProviderCallbackMalformed``.
+    """
 
     name: ClassVar[str]  # stored in Payment.provider
+    label: ClassVar[str] = ""  # shown to the payer; falls back to name
+    confirmation: ClassVar[ConfirmationMode] = ConfirmationMode.PROVIDER
     pending_horizon: ClassVar[timedelta]  # provider's own final-outcome window
     not_found_grace: ClassVar[timedelta]  # NOT_FOUND is final only after this
 
@@ -177,3 +254,26 @@ class PaymentProvider(ABC):
     @abstractmethod
     def parse_callback(self, payload: Mapping[str, str]) -> ProviderCallback:
         """Parse a callback; claim ``trusted`` only when authenticity was proven."""
+
+    def attestation_methods(self) -> list[AttestationMethod]:
+        """Collection methods staff may record; empty for ``PROVIDER`` providers."""
+
+        return []
+
+    def attest(self, attestation: Attestation) -> ProviderStatus:
+        """Validate an attestation and return the status to apply.
+
+        Raises ``ProviderPermanentError(code, message, field=<Attestation field
+        or "details.<key>">)`` when the record is not acceptable.
+        """
+
+        raise ProviderPermanentError("ATTESTATION_NOT_SUPPORTED")
+
+    def normalise_reference(self, value: str) -> str:
+        """The canonical form of a reference typed by a person.
+
+        Raises ``ProviderPermanentError`` when ``value`` cannot be one of this
+        provider's references (for example, a failed check symbol).
+        """
+
+        return (value or "").strip()

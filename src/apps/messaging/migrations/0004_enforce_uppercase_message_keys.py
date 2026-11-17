@@ -35,14 +35,14 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="messagetemplate",
             constraint=models.CheckConstraint(
-                check=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
+                condition=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
                 name="messagetemplate_message_key_upper_snake",
             ),
         ),
         migrations.AddConstraint(
             model_name="messagelog",
             constraint=models.CheckConstraint(
-                check=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
+                condition=models.Q(message_key__regex=r"^[A-Z][A-Z0-9_]*$"),
                 name="messagelog_message_key_upper_snake",
             ),
         ),

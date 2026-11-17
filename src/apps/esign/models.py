@@ -96,7 +96,7 @@ class ESignTransaction(BaseModel):
                 name="esign_unique_provider_transaction",
             ),
             models.CheckConstraint(
-                check=~Q(status=ESignStatus.SUCCESS.value) | ~Q(signed_file_id=""),
+                condition=~Q(status=ESignStatus.SUCCESS.value) | ~Q(signed_file_id=""),
                 name="esign_success_requires_signed_file",
             ),
             # A row being signed must have a prepared document to sign. The
@@ -105,7 +105,7 @@ class ESignTransaction(BaseModel):
             # prepared document of terminal transactions and clears the id —
             # a completed transaction legitimately outlives its placeholder.
             models.CheckConstraint(
-                check=~Q(status=ESignStatus.SIGNING.value) | ~Q(placeholder_file_id=""),
+                condition=~Q(status=ESignStatus.SIGNING.value) | ~Q(placeholder_file_id=""),
                 name="esign_signing_requires_placeholder",
             ),
         ]

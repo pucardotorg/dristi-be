@@ -895,25 +895,27 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="demand",
             constraint=models.CheckConstraint(
-                check=models.Q(("total_amount__gte", 0)), name="payments_demand_total_non_negative"
+                condition=models.Q(("total_amount__gte", 0)),
+                name="payments_demand_total_non_negative",
             ),
         ),
         migrations.AddConstraint(
             model_name="demand",
             constraint=models.CheckConstraint(
-                check=models.Q(("paid_amount__gte", 0)), name="payments_demand_paid_non_negative"
+                condition=models.Q(("paid_amount__gte", 0)),
+                name="payments_demand_paid_non_negative",
             ),
         ),
         migrations.AddConstraint(
             model_name="demand",
             constraint=models.CheckConstraint(
-                check=models.Q(("due_amount__gte", 0)), name="payments_demand_due_non_negative"
+                condition=models.Q(("due_amount__gte", 0)), name="payments_demand_due_non_negative"
             ),
         ),
         migrations.AddConstraint(
             model_name="demand",
             constraint=models.CheckConstraint(
-                check=models.Q(("paid_amount__lte", models.F("total_amount"))),
+                condition=models.Q(("paid_amount__lte", models.F("total_amount"))),
                 name="payments_demand_paid_within_total",
             ),
         ),
@@ -932,37 +934,38 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="demanditem",
             constraint=models.CheckConstraint(
-                check=models.Q(("quantity__gt", 0)), name="payments_item_quantity_positive"
+                condition=models.Q(("quantity__gt", 0)), name="payments_item_quantity_positive"
             ),
         ),
         migrations.AddConstraint(
             model_name="demanditem",
             constraint=models.CheckConstraint(
-                check=models.Q(("unit_amount__gt", 0)), name="payments_item_unit_amount_positive"
+                condition=models.Q(("unit_amount__gt", 0)),
+                name="payments_item_unit_amount_positive",
             ),
         ),
         migrations.AddConstraint(
             model_name="demanditem",
             constraint=models.CheckConstraint(
-                check=models.Q(("amount__gt", 0)), name="payments_item_amount_positive"
+                condition=models.Q(("amount__gt", 0)), name="payments_item_amount_positive"
             ),
         ),
         migrations.AddConstraint(
             model_name="demanditem",
             constraint=models.CheckConstraint(
-                check=models.Q(("paid_amount__gte", 0)), name="payments_item_paid_non_negative"
+                condition=models.Q(("paid_amount__gte", 0)), name="payments_item_paid_non_negative"
             ),
         ),
         migrations.AddConstraint(
             model_name="demanditem",
             constraint=models.CheckConstraint(
-                check=models.Q(("due_amount__gte", 0)), name="payments_item_due_non_negative"
+                condition=models.Q(("due_amount__gte", 0)), name="payments_item_due_non_negative"
             ),
         ),
         migrations.AddConstraint(
             model_name="demanditem",
             constraint=models.CheckConstraint(
-                check=models.Q(("paid_amount__lte", models.F("amount"))),
+                condition=models.Q(("paid_amount__lte", models.F("amount"))),
                 name="payments_item_paid_within_amount",
             ),
         ),
@@ -979,7 +982,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="payment",
             constraint=models.CheckConstraint(
-                check=models.Q(("amount__gt", 0)), name="payments_payment_amount_positive"
+                condition=models.Q(("amount__gt", 0)), name="payments_payment_amount_positive"
             ),
         ),
         migrations.AddConstraint(
@@ -1009,7 +1012,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="paymentdemanditem",
             constraint=models.CheckConstraint(
-                check=models.Q(("amount__gt", 0)), name="payments_payment_item_amount_positive"
+                condition=models.Q(("amount__gt", 0)), name="payments_payment_item_amount_positive"
             ),
         ),
         migrations.AddConstraint(

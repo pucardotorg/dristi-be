@@ -99,11 +99,11 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         # states the whole spec rests on are pinned at the database instead.
         constraints = [
             models.CheckConstraint(
-                check=models.Q(registration_status__in=RegistrationStatus.values),
+                condition=models.Q(registration_status__in=RegistrationStatus.values),
                 name="users_user_registration_status_valid",
             ),
             models.CheckConstraint(
-                check=models.Q(role__isnull=True) | models.Q(role__in=Role.values),
+                condition=models.Q(role__isnull=True) | models.Q(role__in=Role.values),
                 name="users_user_role_valid",
             ),
         ]
@@ -204,11 +204,11 @@ class AdvocateProfile(BaseModel):
 
         constraints = [
             models.CheckConstraint(
-                check=models.Q(approval_status__in=ApprovalStatus.values),
+                condition=models.Q(approval_status__in=ApprovalStatus.values),
                 name="users_advocateprofile_approval_status_valid",
             ),
             models.CheckConstraint(
-                check=models.Q(advocate_type__isnull=True)
+                condition=models.Q(advocate_type__isnull=True)
                 | models.Q(advocate_type__in=AdvocateType.values),
                 name="users_advocateprofile_advocate_type_valid",
             ),
@@ -241,7 +241,7 @@ class ClerkProfile(BaseModel):
 
         constraints = [
             models.CheckConstraint(
-                check=models.Q(approval_status__in=ApprovalStatus.values),
+                condition=models.Q(approval_status__in=ApprovalStatus.values),
                 name="users_clerkprofile_approval_status_valid",
             ),
         ]

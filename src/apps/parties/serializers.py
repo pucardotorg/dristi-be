@@ -15,9 +15,11 @@ from .models import Institution, Person
 
 
 class InstitutionSerializer(serializers.ModelSerializer):
-    """Read-only representation of an institution, with its address nested."""
+    """Read-only representation of an institution.
 
-    address = AddressSerializer(read_only=True)
+    Its phone numbers, emails and addresses belong to each case
+    (``cases.CaseContact``), not to the shared row.
+    """
 
     class Meta:
         """Meta options."""
@@ -29,9 +31,6 @@ class InstitutionSerializer(serializers.ModelSerializer):
             "entity_name",
             "pan",
             "cin",
-            "contact_number",
-            "email_address",
-            "address",
             "created_at",
             "updated_at",
         ]

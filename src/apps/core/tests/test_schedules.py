@@ -22,6 +22,8 @@ EXPECTED = {
     "cleanup_placeholders": "30 20 * * *",
     "prune_task_history": "0 21 * * *",
     "heartbeat": "* * * * *",
+    "expire_bulk_previews": "*/5 * * * *",
+    "end_hearing_days": "30 18 * * *",
 }
 
 

@@ -137,6 +137,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ../src:/app
+      - ../data:/data
     depends_on:
       db:
         condition: service_healthy
@@ -161,6 +162,7 @@ services:
       MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin:8080/post"
     volumes:
       - ../src:/app
+      - ../data:/data
     depends_on:
       db:
         condition: service_healthy
@@ -186,6 +188,7 @@ services:
       MESSAGING_DUMMY_SMS_ENDPOINT: "http://httpbin:8080/post"
     volumes:
       - ../src:/app
+      - ../data:/data
     depends_on:
       db:
         condition: service_healthy

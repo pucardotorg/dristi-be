@@ -63,13 +63,14 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="address",
             constraint=models.CheckConstraint(
-                check=models.Q(("pincode__regex", "^[1-9][0-9]{5}$")), name="address_pincode_valid"
+                condition=models.Q(("pincode__regex", "^[1-9][0-9]{5}$")),
+                name="address_pincode_valid",
             ),
         ),
         migrations.AddConstraint(
             model_name="address",
             constraint=models.CheckConstraint(
-                check=models.Q(("hash__regex", "^[0-9a-f]{64}$")), name="address_hash_is_sha256"
+                condition=models.Q(("hash__regex", "^[0-9a-f]{64}$")), name="address_hash_is_sha256"
             ),
         ),
     ]

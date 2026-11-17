@@ -9,14 +9,16 @@ from django.utils import timezone
 
 from apps.cases.models import (
     Case,
+    CaseContact,
     CaseDocument,
     CaseEvidence,
     CaseParticipant,
     CaseStatus,
+    ContactType,
     ParticipantRole,
 )
 from apps.cases.services import services as case_services
-from apps.cases.services.case_types import CaseType, EvidenceType, get_config
+from apps.cases.services.case_types import CaseType, DocumentType, EvidenceType, get_config
 from apps.files.tests.factories import make_file
 from apps.organizations.models import Organization, OrganizationType
 from apps.parties.models import Person
@@ -74,30 +76,44 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
         evidence_info={
             "presentation_date": presented,
             "return_date": "2026-05-05",
-            "return_reason": "Funds insufficient",
+            "return_reason": "FUNDS_INSUFFICIENT",
         },
     )
     notice = {
-        "nature_of_debt": "Loan",
-        "cheque_issue_reason": "Repayment",
+        "nature_of_debt": "LOAN_OR_ADVANCE_REPAYMENT",
         "dispatch_date": "2026-05-10",
-        "mode_of_service": "Registered post",
+        "mode_of_service": "REGISTERED_POST",
         "is_delivered": delivered,
-        "payment_status": "Unpaid",
+        "payment_status": "NO_PAYMENT_MADE",
     }
     if delivered:
         notice["delivery_date"] = "2026-05-12"
-    CaseEvidence.objects.create(
+    else:
+        notice.update(return_date="2026-05-12", non_delivery_reason="UNCLAIMED")
+    notice = CaseEvidence.objects.create(
         case=case,
         evidence_type=EvidenceType.LEGAL_DEMAND_NOTICE,
         ordinal=ordinal,
         evidence_info=notice,
     )
+    if delivered:
+        # A delivered notice is filed with its proof of delivery, linked to it.
+        CaseDocument.objects.create(
+            case=case,
+            document=make_file(user=case.created_by),
+            document_type=DocumentType.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE,
+            case_evidence=notice,
+        )
 
 
 def set_cause_of_action(case, day):
     row = ports.detail(case)
-    row.jurisdiction_limitation = {"cheque_deposited_by_payee": False, "cause_of_action_date": day}
+    row.jurisdiction_limitation = {
+        "cheque_deposited_by_payee": False,
+        "drawer_bank_police_station": "Ernakulam Central",
+        "cause_of_action_date": day,
+        "complaint_filing_date": day,
+    }
     row.save()
 
 
@@ -106,25 +122,48 @@ def enter(case, status):
     case.save()
 
 
+def add_address(participant):
+    """Give ``participant`` an address on its case, as a party write would (spec 0020 §4.6)."""
+    CaseContact.objects.create(
+        case=participant.case,
+        case_participant=participant,
+        contact_type=ContactType.ADDRESS,
+        address=make_address(),
+        ordinal=1,
+    )
+
+
 def complete_filing(case, filer):
     """Add the parties, documents and prayer a case needs to pass the completeness check."""
     for role, name in [
         (ParticipantRole.COMPLAINANT, "Complainant"),
         (ParticipantRole.ACCUSED, "Accused"),
     ]:
-        CaseParticipant.objects.create(
+        complainant = role == ParticipantRole.COMPLAINANT
+        participant = CaseParticipant.objects.create(
             case=case,
             person=Person.objects.create(name=name),
             role=role,
             ordinal=1,
             name_at_filing=name,
-            address=make_address(),
-            is_party_in_person=role == ParticipantRole.COMPLAINANT,
+            is_party_in_person=complainant,
+            party_in_person_affidavit="<p>I ask to appear in person.</p>" if complainant else None,
+            resides_within_jurisdiction=None if complainant else True,
         )
+        add_address(participant)
+        if complainant:
+            CaseDocument.objects.create(
+                case=case,
+                document=make_file(user=filer),
+                document_type=DocumentType.IDENTITY_PROOF,
+                case_participant=participant,
+            )
     for document_type in get_config(case.case_type).required_document_types:
         CaseDocument.objects.create(
             case=case, document=make_file(user=filer), document_type=document_type
         )
+    case.affidavit = "<p>The facts above are true.</p>"
+    case.save(update_fields=["affidavit"])
     row = ports.detail(case)
     row.adr_other_prayer = {"final_relief": "Direct the accused to pay the cheque amount."}
     row.save()

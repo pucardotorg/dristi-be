@@ -186,7 +186,9 @@ class TestDeduplication:
 
         Address(**{**ADDRESS_DEFAULTS, "line1": "99 Brigade Road"}).full_clean()
 
-    @pytest.mark.parametrize("field", Address.CONTENT_FIELDS)
+    @pytest.mark.parametrize(
+        "field", [field for field in Address.CONTENT_FIELDS if field != "police_station"]
+    )
     @pytest.mark.parametrize("missing", [None, "", "   "])
     def test_full_clean_reports_a_missing_field_instead_of_crashing(self, field, missing):
         address = Address(**{**ADDRESS_DEFAULTS, field: missing})
@@ -196,10 +198,40 @@ class TestDeduplication:
 
         assert field in exc.value.message_dict
 
+    def test_police_station_may_be_left_out(self):
+        address, _ = Address.objects.get_or_create_address(
+            **{**ADDRESS_DEFAULTS, "police_station": ""}
+        )
+
+        assert address.police_station == ""
+
     def test_validate_unique_skips_the_duplicate_check_while_a_field_is_missing(self):
         make_address()
 
         Address(**{**ADDRESS_DEFAULTS, "line1": None}).validate_unique()
+
+    def test_validate_unique_rejects_a_duplicate_with_no_police_station(self):
+        """A blank police station is a value; the admin would otherwise hit the unique index."""
+        make_address(police_station="")
+        duplicate = Address(**{**ADDRESS_DEFAULTS, "police_station": ""})
+
+        with pytest.raises(ValidationError) as exc:
+            duplicate.full_clean()
+
+        assert "This address already exists." in str(exc.value)
+
+    def test_a_null_required_field_is_reported_not_hashed(self):
+        with pytest.raises(ValidationError) as exc:
+            Address.objects.get_or_create_address(**{**ADDRESS_DEFAULTS, "line1": None})
+
+        assert "line1" in exc.value.message_dict
+
+    def test_a_null_police_station_is_stored_blank(self):
+        address, _ = Address.objects.get_or_create_address(
+            **{**ADDRESS_DEFAULTS, "police_station": None}
+        )
+
+        assert address.police_station == ""
 
 
 @pytest.mark.django_db

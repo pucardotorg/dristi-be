@@ -16,21 +16,34 @@ import uuid
 from contextlib import contextmanager
 
 from django.core.cache import cache, caches
+from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import CharField, Max, OuterRef, Subquery, Value
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import ErrorDetail, NotFound
+from rest_framework.fields import get_error_detail
+from rest_framework.settings import api_settings
 
 from apps.api import errors as api_errors
 from apps.api.errors import BusinessError
 from apps.files import documents
 
 from .. import errors
-from ..models import Case, CaseDocument, CaseEvidence, CaseStatus
+from ..models import (
+    Case,
+    CaseDocument,
+    CaseEvidence,
+    CaseParticipant,
+    CaseStatus,
+    ParticipantRole,
+    link_type_errors,
+)
 from . import correction
-from .case_types import DOCUMENTS_PART, get_config, schema_errors
+from .case_types import CASE_TYPES, DOCUMENTS_PART, get_config, schema_errors, section_errors
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +66,59 @@ _UNSET = object()
 # other keyword (pattern, format, minimum …) is a plain invalid value.
 SCHEMA_KEYWORD_ERRORS = {
     "required": api_errors.REQUIRED,
+    # Text with no visible character (``case_types._text``).
+    "blank": api_errors.BLANK,
     "type": api_errors.INCORRECT_TYPE,
     "enum": api_errors.INVALID_CHOICE,
     "const": api_errors.INVALID_CHOICE,
+    # Only used for code lists with labels (``case_types._choice``).
+    "oneOf": api_errors.INVALID_CHOICE,
 }
+
+
+# Model rules as API errors
+
+
+@contextmanager
+def errors_under(field=None, *, renamed=None):
+    """Turn a model ``ValidationError`` into a 400, nested under ``field`` when given.
+
+    Every message keeps the code the model gave it: a case rule's API code, or
+    Django's own. ``renamed`` maps model field names to the request's.
+    """
+    renamed = {NON_FIELD_ERRORS: api_settings.NON_FIELD_ERRORS_KEY, **(renamed or {})}
+    try:
+        yield
+    except DjangoValidationError as exc:
+        detail = get_error_detail(exc)
+        if isinstance(detail, dict):
+            detail = {renamed.get(key, key): messages for key, messages in detail.items()}
+        else:
+            detail = {api_settings.NON_FIELD_ERRORS_KEY: detail}
+        raise serializers.ValidationError({field: detail} if field else detail) from exc
+
+
+def validated_save(row, update_fields=None, **errors_under_kwargs):
+    """Save ``row`` once ``full_clean`` passes; its errors become a 400 as in ``errors_under``.
+
+    ``update_fields`` limits the write to the fields a change touched, so a
+    concurrent change to the others is not overwritten.
+    """
+    with errors_under(**errors_under_kwargs):
+        row.full_clean()
+    row.save(update_fields=update_fields)
+
+
+def unlink(rows, field, user):
+    """Clear ``field`` on each of ``rows``, as ``user``.
+
+    For links to a row that has just been removed. One save per row, not
+    ``update()``, so each unlink is kept in history.
+    """
+    for row in rows:
+        setattr(row, field, None)
+        row.updated_by = user
+        row.save(update_fields=[field, "updated_by", "updated_at"])
 
 
 # Draft sessions and case resolution
@@ -76,6 +138,52 @@ def start_draft(user, case_type, court_id=None):
     }
     _draft_cache().set(_get_draft_key(draft["draft_session_id"]), draft, DRAFT_SESSION_TTL_SECONDS)
     return draft
+
+
+def with_list_fields(cases):
+    """Annotate ``cases`` with what the cases list shows beyond the case row.
+
+    ``first_complainant_name`` and ``first_accused_name`` are the party names on
+    the case of the active complainant and accused numbered 1: the
+    institution's when there is one, else the person's;
+    ``cause_of_action_date`` comes from the case type's details. Each is a
+    subquery or join, so a page of cases costs no extra query per row.
+    """
+    dates = [
+        KeyTextTransform(key, field)
+        for field, key in (
+            config.cause_of_action_date_key
+            for config in CASE_TYPES.values()
+            if config.cause_of_action_date_key
+        )
+    ]
+    if not dates:
+        cause_of_action_date = Value(None, output_field=CharField())
+    elif len(dates) == 1:
+        cause_of_action_date = dates[0]
+    else:
+        cause_of_action_date = Coalesce(*dates)
+    return cases.annotate(
+        first_complainant_name=_first_participant_name(ParticipantRole.COMPLAINANT),
+        first_accused_name=_first_participant_name(ParticipantRole.ACCUSED),
+        cause_of_action_date=cause_of_action_date,
+    )
+
+
+def _first_participant_name(role):
+    """Return a subquery for the party name of the first active participant in ``role``.
+
+    A person acting for an institution is not the party, so the institution's
+    name is used when there is one.
+    """
+    first = (
+        CaseParticipant.objects.active()
+        .filter(case=OuterRef("pk"), role=role)
+        .order_by("ordinal")
+        .annotate(party_name=Coalesce("entity_name_at_filing", "name_at_filing"))
+        .values("party_name")[:1]
+    )
+    return Subquery(first)
 
 
 def get_case(case_id, user):
@@ -278,43 +386,131 @@ def _require_allowed(value, allowed, field, case_type):
 # Documents (spec 0021 §3)
 
 
-def add_document(case_or_draft_id, user, upload, document_type):
+# A case document's model fields, by the names the API gives them.
+DOCUMENT_FIELD_NAMES = {
+    "case_participant": "case_participant_id",
+    "case_evidence": "case_evidence_id",
+}
+
+
+def add_document(
+    case_or_draft_id,
+    user,
+    upload,
+    document_type,
+    *,
+    case_participant_id=None,
+    case_evidence_id=None,
+    is_digital=None,
+    display_name=None,
+):
     """Store ``upload`` and file it under the case, creating the case on first save.
 
     The upload has already passed ``apps.files.documents.document_error``
     (content, extension and size), in the serializer. The file is written to
     storage before the database transaction, as ``apps.files`` requires; if the
     transaction fails the file is deleted again.
+
+    ``case_participant_id`` and ``case_evidence_id`` link the document to the
+    party it belongs to or the evidence item it supports; ``CaseDocument.clean``
+    checks they fit its type. A link the type can never have is refused before
+    the file is stored. ``is_digital`` and ``display_name`` are kept in
+    ``additional_details``.
     """
     case_type = get_case_type(case_or_draft_id, user)
     allowed = get_config(case_type).document_types
     _require_allowed(document_type, allowed, "document_type", case_type)
+    links = [
+        field
+        for field, value in (
+            ("case_participant", case_participant_id),
+            ("case_evidence", case_evidence_id),
+        )
+        if value
+    ]
+    if problems := link_type_errors(document_type, links):
+        with errors_under(renamed=DOCUMENT_FIELD_NAMES):
+            raise DjangoValidationError(problems)
+    details = _with_details({}, is_digital=is_digital, display_name=display_name)
     file_id = _store_file(upload, user, case_type)
     try:
         with editing_or_creating(case_or_draft_id, user) as case:
             correction.check_write(case, user, DOCUMENTS_PART, whole=True, field="document_type")
-            document = CaseDocument.objects.create(
+            document = CaseDocument(
                 case=case,
                 document_id=file_id,
                 document_type=document_type,
+                case_participant_id=case_participant_id,
+                case_evidence_id=case_evidence_id,
+                additional_details=details,
                 created_by=user,
                 updated_by=user,
             )
+            validated_save(document, renamed=DOCUMENT_FIELD_NAMES)
         return document
     except Exception:
         documents.discard_documents([file_id])
         raise
 
 
+def update_document(case_document_id, user, changes):
+    """Change a case document's links and details; its file and type cannot change.
+
+    ``changes`` is a validated ``CaseDocumentUpdateSerializer`` body: a field
+    left out is kept, ``None`` removes a link or a detail. ``CaseDocument.clean``
+    checks the links fit the type, as on upload. This is how a document
+    uploaded before its party or evidence was saved is linked to it, without
+    uploading the file again.
+
+    The row is read again under the case lock, and only the changed fields are
+    written, so a concurrent removal or change is not undone.
+    """
+    case = get_active_case_item(CaseDocument, case_document_id, user).case
+    with editing(case, user):
+        document = get_active_case_item(CaseDocument, case_document_id, user)
+        fields = ["updated_by", "updated_at"]
+        for field in DOCUMENT_FIELD_NAMES.values():
+            if field in changes:
+                setattr(document, field, changes[field])
+                fields.append(field.removesuffix("_id"))
+        details = {key: changes[key] for key in ("is_digital", "display_name") if key in changes}
+        if details:
+            document.additional_details = _with_details(document.additional_details, **details)
+            fields.append("additional_details")
+        document.updated_by = user
+        validated_save(document, update_fields=fields, renamed=DOCUMENT_FIELD_NAMES)
+    return document
+
+
+def _with_details(details, **values):
+    """Return ``details`` with ``is_digital`` / ``display_name`` set to ``values``.
+
+    A display name is trimmed; ``None`` or a blank name removes the key.
+    """
+    details = dict(details)
+    for key, value in values.items():
+        if isinstance(value, str):
+            value = value.strip()
+        if value is None or value == "":
+            details.pop(key, None)
+        else:
+            details[key] = value
+    return details
+
+
 def remove_document(case_document_id, user):
     """Soft-delete a case document. The stored file is kept.
 
     Evidence that pointed at it is unlinked, so no evidence keeps showing a
-    document that is no longer part of the case.
+    document that is no longer part of the case. The case is locked first, as
+    every other write does, so this cannot interleave with a change to the
+    same document.
     """
-    document = get_active_case_item(CaseDocument, case_document_id, user)
-    with editing(document.case, user) as case:
+    case = get_active_case_item(CaseDocument, case_document_id, user).case
+    with editing(case, user) as case:
         correction.check_write(case, user, DOCUMENTS_PART, whole=True)
+        # Re-read under the lock: a concurrent write may have removed it.
+        document = get_active_case_item(CaseDocument, case_document_id, user)
         deactivate(document, user)
         _relink_evidence(document, None, user)
 
@@ -334,13 +530,18 @@ def replace_document(case_document_id, user, upload):
         with editing(old.case, user) as case:
             # Re-read under the lock: a concurrent write may have removed it.
             old = get_active_case_item(CaseDocument, case_document_id, user)
-            document = CaseDocument.objects.create(
+            # The new file takes the old one's place, links and details included.
+            document = CaseDocument(
                 case=case,
                 document_id=file_id,
                 document_type=old.document_type,
+                case_participant_id=old.case_participant_id,
+                case_evidence_id=old.case_evidence_id,
+                additional_details=old.additional_details,
                 created_by=user,
                 updated_by=user,
             )
+            validated_save(document, renamed=DOCUMENT_FIELD_NAMES)
             correction.check_replacement(case, user, old, document)
             deactivate(old, user)
             _relink_evidence(old, document, user)
@@ -378,18 +579,18 @@ def validate_evidence(case_type, evidence_type, evidence_info):
     """Raise a 400 unless ``case_type`` accepts ``evidence_type`` and the info fits its schema."""
     schemas = get_config(case_type).evidence_schemas
     _require_allowed(evidence_type, tuple(schemas), "evidence_type", case_type)
-    _validate_schema(schemas[evidence_type], evidence_info, "evidence_info")
+    _raise_schema_errors(schema_errors(schemas[evidence_type], evidence_info), "evidence_info")
 
 
-def _validate_schema(schema, data, field):
-    """Raise a 400 listing every way ``data``, sent as ``field``, breaks ``schema``.
+def _raise_schema_errors(problems, field):
+    """Raise a 400 listing ``problems``, the ways the data sent as ``field`` breaks its schema.
 
     Each error is reported on the path to the offending value, such as
     ``evidence_info.cheque_number``; one about the object as a whole (a
     missing or unknown key) on ``field`` itself.
     """
     detail = {}
-    for problem in schema_errors(schema, data):
+    for problem in problems:
         code = SCHEMA_KEYWORD_ERRORS.get(problem.keyword, api_errors.INVALID).code
         path = f"{field}.{problem.path}" if problem.path else field
         detail.setdefault(path, []).append(ErrorDetail(problem.message, code=code))
@@ -397,14 +598,16 @@ def _validate_schema(schema, data, field):
         raise serializers.ValidationError(detail)
 
 
-def _require_case_document(case, case_document_id):
-    """Raise ``DOCUMENT_NOT_ON_CASE`` unless ``case_document_id`` is an active document of ``case``."""
-    if not CaseDocument.objects.active().filter(pk=case_document_id, case=case).exists():
-        raise BusinessError(errors.DOCUMENT_NOT_ON_CASE, field="case_document_id")
+# Evidence's model fields, by the names the API gives them.
+EVIDENCE_FIELD_NAMES = {"case_document": "case_document_id"}
 
 
 def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_document_id=None):
-    """Add evidence with the next ordinal for its type, creating the case on first save."""
+    """Add evidence with the next ordinal for its type, creating the case on first save.
+
+    ``CaseEvidence.clean`` checks a linked document is an active document of
+    the case, of this evidence's scan type: a cheque's must be a bounced cheque.
+    """
     validate_evidence(get_case_type(case_or_draft_id, user), evidence_type, evidence_info)
     # The case lock serialises ordinal assignment.
     with editing_or_creating(case_or_draft_id, user) as case:
@@ -415,10 +618,7 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
             case, evidence_type, {}, evidence_info, index=ordinal - 1, field="evidence_info"
         )
         correction.check_write(case, user, evidence_type, added, whole=True, field="evidence_type")
-        if case_document_id is not None:
-            _require_case_document(case, case_document_id)
-
-        evidence = CaseEvidence.objects.create(
+        evidence = CaseEvidence(
             case=case,
             case_document_id=case_document_id,
             evidence_type=evidence_type,
@@ -427,6 +627,7 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
             created_by=user,
             updated_by=user,
         )
+        validated_save(evidence, renamed=EVIDENCE_FIELD_NAMES)
     return evidence
 
 
@@ -446,8 +647,9 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
     if evidence_info is not _UNSET:
         validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
     with editing(evidence.case, user) as case:
-        # Re-read under the lock, so the change is measured against what is stored.
-        evidence.refresh_from_db()
+        # Re-read under the lock: a concurrent removal is not undone, and the
+        # change is measured against what is stored.
+        evidence = get_active_case_item(CaseEvidence, evidence.pk, user)
         fields, changed = ["updated_by", "updated_at"], []
         if evidence_info is not _UNSET:
             changed += correction.changes(
@@ -461,8 +663,6 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
             evidence.evidence_info = evidence_info
             fields.append("evidence_info")
         if case_document_id is not _UNSET:
-            if case_document_id is not None:
-                _require_case_document(case, case_document_id)
             if case_document_id != evidence.case_document_id:
                 changed.append(
                     correction.Change(
@@ -476,7 +676,7 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
             fields.append("case_document")
         correction.check_write(case, user, evidence.evidence_type, changed)
         evidence.updated_by = user
-        evidence.save(update_fields=fields)
+        validated_save(evidence, update_fields=fields, renamed=EVIDENCE_FIELD_NAMES)
     return evidence
 
 
@@ -485,11 +685,27 @@ def _str_or_none(value):
 
 
 def remove_evidence(evidence, user):
-    """Soft-delete evidence."""
+    """Soft-delete evidence; documents that supported it are unlinked, as on removing a document."""
     ensure_editable(evidence.case)
     with editing(evidence.case, user) as case:
         correction.check_write(case, user, evidence.evidence_type, whole=True)
+        evidence = get_active_case_item(CaseEvidence, evidence.pk, user)
         deactivate(evidence, user)
+        unlink(evidence.documents.active(), "case_evidence", user)
+
+
+# Affidavit
+
+
+def save_affidavit(case_or_draft_id, user, affidavit):
+    """Replace the case's affidavit, creating the case on first save."""
+    # Raises 404 before anything is written.
+    get_case_type(case_or_draft_id, user)
+    with editing_or_creating(case_or_draft_id, user) as case:
+        case.affidavit = affidavit
+        case.updated_by = user
+        case.save(update_fields=["affidavit", "updated_by", "updated_at"])
+    return case
 
 
 # Case details (spec 0021 §5.3)
@@ -498,6 +714,13 @@ def remove_evidence(evidence, user):
 def get_details(case_id, user):
     """Return every details section of ``user``'s case."""
     return get_detail_sections(get_case(case_id, user))
+
+
+def get_details_section(case_id, user, section):
+    """Return one details section of ``user``'s case; ``{}`` before it is first saved."""
+    case = get_case(case_id, user)
+    _require_allowed(section, get_config(case.case_type).sections, "section", case.case_type)
+    return get_detail_sections(case)[section]
 
 
 def get_detail_sections(case):
@@ -511,9 +734,9 @@ def get_detail_sections(case):
 def save_details_section(case_or_draft_id, user, section, data):
     """Replace one details section, creating the case on first save."""
     case_type = get_case_type(case_or_draft_id, user)
-    schemas = get_config(case_type).section_schemas
-    _require_allowed(section, tuple(schemas), "section", case_type)
-    _validate_schema(schemas[section], data, "data")
+    config = get_config(case_type)
+    _require_allowed(section, config.sections, "section", case_type)
+    _raise_schema_errors(section_errors(config, section, data), "data")
     with editing_or_creating(case_or_draft_id, user) as case:
         detail = _get_or_create_detail_row(case, user)
         changed = correction.changes(case, section, getattr(detail, section), data, field="data")

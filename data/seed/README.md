@@ -48,6 +48,18 @@ parent = "IN"                  # a foreign key given as the parent's code
 The `example/` folder is a small, self-contained set used by the tests and as a
 worked example of the format.
 
+## Initial data every environment needs
+
+`core/` holds reference data the application needs in every environment,
+seeded instead of shipped as data migrations:
+
+- `core/languages.toml` — the supported languages and the default one
+  (spec 0030). Language resolution fails until it is loaded.
+
+```sh
+python manage.py seed data/seed/core/
+```
+
 ## Loading pincodes
 
 Pincodes (and the states and districts above them) are loaded from TOML like

@@ -214,6 +214,11 @@ class Command(BaseCommand):
         try:
             instance.full_clean()
         except ValidationError as exc:
+            # clean() normalizes the key in place (e.g. lowercases config_set)
+            # even when validation fails, so a row stored under the normalized
+            # key is still found and left unchanged.
+            if model.objects.filter(**{name: getattr(instance, name) for name in key}).exists():
+                return "unchanged", label
             raise RowError(self._describe(exc)) from exc
 
         instance.save()

@@ -18,8 +18,14 @@ from apps.payments.providers import registry
 from apps.payments.services import DemandService
 from apps.payments.tests.helpers import item
 
+from .base import make_response_key, write_key_file
+
 MOCK_PATH = "apps.payments.providers.mock.MockPaymentProvider"
 REDIRECT = "https://app.example.com/payments/return"
+
+# One shared response key for the encrypted-callback flow test (spec 0022 #5.4).
+RESPONSE_KEY = make_response_key()
+RESPONSE_KEY_FILE = write_key_file(RESPONSE_KEY)
 
 _mobile = itertools.count(1)
 
@@ -52,7 +58,9 @@ def egras(settings):
         {"code": "SBI", "label": "State Bank of India", "group": "NET_BANKING"}
     ]
     settings.EGRAS_DEFAULT_BANK = "SBI"
+    settings.EGRAS_RESPONSE_KEY_PATH = RESPONSE_KEY_FILE
     registry.reset_cache()
+    return RESPONSE_KEY
 
 
 @pytest.fixture

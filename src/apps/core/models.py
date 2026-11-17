@@ -1,18 +1,22 @@
 """Shared base model used across the project."""
 
 import copy
+import json
 import re
 import uuid
 
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import models
+from django.db.models import Q
 from simple_history.models import HistoricalRecords
 
 from .validators import (
     DATA_TYPE_CHOICES,
+    coerce_integer,
     coerce_value,
+    parse_config_bool,
     validate_attribute_name,
     validate_default_value,
 )
@@ -223,9 +227,52 @@ class ApiVersionChangeLog(BaseExtendableModel, BaseModel, BaseActivatableModel, 
 CONFIG_NAME_PATTERN = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)*$")
 
 
+CONFIG_NAME_MESSAGE = (
+    "Use lowercase letters, numbers, and underscores, optionally "
+    "grouped with dots (for example 'gateway.cdac.timeout')."
+)
+
+
 def normalize_config_name(value: str) -> str:
     """Return a configuration set/key trimmed and lowercased."""
     return value.strip().lower() if isinstance(value, str) else value
+
+
+def clean_config_names(instance) -> dict[str, str]:
+    """Normalize ``config_set`` / ``config_key`` in place; return format errors by field."""
+    errors = {}
+    for field in ("config_set", "config_key"):
+        value = normalize_config_name(getattr(instance, field))
+        setattr(instance, field, value)
+        if not CONFIG_NAME_PATTERN.match(value or ""):
+            errors[field] = CONFIG_NAME_MESSAGE
+    return errors
+
+
+def check_other_config_store(instance, other_model, errors: dict[str, str]) -> None:
+    """Add an error when the set/key pair already exists in ``other_model``.
+
+    A pair belongs to exactly one of ``Configuration`` and
+    ``PublicConfiguration`` (spec 0034 section 1.3). Inactive rows count, as
+    they do for uniqueness. Application-level only: two concurrent saves of
+    the same pair into both tables are not prevented.
+
+    Only a new row or a changed pair is checked, so a row whose pair already
+    ended up in both stores (bulk writes, a race, a manual fix) can still be
+    edited or deactivated rather than only deleted.
+    """
+    if errors.keys() & {"config_set", "config_key"}:
+        return
+    pair = {"config_set": instance.config_set, "config_key": instance.config_key}
+    if not instance._state.adding:
+        stored = type(instance).objects.filter(pk=instance.pk).values(*pair).first()
+        if stored == pair:
+            return
+    if other_model.objects.filter(**pair).exists():
+        errors["config_key"] = (
+            f"{instance.config_set}.{instance.config_key} already exists in "
+            f"{other_model._meta.verbose_name}; a key belongs to exactly one store."
+        )
 
 
 class Configuration(BaseModel, BaseActivatableModel):
@@ -260,17 +307,171 @@ class Configuration(BaseModel, BaseActivatableModel):
         return f"{self.config_set}.{self.config_key}"
 
     def clean(self):
-        """Normalize the set and key, then validate their format."""
+        """Normalize and validate the set and key; reject a pair held in PublicConfiguration."""
         super().clean()
-        self.config_set = normalize_config_name(self.config_set)
-        self.config_key = normalize_config_name(self.config_key)
-        errors = {}
+        errors = clean_config_names(self)
+        check_other_config_store(self, PublicConfiguration, errors)
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        """Validate the model before saving."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+PUBLIC_CONFIGURATION_WARNING = "Everything in this table is public and visible to internet clients."
+
+# Names that suggest a secret (spec 0034 section 1.4). Within each dotted part
+# of a public set or key, one of these as an underscored run of words is
+# rejected unless it only leads the part as a qualifier: ``client_secret_value``
+# and ``gateway.password`` are rejected, ``token_expiry_minutes`` is not.
+# Defence in depth only: a human still reviews every value.
+#
+# Consequence: a harmless name that mentions a secret word after its first
+# word is rejected too, for example ``enable_password_reset`` or
+# ``max_token_count``. Rename such a key so the word leads its part
+# (``password_reset_enabled``, ``token_max_count``).
+# This false positive is accepted over letting ``client_secret_value`` through.
+SECRET_CONFIG_NAMES = frozenset(
+    {
+        "secret",
+        "secrets",
+        "password",
+        "passwd",
+        "token",
+        "api_key",
+        "apikey",
+        "private_key",
+        "secret_key",
+        "access_key",
+        "secret_access_key",
+        "client_secret",
+        "credential",
+        "credentials",
+        "connection_string",
+        "dsn",
+    }
+)
+
+
+_SECRET_NAME_WORDS = tuple(tuple(secret.split("_")) for secret in SECRET_CONFIG_NAMES)
+
+
+def is_secret_config_name(name: str) -> bool:
+    """Whether a normalized set/key looks like it names a secret."""
+    for part in name.split("."):
+        words = tuple(part.split("_"))
+        for secret in _SECRET_NAME_WORDS:
+            for start in range(len(words) - len(secret) + 1):
+                end = start + len(secret)
+                if words[start:end] == secret and (start > 0 or end == len(words)):
+                    return True
+    return False
+
+
+# A public integer is an optional sign and ASCII digits, so a client's
+# ``Number()`` reads the same value; ``coerce_integer`` alone also accepts
+# "1_000", "1e3" and non-ASCII digits.
+PUBLIC_INTEGER_PATTERN = re.compile(r"^\s*[+-]?[0-9]+\s*$")
+
+
+def _validate_integer(value: str) -> None:
+    if not PUBLIC_INTEGER_PATTERN.match(value):
+        raise ValueError(value)
+    coerce_integer(value)
+
+
+def _reject_json_constant(name: str) -> None:
+    raise ValueError(f"{name} is not valid JSON.")
+
+
+def _validate_json(value: str) -> None:
+    # Python accepts NaN / Infinity, but a client's JSON.parse does not.
+    json.loads(value, parse_constant=_reject_json_constant)
+
+
+class PublicConfiguration(BaseModel, BaseActivatableModel):
+    """A runtime-editable configuration entry served to clients (spec 0034).
+
+    Every row is public: it is returned by an unauthenticated, internet-facing
+    API. Secrets MUST NOT be stored here; backend-only values belong in
+    ``Configuration``. Read values in-process through ``apps.core.services``.
+    """
+
+    class ValueType(models.TextChoices):
+        """How clients interpret ``config_value``; storage is always text."""
+
+        STRING = "string", "String"
+        INTEGER = "integer", "Integer"
+        BOOLEAN = "boolean", "Boolean"
+        JSON = "json", "JSON"
+
+    # Parsers that a value of each non-string type must pass.
+    VALUE_PARSERS = {
+        ValueType.INTEGER: _validate_integer,
+        ValueType.BOOLEAN: parse_config_bool,
+        ValueType.JSON: _validate_json,
+    }
+
+    config_set = models.CharField(max_length=100)
+    config_key = models.CharField(max_length=255)
+    config_value = models.TextField(blank=True, help_text=PUBLIC_CONFIGURATION_WARNING)
+    value_type = models.CharField(
+        max_length=16,
+        choices=ValueType.choices,
+        default=ValueType.STRING,
+        help_text="How clients interpret the value. It must parse as this type.",
+    )
+    description = models.TextField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Admin-only note; not returned by the API, but write it as if it "
+            "could be read by anyone."
+        ),
+    )
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("config_set", "config_key")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("config_set", "config_key"),
+                name="core_publicconfiguration_unique_set_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("config_set",), name="core_public_config_set_idx"),
+        ]
+        verbose_name = "Public Configuration"
+        verbose_name_plural = "Public Configurations"
+
+    def __str__(self):
+        return f"{self.config_set}.{self.config_key}"
+
+    def clean(self):
+        """Vet the set and key, type-check the value, and reject a pair held in Configuration."""
+        super().clean()
+        errors = clean_config_names(self)
         for field in ("config_set", "config_key"):
-            if not CONFIG_NAME_PATTERN.match(getattr(self, field) or ""):
+            if field not in errors and is_secret_config_name(getattr(self, field)):
                 errors[field] = (
-                    "Use lowercase letters, numbers, and underscores, optionally "
-                    "grouped with dots (for example 'gateway.cdac.timeout')."
+                    "This name looks like a secret. Public configuration is visible "
+                    "to internet clients; keep secrets in environment variables."
                 )
+
+        parse = self.VALUE_PARSERS.get(self.value_type)
+        if parse is not None:
+            try:
+                parse(self.config_value or "")
+            except (ValidationError, ValueError):
+                errors["value_type"] = (
+                    f"The value does not parse as {self.get_value_type_display()}."
+                )
+
+        check_other_config_store(self, Configuration, errors)
         if errors:
             raise ValidationError(errors)
 
@@ -373,3 +574,203 @@ class BusinessRule(BaseModel, BaseActivatableModel, BaseAuditableModel):
         """Validate the model before saving, so no write path stores a broken rule."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+# BCP 47 tag, lowercase. Used with fullmatch(): "$" would also accept a trailing newline.
+LANGUAGE_CODE_RE = re.compile(r"[a-z]{2,3}(-[a-z0-9]{2,8})*")
+
+
+def validate_language_code(value):
+    """Reject anything but a lowercase BCP 47 tag such as ``en`` or ``en-in``."""
+    if not isinstance(value, str) or not LANGUAGE_CODE_RE.fullmatch(value):
+        raise ValidationError(
+            "Use a lowercase BCP 47 language tag, for example 'en', 'ml' or 'en-in'.",
+            code="invalid",
+        )
+
+
+class LanguageQuerySet(ActivatableQuerySet):
+    """QuerySet for supported languages."""
+
+    def get_default(self):
+        """Return the default (fallback) language.
+
+        Raises ``ImproperlyConfigured`` when none is marked default: every
+        language-aware endpoint falls back to it, so it must always exist.
+        """
+        try:
+            return self.get(is_default=True)
+        except self.model.DoesNotExist:
+            raise ImproperlyConfigured("No default language is configured.") from None
+
+    def bulk_create(self, objs, *args, **kwargs):
+        """Normalise each language as ``save()`` does; bulk inserts skip ``save()``."""
+        objs = list(objs)
+        for obj in objs:
+            obj.normalize()
+        return super().bulk_create(objs, *args, **kwargs)
+
+    def delete(self):
+        """Refuse a bulk delete that includes the default language."""
+        Language.check_deletable(self.filter(is_default=True).first())
+        return super().delete()
+
+    delete.alters_data = True
+    delete.queryset_only = True
+
+
+class Language(BaseModel, BaseActivatableModel):
+    """A language Dristi supports, managed in admin (spec 0030).
+
+    Shared reference data: consumers such as CMS (spec 0018) import it from
+    here. Exactly one active row is the default, the fallback when a request
+    names no supported language. ``supports`` lists the capabilities this
+    language has; it is metadata for clients and features and does not gate
+    language resolution, which only considers ``is_active``.
+    """
+
+    class LanguageSupport(models.TextChoices):
+        """Capabilities a language can declare in ``supports``."""
+
+        UI = "ui", "UI"
+        TRANSLATION = "translation", "Translation"
+        OCR = "ocr", "OCR"
+
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+        db_index=True,
+        validators=[validate_language_code],
+        help_text="Lowercase BCP 47 tag, for example 'en', 'ml' or 'en-in'.",
+    )
+    name = models.CharField(max_length=100, help_text="English name, for example 'Malayalam'.")
+    native_name = models.CharField(
+        max_length=100, help_text="Name in the language itself, shown in language pickers."
+    )
+    is_default = models.BooleanField(
+        default=False, help_text="The fallback language. Exactly one language is the default."
+    )
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    supports = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Capabilities this language has. Empty means content-only.",
+    )
+
+    objects = LanguageQuerySet.as_manager()
+
+    class Meta:
+        """Meta options."""
+
+        ordering = ("sort_order", "code")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_default"],
+                condition=Q(is_default=True),
+                name="core_language_single_default",
+                violation_error_message=(
+                    "Another language is already the default. Use the "
+                    "'Make default' action to switch the default language."
+                ),
+            ),
+            models.CheckConstraint(
+                condition=Q(is_default=False) | Q(is_active=True),
+                name="core_language_default_is_active",
+                violation_error_message="The default language must be active.",
+            ),
+        ]
+        verbose_name = "Language"
+        verbose_name_plural = "Languages"
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+    @classmethod
+    def normalize_supports(cls, value):
+        """Return ``value`` deduplicated and in ``LanguageSupport`` order.
+
+        Raises ``ValidationError`` for non-list input or unknown capabilities.
+        """
+        if not isinstance(value, list):
+            raise ValidationError({"supports": "Must be a list of capabilities."})
+        unknown = [item for item in value if item not in cls.LanguageSupport.values]
+        if unknown:
+            raise ValidationError(
+                {
+                    "supports": (
+                        f"Unknown capabilities: {', '.join(map(str, unknown))}. Use: "
+                        f"{', '.join(cls.LanguageSupport.values)}."
+                    )
+                }
+            )
+        return [item for item in cls.LanguageSupport.values if item in value]
+
+    def full_clean(self, *args, **kwargs):
+        """Lowercase the code before field validation, so 'en-IN' is accepted as 'en-in'."""
+        self._normalize_code()
+        super().full_clean(*args, **kwargs)
+
+    def clean(self):
+        """Normalise the code and validate ``supports`` and the default language's state."""
+        super().clean()
+        self._normalize_code()
+        errors = {}
+
+        try:
+            supports = self.normalize_supports(self.supports)
+        except ValidationError as exc:
+            errors.update(exc.message_dict)
+        else:
+            if len(supports) != len(self.supports):
+                errors["supports"] = "Each capability may be listed only once."
+            else:
+                self.supports = supports
+
+        if self.is_default and not self.is_active:
+            errors["is_active"] = "The default language cannot be deactivated."
+        if (
+            not self.is_default
+            and not self._state.adding
+            and Language.objects.filter(pk=self.pk, is_default=True).exists()
+        ):
+            errors["is_default"] = (
+                "This is the default language. Make another language the default instead."
+            )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        """Normalise before writing; ``bulk_create`` does the same."""
+        self.normalize()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Refuse to delete the default language.
+
+        Checked against the database: this instance's ``is_default`` may be
+        stale if the default moved after it was loaded.
+        """
+        self.check_deletable(Language.objects.filter(pk=self.pk, is_default=True).first())
+        return super().delete(*args, **kwargs)
+
+    def normalize(self):
+        """Lowercase the code and put ``supports`` in enum order, deduplicated.
+
+        Raises ``ValidationError`` for unknown capabilities or non-list ``supports``.
+        """
+        self._normalize_code()
+        self.supports = self.normalize_supports(self.supports)
+
+    @staticmethod
+    def check_deletable(default):
+        """Raise ``ProtectedError`` if ``default`` (the default language, or None) would go."""
+        if default is not None:
+            raise models.ProtectedError(
+                "The default language cannot be deleted. Make another language the default first.",
+                {default},
+            )
+
+    def _normalize_code(self):
+        if isinstance(self.code, str):
+            self.code = self.code.strip().lower()

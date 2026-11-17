@@ -4,7 +4,7 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
-from apps.core.views import ApiVersionChangeLogViewSet, health_check
+from apps.core.views import ApiVersionChangeLogViewSet, LanguageViewSet, health_check
 
 router = DefaultRouter()
 router.register(
@@ -12,6 +12,7 @@ router.register(
     ApiVersionChangeLogViewSet,
     basename="api-version-changelog",
 )
+router.register(r"languages", LanguageViewSet, basename="language")
 
 urlpatterns = [
     path("schema/", SpectacularAPIView.as_view(), name="api-schema"),

@@ -63,11 +63,13 @@ INSTALLED_APPS = [
     "apps.cases",
     "apps.scrutiny",
     "apps.payments",
+    "apps.hearings",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
     "addon.cdac_esign",
     "addon.egras_payment_gateway",
+    "addon.offline_payment",
 ]
 
 MIDDLEWARE = [
@@ -212,7 +214,7 @@ if all([S3_API_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY]):
 # S3-compatible bucket above once S3_* is configured.
 STORAGES["files"] = STORAGES["default"]
 
-FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=10 * 1024 * 1024)
+FILE_MAX_SIZE_BYTES = env.int("FILE_MAX_SIZE_BYTES", default=15 * 1024 * 1024)
 FILE_MAX_COUNT_PER_UPLOAD = env.int("FILE_MAX_COUNT_PER_UPLOAD", default=10)
 FILE_MAX_READ_BYTES = env.int("FILE_MAX_READ_BYTES", default=FILE_MAX_SIZE_BYTES)
 # User that background/system uploads are attributed to (spec 0014 #10): the
@@ -248,7 +250,6 @@ PDF_TASK_TIME_LIMIT_MS = env.int("PDF_TASK_TIME_LIMIT_MS", default=600000)
 # Signing primitives consumed by eSign (spec 0016 #14).
 PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
 PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
-PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=FILE_MAX_SIZE_BYTES)
 # Service credentials external API mappings may reference by name, e.g.
 # {"hrms": {"Authorization": "Bearer ..."}}. Configure in code or via the
 # environment-specific settings module; never stored on jobs.
@@ -327,7 +328,21 @@ SPECTACULAR_SETTINGS = {
         "RoundDecisionEnum": "apps.scrutiny.enums.RoundDecision",
         "DemandStatusEnum": "apps.payments.enums.DemandStatus",
         "DemandItemStatusEnum": "apps.payments.enums.DemandItemStatus",
+        "HearingStatusEnum": "apps.hearings.enums.HearingStatus",
+        "RescheduleReasonEnum": "apps.hearings.enums.RescheduleReason",
+        "BulkRescheduleStatusEnum": "apps.hearings.enums.BulkRescheduleStatus",
+        # Hearings also has `mode`, `reason_code` and side fields; scrutiny's
+        # existing names are pinned so they do not change.
+        "HearingModeEnum": "apps.hearings.enums.HearingMode",
+        "BulkModeEnum": "apps.hearings.enums.BulkMode",
+        "HearingSideEnum": "apps.hearings.enums.Side",
+        # A witness's side and the side of a hearing's party share these two values.
+        "PartySideEnum": "apps.cases.models.WitnessSide",
+        "ReasonCodeEnum": "apps.scrutiny.enums.DocumentIssue",
+        "ModeEnum": [("MARKED", "MARKED"), ("ALL", "ALL")],
         "PaymentStatusEnum": "apps.payments.enums.PaymentStatus",
+        # Otherwise named after the generic `supports` field.
+        "LanguageSupportEnum": "apps.core.models.Language.LanguageSupport",
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
@@ -363,6 +378,9 @@ PASSWORD_RESET_WINDOW_SECONDS = env.int("PASSWORD_RESET_WINDOW_SECONDS", default
 # so registration and bar-ID requests can be routed on a fresh local or test
 # stack (apps.users.services.approvers). Off in production (production.py).
 SEED_SUPERUSER_APPROVERS = env.bool("SEED_SUPERUSER_APPROVERS", default=True)
+# Per-user rate of GET /advocates/?search= (finding an advocate to add to a
+# case); blank disables it. Limits scraping the list of advocates.
+ADVOCATE_SEARCH_THROTTLE_RATE = env("ADVOCATE_SEARCH_THROTTLE_RATE", default="60/min")
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +421,11 @@ CACHALOT_ONLY_CACHABLE_APPS = ("locations", "cms")
 # core app so AdditionalAttribute and the history tables stay uncached.
 CACHALOT_ONLY_CACHABLE_TABLES = (
     "core_configuration",
+    "core_publicconfiguration",
     "core_businessrule",
+    # Reference table edited in admin (spec 0023 #11.8).
+    "hearings_hearingpurpose",
+    "core_language",
 )
 CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
@@ -571,6 +593,15 @@ PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="")
 PAYMENT_REGISTERED_PROVIDERS = [
     name.strip() for name in env.list("PAYMENT_REGISTERED_PROVIDERS", default=[]) if name.strip()
 ]
+# Ordered names a payer may choose for a NEW payment (spec 0032 #4.2); empty
+# means "the default only". The environment modules register every name here.
+PAYMENT_SELECTABLE_PROVIDERS = [
+    name.strip() for name in env.list("PAYMENT_SELECTABLE_PROVIDERS", default=[]) if name.strip()
+]
+# Per-user rate of failed collection-desk lookups (spec 0032 #15); blank disables it.
+PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE = env(
+    "PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE", default="120/min"
+)
 PAYMENT_DEFAULT_CURRENCY = env("PAYMENT_DEFAULT_CURRENCY", default="INR")
 # Where the provider callback sends the browser. Server-side only: taking it
 # from the request would make the public callback an open redirect.
@@ -629,6 +660,10 @@ EGRAS_DTO = env("EGRAS_DTO", default="")
 EGRAS_STO = env("EGRAS_STO", default="")
 EGRAS_DDO = env("EGRAS_DDO", default="")
 EGRAS_OFFICE_NAME = env("EGRAS_OFFICE_NAME", default="")
+# Path to the NIC-issued key file for decrypting the encrypted callback (payRes),
+# and how the file stores the key: raw bytes (default), or base64/hex text.
+EGRAS_RESPONSE_KEY_PATH = env("EGRAS_RESPONSE_KEY_PATH", default="")
+EGRAS_RESPONSE_KEY_FORMAT = env("EGRAS_RESPONSE_KEY_FORMAT", default="raw")
 EGRAS_USER_ID = env("EGRAS_USER_ID", default="guest")
 # JSON object: account_head or charge_type -> 17-character scheme code.
 EGRAS_SCHEME_MAP = env.json("EGRAS_SCHEME_MAP", default={})
@@ -650,12 +685,47 @@ EGRAS_ENABLED = env.bool("EGRAS_ENABLED", default=True)
 
 
 # ---------------------------------------------------------------------------
+# Offline payment provider addon (addon.offline_payment, spec 0032 #13)
+# ---------------------------------------------------------------------------
+# Remove this block, the INSTALLED_APPS entry, and PAYMENT_PROVIDERS["offline"]
+# (plus "offline" in PAYMENT_SELECTABLE_PROVIDERS) to remove the integration;
+# apps.payments keeps working on the other providers. The addon's system checks
+# run only when "offline" is in PAYMENT_PROVIDERS.
+OFFLINE_PAYMENT_ENABLED = env.bool("OFFLINE_PAYMENT_ENABLED", default=True)
+OFFLINE_PAYMENT_LABEL = env("OFFLINE_PAYMENT_LABEL", default="Pay at the court counter")
+OFFLINE_PAYMENT_REFERENCE_PREFIX = env("OFFLINE_PAYMENT_REFERENCE_PREFIX", default="OFL")
+OFFLINE_PAYMENT_VALIDITY_DAYS = env.int("OFFLINE_PAYMENT_VALIDITY_DAYS", default=7)
+OFFLINE_PAYMENT_RECORDING_GRACE_HOURS = env.int("OFFLINE_PAYMENT_RECORDING_GRACE_HOURS", default=24)
+# Subset of CASH, DEMAND_DRAFT, POS.
+OFFLINE_PAYMENT_METHODS = env.list("OFFLINE_PAYMENT_METHODS", default=["CASH", "DEMAND_DRAFT"])
+# JSON list of {code, label, address, hours}.
+OFFLINE_PAYMENT_COUNTERS = env.json("OFFLINE_PAYMENT_COUNTERS", default=[])
+OFFLINE_PAYMENT_DEFAULT_COUNTER = env("OFFLINE_PAYMENT_DEFAULT_COUNTER", default="")
+OFFLINE_PAYMENT_INSTRUCTIONS = env(
+    "OFFLINE_PAYMENT_INSTRUCTIONS",
+    default="Quote the payment reference at the counter and keep the receipt.",
+)
+# In whose favour a demand draft is drawn; required when DEMAND_DRAFT is enabled.
+OFFLINE_PAYMENT_PAYABLE_TO = env("OFFLINE_PAYMENT_PAYABLE_TO", default="")
+# Decimal caps; empty means no cap.
+OFFLINE_PAYMENT_MAX_AMOUNT = env("OFFLINE_PAYMENT_MAX_AMOUNT", default="")
+OFFLINE_PAYMENT_CASH_MAX_AMOUNT = env("OFFLINE_PAYMENT_CASH_MAX_AMOUNT", default="")
+# ChargeType values offline may collect; empty allows all.
+OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES = env.list("OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES", default=[])
+OFFLINE_PAYMENT_RECEIPT_PATTERN = env(
+    "OFFLINE_PAYMENT_RECEIPT_PATTERN", default=r"^[A-Z0-9][A-Z0-9/-]{0,63}$"
+)
+OFFLINE_PAYMENT_DD_MAX_AGE_DAYS = env.int("OFFLINE_PAYMENT_DD_MAX_AGE_DAYS", default=90)
+
+
+# ---------------------------------------------------------------------------
 # PDF Service (spec 0016) — signing primitives consumed by apps.esign
 # ---------------------------------------------------------------------------
 # Declared here because the eSign system checks verify that the algorithm this
 # module tells the ESP about is the one the PDF Service digests with.
 PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA256")
 PDF_SIGNATURE_CONTAINER_BYTES = env.int("PDF_SIGNATURE_CONTAINER_BYTES", default=16384)
+# Keep at or above FILE_MAX_SIZE_BYTES, or an accepted upload cannot be signed.
 PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=20971520)
 
 
@@ -735,6 +805,11 @@ LOGGING = {
             "propagate": False,
         },
         "addon.egras_payment_gateway": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "addon.offline_payment": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

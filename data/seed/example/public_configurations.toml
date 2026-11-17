@@ -1,0 +1,44 @@
+[seed]
+model = "core.PublicConfiguration"
+
+# Every row here is PUBLIC: it is served to internet clients without
+# authentication. Never put secrets, passwords, tokens or credentials here.
+
+# Boolean values
+[[rows]]
+config_set = "registration"
+config_key = "show_welcome_message"
+value_type = "boolean"
+config_value = "false"
+
+[[rows]]
+config_set = "ui_feature_flag"
+config_key = "enable_bulk_case_select"
+value_type = "boolean"
+config_value = "true"
+
+[[rows]]
+config_set = "ui_feature_flag"
+config_key = "enable_dark_mode"
+value_type = "boolean"
+config_value = "false"
+
+[[rows]]
+config_set = "efiling_cheque_fraud"
+config_key = "enable_filtering"
+value_type = "boolean"
+config_value = "true"
+
+[[rows]]
+config_set = "efiling_cheque_fraud"
+config_key = "enable_sorting"
+value_type = "boolean"
+config_value = "true"
+
+# Structured value, stored as JSON text. Write it as a JSON string, not a TOML
+# inline table: the seed engine stringifies tables with str(), which is not JSON.
+[[rows]]
+config_set = "efiling_cheque_fraud"
+config_key = "identity_drop_down"
+value_type = "json"
+config_value = '{"pan": "Pan Card", "epic_id": "Voter ID"}'

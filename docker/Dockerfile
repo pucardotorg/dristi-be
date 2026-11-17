@@ -26,6 +26,10 @@ RUN pip install --no-cache-dir -r /app/${REQUIREMENTS_FILE}
 # Copy application code
 COPY src /app
 
+# Seed/reference data lives beside the source tree (BASE_DIR.parent / "data").
+# BASE_DIR is /app in the image, so its parent is /, giving /data.
+COPY data /data
+
 # Inject the Git commit SHA into the image (passed via --build-arg).
 ARG GIT_COMMIT_SHA
 RUN sed -i "s/^GIT_COMMIT_SHA = \"unknown\"/GIT_COMMIT_SHA = \"$GIT_COMMIT_SHA\"/" /app/config/settings/version.py

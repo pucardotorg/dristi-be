@@ -7,11 +7,12 @@ from django.conf import settings
 from django.core.management import CommandError, call_command
 
 from apps.cms.models import Page
-from apps.core.models import Configuration
+from apps.core import services
+from apps.core.models import Configuration, PublicConfiguration
 from apps.locations.models import Location
 from apps.organizations.models import Organization
 
-EXAMPLE_DIR = settings.BASE_DIR / "data" / "seed" / "example"
+EXAMPLE_DIR = settings.BASE_DIR.parent / "data" / "seed" / "example"
 
 
 def write(tmp_path, name, content):
@@ -58,6 +59,7 @@ class TestListing:
         output = run("--list")
         assert "locations.Location" in output
         assert "core.Configuration" in output
+        assert "core.PublicConfiguration" in output
         assert "config_set, config_key" in output  # composite key is shown
 
 
@@ -206,6 +208,104 @@ config_value = 100
         assert Configuration.objects.count() == 1
         assert "unchanged 1" in output
 
+    def test_rerun_matches_the_normalized_key(self, tmp_path):
+        toml = (
+            '[seed]\nmodel = "core.Configuration"\n\n'
+            '[[rows]]\nconfig_set = "PDF"\nconfig_key = " Max "\nconfig_value = "v"\n'
+        )
+        path = write(tmp_path, "config.toml", toml)
+        run(path)
+        output = run(path, "--strict")
+        assert Configuration.objects.get().config_set == "pdf"
+        assert "created 0, unchanged 1, skipped 0" in output
+
+
+PUBLIC_CONFIGURATIONS = """
+[seed]
+model = "core.PublicConfiguration"
+
+[[rows]]
+config_set = "UI_Feature_Flag"
+config_key = "enable_dark_mode"
+value_type = "boolean"
+# A native TOML boolean; stringified to "False".
+config_value = false
+
+[[rows]]
+config_set = "ui_feature_flag"
+config_key = "page_size"
+value_type = "integer"
+config_value = 25
+
+[[rows]]
+config_set = "efiling_cheque_fraud"
+config_key = "identity_drop_down"
+value_type = "json"
+config_value = '{"pan": "Pan Card", "epic_id": "Voter ID"}'
+"""
+
+
+@pytest.mark.django_db
+class TestPublicConfiguration:
+    """Public configuration seeds through the model's full validation (spec 0034)."""
+
+    def test_creates_rows_and_coerces_values_to_text(self, tmp_path):
+        output = run(write(tmp_path, "public.toml", PUBLIC_CONFIGURATIONS))
+        assert "created 3, unchanged 0, skipped 0" in output
+
+        flag = PublicConfiguration.objects.get(config_key="enable_dark_mode")
+        assert flag.config_set == "ui_feature_flag"  # normalized
+        assert flag.config_value == "False"
+        assert flag.value_type == "boolean"
+        assert PublicConfiguration.objects.get(config_key="page_size").config_value == "25"
+
+    def test_rerun_is_noop(self, tmp_path):
+        # "UI_Feature_Flag" is stored as "ui_feature_flag" and still matched.
+        path = write(tmp_path, "public.toml", PUBLIC_CONFIGURATIONS)
+        run(path)
+        output = run(path, "--strict")
+        assert PublicConfiguration.objects.count() == 3
+        assert "created 0, unchanged 3, skipped 0" in output
+
+    def test_typed_values_are_readable_through_services(self, tmp_path):
+        run(write(tmp_path, "public.toml", PUBLIC_CONFIGURATIONS))
+        assert services.get_public_bool("ui_feature_flag", "enable_dark_mode") is False
+        assert services.get_public_int("ui_feature_flag", "page_size") == 25
+        assert services.get_public_json("efiling_cheque_fraud", "identity_drop_down") == {
+            "pan": "Pan Card",
+            "epic_id": "Voter ID",
+        }
+
+    def test_secret_like_key_is_skipped_and_reported(self, tmp_path):
+        toml = (
+            '[seed]\nmodel = "core.PublicConfiguration"\n\n'
+            '[[rows]]\nconfig_set = "gateway"\nconfig_key = "password"\nconfig_value = "x"\n\n'
+            '[[rows]]\nconfig_set = "gateway"\nconfig_key = "endpoint"\nconfig_value = "https://x"\n'
+        )
+        output = run(write(tmp_path, "public.toml", toml))
+        assert "created 1, unchanged 0, skipped 1" in output
+        assert not PublicConfiguration.objects.filter(config_key="password").exists()
+
+    def test_pair_already_in_configuration_is_skipped(self, tmp_path):
+        Configuration.objects.create(config_set="pdf", config_key="max", config_value="100")
+        toml = (
+            '[seed]\nmodel = "core.PublicConfiguration"\n\n'
+            '[[rows]]\nconfig_set = "pdf"\nconfig_key = "max"\nconfig_value = "100"\n'
+        )
+        output = run(write(tmp_path, "public.toml", toml))
+        assert "created 0, unchanged 0, skipped 1" in output
+        assert not PublicConfiguration.objects.exists()
+
+    def test_value_not_matching_type_is_skipped(self, tmp_path):
+        toml = (
+            '[seed]\nmodel = "core.PublicConfiguration"\n\n'
+            '[[rows]]\nconfig_set = "ui"\nconfig_key = "page_size"\n'
+            'value_type = "integer"\nconfig_value = "lots"\n'
+        )
+        output = run(write(tmp_path, "public.toml", toml))
+        assert "skipped 1" in output
+        assert not PublicConfiguration.objects.exists()
+
 
 @pytest.mark.django_db
 class TestBusinessRule:
@@ -245,6 +345,10 @@ class TestDirectoryAndFlags:
         assert Location.objects.count() == 3
         assert Organization.objects.get(code="ERN_DC").parent.code == "KL_HC"
         assert Configuration.objects.filter(config_set="pdf").exists()
+        assert services.get_public_json("efiling_cheque_fraud", "identity_drop_down") == {
+            "pan": "Pan Card",
+            "epic_id": "Voter ID",
+        }
         assert "skipped 0" in output
 
     def test_same_model_files_load_in_given_order(self, tmp_path):

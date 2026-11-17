@@ -5,8 +5,8 @@ from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from apps.cases.models import Case, CaseEvidence, CaseStatus
-from apps.cases.services.case_types import EvidenceType
+from apps.cases.models import Case, CaseDocument, CaseEvidence, CaseStatus
+from apps.cases.services.case_types import DocumentType, EvidenceType
 from apps.scrutiny import ports
 from apps.scrutiny.enums import DocumentIssue, FlagStatus, FlagTarget, ResponseKind
 from apps.scrutiny.services import flags
@@ -288,6 +288,8 @@ def test_filer_corrects_through_the_filing_endpoints(case, officer, filer, docum
         "files": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
     }
     cheque = CaseEvidence.objects.get(case=case, evidence_type=EvidenceType.CHEQUE)
+    # A cheque's scan is a bounced cheque (spec 0020 §11.4).
+    CaseDocument.objects.filter(pk=document.pk).update(document_type=DocumentType.BOUNCED_CHEQUE)
     CaseEvidence.objects.filter(pk=cheque.pk).update(case_document=document)
     field_flag = draft_field(case, officer, "CHQ-3[0]")[0]
     document_flag = flags.draft(

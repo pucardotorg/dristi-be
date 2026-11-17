@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import ApiVersionChangeLog
+from .models import ApiVersionChangeLog, Language, PublicConfiguration
 
 
 class ApiVersionChangeLogSerializer(serializers.ModelSerializer):
@@ -21,4 +21,41 @@ class ApiVersionChangeLogSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        read_only_fields = fields
+
+
+class LanguageSerializer(serializers.ModelSerializer):
+    """A supported language, as listed by GET /languages/ (spec 0030 section 6)."""
+
+    supports = serializers.ListField(
+        child=serializers.ChoiceField(choices=Language.LanguageSupport.choices),
+        read_only=True,
+    )
+
+    class Meta:
+        """Meta options."""
+
+        model = Language
+        fields = ["code", "name", "native_name", "is_default", "supports"]
+        read_only_fields = fields
+
+
+class LanguageFilterSerializer(serializers.Serializer):
+    """Validates the query parameters of GET /languages/."""
+
+    supports = serializers.ChoiceField(
+        choices=Language.LanguageSupport.choices,
+        required=False,
+        help_text="Only list languages that declare this capability.",
+    )
+
+
+class PublicConfigurationSerializer(serializers.ModelSerializer):
+    """Public configuration entry: the value and its coarse type, no admin metadata."""
+
+    class Meta:
+        """Meta options."""
+
+        model = PublicConfiguration
+        fields = ["config_set", "config_key", "value_type", "config_value"]
         read_only_fields = fields
