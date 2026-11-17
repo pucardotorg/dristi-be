@@ -29,24 +29,23 @@ ANCESTORS_IS_ACTIVE = OpenApiParameter(
         "'false': not found unless the location itself is inactive."
     ),
 )
+# Every route runs LocationFilterSerializer through get_queryset(), so each one
+# accepts these query parameters and can return these errors.
+FILTER_ERRORS = error_responses(
+    errors.INVALID_CHOICE.example('"XX" is not a valid choice.', field="location_type"),
+    errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
+    errors.INVALID.example("No location exists with code 'XX'.", field="parent_code"),
+    errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active"),
+    errors.INVALID.example("parent_id and parent_code are mutually exclusive."),
+)
+FILTERED_SCHEMA = extend_schema(parameters=[LocationFilterSerializer], responses=FILTER_ERRORS)
+# ANCESTORS_IS_ACTIVE comes after the serializer, so its description wins.
 ANCESTORS_SCHEMA = extend_schema(
-    parameters=[ANCESTORS_IS_ACTIVE],
-    responses=error_responses(errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active")),
+    parameters=[LocationFilterSerializer, ANCESTORS_IS_ACTIVE], responses=FILTER_ERRORS
 )
 
 
-@extend_schema_view(
-    # Query parameters are validated by LocationFilterSerializer.
-    list=extend_schema(
-        responses=error_responses(
-            errors.INVALID_CHOICE.example('"XX" is not a valid choice.', field="location_type"),
-            errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
-            errors.INVALID.example("No location exists with code 'XX'.", field="parent_code"),
-            errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active"),
-            errors.INVALID.example("parent_id and parent_code are mutually exclusive."),
-        )
-    ),
-)
+@extend_schema_view(list=FILTERED_SCHEMA, retrieve=FILTERED_SCHEMA)
 class LocationViewSet(APIModelReadOnlyViewSet):
     """Read-only location API with hierarchy lookups by id or code."""
 
@@ -59,16 +58,22 @@ class LocationViewSet(APIModelReadOnlyViewSet):
     # Ancestor chains are short and returned whole; documented as plain lists.
     unpaginated_actions = {"ancestors", "ancestors_by_code"}
 
+    def get_filter_params(self):
+        """Return the validated query filters, raising a 400 on a bad value."""
+        if not hasattr(self, "_filter_params"):
+            filters = LocationFilterSerializer(data=self.request.query_params)
+            filters.is_valid(raise_exception=True)
+            self._filter_params = filters.validated_data
+        return self._filter_params
+
     def get_queryset(self):
         """Apply the location_type, parent and is_active query filters.
 
-        They apply to every route built on this queryset, detail lookups
-        included, so a lookup by id honours ``is_active`` too.
+        They apply to every route built on this queryset, detail and code
+        lookups included, so the id and code routes answer a query alike.
         """
         queryset = super().get_queryset()
-        filters = LocationFilterSerializer(data=self.request.query_params)
-        filters.is_valid(raise_exception=True)
-        params = filters.validated_data
+        params = self.get_filter_params()
 
         if "location_type" in params:
             queryset = queryset.filter(location_type=params["location_type"])
@@ -82,8 +87,8 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         return queryset
 
     def _get_by_code(self, code):
-        """Return the location with the given unique code or raise 404."""
-        return get_object_or_404(Location.objects.select_related("parent"), code=code)
+        """Return the location with this code that passes the query filters, or 404."""
+        return get_object_or_404(self.get_queryset(), code=code)
 
     def _children_response(self, location):
         """Return a paginated response of the location's direct children."""
@@ -99,19 +104,17 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         With ``is_active=true`` a chain with any inactive link, the location
         itself included, is not found: address forms pre-fill from a pincode's
         ancestors, and a deactivated pincode or district must not pre-fill.
-        With ``is_active=false`` an active location is not found, as the id
-        route's queryset filter already does. Any other value is a 400.
+        The queryset has already applied every filter to the location itself,
+        so ``is_active=false`` never reaches here with an active location.
         """
-        filters = LocationFilterSerializer(data=self.request.query_params)
-        filters.is_valid(raise_exception=True)
-        is_active = filters.validated_data.get("is_active")
         ancestors = location.get_ancestors()
-        if is_active and not all(link.is_active for link in [location, *ancestors]):
+        if self.get_filter_params().get("is_active") and not all(
+            link.is_active for link in ancestors
+        ):
             raise NotFound("No active location with an active ancestor chain was found.")
-        if is_active is False and location.is_active:
-            raise NotFound("No inactive location with this code was found.")
         return Response(self.get_serializer(ancestors, many=True).data)
 
+    @FILTERED_SCHEMA
     @action(detail=True, methods=["get"], url_path="children", url_name="children")
     def children(self, request, *args, **kwargs):
         """List the direct children of a location identified by id."""
@@ -123,11 +126,13 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         """List the ancestors of a location identified by id."""
         return self._ancestors_response(self.get_object())
 
+    @FILTERED_SCHEMA
     @action(detail=False, methods=["get"], url_path=CODE_URL_PATH, url_name="by-code")
     def by_code(self, request, code=None, *args, **kwargs):
         """Retrieve a location by its unique code."""
         return Response(self.get_serializer(self._get_by_code(code)).data)
 
+    @FILTERED_SCHEMA
     @action(
         detail=False,
         methods=["get"],
