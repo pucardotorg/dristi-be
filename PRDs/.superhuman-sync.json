@@ -159,14 +159,14 @@
     "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
       "title": "View Case",
-      "contentHash": "6204f1d83654",
-      "pageUpdatedAt": 1794930222.951,
+      "contentHash": "dc83a6902fcc",
+      "pageUpdatedAt": 1794931706.476,
       "calloutElementId": "cl-i2jpMT8bMh",
       "sections": [
         {
           "key": "# View Case",
           "elementId": "cl-MPobgQF3Nq",
-          "hash": "b4490223177e"
+          "hash": "5ac655a53d71"
         },
         {
           "key": "1",
@@ -206,7 +206,7 @@
         {
           "key": "# 6. Case File",
           "elementId": "cl-smTQBsrUxR",
-          "hash": "b45c3ed2744e"
+          "hash": "34d40819b1ef"
         },
         {
           "key": "# 7. Notice/Process Status",
@@ -249,7 +249,7 @@
           "hash": "d6c79bfaee81"
         }
       ],
-      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key. 2026-11-17 v1.74: §10.1 rows (grid-FwlcgeGjmr), DOC-10/12/13 cells (grid-ZQe0bbC4g7), Q-12 and Q-14 rows (grid-ECWU9NBzz9), Status and callout patched."
+      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key. 2026-11-17 v1.74: §10.1 rows (grid-FwlcgeGjmr), DOC-10/12/13 cells (grid-ZQe0bbC4g7), Q-12 and Q-14 rows (grid-ECWU9NBzz9), Status and callout patched. 2026-11-17 v1.75: prototype link paragraph inserted after cl-WAc-JSRNF_; Status and callout patched."
     },
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
