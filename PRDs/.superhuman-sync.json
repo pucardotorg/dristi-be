@@ -828,8 +828,8 @@
     "payment-logic.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-690VkCoSSB",
       "title": "Payment Logic",
-      "contentHash": "38203bba4f50",
-      "pageUpdatedAt": 1794929677.256,
+      "contentHash": "1a40282ee0e2",
+      "pageUpdatedAt": 1794930915.897,
       "calloutElementId": "cl-N8Oug4EJ6b",
       "sections": [
         {
@@ -843,7 +843,7 @@
           "hash": "5ec634679193"
         }
       ],
-      "note": " 2026-11-17 v2.5: page edit by the owner (P&H application fee 20) pulled into the file first; PMT-15, Q-16, Q-3, fee cell, Status and callout patched."
+      "note": " 2026-11-17 v2.5: page edit by the owner (P&H application fee 20) pulled into the file first; PMT-15, Q-16, Q-3, fee cell, Status and callout patched. 2026-11-17 v2.7: §3.1–§3.3 and §4 rebuilt; <mark>Not known</mark> in the file is written on the page as yellow-highlighted \"Not known\" cell by cell (a <color> tag inside a markdown table insert is dropped; set it through table_rows_manage). `sections` not recomputed."
     },
     "cis-integration.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-eBrQVdOTYN",
