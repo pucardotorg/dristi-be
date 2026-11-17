@@ -94,6 +94,7 @@ SCAN_LINK_ERRORS = (
     errors.DOCUMENT_TYPE_MISMATCH.example(
         scan_type_message(DocumentType.BOUNCED_CHEQUE), field="case_document_id"
     ),
+    errors.SCAN_ALREADY_LINKED.example(field="case_document_id"),
 )
 
 

@@ -721,7 +721,7 @@ Evidence attached to a case: the cheque, return memo, demand notice, postal ackn
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | |
-| `case_document_id` | uuid | FK → case_document, NULLABLE | The evidence's own scan; must be of its type: `BOUNCED_CHEQUE` for a cheque, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE` (`E07030` otherwise) |
+| `case_document_id` | uuid | FK → case_document, NULLABLE | The evidence's own scan; must be of its type: `BOUNCED_CHEQUE` for a cheque, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE` (`E07030` otherwise); unique among active evidence: two items never share a scan (`cases_case_evidence_unique_active_scan`) |
 | `evidence_type` | varchar(64) | NOT NULL | CHEQUE, RETURN_MEMO, LEGAL_DEMAND_NOTICE, etc. |
 | `ordinal` | smallint | NOT NULL | Cheque #1, cheque #2, demand notice #1 |
 | `evidence_info` | jsonb | NOT NULL, default '{}' | Type-specific details, see §11.3 |

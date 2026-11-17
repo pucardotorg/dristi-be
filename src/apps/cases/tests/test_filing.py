@@ -5,6 +5,7 @@ import uuid
 
 import pytest
 from django.contrib.auth.models import Permission
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -30,7 +31,7 @@ from apps.files.tests.factories import make_file
 from apps.parties.models import Institution, Person
 from apps.parties.tests.factories import ADDRESS_DEFAULTS
 
-from .conftest import DEMAND_NOTICE_INFO, RETURN_MEMO_INFO, error_codes
+from .conftest import CHEQUE_INFO, DEMAND_NOTICE_INFO, RETURN_MEMO_INFO, error_codes
 from .test_api import add_cheque, add_evidence, put_section, upload
 from .test_participants import (
     INSTITUTION,
@@ -62,16 +63,46 @@ AFFIDAVIT = "<p>I, the complainant, state on oath that the facts above are true.
 PIP_AFFIDAVIT = "<p>I request permission to appear and argue in person.</p>"
 
 
+UNDELIVERED_NOTICE = {
+    **{k: v for k, v in DEMAND_NOTICE_INFO.items() if k != "delivery_date"},
+    "is_delivered": False,
+    "return_date": "2024-02-05",
+    "non_delivery_reason": "UNCLAIMED",
+}
+
+
 def put_affidavit(client, case_id, affidavit=AFFIDAVIT):
     return client.put(
         reverse("case-affidavit", args=[case_id]), {"affidavit": affidavit}, format="json"
     )
 
 
+# The document type each evidence item's own scan is.
+SCAN_TYPES = {
+    "CHEQUE": "BOUNCED_CHEQUE",
+    "RETURN_MEMO": "RETURN_MEMO",
+    "LEGAL_DEMAND_NOTICE": "LEGAL_DEMAND_NOTICE",
+}
+
+
+def add_with_scan(client, case_id, pdf, evidence_type, evidence_info):
+    """Add evidence with its own scan linked, as the filing screens save it."""
+    scan = upload(client, case_id, pdf, SCAN_TYPES[evidence_type])
+    assert scan.status_code == 201, scan.json()
+    response = add_evidence(
+        client,
+        case_id,
+        evidence_type,
+        evidence_info,
+        case_document_id=scan.json()["case_document_id"],
+    )
+    assert response.status_code == 201, response.json()
+    return response
+
+
 def make_complete_case(client, case_id, pdf):
     """Fill a draft until it passes the completeness check; return the complainant."""
-    for document_type in REQUIRED_DOCUMENTS:
-        assert upload(client, case_id, pdf, document_type).status_code == 201
+    assert upload(client, case_id, pdf, "PROOF_OF_DISPATCH").status_code == 201
     complainant = add(
         client,
         case_id,
@@ -82,10 +113,9 @@ def make_complete_case(client, case_id, pdf):
     upload_identity_proof(client, case_id, pdf, complainant)
     accused = add(client, case_id, "accused", person={**PERSON, "name": "Suresh Patel"})
     assert accused.status_code == 201
-    assert add_cheque(client, case_id).status_code == 201
+    add_with_scan(client, case_id, pdf, "CHEQUE", CHEQUE_INFO)
     for evidence_type, evidence_info in EVIDENCE:
-        response = add_evidence(client, case_id, evidence_type, evidence_info)
-        assert response.status_code == 201
+        response = add_with_scan(client, case_id, pdf, evidence_type, evidence_info)
     # DEMAND_NOTICE_INFO is delivered, so it needs its proof of delivery.
     response = upload(
         client,
@@ -564,7 +594,8 @@ class TestValidate:
             "evidence.LEGAL_DEMAND_NOTICE",
             "details.jurisdiction_limitation",
             "affidavit",
-            *(f"documents.{document_type}" for document_type in REQUIRED_DOCUMENTS),
+            # Scans are asked for on their evidence items, of which there are none.
+            "documents.PROOF_OF_DISPATCH",
         }
 
     def test_a_complainant_needs_an_advocate_or_to_appear_in_person(self, client, draft, pdf):
@@ -680,6 +711,55 @@ class TestValidate:
                 "message": "Complainant #1 has no name.",
             }
         ]
+
+    @pytest.mark.parametrize(
+        ("evidence_type", "evidence_info", "label"),
+        [
+            ("CHEQUE", CHEQUE_INFO, "Cheque"),
+            ("RETURN_MEMO", RETURN_MEMO_INFO, "Return memo"),
+            # Undelivered, so it needs no proof of delivery of its own.
+            ("LEGAL_DEMAND_NOTICE", UNDELIVERED_NOTICE, "Legal demand notice"),
+        ],
+    )
+    def test_each_evidence_item_needs_its_own_scan(
+        self, client, draft, pdf, evidence_type, evidence_info, label
+    ):
+        make_complete_case(client, draft, pdf)
+        second = add_evidence(client, draft, evidence_type, evidence_info).json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"documents.{SCAN_TYPES[evidence_type]}",
+                "message": f"{label} #2 has no scan linked.",
+            }
+        ]
+
+        scan = upload(client, draft, pdf, SCAN_TYPES[evidence_type]).json()
+        url = reverse("case-evidence-detail", args=[second["case_evidence_id"]])
+        linked = client.patch(url, {"case_document_id": scan["case_document_id"]}, format="json")
+        assert linked.status_code == 200, linked.json()
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_two_items_cannot_share_a_scan(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        first = CaseEvidence.objects.get(case_id=draft, evidence_type="CHEQUE")
+
+        response = add_evidence(
+            client, draft, "CHEQUE", CHEQUE_INFO, case_document_id=str(first.case_document_id)
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"case_document_id": ["E07035"]}
+
+    def test_the_database_refuses_a_shared_scan(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        second = add_evidence(client, draft, "CHEQUE", CHEQUE_INFO).json()
+        first = CaseEvidence.objects.get(case_id=draft, evidence_type="CHEQUE", ordinal=1)
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            CaseEvidence.objects.filter(pk=second["case_evidence_id"]).update(
+                case_document_id=first.case_document_id
+            )
 
     def test_a_poa_mandate_needs_a_poa_document(self, client, draft, pdf):
         complainant = make_complete_case(client, draft, pdf)

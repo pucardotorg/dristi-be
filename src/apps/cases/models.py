@@ -1194,6 +1194,14 @@ class CaseEvidence(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 condition=Q(is_active=True),
                 name="cases_case_evidence_unique_active_ordinal",
             ),
+            # Each item has a scan of its own: two active items never share one.
+            models.UniqueConstraint(
+                fields=["case_document"],
+                condition=Q(is_active=True, case_document__isnull=False),
+                name="cases_case_evidence_unique_active_scan",
+                violation_error_message=case_errors.SCAN_ALREADY_LINKED.message,
+                violation_error_code=case_errors.SCAN_ALREADY_LINKED.code,
+            ),
         ]
         indexes = [models.Index(fields=["case", "evidence_type", "is_active"])]
 
@@ -1210,7 +1218,7 @@ class CaseEvidence(BaseModel, BaseActivatableModel, BaseAuditableModel):
         The case's type must accept the evidence type, ``evidence_info`` must
         match its schema, and a linked document must be an active document of
         the same case, of the type this evidence's scan is (a cheque's must be
-        a bounced cheque).
+        a bounced cheque), and not the scan of another active item.
         """
         super().clean()
         if not self.case_id:
@@ -1238,4 +1246,14 @@ class CaseEvidence(BaseModel, BaseActivatableModel, BaseAuditableModel):
         scan_type = EVIDENCE_SCAN_TYPES.get(self.evidence_type)
         if scan_type and document.document_type != scan_type:
             return _rule_error(case_errors.DOCUMENT_TYPE_MISMATCH, scan_type_message(scan_type))
+        if (
+            self.is_active
+            and CaseEvidence.objects.active()
+            .filter(case_document_id=self.case_document_id)
+            .exclude(pk=self.pk)
+            .exists()
+        ):
+            return _rule_error(
+                case_errors.SCAN_ALREADY_LINKED, case_errors.SCAN_ALREADY_LINKED.message
+            )
         return None
