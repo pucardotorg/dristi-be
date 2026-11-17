@@ -159,14 +159,14 @@
     "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
       "title": "View Case",
-      "contentHash": "dc83a6902fcc",
-      "pageUpdatedAt": 1794931706.476,
+      "contentHash": "e13c3c3b5b52",
+      "pageUpdatedAt": 1794932045.37,
       "calloutElementId": "cl-i2jpMT8bMh",
       "sections": [
         {
           "key": "# View Case",
           "elementId": "cl-MPobgQF3Nq",
-          "hash": "5ac655a53d71"
+          "hash": "a7a8ea13fde0"
         },
         {
           "key": "1",
@@ -206,7 +206,7 @@
         {
           "key": "# 6. Case File",
           "elementId": "cl-smTQBsrUxR",
-          "hash": "34d40819b1ef"
+          "hash": "b45c3ed2744e"
         },
         {
           "key": "# 7. Notice/Process Status",
@@ -249,7 +249,7 @@
           "hash": "d6c79bfaee81"
         }
       ],
-      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key. 2026-11-17 v1.74: §10.1 rows (grid-FwlcgeGjmr), DOC-10/12/13 cells (grid-ZQe0bbC4g7), Q-12 and Q-14 rows (grid-ECWU9NBzz9), Status and callout patched. 2026-11-17 v1.75: prototype link paragraph inserted after cl-WAc-JSRNF_; Status and callout patched."
+      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key. 2026-11-17 v1.74: §10.1 rows (grid-FwlcgeGjmr), DOC-10/12/13 cells (grid-ZQe0bbC4g7), Q-12 and Q-14 rows (grid-ECWU9NBzz9), Status and callout patched. 2026-11-17 v1.75: prototype link paragraph inserted after cl-WAc-JSRNF_; Status and callout patched. 2026-11-17 v1.76: prototype link block removed; Status and callout patched."
     },
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
@@ -862,14 +862,14 @@
     "case-file.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WBYZ9C_w-f",
       "title": "Case File",
-      "contentHash": "8f62fd2b8ada",
-      "pageUpdatedAt": 1794929591.122,
+      "contentHash": "0e526f56239d",
+      "pageUpdatedAt": 1794932038.281,
       "calloutElementId": "cl-I3IpwuxKBN",
       "sections": [
         {
           "key": "# Case File",
           "elementId": "cl-zMzgoojkww",
-          "hash": "38e6124d97c8"
+          "hash": "ea72818e6ebf"
         },
         {
           "key": "# 1. Categories",
@@ -899,7 +899,7 @@
         {
           "key": "# 6. Configuration by state",
           "elementId": "cl-s_zMoT5XHh",
-          "hash": "9d220c4fee67"
+          "hash": "974b0529afb6"
         },
         {
           "key": "# 7. Open questions",
@@ -907,7 +907,7 @@
           "hash": "ecb3ec3a9984"
         }
       ],
-      "note": "Body below the callout replaced 2026-11-17 at v15 (no comments on the page). Section elementIds are each chunk's first block. 2026-11-17 v29: §1/§2 cells, §3.1 (new block after cl-WESb8b6GJw) and §7 table replaced; Status split across cl-MI1RqK3r40 (v29–v16) and cl-297TnFOWoO (v15 on)."
+      "note": "Body below the callout replaced 2026-11-17 at v15 (no comments on the page). Section elementIds are each chunk's first block. 2026-11-17 v29: §1/§2 cells, §3.1 (new block after cl-WESb8b6GJw) and §7 table replaced; Status split across cl-MI1RqK3r40 (v29–v16) and cl-297TnFOWoO (v15 on). 2026-11-17 v30: prototype link inserted after cl-lCsN4S7bvT (§6.2); Status and callout patched."
     },
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
