@@ -159,14 +159,14 @@
     "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
       "title": "View Case",
-      "contentHash": "939c1b05c080",
-      "pageUpdatedAt": 1794404983.571,
+      "contentHash": "1ecff247d8fa",
+      "pageUpdatedAt": 1794894866.004,
       "calloutElementId": "cl-i2jpMT8bMh",
       "sections": [
         {
           "key": "# View Case",
           "elementId": "cl-MPobgQF3Nq",
-          "hash": "b5f3d3aa45f3"
+          "hash": "4929df94a060"
         },
         {
           "key": "1",
@@ -181,75 +181,75 @@
         {
           "key": "# 1. Scope",
           "elementId": "cl-V42Y3DMfW5",
-          "hash": "a404c98f3680"
+          "hash": "7ec9f4398210"
         },
         {
           "key": "# 2. Entry context",
           "elementId": "cl-yRVtnLJQsV",
-          "hash": "d9c4afd0b993"
+          "hash": "b232759f0608"
         },
         {
           "key": "# 3. Case detail — header",
           "elementId": "cl-RuE4BUsg4d",
-          "hash": "b6bd4925a5a3"
+          "hash": "1a2278df96ba"
         },
         {
           "key": "# 4. Section navigation",
           "elementId": "cl-hUbhWdhAw7",
-          "hash": "3142566993bb"
+          "hash": "0170beab2815"
         },
         {
           "key": "# 5. Overview",
           "elementId": "cl-HcHZLajPsq",
-          "hash": "3637b908840c"
+          "hash": "a68019605a42"
         },
         {
           "key": "# 6. Case File",
           "elementId": "cl-smTQBsrUxR",
-          "hash": "aab95d44ca1d"
+          "hash": "b45c3ed2744e"
         },
         {
           "key": "# 7. Notice/Process Status",
           "elementId": "cl-bDkI33DbCB",
-          "hash": "2374b5631291"
+          "hash": "90d33634365b"
         },
         {
           "key": "# 8. Orders & Notifications",
           "elementId": "cl-b4i3Fw6P4M",
-          "hash": "3d5c605bad67"
+          "hash": "9198a9967a01"
         },
         {
           "key": "# 9. Applications",
           "elementId": "cl-0u2jjrurWG",
-          "hash": "22f2489c67e8"
+          "hash": "85faeeac2de4"
         },
         {
           "key": "# 10. Documents",
           "elementId": "cl-zMm1auWWbw",
-          "hash": "9b3efbbeec0d"
+          "hash": "70b4dc90ea4e"
         },
         {
           "key": "# 11. Parties",
           "elementId": "cl-05FJEKmH30",
-          "hash": "133158198661"
+          "hash": "fe7f0a73f810"
         },
         {
           "key": "# 12. Case History",
           "elementId": "cl-0ThP_2-Gnr",
-          "hash": "de6162e14233"
+          "hash": "41d1c9397248"
         },
         {
           "key": "# 13. Open questions",
           "elementId": "cl-PHWcX66f3y",
-          "hash": "726437073a30"
+          "hash": "2e749bc90d80"
         },
         {
           "key": "# 14. Enhancements",
           "elementId": "cl-9DsCxsFTCl",
-          "hash": "e44f84850f61"
+          "hash": "d6c79bfaee81"
         }
       ],
-      "note": "Force-synced (cleared and rebuilt) 2026-11-11 at v1.70, with the owner's go-ahead; two unanchored @-mention comments discarded. Status line split across two blocks (00a/00b). Section elementIds are each chunk's first block."
+      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block."
     },
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
