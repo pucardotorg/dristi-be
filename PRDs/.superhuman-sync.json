@@ -572,9 +572,9 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "cc0b13518cc6",
-      "pageUpdatedAt": 1794917550.026,
-      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded.",
+      "contentHash": "37e14f644b79",
+      "pageUpdatedAt": 1794929702.782,
+      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated.",
       "calloutElementId": "cl-e-XQNr8pNU"
     },
     "office-management.md": {
@@ -828,21 +828,22 @@
     "payment-logic.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-690VkCoSSB",
       "title": "Payment Logic",
-      "contentHash": "1f14926b5654",
-      "pageUpdatedAt": 1794808815.947,
+      "contentHash": "38203bba4f50",
+      "pageUpdatedAt": 1794929677.256,
       "calloutElementId": "cl-N8Oug4EJ6b",
       "sections": [
         {
           "key": "# Payment Logic",
           "elementId": "cl-2TEVGygvLY",
-          "hash": "9572d3ee585b"
+          "hash": "bfae285335b8"
         },
         {
           "key": "### 3.1 Kerala",
           "elementId": "cl-dXn3_eq1nl",
           "hash": "5ec634679193"
         }
-      ]
+      ],
+      "note": " 2026-11-17 v2.5: page edit by the owner (P&H application fee 20) pulled into the file first; PMT-15, Q-16, Q-3, fee cell, Status and callout patched."
     },
     "cis-integration.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-eBrQVdOTYN",
@@ -861,29 +862,29 @@
     "case-file.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WBYZ9C_w-f",
       "title": "Case File",
-      "contentHash": "030770e6dbd1",
-      "pageUpdatedAt": 1794917333.127,
+      "contentHash": "8f62fd2b8ada",
+      "pageUpdatedAt": 1794929591.122,
       "calloutElementId": "cl-I3IpwuxKBN",
       "sections": [
         {
           "key": "# Case File",
           "elementId": "cl-zMzgoojkww",
-          "hash": "9ab70db7b1c0"
+          "hash": "38e6124d97c8"
         },
         {
           "key": "# 1. Categories",
           "elementId": "cl-zyXUh5_2V0",
-          "hash": "926b1cb44bf6"
+          "hash": "94239d465436"
         },
         {
           "key": "# 2. How the case file is ordered",
           "elementId": "cl-30lbHxMQFe",
-          "hash": "4cfe702a0734"
+          "hash": "f7bf9c53f20c"
         },
         {
           "key": "# 3. Viewing the case file",
           "elementId": "cl-QLArNMKYeQ",
-          "hash": "50e634ab4b98"
+          "hash": "c6a802a5873f"
         },
         {
           "key": "# 4. Marking as evidence",
@@ -903,10 +904,10 @@
         {
           "key": "# 7. Open questions",
           "elementId": "cl-xjU3TCz9LV",
-          "hash": "ec64f2caa4a4"
+          "hash": "ecb3ec3a9984"
         }
       ],
-      "note": "Body below the callout replaced 2026-11-17 at v15 (no comments on the page). Section elementIds are each chunk's first block."
+      "note": "Body below the callout replaced 2026-11-17 at v15 (no comments on the page). Section elementIds are each chunk's first block. 2026-11-17 v29: §1/§2 cells, §3.1 (new block after cl-WESb8b6GJw) and §7 table replaced; Status split across cl-MI1RqK3r40 (v29–v16) and cl-297TnFOWoO (v15 on)."
     },
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
