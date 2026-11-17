@@ -19,6 +19,7 @@ from apps.api import errors as api_errors
 from apps.parties.models import Person, normalize_identifier
 from apps.parties.services import (
     create_asserted_person,
+    fill_missing_details,
     get_or_create_institution,
     get_or_create_self_person,
 )
@@ -263,7 +264,7 @@ def _create_participant(case, user, role, data):
             if field in institution_fields
         }
         with errors_under("institution"):
-            institution = get_or_create_institution(user, institution_fields)
+            institution = _get_or_create_institution(user, institution_fields)
 
     # An individual complainant or POA holder has a permanent address: the
     # one sent when it differs from their first address, else that address.
@@ -360,7 +361,9 @@ def _snapshot(person, data):
     institution = data.get("institution")
     snapshot = {}
     if institution is not None:
-        snapshot = {"entity_name_at_filing": institution["entity_name"].strip()}
+        # Left out while drafting, it is ``None``; the completeness check asks for it.
+        name = (institution.get("entity_name") or "").strip() or None
+        snapshot = {"entity_name_at_filing": name}
     if person is not None:
         return {
             **snapshot,
@@ -642,8 +645,23 @@ def _relink_institution(participant, user, fields, data):
     name.
     """
     with errors_under("institution"):
-        participant.institution = get_or_create_institution(user, fields)
+        participant.institution = _get_or_create_institution(user, fields)
     _name_from(participant, fields, data)
+
+
+def _get_or_create_institution(user, fields):
+    """Return the institution ``fields`` name, filling a matched one's missing type and name.
+
+    The institution row is shared by every filing that names its PAN or CIN,
+    and each shows its type and name, so filling them drops each one's cached
+    preview, as a change to a person does (``_change_person``; spec 0021 §6.1).
+    """
+    institution = get_or_create_institution(user, fields)
+    if fill_missing_details(institution, user, fields):
+        case_ids = institution.case_participations.values_list("case_id", flat=True).distinct()
+        for case_id in case_ids:
+            clear_preview_cache(case_id)
+    return institution
 
 
 def _identified_by_nothing(institution, fields):
@@ -672,7 +690,7 @@ def _edit_institution(participant, user, fields, data):
     institution = participant.institution
     with errors_under("institution"):
         institution.entity_type = fields.get("entity_type")
-        institution.entity_name = fields["entity_name"]
+        institution.entity_name = fields.get("entity_name")
         institution.pan_cin_skip_declared = fields.get("pan_cin_skip_declared", False)
         institution.updated_by = user
         institution.save()

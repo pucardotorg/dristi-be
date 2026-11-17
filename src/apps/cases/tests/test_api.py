@@ -492,7 +492,7 @@ class TestDetails:
         [
             # The old shared key is gone.
             ("jurisdiction_limitation", {**JURISDICTION, "bank_police_station": "Kochi"}),
-            ("jurisdiction_limitation", {**JURISDICTION, "condonation_reason": ""}),
+            ("jurisdiction_limitation", {**JURISDICTION, "condonation_reason": " "}),
             ("jurisdiction_limitation", {**JURISDICTION, "complaint_filing_date": "05/03/2024"}),
             ("jurisdiction_limitation", {**JURISDICTION, "payee_ifsc_code": "HDFC512"}),
             ("jurisdiction_limitation", {**JURISDICTION, "limitation_notes": "typo"}),
@@ -631,7 +631,7 @@ class TestDetails:
         assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
         assert validation_messages(client, draft, "details.jurisdiction_limitation") == []
 
-    @pytest.mark.parametrize("reason", ["", " ", "\t\n"])
+    @pytest.mark.parametrize("reason", [" ", "\t\n"])
     def test_a_blank_condonation_reason_does_not_excuse_a_late_filing(self, client, draft, reason):
         data = {**JURISDICTION, "complaint_filing_date": "2024-03-22", "condonation_reason": reason}
 
@@ -668,7 +668,7 @@ class TestDetails:
     def test_adr_other_prayer_round_trip(self, client, draft, adr_preference):
         data = {
             "adr_preference": adr_preference,
-            "other_details": "",
+            "other_details": "<p>The accused has other cheques pending.</p>",
             "interim_relief": "<p>Interim compensation under Section 143A.</p>",
             "final_relief": "<p>Take cognizance of the offence under Section 138.</p>",
         }
@@ -676,6 +676,36 @@ class TestDetails:
         assert put_section(client, draft, "adr_other_prayer", data).status_code == 200
         details = client.get(reverse("case-details", args=[draft])).json()
         assert details["adr_other_prayer"] == data
+
+    def test_an_empty_input_is_saved_as_not_given(self, client, draft):
+        """A form sends a field left empty as ``""``; any type of value, nested too."""
+        data = {
+            "cheque_deposited_by_payee": "",
+            "payee_ifsc_code": "",
+            "payee_bank_name": "",
+            "other_complaints": [{"court": "", "case_number": "CC/1/2024"}],
+            "cause_of_action_date": "2024-02-20",
+            "complaint_filing_date": "",
+        }
+
+        response = put_section(client, draft, "jurisdiction_limitation", data)
+
+        assert response.status_code == 200, response.json()
+        saved = {
+            "other_complaints": [{"case_number": "CC/1/2024"}],
+            "cause_of_action_date": "2024-02-20",
+        }
+        assert response.json()["data"] == saved
+        details = client.get(reverse("case-details", args=[draft])).json()
+        assert details["jurisdiction_limitation"] == saved
+        messages = validation_messages(client, draft, "details.jurisdiction_limitation")
+        assert any("'complaint_filing_date' is a required property" in m for m in messages)
+
+    def test_an_empty_condonation_reason_is_asked_for_by_validate(self, client, draft):
+        data = {**JURISDICTION, "complaint_filing_date": "2024-03-22", "condonation_reason": ""}
+
+        assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
+        assert validation_messages(client, draft, "details.jurisdiction_limitation")
 
     def test_one_section_reads_as_saved(self, client, draft):
         put_section(client, draft, "jurisdiction_limitation", JURISDICTION)
@@ -762,6 +792,32 @@ class TestEvidence:
             reverse("case-evidence-list", args=[draft]), {"evidence_type": "CHEQUE"}
         )
         assert [item["ordinal"] for item in listed.json()["results"]] == [2]
+
+    def test_an_empty_input_is_saved_as_not_given(self, client, draft):
+        """``""`` for a date, a number, a pattern or a choice is a value left out, not a 400."""
+        blank = dict.fromkeys(("cheque_date", "amount", "cheque_number", "ifsc_code"), "")
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {
+                "evidence_type": "CHEQUE",
+                "evidence_info": {**blank, "bank_name": "SBI"},
+                "case_document_id": "",
+            },
+            format="json",
+        )
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["evidence_info"] == {"bank_name": "SBI"}
+        assert response.json()["case_document_id"] is None
+
+        patched = client.patch(
+            reverse("case-evidence-detail", args=[response.json()["case_evidence_id"]]),
+            {"evidence_info": {"bank_name": "", "bank_branch": "Kochi"}},
+            format="json",
+        )
+
+        assert patched.status_code == 200, patched.json()
+        assert patched.json()["evidence_info"] == {"bank_branch": "Kochi"}
 
     @pytest.mark.parametrize(
         "evidence_info",
@@ -856,7 +912,7 @@ class TestEvidence:
         "evidence_info",
         [
             {**DEMAND_NOTICE_INFO, "is_delivered": "yes"},
-            {**DEMAND_NOTICE_INFO, "mode_of_service": ""},
+            {**DEMAND_NOTICE_INFO, "mode_of_service": " "},
             # Labels, not codes.
             {**DEMAND_NOTICE_INFO, "mode_of_service": "Registered post (RPAD)"},
             {**DEMAND_NOTICE_INFO, "nature_of_debt": "Loan"},

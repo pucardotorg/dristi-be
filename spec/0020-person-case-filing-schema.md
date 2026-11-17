@@ -118,7 +118,7 @@ One row per non-human party the system knows of: a company, LLP, partnership fir
 |-------|------|-------------|-------|
 | `id` | uuid | PK | |
 | `entity_type` | varchar(32) | NULLABLE | See §3.3. May be left out while a filing is drafted; the case filing completeness check asks for it (spec 0021 §6.3). A reused institution with none takes the type the next filer sends; one stored is never replaced |
-| `entity_name` | varchar(256) | NOT NULL | Registered / legal name |
+| `entity_name` | varchar(256) | NULLABLE | Registered / legal name. May be left out while a filing is drafted (stored as null, never blank); the case filing completeness check asks for the case's name for it (`case_participant.entity_name_at_filing`). A reused institution with none takes the name the next filer sends; one stored is never replaced |
 | `pan` | varchar(10) | NULLABLE, UNIQUE | Permanent Account Number, e.g. `AAACA1234A`; uppercase, `^[A-Z]{5}[0-9]{4}[A-Z]$` |
 | `cin` | varchar(21) | NULLABLE, UNIQUE | Corporate Identification Number, companies only, e.g. `U72200KA2010PTC052651`; uppercase, `^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$` |
 | `pan_cin_skip_declared` | boolean | NOT NULL, default false | The filer declared they will give neither a PAN nor a CIN (the complainant form's skip checkbox). Then both are null |
@@ -191,7 +191,7 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `gender_at_filing` | varchar(32) | NULLABLE | Frozen snapshot of gender |
 | `age_at_filing` | smallint | NULLABLE | Frozen snapshot of age: from `person.date_of_birth` when known, else `person.age` |
 | `designation_at_filing` | varchar(128) | NULLABLE | The acting person's designation at the institution, e.g. Director; required for an ACCUSED when both `person_id` and `institution_id` are set, optional for a COMPLAINANT |
-| `entity_name_at_filing` | varchar(256) | NULLABLE | The institution's name as the filer entered it; set exactly when `institution_id` is set. With no person it equals `name_at_filing` |
+| `entity_name_at_filing` | varchar(256) | NULLABLE | The institution's name as the filer entered it; set only when `institution_id` is set, and may be left out while drafting (the case filing completeness check asks for it). With no person it equals `name_at_filing` |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Role-specific data (see §4.3) |
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
 | `end_date` | timestamp | NULLABLE | When participant was removed |
@@ -672,6 +672,7 @@ Cheque-bounce-specific data. One row per case, with `case_id` as both PK and FK 
 
 Each JSONB column corresponds to one section of the filing form, stored as it is
 displayed. The schemas each section is validated against are in spec 0021 §5.3.
+A value sent as `""` is not given, so it is not stored (spec 0021 §6.4).
 
 **`jurisdiction_limitation`:**
 ```json
@@ -692,7 +693,6 @@ displayed. The schemas each section is validated against are in spec 0021 §5.3.
 ```json
 {
   "adr_preference": "NO",
-  "other_details": "",
   "interim_relief": "<p>Direct the Accused to pay interim compensation under Section 143A ...</p>",
   "final_relief": "<p>Take cognizance of the offence committed by the Accused under Section 138 ...</p>"
 }

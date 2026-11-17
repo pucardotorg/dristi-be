@@ -43,7 +43,14 @@ from ..models import (
     link_type_errors,
 )
 from . import correction
-from .case_types import CASE_TYPES, DOCUMENTS_PART, evidence_errors, get_config, section_errors
+from .case_types import (
+    CASE_TYPES,
+    DOCUMENTS_PART,
+    evidence_errors,
+    get_config,
+    section_errors,
+    without_blanks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -612,7 +619,9 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
 
     ``CaseEvidence.clean`` checks a linked document is an active document of
     the case, of this evidence's scan type: a cheque's must be a bounced cheque.
+    A ``""`` value in ``evidence_info`` is not given (``without_blanks``).
     """
+    evidence_info = without_blanks(evidence_info)
     validate_evidence(get_case_type(case_or_draft_id, user), evidence_type, evidence_info)
     # The case lock serialises ordinal assignment.
     with editing_or_creating(case_or_draft_id, user) as case:
@@ -646,10 +655,12 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
 
     ``case_document_id=None`` unlinks the document; leaving it out keeps the
     current link. This is how a scan uploaded after the evidence was entered is
-    linked to it (spec 0020 §11.4).
+    linked to it (spec 0020 §11.4). A ``""`` value in ``evidence_info`` is
+    not given (``without_blanks``).
     """
     ensure_editable(evidence.case)
     if evidence_info is not _UNSET:
+        evidence_info = without_blanks(evidence_info)
         validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
     with editing(evidence.case, user) as case:
         # Re-read under the lock: a concurrent removal is not undone, and the
@@ -737,7 +748,11 @@ def get_detail_sections(case):
 
 
 def save_details_section(case_or_draft_id, user, section, data):
-    """Replace one details section, creating the case on first save."""
+    """Replace one details section, creating the case on first save.
+
+    A ``""`` value in ``data`` is not given (``without_blanks``).
+    """
+    data = without_blanks(data)
     case_type = get_case_type(case_or_draft_id, user)
     config = get_config(case_type)
     _require_allowed(section, config.sections, "section", case_type)

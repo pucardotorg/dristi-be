@@ -58,8 +58,8 @@ def create_asserted_person(
 def get_or_create_institution(user, fields):
     """Return the institution with the PAN or CIN in ``fields``, or create one.
 
-    A match is returned as is, except that a type left out when it was
-    created is filled from ``fields`` (``_fill_entity_type``). A PAN and a CIN
+    A match is returned as is: none of ``fields`` is applied to it; a type or
+    name it lacks is filled separately (``fill_missing_details``). A PAN and a CIN
     belonging to two different institutions are refused, since either could
     be the one meant. A complainant's institution needs a PAN, a CIN or the
     skip declaration (spec 0020 §3.4), but only to be filed: the case filing
@@ -76,7 +76,7 @@ def get_or_create_institution(user, fields):
 
     found = _find_institution(pan, cin)
     if found is not None:
-        return _fill_entity_type(found, user, fields.get("entity_type"))
+        return found
     try:
         # A savepoint, so a concurrent insert of the same PAN or CIN can be
         # recovered from without aborting the caller's transaction.
@@ -86,25 +86,40 @@ def get_or_create_institution(user, fields):
         found = _find_institution(pan, cin)
         if found is None:
             raise
-        return _fill_entity_type(found, user, fields.get("entity_type"))
+        return found
 
 
-def _fill_entity_type(institution, user, entity_type):
-    """Give ``institution`` the ``entity_type`` sent when it has none yet; return it.
+# What a filer may leave out of a new institution and a later filer may fill.
+FILLABLE_FIELDS = ("entity_type", "entity_name")
 
-    A type may be left out while a filing is drafted, and the institution is
+
+def fill_missing_details(institution, user, fields):
+    """Give ``institution`` the type and name in ``fields`` it has none of yet; return whether it did.
+
+    Either may be left out while a filing is drafted, and the institution is
     matched again by its PAN or CIN when the filer sends it later, so this is
-    how the type is completed. A stored type is never replaced: other filings
-    share the row. The row is locked, so a concurrent filer's type is kept.
+    how they are completed. A stored value is never replaced: other filings
+    share the row, and the caller refreshes what they show when this returns
+    ``True``. The row is locked, so a concurrent filer's values are kept;
+    either way ``institution`` ends up with the stored values.
     """
-    if not entity_type or institution.entity_type:
-        return institution
-    institution = Institution.objects.select_for_update().get(pk=institution.pk)
-    if institution.entity_type is None:
-        institution.entity_type = entity_type
-        institution.updated_by = user
-        institution.save(update_fields=["entity_type", "updated_by", "updated_at"])
-    return institution
+    sent = {
+        field: value
+        for field in FILLABLE_FIELDS
+        if (value := (fields.get(field) or "").strip()) and not getattr(institution, field)
+    }
+    if not sent:
+        return False
+    locked = Institution.objects.select_for_update().get(pk=institution.pk)
+    filled = [field for field in sent if getattr(locked, field) is None]
+    if filled:
+        for field in filled:
+            setattr(locked, field, sent[field])
+        locked.updated_by = user
+        locked.save(update_fields=[*filled, "updated_by", "updated_at"])
+    for field in (*FILLABLE_FIELDS, "updated_by", "updated_at"):
+        setattr(institution, field, getattr(locked, field))
+    return bool(filled)
 
 
 def _find_institution(pan, cin):

@@ -305,6 +305,19 @@ class TestPreview:
 
         assert body["participants"][0]["permanent_address"]["line1"] == "7 Temple Street"
 
+    def test_an_entity_type_filled_from_another_case_is_shown(self, client, user, draft):
+        """The institution appears in both filings; both previews follow its filled type."""
+        no_type = {k: v for k, v in INSTITUTION.items() if k != "entity_type"}
+        add(client, draft, institution=no_type)
+        before = client.get(reverse("case-detail", args=[draft])).json()  # cached
+        assert before["participants"][0]["institution"]["entity_type"] is None
+        other = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+        assert add(client, other, institution=INSTITUTION).status_code == 201
+
+        body = client.get(reverse("case-detail", args=[draft])).json()
+
+        assert body["participants"][0]["institution"]["entity_type"] == INSTITUTION["entity_type"]
+
     def test_representations_show_the_bar_registration_number(
         self, client, make_user, other_user, draft
     ):

@@ -215,19 +215,16 @@ class TestModelRulesMatchTheApi:
         with pytest.raises(ValidationError, match="both a complainant and an accused"):
             participant(ParticipantRole.ACCUSED).full_clean()
 
-    def test_an_institution_needs_its_name_on_the_case(self, case):
+    def test_an_institution_may_have_no_name_on_the_case_while_drafting(self, case):
+        """The completeness check asks for it, not the model."""
         participant = CaseParticipant(
             case=case,
             institution=make_institution(),
             role=ParticipantRole.COMPLAINANT,
             ordinal=1,
-            name_at_filing="ABC Pvt Ltd",
         )
 
-        with pytest.raises(ValidationError) as exc:
-            participant.full_clean()
-
-        assert set(exc.value.message_dict) == {"entity_name_at_filing"}
+        participant.full_clean()
 
     def test_an_individual_cannot_have_institution_details(self, case):
         participant = CaseParticipant(

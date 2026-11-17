@@ -221,8 +221,12 @@ def validation_errors(case):
     for participant in load_contacts(ordered):
         field = f"participants.{participant.id}"
         label = f"{participant.get_role_display()} #{participant.ordinal}"
+        # An institution with no person acting for it is named by the
+        # institution's name, so a missing one is reported once, as that.
+        if participant.institution_id and not participant.entity_name_at_filing:
+            error(field, f"{label}'s institution has no name.")
         if participant.role != ParticipantRole.WITNESS:
-            if not participant.name_at_filing:
+            if not participant.name_at_filing and participant.person_id:
                 error(field, f"{label} has no name.")
         elif not (participant.name_at_filing or participant.designation_at_filing):
             error(field, f"{label} has no name or designation.")

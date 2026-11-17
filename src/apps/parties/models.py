@@ -163,7 +163,9 @@ class Institution(BaseModel, BaseAuditableModel):
     # May be left out while a filing is drafted; the case filing completeness
     # check asks for it.
     entity_type = models.CharField(max_length=32, choices=EntityType.choices, null=True, blank=True)
-    entity_name = models.CharField(max_length=256, db_index=True)
+    # May be left out while a filing is drafted; the case filing completeness
+    # check asks for the case's name for it (``entity_name_at_filing``).
+    entity_name = models.CharField(max_length=256, null=True, blank=True, db_index=True)
     # Its phone numbers, emails and addresses are recorded per case, as
     # ``cases.CaseContact`` rows: one institution is shared between filings.
     # How an institution is recognised again at a later filing (spec 0020 §3.4).
@@ -204,18 +206,18 @@ class Institution(BaseModel, BaseAuditableModel):
         ]
 
     def __str__(self):
-        """Return a readable label for admin and logs."""
-        return self.entity_name
+        """Return a readable label for admin and logs, even before it is named."""
+        return self.entity_name or self.pan or self.cin or "Unnamed institution"
 
     def clean_fields(self, exclude=None):
         """Validate values as they will be stored.
 
-        The name is trimmed, so a whitespace-only name is rejected as missing,
-        and a blank type, PAN or CIN is stored as none. PAN and CIN
+        The name is trimmed, and a blank or whitespace-only name, type, PAN
+        or CIN is stored as none. PAN and CIN
         are stored uppercase without spaces, so "aaaca 1234 a" matches
         "AAACA1234A" when an institution is looked up again.
         """
-        self.entity_name = _strip(self.entity_name)
+        self.entity_name = _strip(self.entity_name) or None
         self.entity_type = self.entity_type or None
         self.pan = normalize_identifier(self.pan)
         self.cin = normalize_identifier(self.cin)

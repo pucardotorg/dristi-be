@@ -1,9 +1,12 @@
 """Case filing serializers (spec 0021)."""
 
+from collections.abc import Mapping
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
+from rest_framework.utils import html
 
 from apps.address.models import EMPTY_ADDRESS_MESSAGE, Address
 from apps.api import errors as api_errors
@@ -41,6 +44,44 @@ from .services.case_types import CaseType, DocumentType, EvidenceType
 from .services.contacts import contacts_of, first
 
 
+class BlankAsNotGivenMixin:
+    """Reads ``""`` for an optional field as not given, as DRF reads an empty form input.
+
+    A form sends an input left empty as ``""``, and a filing is saved partly
+    filled in (spec 0021 §6.4). A text field that takes blank text keeps it;
+    any other field reads it as ``null`` when it takes one (so on PATCH it
+    clears the field), else, when optional, as left out, instead of refusing
+    it. A required field that takes no ``null`` still reports it. A choice is
+    never stored blank: one a model allows blank (``gender``) is read as
+    ``null`` too. Multipart bodies get the rest from DRF (``Field.get_value``).
+    """
+
+    def to_internal_value(self, data):
+        """Rewrite each ``""`` a field cannot take before the fields read ``data``."""
+        if isinstance(data, Mapping) and not html.is_html_input(data):
+            blank = {
+                name: field
+                for name, field in self.fields.items()
+                if data.get(name) == "" and not field.read_only and _blank_is_not_given(field)
+            }
+            if blank:
+                data = {
+                    key: None if key in blank else value
+                    for key, value in data.items()
+                    if key not in blank or blank[key].allow_null
+                }
+        return super().to_internal_value(data)
+
+
+def _blank_is_not_given(field):
+    """Return whether ``field`` reads ``""`` as not given (``BlankAsNotGivenMixin``)."""
+    if isinstance(field, serializers.ChoiceField) and field.allow_null:
+        return True
+    if getattr(field, "allow_blank", False):
+        return False
+    return field.allow_null or not field.required
+
+
 class RejectUnknownFieldsMixin:
     """Refuses fields the serializer does not declare, so they are not silently ignored.
 
@@ -60,7 +101,9 @@ class RejectUnknownFieldsMixin:
         return super().validate(attrs)
 
 
-class PartialUpdateSerializer(RejectUnknownFieldsMixin, serializers.Serializer):
+class PartialUpdateSerializer(
+    BlankAsNotGivenMixin, RejectUnknownFieldsMixin, serializers.Serializer
+):
     """Base body of a PATCH: any declared field, at least one, and nothing else.
 
     A field left out is kept. The views take JSON only, so a field left out is
@@ -93,7 +136,7 @@ class UploadField(serializers.FileField):
     """
 
 
-class DraftSessionSerializer(serializers.Serializer):
+class DraftSessionSerializer(BlankAsNotGivenMixin, serializers.Serializer):
     """A draft session.
 
     The request takes ``case_type`` and, optionally, the ``court_id`` of the
@@ -259,7 +302,7 @@ class CaseDocumentSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class EvidenceCreateSerializer(serializers.Serializer):
+class EvidenceCreateSerializer(BlankAsNotGivenMixin, serializers.Serializer):
     """Body of POST /cases/{id}/evidence.
 
     ``evidence_info`` is checked against the case type's schema by the service.
@@ -392,7 +435,7 @@ class AddressInputSerializer(serializers.Serializer):
         return attrs
 
 
-class PersonInputSerializer(serializers.ModelSerializer):
+class PersonInputSerializer(BlankAsNotGivenMixin, serializers.ModelSerializer):
     """A person named in a party write. The model's rules apply again when saving.
 
     Their mobile numbers and emails are the party's ``mobile_numbers`` and
@@ -414,29 +457,33 @@ class PersonInputSerializer(serializers.ModelSerializer):
         ]
 
 
-class ContactListsSerializer(serializers.Serializer):
+class ContactListsSerializer(BlankAsNotGivenMixin, serializers.Serializer):
     """Mobile numbers, emails and addresses, each a list in order; the first is the primary.
 
     Stored as ``CaseContact`` rows (spec 0020 §4.6). A list left out is not
     changed; on PATCH, a list sent replaces the whole list. A person's mobile
     number is in E.164 form; an institution's may be a landline
-    (``mobile_number_validator``). Nothing may be given twice in one list.
+    (``mobile_number_validator``). Nothing may be given twice in one list. A
+    blank number or email is an input left empty, not given (spec 0021 §6.4):
+    it is left out of the list, and errors keep the positions as sent.
     """
 
     mobile_number_validator = phone_number_validator
 
     mobile_numbers = serializers.ListField(
-        child=serializers.CharField(max_length=20), required=False
+        child=serializers.CharField(max_length=20, allow_blank=True), required=False
     )
     email_addresses = serializers.ListField(
-        child=serializers.EmailField(max_length=256), required=False
+        child=serializers.EmailField(max_length=256, allow_blank=True), required=False
     )
     addresses = serializers.ListField(child=AddressInputSerializer(), required=False)
 
     def validate_mobile_numbers(self, values):
-        """Check each number's form, and that none is repeated."""
+        """Check each number's form, and that none is repeated; leave out blanks."""
         problems = {}
         for index, value in enumerate(values):
+            if not value:
+                continue
             try:
                 self.mobile_number_validator(value)
             except DjangoValidationError as exc:
@@ -446,22 +493,24 @@ class ContactListsSerializer(serializers.Serializer):
         return _require_unique(values)
 
     def validate_email_addresses(self, values):
-        """Refuse an email given twice, in any case."""
+        """Refuse an email given twice, in any case; leave out blanks."""
         return _require_unique(values, key=str.lower)
 
 
 def _require_unique(values, key=None):
-    """Refuse a list with the same value twice, reporting each repeat at its position."""
+    """Return ``values`` without blanks; refuse the same value twice, at each repeat's position."""
     seen = set()
     problems = {}
     for index, value in enumerate(values):
+        if not value:
+            continue
         compared = key(value) if key else value
         if compared in seen:
             problems[index] = [errors.coded(errors.DUPLICATE_CONTACT)]
         seen.add(compared)
     if problems:
         raise serializers.ValidationError(problems)
-    return values
+    return [value for value in values if value]
 
 
 class InstitutionContactsSerializer(ContactListsSerializer):
@@ -801,7 +850,7 @@ class ParticipantUpdateSerializer(ContactListsSerializer, PartialUpdateSerialize
     disability_status = serializers.BooleanField(required=False, allow_null=True)
     # Institutions only. For an institution with no person acting for it,
     # ``name_at_filing`` and ``entity_name_at_filing`` are kept the same.
-    entity_name_at_filing = serializers.CharField(max_length=256, required=False)
+    entity_name_at_filing = serializers.CharField(max_length=256, required=False, allow_null=True)
     # Individual complainants and POA holders only. Set on the person, which
     # holds current data; it has no snapshot on the participant. ``null``
     # makes it the participant's first address again.

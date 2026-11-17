@@ -322,6 +322,63 @@ class TestInstitutions:
             "entity type" in message for message in completeness(client, draft, participant_id)
         )
 
+    @pytest.mark.parametrize("name", [None, "", "   "])
+    def test_the_entity_name_may_be_left_out_until_validate(self, client, draft, name):
+        institution = {k: v for k, v in INSTITUTION.items() if k != "entity_name"}
+        if name is not None:
+            institution["entity_name"] = name
+
+        response = add(client, draft, institution=institution)
+
+        assert response.status_code == 201, response.json()
+        body = response.json()
+        assert body["entity_name_at_filing"] is None
+        assert body["institution"]["entity_name"] is None
+        messages = completeness(client, draft, body["case_participant_id"])
+        assert "Complainant #1's institution has no name." in messages
+        assert "Complainant #1 has no name." not in messages
+
+    def test_a_person_acting_for_an_unnamed_institution_is_reported_once(self, client, draft):
+        add_complainant(client, draft)
+        institution = {k: v for k, v in INSTITUTION.items() if k != "entity_name"}
+
+        response = add(
+            client, draft, role="accused", person=PERSON, institution=institution, designation="MD"
+        )
+
+        assert response.status_code == 201, response.json()
+        messages = completeness(client, draft, response.json()["case_participant_id"])
+        assert [m for m in messages if "name" in m] == ["Accused #1's institution has no name."]
+
+    def test_the_entity_name_given_later_satisfies_validate(self, client, draft):
+        institution = {k: v for k, v in INSTITUTION.items() if k != "entity_name"}
+        participant_id = add(client, draft, institution=institution).json()["case_participant_id"]
+
+        response = patch(client, participant_id, {"entity_name_at_filing": "ABC Pvt Ltd"})
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["name_at_filing"] == "ABC Pvt Ltd"
+        assert not any("name" in m for m in completeness(client, draft, participant_id))
+
+    def test_an_entity_name_sent_later_fills_the_matched_institution(self, client, draft):
+        """Matched again by its PAN: its missing name is set, a stored one never replaced."""
+        institution = {k: v for k, v in INSTITUTION.items() if k != "entity_name"}
+        participant_id = add(client, draft, institution=institution).json()["case_participant_id"]
+
+        response = patch(client, participant_id, {"institution": INSTITUTION})
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution"]["entity_name"] == "ABC Pvt Ltd"
+        assert response.json()["entity_name_at_filing"] == "ABC Pvt Ltd"
+        assert Institution.objects.count() == 1
+
+        renamed = patch(
+            client, participant_id, {"institution": {**INSTITUTION, "entity_name": "XYZ Ltd"}}
+        )
+
+        assert renamed.json()["institution"]["entity_name"] == "ABC Pvt Ltd"
+        assert renamed.json()["entity_name_at_filing"] == "XYZ Ltd"
+
     def test_a_stored_entity_type_is_never_replaced(self, client, draft):
         """Other filings share the institution; its type is filled, not changed."""
         make_institution(pan=INSTITUTION["pan"], entity_type="LLP")
@@ -2887,3 +2944,103 @@ class TestResidesWithinJurisdiction:
 
         with pytest.raises(IntegrityError), transaction.atomic():
             participant.save()
+
+
+class TestEmptyInputs:
+    """A form sends a field left empty as ``""``; it is read as not given (spec 0021 §6.4)."""
+
+    def test_an_empty_optional_person_field_is_not_given(self, client, draft):
+        person = {**PERSON, "date_of_birth": "", "age": "", "gender": "", "relation": ""}
+        person["relative_name"] = ""
+
+        response = add(client, draft, person=person)
+
+        assert response.status_code == 201, response.json()
+        body = response.json()
+        assert (body["age_at_filing"], body["gender_at_filing"]) == (None, None)
+
+    def test_an_empty_designation_is_not_given(self, client, draft):
+        add_complainant(client, draft)
+
+        response = add(
+            client, draft, role="accused", person=PERSON, institution=INSTITUTION, designation=""
+        )
+
+        assert response.status_code == 201, response.json()
+        assert "Accused #1 acts for an institution but has no designation." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
+
+    def test_a_witness_with_an_empty_designation_is_saved(self, client, draft):
+        response = add_witness(client, draft, designation="")
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["designation_at_filing"] is None
+
+    def test_an_empty_value_on_patch_clears_the_field(self, client, draft):
+        participant_id = add_complainant(client, draft)["case_participant_id"]
+
+        response = patch(
+            client,
+            participant_id,
+            {"name_at_filing": "", "gender_at_filing": "", "age_at_filing": ""},
+        )
+
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert (body["name_at_filing"], body["gender_at_filing"], body["age_at_filing"]) == (
+            None,
+            None,
+            None,
+        )
+
+    def test_an_empty_field_that_takes_no_null_is_left_unchanged_on_patch(self, client, draft):
+        participant_id = add_complainant(client, draft)["case_participant_id"]
+        patch(client, participant_id, {"is_party_in_person": True})
+
+        response = patch(
+            client, participant_id, {"is_party_in_person": "", "name_at_filing": "Anita"}
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["is_party_in_person"] is True
+
+    def test_an_empty_witness_side_on_patch_is_left_unchanged(self, client, draft):
+        """A side is always required, so ``""`` cannot clear it."""
+        participant_id = add_witness(client, draft).json()["case_participant_id"]
+
+        response = patch(client, participant_id, {"side": "", "what_will_witness_prove": "x"})
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["witness"]["side"] == "COMPLAINANT"
+
+    def test_an_empty_witness_side_on_create_is_refused(self, client, draft):
+        response = add_witness(client, draft, side="")
+
+        assert error_codes(response) == {"side": ["E00005"]}
+
+    def test_a_required_field_still_refuses_it(self, client, draft):
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "", "evidence_info": {}},
+            format="json",
+        )
+
+        assert error_codes(response) == {"evidence_type": ["E00005"]}
+
+    def test_empty_contacts_are_left_out_and_errors_keep_their_positions(self, client, draft):
+        response = add(
+            client,
+            draft,
+            person=PERSON,
+            mobile_numbers=["", MOBILE],
+            email_addresses=["", "rajesh@example.com", ""],
+        )
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["mobile_numbers"] == [MOBILE]
+        assert response.json()["email_addresses"] == ["rajesh@example.com"]
+
+        refused = add(client, draft, person=PERSON, mobile_numbers=["", "12"])
+
+        assert error_codes(refused) == {"mobile_numbers[1]": ["E00001"]}

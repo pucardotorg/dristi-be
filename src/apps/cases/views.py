@@ -364,7 +364,9 @@ class CaseDetailsSectionView(APIView):
         if not isinstance(request.data, dict):
             raise api_errors.INCORRECT_TYPE.validation_error({"data": ["Expected a JSON object."]})
         case = services.save_details_section(case_id, request.user, section, request.data)
-        return Response({"case_id": case.id, "section": section, "data": request.data})
+        # As saved, as GET returns it: a ``""`` sent is left out.
+        data = services.get_detail_sections(case)[section]
+        return Response({"case_id": case.id, "section": section, "data": data})
 
 
 class CaseAffidavitView(APIView):

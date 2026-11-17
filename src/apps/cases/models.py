@@ -176,7 +176,6 @@ def _roles_message(roles):
 # §10), which the project error handler keeps.
 INSTITUTION_ROLE_MESSAGE = "Only a complainant or an accused may be an institution."
 DESIGNATION_NOT_ALLOWED_MESSAGE = "Only for a person acting for an institution."
-INSTITUTION_DETAILS_REQUIRED_MESSAGE = "Required for an institution."
 INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE = "Only for an institution."
 COMPLAINANT_ONLY_MESSAGE = "Only for a complainant."
 INSTITUTION_CONTACTS_MESSAGE = (
@@ -300,8 +299,9 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         null=True, blank=True, validators=[MaxValueValidator(MAX_AGE)]
     )
     designation_at_filing = models.CharField(max_length=128, null=True, blank=True)
-    # Set exactly when there is an institution: its name as the filer entered
-    # it, which may differ from a reused institution's stored one.
+    # Set only when there is an institution: its name as the filer entered it,
+    # which may differ from a reused institution's stored one. It may be left
+    # out while drafting; the completeness check asks for it.
     entity_name_at_filing = models.CharField(max_length=256, null=True, blank=True)
     # Mobile numbers, emails and addresses are ``CaseContact`` rows.
     additional_details = models.JSONField(default=dict, blank=True)
@@ -382,12 +382,13 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     def clean(self):
         """Apply the rules the database cannot express (spec 0020 §4.2, §7.2, §14.1).
 
-        What a filing must have before it is filed (a name, an address, an
-        accused institution's officer's designation) is not checked here: a
+        What a filing must have before it is filed (a name, an institution's
+        name, an address, an accused institution's officer's designation) is
+        not checked here: a
         draft may be saved without it, and the completeness check reports it
         (``services.filing.validation_errors``). Only an accused may declare
         their contact details unknown. An institution's name is recorded
-        exactly when there is one, and only a
+        only when there is one, and only a
         complainant has a party-in-person affidavit. While
         active, a person or an institution cannot hold one role twice on a
         case, nor be both a complainant and an accused there, nor appear in
@@ -410,11 +411,7 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
             errors["party_in_person_affidavit"] = _rule_error(
                 case_errors.FIELD_NOT_APPLICABLE, COMPLAINANT_ONLY_MESSAGE
             )
-        if self.institution_id and not self.entity_name_at_filing:
-            errors["entity_name_at_filing"] = _rule_error(
-                api_errors.REQUIRED, INSTITUTION_DETAILS_REQUIRED_MESSAGE
-            )
-        elif not self.institution_id and self.entity_name_at_filing:
+        if not self.institution_id and self.entity_name_at_filing:
             errors["entity_name_at_filing"] = _rule_error(
                 case_errors.FIELD_NOT_APPLICABLE, INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE
             )
