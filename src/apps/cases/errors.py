@@ -100,3 +100,8 @@ WITNESS_ALREADY_ON_SIDE = define("E07033", "This person is already a witness for
 
 # Contacts (spec 0020 §4.6)
 DUPLICATE_CONTACT = define("E07034", "This contact is given more than once.")
+
+# Evidence scans (spec 0020 §11.4): each item is filed with a scan of its own.
+SCAN_ALREADY_LINKED = define(
+    "E07035", "This document is already the scan of another evidence item."
+)

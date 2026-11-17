@@ -1433,6 +1433,7 @@ POST /cases/{case_id}/validate
 
 4. **Evidence (cheque bounce specific):**
    - At least one `CHEQUE`, one `RETURN_MEMO` and one `LEGAL_DEMAND_NOTICE` evidence row
+   - Each cheque, return memo and demand notice has its own scan linked (`case_evidence.case_document_id`), of its scan type: `BOUNCED_CHEQUE`, `RETURN_MEMO`, `LEGAL_DEMAND_NOTICE`. A missing one is reported on the item (`documents.<TYPE>`, e.g. "Cheque #2 has no scan linked."), so these three scan types are not also reported as missing required documents. No two active items share a scan: linking one already in use is refused when saving (`E07035` on `case_document_id`), and a database rule enforces it.
    - Each evidence row has required fields in `evidence_info` (validated against schema §5.2)
    - Pairing each cheque with its own return memo and demand notice by `ordinal` is not checked yet
 
@@ -1538,6 +1539,7 @@ Anything else is refused with `409 Conflict` and `E07029`, on the request field 
 | `E07032` | 400 | The linked evidence is not an active evidence item of this case. |
 | `E07033` | 400 | The person is already a witness for this side. |
 | `E07034` | 400 | A mobile number, email or address is given more than once in one list (spec 0020 §4.6). |
+| `E07035` | 400 | The document is already the scan of another active evidence item; each item has its own (spec 0020 §11.4). |
 
 A details section or `evidence_info` that breaks its schema is reported with common codes (`E00004` blank text, `E00012` wrong type, `E00005` value not allowed, `E00001` otherwise), each on the path to the offending value, such as `evidence_info.cheque_number`. A missing key is not an error on save (§6.4); the completeness check reports it.
 

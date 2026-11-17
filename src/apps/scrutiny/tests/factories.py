@@ -18,7 +18,13 @@ from apps.cases.models import (
     ParticipantRole,
 )
 from apps.cases.services import services as case_services
-from apps.cases.services.case_types import CaseType, DocumentType, EvidenceType, get_config
+from apps.cases.services.case_types import (
+    EVIDENCE_SCAN_TYPES,
+    CaseType,
+    DocumentType,
+    EvidenceType,
+    get_config,
+)
 from apps.files.tests.factories import make_file
 from apps.organizations.models import Organization, OrganizationType
 from apps.parties.models import Person
@@ -55,9 +61,20 @@ def add_courtroom(establishment, name):
     )
 
 
+def _scan(case, evidence_type):
+    """Return a new document to be the scan of an evidence item of ``evidence_type``."""
+    return CaseDocument.objects.create(
+        case=case,
+        document=make_file(user=case.created_by),
+        document_type=EVIDENCE_SCAN_TYPES[evidence_type],
+    )
+
+
 def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presented="2026-05-02"):
+    """Add a cheque, its return memo and its demand notice, each filed with its own scan."""
     CaseEvidence.objects.create(
         case=case,
+        case_document=_scan(case, EvidenceType.CHEQUE),
         evidence_type=EvidenceType.CHEQUE,
         ordinal=ordinal,
         evidence_info={
@@ -71,6 +88,7 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
     )
     CaseEvidence.objects.create(
         case=case,
+        case_document=_scan(case, EvidenceType.RETURN_MEMO),
         evidence_type=EvidenceType.RETURN_MEMO,
         ordinal=ordinal,
         evidence_info={
@@ -92,6 +110,7 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
         notice.update(return_date="2026-05-12", non_delivery_reason="UNCLAIMED")
     notice = CaseEvidence.objects.create(
         case=case,
+        case_document=_scan(case, EvidenceType.LEGAL_DEMAND_NOTICE),
         evidence_type=EvidenceType.LEGAL_DEMAND_NOTICE,
         ordinal=ordinal,
         evidence_info=notice,

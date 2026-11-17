@@ -345,8 +345,10 @@ def validation_errors(case):
                 f"{party.get_role_display()} #{party.ordinal} acts through a POA holder "
                 "but has no POA document.",
             )
+    scan_types = set(EVIDENCE_SCAN_TYPES.values())
     for document_type in config.required_document_types:
-        if document_type not in uploaded:
+        # An evidence item's scan is asked for on the item, below.
+        if document_type not in uploaded and document_type not in scan_types:
             error(
                 f"documents.{document_type}",
                 f"Document type {document_type} is required but not uploaded.",
@@ -373,15 +375,20 @@ def validation_errors(case):
                 f"Demand notice #{item.ordinal} was delivered but has no proof of delivery.",
             )
     # Writes already check these; a rule tightened since then is caught here.
+    # Each cheque, return memo and demand notice is filed with its own scan,
+    # linked from the item, of its type. That no two items share one is a
+    # database rule (``cases_case_evidence_unique_active_scan``).
     document_types = {document.id: document.document_type for document in documents}
     for item in evidence:
         scan_type = EVIDENCE_SCAN_TYPES.get(item.evidence_type)
-        if (
+        label = EvidenceType(item.evidence_type).label
+        if scan_type and not item.case_document_id:
+            error(f"documents.{scan_type}", f"{label} #{item.ordinal} has no scan linked.")
+        elif (
             item.case_document_id
             and scan_type
             and document_types.get(item.case_document_id) != scan_type
         ):
-            label = EvidenceType(item.evidence_type).label
             error(
                 f"evidence.{item.evidence_type}",
                 f"{label} #{item.ordinal}: {scan_type_message(scan_type)}",
@@ -390,7 +397,6 @@ def validation_errors(case):
         for problem in (
             evidence_errors(config, item.evidence_type, item.evidence_info) if has_schema else []
         ):
-            label = EvidenceType(item.evidence_type).label
             error(f"evidence.{item.evidence_type}", f"{label} #{item.ordinal}: {problem}")
 
     # An unsaved section is still ``{}``, which fails its required fields here.
