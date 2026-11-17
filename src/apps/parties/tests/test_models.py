@@ -355,6 +355,15 @@ class TestRulesOnEveryWrite:
         assert institution.entity_name is None
         assert str(institution) == "Unnamed institution"
 
+    @pytest.mark.parametrize("blank", [None, "", "   "])
+    def test_a_blank_entity_type_is_stored_as_none(self, blank):
+        """It may be left out while a filing is drafted; the completeness check asks for it."""
+        institution = Institution(entity_type=blank, entity_name="ABC Pvt Ltd")
+
+        institution.full_clean()
+
+        assert institution.entity_type is None
+
     def test_names_are_stored_trimmed(self):
         person = make_person(name="  Ravi Kumar ")
         institution = make_institution(entity_name=" ABC Pvt Ltd  ")

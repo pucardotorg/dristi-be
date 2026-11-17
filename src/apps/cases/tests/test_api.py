@@ -707,6 +707,24 @@ class TestDetails:
         assert put_section(client, draft, "jurisdiction_limitation", data).status_code == 200
         assert validation_messages(client, draft, "details.jurisdiction_limitation")
 
+    @pytest.mark.parametrize(
+        ("section", "data", "field"),
+        [
+            ("adr_other_prayer", {"final_relief": "<p>Pay</p>", "final_releif": ""}, "data"),
+            (
+                "jurisdiction_limitation",
+                {"other_complaints": [{"case_number": "CC/1/2024", "cort": ""}]},
+                "data.other_complaints[0]",
+            ),
+        ],
+    )
+    def test_an_empty_unknown_key_is_still_refused(self, client, draft, section, data, field):
+        """Only a key the schema knows is read as not given; a typo is still a 400."""
+        response = put_section(client, draft, section, data)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {field: ["E00001"]}
+
     def test_one_section_reads_as_saved(self, client, draft):
         put_section(client, draft, "jurisdiction_limitation", JURISDICTION)
 
@@ -818,6 +836,16 @@ class TestEvidence:
 
         assert patched.status_code == 200, patched.json()
         assert patched.json()["evidence_info"] == {"bank_branch": "Kochi"}
+
+    def test_an_empty_unknown_key_is_still_refused(self, client, draft):
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "CHEQUE", "evidence_info": {"bank_name": "SBI", "bank_nmae": ""}},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"evidence_info": ["E00001"]}
 
     @pytest.mark.parametrize(
         "evidence_info",

@@ -567,19 +567,25 @@ def draft_schema(schema):
     }
 
 
-def without_blanks(data):
-    """Return ``data`` with each ``""`` value of an object left out, at any depth.
+def without_blanks(data, schema):
+    """Return ``data`` with each ``""`` value of a key ``schema`` knows left out, at any depth.
 
     A form sends an input left empty as ``""``, which in a details section or
     ``evidence_info`` means not given (spec 0021 §6.4): it is dropped before
     the data is checked and stored, so a save of a partly filled form is not
     refused as blank or malformed, and the completeness check reports the key
-    as missing.
+    as missing. A key the schema does not declare is kept, so it is still
+    refused as unknown.
     """
     if isinstance(data, dict):
-        return {key: without_blanks(value) for key, value in data.items() if value != ""}
+        properties = schema.get("properties", {})
+        return {
+            key: without_blanks(value, properties.get(key, {}))
+            for key, value in data.items()
+            if not (value == "" and key in properties)
+        }
     if isinstance(data, list):
-        return [without_blanks(item) for item in data]
+        return [without_blanks(item, schema.get("items", {})) for item in data]
     return data
 
 

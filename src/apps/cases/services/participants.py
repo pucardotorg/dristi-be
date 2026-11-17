@@ -285,9 +285,9 @@ def _create_participant(case, user, role, data):
             person = _lock_person(person.pk)
         # The filer's own person row takes the permanent address they just
         # gave (spec 0020 §2.5). Falling back to ``address`` only fills one
-        # they lack; it never replaces theirs.
+        # they lack or have left incomplete; it never replaces a complete one.
         if permanent_address is not None and (
-            sent_permanent_address or person.permanent_address_id is None
+            sent_permanent_address or _is_incomplete_or_missing(person.permanent_address)
         ):
             _change_person(person, user, permanent_address=permanent_address)
     elif "person" in data:
@@ -597,7 +597,7 @@ def update_participant(participant, user, data):
             and "addresses" in own_lists
             and not sends_permanent_address
             and (
-                permanent_address_id is None
+                _is_incomplete_or_missing(participant.person.permanent_address)
                 or (
                     participant.person.user_id is None
                     and permanent_address_id == _stored_first_address_id(participant)
@@ -734,6 +734,15 @@ def _align_representatives(participant, user, old_institution_id):
             setattr(other, field, value)
         other.updated_by = user
         validated_save(other)
+
+
+def _is_incomplete_or_missing(address):
+    """Return whether a permanent address may follow the first address sent.
+
+    One that is missing or still incomplete is filled from it, also for a
+    registered user's person; a complete one is changed only when sent.
+    """
+    return address is None or bool(address.missing_fields)
 
 
 def _stored_first_address_id(participant):

@@ -218,7 +218,7 @@ class Institution(BaseModel, BaseAuditableModel):
         "AAACA1234A" when an institution is looked up again.
         """
         self.entity_name = _strip(self.entity_name) or None
-        self.entity_type = self.entity_type or None
+        self.entity_type = _strip(self.entity_type) or None
         self.pan = normalize_identifier(self.pan)
         self.cin = normalize_identifier(self.cin)
         super().clean_fields(exclude=exclude)

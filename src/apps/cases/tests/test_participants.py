@@ -2498,6 +2498,41 @@ class TestPermanentAddress:
         assert response.status_code == 200, response.json()
         assert Person.objects.get(user=user).permanent_address.line1 == self.OFFICE["line1"]
 
+    def test_the_filers_incomplete_one_follows_their_case_address(self, client, user, draft):
+        """Not yet usable, it is completed by the case's address, then kept."""
+        body = add(client, draft, self=True, addresses=[{"line1": "12 MG Road"}]).json()
+
+        response = patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
+
+        assert response.status_code == 200, response.json()
+        person = Person.objects.get(user=user)
+        assert person.permanent_address.line1 == self.OFFICE["line1"]
+        assert person.permanent_address.missing_fields == []
+        assert not any(
+            "permanent" in message
+            for message in completeness(client, draft, body["case_participant_id"])
+        )
+
+        patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
+
+        assert Person.objects.get(user=user).permanent_address.line1 == self.OFFICE["line1"]
+
+    def test_the_filers_incomplete_one_sent_follows_their_case_address(self, client, user, draft):
+        body = add(client, draft, self=True, permanent_address={"state": "Karnataka"}).json()
+
+        patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
+
+        assert Person.objects.get(user=user).permanent_address.line1 == self.OFFICE["line1"]
+
+    def test_the_filers_incomplete_one_is_completed_on_another_case(self, client, user, draft):
+        add(client, draft, self=True, addresses=[{"line1": "12 MG Road"}])
+        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+
+        response = add(client, other_draft, self=True, addresses=[self.OFFICE])
+
+        assert response.status_code == 201, response.json()
+        assert Person.objects.get(user=user).permanent_address.line1 == self.OFFICE["line1"]
+
     def test_a_claimed_persons_stays_when_the_case_address_changes(self, client, other_user, draft):
         """Once a user claims the person, it is theirs on every case, like the filer's own."""
         add(client, draft, self=True)  # an active complainant may change the claimed person

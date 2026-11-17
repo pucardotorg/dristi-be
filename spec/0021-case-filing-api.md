@@ -470,7 +470,7 @@ POST /cases/{case_id_or_draft_session_id}/complainants
 
 Exactly one of `person` or `self` describes the individual, and either may be left out when `institution` is given. `designation` is accepted only when both an individual and an institution are given; it is optional for a complainant and, for an accused, required to file (spec 0020 §4.2; asked for by §6.3, not on save). `date_of_birth` and `age` are both optional. `person.name` may be left out while drafting; every party but a witness needs a name to file.
 
-`permanent_address` (an address, optional) is accepted only for an individual complainant (`E07023` otherwise): send it when the permanent address differs from their first address. Left out, the person's permanent address is that first address, except that the filer's own person (`"self": true`) keeps a permanent address they already have: the first address only fills one they lack. It is saved on the person, not on the participant. PATCH `/case-participants/{id}` may send `permanent_address` for an individual complainant or POA holder to set it on the person; the participant's contacts and snapshot are unchanged. `null` makes it the participant's first address again (after any change to `addresses` in the same request), as when it is left out on create; for a party with no permanent address, `null` is accepted and changes nothing. It is refused (`E07023`) for any other participant, and for a person another user has registered and claimed, unless the filer is that user, an advocate actively representing the participant on this case, or an active complainant on this case.
+`permanent_address` (an address, optional) is accepted only for an individual complainant (`E07023` otherwise): send it when the permanent address differs from their first address. Left out, the person's permanent address is that first address, except that the filer's own person (`"self": true`) keeps a complete permanent address they already have: the first address only fills one they lack or have left incomplete. It is saved on the person, not on the participant. PATCH `/case-participants/{id}` may send `permanent_address` for an individual complainant or POA holder to set it on the person; the participant's contacts and snapshot are unchanged. `null` makes it the participant's first address again (after any change to `addresses` in the same request), as when it is left out on create; for a party with no permanent address, `null` is accepted and changes nothing. It is refused (`E07023`) for any other participant, and for a person another user has registered and claimed, unless the filer is that user, an advocate actively representing the participant on this case, or an active complainant on this case.
 
 **Response (201 Created):**
 ```json
@@ -1477,9 +1477,11 @@ first address (none of its own was given), the permanent address follows the
 new first address, so completing a partly entered address completes both. A
 registered user's person (the filer's own, `"self": true`, or one a user has
 claimed) is the exception: it is theirs on every case, so, as on create, it
-keeps the permanent address it has, and only `permanent_address` changes it. A
-party saved with no address has no permanent address yet; the first address
-later sent fills it, as on create, for every party.
+keeps a complete permanent address it has, and only `permanent_address`
+changes it. A party saved with no address has no permanent address yet; the
+first address later sent fills it, as on create, for every party. A permanent
+address that is still incomplete (missing any of `line1`, `city`, `state`,
+`pincode`, `district`) follows the new first address too, for every party.
 
 What still has to be sent is what says what is being saved: `case_type`,
 `evidence_type`, a witness's `side`, a party's `person`, `self` or
@@ -1494,9 +1496,10 @@ institution's `entity_name` may be left out too; the completeness check
 A form sends an input left empty as `""`, which a save reads as not given
 rather than refusing it as blank or malformed:
 
-- In a details section or `evidence_info`, a key whose value is `""` (at any
-  depth) is dropped before the data is checked and stored, so the
-  completeness check reports a required one as missing. Whitespace-only text
+- In a details section or `evidence_info`, a key of the schema whose value
+  is `""` (at any depth) is dropped before the data is checked and stored, so
+  the completeness check reports a required one as missing. A key the schema
+  does not have is still refused, `""` or not (`E00001`). Whitespace-only text
   is still refused as blank (`E00004`).
 - A field of a party, evidence, document or draft body that does not take
   blank text (a date, a number, a choice, an id, `designation`, the
