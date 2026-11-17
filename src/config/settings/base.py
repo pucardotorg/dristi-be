@@ -374,10 +374,6 @@ OTP_MAX_ATTEMPTS = env.int("OTP_MAX_ATTEMPTS", default=5)
 # How long a verified password-reset code lets the session set a new password.
 PASSWORD_RESET_WINDOW_SECONDS = env.int("PASSWORD_RESET_WINDOW_SECONDS", default=600)
 
-# Add every superuser to the BAR_ID_APPROVER group, at migrate and on creation,
-# so registration and bar-ID requests can be routed on a fresh local or test
-# stack (apps.users.services.approvers). Off in production (production.py).
-SEED_SUPERUSER_APPROVERS = env.bool("SEED_SUPERUSER_APPROVERS", default=True)
 # Per-user rate of GET /advocates/?search= (finding an advocate to add to a
 # case); blank disables it. Limits scraping the list of advocates.
 ADVOCATE_SEARCH_THROTTLE_RATE = env("ADVOCATE_SEARCH_THROTTLE_RATE", default="60/min")

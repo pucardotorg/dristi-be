@@ -26,7 +26,7 @@ Common management commands:
 # Run migrations
 docker compose -f docker/docker-compose.yml exec web python manage.py migrate
 
-# Create a superuser (also made a BAR_ID_APPROVER, see SEED_SUPERUSER_APPROVERS)
+# Create a superuser
 docker compose -f docker/docker-compose.yml exec web python manage.py createsuperuser
 
 # Open a Django shell
@@ -47,6 +47,14 @@ docker compose -f docker/docker-compose.yml exec web python manage.py seed /data
 ```
 
 See [data/seed/README.md](../data/seed/README.md) for what `core/` contains.
+
+On a local or test stack, also make your superuser a bar-ID approver so advocate
+and clerk registration requests can be routed. Create the superuser with mobile
+number `+919999999999`, then:
+
+```bash
+docker compose -f docker/docker-compose.yml exec web python manage.py seed /data/seed/local/
+```
 
 ### Loading location data (pincode pre-fill)
 

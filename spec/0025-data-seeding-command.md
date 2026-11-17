@@ -108,6 +108,7 @@ Natural keys below are taken from the current models.
 | `core.PublicConfiguration` | `(config_set, config_key)` | — | — | Public counterpart of `core.Configuration` (spec 0034). Composite key, normalized by the model; `config_value` is coerced to text. |
 | `cms.PageCategory` | `slug` | — | — | `name` also unique. |
 | `cms.Page` | `slug` | `category` → PageCategory.slug | — | Slug lowercased by the model. |
+| `users.User_groups` | `(user, group)` | `user` → User.mobile_number, `group` → Group.name | — | Adds an existing user to an existing group (e.g. `BAR_ID_APPROVER`, issue #260). The key is matched on the resolved objects, so an unknown user or group skips the row. Never removes a membership. |
 
 "Permissions" from the ticket are **out of scope** for now (confirmed by @thejeshgn); current `users.Role` is a code-level `TextChoices`, not a seedable row set.
 

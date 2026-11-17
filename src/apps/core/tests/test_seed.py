@@ -4,6 +4,8 @@ from io import StringIO
 
 import pytest
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core.management import CommandError, call_command
 
 from apps.cms.models import Page
@@ -13,6 +15,7 @@ from apps.locations.models import Location
 from apps.organizations.models import Organization
 
 EXAMPLE_DIR = settings.BASE_DIR.parent / "data" / "seed" / "example"
+LOCAL_DIR = settings.BASE_DIR.parent / "data" / "seed" / "local"
 
 
 def write(tmp_path, name, content):
@@ -425,3 +428,70 @@ parent = "NOPE"
     def test_no_paths_errors(self):
         with pytest.raises(CommandError, match="at least one"):
             run()
+
+
+MEMBERSHIP = """
+[seed]
+model = "users.User_groups"
+
+[[rows]]
+user = "+919000000001"
+group = "BAR_ID_APPROVER"
+"""
+
+
+@pytest.mark.django_db
+class TestGroupMembership:
+    """User-group membership is seeded by mobile number and group name."""
+
+    @pytest.fixture
+    def approvers(self):
+        group, _ = Group.objects.get_or_create(name="BAR_ID_APPROVER")
+        return group
+
+    @pytest.fixture
+    def user(self):
+        return get_user_model().objects.create_user("+919000000001", password="pw")
+
+    def test_adds_user_to_group(self, tmp_path, approvers, user):
+        output = run(write(tmp_path, "members.toml", MEMBERSHIP))
+        assert approvers.user_set.filter(pk=user.pk).exists()
+        assert "created 1, unchanged 0, skipped 0" in output
+
+    def test_rerun_is_idempotent(self, tmp_path, approvers, user):
+        path = write(tmp_path, "members.toml", MEMBERSHIP)
+        run(path)
+        output = run(path)
+        assert approvers.user_set.filter(pk=user.pk).count() == 1
+        assert "created 0, unchanged 1, skipped 0" in output
+
+    def test_existing_member_is_unchanged(self, tmp_path, approvers, user):
+        user.groups.add(approvers)
+        output = run(write(tmp_path, "members.toml", MEMBERSHIP))
+        assert approvers.user_set.count() == 1
+        assert "created 0, unchanged 1, skipped 0" in output
+
+    def test_unknown_user_skips_row(self, tmp_path, approvers):
+        output = run(write(tmp_path, "members.toml", MEMBERSHIP))
+        assert not approvers.user_set.exists()
+        assert "no users.User with mobile_number='+919000000001'" in output
+
+    def test_unknown_group_skips_row(self, tmp_path, user):
+        toml = MEMBERSHIP.replace("BAR_ID_APPROVER", "NO_SUCH_GROUP")
+        output = run(write(tmp_path, "members.toml", toml))
+        assert not user.groups.exists()
+        assert "no auth.Group with name='NO_SUCH_GROUP'" in output
+
+    def test_dry_run_adds_nobody(self, tmp_path, approvers, user):
+        output = run(write(tmp_path, "members.toml", MEMBERSHIP), dry_run=True)
+        assert not approvers.user_set.exists()
+        assert "Dry run: would have created 1" in output
+
+    def test_listed_with_composite_key(self):
+        assert "users.User_groups  (key: user, group)" in run("--list")
+
+    def test_local_seed_file_adds_the_documented_superuser(self, approvers):
+        superuser = get_user_model().objects.create_superuser("+919999999999", password="pw")
+        output = run(str(LOCAL_DIR))
+        assert approvers.user_set.filter(pk=superuser.pk).exists()
+        assert "skipped 0" in output
