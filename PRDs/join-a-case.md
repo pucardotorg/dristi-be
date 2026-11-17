@@ -1,6 +1,6 @@
 # Join a Case
 
-**Status:** v7.2 — 2026-11-06; **a case can be joined only once it is registered** (`JOIN-08a`, new, §3). v7.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `join-a-case.md`. v7 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-10-06; added a placeholder for the vakalatnama payment logic. v5 — 2026-10-06; a mobile number entered for a party is confirmed by that party at their first sign-in before the case links to their account (JOIN-64). v4 — 2026-10-06; PoA holders can join for the complainant side and for several parties at once (one authorization document and one mobile number per party); flow outcome is Success. v3 — 2026-09-17; §12 Linked records now carries live views of all four
+**Status:** v7.4 — 2026-11-17; **the advocate says who else is named on each vakalatnama, and the first advocate pays for it** (§9c): `JOIN-51` asks, for each litigant's vakalatnama, whether other advocates are named on it, replacing the question whether another advocate already paid; `JOIN-52` has the advocate add exactly that many registered advocates, who get an invite; `JOIN-53` says the uploading advocate pays and every other advocate named on the vakalatnama gets access once it is paid; two open questions added (`Q-1`, `Q-2`, §14); "Vakalatnama payment logic" (§9c) now links to [`payment-logic.md`](payment-logic.md) §3 for the fees; `JOIN-50a` now gives the reason for one vakalatnama per litigant. v7.3 — 2026-11-17; **each litigant has a separate vakalatnama**: an advocate representing several litigants uploads one for each (`JOIN-50a`, new, §9c); `JOIN-39` no longer says one vakalatnama covers several litigants. v7.2 — 2026-11-06; **a case can be joined only once it is registered** (`JOIN-08a`, new, §3). v7.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `join-a-case.md`. v7 — 2026-10-19; links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v6 — 2026-10-06; added a placeholder for the vakalatnama payment logic. v5 — 2026-10-06; a mobile number entered for a party is confirmed by that party at their first sign-in before the case links to their account (JOIN-64). v4 — 2026-10-06; PoA holders can join for the complainant side and for several parties at once (one authorization document and one mobile number per party); flow outcome is Success. v3 — 2026-09-17; §12 Linked records now carries live views of all four
 master tables (pending tasks court and citizen side, notifications, events), so anything
 tagged later appears automatically. v2 — §12 Events added; later sections renumbered. v1 — all open questions resolved;
 no approval flows in V1 (replacement deferred, all joins immediate)
@@ -402,7 +402,7 @@ this.
 ### Which parties?
 
 `JOIN-39` — The user selects which litigant(s) they represent. This is a
-**multi-select** — one vakalatnama routinely covers co-accused (or co-complainants).
+**multi-select**.
 
 `JOIN-40` — **[OWNER]** If there is only one party on the selected side, the system
 auto-selects them.
@@ -437,22 +437,25 @@ Each number entered here is confirmed by the litigant, not at entry (`JOIN-64`).
 `JOIN-50` — **[OWNER]** In V1, the advocate must always **upload** a vakalatnama.
 Generated vakalatnamas will be available in a later version.
 
-`JOIN-51` — **[OWNER]** The advocate **always uploads** the vakalatnama document,
-regardless of whether another advocate has already done so.
+`JOIN-50a` — **[OWNER]** Each litigant has a **separate vakalatnama**. An advocate who
+represents several litigants (`JOIN-39`) uploads one vakalatnama for each of them.
 
-If another advocate is already on the case, the user is asked: **"Has another advocate
-already uploaded and paid for this vakalatnama?"**
+*When a single vakalatnama names all the litigants, the advocate uploads the same file
+for each one. That extra effort lasts only until vakalatnamas can be generated in the
+product (`JOIN-50`). Assuming instead that one vakalatnama covers every litigant would
+leave no way to upload separate ones when they exist.*
 
-- **Yes** → This advocate uploads the document but **does not pay**.
-- **No** → This advocate uploads the document **and pays**.
+`JOIN-51` — **[OWNER]** The advocate uploads one vakalatnama for each litigant they
+represent (`JOIN-50a`). For each vakalatnama, the advocate says whether any other
+advocate is named on it.
 
-`JOIN-52` — This question is only asked when another advocate is already on the case.
-If this is the first advocate joining, they always upload and pay.
+`JOIN-52` — **[OWNER]** If other advocates are named on a vakalatnama, the advocate says
+how many and adds exactly that many. Only advocates registered on the platform can be
+added. Each advocate added gets an invite to join the case.
 
-`JOIN-53` — If the advocate is uploading (not joining an existing vakalatnama), they
-are asked:
-- How many advocates are part of this vakalatnama? (numeric)
-- Which advocates? (selected from the bar directory, capped at the stated count)
+`JOIN-53` — **[OWNER]** The advocate who uploads a vakalatnama pays for it (`JOIN-54`).
+Every other advocate named on it gets access to the case once it is paid, with nothing to
+upload or pay themselves.
 
 `JOIN-54` — **[OWNER]** Payment for the vakalatnama happens **within the join flow**.
 After uploading the vakalatnama, the advocate is taken to the payment step. The
@@ -464,7 +467,8 @@ access to the case until they do.
 
 ### Vakalatnama payment logic
 
-`[GAP]` To be specified — how the vakalatnama fee is calculated and collected.
+The fees charged at join a case, for each state, are in
+[`payment-logic.md`](payment-logic.md) §3.
 
 ### Outcome
 
@@ -581,4 +585,7 @@ These are deliberate shortcuts. Each must be revisited before V1 exits pilot.
 
 # 14. Open questions
 
-No blocking open questions remain.
+| ID | Question | Blocking |
+|---|---|---|
+| `Q-1` | When an advocate uploads vakalatnamas for several litigants, is "is any other advocate named on it?" asked for each vakalatnama, or once for all of them (`JOIN-51`)? | Yes |
+| `Q-2` | An advocate named on only some of the vakalatnamas looks up the case. Do they join only for those litigants, and how do they join for the others (`JOIN-53`)? | Yes |
