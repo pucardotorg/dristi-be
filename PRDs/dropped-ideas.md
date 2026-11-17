@@ -1,6 +1,6 @@
 # Dropped ideas
 
-**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`); the four application order items (#5, #6, #13, #26) of the order item catalogue. 2026-11-11 — the next hearing's status and View All Hearings on the case overview (`OVW-02`, `OVW-05`); one line of text per case update on the overview (`OVW-06`); the hearings list and hearing detail on the case (`HRG-01`–`HRG-12`); hiding Notice/Process Status when no process has issued (`SVC-16`); the Applications filters and search, and the Needs attention grouping, bulk signing and bulk payment (`APP-01`–`APP-04`, `APP-09`–`APP-11`); the application statuses and record restated in view-case (`APP-12`–`APP-20`); the Documents section's separate bail-bond list and its filters and search (`DOC-01`–`DOC-04`); a witness's linked party and added by, and how its number is composed (`PTY-13`–`PTY-16`); legal teams all authored or none (`PTY-21`); counts per group in Parties (`PTY-22`); the rest of the Parties section's structure — list and selection, per-population rules and fields (`PTY-01`–`PTY-14`, `PTY-17`–`PTY-20`, `PTY-23`, `PTY-27`, `PTY-29`, `PTY-31`, `PTY-32`); Case History's date range and the Bail lifecycle section of view-case (`TME-02`, `TME-03`, §13); view-case's Not yet covered section; the last order highlighted in Case History (`TME-06`). 2026-11-13 — the case reference of bulk filing (`BLK-07`).
+**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`); the four application order items (#5, #6, #13, #26) of the order item catalogue. 2026-11-11 — the next hearing's status and View All Hearings on the case overview (`OVW-02`, `OVW-05`); one line of text per case update on the overview (`OVW-06`); the hearings list and hearing detail on the case (`HRG-01`–`HRG-12`); hiding Notice/Process Status when no process has issued (`SVC-16`); the Applications filters and search, and the Needs attention grouping, bulk signing and bulk payment (`APP-01`–`APP-04`, `APP-09`–`APP-11`); the application statuses and record restated in view-case (`APP-12`–`APP-20`); the Documents section's separate bail-bond list and its filters and search (`DOC-01`–`DOC-04`); a witness's linked party and added by, and how its number is composed (`PTY-13`–`PTY-16`); legal teams all authored or none (`PTY-21`); counts per group in Parties (`PTY-22`); the rest of the Parties section's structure — list and selection, per-population rules and fields (`PTY-01`–`PTY-14`, `PTY-17`–`PTY-20`, `PTY-23`, `PTY-27`, `PTY-29`, `PTY-31`, `PTY-32`); Case History's date range and the Bail lifecycle section of view-case (`TME-02`, `TME-03`, §13); view-case's Not yet covered section; the last order highlighted in Case History (`TME-06`). 2026-11-13 — the case reference of bulk filing (`BLK-07`). 2026-11-16 — an exhibit number never changing (case-file `CFL-13`, `Q-7`). 2026-11-17 — the case file index as headings two levels deep (case-file `CFL-16`, `CFL-17`, `Q-8`), and the case file opening on its first document (`CFL-18`); a document's number as its exhibit number or a system identifier (case-file `CFL-20`); no other action offered in the case file (case-file `CFL-25`); actions on documents only, not on sections (case-file `CFL-23`).
 
 Ideas taken out of the PRDs, kept here with their last wording so they can be restored. Each entry says where it came from and what replaced it. The full earlier documents are also in git history: commit `cb97c67` holds both files as they were before.
 
@@ -884,3 +884,56 @@ of `TME-04`. The Bail lifecycle section does not belong in the case view.
 > `BLK-37`: These rows cannot be created and are not imported: a row with neither a case reference nor an accused name; a row repeating a case reference used higher in the file; a row repeating the cheque number and amount of a row higher in the file.
 
 ---
+
+## Exhibit number never changes (case-file.md `CFL-13`, `Q-7`)
+
+**Dropped 2026-11-16.** Courts may ask to edit an exhibit number, so the case file does not promise that it never changes. Whether a marking can be corrected is [`evidence-marking.md`](evidence-marking.md) `Q-3`.
+
+### From case-file.md §2
+
+> | `CFL-13` | **An exhibit number never changes** once it is allotted. It stays the same for as long as the case file exists. |
+
+### From case-file.md §5
+
+> | `Q-7` | **Fixed numbers.** Confirm with the courts that an exhibit number never changes once given (`CFL-13`). Courts may want to correct or renumber exhibits. | No |
+
+---
+
+## Case file index as headings (case-file.md `CFL-16`–`CFL-18`, `Q-8`)
+
+**Dropped 2026-11-17.** §2 of case-file.md sets the structure of the case file (sections, sub-sections, documents and the documents linked to them), and `CFL-21` covers opening a document. Where the case file opens (`CFL-18`) is left to the UI. These rows came from view-case.md (`DET-09`, `DET-10`, `DET-13`).
+
+### From case-file.md §3.1
+
+> | `CFL-16` | The case file has an index of its contents and shows the document selected in it. |
+> | `CFL-17` | Each entry in the index is either a **heading**, which groups the entries under it, or a **document**. Headings go up to two levels deep: for example, heading 4, under it heading 4.2, and under that document 4.2.2. |
+> | `CFL-18` | The case file opens on the first document in the index. |
+
+### From case-file.md §6
+
+> | `Q-8` | **Index depth.** `CFL-17` allows headings two levels deep, with each entry either a heading or a document. The format needs more: documents linked to a document sit under it (6.1.1, `CFL-03`), and in a split section a document's linked documents sit a level below that (12.1.1.1, `CFL-08`). How should `CFL-17` read? | No |
+
+---
+
+## A document's number as its exhibit number or a system identifier (case-file.md `CFL-20`)
+
+**Dropped 2026-11-17.** In the case file, a document's number is its place in the case file (case-file.md §2), with any exhibit number shown beside it (`CFL-09`). The row came from view-case.md (`DET-15`). The open question it raised went with it.
+
+### From case-file.md §3.1
+
+> | `CFL-20` | Number | The document's exhibit number, if it has been marked as evidence; otherwise its system-generated identifier, such as the application number |
+
+### Open question raised in case-file.md (never published)
+
+> | `Q-9` | **Which number a document shows.** `CFL-20` shows the exhibit number, or otherwise the system's identifier. Every document also has its place in the case file (4.1, `CFL-02`), with any exhibit number beside it (`CFL-09`). Which numbers does a document show? | No |
+
+---
+
+## No other action in the case file; actions on documents only (case-file.md `CFL-23`, `CFL-25`)
+
+**Dropped 2026-11-17.** Not needed: `CFL-22` (marking) and `CFL-26` (downloading) say what can be done with documents in the case file, and both are about documents. The rows came from view-case.md (`DET-16`, `DET-18`).
+
+### From case-file.md §3.3
+
+> | `CFL-23` | Both actions (`CFL-22`) are on documents only, not on sections or sub-sections. |
+> | `CFL-25` | No other action is offered in the case file. Anything else to be done with a document — responding to an application, for example — is done from the user's pending tasks ([`view-case.md`](view-case.md) §5.3) or from the section the document belongs to, such as Applications ([`view-case.md`](view-case.md) §9). |
