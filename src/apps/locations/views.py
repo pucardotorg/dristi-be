@@ -137,18 +137,19 @@ class LocationViewSet(APIModelReadOnlyViewSet):
 
         return queryset
 
+    def _location_type_param(self):
+        """Return the validated location_type query param, or None when absent."""
+        location_type = self.request.query_params.get("location_type")
+        if location_type is not None and location_type not in Location.LocationType.values:
+            raise errors.INVALID_CHOICE.validation_error(
+                {"location_type": f"Must be one of: {', '.join(Location.LocationType.values)}."}
+            )
+        return location_type
+
     def _apply_location_type_filter(self, queryset):
         """Filter a location collection by the location_type query param."""
-        location_type = self.request.query_params.get("location_type")
+        location_type = self._location_type_param()
         if location_type is not None:
-            if location_type not in Location.LocationType.values:
-                raise errors.INVALID_CHOICE.validation_error(
-                    {
-                        "location_type": (
-                            f"Must be one of: {', '.join(Location.LocationType.values)}."
-                        )
-                    }
-                )
             queryset = queryset.filter(location_type=location_type)
         return queryset
 
@@ -156,16 +157,24 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         """Return the location with the given unique code or raise 404."""
         return get_object_or_404(Location.objects.select_related("parent"), code=code)
 
-    def _children_response(self, location):
-        """Return a paginated response of the location's active direct children.
+    def _validate_children_params(self):
+        """Reject bad children query params before the parent is looked up.
 
-        An inactive parent is not found and inactive children are never
-        listed. ``location_type`` is the only filter; the parent and
-        ``is_active`` filters are rejected rather than ignored.
+        ``location_type`` is the only filter; the parent and ``is_active``
+        filters are rejected rather than ignored. Validating first means a bad
+        param is always a 400, whether the parent is active, inactive or unknown.
         """
         params = self.request.query_params
         if any(param in params for param in ("parent_id", "parent_code", "is_active")):
             raise ValidationError(UNSUPPORTED_CHILDREN_FILTERS)
+        self._location_type_param()
+
+    def _children_response(self, location):
+        """Return a paginated response of the location's active direct children.
+
+        Call ``_validate_children_params()`` before looking ``location`` up.
+        An inactive parent is not found and inactive children are never listed.
+        """
         if not location.is_active:
             raise NotFound("No active location matches the given query.")
         children = self._apply_location_type_filter(
@@ -197,6 +206,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
     @action(detail=True, methods=["get"], url_path="children", url_name="children")
     def children(self, request, *args, **kwargs):
         """List the direct children of a location identified by id."""
+        self._validate_children_params()
         return self._children_response(self.get_object())
 
     @ANCESTORS_SCHEMA
@@ -219,6 +229,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
     )
     def children_by_code(self, request, code=None, *args, **kwargs):
         """List the direct children of a location identified by code."""
+        self._validate_children_params()
         return self._children_response(self._get_by_code(code))
 
     @ANCESTORS_SCHEMA

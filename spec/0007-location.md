@@ -138,7 +138,7 @@ Query examples:
 - `GET /locations/code/IN/children?location_type=state` — list the states under India.
 
 `parent_id` and `parent_code` are explicit, mutually-exclusive filters. Validation rejects requests that supply both. `is_active` filtering is provided because `Location` uses `BaseActivatableModel`.
-On the two `children` endpoints the parent is identified by the URL path and must be active (404 otherwise), and inactive children are never listed: `location_type` is the only filter, and supplying `parent_id`, `parent_code` or `is_active` is rejected.
+On the two `children` endpoints the parent is identified by the URL path and must be active (404 otherwise), and inactive children are never listed: `location_type` is the only filter, and supplying `parent_id`, `parent_code` or `is_active` is rejected. Query parameters are validated before the parent is looked up, so a bad one is a 400 even when the parent is inactive or unknown.
 
 ### 7. Pincodes
 

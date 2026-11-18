@@ -248,6 +248,32 @@ class LocationChildrenTests(LocationAPITestCase):
                         [{"code": errors.INVALID.code}],
                     )
 
+    def test_children_bad_params_are_400_whatever_the_parent(self):
+        # Params are validated before the parent lookup, so an inactive or
+        # unknown parent never turns a bad param into a 404.
+        unknown_urls = [
+            reverse("location-children", args=[uuid.uuid4()]),
+            reverse("location-by-code-children", args=["NO_SUCH_CODE"]),
+        ]
+        cases = (
+            ({"location_type": "tehsil"}, errors.INVALID_CHOICE.code, "location_type"),
+            ({"is_active": "true"}, errors.INVALID.code, None),
+            ({"parent_code": "BR"}, errors.INVALID.code, None),
+        )
+        for url in [*self.children_urls(self.goa), *unknown_urls]:
+            for params, code, field in cases:
+                with self.subTest(url=url, params=params):
+                    response = self.client.get(url, params)
+
+                    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                    self.assertEqual(
+                        [
+                            {"code": e["code"], "field": e.get("field")}
+                            for e in response.json()["errors"]
+                        ],
+                        [{"code": code, "field": field}],
+                    )
+
 
 class LocationAncestorsTests(LocationAPITestCase):
     """GET /locations/{id}/ancestors/ and /locations/code/{code}/ancestors/"""
