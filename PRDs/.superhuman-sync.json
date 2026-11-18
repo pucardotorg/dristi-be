@@ -14,10 +14,10 @@
     "efiling.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing",
-      "contentHash": "4a26a5938b41",
-      "pageUpdatedAt": 1795000991.213,
+      "contentHash": "433faf5d9c58",
+      "pageUpdatedAt": 1795027407.165,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed. 2026-11-17 v50.16: Status line, callout and DCM-12 cells (grid-TpBE7PtM6j) patched in place. 2026-11-18 v50.17: Status line, callout, §5 police-station sentence, §8 persons-responsible line (new block), §20.2 batch 21 patched; ACC-3 row deleted and ACC-14 cell updated (grid-FAAg6kHyer); WIT-8 row added (grid-s22EreNnJR)."
+      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed. 2026-11-17 v50.16: Status line, callout and DCM-12 cells (grid-TpBE7PtM6j) patched in place. 2026-11-18 v50.17: Status line, callout, §5 police-station sentence, §8 persons-responsible line (new block), §20.2 batch 21 patched; ACC-3 row deleted and ACC-14 cell updated (grid-FAAg6kHyer); WIT-8 row added (grid-s22EreNnJR). 2026-11-19: patched in place to v50.19 (ACC-6/7, ACC-16/17, JUR-7/8, missing contacts, batch 22). Hash is of the committed file; the working copy also holds uncommitted PSS Act edits (v50.18) from another session, not synced."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -715,8 +715,8 @@
     "bulk-filing.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
       "title": "Bulk Filing",
-      "contentHash": "0df1b66aa654",
-      "pageUpdatedAt": 1794924263.375,
+      "contentHash": "6c4294ef3269",
+      "pageUpdatedAt": 1795027498.825,
       "calloutElementId": "cl-IwwclcUBOf",
       "sections": [
         {
@@ -745,7 +745,7 @@
           "hash": "4fc345c51cb6"
         }
       ],
-      "note": "2026-11-17 v8.22: Status line, callout and the Vakalatnamas cell (grid-F3TEvMilyT) patched in place; section hashes recomputed by key."
+      "note": "2026-11-17 v8.22: Status line, callout and the Vakalatnamas cell (grid-F3TEvMilyT) patched in place; section hashes recomputed by key. 2026-11-19: patched in place to v8.23 (accused age row deleted, column counts)."
     },
     "evidence-marking.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-uJ7EU__l31",
