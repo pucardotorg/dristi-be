@@ -950,3 +950,13 @@ of `TME-04`. The Bail lifecycle section does not belong in the case view.
 > | `CFL-28` | An **order** is named **"Order: "** followed by its title ([`order-generation.md`](order-generation.md) `TIT-07`) and its date: *Order: [title] - [date]*, for example *Order: Issue of summons and other items - [date]*. The name is the same wherever the order is shown. |
 > | `CFL-29` | A **document submitted with an application or a bail bond** is named **"Document attached: "** followed by its title: for example, *Document attached: Proof of solvency*. |
 > | `CFL-30` | A **payment receipt**'s name includes its date. |
+
+---
+
+## Accused's age (efiling.md `ACC-3`)
+
+**Dropped 2026-11-18.** The filer is not asked the accused's age. It was optional, and nothing else in the filing used it.
+
+### From efiling.md §8
+
+> | ACC-3 | Age | Number | Positive integer; nothing else; optional | Individual |
