@@ -666,7 +666,7 @@ routed to the `BAR_ID_APPROVER` group. The request's `data` is the profile
 | — | `PENDING` | `POST /advocates/` or `POST /clerks/` |
 | `PENDING` | `ACCEPTED` | Approval hook (section 7.2) |
 | `PENDING` | `REJECTED` | Rejection hook (section 7.3) |
-| `REJECTED` | `PENDING` | `POST /registrations/current/resubmit/` (section 7.4) |
+| `REJECTED` | `PENDING` | `POST /users/me/registration/resubmission/` (section 7.4) |
 
 ### 7.1 Raising the verification request
 
@@ -708,14 +708,15 @@ again.
 ![Rejection and resubmission sequence](../docs/sequence-diagrams/0005-registration-and-login/rejection-and-resubmission.svg)
 
 ```http
-GET    /registrations/current/            cookie auth, rejected registrant only
-POST   /registrations/current/resubmit/   cookie auth, rejected registrant only
+GET    /users/me/registration/resubmission/   cookie auth
+POST   /users/me/registration/resubmission/   cookie auth
 ```
 
-A rejected advocate or clerk can log in (section 4.1.2) and reach only these
-two endpoints.
+A rejected advocate or clerk can log in (section 4.1.2); the login's
+`next: "resubmit"` sends the client here. Besides this endpoint, such a session
+reaches only those listed in section 7.5.
 
-`GET /registrations/current/` returns the reason and the claim as last
+`GET /users/me/registration/resubmission/` returns the reason and the claim as last
 submitted, to pre-fill the correction screens:
 
 ```json
@@ -736,7 +737,13 @@ submitted, to pre-fill the correction screens:
 `application_id` is the 0010 request's id. `officer_message` and `rejected_at`
 come from the rejection in the request's current round, not earlier ones.
 
-`POST /registrations/current/resubmit/` takes the corrected claim as multipart,
+| Code | Condition |
+|---|---|
+| `200` | The rejected registration |
+| `403` | Not signed in |
+| `404` | No rejected registration to correct (`E01015`): pending, accepted, a role that is not verified, or registration not finished |
+
+`POST /users/me/registration/resubmission/` takes the corrected claim as multipart,
 since it carries the document:
 
 ```
@@ -773,8 +780,8 @@ The user is logged out, since the account is pending again.
 |---|---|
 | `200` | Resubmitted; session ended |
 | `400` | Validation failure, or `bar_id_document` refused |
-| `403` | Caller is not a rejected advocate or clerk |
-| `409` | Nothing to resubmit (`E01012`) |
+| `403` | Not signed in |
+| `409` | Nothing to resubmit (`E01012`): the registration is not `REJECTED`. Checked before the body is validated, so no document is stored |
 
 #### 7.4.1 Why resubmit the same request rather than raise a new one
 
@@ -782,18 +789,28 @@ The application keeps one id across rounds, and approvers see every round's
 decision on a single request, keyed by `version`, rather than a chain of
 unrelated requests.
 
+#### 7.4.2 Why 404 and 409 rather than 403
+
+A caller who is signed in but has no rejected registration is not refused
+access; there is just nothing to correct. A `403` reads as an access problem,
+so the read answers `404` (no such resubmission) and the write `409` (the
+registration is not in a state that can be resubmitted). One noun resource
+under `/users/me/` carries both, named after the `next: "resubmit"` step that
+sends the client there.
+
 ### 7.5 Access gates
 
 | `approval_status` | Session | Reachable |
 |---|---|---|
 | `PENDING` | none | nothing gated |
-| `REJECTED` | gated | the section 7.4 endpoints, `GET /users/me/`, `POST /users/me/terms/`, `DELETE /sessions/` |
+| `REJECTED` | gated | the section 7.4 endpoint, `GET /users/me/`, `POST /users/me/terms/`, `DELETE /sessions/` |
 | `ACCEPTED` | full | everything a registered account can reach |
 
 `IsNotAwaitingApproval`, in the default permission classes after
 `IsAuthenticatedAndRegistered` and before `HasAcceptedCurrentTerms`, refuses a
-`PENDING` or `REJECTED` advocate or clerk. `IsRejectedRegistrant` admits only a
-`REJECTED` one, and guards the section 7.4 endpoints.
+`PENDING` or `REJECTED` advocate or clerk. The section 7.4 endpoint opts out
+of the defaults with `IsAuthenticated` alone and checks for a `REJECTED`
+registration itself, answering `404` or `409` (section 7.4.2).
 
 ### 7.6 Notifications
 
