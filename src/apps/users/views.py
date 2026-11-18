@@ -43,13 +43,13 @@ from .serializers import (
     AdvocateRegistrationSerializer,
     AdvocateSearchResultSerializer,
     ClerkRegistrationSerializer,
-    CurrentRegistrationSerializer,
     CurrentUserSerializer,
     MobileOTPSerializer,
     OTPRequestSerializer,
     PasswordResetSerializer,
     RegistrationCompletionSerializer,
     RegistrationResubmissionSerializer,
+    RejectedRegistrationSerializer,
     SessionCreateSerializer,
     TermsAcceptanceSerializer,
     TermsStatusSerializer,
@@ -60,7 +60,7 @@ from .services.password import (
     reset_password,
     verify_password_reset_code,
 )
-from .services.permissions import IsRejectedRegistrant, next_step
+from .services.permissions import next_step
 from .services.registration import (
     DocumentRejected,
     RegistrationNotRejected,
@@ -701,39 +701,36 @@ class ClerkRegistrationView(BaseRegistrationCompletionView):
     parser_classes = [MultiPartParser, FormParser]
 
 
-class CurrentRegistrationView(APIView):
-    """GET /registrations/current/ — the rejected registration to correct.
+class RegistrationResubmissionView(APIView):
+    """GET, POST /users/me/registration/resubmission/ — correct a rejected registration.
 
-    Feeds the correction screens: the application id, the approver's reason
-    and the claim as last submitted, to pre-fill the steps.
+    GET feeds the correction screens: the application id, the approver's
+    reason and the claim as last submitted, to pre-fill the steps. POST sends
+    the corrected claim back: the request keeps its id and only its version
+    moves on. Multipart when it carries the bar ID document.
+
+    Gated on IsAuthenticated alone. A caller with no rejected registration is
+    signed in and allowed here; there is just nothing to correct. GET answers
+    404 and POST 409, rather than a 403 that reads as an access problem.
     """
 
-    permission_classes = [IsAuthenticated, IsRejectedRegistrant]
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(
         tags=["registration"],
         responses={
-            200: CurrentRegistrationSerializer,
-            **error_responses(errors.NOTHING_TO_RESUBMIT),
+            200: RejectedRegistrationSerializer,
+            **error_responses(errors.NO_REJECTED_REGISTRATION),
         },
     )
     def get(self, request):
         """Return the rejected registration with the approver's reason."""
+        _require_rejected_registration(request.user, errors.NO_REJECTED_REGISTRATION)
         try:
             registration = describe_rejected_registration(request.user)
         except RegistrationNotRejected as exc:
-            raise BusinessError(errors.NOTHING_TO_RESUBMIT) from exc
-        return Response(CurrentRegistrationSerializer(registration).data)
-
-
-class RegistrationResubmitView(APIView):
-    """POST /registrations/current/resubmit/ — send the corrected claim back.
-
-    The same application goes back for approval: the request keeps its id and
-    only its version moves on. Multipart when it carries the bar ID document.
-    """
-
-    permission_classes = [IsAuthenticated, IsRejectedRegistrant]
+            raise BusinessError(errors.NO_REJECTED_REGISTRATION) from exc
+        return Response(RejectedRegistrationSerializer(registration).data)
 
     @extend_schema(
         tags=["registration"],
@@ -755,6 +752,9 @@ class RegistrationResubmitView(APIView):
     )
     def post(self, request):
         """Apply the corrections, resubmit, and end the session."""
+        # Before validation: the serializer assumes a verified role, and a
+        # caller with nothing to resubmit should not have a document stored.
+        _require_rejected_registration(request.user, errors.NOTHING_TO_RESUBMIT)
         serializer = RegistrationResubmissionSerializer(
             data=request.data, context={"request": request}
         )
@@ -780,3 +780,13 @@ class RegistrationResubmitView(APIView):
         return Response(
             {"application_id": str(resubmitted.pk), "approval_status": ApprovalStatus.PENDING}
         )
+
+
+def _require_rejected_registration(user, error):
+    """Raise ``error`` unless the user is an advocate or clerk whose registration was rejected.
+
+    A cheap early check; the services check again under lock, since the
+    registration can change between this and the write.
+    """
+    if approval_status_of(user) != ApprovalStatus.REJECTED:
+        raise BusinessError(error)

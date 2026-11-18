@@ -20,3 +20,6 @@ APPROVAL_PENDING = define("E01013", "Account approval is pending.", status=403)
 PASSWORD_RESET_NOT_VERIFIED = define(
     "E01014", "Verify a password reset code first, or request a new one.", status=401
 )
+NO_REJECTED_REGISTRATION = define(
+    "E01015", "There is no rejected registration to correct.", status=404
+)

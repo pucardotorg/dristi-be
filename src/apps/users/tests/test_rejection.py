@@ -90,7 +90,7 @@ class RejectionTestCase(OTPTestCase):
         }
         body = {key: value for key, value in body.items() if value is not None}
         with self.captureOnCommitCallbacks(execute=True):
-            return self.client.post(reverse("registration-resubmit"), body, format="multipart")
+            return self.client.post(reverse("registration-resubmission"), body, format="multipart")
 
 
 class RejectionTests(RejectionTestCase):
@@ -133,8 +133,8 @@ class RejectedSignInTests(RejectionTestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
-class CurrentRegistrationTests(RejectionTestCase):
-    """GET /registrations/current/."""
+class RejectedRegistrationTests(RejectionTestCase):
+    """GET /users/me/registration/resubmission/."""
 
     def test_shows_the_reason_and_the_claim_as_submitted(self):
         """Everything the correction screens show, to pre-fill the steps."""
@@ -142,7 +142,7 @@ class CurrentRegistrationTests(RejectionTestCase):
         self.reject(user)
         self.sign_in()
 
-        response = self.client.get(reverse("registration-current"))
+        response = self.client.get(reverse("registration-resubmission"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.json()
@@ -167,22 +167,46 @@ class CurrentRegistrationTests(RejectionTestCase):
         self.reject(user, reason="Second reason.")
         self.sign_in()
 
-        response = self.client.get(reverse("registration-current"))
+        response = self.client.get(reverse("registration-resubmission"))
 
         self.assertEqual(response.json()["officer_message"], "Second reason.")
 
-    def test_refused_to_anyone_not_rejected(self):
-        """A pending, accepted or litigant account has nothing to correct."""
+    def assert_nothing_to_correct(self, response):
+        """A 404 with the no-rejected-registration code, not an access error."""
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND, response.content)
+        [error] = response.json()["errors"]
+        self.assertEqual(error["code"], errors.NO_REJECTED_REGISTRATION.code)
+
+    def test_accepted_advocate_has_nothing_to_correct(self):
+        """Signed in and allowed, so a 404 rather than a 403."""
         user = self.register()
         decide(self.request_of(user).current_approval, "approved", self.approver)
         self.sign_in()
 
-        response = self.client.get(reverse("registration-current"))
+        self.assert_nothing_to_correct(self.client.get(reverse("registration-resubmission")))
+
+    def test_pending_advocate_has_nothing_to_correct(self):
+        """Pending holds no session, but a forced one still finds nothing."""
+        user = self.register()
+        self.client.force_authenticate(user)
+
+        self.assert_nothing_to_correct(self.client.get(reverse("registration-resubmission")))
+
+    def test_litigant_has_nothing_to_correct(self):
+        """A role that is never verified has no registration to correct."""
+        litigant = User.objects.create_user(mobile_number=OTHER_MOBILE, role=Role.LITIGANT)
+        self.client.force_authenticate(litigant)
+
+        self.assert_nothing_to_correct(self.client.get(reverse("registration-resubmission")))
+
+    def test_unauthenticated_is_refused(self):
+        """Still an access error without a session."""
+        response = self.client.get(reverse("registration-resubmission"))
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_registration_gone_since_the_permission_check_is_a_409(self):
-        """A rejection undone after the permission passed has nothing to show."""
+    def test_rejection_undone_since_the_check_is_a_404(self):
+        """A rejection undone between the early check and the read has nothing to show."""
         user = self.register()
         self.reject(user)
         self.sign_in()
@@ -191,15 +215,13 @@ class CurrentRegistrationTests(RejectionTestCase):
             "apps.users.views.describe_rejected_registration",
             side_effect=RegistrationNotRejected,
         ):
-            response = self.client.get(reverse("registration-current"))
+            response = self.client.get(reverse("registration-resubmission"))
 
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        [error] = response.json()["errors"]
-        self.assertEqual(error["code"], errors.NOTHING_TO_RESUBMIT.code)
+        self.assert_nothing_to_correct(response)
 
 
 class ResubmissionTests(RejectionTestCase):
-    """POST /registrations/current/resubmit/."""
+    """POST /users/me/registration/resubmission/."""
 
     def setUp(self):
         """Register, reject and sign back in, as the SMS asks."""
@@ -255,18 +277,51 @@ class ResubmissionTests(RejectionTestCase):
         self.resubmit()
 
         self.assertNotIn("_auth_user_id", self.client.session)
-        response = self.client.get(reverse("registration-current"))
+        response = self.client.get(reverse("registration-resubmission"))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_resubmitting_twice_is_refused(self):
+    def assert_nothing_to_resubmit(self, response):
+        """A 409 with the nothing-to-resubmit code, not an access error."""
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT, response.content)
+        [error] = response.json()["errors"]
+        self.assertEqual(error["code"], errors.NOTHING_TO_RESUBMIT.code)
+
+    def test_resubmitting_twice_is_a_conflict(self):
         """Once resubmitted, the registration is no longer rejected."""
         self.resubmit()
         self.client.force_authenticate(self.user)
 
-        response = self.resubmit()
-
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assert_nothing_to_resubmit(self.resubmit())
         self.assertEqual(self.request_of(self.user).version, 2)
+
+    def test_accepted_advocate_resubmitting_is_a_conflict_and_stores_nothing(self):
+        """Refused before validation: no document reaches the files store."""
+        self.resubmit()
+        decide(self.request_of(self.user).current_approval, "approved", self.approver)
+        self.client.force_authenticate(self.user)
+        files_before = File.objects.count()
+
+        self.assert_nothing_to_resubmit(self.resubmit())
+        self.assertEqual(File.objects.count(), files_before)
+
+    def test_invalid_body_from_a_non_rejected_caller_is_still_a_conflict(self):
+        """The state is checked before the body, so the client is not sent to fix fields."""
+        self.resubmit()
+        self.client.force_authenticate(self.user)
+
+        self.assert_nothing_to_resubmit(self.resubmit(name=None, bar_id_document=None))
+
+    def test_litigant_resubmitting_is_a_conflict(self):
+        """A role that is never verified has nothing to resubmit, and no 500."""
+        litigant = User.objects.create_user(mobile_number=OTHER_MOBILE, role=Role.LITIGANT)
+        self.client.force_authenticate(litigant)
+
+        self.assert_nothing_to_resubmit(self.resubmit())
+
+    def test_rejection_undone_since_the_check_is_a_409(self):
+        """The service's check under lock still answers 409 if the early one is passed."""
+        with patch("apps.users.views.resubmit_registration", side_effect=RegistrationNotRejected):
+            self.assert_nothing_to_resubmit(self.resubmit())
 
     def test_advocate_must_send_the_document(self):
         """The bar ID is required of an advocate, as at registration."""

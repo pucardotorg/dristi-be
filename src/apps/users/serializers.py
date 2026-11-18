@@ -230,7 +230,7 @@ class ClerkRegistrationSerializer(RegistrationCompletionSerializer):
 
 
 class RegistrationResubmissionSerializer(serializers.Serializer):
-    """Body of POST /registrations/current/resubmit/: the corrected claim.
+    """Body of POST /users/me/registration/resubmission/: the corrected claim.
 
     The registration steps minus what cannot change: the mobile number was
     proven by OTP and is what the person signs in with, and the role, password
@@ -270,8 +270,8 @@ class RegistrationDocumentSerializer(serializers.Serializer):
     file_name = serializers.CharField()
 
 
-class CurrentRegistrationSerializer(serializers.Serializer):
-    """Body of GET /registrations/current/: what the correction screens show."""
+class RejectedRegistrationSerializer(serializers.Serializer):
+    """Body of GET /users/me/registration/resubmission/: what the correction screens show."""
 
     application_id = serializers.UUIDField()
     approval_status = serializers.ChoiceField(choices=ApprovalStatus.choices)

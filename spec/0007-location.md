@@ -137,7 +137,7 @@ Query examples:
 - `GET /locations/?parent_id=<state-uuid>&location_type=district` — list all districts under a given state.
 - `GET /locations/?is_active=false` — list disabled locations.
 
-`parent_id` and `parent_code` are explicit, mutually-exclusive filters. Validation rejects requests that supply both. `is_active` filtering is provided because `Location` uses `BaseActivatableModel`.
+`parent_id` and `parent_code` are explicit, mutually-exclusive filters. Validation rejects requests that supply both. `is_active` filtering is provided because `Location` uses `BaseActivatableModel`. An empty filter value (for example `?is_active=`) is treated as not sent.
 
 ### 7. Pincodes
 
@@ -154,8 +154,9 @@ The client takes `district` and `state` from the entries whose
 `location_type` is `district` and `state`. `is_active=true` makes the call
 `404` unless the pincode and every location above it are active, so
 deactivating a wrong pincode or district stops it pre-filling. On both
-`ancestors` routes, `is_active=false` finds only an inactive location, and any
-other value is a `400`, so a typo never skips the check. A `404` means
+`ancestors` routes, `is_active=false` finds only an inactive location, an
+empty value (`?is_active=`) is treated as not sent, and any other value is a
+`400`, so a typo never skips the check. A `404` means
 "no pre-fill": the user enters district and state by hand.
 
 | Field | Value |

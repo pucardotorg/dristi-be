@@ -3,7 +3,7 @@ set -e
 
 # Show help if requested
 if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ -z "$1" ]; then
-    echo "Usage: entrypoint.sh [web|worker|scheduler|migrate|collectstatic|dev|shell]"
+    echo "Usage: entrypoint.sh [web|sse|worker|scheduler|migrate|collectstatic|dev|shell]"
     exit 0
 fi
 
@@ -38,6 +38,23 @@ case "$1" in
             --bind 0.0.0.0:8000 \
             --workers 4 \
             --worker-class sync \
+            --access-logfile - \
+            --error-logfile - \
+            --capture-output \
+            --enable-stdio-inheritance
+        ;;
+    sse)
+        # Dedicated SSE server (spec 0031 §10.2). Threaded workers so a
+        # long-lived stream does not occupy a sync worker; no migrations or
+        # collectstatic (web owns those). Start only after the schema is current.
+        wait_for_db
+        echo "Starting SSE server..."
+        exec gunicorn config.wsgi:application \
+            --bind 0.0.0.0:8001 \
+            --workers 2 \
+            --worker-class gthread \
+            --threads 100 \
+            --timeout 0 \
             --access-logfile - \
             --error-logfile - \
             --capture-output \
