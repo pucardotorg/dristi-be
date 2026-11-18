@@ -83,19 +83,27 @@ code), then `pincodes.toml` (whose `parent` is a district code).
 ## Loading banks
 
 Bank branches (issue #249, spec 0007 section 8) are `bank` locations keyed by
-IFSC, converted from [razorpay/ifsc](https://github.com/razorpay/ifsc) and
-loaded after `core/additional_attributes.toml` (which defines `address`) and
-the states or districts they point at:
+IFSC, each under its district. Only Kerala is seeded for now:
+`banks_kerala.toml` is generated from
+[razorpay/ifsc](https://github.com/razorpay/ifsc) by `ifsc_to_toml.py` (in
+`dristi-be-experiments`, next to the pincode converter) and loaded after
+`core/additional_attributes.toml` (which defines `address`) and the Kerala
+districts:
 
 ```toml
 [[rows]]
-code = "ICIC0000002"
-name = "ICICI Bank - BANGALORE M G ROAD"
-short_name = "ICIC0000002"
+code = "AUBL0002670"
+name = "AU Small Finance Bank - M G ROAD KOCHI"
+short_name = "AUBL0002670"
 location_type = "bank"
-parent = "IN_KA"
-additional_attributes = { address = "ICICI BANK LTD., 1, SHOBHA PEARL, ..." }
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { address = "BUILDING DOOR NOS. 62/5202 ..., MG ROAD, KOCHI, KERALA" }
 ```
 
-Locations load in batches, so the full list (about 1.8 lakh rows) takes about a
-minute.
+```sh
+python manage.py seed data/seed/core/
+python manage.py seed states.toml districts.toml
+python manage.py seed banks_kerala.toml
+```
+
+Locations load in batches, so the ~9,000 Kerala banks take about 10 seconds.

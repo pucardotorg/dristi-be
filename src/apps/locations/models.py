@@ -26,8 +26,8 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
         # A postal pincode under its district; seeded from TOML with the
         # `seed` management command (spec 0025).
         PINCODE = "pincode", "Pincode"
-        # A bank branch keyed by its IFSC, under its state or district, so the
-        # filing form can fill bank details from an IFSC (issue #249).
+        # A bank branch keyed by its IFSC, under its district, so the filing
+        # form can fill bank details from an IFSC (issue #249).
         BANK = "bank", "Bank"
 
     code = models.CharField(max_length=50, unique=True)
@@ -76,9 +76,9 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
         """Reject self-parenting, circular chains and anything that breaks a leaf's chain.
 
         Address forms read a pincode's district and state from its ancestors,
-        so a pincode must sit directly under a district; a bank sits under its
-        state or district. Pincodes and banks stay leaves, and a location
-        holding them keeps a type they may sit under.
+        so a pincode must sit directly under a district, and so must a bank.
+        Pincodes and banks stay leaves, and a location holding them stays a
+        district.
         """
         parent_type = self.parent.location_type if self.parent_id is not None else None
         allowed_parents = LEAF_PARENT_TYPES.get(self.location_type)
@@ -163,14 +163,14 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
 # Leaf types: nothing may sit under them, and each sits only under these types.
 LEAF_PARENT_TYPES = {
     Location.LocationType.PINCODE: {Location.LocationType.DISTRICT},
-    Location.LocationType.BANK: {Location.LocationType.STATE, Location.LocationType.DISTRICT},
+    Location.LocationType.BANK: {Location.LocationType.DISTRICT},
 }
 LEAF_TYPES = frozenset(LEAF_PARENT_TYPES)
 LEAF_PARENT_MESSAGES = {
     Location.LocationType.PINCODE: "A pincode must be under a district.",
-    Location.LocationType.BANK: "A bank must be under a state or a district.",
+    Location.LocationType.BANK: "A bank must be under a district.",
 }
 LEAF_HOLDER_MESSAGES = {
     Location.LocationType.PINCODE: "A location with pincodes under it must stay a district.",
-    Location.LocationType.BANK: "A location with banks under it must stay a state or a district.",
+    Location.LocationType.BANK: "A location with banks under it must stay a district.",
 }

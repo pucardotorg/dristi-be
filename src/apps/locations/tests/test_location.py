@@ -296,16 +296,14 @@ class TestActivatableManager:
 
 @pytest.mark.django_db
 class TestBankValidation:
-    """A bank is an IFSC-keyed leaf under a state or district (issue #249)."""
+    """A bank is an IFSC-keyed leaf under a district (issue #249)."""
 
-    @pytest.mark.parametrize("parent_level", ["state", "district"])
-    def test_bank_under_a_state_or_district_is_valid(self, parent_level):
-        _india, bihar, patna = make_hierarchy()
-        parent = {"state": bihar, "district": patna}[parent_level]
+    def test_bank_under_a_district_is_valid(self):
+        _india, _bihar, patna = make_hierarchy()
 
-        bank = make_bank(parent)
+        bank = make_bank(patna)
 
-        assert bank.parent == parent
+        assert bank.parent == patna
 
     def test_full_name_runs_through_the_district(self):
         _india, _bihar, patna = make_hierarchy()
@@ -314,23 +312,21 @@ class TestBankValidation:
 
         assert bank.get_full_name() == "India / Bihar / Patna / State Bank of India - Patna Main"
 
-    @pytest.mark.parametrize("parent_level", ["none", "country", "pincode"])
-    def test_bank_must_be_under_a_state_or_district(self, parent_level):
-        india, _bihar, patna = make_hierarchy()
+    @pytest.mark.parametrize("parent_level", ["none", "country", "state", "pincode"])
+    def test_bank_must_be_under_a_district(self, parent_level):
+        india, bihar, patna = make_hierarchy()
         pincode = make_location(
             code="PIN_800001",
             name="800001",
             location_type=Location.LocationType.PINCODE,
             parent=patna,
         )
-        parent = {"none": None, "country": india, "pincode": pincode}[parent_level]
+        parent = {"none": None, "country": india, "state": bihar, "pincode": pincode}[parent_level]
 
         with pytest.raises(ValidationError) as exc_info:
             make_bank(parent)
 
-        assert exc_info.value.message_dict["parent"] == [
-            "A bank must be under a state or a district."
-        ]
+        assert exc_info.value.message_dict["parent"] == ["A bank must be under a district."]
 
     def test_nothing_can_be_put_under_a_bank(self):
         _india, _bihar, patna = make_hierarchy()
@@ -382,40 +378,39 @@ class TestBankValidation:
 
         assert "additional_attributes" in exc_info.value.message_dict
 
-    def test_location_holding_banks_cannot_become_a_country(self):
-        _india, bihar, _patna = make_hierarchy()
-        make_bank(bihar)
-        bihar.location_type = Location.LocationType.COUNTRY
-
-        with pytest.raises(ValidationError) as exc_info:
-            bihar.full_clean()
-
-        # Patna (a district) under it is not the reason; the bank is.
-        assert exc_info.value.message_dict["location_type"] == [
-            "A location with banks under it must stay a state or a district."
-        ]
-
-    def test_district_holding_banks_can_become_a_state(self):
+    @pytest.mark.parametrize(
+        "new_type", [Location.LocationType.STATE, Location.LocationType.COUNTRY]
+    )
+    def test_district_holding_banks_must_stay_a_district(self, new_type):
         _india, _bihar, patna = make_hierarchy()
         make_bank(patna)
-        patna.location_type = Location.LocationType.STATE
+        patna.location_type = new_type
         patna.parent = None
-
-        patna.save()
-
-        assert Location.objects.get(pk=patna.pk).location_type == Location.LocationType.STATE
-
-    def test_location_with_children_cannot_become_a_bank(self):
-        # Patna sits under a state, so only the "has children" rule applies.
-        _india, _bihar, patna = make_hierarchy()
-        make_location(
-            code="AREA", name="Area", location_type=Location.LocationType.DISTRICT, parent=patna
-        )
-        patna.code = "SBIN0001234"
-        patna.location_type = Location.LocationType.BANK
 
         with pytest.raises(ValidationError) as exc_info:
             patna.full_clean()
+
+        assert exc_info.value.message_dict["location_type"] == [
+            "A location with banks under it must stay a district."
+        ]
+
+    def test_location_with_children_cannot_become_a_bank(self):
+        # Area sits under a district, so only the "has children" rule applies.
+        _india, _bihar, patna = make_hierarchy()
+        area = make_location(
+            code="AREA", name="Area", location_type=Location.LocationType.DISTRICT, parent=patna
+        )
+        make_location(
+            code="SUB_AREA",
+            name="Sub area",
+            location_type=Location.LocationType.DISTRICT,
+            parent=area,
+        )
+        area.code = "SBIN0001234"
+        area.location_type = Location.LocationType.BANK
+
+        with pytest.raises(ValidationError) as exc_info:
+            area.full_clean()
 
         assert exc_info.value.message_dict["location_type"] == [
             "A location with locations under it cannot be a bank."

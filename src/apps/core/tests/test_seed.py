@@ -607,7 +607,7 @@ data_type = "character"
 
     def test_definitions_load_before_the_locations_that_use_them(self, tmp_path):
         # Passed after the banks, but the attribute spec's load order puts it first.
-        banks = banks_file(tmp_path, bank_rows(1, parent="IN_KL"))
+        banks = banks_file(tmp_path, bank_rows(1))
         locations = write(tmp_path, "locations.toml", LOCATIONS)
 
         output = run(locations, banks, str(ATTRIBUTES_FILE))

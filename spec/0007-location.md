@@ -192,10 +192,11 @@ A bank branch is a `bank` location keyed by its IFSC, so the e-filing form can
 fill a cheque's bank name and branch from the IFSC the user types (issue #249):
 
 ```
-GET /api/v1/locations/code/ICIC0000002/?location_type=bank&is_active=true
-→ {"code": "ICIC0000002", "name": "ICICI Bank - BANGALORE M G ROAD",
-   "short_name": "ICIC0000002", "location_type": "bank", "parent_code": "IN_KA",
-   "additional_attributes": {"address": "ICICI BANK LTD., 1, SHOBHA PEARL, ..."}, ...}
+GET /api/v1/locations/code/AUBL0002670/?location_type=bank&is_active=true
+→ {"code": "AUBL0002670", "name": "AU Small Finance Bank - M G ROAD KOCHI",
+   "short_name": "AUBL0002670", "location_type": "bank",
+   "parent_code": "IN_KERALA_ERNAKULAM",
+   "additional_attributes": {"address": "BUILDING DOOR NOS. 62/5202 ..., MG ROAD, KOCHI, KERALA"}, ...}
 ```
 
 The client uppercases the IFSC before the call. `location_type=bank` and
@@ -206,10 +207,10 @@ branches open between data releases.
 
 | Field | Value |
 |-------|-------|
-| `code` | The IFSC, e.g. `ICIC0000002`. `clean()` rejects a bank whose code is not an IFSC (`^[A-Z]{4}0[A-Z0-9]{6}$`) |
+| `code` | The IFSC, e.g. `AUBL0002670`. `clean()` rejects a bank whose code is not an IFSC (`^[A-Z]{4}0[A-Z0-9]{6}$`) |
 | `name` | `<BANK> - <BRANCH>` |
 | `short_name` | The IFSC |
-| `parent` | The branch's state or district. `clean()` rejects any other parent, any location placed under a bank, and a type change on a location holding banks to anything but a state or district |
+| `parent` | The branch's district. `clean()` rejects any other parent, any location placed under a bank, and a type change on a district holding banks |
 | `additional_attributes.address` | The branch address. Optional; `clean()` does not require it |
 
 `address` is an additional attribute on `Location`, defined by the seed file
@@ -217,11 +218,35 @@ branches open between data releases.
 loaded before any bank rows that carry an address. It is nullable, so once it is
 defined every other location carries `"address": null`.
 
-Like pincodes, banks never appear in an organization's jurisdictions. Bank data
-comes from [razorpay/ifsc](https://github.com/razorpay/ifsc) (RBI's list),
-converted to TOML out-of-band and loaded with `seed` after the states (and
-districts) it points at. The `Location` seed spec inserts in batches, so the
-full list of about 1.8 lakh branches loads in about a minute.
+Like pincodes, banks never appear in an organization's jurisdictions, and a
+district's `children` list them alongside its pincodes (filter by
+`location_type`).
+
+Only **Kerala** branches are seeded for now. They come from
+[razorpay/ifsc](https://github.com/razorpay/ifsc) (RBI's list), converted to
+TOML out-of-band (`ifsc_to_toml.py`, kept with the pincode converter in the
+`dristi-be-experiments` repo). Razorpay's `DISTRICT` column is free text that
+often does not match our district names, so the converter places each branch
+by the first step that works:
+
+1. the pincode in the address → its district (India Post directory);
+2. `DISTRICT`, then `CITY`, equals a district name or a known old name or
+   spelling (Trivandrum, Trichur, Calicut, Cochin, Alleppey, Quilon, …);
+3. a district name appears inside `DISTRICT`/`CITY`, then inside the address;
+4. `DISTRICT` or `CITY` is a known town (Cherthala → Alappuzha, Thiruvalla →
+   Pathanamthitta, …).
+
+On Razorpay v2.0.62 this places 8,964 of 9,029 Kerala branches (99.3%; 74%
+by pincode). The other 65 are left out — about half are branches elsewhere
+mislabelled as Kerala — so their IFSC lookup is a `404` and the user enters
+the details by hand, as for any IFSC outside Kerala. The converter's report
+lists every left-out branch and every text-matched one for review.
+
+```bash
+python manage.py seed data/seed/core/                 # defines `address`
+python manage.py seed states.toml districts.toml      # IN_KERALA and its districts
+python manage.py seed banks_kerala.toml               # about 10 seconds
+```
 
 ## Example data
 
