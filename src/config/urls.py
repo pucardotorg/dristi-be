@@ -13,6 +13,7 @@ urlpatterns = [
     # apps.api owns the schema, docs and health routes; each domain app is
     # mounted here so the whole API surface is visible in one file.
     path("api/", include("apps.api.urls")),
+    path("api/v1/", include("apps.core.urls")),
     path("api/v1/", include("apps.users.urls")),
     path("api/v1/", include("apps.locations.urls")),
     path("api/v1/", include("apps.organizations.urls")),
@@ -24,6 +25,7 @@ urlpatterns = [
     path("api/v1/", include("apps.esign.urls")),
     path("api/v1/", include("apps.cms.urls")),
     path("api/v1/", include("apps.payments.urls")),
+    path("api/v1/", include("apps.notifications.urls")),
     path(
         "health/",
         HealthCheckView.as_view(

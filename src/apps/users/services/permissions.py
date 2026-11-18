@@ -48,23 +48,6 @@ class IsNotAwaitingApproval(BasePermission):
         return approval_status_of(user) not in (ApprovalStatus.PENDING, ApprovalStatus.REJECTED)
 
 
-class IsRejectedRegistrant(BasePermission):
-    """Allows only an advocate or clerk whose registration was not approved.
-
-    Guards the endpoints that show the rejection and take the corrected
-    registration; to anyone else there is nothing there to act on.
-    """
-
-    message = "There is no rejected registration to resubmit."
-
-    def has_permission(self, request, view):
-        """Return whether the caller's registration was rejected."""
-        user = request.user
-        return bool(
-            user and user.is_authenticated and approval_status_of(user) == ApprovalStatus.REJECTED
-        )
-
-
 class HasAcceptedCurrentTerms(BasePermission):
     """Allows only accounts holding the terms version currently in force.
 

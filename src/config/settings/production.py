@@ -7,6 +7,7 @@ from .base import (  # noqa: F401
     CDAC_SMS_USE_DEFAULT_NUMBER,
     CDAC_SMS_VERIFY_SSL,
     PAYMENT_REGISTERED_PROVIDERS,
+    PAYMENT_SELECTABLE_PROVIDERS,
     env,
 )
 
@@ -55,19 +56,27 @@ if not CDAC_SMS_VERIFY_SSL:
 # PAYMENT_REGISTERED_PROVIDERS until `payments_provider_usage egras` shows none
 # pending, so in-flight payments still verify (spec 0022 #8). Until a deployment
 # is onboarded with NIC, leave both empty — no provider is registered, the
-# addon's checks stay silent, and the web container boots.
+# addon's checks stay silent, and the web container boots. Every name in
+# PAYMENT_SELECTABLE_PROVIDERS (spec 0032 #4.2), e.g. "egras,offline", is
+# registered too.
 PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="")
 _AVAILABLE_PAYMENT_PROVIDERS = {
     "egras": "addon.egras_payment_gateway.provider.EGRASPaymentProvider",
+    "offline": "addon.offline_payment.provider.OfflinePaymentProvider",
 }
-_unknown_providers = set(PAYMENT_REGISTERED_PROVIDERS) - set(_AVAILABLE_PAYMENT_PROVIDERS)
+_unknown_providers = {*PAYMENT_REGISTERED_PROVIDERS, *PAYMENT_SELECTABLE_PROVIDERS} - set(
+    _AVAILABLE_PAYMENT_PROVIDERS
+)
 if _unknown_providers:
     raise ImproperlyConfigured(
-        f"PAYMENT_REGISTERED_PROVIDERS names unknown providers: {sorted(_unknown_providers)}."
+        "PAYMENT_REGISTERED_PROVIDERS / PAYMENT_SELECTABLE_PROVIDERS name unknown providers: "
+        f"{sorted(_unknown_providers)}."
     )
 # An unknown default is left out here and reported by the payments.E003 check.
 PAYMENT_PROVIDERS = {
     name: path
     for name, path in _AVAILABLE_PAYMENT_PROVIDERS.items()
-    if name == PAYMENT_DEFAULT_PROVIDER or name in PAYMENT_REGISTERED_PROVIDERS
+    if name == PAYMENT_DEFAULT_PROVIDER
+    or name in PAYMENT_REGISTERED_PROVIDERS
+    or name in PAYMENT_SELECTABLE_PROVIDERS
 }

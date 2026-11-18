@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import ApiVersionChangeLog, Language
+from .models import ApiVersionChangeLog, Language, PublicConfiguration
 
 
 class ApiVersionChangeLogSerializer(serializers.ModelSerializer):
@@ -48,3 +48,14 @@ class LanguageFilterSerializer(serializers.Serializer):
         required=False,
         help_text="Only list languages that declare this capability.",
     )
+
+
+class PublicConfigurationSerializer(serializers.ModelSerializer):
+    """Public configuration entry: the value and its coarse type, no admin metadata."""
+
+    class Meta:
+        """Meta options."""
+
+        model = PublicConfiguration
+        fields = ["config_set", "config_key", "value_type", "config_value"]
+        read_only_fields = fields

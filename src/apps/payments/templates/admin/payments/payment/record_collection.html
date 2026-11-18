@@ -1,0 +1,57 @@
+{% extends "admin/base_site.html" %}
+{% comment %}Record a collection against an attested payment request (spec 0032 #10).{% endcomment %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:payments_payment_changelist' %}">Payments</a>
+  &rsaquo; <a href="{{ change_url }}">{{ original.payment_number }}</a>
+  &rsaquo; {{ title }}
+</div>
+{% endblock %}
+{% block content %}
+<div id="content-main">
+  {% if late %}
+    <p class="errornote">This request is no longer open. The record will be flagged for
+      reconciliation; nothing will be credited.</p>
+  {% endif %}
+  <fieldset class="module aligned">
+    <h2>Payment request {{ request_obj.reference }}</h2>
+    <div class="form-row"><label>Status</label> {{ request_obj.first.get_status_display }}</div>
+    <div class="form-row"><label>Amount due</label> {{ request_obj.amount }} {{ request_obj.first.currency }}</div>
+    <div class="form-row"><label>Valid until</label> {{ request_obj.valid_until|default:"—" }}</div>
+    <div class="form-row"><label>Payer</label> {{ payer_name }} {{ payer_phone }}</div>
+  </fieldset>
+  <table>
+    <thead><tr><th>Payment</th><th>Demand</th><th>Case</th><th>Item</th><th>Amount</th></tr></thead>
+    <tbody>
+    {% for payment in request_obj.payments %}
+      {% for line in payment.items.all %}
+        <tr>
+          <td>{{ payment.payment_number }}</td>
+          <td>{{ payment.demand.demand_number }}</td>
+          <td>{{ payment.demand.case_id }}</td>
+          <td>{{ line.demand_item.description }}</td>
+          <td>{{ line.amount }}</td>
+        </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+  <form method="post">{% csrf_token %}
+    {{ form.non_field_errors }}
+    <fieldset class="module aligned">
+      {% for field in form %}
+        <div class="form-row">
+          {{ field.errors }}
+          {{ field.label_tag }} {{ field }}
+          {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </fieldset>
+    <div class="submit-row">
+      <input type="submit" class="default" value="{{ title }}">
+      <a href="{{ change_url }}" class="closelink">Back</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -137,8 +137,8 @@ Query examples:
 - `GET /locations/?is_active=false` — list disabled locations.
 - `GET /locations/code/IN/children?location_type=state` — list the states under India.
 
-`parent_id` and `parent_code` are explicit, mutually-exclusive filters. Validation rejects requests that supply both. `is_active` filtering is provided because `Location` uses `BaseActivatableModel`.
-On the two `children` endpoints the parent is identified by the URL path and must be active (404 otherwise), and inactive children are never listed: `location_type` is the only filter, and supplying `parent_id`, `parent_code` or `is_active` is rejected. Query parameters are validated before the parent is looked up, so a bad one is a 400 even when the parent is inactive or unknown.
+`parent_id` and `parent_code` are explicit, mutually-exclusive filters. Validation rejects requests that supply both. `is_active` filtering is provided because `Location` uses `BaseActivatableModel`. An empty filter value (for example `?is_active=`) is treated as not sent.
+On the two `children` endpoints the query parameters describe the children, not the parent: the parent is identified by the URL path and must be active (404 otherwise), and inactive children are never listed. `location_type` is the only filter. `is_active=true` is accepted and changes nothing; `is_active=false` (which can never be satisfied), a malformed `is_active`, and `parent_id` or `parent_code` are rejected. Query parameters are validated before the parent is looked up, so a bad one is a 400 even when the parent is inactive or unknown.
 
 ### 7. Pincodes
 
@@ -155,8 +155,9 @@ The client takes `district` and `state` from the entries whose
 `location_type` is `district` and `state`. `is_active=true` makes the call
 `404` unless the pincode and every location above it are active, so
 deactivating a wrong pincode or district stops it pre-filling. On both
-`ancestors` routes, `is_active=false` finds only an inactive location, and any
-other value is a `400`, so a typo never skips the check. A `404` means
+`ancestors` routes, `is_active=false` finds only an inactive location, an
+empty value (`?is_active=`) is treated as not sent, and any other value is a
+`400`, so a typo never skips the check. A `404` means
 "no pre-fill": the user enters district and state by hand.
 
 | Field | Value |

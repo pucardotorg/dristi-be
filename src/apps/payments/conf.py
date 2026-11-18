@@ -16,6 +16,7 @@ DEFAULT_POLL_INTERVAL_SECONDS = 300
 DEFAULT_POLL_MAX_INTERVAL_SECONDS = 21600
 DEFAULT_POLL_BATCH_SIZE = 200
 DEFAULT_BATCH_MAX_DEMANDS = 50
+DEFAULT_COLLECTION_LOOKUP_THROTTLE_RATE = "120/min"
 
 
 def providers() -> dict[str, str]:
@@ -28,6 +29,29 @@ def default_provider() -> str:
     """Name of the provider new payments are initiated with; empty for none."""
 
     return getattr(settings, "PAYMENT_DEFAULT_PROVIDER", "") or ""
+
+
+def selectable_providers() -> list[str]:
+    """Ordered names a payer may choose for a new payment (spec 0032 #4.2).
+
+    Empty entries are dropped; an empty list means "the default only".
+    """
+
+    names = getattr(settings, "PAYMENT_SELECTABLE_PROVIDERS", []) or []
+    return [str(name).strip() for name in names if str(name).strip()]
+
+
+def collection_lookup_throttle_rate() -> str:
+    """Per-user rate of failed collection lookups; empty disables it (spec 0032 #15)."""
+
+    return (
+        getattr(
+            settings,
+            "PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE",
+            DEFAULT_COLLECTION_LOOKUP_THROTTLE_RATE,
+        )
+        or ""
+    )
 
 
 def default_currency() -> str:

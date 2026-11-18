@@ -64,11 +64,13 @@ INSTALLED_APPS = [
     "apps.scrutiny",
     "apps.payments",
     "apps.hearings",
+    "apps.notifications",
     # Addons
     "addon.cdac_sms_gateway",
     "apps.esign",
     "addon.cdac_esign",
     "addon.egras_payment_gateway",
+    "addon.offline_payment",
 ]
 
 MIDDLEWARE = [
@@ -416,6 +418,7 @@ CACHALOT_ONLY_CACHABLE_APPS = ("locations", "cms")
 # core app so AdditionalAttribute and the history tables stay uncached.
 CACHALOT_ONLY_CACHABLE_TABLES = (
     "core_configuration",
+    "core_publicconfiguration",
     "core_businessrule",
     # Reference table edited in admin (spec 0023 #11.8).
     "hearings_hearingpurpose",
@@ -521,6 +524,45 @@ MESSAGING_TASK_TIME_LIMIT = env.int("MESSAGING_TASK_TIME_LIMIT", default=600000)
 
 
 # ---------------------------------------------------------------------------
+# In-app notifications (spec 0031)
+# ---------------------------------------------------------------------------
+NOTIFICATIONS_REDIS_URL = env(
+    "NOTIFICATIONS_REDIS_URL",
+    default="redis://localhost:6379/4",
+)
+# Dotted path to the event-bus implementation. Code-level setting; tests use
+# the in-memory bus.
+NOTIFICATIONS_EVENT_BUS = "apps.notifications.bus.RedisStreamBus"
+NOTIFICATIONS_STREAM_PREFIX = env(
+    "NOTIFICATIONS_STREAM_PREFIX",
+    default="dristi:notifications",
+)
+# Redis socket timeouts (seconds). The read timeout must exceed the SSE
+# heartbeat so a healthy blocking XREAD returns before the socket times out; a
+# dead connection then raises instead of hanging a stream thread forever.
+NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT = env.int(
+    "NOTIFICATIONS_REDIS_SOCKET_CONNECT_TIMEOUT", default=5
+)
+NOTIFICATIONS_REDIS_SOCKET_TIMEOUT = env.int("NOTIFICATIONS_REDIS_SOCKET_TIMEOUT", default=20)
+# Approximate number of entries retained per user for Last-Event-ID replay.
+NOTIFICATIONS_STREAM_MAXLEN = env.int("NOTIFICATIONS_STREAM_MAXLEN", default=1000)
+# Replay tail lifetime, refreshed on every publish (7 days by default).
+NOTIFICATIONS_STREAM_TTL_SECONDS = env.int(
+    "NOTIFICATIONS_STREAM_TTL_SECONDS", default=7 * 24 * 60 * 60
+)
+# Comment frame interval; must stay below proxy/load-balancer idle timeouts.
+NOTIFICATIONS_SSE_HEARTBEAT_SECONDS = env.int("NOTIFICATIONS_SSE_HEARTBEAT_SECONDS", default=15)
+NOTIFICATIONS_SSE_RETRY_MS = env.int("NOTIFICATIONS_SSE_RETRY_MS", default=3000)
+# Bounds a single SSE connection; browsers reconnect and resume.
+NOTIFICATIONS_SSE_MAX_DURATION_SECONDS = env.int(
+    "NOTIFICATIONS_SSE_MAX_DURATION_SECONDS", default=1800
+)
+# Max entries read from the stream per XREAD.
+NOTIFICATIONS_SSE_READ_COUNT = env.int("NOTIFICATIONS_SSE_READ_COUNT", default=100)
+NOTIFICATIONS_TASK_TIME_LIMIT = env.int("NOTIFICATIONS_TASK_TIME_LIMIT", default=60000)
+
+
+# ---------------------------------------------------------------------------
 # CDAC SMS gateway addon (addon.cdac_sms_gateway)
 # ---------------------------------------------------------------------------
 # Remove this block, the INSTALLED_APPS entry, and the MESSAGING_BACKENDS["sms"]
@@ -587,6 +629,15 @@ PAYMENT_DEFAULT_PROVIDER = env("PAYMENT_DEFAULT_PROVIDER", default="")
 PAYMENT_REGISTERED_PROVIDERS = [
     name.strip() for name in env.list("PAYMENT_REGISTERED_PROVIDERS", default=[]) if name.strip()
 ]
+# Ordered names a payer may choose for a NEW payment (spec 0032 #4.2); empty
+# means "the default only". The environment modules register every name here.
+PAYMENT_SELECTABLE_PROVIDERS = [
+    name.strip() for name in env.list("PAYMENT_SELECTABLE_PROVIDERS", default=[]) if name.strip()
+]
+# Per-user rate of failed collection-desk lookups (spec 0032 #15); blank disables it.
+PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE = env(
+    "PAYMENT_COLLECTION_LOOKUP_THROTTLE_RATE", default="120/min"
+)
 PAYMENT_DEFAULT_CURRENCY = env("PAYMENT_DEFAULT_CURRENCY", default="INR")
 # Where the provider callback sends the browser. Server-side only: taking it
 # from the request would make the public callback an open redirect.
@@ -667,6 +718,40 @@ EGRAS_VERIFY_SSL = env.bool("EGRAS_VERIFY_SSL", default=True)
 EGRAS_PENDING_HORIZON = env.int("EGRAS_PENDING_HORIZON", default=9)
 EGRAS_NOT_FOUND_GRACE = env.int("EGRAS_NOT_FOUND_GRACE", default=2)
 EGRAS_ENABLED = env.bool("EGRAS_ENABLED", default=True)
+
+
+# ---------------------------------------------------------------------------
+# Offline payment provider addon (addon.offline_payment, spec 0032 #13)
+# ---------------------------------------------------------------------------
+# Remove this block, the INSTALLED_APPS entry, and PAYMENT_PROVIDERS["offline"]
+# (plus "offline" in PAYMENT_SELECTABLE_PROVIDERS) to remove the integration;
+# apps.payments keeps working on the other providers. The addon's system checks
+# run only when "offline" is in PAYMENT_PROVIDERS.
+OFFLINE_PAYMENT_ENABLED = env.bool("OFFLINE_PAYMENT_ENABLED", default=True)
+OFFLINE_PAYMENT_LABEL = env("OFFLINE_PAYMENT_LABEL", default="Pay at the court counter")
+OFFLINE_PAYMENT_REFERENCE_PREFIX = env("OFFLINE_PAYMENT_REFERENCE_PREFIX", default="OFL")
+OFFLINE_PAYMENT_VALIDITY_DAYS = env.int("OFFLINE_PAYMENT_VALIDITY_DAYS", default=7)
+OFFLINE_PAYMENT_RECORDING_GRACE_HOURS = env.int("OFFLINE_PAYMENT_RECORDING_GRACE_HOURS", default=24)
+# Subset of CASH, DEMAND_DRAFT, POS.
+OFFLINE_PAYMENT_METHODS = env.list("OFFLINE_PAYMENT_METHODS", default=["CASH", "DEMAND_DRAFT"])
+# JSON list of {code, label, address, hours}.
+OFFLINE_PAYMENT_COUNTERS = env.json("OFFLINE_PAYMENT_COUNTERS", default=[])
+OFFLINE_PAYMENT_DEFAULT_COUNTER = env("OFFLINE_PAYMENT_DEFAULT_COUNTER", default="")
+OFFLINE_PAYMENT_INSTRUCTIONS = env(
+    "OFFLINE_PAYMENT_INSTRUCTIONS",
+    default="Quote the payment reference at the counter and keep the receipt.",
+)
+# In whose favour a demand draft is drawn; required when DEMAND_DRAFT is enabled.
+OFFLINE_PAYMENT_PAYABLE_TO = env("OFFLINE_PAYMENT_PAYABLE_TO", default="")
+# Decimal caps; empty means no cap.
+OFFLINE_PAYMENT_MAX_AMOUNT = env("OFFLINE_PAYMENT_MAX_AMOUNT", default="")
+OFFLINE_PAYMENT_CASH_MAX_AMOUNT = env("OFFLINE_PAYMENT_CASH_MAX_AMOUNT", default="")
+# ChargeType values offline may collect; empty allows all.
+OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES = env.list("OFFLINE_PAYMENT_ALLOWED_CHARGE_TYPES", default=[])
+OFFLINE_PAYMENT_RECEIPT_PATTERN = env(
+    "OFFLINE_PAYMENT_RECEIPT_PATTERN", default=r"^[A-Z0-9][A-Z0-9/-]{0,63}$"
+)
+OFFLINE_PAYMENT_DD_MAX_AGE_DAYS = env.int("OFFLINE_PAYMENT_DD_MAX_AGE_DAYS", default=90)
 
 
 # ---------------------------------------------------------------------------
@@ -756,6 +841,11 @@ LOGGING = {
             "propagate": False,
         },
         "addon.egras_payment_gateway": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "addon.offline_payment": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

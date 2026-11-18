@@ -73,6 +73,22 @@ register(
 
 register(
     SeedSpec(
+        model_label="core.PublicConfiguration",
+        key=("config_set", "config_key"),
+        fields=(
+            "config_set",
+            "config_key",
+            "value_type",
+            "config_value",
+            "description",
+            "is_active",
+        ),
+        order=30,
+    )
+)
+
+register(
+    SeedSpec(
         model_label="cms.PageCategory",
         key=("slug",),
         fields=("name", "slug"),
