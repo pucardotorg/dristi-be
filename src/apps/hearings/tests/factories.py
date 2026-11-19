@@ -24,7 +24,7 @@ from apps.cases.models import (
 )
 from apps.cases.services.case_types import CaseType
 from apps.core.models import Configuration
-from apps.hearings.services import listing
+from apps.hearings.services import calendar, listing
 from apps.organizations.models import Organization, OrganizationType
 from apps.parties.models import Person
 from apps.parties.tests.factories import make_address
@@ -35,6 +35,10 @@ _numbers = itertools.count(1)
 
 # The business date every test runs on: a Thursday (``business_date`` fixture).
 TODAY = datetime.date(2026, 11, 12)
+# Filing ages count back from the pinned business date, not the wall clock:
+# ``days_since_filing`` is measured against TODAY, so a wall-clock ``filed_at``
+# drifts by a day for every real day after TODAY.
+TODAY_NOON = datetime.datetime.combine(TODAY, datetime.time(12), tzinfo=calendar.IST)
 MON, TUE, WED, THU, FRI, SAT, SUN = (datetime.date(2026, 11, day) for day in range(16, 23))
 
 
@@ -109,7 +113,7 @@ def make_case(
         status=status,
         case_number=f"CC/{number}/2026" if status == CaseStatus.REGISTERED else None,
         filing_number=f"F/{number}/2026",
-        filed_at=timezone.now() - datetime.timedelta(days=filed_days_ago),
+        filed_at=TODAY_NOON - datetime.timedelta(days=filed_days_ago),
         registered_at=timezone.now() if status == CaseStatus.REGISTERED else None,
     )
     complainant = _party(
