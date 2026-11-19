@@ -99,7 +99,8 @@ seeded instead of shipped as data migrations:
   prefixes request numbers (`KL-REQ-00001`, spec 0010). Creating a request
   fails until it is loaded.
 - `core/additional_attributes.toml` — the additional attributes each model
-  accepts, e.g. a bank location's `address` (issue #249). A row's
+  accepts, e.g. a bank location's `address` (issue #249) and a police
+  station's `police_district` (issue #250). A row's
   `additional_attributes` are rejected until their keys are defined, so this
   loads before other models whatever order the files are given in.
 
@@ -168,3 +169,26 @@ python manage.py seed banks_kerala.toml
 ```
 
 Locations load in batches, so the ~9,000 Kerala banks take about 10 seconds.
+
+## Loading police stations
+
+Police stations (issue #250, spec 0007 section 9) are `police_station`
+locations keyed by their 8-digit code from V1's MDMS master, each under its
+revenue district (railway police and CID under the state). Only Kerala is
+seeded: `kerala/police_stations.toml` is kept in this repo and loads after
+`core/` (which defines `police_district`) and the Kerala state and districts:
+
+```toml
+[[rows]]
+code = "15996001"
+name = "THRISSUR EAST"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+```
+
+```sh
+python manage.py seed data/seed/core/
+python manage.py seed states.toml districts.toml
+python manage.py seed data/seed/kerala/police_stations.toml
+```

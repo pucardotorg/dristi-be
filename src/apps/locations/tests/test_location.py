@@ -7,9 +7,11 @@ from django.db.models import ProtectedError
 from apps.locations.models import Location
 from apps.locations.tests.factories import (
     define_address_attribute,
+    define_police_district_attribute,
     make_bank,
     make_hierarchy,
     make_location,
+    make_police_station,
     make_state,
 )
 
@@ -79,10 +81,11 @@ class TestLocationTypeValidation:
 
     def test_accepts_every_supported_type(self):
         district = make_location(code="D", location_type=Location.LocationType.DISTRICT)
-        # Leaf types need a parent; a bank's code is its IFSC.
+        # Leaf types need a parent; banks and police stations have fixed code formats.
         leaf_overrides = {
             Location.LocationType.PINCODE: {"parent": district},
             Location.LocationType.BANK: {"parent": district, "code": "SBIN0001234"},
+            Location.LocationType.POLICE_STATION: {"parent": district, "code": "15996001"},
         }
         for index, value in enumerate(Location.LocationType.values):
             fields = {"code": f"C{index}", **leaf_overrides.get(value, {})}
@@ -414,4 +417,126 @@ class TestBankValidation:
 
         assert exc_info.value.message_dict["location_type"] == [
             "A location with locations under it cannot be a bank."
+        ]
+
+
+@pytest.mark.django_db
+class TestPoliceStationValidation:
+    """A police station is a leaf under a district, or a state-wide one under a state (#250)."""
+
+    def test_police_station_under_a_district_is_valid(self):
+        _india, _bihar, patna = make_hierarchy()
+
+        station = make_police_station(patna)
+
+        assert station.parent == patna
+        assert station.get_full_name() == "India / Bihar / Patna / THRISSUR EAST"
+
+    def test_state_wide_police_station_sits_under_the_state(self):
+        # Railway police and CID stations serve the whole state.
+        _india, bihar, _patna = make_hierarchy()
+
+        station = make_police_station(bihar, code="15296014", name="THRISSUR RAILWAY")
+
+        assert station.parent == bihar
+
+    @pytest.mark.parametrize("parent_level", ["none", "country", "pincode", "bank"])
+    def test_police_station_must_be_under_a_district_or_a_state(self, parent_level):
+        india, _bihar, patna = make_hierarchy()
+        parents = {
+            "none": None,
+            "country": india,
+            "pincode": make_location(
+                code="PIN_800001",
+                name="800001",
+                location_type=Location.LocationType.PINCODE,
+                parent=patna,
+            ),
+            "bank": make_bank(patna),
+        }
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_police_station(parents[parent_level])
+
+        assert exc_info.value.message_dict["parent"] == [
+            "A police station must be under a district or a state."
+        ]
+
+    def test_nothing_can_be_put_under_a_police_station(self):
+        _india, _bihar, patna = make_hierarchy()
+        station = make_police_station(patna)
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_location(
+                code="NALANDA",
+                name="Nalanda",
+                location_type=Location.LocationType.DISTRICT,
+                parent=station,
+            )
+
+        assert exc_info.value.message_dict["parent"] == [
+            "A police station cannot have locations under it."
+        ]
+
+    @pytest.mark.parametrize("code", ["1599600", "159960011", "PS_15996001", "SBIN0001234"])
+    def test_code_must_be_eight_digits(self, code):
+        _india, _bihar, patna = make_hierarchy()
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_police_station(patna, code=code)
+
+        assert "code" in exc_info.value.message_dict
+
+    def test_stores_its_police_district_once_the_attribute_is_defined(self):
+        define_police_district_attribute()
+        _india, _bihar, patna = make_hierarchy()
+
+        station = make_police_station(patna, police_district="THRISSUR CITY")
+
+        station.refresh_from_db()
+        assert station.additional_attributes == {"police_district": "THRISSUR CITY"}
+
+    def test_police_district_is_rejected_until_the_attribute_is_defined(self):
+        _india, _bihar, patna = make_hierarchy()
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_police_station(patna, police_district="THRISSUR CITY")
+
+        assert "additional_attributes" in exc_info.value.message_dict
+
+    @pytest.mark.parametrize("holder", ["district", "state"])
+    def test_location_holding_police_stations_cannot_become_a_country(self, holder):
+        _india, bihar, patna = make_hierarchy()
+        location = {"district": patna, "state": bihar}[holder]
+        make_police_station(location)
+        location.location_type = Location.LocationType.COUNTRY
+        location.parent = None
+
+        with pytest.raises(ValidationError) as exc_info:
+            location.full_clean()
+
+        assert exc_info.value.message_dict["location_type"] == [
+            "A location with police stations under it must stay a district or a state."
+        ]
+
+    def test_district_holding_police_stations_may_become_a_state(self):
+        # Stations may sit under either, so only the district's own rules apply.
+        india, _bihar, patna = make_hierarchy()
+        make_police_station(patna)
+        patna.location_type = Location.LocationType.STATE
+        patna.parent = india
+
+        patna.full_clean()
+
+    def test_location_with_children_cannot_become_a_police_station(self):
+        _india, _bihar, patna = make_hierarchy()
+        make_police_station(patna)
+        patna.code = "15996002"
+        patna.location_type = Location.LocationType.POLICE_STATION
+
+        with pytest.raises(ValidationError) as exc_info:
+            patna.full_clean()
+
+        assert exc_info.value.message_dict["location_type"] == [
+            "A location with locations under it cannot be a police station."
         ]
