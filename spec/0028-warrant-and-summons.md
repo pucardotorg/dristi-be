@@ -6,7 +6,7 @@ Proposed
 
 ## References
 
-- PRDs: `process.md` v14.3 (§3.1, §3.2, `PRC-`, `AUT-`, `TPL-01`, `TPL-02`, §6.2, §6.3, `FEE-`, `STP-`, `SGN-`, `DSP-`, §10.1, `EXP-`, `PIA-01`, §13, §15, `Q-15`, `Q-16`), `court-roles.md` (`RLE-02a`, `RLE-04`, `RLE-06`, `RLE-09`, §2), `order-template-catalogue.md` (#9, #10, #12, #20, #21, #25), `pending-task-drafts.md` (§4–§8), `pending-tasks.md`, `case-lifecycle.md` (§4), `efiling.md` (§19.2), `view-case.md` (§7, `SVC-`), `signing-methods.md` (`SGM-`), `payment-logic.md`
+- PRDs: `process.md` v14.4 (§3.1, §3.2, `PRC-`, `AUT-`, `TPL-01`, `TPL-02`, §6.2, §6.3, `FEE-`, `STP-`, `SGN-`, `DSP-`, §10.1, `EXP-`, `PIA-01`, §13, §15, `Q-15`, `Q-16`), `court-roles.md` (`RLE-02a`, `RLE-04`, `RLE-06`, `RLE-09`, §2), `order-template-catalogue.md` (#9, #10, #12, #20, #21, #25), `pending-task-drafts.md` (§4–§8), `pending-tasks.md`, `case-lifecycle.md` (§4), `efiling.md` (§19.2), `view-case.md` v1.76 (§7, `SVC-`), `signing-methods.md` (`SGM-`), `payment-logic.md` v2.7 (`PMT-04`, §4)
 
 > **Scope note.** A summons and a warrant are two **process types** of one
 > process workflow. The PRD specifies a single workflow for notice, summons,
@@ -67,16 +67,16 @@ What varies by process type:
 
 What varies by channel (§6.2):
 
-| Channel | Goes to | Send | Update status | Envelope |
-| --- | --- | --- | --- | --- |
-| SMS | mobile number | System — messaging | System | — |
-| Email | email address | System — email | System | — |
-| RPAD | postal address | Manual | Manual | yes |
-| e-Post | postal address | Manual | Manual | — |
-| Police (RPAD) | the police station's postal address | Manual | Manual | yes |
-| Police (NSTEP) | the police station, through NSTEP | System — via CIS, end-of-day batch | System — polls CIS | — |
-| Police (iCOPS) | the police station, through iCOPS (Kerala) | System — direct | System — iCOPS calls back | — |
-| By hand | postal address, taken in person | Manual | Manual | — |
+| Channel | Goes to | Send | Next action after signing | Update status | Envelope |
+| --- | --- | --- | --- | --- | --- |
+| SMS | mobile number | System — messaging | *Send* | System | — |
+| Email | email address | System — email | *Send* | System | — |
+| RPAD | postal address | Manual | *Mark as posted* | Manual | yes |
+| e-Post | postal address | Manual | *Mark as posted* | Manual | — |
+| Police (RPAD) | the police station's postal address | Manual | *Mark as posted* | Manual | yes |
+| Police (NSTEP) | the police station, through NSTEP | System — via CIS, end-of-day batch | *Send* | System — polls CIS | — |
+| Police (iCOPS) | the police station, through iCOPS (Kerala) | System — direct | *Send* | System — iCOPS calls back | — |
+| By hand | postal address, taken in person | Manual | *Mark as handed over*; *Mark as published* for a proclamation (`DSP-10`) | Manual | — |
 
 The court screens make the work concrete.
 
@@ -84,8 +84,9 @@ The court screens make the work concrete.
 
 | Element | What it shows |
 | --- | --- |
-| Tabs | *Pending steps*, *Pending signature*, *Signed*, *Sent*, *Errored*, *Closed*, each with a count, filtered to the process types and channels the viewer's roles cover |
-| Row | case number and title · process type · recipient · channel · destination · hearing date · status and status date · the viewer's move (*Record receipt*, *Sign*, *Send* / *Mark as sent*, *Record outcome*) |
+| Tabs | the screen's choice: how the lists are built is for the implementer (`SGN-02`). The API filters and counts by status, channel and `my_move` (#11.2), so a screen can group them its own way — for example the prototype's three tabs, *RPAD collection* (`PENDING_STEPS` on an envelope channel), *Issuance* (`PENDING_SIGNATURE`, `SIGNED`, `ERRORED`) and *Service* (`SENT` and the outcomes) |
+| Row | case number and title · process type · recipient · channel · destination · hearing date · status and status date · the viewer's move (*Record receipt*, *Sign*, the channel's next action after signing above, *Record outcome*) |
+| Filters and sort | process type, channel, status, non-delivery reason, case number; sorted by hearing date or by last update |
 | Bulk | select several to sign (`SGN-03`) or recall (`PIA-01`) |
 
 **Process register** — the case's *Notice/Process Status* section (`view-case.md` §7).
@@ -93,8 +94,8 @@ The court screens make the work concrete.
 | Element | What it shows |
 | --- | --- |
 | Per person | name and role on the case — *Accused 2*, *PW-1* (`SVC-01`–`SVC-03`) |
-| Per round, newest first | process type, linked hearing and its date, triggering order and its date, date the fee was paid (`SVC-04`–`SVC-09`) |
-| Per process in the round | channel, destination, status, status date, remarks (`SVC-10`–`SVC-14`) |
+| Per round, newest first, one group per process type | process type, linked hearing and its date, triggering order and its date (`SVC-04`–`SVC-08`, `SVC-19`) |
+| Per process in the round | process document, channel, destination, status, status date, date its fee was paid, reason for non-delivery, remarks, supporting file (`SVC-09`–`SVC-22`) |
 
 The PRD fixes the rules:
 
@@ -150,7 +151,8 @@ here. It does not move the case's stage — it dispatches events to
 * Upfront process payments at filing (`efiling.md` §19.2) — collected by the filing flow into the pool this module draws from.
 * PDF template content per process type (`Q-16`).
 * Custom templates a court creates itself (`process.md` §6.1).
-* Court fee amounts per state: moving to a separate fee document, not yet written (`FEE-01`).
+* Court fee amounts per state: owned by `payment-logic.md` §4 and loaded as configuration (`FEE-01`, #12.3).
+* e-Post routing to post offices and Post officer accounts (`e-post.md`): e-Post is post-launch (§13.1).
 * Working out a police station from the PIN code, and excluding addresses where delivery is known to fail (`process.md` §15).
 * Gujarat's police return portal (`process.md` §6.2) — not in this version.
 * DSC and batch e-sign (`SGM-02`, `SGM-04`): no spec provides them yet.
@@ -227,7 +229,7 @@ Rules:
 | --- | --- | --- |
 | `apps.cases` | `selectors.process_recipients(case_id)` | every possible recipient: accused (and for a company, each person in charge), witnesses with their side and whether examined, complainants; each with name, role label and type (`PRC-02`, `AUT-05`, `AUT-06`, `SVC-01`) |
 | | `selectors.recipient_destinations(case_id, recipient)` | the recipient's mobile numbers, email addresses and postal addresses (address ids), with any police station held against each address (`PRC-05`, `AUT-04`, `AUT-07`) |
-| | `services.add_recipient_destination(case_id, recipient, kind, value, actor)` | saves a destination added on the order screen to the recipient's record and returns its id (`PRC-05`) |
+| | `services.add_recipient_destination(case_id, recipient, kind, value, actor)` | saves a destination added on the order screen to the recipient's record and returns its id (`PRC-05`); `actor` only fills the new row's existing `created_by`, no new column |
 | | `selectors.accused_joined(case_id)` | whether the accused has joined (`AUT-05`, `AUT-06`) |
 | | `selectors.get_case_summaries(case_ids)` | list rows: number, title, courtroom |
 | | `selectors.case_contacts(case_id, side=None)` | notification recipients (#12.2) |
@@ -279,8 +281,8 @@ courtroom membership is open (question 1).
 
 Reading is not a role: any staff of the courtroom sees its processes
 (`RLE-06`). Parties of the case see its process register (#11.3).
-76
-7### 3. Data model
+
+### 3. Data model
 
 ```mermaid
 classDiagram
@@ -450,8 +452,8 @@ All the processes one order triggers (`process.md` §3, `SVC-04`).
 | `case` | `FK("cases.Case", on_delete=PROTECT, related_name="process_rounds")` | |
 | `order_id` | `UUIDField(unique=True)` | the triggering order (`SVC-08`) |
 | `hearing_id` | `UUIDField(null=True)` | the hearing set in the same order, or else the case's existing next hearing at trigger (`PRC-06`, `SVC-07`) |
+| `hearing_date` | `DateField(null=True)` | that hearing's date when the round started — the date at issue, for lists and sorting; never updated (`PRC-06`) |
 | `court_id` | `UUIDField(db_index=True)` | the case's courtroom; roles are read here |
-| `fee_paid_at` | `DateTimeField(null=True)` | when the round's last fee was paid (`SVC-09`) |
 
 #### 3.3 `Process`
 
@@ -478,10 +480,12 @@ All the processes one order triggers (`process.md` §3, `SVC-04`).
 | `remark` | `TextField(blank=True)` | the outcome comment, or the last error (`DSP-04`, `DSP-08`) |
 | `reason` | `FK(NonDeliveryReason, null=True, on_delete=PROTECT)` | negative outcomes (`DSP-09`) |
 | `outcome_file_id` | `CharField(64, blank=True)` | optional supporting file (`DSP-08`) |
+| `outcome_date` | `DateField(null=True)` | the day the process was delivered or executed, or the attempt failed, as reported — distinct from `status_at`, when it was recorded; a clerk often records a batch of returns days later |
 | `court_fee` | `DecimalField(18, 2)` | this process's court fee (`FEE-01`) |
 | `fee_from_pool` | `DecimalField(18, 2)` | the part covered by the pool (`FEE-04`) |
 | `demand_item_id` | `UUIDField(null=True)` | the [`0017`](0017-orders-management.md) item for the balance |
 | `fee_paid` | `BooleanField(default=False)` | the court fee is fully covered (`FEE-08`) |
+| `fee_paid_at` | `DateTimeField(null=True)` | when this process's fee was covered — at trigger where the pool covers it, else when its demand item is paid; empty for a zero fee (`SVC-09`) |
 | `envelope_received_by` / `_at` | `FK(User, null=True)` / `DateTimeField(null=True)` | `STP-02` |
 | `signing_file_id` | `CharField(64, blank=True)` | the rendered document being signed (#7.2) |
 | `signed_file_id` | `CharField(64, blank=True)` | the signed document |
@@ -709,7 +713,7 @@ collected for (`FEE-04`). Upfront payments at filing (`efiling.md` §19.2) are
 On trigger (`FEE-05`), under `select_for_update()` on the case's row in this
 module's lock table (#12.4):
 
-1. Each process's `court_fee` is the flat fee for its type in the case's state, from config `processes.<STATE_CODE>.court_fee.<TYPE>` (`FEE-01`). A fee may be zero. The amounts per state are moving to a separate fee document, not yet written; until then they are configuration (#12.3).
+1. Each process's `court_fee` is the flat fee for its type in the case's state, from config `processes.<STATE_CODE>.court_fee.<TYPE>` (`FEE-01`), seeded from `payment-logic.md` §4 — Kerala ₹2 for notice, summons and warrant, ₹0 otherwise; Gujarat and Punjab & Haryana ₹0 for every type (#12.3). A fee may be zero.
 2. The pool is drawn on in process creation order: each process takes `min(court_fee, pool left)` as `fee_from_pool`.
 3. A process fully covered is `fee_paid`.
 4. Every other process becomes one `PROCESS_COURT_FEE` item of one demand on the case, `reference_type = ORDER`, `reference_id = order_id`, item `reference_type = SUMMONS` / `WARRANT` / …, `reference_id = process.id`, `user_id` empty — the side pays, not one person ([`0017`](0017-orders-management.md) #3, #6.1). One process, one item, so each process moves on its own when its item is paid.
@@ -723,8 +727,8 @@ is refunded (`FEE-07`).
 On `notify_payment_completed` ([`0017`](0017-orders-management.md) #14), the
 receiver marks each process whose `demand_item_id` is now `PAID` as `fee_paid`,
 and moves it to `PENDING_SIGNATURE` if its envelope is received or not needed
-(`FEE-08`). The pay task closes when the demand is `PAID`; `fee_paid_at` is set
-on the round. A process never moves on a `PENDING` payment.
+(`FEE-08`), and sets its `fee_paid_at`. The pay task closes when the demand is
+`PAID`. A process never moves on a `PENDING` payment.
 
 #### 6.4 Channel fee
 
@@ -807,28 +811,30 @@ Process dispatcher for the type and channel, `SIGNED` (`DSP-03`):
 * A Manual send never ends in `ERRORED`: a failure at the destination is recorded as `NOT_DELIVERED` (`DSP-11`).
 * The send task closes. Where the channel's status update is Manual, *Record outcome* opens for the `PROCESS_REPORTER` holders (`SGN-02`).
 
-**Proclamation by hand.** A proclamation is signed, sent and executed — three
-stages (`DSP-10`). A dispatcher who also holds `PROCESS_REPORTER` may send
-`{"outcome": "DELIVERED"}` with the send on a `BY_HAND` proclamation; it is
-recorded `SENT` and *Executed* at the same time. Publication in a newspaper is
-recorded the same way and not tracked separately.
+**Proclamation by hand — *Mark as published*.** A proclamation is signed, sent
+and executed — three stages (`DSP-10`). On a `BY_HAND` proclamation the Process
+dispatcher sends `{"published": true}`; it is recorded `SENT` and *Executed*
+(`DELIVERED`) at the same time, one event each, and no *Record outcome* task
+opens. Only the dispatcher role is needed (`process.md` v14.4). Publication in a
+newspaper is recorded the same way and not tracked separately.
 
 #### 8.2 Recording the outcome
 
 ```json
 POST /api/v1/processes/{id}/outcome/
-{ "status": "NOT_DELIVERED", "reason": "ADDRESSEE_NOT_FOUND", "comment": "House locked for a month.", "file_id": "…" }
+{ "status": "NOT_DELIVERED", "reason": "ADDRESSEE_NOT_FOUND", "outcome_date": "2026-11-12", "comment": "House locked for a month.", "file_id": "…" }
 ```
 
 Process reporter for the type and channel, `SENT`, on a channel whose status
 update is Manual (`409 E12013` on a System one):
 
-* `status` is `DELIVERED` or `NOT_DELIVERED` (`DSP-08`). `NOT_DELIVERED` requires a `reason` from the state's `NonDeliveryReason` list (`400 E12014`, `DSP-09`). `comment` is free text; `file_id` an optional `apps.files` upload.
+* `status` is `DELIVERED` or `NOT_DELIVERED` (`DSP-08`). `NOT_DELIVERED` requires a `reason` from the state's `NonDeliveryReason` list (`400 E12014`, `DSP-09`). `outcome_date` defaults to today and may be neither in the future nor before `sent_at` (`400 E12018`); a batch of returns recorded together may share it. `comment` is free text; `file_id` an optional `apps.files` upload.
 * The outcome task closes; *outcome recorded* goes to the case (#12.2).
 
 On a System status channel the backend reports instead — by poll or callback
 (#9) — through the same service, with `source = POLL` or `CALLBACK`, carrying
-the same comment, reason and file (`DSP-08`). A receiving system that reports
+the same comment, reason and file (`DSP-08`), and `reported_at` as
+`outcome_date`. A receiving system that reports
 after acceptance that it could not take the process at all — an invalid
 number, refused input — sets `ERRORED`, on System send channels only. It is
 distinct from `NOT_DELIVERED`, where an attempt was made at the destination
@@ -1036,7 +1042,7 @@ from the app), the `meta` envelope and the standard error shape.
 | Method | Path | Purpose | Who |
 | --- | --- | --- | --- |
 | GET | `/processes/` | the lists (#11.2) | court staff of the courtroom |
-| GET | `/processes/counts/` | counts per status, and the viewer's moves | court staff |
+| GET | `/processes/counts/` | counts per status and channel, and the viewer's moves, so a screen can build its own tabs | court staff |
 | GET | `/processes/{id}/` | one process, its events and tasks | court staff; parties of the case |
 | POST | `/processes/{id}/envelope/` | #7.1 | Envelope receiver |
 | POST | `/processes/{id}/sign/` · `/sign/confirm/` | #7.2 | Process signer |
@@ -1053,10 +1059,11 @@ from the app), the `meta` envelope and the standard error shape.
 | `status` | repeatable `ProcessStatus` |
 | `process_type` | repeatable code |
 | `channel` | repeatable code |
+| `reason` | repeatable `NonDeliveryReason` code; implies `NOT_DELIVERED` |
 | `my_move` | `true`: only processes whose next step the caller's roles cover (`SGN-02`) |
 | `case`, `round`, `hearing` | UUIDs |
 | `search` | case number, title or recipient name |
-| `ordering` | default `status_at`; also `expires_at`, `created_at` |
+| `ordering` | default `status_at`; also `hearing_date` (the date at issue, #3.2), `expires_at`, `created_at`, each with `-` for descending |
 | `page`, `page_size` | project pagination, max 100 |
 
 ```json
@@ -1095,9 +1102,12 @@ columns come from one batched `get_case_summaries` call.
 | GET | `/cases/{case_id}/processes/` | the process register (`view-case.md` §7) | court staff; parties of the case |
 
 Grouped by person (`SVC-02`, `SVC-03`), then by round, newest first (`SVC-06`),
-each round with its type, hearing, order and fee date (`SVC-05`, `SVC-07`–`SVC-09`),
-and each process with channel, destination, status label, status date and
-remark (`SVC-10`–`SVC-14`). Empty when no process has issued (`SVC-16`).
+split into one group per process type where a round holds several (`SVC-19`),
+each with its type, hearing and order (`SVC-05`, `SVC-07`, `SVC-08`), and each
+process with its signed document once signed, channel, destination, status
+label, status date, fee paid date, reason, remark and supporting file
+(`SVC-09`–`SVC-22`). Always available; an empty list when no process has issued
+(`SVC-21`).
 
 Parties also reach their steps through the [`0011`](0011-case-workflows.md)
 task list: the pay task links to the [`0017`](0017-orders-management.md)
@@ -1156,6 +1166,7 @@ and `11` are taken by the hearings and court orders specs.
 | `E12015` | `PROCESS_ROLE_REQUIRED` | 403 | the caller lacks the role for this process's type and channel (`RLE-09`) |
 | `E12016` | `BULK_TOO_LARGE` | 400 | more processes than `processes.bulk_max` in one recall |
 | `E12017` | `DESTINATION_INVALID` | 400 | a destination added on the order screen is not a valid mobile number, email or postal address (`PRC-05`); `field = values.recipients[i].new_destinations[j]` |
+| `E12018` | `OUTCOME_DATE_INVALID` | 400 | `outcome_date` in the future or before the process was sent; `field = outcome_date` |
 
 Rules:
 
@@ -1198,7 +1209,7 @@ read boundary:
 
 | `config_set` | `config_key` | Default | Notes |
 | --- | --- | --- | --- |
-| `processes.<STATE_CODE>` | `court_fee.<TYPE>` | — | the flat court fee per type (`FEE-01`); the amounts move to a separate fee document, not yet written; a fee may be zero |
+| `processes.<STATE_CODE>` | `court_fee.<TYPE>` | — | the flat court fee per type (`FEE-01`), seeded from `payment-logic.md` §4; a fee may be zero |
 | `processes` | `poll_batch_size` | `200` | #9.3 |
 | `processes` | `expiry_batch_size` | `500` | #8.6 |
 | `processes` | `bulk_max` | `200` | #8.4 |
@@ -1260,7 +1271,8 @@ The six master tables are added to `CACHALOT_ONLY_CACHABLE_TABLES`
 * **Steps:** RPAD waits for its own envelope and fee in either order; SMS in the same round does not wait; only an Envelope receiver records receipt.
 * **Signing:** refused before fee and envelope; only a Process signer for that type and channel signs — a summons signer cannot sign a warrant; each process gets its own signature and event; sign-and-send only with both roles on a System send channel, recording `SIGNED` and `SENT` at the same time.
 * **Send and status:** manual send by a dispatcher; system send through a stub backend, a failed send to `ERRORED`, transient retried; a Manual send channel never reaches `ERRORED`; outcome by a reporter only on Manual status channels; negative outcome needs a reason; callback trusted only through the backend; poll applies reports; a report on a terminal process ignored; labels *Executed* / *Not executed* for warrants.
-* **Proclamation:** By hand only; sent and executed in one action by someone with both roles.
+* **Proclamation:** By hand only; *Mark as published* by a Process dispatcher records `SENT` and *Executed* together, with no reporter role and no outcome task.
+* **Lists and outcome date:** filter by reason; sort by hearing date at issue; `outcome_date` stored apart from `status_at`, refused in the future or before sending (`E12018`); fee paid date per process.
 * **Resend and recall:** only `ERRORED` resends, as the same process; recall before send never dispatches and cancels an unpaid item; recall after a system send calls the backend; outcomes refuse recall; tasks expire.
 * **Expiry:** 00:00 IST on the hearing date; moves with the hearing before signing, fixed after; the sweep expires `PENDING_STEPS`, `PENDING_SIGNATURE`, `SIGNED` and `ERRORED` processes and closes their tasks; a `SENT` process past its date is left alone; never dispatched after expiry.
 * **Hearing:** the order's new hearing, else the case's next hearing at trigger; a later move changes nothing on the process but an unsigned expiry; lists return the date at issue and the current date.
@@ -1306,14 +1318,16 @@ cd src && python manage.py check
 1. How is a role's scope — process types and channels — stored on the courtroom membership, and who maintains it (`RLE-09`)?
 2. Should a police station typed at e-filing as free text be migrated to the master, so `AUT-04` can preselect it reliably?
 3. Which signing module will sign several processes in one action — DSC or batch e-sign (`SGN-03`, `SGM-02`, `SGM-04`)?
-4. What moves an SMS or Email process from Sent to Delivered (`process.md` §6.2)?
+4. What moves an SMS or Email process from Sent to Delivered (`process.md` §6.2)? If nothing does, it stays `SENT` for good — it never expires (`EXP-02`), so the case's Notice or Summons secondary stage never ends (`case-lifecycle.md` §4) and the process stays on the court's in-progress list.
 5. Can a process be ordered when the case has no next hearing, and if so, when does it expire?
 6. Does *steps due* go once per process or once per round (`pending-task-drafts.md` §8)?
 7. Does a process recalled before signing give its court fee back to the pool?
-8. Where will the court fee per process type and state live, once the separate fee document is written (`FEE-01`)?
+8. The court fee per process type is now in `payment-logic.md` §4. Is it read from configuration seeded from there, or from a fee master owned by [`0017`](0017-orders-management.md) (`FEE-01`)?
 9. When will the police-station master data be received (`Q-15`)?
 10. What is the PDF template for each process type (`Q-16`)?
 11. A sent process never expires (`EXP-02`). Should a sent process with no outcome long after its hearing be shown to the court, so it is not forgotten?
+12. Lists show and sort by the hearing's date at issue (`ProcessRound.hearing_date`). Should they use the hearing's current date instead (`PRC-06` allows either)? Sorting by it needs a batched hearing-date read from `apps.hearings`.
+13. The register's *Status date* (`SVC-13`) for an outcome: the day it was recorded (`status_at`) or the day it happened (`outcome_date`)?
 
 ---
 
@@ -1324,7 +1338,7 @@ cd src && python manage.py check
 * The e-Post channel fee and fee service.
 * Refunds.
 * The content of the templates (`Q-16`), and court-made templates.
-* Court fee amounts per state (the separate fee document).
+* Court fee amounts per state (`payment-logic.md` §4).
 * Police station from the PIN code, and excluding addresses where delivery fails (`process.md` §15).
 * Gujarat's police return portal.
 * DSC and batch signing.
