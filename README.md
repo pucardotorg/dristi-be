@@ -111,6 +111,8 @@ pytest apps/cms/tests/test_pages_api.py::TestPageBySlugAPI::test_existing_slug_r
 
 pytest -m "not integration"                       # unit tests only
 pytest -m integration                             # integration (flow) tests only
+pytest --scenario ORD-CANCEL-3                    # one externally tracked scenario (spec 0037 §15)
+pytest --scenario-report scenario-map.json        # write a scenario-ID → tests JSON map
 ```
 
 Integration tests are the flow suites in each app's `tests/integration/`

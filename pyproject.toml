@@ -37,6 +37,7 @@ python_files = ["tests.py", "test_*.py", "*_tests.py"]
 addopts = "-v --tb=short"
 markers = [
     "integration: flow tests crossing several calls/surfaces; auto-applied to anything under a tests/integration/ package (spec 0037)",
+    "scenario(id): manually assigned scenario ID for external tracking; enables --scenario and --scenario-report (spec 0037 §15)",
 ]
 
 [tool.coverage.run]

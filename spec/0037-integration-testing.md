@@ -451,6 +451,41 @@ Tests violating these are changed on review:
 cd src && DJANGO_SETTINGS_MODULE=config.settings.test pytest apps/<domain>
 cd src && DJANGO_SETTINGS_MODULE=config.settings.test pytest -m integration        # flow suites only
 cd src && DJANGO_SETTINGS_MODULE=config.settings.test pytest -m "not integration"  # unit suites only
+cd src && DJANGO_SETTINGS_MODULE=config.settings.test pytest --scenario ORD-CANCEL-3               # one scenario
+cd src && DJANGO_SETTINGS_MODULE=config.settings.test pytest --scenario-report scenario-map.json   # ID → tests map
 cd src && ruff check . && ruff format .
 cd src && python manage.py check
 ```
+
+## 15. Scenario IDs
+
+A module docstring cites the **spec sections** a flow pins (§2 rule 2). A test
+can also be pinned to an **externally tracked scenario or requirement ID**
+(for example a PRD `ORD-CANCEL-3`) with a registered marker:
+
+```python
+@pytest.mark.scenario("ORD-CANCEL-3")
+def test_cancel_after_hearing_set_is_refused(...):
+    ...
+```
+
+Rules:
+
+1. **IDs are assigned manually** — the marker does not validate against a PRD
+   or TMS. Like error codes (0000 §9.4), an ID is stable once released: never
+   renumber, never reuse.
+2. **Stack the marker** when one test covers several scenarios — two
+   decorators, one per ID. A bare `@pytest.mark.scenario` with no ID is a
+   collection error.
+3. **Run by ID** with `pytest --scenario ORD-CANCEL-3` (repeatable; a test
+   tagged with any of the given IDs runs). `-m` cannot do this — it matches
+   marker names, not arguments.
+4. **Report** with `pytest --scenario-report scenario-map.json`: after the run
+   it writes each tagged ID to the selected tests (node ID + first docstring
+   line), for committing or feeding to external documentation. On an
+   unfiltered run it is the full inventory.
+5. **JUnit XML carries the IDs**: tagged tests emit
+   `<property name="scenario" value="..."/>` per testcase, so CI reporters can
+   group by scenario with no extra work.
+6. The marker is orthogonal to `integration`: scenario-tagged unit tests are
+   as welcome as scenario-tagged flow tests.

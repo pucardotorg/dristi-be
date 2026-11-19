@@ -138,6 +138,15 @@ pytest -m "not integration"          # unit tests only
 pytest -m integration                # integration (flow) tests only
 ```
 
+Tests tagged with an externally tracked scenario ID
+(`@pytest.mark.scenario("ORD-CANCEL-3")`, spec 0037 §15) can be run or
+reported by ID:
+
+```bash
+pytest --scenario ORD-CANCEL-3             # only tests tagged with this ID (repeatable)
+pytest --scenario-report scenario-map.json # write a scenario-ID → tests JSON map
+```
+
 ### Test coverage
 
 Coverage settings live in the root `pyproject.toml`: `src/` is measured,
