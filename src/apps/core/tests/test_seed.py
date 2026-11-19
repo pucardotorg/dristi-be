@@ -771,6 +771,53 @@ class TestBulkLocations:
         assert Location.objects.filter(location_type="bank").count() == 2
         assert "created 2, unchanged 1, skipped 0" in output
 
+    # A TOML integer key is stored as text; it must match that text on a re-run,
+    # against a string of the same code in the file, and as a parent reference.
+    STATION = """
+[[rows]]
+code = 15281001
+name = "Alappuzha North"
+location_type = "police_station"
+parent = "IN_KL_ERN"
+"""
+    NUMERIC_DISTRICT = """
+[[rows]]
+code = "682001"
+name = "Numeric District"
+location_type = "district"
+parent = "IN_KL"
+"""
+    UNDER_NUMERIC = """
+[[rows]]
+code = "IN_KL_CHILD"
+name = "Child"
+location_type = "district"
+parent = 682001
+"""
+
+    def test_integer_code_rerun_is_unchanged(self, tmp_path):
+        path = banks_file(tmp_path, self.STATION)
+        assert "created 1, unchanged 0, skipped 0" in run(path)
+
+        output = run(path)
+
+        assert Location.objects.filter(code="15281001").count() == 1
+        assert "created 0, unchanged 1, skipped 0" in output
+
+    def test_integer_and_string_of_one_code_in_a_file(self, tmp_path):
+        quoted = self.STATION.replace("code = 15281001", 'code = "15281001"')
+
+        output = run(banks_file(tmp_path, quoted + self.STATION))
+
+        assert Location.objects.filter(code="15281001").count() == 1
+        assert "created 1, unchanged 1, skipped 0" in output
+
+    def test_integer_parent_created_earlier_in_the_file(self, tmp_path):
+        output = run(banks_file(tmp_path, self.NUMERIC_DISTRICT + self.UNDER_NUMERIC))
+
+        assert Location.objects.get(code="IN_KL_CHILD").parent.code == "682001"
+        assert "created 2, unchanged 0, skipped 0" in output
+
     def test_parent_created_in_an_earlier_batch_resolves(self, tmp_path, monkeypatch):
         monkeypatch.setattr(seed_command, "BULK_BATCH_SIZE", 2)
         district = """

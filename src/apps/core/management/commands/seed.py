@@ -225,7 +225,10 @@ class Command(BaseCommand):
         (key,) = document["key"]
         rows = document["rows"]
         # Rows this file references, kept once created so later rows resolve them.
-        referenced = {name: _values(rows, name) for name in spec.fk_by_code}
+        referenced = {
+            name: {self._key_value(ref.get_model(), ref.key, v) for v in _values(rows, name)}
+            for name, ref in spec.fk_by_code.items()
+        }
         resolved = {name: {} for name in spec.fk_by_code}
         seen = set()
         created = unchanged = skipped = 0
@@ -268,7 +271,9 @@ class Command(BaseCommand):
     def _fetch_references(self, spec, batch, resolved):
         """Read the rows the batch references that are not resolved yet."""
         for name, ref in spec.fk_by_code.items():
-            wanted = _values((row for _, row in batch), name) - set(resolved[name])
+            values = _values((row for _, row in batch), name)
+            wanted = {self._key_value(ref.get_model(), ref.key, v) for v in values}
+            wanted -= set(resolved[name])
             if wanted:
                 related = ref.get_model().objects.filter(**{f"{ref.key}__in": wanted})
                 for obj in related:
@@ -283,7 +288,8 @@ class Command(BaseCommand):
         self._check_row(model, spec, (key,), row)
         if not isinstance(row[key], KEY_TYPES):
             raise RowError(f"{key}: expected a single value")
-        if any(row[key] in keys for keys in known_keys):
+        value = self._key_value(model, key, row[key])
+        if any(value in keys for keys in known_keys):
             return None
         instance = model()
         for name in spec.fields:
@@ -293,7 +299,11 @@ class Command(BaseCommand):
             value = row.get(name)
             if value in EMPTY:
                 continue
-            obj = resolved[name].get(value) if isinstance(value, KEY_TYPES) else None
+            obj = (
+                resolved[name].get(self._key_value(ref.get_model(), ref.key, value))
+                if isinstance(value, KEY_TYPES)
+                else None
+            )
             if obj is None:
                 raise RowError(f"{name}: no {ref.model_label} with {ref.key}={value!r}")
             setattr(instance, name, obj)
@@ -421,6 +431,17 @@ class Command(BaseCommand):
                 raise RowError(f"{name}: no {ref.model_label} with {ref.key} in {missing}")
             resolved[name] = objects
         return resolved
+
+    def _key_value(self, model, name, value):
+        """Return ``value`` as stored in ``name``, so a TOML int matches a stored string.
+
+        A value the field rejects is returned unchanged; it matches nothing and
+        is reported where the row is built.
+        """
+        try:
+            return self._coerce(model, name, value)
+        except RowError:
+            return value
 
     def _coerce(self, model, name, value):
         """Coerce a TOML value to the field's type; raise RowError if it cannot."""
