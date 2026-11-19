@@ -785,14 +785,89 @@
     "cause-list-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-1hS7eP_meC",
       "title": "Cause List Generation",
-      "contentHash": "716e91d2bcb6",
-      "pageUpdatedAt": 1793360829.917,
+      "contentHash": "1b19d98c149c",
+      "pageUpdatedAt": 1795074792.681,
       "calloutElementId": "cl-F3EnmA4_Ed",
       "sections": [
         {
           "key": "# Cause List Generation",
-          "elementId": "cl-1BpdGlYCex",
-          "hash": "e46b02cb0dee"
+          "elementId": "cl-GEoRw6CfFI",
+          "hash": "3c551e4c4aa9"
+        },
+        {
+          "key": "## 1. How the order is worked out",
+          "elementId": "cl-nbvMy-83Zc",
+          "hash": "81569df34e0b"
+        },
+        {
+          "key": "## 2. The ordering step",
+          "elementId": "cl-rhzlDe9ZqI",
+          "hash": "76eb8a4e86a5"
+        },
+        {
+          "key": "## 3. Sort criteria",
+          "elementId": "cl--A4sOe-Owv",
+          "hash": "528d70a522dd"
+        },
+        {
+          "key": "## 4. Configuring the sort",
+          "elementId": "cl-BrRihARW5l",
+          "hash": "391cd10452b8"
+        },
+        {
+          "key": "## 5. Adding hearings to a day",
+          "elementId": "cl-eT03B2SN4G",
+          "hash": "43b9a7c10fb8"
+        },
+        {
+          "key": "## 6. Enhancements",
+          "elementId": "cl-3OsJiXbSar",
+          "hash": "833d3dc51136"
+        },
+        {
+          "key": "## 7. Open questions",
+          "elementId": "cl-n6UU4BQ0_y",
+          "hash": "37f8a04d9771"
+        },
+        {
+          "key": "## Linked records",
+          "elementId": "cl-TY2uOSwnX0",
+          "hash": "407e2d4ce3f1"
+        },
+        {
+          "key": "view",
+          "elementId": "table-LqsIt_iail",
+          "hash": "14e9c3cd2a95"
+        },
+        {
+          "key": "### Pending tasks (Citizen-Side)",
+          "elementId": "cl-s5sycCUhEe",
+          "hash": "20c1668ccaf5"
+        },
+        {
+          "key": "view",
+          "elementId": "table-NpbyX1H3hl",
+          "hash": "3f3a4825e8d2"
+        },
+        {
+          "key": "### Notifications",
+          "elementId": "cl-jFjpfaAwwS",
+          "hash": "65ac5c2cf5a5"
+        },
+        {
+          "key": "view",
+          "elementId": "table-f3IrMC-aI7",
+          "hash": "5e8c98d997e1"
+        },
+        {
+          "key": "### Events",
+          "elementId": "cl-EhSKkTvc1f",
+          "hash": "72199396868f"
+        },
+        {
+          "key": "view",
+          "elementId": "table-b6Raxj4S8o",
+          "hash": "ce1681d713e9"
         }
       ]
     },
