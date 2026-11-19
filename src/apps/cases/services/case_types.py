@@ -71,7 +71,7 @@ EVIDENCE_SCAN_TYPES = {
 # Documents that belong to one party, with the roles that party may hold. Role
 # codes, not ``ParticipantRole``, which is defined in the models.
 PARTY_DOCUMENT_ROLES = {
-    DocumentType.IDENTITY_PROOF: ("COMPLAINANT",),
+    DocumentType.IDENTITY_PROOF: ("COMPLAINANT", "POA_HOLDER"),
     DocumentType.VAKALATNAMA: ("COMPLAINANT", "ACCUSED"),
     DocumentType.POA_DOCUMENT: ("COMPLAINANT", "ACCUSED"),
 }
@@ -167,8 +167,20 @@ class CaseTypeConfig:
     document_types: tuple[str, ...]
     evidence_schemas: dict[str, dict] = field(default_factory=dict)
     # Details section -> rules JSON Schema cannot express, called with the
-    # section's data; returns ``SchemaError``s.
+    # section's data; returns ``SchemaError``s. ``section_checks`` hold on every
+    # save; ``section_completeness_checks`` only in the completeness check, as
+    # they ask for something missing.
     section_checks: dict[str, Callable[[dict], list]] = field(default_factory=dict)
+    section_completeness_checks: dict[str, Callable[[dict], list]] = field(default_factory=dict)
+    # Evidence type -> rules JSON Schema cannot express within one item, called
+    # with its ``evidence_info``; returns ``SchemaError``s. They hold on every
+    # save: a date order inside one item contradicts itself even in a draft.
+    evidence_checks: dict[str, Callable[[dict], list]] = field(default_factory=dict)
+    # Rules between evidence items, which a save of one item cannot judge as the
+    # others may not be filed yet: called with the case's active evidence in
+    # ordinal order; returns ``(evidence type, message)`` pairs. Only the
+    # completeness check runs it.
+    evidence_set_checks: Callable[[list], list[tuple[str, str]]] | None = None
     # The completeness check (spec 0021 §6.3) requires at least one of each.
     required_document_types: tuple[str, ...] = ()
     required_evidence_types: tuple[str, ...] = ()
@@ -259,19 +271,22 @@ def limitation_deadline(arose):
     return date(year, month, min(arose.day, monthrange(year, month)[1]))
 
 
-def _limitation_errors(data):
-    """Check the complaint filing date against the cause of action.
-
-    The complaint cannot be filed before the cause of action arose, and one
-    filed after the limitation period needs a ``condonation_reason``.
-    """
+def _filing_dates(data):
+    """Return ``(arose, filed)`` from ``data``, or ``None`` when either is missing or malformed."""
     try:
-        arose = date.fromisoformat(data["cause_of_action_date"])
-        filed = date.fromisoformat(data["complaint_filing_date"])
+        return (
+            date.fromisoformat(data["cause_of_action_date"]),
+            date.fromisoformat(data["complaint_filing_date"]),
+        )
     except (KeyError, TypeError, ValueError):
         # Missing or malformed: the schema reports it.
-        return []
-    if filed < arose:
+        return None
+
+
+def _filing_date_errors(data):
+    """Refuse a complaint filing date before the cause of action: the two contradict each other."""
+    dates = _filing_dates(data)
+    if dates and dates[1] < dates[0]:
         return [
             SchemaError(
                 "complaint_filing_date",
@@ -279,6 +294,15 @@ def _limitation_errors(data):
                 "minimum",
             )
         ]
+    return []
+
+
+def _condonation_errors(data):
+    """Require a ``condonation_reason`` for a complaint filed after the limitation period."""
+    dates = _filing_dates(data)
+    if dates is None or dates[1] < dates[0]:
+        return []
+    arose, filed = dates
     if filed <= limitation_deadline(arose) or "condonation_reason" in data:
         return []
     return [
@@ -291,6 +315,107 @@ def _limitation_errors(data):
     ]
 
 
+def _relief_errors(data):
+    """Refuse relief whose rendered text is empty, such as an editor's ``<p><br></p>``."""
+    # Imported here: the models import this module.
+    from apps.cases.models import has_visible_text
+
+    return [
+        SchemaError(field, api_errors.BLANK.message, "blank")
+        for field in ("interim_relief", "final_relief")
+        if isinstance(data.get(field), str) and not has_visible_text(data[field])
+    ]
+
+
+def _date_of(info, key):
+    """Return ``info[key]`` as a date, or ``None`` when it is missing or malformed."""
+    try:
+        return date.fromisoformat(info[key])
+    except (KeyError, TypeError, ValueError):
+        # Missing or malformed: the schema reports it.
+        return None
+
+
+def _return_memo_errors(info):
+    """Refuse a return date before the presentation date (CHQ-9 >= CHQ-8): one memo's own dates."""
+    presented, returned = _date_of(info, "presentation_date"), _date_of(info, "return_date")
+    if presented and returned and returned < presented:
+        return [
+            SchemaError(
+                "return_date",
+                "The return date cannot be before the presentation date.",
+                "minimum",
+            )
+        ]
+    return []
+
+
+def _demand_notice_errors(info):
+    """Refuse a delivery or return date before the dispatch date (LDN-6, LDN-7 >= LDN-2)."""
+    dispatched = _date_of(info, "dispatch_date")
+    if dispatched is None:
+        return []
+    return [
+        SchemaError(
+            key,
+            f"The {label} date cannot be before the dispatch date.",
+            "minimum",
+        )
+        for key, label in (("delivery_date", "delivery"), ("return_date", "return"))
+        if (day := _date_of(info, key)) and day < dispatched
+    ]
+
+
+def _evidence_set_errors(evidence):
+    """Return the date rules that span evidence items, as ``(evidence type, message)`` pairs.
+
+    A return memo is matched to its cheque by ordinal: each cheque needs its
+    own memo (PRD CHQ-8..10, DCM-2) and each memo its cheque. A demand notice
+    is matched to none: it needs some cheque returned by its dispatch date.
+    """
+    problems = []
+    cheques = {item.ordinal: item for item in evidence if item.evidence_type == EvidenceType.CHEQUE}
+    memos = [item for item in evidence if item.evidence_type == EvidenceType.RETURN_MEMO]
+    memo_ordinals = {memo.ordinal for memo in memos}
+    for ordinal in sorted(cheques.keys() - memo_ordinals):
+        problems.append((EvidenceType.RETURN_MEMO, f"Cheque #{ordinal} has no return memo."))
+    for memo in memos:
+        if memo.ordinal not in cheques:
+            problems.append(
+                (
+                    EvidenceType.RETURN_MEMO,
+                    f"Return memo #{memo.ordinal} has no cheque of the same number.",
+                )
+            )
+    for memo in memos:
+        cheque = cheques.get(memo.ordinal)
+        dated = _date_of(cheque.evidence_info, "cheque_date") if cheque else None
+        presented = _date_of(memo.evidence_info, "presentation_date")
+        if dated and presented and presented < dated:
+            problems.append(
+                (
+                    EvidenceType.RETURN_MEMO,
+                    f"Return memo #{memo.ordinal}: the presentation date cannot be before "
+                    f"the date of cheque #{cheque.ordinal}.",
+                )
+            )
+    returned = [day for memo in memos if (day := _date_of(memo.evidence_info, "return_date"))]
+    for notice in evidence:
+        if notice.evidence_type != EvidenceType.LEGAL_DEMAND_NOTICE:
+            continue
+        dispatched = _date_of(notice.evidence_info, "dispatch_date")
+        # With no return date given, the memo's own missing value is reported.
+        if dispatched and returned and not any(day <= dispatched for day in returned):
+            problems.append(
+                (
+                    EvidenceType.LEGAL_DEMAND_NOTICE,
+                    f"Demand notice #{notice.ordinal}: at least one cheque must have been "
+                    "returned on or before the dispatch date.",
+                )
+            )
+    return problems
+
+
 CASE_TYPES = {
     CaseType.CHEQUE_BOUNCE: CaseTypeConfig(
         detail_model="cases.ChequeBounceCase",
@@ -300,6 +425,7 @@ CASE_TYPES = {
             "jurisdiction_limitation": _object(
                 required=[
                     "cheque_deposited_by_payee",
+                    "other_complaints_pending",
                     "cause_of_action_date",
                     "complaint_filing_date",
                 ],
@@ -328,7 +454,7 @@ CASE_TYPES = {
                     "cause_of_action_date": _date(),
                     "complaint_filing_date": _date(),
                     # Why the complaint is late; required when it is filed
-                    # after the limitation period (``_limitation_errors``).
+                    # after the limitation period (``_condonation_errors``).
                     "condonation_reason": _text(),
                 },
                 allOf=[
@@ -350,16 +476,25 @@ CASE_TYPES = {
             ),
             # Willingness to settle, other details for the court, and the relief sought.
             "adr_other_prayer": _object(
-                required=["final_relief"],
+                required=["adr_preference", "interim_relief", "final_relief"],
                 properties={
                     "adr_preference": {"enum": ["YES", "NO", "MAYBE"]},
                     "other_details": _rich_text(),
-                    "interim_relief": _rich_text(),
+                    "interim_relief": _text(),
                     "final_relief": _text(),
                 },
             ),
         },
-        section_checks={"jurisdiction_limitation": _limitation_errors},
+        section_checks={"jurisdiction_limitation": _filing_date_errors},
+        section_completeness_checks={
+            "jurisdiction_limitation": _condonation_errors,
+            "adr_other_prayer": _relief_errors,
+        },
+        evidence_checks={
+            EvidenceType.RETURN_MEMO: _return_memo_errors,
+            EvidenceType.LEGAL_DEMAND_NOTICE: _demand_notice_errors,
+        },
+        evidence_set_checks=_evidence_set_errors,
         document_types=(
             DocumentType.BOUNCED_CHEQUE,
             DocumentType.RETURN_MEMO,
@@ -376,13 +511,12 @@ CASE_TYPES = {
             DocumentType.PROOF_OF_TRANSACTION,
         ),
         # At least one of each. The per-party and per-notice rules (identity
-        # proof, vakalatnama, POA document, proof of delivery) are in the
+        # proof, vakalatnama, POA document, proof of dispatch) are in the
         # completeness check (spec 0021 §6.3).
         required_document_types=(
             DocumentType.BOUNCED_CHEQUE,
             DocumentType.RETURN_MEMO,
             DocumentType.LEGAL_DEMAND_NOTICE,
-            DocumentType.PROOF_OF_DISPATCH,
         ),
         required_evidence_types=(
             EvidenceType.CHEQUE,
@@ -431,6 +565,7 @@ CASE_TYPES = {
                     "dispatch_date",
                     "mode_of_service",
                     "is_delivered",
+                    "accused_replied",
                     "payment_status",
                 ],
                 properties={
@@ -531,15 +666,78 @@ def _schema_error(error):
     return SchemaError(path, error.message, error.validator)
 
 
-def section_errors(config, section, data):
+def draft_schema(schema):
+    """Return ``schema`` without its ``required`` rules, to check data still being filled in.
+
+    A filer may save any part of a section or evidence item (spec 0021 §6.3):
+    what is sent must be well-formed, but nothing has to be sent. ``required``
+    lists are dropped at every level, and so is ``allOf``, which holds only the
+    conditional ``_required_when`` rules. The completeness check uses the full
+    schema.
+    """
+    if isinstance(schema, list):
+        return [draft_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    return {
+        key: draft_schema(value)
+        for key, value in schema.items()
+        if key not in ("required", "allOf")
+    }
+
+
+def without_blanks(data, schema):
+    """Return ``data`` with each ``""`` value of a key ``schema`` knows left out, at any depth.
+
+    A form sends an input left empty as ``""``, which in a details section or
+    ``evidence_info`` means not given (spec 0021 §6.4): it is dropped before
+    the data is checked and stored, so a save of a partly filled form is not
+    refused as blank or malformed, and the completeness check reports the key
+    as missing. A key the schema does not declare is kept, so it is still
+    refused as unknown.
+    """
+    if isinstance(data, dict):
+        properties = schema.get("properties", {})
+        return {
+            key: without_blanks(value, properties.get(key, {}))
+            for key, value in data.items()
+            if not (value == "" and key in properties)
+        }
+    if isinstance(data, list):
+        return [without_blanks(item, schema.get("items", {})) for item in data]
+    return data
+
+
+def section_errors(config, section, data, *, complete=True):
     """Return every way ``data`` breaks ``section``'s schema and checks; empty when it fits.
 
-    The checks run only on data that fits the schema's shape (an object).
+    With ``complete`` off, as on a save, missing values are not errors: only
+    the draft schema and the checks that hold on every save apply. The checks
+    run only on data that fits the schema's shape (an object).
     """
-    problems = schema_errors(config.section_schemas[section], data)
-    check = config.section_checks.get(section)
-    if check and isinstance(data, dict):
+    schema = config.section_schemas[section]
+    problems = schema_errors(schema if complete else draft_schema(schema), data)
+    if not isinstance(data, dict):
+        return problems
+    checks = [config.section_checks.get(section)]
+    if complete:
+        checks.append(config.section_completeness_checks.get(section))
+    for check in filter(None, checks):
         problems += check(data)
+    return problems
+
+
+def evidence_errors(config, evidence_type, evidence_info, *, complete=True):
+    """Return every way ``evidence_info`` breaks its evidence type's schema; empty when it fits.
+
+    With ``complete`` off, as on a save, missing values are not errors. The
+    checks on one item hold either way, on data that fits the schema's shape.
+    """
+    schema = config.evidence_schemas[evidence_type]
+    problems = schema_errors(schema if complete else draft_schema(schema), evidence_info)
+    check = config.evidence_checks.get(evidence_type)
+    if check and isinstance(evidence_info, dict):
+        problems += check(evidence_info)
     return problems
 
 

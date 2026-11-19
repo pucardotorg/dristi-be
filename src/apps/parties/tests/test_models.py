@@ -345,12 +345,28 @@ class TestRulesOnEveryWrite:
 
         assert person.name is None
 
-    @pytest.mark.parametrize("blank", ["", "   "])
-    def test_institution_name_cannot_be_blank(self, blank):
-        with pytest.raises(ValidationError) as exc:
-            Institution(entity_type="LLP", entity_name=blank).full_clean()
+    @pytest.mark.parametrize("blank", [None, "", "   "])
+    def test_a_blank_institution_name_is_stored_as_none(self, blank):
+        """It may be left out while a filing is drafted; the completeness check asks for it."""
+        institution = Institution(entity_type="LLP", entity_name=blank)
 
-        assert "entity_name" in exc.value.message_dict
+        institution.full_clean()
+
+        assert institution.entity_name is None
+        assert str(institution) == "Unnamed institution"
+
+    @pytest.mark.parametrize("blank", [None, "", "   "])
+    def test_a_blank_entity_type_is_stored_as_none(self, blank):
+        """It may be left out while a filing is drafted; the completeness check asks for it."""
+        institution = Institution(entity_type=blank, entity_name="ABC Pvt Ltd")
+
+        institution.full_clean()
+        assert institution.entity_type is None
+
+        # The column and its constraint accept it too.
+        institution = Institution.objects.create(entity_type=blank, entity_name="ABC Pvt Ltd")
+        institution.refresh_from_db()
+        assert institution.entity_type is None
 
     def test_names_are_stored_trimmed(self):
         person = make_person(name="  Ravi Kumar ")

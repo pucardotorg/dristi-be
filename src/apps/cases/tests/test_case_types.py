@@ -13,7 +13,10 @@ from apps.cases.services.case_types import (
     CaseType,
     DocumentType,
     EvidenceType,
+    draft_schema,
+    evidence_errors,
     limitation_deadline,
+    section_errors,
 )
 
 
@@ -63,3 +66,50 @@ def test_an_evidence_scan_is_linked_from_the_evidence_only():
 )
 def test_the_limitation_period_is_one_calendar_month(arose, deadline):
     assert limitation_deadline(arose) == deadline
+
+
+def _keys(schema, found=None):
+    """Return every key used anywhere in ``schema``."""
+    found = set() if found is None else found
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            found.add(key)
+            _keys(value, found)
+    elif isinstance(schema, list):
+        for item in schema:
+            _keys(item, found)
+    return found
+
+
+@pytest.mark.parametrize("case_type", list(CASE_TYPES))
+def test_draft_schemas_ask_for_nothing(case_type):
+    config = CASE_TYPES[case_type]
+    schemas = [*config.section_schemas.values(), *config.evidence_schemas.values()]
+
+    for schema in schemas:
+        draft = draft_schema(schema)
+        assert not {"required", "allOf"} & _keys(draft)
+        # Everything else, the format rules included, is kept.
+        assert draft["properties"].keys() == schema["properties"].keys()
+        assert draft["additionalProperties"] is False
+
+
+@pytest.mark.parametrize("case_type", list(CASE_TYPES))
+def test_an_empty_section_or_evidence_item_is_a_valid_draft_but_not_complete(case_type):
+    config = CASE_TYPES[case_type]
+
+    for section, schema in config.section_schemas.items():
+        assert section_errors(config, section, {}, complete=False) == []
+        if schema.get("required"):
+            assert section_errors(config, section, {})
+    for evidence_type in config.evidence_schemas:
+        assert evidence_errors(config, evidence_type, {}, complete=False) == []
+        assert evidence_errors(config, evidence_type, {})
+
+
+def test_a_draft_still_refuses_malformed_values():
+    config = CASE_TYPES[CaseType.CHEQUE_BOUNCE]
+
+    problems = evidence_errors(config, EvidenceType.CHEQUE, {"cheque_number": "12"}, complete=False)
+
+    assert [problem.path for problem in problems] == ["cheque_number"]

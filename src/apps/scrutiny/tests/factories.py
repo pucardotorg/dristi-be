@@ -18,7 +18,13 @@ from apps.cases.models import (
     ParticipantRole,
 )
 from apps.cases.services import services as case_services
-from apps.cases.services.case_types import CaseType, DocumentType, EvidenceType, get_config
+from apps.cases.services.case_types import (
+    EVIDENCE_SCAN_TYPES,
+    CaseType,
+    DocumentType,
+    EvidenceType,
+    get_config,
+)
 from apps.files.tests.factories import make_file
 from apps.organizations.models import Organization, OrganizationType
 from apps.parties.models import Person
@@ -55,9 +61,20 @@ def add_courtroom(establishment, name):
     )
 
 
+def _scan(case, evidence_type):
+    """Return a new document to be the scan of an evidence item of ``evidence_type``."""
+    return CaseDocument.objects.create(
+        case=case,
+        document=make_file(user=case.created_by),
+        document_type=EVIDENCE_SCAN_TYPES[evidence_type],
+    )
+
+
 def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presented="2026-05-02"):
+    """Add a cheque, its return memo and its demand notice, each filed with its own scan."""
     CaseEvidence.objects.create(
         case=case,
+        case_document=_scan(case, EvidenceType.CHEQUE),
         evidence_type=EvidenceType.CHEQUE,
         ordinal=ordinal,
         evidence_info={
@@ -71,6 +88,7 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
     )
     CaseEvidence.objects.create(
         case=case,
+        case_document=_scan(case, EvidenceType.RETURN_MEMO),
         evidence_type=EvidenceType.RETURN_MEMO,
         ordinal=ordinal,
         evidence_info={
@@ -84,6 +102,7 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
         "dispatch_date": "2026-05-10",
         "mode_of_service": "REGISTERED_POST",
         "is_delivered": delivered,
+        "accused_replied": False,
         "payment_status": "NO_PAYMENT_MADE",
     }
     if delivered:
@@ -92,12 +111,20 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
         notice.update(return_date="2026-05-12", non_delivery_reason="UNCLAIMED")
     notice = CaseEvidence.objects.create(
         case=case,
+        case_document=_scan(case, EvidenceType.LEGAL_DEMAND_NOTICE),
         evidence_type=EvidenceType.LEGAL_DEMAND_NOTICE,
         ordinal=ordinal,
         evidence_info=notice,
     )
+    # Each notice is filed with its proof of dispatch, linked to it.
+    CaseDocument.objects.create(
+        case=case,
+        document=make_file(user=case.created_by),
+        document_type=DocumentType.PROOF_OF_DISPATCH,
+        case_evidence=notice,
+    )
     if delivered:
-        # A delivered notice is filed with its proof of delivery, linked to it.
+        # A delivered notice may be filed with its proof of delivery, linked to it.
         CaseDocument.objects.create(
             case=case,
             document=make_file(user=case.created_by),
@@ -111,6 +138,7 @@ def set_cause_of_action(case, day):
     row.jurisdiction_limitation = {
         "cheque_deposited_by_payee": False,
         "drawer_bank_police_station": "Ernakulam Central",
+        "other_complaints_pending": False,
         "cause_of_action_date": day,
         "complaint_filing_date": day,
     }
@@ -123,21 +151,28 @@ def enter(case, status):
 
 
 def add_address(participant):
-    """Give ``participant`` an address on its case, as a party write would (spec 0020 §4.6)."""
+    """Give ``participant`` an address on its case, as a party write would (spec 0020 §4.6).
+
+    An individual complainant's is their permanent address too.
+    """
+    address = make_address()
     CaseContact.objects.create(
         case=participant.case,
         case_participant=participant,
         contact_type=ContactType.ADDRESS,
-        address=make_address(),
+        address=address,
         ordinal=1,
     )
+    if participant.role == ParticipantRole.COMPLAINANT and participant.person_id:
+        Person.objects.filter(pk=participant.person_id).update(permanent_address=address)
 
 
 def complete_filing(case, filer):
     """Add the parties, documents and prayer a case needs to pass the completeness check."""
-    for role, name in [
-        (ParticipantRole.COMPLAINANT, "Complainant"),
-        (ParticipantRole.ACCUSED, "Accused"),
+    # Each party has a number of their own (PRD LIT-3).
+    for role, name, mobile_number in [
+        (ParticipantRole.COMPLAINANT, "Complainant", "+919876543210"),
+        (ParticipantRole.ACCUSED, "Accused", "+919812345678"),
     ]:
         complainant = role == ParticipantRole.COMPLAINANT
         participant = CaseParticipant.objects.create(
@@ -146,11 +181,19 @@ def complete_filing(case, filer):
             role=role,
             ordinal=1,
             name_at_filing=name,
+            age_at_filing=40 if complainant else None,
             is_party_in_person=complainant,
             party_in_person_affidavit="<p>I ask to appear in person.</p>" if complainant else None,
             resides_within_jurisdiction=None if complainant else True,
         )
         add_address(participant)
+        CaseContact.objects.create(
+            case=case,
+            case_participant=participant,
+            contact_type=ContactType.MOBILE_NUMBER,
+            value=mobile_number,
+            ordinal=1,
+        )
         if complainant:
             CaseDocument.objects.create(
                 case=case,
@@ -165,7 +208,11 @@ def complete_filing(case, filer):
     case.affidavit = "<p>The facts above are true.</p>"
     case.save(update_fields=["affidavit"])
     row = ports.detail(case)
-    row.adr_other_prayer = {"final_relief": "Direct the accused to pay the cheque amount."}
+    row.adr_other_prayer = {
+        "adr_preference": "NO",
+        "interim_relief": "Direct the accused to pay interim compensation.",
+        "final_relief": "Direct the accused to pay the cheque amount.",
+    }
     row.save()
 
 

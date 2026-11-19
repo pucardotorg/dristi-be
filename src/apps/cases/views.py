@@ -21,13 +21,11 @@ from apps.api.schema import error_responses
 
 from . import errors
 from .models import (
-    ADDRESS_REQUIRED_MESSAGE,
     EVIDENCE_ORDERING,
     JOINABLE_STATUSES,
     PARTICIPANT_LINK_MESSAGE,
     PARTICIPANT_ORDERING,
     POA_MANDATE_ORDERING,
-    POLICE_STATION_REQUIRED_MESSAGE,
     REPRESENTATION_ORDERING,
     Case,
     CaseDocument,
@@ -96,6 +94,7 @@ SCAN_LINK_ERRORS = (
     errors.DOCUMENT_TYPE_MISMATCH.example(
         scan_type_message(DocumentType.BOUNCED_CHEQUE), field="case_document_id"
     ),
+    errors.SCAN_ALREADY_LINKED.example(field="case_document_id"),
 )
 
 
@@ -365,7 +364,9 @@ class CaseDetailsSectionView(APIView):
         if not isinstance(request.data, dict):
             raise api_errors.INCORRECT_TYPE.validation_error({"data": ["Expected a JSON object."]})
         case = services.save_details_section(case_id, request.user, section, request.data)
-        return Response({"case_id": case.id, "section": section, "data": request.data})
+        # As saved, as GET returns it: a ``""`` sent is left out.
+        data = services.get_detail_sections(case)[section]
+        return Response({"case_id": case.id, "section": section, "data": data})
 
 
 class CaseAffidavitView(APIView):
@@ -492,10 +493,6 @@ class _ParticipantCreateView(APIView):
         responses={
             201: CaseParticipantSerializer,
             **error_responses(
-                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="addresses"),
-                api_errors.REQUIRED.example(
-                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
-                ),
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.SELF_AS_ACCUSED.example(field="self"),
                 errors.FIELD_NOT_APPLICABLE.example(
@@ -551,9 +548,6 @@ class WitnessCreateView(APIView):
             201: CaseParticipantSerializer,
             **error_responses(
                 errors.WITNESS_ALREADY_ON_SIDE.example(field="side"),
-                api_errors.REQUIRED.example(
-                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
-                ),
                 errors.PERSON_AND_SELF.example(field="self"),
                 errors.FIELD_NOT_ACCEPTED.example(field="institution"),
                 errors.CASE_NOT_EDITABLE,
@@ -632,9 +626,6 @@ class CaseParticipantDetailView(APIView):
                 errors.ROLE_ALREADY_HELD.example(field="institution"),
                 errors.BOTH_SIDES.example(field="institution"),
                 errors.WITNESS_ALREADY_ON_SIDE.example(field="side"),
-                api_errors.REQUIRED.example(
-                    POLICE_STATION_REQUIRED_MESSAGE, field="addresses[0].police_station"
-                ),
                 errors.CASE_NOT_EDITABLE,
                 errors.FIELD_NOT_OPEN_FOR_CORRECTION,
             ),
@@ -680,7 +671,6 @@ class PoaHolderCreateView(APIView):
         responses={
             201: PoaHolderCreatedSerializer,
             **error_responses(
-                api_errors.REQUIRED.example(ADDRESS_REQUIRED_MESSAGE, field="addresses"),
                 errors.DUPLICATE_PARTICIPANT.example(field="represented_participant_ids"),
                 errors.PARTICIPANT_NOT_ON_CASE.example(
                     "Must be active participants of the same case.",

@@ -52,9 +52,10 @@ def pan_cin_errors(pan, cin, skip_declared, *, required=False):
 
     The declaration cannot come with a PAN or CIN, which it contradicts: that
     holds for every institution. Only a complainant institution must have one
-    of the three (``required``; PRD LIT-18a): an accused's form asks for no
-    PAN or CIN, and one institution can be complainant in one case and accused
-    in another. ``pan`` and ``cin`` are stored values.
+    of the three (``required``; PRD LIT-18a), and only once the case is filed:
+    the case filing completeness check asks for it. An accused's form asks for
+    no PAN or CIN, and one institution can be complainant in one case and
+    accused in another. ``pan`` and ``cin`` are stored values.
     """
     if skip_declared and (pan or cin):
         return {
@@ -159,8 +160,12 @@ class Institution(BaseModel, BaseAuditableModel):
     hierarchy, so a court can never be recorded as a party by mistake.
     """
 
-    entity_type = models.CharField(max_length=32, choices=EntityType.choices)
-    entity_name = models.CharField(max_length=256, db_index=True)
+    # May be left out while a filing is drafted; the case filing completeness
+    # check asks for it.
+    entity_type = models.CharField(max_length=32, choices=EntityType.choices, null=True, blank=True)
+    # May be left out while a filing is drafted; the case filing completeness
+    # check asks for the case's name for it (``entity_name_at_filing``).
+    entity_name = models.CharField(max_length=256, null=True, blank=True, db_index=True)
     # Its phone numbers, emails and addresses are recorded per case, as
     # ``cases.CaseContact`` rows: one institution is shared between filings.
     # How an institution is recognised again at a later filing (spec 0020 §3.4).
@@ -180,7 +185,7 @@ class Institution(BaseModel, BaseAuditableModel):
 
         constraints = [
             models.CheckConstraint(
-                condition=Q(entity_type__in=EntityType.values),
+                condition=Q(entity_type__isnull=True) | Q(entity_type__in=EntityType.values),
                 name="parties_institution_entity_type_valid",
             ),
             models.CheckConstraint(
@@ -201,18 +206,19 @@ class Institution(BaseModel, BaseAuditableModel):
         ]
 
     def __str__(self):
-        """Return a readable label for admin and logs."""
-        return self.entity_name
+        """Return a readable label for admin and logs, even before it is named."""
+        return self.entity_name or self.pan or self.cin or "Unnamed institution"
 
     def clean_fields(self, exclude=None):
         """Validate values as they will be stored.
 
-        The name is trimmed, so a whitespace-only name is rejected as missing,
-        and a blank PAN or CIN is stored as none. PAN and CIN
+        The name is trimmed, and a blank or whitespace-only name, type, PAN
+        or CIN is stored as none. PAN and CIN
         are stored uppercase without spaces, so "aaaca 1234 a" matches
         "AAACA1234A" when an institution is looked up again.
         """
-        self.entity_name = _strip(self.entity_name)
+        self.entity_name = _strip(self.entity_name) or None
+        self.entity_type = _strip(self.entity_type) or None
         self.pan = normalize_identifier(self.pan)
         self.cin = normalize_identifier(self.cin)
         super().clean_fields(exclude=exclude)
@@ -221,7 +227,7 @@ class Institution(BaseModel, BaseAuditableModel):
         """Refuse the skip declaration with a PAN or CIN.
 
         Whether one of the three is required depends on the party's role, so
-        the party write checks that (``get_or_create_institution``).
+        the case filing completeness check asks for that.
         """
         super().clean()
         if problems := pan_cin_errors(self.pan, self.cin, self.pan_cin_skip_declared):

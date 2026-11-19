@@ -10,16 +10,16 @@ A party's details have no field the court flags on its own, so in correction
 a party write needs its whole section open (``correction.check_write``).
 """
 
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.address.models import Address
 from apps.api import errors as api_errors
-from apps.parties.models import normalize_identifier, pan_cin_errors
+from apps.parties.models import Person, normalize_identifier
 from apps.parties.services import (
     create_asserted_person,
+    fill_missing_details,
     get_or_create_institution,
     get_or_create_self_person,
 )
@@ -27,7 +27,6 @@ from apps.users.models import AdvocateProfile
 
 from .. import errors, models
 from ..models import (
-    ADDRESS_REQUIRED_MESSAGE,
     COMPLAINANT_ONLY_MESSAGE,
     DESIGNATION_NOT_ALLOWED_MESSAGE,
     INSTITUTION_CONTACTS_MESSAGE,
@@ -37,12 +36,14 @@ from ..models import (
     PERMANENT_ADDRESS_MESSAGE,
     PERSON_OF_ANOTHER_USER_MESSAGE,
     PERSON_ONLY_MESSAGE,
+    POA_GIVEN_MESSAGE,
+    CaseContact,
     CaseParticipant,
+    ContactType,
     ParticipantRole,
     PoaMandate,
     Representation,
     Witness,
-    police_station_problems,
 )
 from . import correction
 from .case_types import ADVOCATES_PART
@@ -75,6 +76,11 @@ REPRESENTATION_FIELD_NAMES = {"case_participant": "client_participant_ids"}
 
 # The parties whose person row records a permanent address (an individual only).
 PERMANENT_ADDRESS_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.POA_HOLDER)
+# What an edit in place may change on an institution no other filing shares.
+INSTITUTION_DETAILS = ("entity_type", "entity_name", "pan_cin_skip_declared")
+# Sent with an institution's details or contacts, but the case's, not the
+# institution row's: ``CaseParticipant.institution_contact_details_unknown_declared``.
+INSTITUTION_DECLARATION = "contact_details_unknown_declared"
 
 INSTITUTION_ONLY_MESSAGE = "Only for an institution."
 INSTITUTION_CONTACTS_TWICE_MESSAGE = (
@@ -83,6 +89,9 @@ INSTITUTION_CONTACTS_TWICE_MESSAGE = (
 INSTITUTION_SWITCH_MESSAGE = (
     "Only for an institution. To switch between an individual and an institution, "
     "remove the participant and add it again."
+)
+INSTITUTION_DECLARATION_TWICE_MESSAGE = (
+    "Declare the institution's contact details unknown once, here or under institution."
 )
 
 
@@ -250,6 +259,9 @@ def _create_participant(case, user, role, data):
 
     institution = None
     institution_lists = {}
+    # The case's declaration for the institution's own contacts; ``None`` when
+    # not sent (``_declare_institution_contacts``).
+    institution_declared = None
     # Another representative of an institution already accused on the case.
     represented = (
         _accused_institution(case, data["institution_id"]) if "institution_id" in data else None
@@ -263,12 +275,10 @@ def _create_participant(case, user, role, data):
             for field in CONTACT_LISTS
             if field in institution_fields
         }
+        # Not a field of the institution row.
+        institution_declared = institution_fields.pop(INSTITUTION_DECLARATION, None)
         with errors_under("institution"):
-            institution = get_or_create_institution(
-                user,
-                institution_fields,
-                require_identifier=role == ParticipantRole.COMPLAINANT,
-            )
+            institution = _get_or_create_institution(user, institution_fields)
 
     # An individual complainant or POA holder has a permanent address: the
     # one sent when it differs from their first address, else that address.
@@ -283,11 +293,15 @@ def _create_participant(case, user, role, data):
     if data["is_self"]:
         with errors_under("self"):
             person = get_or_create_self_person(user)
+        if permanent_address is not None:
+            # Shared with the filer's other cases, which this case's lock
+            # does not serialise.
+            person = _lock_person(person.pk)
         # The filer's own person row takes the permanent address they just
         # gave (spec 0020 §2.5). Falling back to ``address`` only fills one
-        # they lack; it never replaces theirs.
+        # they lack or have left incomplete; it never replaces a complete one.
         if permanent_address is not None and (
-            sent_permanent_address or person.permanent_address_id is None
+            sent_permanent_address or _is_incomplete_or_missing(person.permanent_address)
         ):
             _change_person(person, user, permanent_address=permanent_address)
     elif "person" in data:
@@ -312,6 +326,7 @@ def _create_participant(case, user, role, data):
         role=role,
         ordinal=next_ordinal(CaseParticipant.objects.active().filter(case=case, role=role)),
         is_party_in_person=data["is_party_in_person"],
+        poa_given=data.get("poa_given"),
         # Yes unless the filer says otherwise; recorded for an accused only.
         resides_within_jurisdiction=data.get(
             "resides_within_jurisdiction", True if role == ParticipantRole.ACCUSED else None
@@ -321,7 +336,7 @@ def _create_participant(case, user, role, data):
         additional_details=data["additional_details"],
         created_by=user,
         updated_by=user,
-        **_snapshot(person, data),
+        **_snapshot(person, data, institution),
     )
     if represented is not None:
         # The case's name for the institution, as its other participants have it.
@@ -333,7 +348,89 @@ def _create_participant(case, user, role, data):
         replace_contacts(
             case, user, institution_lists, institution=institution, path=("institution",)
         )
+    if participant.role == ParticipantRole.ACCUSED and institution is not None:
+        if institution_declared is None:
+            # As the institution's other participants on the case hold it.
+            others = _institution_accused(participant).exclude(pk=participant.pk)
+            institution_declared = others.filter(
+                institution_contact_details_unknown_declared=True
+            ).exists()
+        _declare_institution_contacts(
+            case, user, participant, institution_declared, ("institution",)
+        )
     return participant
+
+
+def _institution_accused(participant):
+    """Return the active accused participants of ``participant``'s institution on its case."""
+    return CaseParticipant.objects.active().filter(
+        case_id=participant.case_id,
+        role=ParticipantRole.ACCUSED,
+        institution_id=participant.institution_id,
+    )
+
+
+def _declare_institution_contacts(case, user, participant, declared, path):
+    """Record whether an accused institution's contacts are declared unknown (PRD ACC-6/7).
+
+    It is the case's answer for the institution, so every accused participant
+    of the institution on the case is given ``declared``, as they share its
+    name (``_align_representatives``). It holds only while the institution
+    has no mobile number or email of its own on the case; otherwise the
+    whole write is refused, with the error under ``path``, the field the
+    request sent the institution's details in. Runs after the write, as a
+    re-link merges contacts.
+    """
+    if declared and _institution_has_mobile_or_email(case, participant.institution_id):
+        raise serializers.ValidationError(
+            _under(path, {"contact_details_unknown_declared": [_contact_unknown_error()]})
+        )
+    for other in _institution_accused(participant).exclude(
+        institution_contact_details_unknown_declared=declared
+    ):
+        other.institution_contact_details_unknown_declared = declared
+        other.updated_by = user
+        validated_save(other)
+    participant.institution_contact_details_unknown_declared = declared
+
+
+def _declaration_of_residents(participant):
+    """Return the declaration of the others accused for ``participant``'s institution, or ``None``.
+
+    ``None`` when there are none: the participant is the first accused for it
+    on the case, so its own answer stands. Otherwise their shared answer, which
+    ``_declare_institution_contacts`` keeps equal on every participant, is the
+    institution's; a participant moved onto it takes it rather than replacing it.
+    """
+    residents = _institution_accused(participant).exclude(pk=participant.pk)
+    if not residents.exists():
+        return None
+    return residents.filter(institution_contact_details_unknown_declared=True).exists()
+
+
+def _institution_has_mobile_or_email(case, institution_id):
+    """Return whether the institution has a mobile number or email of its own on ``case``."""
+    return (
+        CaseContact.objects.active()
+        .filter(
+            case=case,
+            case_participant__isnull=True,
+            institution_id=institution_id,
+            contact_type__in=(ContactType.MOBILE_NUMBER, ContactType.EMAIL),
+        )
+        .exists()
+    )
+
+
+def _contact_unknown_error():
+    return errors.coded(api_errors.INVALID, models.CONTACT_UNKNOWN_MESSAGE)
+
+
+def _under(path, detail):
+    """Return ``detail`` nested under each key of ``path`` in turn."""
+    for key in reversed(path):
+        detail = {key: detail}
+    return detail
 
 
 def _accused_institution(case, institution_id):
@@ -352,16 +449,21 @@ def _accused_institution(case, institution_id):
     return found
 
 
-def _snapshot(person, data):
+def _snapshot(person, data, institution=None):
     """Return the ``*_at_filing`` values for a new participant.
 
     Taken from the person when there is one. An institution is recorded by the
-    name the filer entered, not the one stored for a reused institution.
+    name the filer entered, not the one stored for a reused institution; when
+    the filer gave none, by the stored one, if ``institution`` has it.
     """
-    institution = data.get("institution")
+    sent = data.get("institution")
     snapshot = {}
-    if institution is not None:
-        snapshot = {"entity_name_at_filing": institution["entity_name"].strip()}
+    if sent is not None:
+        name = (sent.get("entity_name") or "").strip()
+        # Left out while drafting and not stored either, it is ``None``; the
+        # completeness check asks for it.
+        name = name or (institution.entity_name if institution else None) or None
+        snapshot = {"entity_name_at_filing": name}
     if person is not None:
         return {
             **snapshot,
@@ -391,6 +493,15 @@ def _may_change_person(participant, user):
         .filter(case_id=participant.case_id, role=ParticipantRole.COMPLAINANT, person__user=user)
         .exists()
     )
+
+
+def _lock_person(person_id):
+    """Return the person row, locked until the caller's transaction ends.
+
+    Taken after the case lock, never before, so writes on two cases sharing
+    a person cannot deadlock.
+    """
+    return Person.objects.select_for_update().get(pk=person_id)
 
 
 def _change_person(person, user, **fields):
@@ -430,9 +541,8 @@ def update_participant(participant, user, data):
     only they or their advocate on this case may change it.
     ``mobile_numbers``, ``email_addresses`` and ``addresses`` each replace the
     participant's list; inside ``institution``, the institution's own in this
-    case (``contacts.replace_contacts``). Accused and witness addresses need a
-    police station. A witness's side, statement and ``additional_details``
-    are on its ``Witness`` row.
+    case (``contacts.replace_contacts``). A witness's side, statement and
+    ``additional_details`` are on its ``Witness`` row.
     ``institution`` re-links an institution participant (``_relink_institution``);
     switching between an individual and an institution is a remove and re-add.
     """
@@ -440,6 +550,10 @@ def update_participant(participant, user, data):
     data = dict(data)
     institution_fields = data.pop("institution", None)
     institution_lists = {}
+    # The case's declaration for an accused institution's own contacts, and
+    # the field it was sent in (``_declare_institution_contacts``).
+    institution_declared = None
+    declared_in = []
     if institution_fields is not None:
         institution_fields = dict(institution_fields)
         institution_lists = {
@@ -447,10 +561,18 @@ def update_participant(participant, user, data):
             for field in CONTACT_LISTS
             if field in institution_fields
         }
+        if INSTITUTION_DECLARATION in institution_fields:
+            institution_declared = institution_fields.pop(INSTITUTION_DECLARATION)
+            declared_in.append("institution")
     # The institution's own lists, sent without re-linking it, or inside
     # ``institution``; reported under whichever field carried them.
     institution_contacts = data.pop("institution_contacts", None)
     institution_lists_field = "institution"
+    if institution_contacts is not None:
+        institution_contacts = dict(institution_contacts)
+        if INSTITUTION_DECLARATION in institution_contacts:
+            institution_declared = institution_contacts.pop(INSTITUTION_DECLARATION)
+            declared_in.append("institution_contacts")
     sent_twice = set(institution_contacts or {}) & set(institution_lists)
     if institution_contacts is not None:
         institution_lists_field = "institution_contacts"
@@ -486,6 +608,10 @@ def update_participant(participant, user, data):
         problems["is_party_in_person"] = [
             errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for a complainant or an accused.")
         ]
+    if data.get("poa_given") is not None and not (
+        participant.role == ParticipantRole.COMPLAINANT and not participant.institution_id
+    ):
+        problems["poa_given"] = [errors.coded(errors.FIELD_NOT_APPLICABLE, POA_GIVEN_MESSAGE)]
     for field in ("resides_within_jurisdiction", "contact_details_unknown_declared"):
         if participant.role != ParticipantRole.ACCUSED and field in data:
             problems[field] = [errors.coded(errors.FIELD_NOT_APPLICABLE, "Only for an accused.")]
@@ -515,9 +641,22 @@ def update_participant(participant, user, data):
         problems["institution_contacts"] = [
             errors.coded(api_errors.INVALID, INSTITUTION_CONTACTS_TWICE_MESSAGE)
         ]
-    problems.update(
-        _contact_problems(participant, own_lists, institution_lists, data, institution_lists_field)
-    )
+    elif len(declared_in) > 1:
+        problems["institution_contacts"] = _under(
+            (INSTITUTION_DECLARATION,),
+            [errors.coded(api_errors.INVALID, INSTITUTION_DECLARATION_TWICE_MESSAGE)],
+        )
+    if (
+        declared_in
+        and participant.institution_id
+        and participant.role != ParticipantRole.ACCUSED
+        and declared_in[0] not in problems
+    ):
+        problems[declared_in[0]] = _under(
+            (INSTITUTION_DECLARATION,),
+            [errors.coded(errors.FIELD_NOT_APPLICABLE, models.INSTITUTION_CONTACT_UNKNOWN_MESSAGE)],
+        )
+    problems.update(_contact_problems(participant, own_lists, data))
     if person_fields:
         if not participant.person_id:
             problems["disability_status"] = [
@@ -560,6 +699,10 @@ def update_participant(participant, user, data):
         correction.check_write(case, user, participant.role, whole=True)
         # Read again under the case lock: a concurrent removal is not undone.
         participant = get_participant(participant.pk, user)
+        if has_permanent_address or person_fields:
+            # The person may be on other cases, which this case's lock does
+            # not serialise.
+            participant.person = _lock_person(participant.person_id)
         old_institution_id = participant.institution_id
         if institution_fields is not None:
             if _identified_by_nothing(participant.institution, institution_fields):
@@ -570,15 +713,49 @@ def update_participant(participant, user, data):
             setattr(participant, field, value)
         participant.updated_by = user
         validated_save(participant)
+        relinked = participant.institution_id != old_institution_id
+        # Read before the others of the old institution follow, so that the ones
+        # already on the new institution are the only ones found.
+        resident_declared = (
+            _declaration_of_residents(participant)
+            if relinked and participant.role == ParticipantRole.ACCUSED
+            else None
+        )
         # Only once the participant's rules allow the new institution.
-        if participant.institution_id != old_institution_id:
-            move_institution_contacts(case, user, old_institution_id, participant.institution)
+        if relinked:
+            move_institution_contacts(
+                case,
+                user,
+                old_institution_id,
+                participant.institution,
+                replaced={CONTACT_LISTS[field] for field in institution_lists},
+            )
         if old_institution_id:
             _align_representatives(participant, user, old_institution_id)
+        # Spec 0021 §6.4. Compared with the first address before the lists
+        # are replaced.
+        permanent_address_id = (
+            participant.person.permanent_address_id if has_permanent_address else None
+        )
+        follows_first = (
+            has_permanent_address
+            and "addresses" in own_lists
+            and not sends_permanent_address
+            and (
+                _is_incomplete_or_missing(participant.person.permanent_address)
+                or (
+                    participant.person.user_id is None
+                    and permanent_address_id == _stored_first_address_id(participant)
+                )
+            )
+            and _may_change_person(participant, user)
+        )
         if participant.person_id:
             replace_contacts(
                 case, user, own_lists, participant=participant, institution=participant.institution
             )
+        if follows_first and (first_id := _stored_first_address_id(participant)) is not None:
+            person_fields["permanent_address_id"] = first_id
         if participant.institution_id:
             replace_contacts(
                 case,
@@ -586,6 +763,27 @@ def update_participant(participant, user, data):
                 institution_lists,
                 institution=participant.institution,
                 path=(institution_lists_field,),
+            )
+        # Whenever the institution's declaration, its contacts or the
+        # institution itself may have changed. A declaration sent wins. Left
+        # out, the answer is the institution's on the case: that of those
+        # already accused for the institution a re-link moves to, else the
+        # participant's own, kept through the re-link.
+        if participant.role == ParticipantRole.ACCUSED and (
+            declared_in or institution_lists or institution_fields is not None
+        ):
+            if institution_declared is None:
+                institution_declared = (
+                    resident_declared
+                    if resident_declared is not None
+                    else participant.institution_contact_details_unknown_declared
+                )
+            _declare_institution_contacts(
+                case,
+                user,
+                participant,
+                institution_declared,
+                (declared_in[0] if declared_in else institution_lists_field,),
             )
         if sends_permanent_address:
             # After the addresses change, since ``null`` falls back to the first.
@@ -613,12 +811,23 @@ def _relink_institution(participant, user, fields, data):
     name.
     """
     with errors_under("institution"):
-        participant.institution = get_or_create_institution(
-            user,
-            fields,
-            require_identifier=participant.role == ParticipantRole.COMPLAINANT,
-        )
+        participant.institution = _get_or_create_institution(user, fields)
     _name_from(participant, fields, data)
+
+
+def _get_or_create_institution(user, fields):
+    """Return the institution ``fields`` name, filling a matched one's missing type and name.
+
+    The institution row is shared by every filing that names its PAN or CIN,
+    and each shows its type and name, so filling them drops each one's cached
+    preview, as a change to a person does (``_change_person``; spec 0021 §6.1).
+    """
+    institution = get_or_create_institution(user, fields)
+    if fill_missing_details(institution, user, fields):
+        case_ids = institution.case_participations.values_list("case_id", flat=True).distinct()
+        for case_id in case_ids:
+            clear_preview_cache(case_id)
+    return institution
 
 
 def _identified_by_nothing(institution, fields):
@@ -641,26 +850,29 @@ def _edit_institution(participant, user, fields, data):
     """Change the participant's institution, one no other filing can share, in place.
 
     Its type, name and skip declaration become those sent, for every
-    participant linked to it; it keeps its id. The name is the case's too,
-    as on a re-link.
+    participant linked to it; it keeps its id. One left out is kept, and
+    ``null`` clears it. The name is the case's too, as on a re-link.
     """
     institution = participant.institution
-    skip_declared = fields.get("pan_cin_skip_declared", False)
-    required = participant.role == ParticipantRole.COMPLAINANT
-    with errors_under("institution"):
-        if problems := pan_cin_errors(None, None, skip_declared, required=required):
-            raise DjangoValidationError(problems)
-        institution.entity_type = fields["entity_type"]
-        institution.entity_name = fields["entity_name"]
-        institution.pan_cin_skip_declared = skip_declared
-        institution.updated_by = user
-        institution.save()
+    changed = {field: fields[field] for field in INSTITUTION_DETAILS if field in fields}
+    if changed:
+        with errors_under("institution"):
+            for field, value in changed.items():
+                setattr(institution, field, value)
+            institution.updated_by = user
+            institution.save()
     _name_from(participant, fields, data)
 
 
 def _name_from(participant, fields, data):
-    """Name the participant after the institution sent, unless the request names it itself."""
-    snapshot = _snapshot(None, {"institution": fields})
+    """Name the participant after the institution's name sent, unless the request names it itself.
+
+    A blank name is the institution's stored one, if it has one. With no
+    ``entity_name`` sent, the case's names for it are kept.
+    """
+    if "entity_name" not in fields:
+        return
+    snapshot = _snapshot(None, {"institution": fields}, participant.institution)
     if participant.person_id is not None:
         snapshot = {"entity_name_at_filing": snapshot["entity_name_at_filing"]}
     for field, value in snapshot.items():
@@ -697,6 +909,26 @@ def _align_representatives(participant, user, old_institution_id):
         validated_save(other)
 
 
+def _is_incomplete_or_missing(address):
+    """Return whether a permanent address may follow the first address sent.
+
+    One that is missing or still incomplete is filled from it, also for a
+    registered user's person; a complete one is changed only when sent.
+    """
+    return address is None or bool(address.missing_fields)
+
+
+def _stored_first_address_id(participant):
+    """Return the id of the participant's own primary address as stored now, or ``None``."""
+    return (
+        CaseContact.objects.active()
+        .filter(case_participant=participant, contact_type=ContactType.ADDRESS)
+        .order_by("ordinal")
+        .values_list("address_id", flat=True)
+        .first()
+    )
+
+
 def _first_address(participant):
     """Return the participant's own primary address, or ``None``."""
     own, _ = contacts_of(participant)
@@ -704,55 +936,47 @@ def _first_address(participant):
     return row.address if row else None
 
 
-def _contact_problems(participant, own_lists, institution_lists, data, institution_field):
-    """Return the problems with the contact lists a PATCH sends, as ``{field: …}``.
+def _contact_problems(participant, own_lists, data):
+    """Return the problems with the person's own contacts a PATCH sends, as ``{field: …}``.
 
     Only a person has contacts of their own; an institution's go under
-    ``institution_field`` (``institution`` or ``institution_contacts``). Whoever is served must keep an address: an individual
-    their own, an institution its own. Accused and witness addresses need a
-    police station. Contact details can be declared unknown only while no
-    mobile number or email is left.
+    ``institution`` or ``institution_contacts``, and so does the declaration
+    that they are unknown (``_declare_institution_contacts``). A person's own
+    can be declared unknown only while no mobile number or email of their own
+    is left; an institution's contacts do not count for them.
     """
     problems = {}
-    role = participant.role
-    if own_lists and not participant.person_id:
+    if not participant.person_id:
         for field in own_lists:
             problems[field] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, INSTITUTION_CONTACTS_MESSAGE)
             ]
+        # Whatever the value: a ``false`` here would otherwise be accepted
+        # and leave the institution's declaration as it was.
+        if "contact_details_unknown_declared" in data:
+            problems["contact_details_unknown_declared"] = [
+                errors.coded(errors.FIELD_NOT_APPLICABLE, models.PERSON_CONTACT_UNKNOWN_MESSAGE)
+            ]
         return problems
-    if own_lists.get("addresses") == [] and not participant.institution_id:
-        problems["addresses"] = [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
-    elif problem := police_station_problems(role, own_lists.get("addresses")):
-        problems["addresses"] = problem
-    if institution_lists.get("addresses") == []:
-        problems[institution_field] = {
-            "addresses": [errors.coded(api_errors.REQUIRED, ADDRESS_REQUIRED_MESSAGE)]
-        }
-    elif problem := police_station_problems(role, institution_lists.get("addresses")):
-        problems[institution_field] = {"addresses": problem}
     declared = data.get(
         "contact_details_unknown_declared", participant.contact_details_unknown_declared
     )
-    if declared and _has_mobile_or_email(participant, own_lists, institution_lists):
-        problems["contact_details_unknown_declared"] = [
-            errors.coded(api_errors.INVALID, models.CONTACT_UNKNOWN_MESSAGE)
-        ]
+    if declared and _has_mobile_or_email(participant, own_lists):
+        problems["contact_details_unknown_declared"] = [_contact_unknown_error()]
     return problems
 
 
-def _has_mobile_or_email(participant, own_lists, institution_lists):
-    """Return whether a mobile number or email is left once the lists sent apply."""
-    own, of_institution = contacts_of(participant)
-    for lists, rows in ((own_lists, own), (institution_lists, of_institution)):
-        for field, contact_type in CONTACT_LISTS.items():
-            if contact_type == models.ContactType.ADDRESS:
-                continue
-            if field in lists:
-                if lists[field]:
-                    return True
-            elif any(row.contact_type == contact_type for row in rows):
+def _has_mobile_or_email(participant, own_lists):
+    """Return whether the person has a mobile number or email of their own once the lists apply."""
+    own, _ = contacts_of(participant)
+    for field, contact_type in CONTACT_LISTS.items():
+        if contact_type == models.ContactType.ADDRESS:
+            continue
+        if field in own_lists:
+            if own_lists[field]:
                 return True
+        elif any(row.contact_type == contact_type for row in own):
+            return True
     return False
 
 
