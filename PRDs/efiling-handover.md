@@ -529,7 +529,8 @@ and address are required.
 | DCM-12 | Vakalatnama | No | Present if ≥ 1 advocate on the case |
 | DCM-13 | Other documents | No | As many as the user adds |
 
-**Natively digital column** **[OWNER]** — a deployment config, `nativelyDigitalColumn`,
+**Natively digital column** **[OWNER]** — a deployment config, `ui_efiling.natively_digital_document_submission_on`
+(public configuration, spec 0034; a missing row counts as off),
 **on for Kerala**. When on, each uploaded document carries a natively digital attribute
 (born-digital vs scanned), printed as a column in the complaint PDF's list of documents
 (§16.4, 3.2). When off, the column and all text about it are absent. **[OWNER]** DCM-9/DCM-10 are named **"ID
@@ -775,7 +776,7 @@ only and not to the accused side: see §14 for the full statement.
 | 2.4. | ADR, prayer and other details | §12, `PRY-1…3`, `PRY-5` | once | One screen, one section, in the screen's own field order: `PRY-5` ADR, `PRY-1` Other details, then `PRY-2`/`PRY-3` Interim Relief and Final Relief, each full width, as the user left them |
 | 3. | **Evidence** | | | |
 | 3.1. | List of witnesses | §13, `WIT-*` | per witness | Whole section omitted when there are no witnesses |
-| 3.2. | List of documents | §14, `DCM-*` | one line per uploaded document | Columnar: `S. No.` · `Document Name` · `Natively Digital` (only when `nativelyDigitalColumn` is on, §14). **Generated, never a static list**: one line per document actually uploaded, in Documents-screen order; a repeated document carries its record's number (`Cheque 2`, `ID Card — Complainant 2`); an optional document not uploaded does not appear. |
+| 3.2. | List of documents | §14, `DCM-*` | one line per uploaded document | Columnar: `S. No.` · `Document Name` · `Natively Digital` (only when `natively_digital_document_submission_on` is on, §14). **Generated, never a static list**: one line per document actually uploaded, in Documents-screen order; a repeated document carries its record's number (`Cheque 2`, `ID Card — Complainant 2`); an optional document not uploaded does not appear. |
 | 4. | **Affidavit** | §12, `PRY-4` | once | Full width, as the user left it. Signature block follows (§16.6) |
 | — | *appended documents* | §16.7 | | |
 
@@ -864,7 +865,7 @@ will not find them:
 | Synopsis jurisdiction line — "[branch] - complainant's bank branch" | composed: the branch, plus whose branch it is, derived from `JUR-1` |
 | `Duration of delay` | computed from the cause-of-action and filing dates (`JUR-11`) |
 | Repeat numbering — `Cheque 2`, `Accused 1`, `Address 2`, `S. No.` | the generator's own counters |
-| `Natively Digital` | the per-document attribute under the `nativelyDigitalColumn` config (§14); absent when the config is off |
+| `Natively Digital` | the per-document attribute under the `natively_digital_document_submission_on` config (§14); absent when the config is off |
 | Signature names and roles | derived from the parties, their PoA holders and representatives, and their advocates (§16.6) |
 | `Documents uploaded by the Complainant.` | fixed string on its own page (§16.7) |
 
@@ -1449,7 +1450,7 @@ on 2026-09-03 and now matches it.
 | PoA-Holder | Power-of-Attorney holder; acts and signs on a complainant's behalf. |
 | Party-in-Person (PiP) | A complainant representing themselves; never counted as an advocate. |
 | Scrutiny | Court-staff defect review before registration — the stage a case enters when payment completes; see [`scrutiny-registration-handover.md`](scrutiny-registration-handover.md). |
-| Natively digital | Per-document attribute: born-digital vs scanned. Shown only under the `nativelyDigitalColumn` config (§14). |
+| Natively digital | Per-document attribute: born-digital vs scanned. Shown only under the `natively_digital_document_submission_on` config (§14). |
 | Vakalatnama | The document appointing an advocate. |
 | Digital signing | Signing in the system by any method — mobile OTP, DSC or Aadhaar e-sign (§18, [`signing-methods.md`](signing-methods.md)). |
 | E-sign | Aadhaar-based e-signing through C-DAC only — one digital signing method, not a synonym for it. |
