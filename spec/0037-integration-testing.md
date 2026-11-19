@@ -489,3 +489,8 @@ Rules:
    group by scenario with no extra work.
 6. The marker is orthogonal to `integration`: scenario-tagged unit tests are
    as welcome as scenario-tagged flow tests.
+7. **Every ID is documented in `scenarious/app_<domain>.md`** at the repo
+   root: one lightweight Given/When/Then table per endpoint group, row `N`
+   under section ID `X` being scenario `X-N` (see
+   `scenarious/app_cms.md`). The sync between table and markers is manual;
+   `--scenario-report` is the way to check it.
