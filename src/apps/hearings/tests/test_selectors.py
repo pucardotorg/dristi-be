@@ -24,7 +24,18 @@ from apps.hearings.services import listing
 from apps.parties.models import Person
 from apps.parties.tests.factories import make_institution
 
-from .factories import MON, TODAY, TUE, WED, add_address, hold, make_case, schedule, set_config
+from .factories import (
+    MON,
+    TODAY,
+    TODAY_NOON,
+    TUE,
+    WED,
+    add_address,
+    hold,
+    make_case,
+    schedule,
+    set_config,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -338,7 +349,7 @@ class TestCasesContract:
     def test_filed_before(self, courtroom):
         old = make_case(courtroom, filed_days_ago=30)
         make_case(courtroom, filed_days_ago=1)
-        cutoff = timezone.now() - datetime.timedelta(days=10)
+        cutoff = TODAY_NOON - datetime.timedelta(days=10)
         assert list(cases.case_ids_filed_before(cutoff)) == [old.pk]
 
 
