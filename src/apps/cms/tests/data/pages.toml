@@ -1,0 +1,47 @@
+# Test fixture: CMS pages loaded by ``manage.py seed`` (spec 0025).
+# Slugs must not collide with the migration-seeded pages (terms, privacy,
+# support): seed is insert-only, so a collision would leave the existing row
+# untouched and these tests would validate migration data, not seed data.
+
+[seed]
+model = "cms.Page"
+
+[[rows]]
+slug = "how-to-file-a-case"
+title = "How to File a Case"
+sub_title = "A step-by-step guide for litigants"
+main_image_url = "https://example.test/images/how-to-file-a-case.png"
+content_type = "markdown"
+content = """
+# How to File a Case
+
+Register with your mobile number, then follow the filing checklist.
+"""
+categories = ["guides"]
+
+[[rows]]
+slug = "fee-refund-policy"
+title = "Fee Refund Policy"
+sub_title = "When court fees and payments are refunded"
+main_image_url = "https://example.test/images/fee-refund-policy.png"
+content_type = "markdown"
+content = """
+# Fee Refund Policy
+
+A failed payment is auto-reversed; a cancelled filing is refunded on request.
+"""
+# Two categories: proves the seed resolves each slug in the list.
+categories = ["guides", "policies"]
+
+[[rows]]
+slug = "kerala-courts-overview"
+title = "Kerala Courts Overview"
+sub_title = ""
+main_image_url = ""
+content_type = "markdown"
+content = """
+# Kerala Courts Overview
+
+The portal serves the district judiciary of Kerala.
+"""
+# No categories key: the m2m mapping is optional.

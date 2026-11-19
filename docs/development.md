@@ -127,6 +127,17 @@ pytest
 DATABASE_URL=postgres://dristi:secret@localhost:5432/dristi pytest
 ```
 
+Run part of the suite by path, or by the `integration` marker — flow tests
+live in each app's `tests/integration/` package and are marked by location
+(spec 0037), no per-file decoration needed:
+
+```bash
+pytest apps/cms                      # one app
+pytest apps/cms/tests/integration/   # one app's flow tests
+pytest -m "not integration"          # unit tests only
+pytest -m integration                # integration (flow) tests only
+```
+
 ### Test coverage
 
 Coverage settings live in the root `pyproject.toml`: `src/` is measured,

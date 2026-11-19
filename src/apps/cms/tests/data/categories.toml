@@ -1,0 +1,14 @@
+# Test fixture: categories the seeded pages resolve by slug (spec 0025).
+# Slugs must not collide with the migration-seeded ones (help, main, faq):
+# seed is insert-only, so a collision would silently keep the existing row.
+
+[seed]
+model = "cms.PageCategory"
+
+[[rows]]
+name = "Guides"
+slug = "guides"
+
+[[rows]]
+name = "Policies"
+slug = "policies"

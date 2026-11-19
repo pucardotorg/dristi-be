@@ -94,6 +94,31 @@ its CSV-to-TOML converter live in the
 [`dristi-be-experiments`](https://github.com/pucardotorg/dristi-be-experiments)
 repo (see [data/seed/README.md](data/seed/README.md)).
 
+## Running tests
+
+Tests use pytest with the `config.settings.test` settings module (already set in
+`pyproject.toml`), so from `src/` plain `pytest` runs the whole suite against
+in-memory SQLite; CI runs the same suite on PostgreSQL.
+
+```bash
+cd src
+
+pytest                                            # whole suite
+pytest apps/cms                                   # one app
+pytest apps/cms/tests/integration/                # one package
+pytest apps/cms/tests/test_pages_api.py           # one module
+pytest apps/cms/tests/test_pages_api.py::TestPageBySlugAPI::test_existing_slug_returns_200
+
+pytest -m "not integration"                       # unit tests only
+pytest -m integration                             # integration (flow) tests only
+```
+
+Integration tests are the flow suites in each app's `tests/integration/`
+package; the `integration` marker is applied by location (spec 0037), so new
+flow tests are selected automatically. In Docker, `make test` runs the suite in
+the `web` container. For coverage and running against the compose PostgreSQL,
+see [docs/development.md](docs/development.md#running-tests).
+
 ## Scheduled and delayed jobs
 
 Background jobs are Dramatiq actors in `src/apps/<app>/tasks.py`, run by the

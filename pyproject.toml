@@ -35,6 +35,9 @@ convention = "google"
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 addopts = "-v --tb=short"
+markers = [
+    "integration: flow tests crossing several calls/surfaces; auto-applied to anything under a tests/integration/ package (spec 0037)",
+]
 
 [tool.coverage.run]
 source = ["src"]
