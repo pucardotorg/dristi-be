@@ -11,3 +11,13 @@ content_type = "locations.location"
 name = "address"
 data_type = "character"
 is_nullable = true
+
+# A police station's police district as Kerala Police and V1's MDMS name it,
+# e.g. "THRISSUR CITY" (issue #250, spec 0007 section 9). Police districts split
+# some revenue districts in two, so this tells such a district's stations apart.
+# Nullable, so every other location stores it as null.
+[[rows]]
+content_type = "locations.location"
+name = "police_district"
+data_type = "character"
+is_nullable = true

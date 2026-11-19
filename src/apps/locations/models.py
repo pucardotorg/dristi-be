@@ -10,12 +10,17 @@ from apps.core.models import BaseActivatableModel, BaseExtendableModel, BaseMode
 CODE_RE = re.compile(r"^[A-Z0-9_]+$")
 # An RBI IFSC: four-letter bank code, a zero, then six branch characters.
 IFSC_RE = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
+# A Kerala Police station code as V1's MDMS PoliceStation master holds it.
+POLICE_STATION_CODE_RE = re.compile(r"^[0-9]{8}$")
 
 FULL_NAME_SEPARATOR = " / "
 
 
 class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
-    """An area in a hierarchy of countries, states, districts, pincodes and banks."""
+    """An area in a hierarchy of countries, states, districts and the places in them.
+
+    Pincodes, banks and police stations are leaves of the hierarchy.
+    """
 
     class LocationType(models.TextChoices):
         """Supported administrative levels."""
@@ -29,6 +34,9 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
         # A bank branch keyed by its IFSC, under its district, so the filing
         # form can fill bank details from an IFSC (issue #249).
         BANK = "bank", "Bank"
+        # A police station under its district, or under its state for a
+        # state-wide unit such as railway police (issue #250).
+        POLICE_STATION = "police_station", "Police station"
 
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=255)
@@ -70,6 +78,12 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
             )
         if self.location_type == self.LocationType.BANK and not IFSC_RE.match(self.code):
             raise ValidationError({"code": "A bank's code must be its IFSC, e.g. SBIN0001234."})
+        if self.location_type == self.LocationType.POLICE_STATION and not (
+            POLICE_STATION_CODE_RE.match(self.code)
+        ):
+            raise ValidationError(
+                {"code": "A police station's code must be its 8-digit code, e.g. 15996001."}
+            )
         self._validate_parent()
 
     def _validate_parent(self):
@@ -77,8 +91,9 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
 
         Address forms read a pincode's district and state from its ancestors,
         so a pincode must sit directly under a district, and so must a bank.
-        Pincodes and banks stay leaves, and a location holding them stays a
-        district.
+        A police station sits under a district or, for a state-wide unit, a
+        state. Leaves stay leaves, and a location holding them keeps a type
+        they may sit under.
         """
         parent_type = self.parent.location_type if self.parent_id is not None else None
         allowed_parents = LEAF_PARENT_TYPES.get(self.location_type)
@@ -164,13 +179,21 @@ class Location(BaseExtendableModel, BaseModel, BaseActivatableModel):
 LEAF_PARENT_TYPES = {
     Location.LocationType.PINCODE: {Location.LocationType.DISTRICT},
     Location.LocationType.BANK: {Location.LocationType.DISTRICT},
+    Location.LocationType.POLICE_STATION: {
+        Location.LocationType.DISTRICT,
+        Location.LocationType.STATE,
+    },
 }
 LEAF_TYPES = frozenset(LEAF_PARENT_TYPES)
 LEAF_PARENT_MESSAGES = {
     Location.LocationType.PINCODE: "A pincode must be under a district.",
     Location.LocationType.BANK: "A bank must be under a district.",
+    Location.LocationType.POLICE_STATION: "A police station must be under a district or a state.",
 }
 LEAF_HOLDER_MESSAGES = {
     Location.LocationType.PINCODE: "A location with pincodes under it must stay a district.",
     Location.LocationType.BANK: "A location with banks under it must stay a district.",
+    Location.LocationType.POLICE_STATION: (
+        "A location with police stations under it must stay a district or a state."
+    ),
 }

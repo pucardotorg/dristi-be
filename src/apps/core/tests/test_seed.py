@@ -467,7 +467,11 @@ class TestBulkLocations:
         bank = Location.objects.get(code="TEST0000002")
         assert bank.parent.code == "IN_KL_ERN"
         assert (bank.name, bank.short_name) == ("Test Bank - Branch 2", "TEST0000002")
-        assert bank.additional_attributes == {"address": "2 MG Road, Kochi 682001"}
+        # Every defined attribute is nullable, so the ones a bank lacks are null.
+        assert bank.additional_attributes == {
+            "address": "2 MG Road, Kochi 682001",
+            "police_district": None,
+        }
         assert "created 3, unchanged 0, skipped 0" in output
 
     def test_rerun_is_idempotent(self, tmp_path):
@@ -553,13 +557,14 @@ parent = "IN_KL"
 class TestAdditionalAttribute:
     """Attribute definitions seed by (content type, name), the type given as app.model."""
 
-    def test_core_file_defines_the_location_address(self):
+    @pytest.mark.parametrize("name", ["address", "police_district"])
+    def test_core_file_defines_the_location_attributes(self, name):
         output = run(str(ATTRIBUTES_FILE))
 
-        attribute = AdditionalAttribute.objects.get(name="address")
+        attribute = AdditionalAttribute.objects.get(name=name)
         assert attribute.content_type.model_class() is Location
         assert (attribute.data_type, attribute.is_nullable) == ("character", True)
-        assert "created 1, unchanged 0, skipped 0" in output
+        assert "created 2, unchanged 0, skipped 0" in output
 
     def test_rerun_matches_on_content_type_and_name(self):
         run(str(ATTRIBUTES_FILE))
@@ -567,7 +572,7 @@ class TestAdditionalAttribute:
         output = run(str(ATTRIBUTES_FILE))
 
         assert AdditionalAttribute.objects.filter(name="address").count() == 1
-        assert "created 0, unchanged 1, skipped 0" in output
+        assert "created 0, unchanged 2, skipped 0" in output
 
     def test_same_name_on_another_model_is_a_new_row(self, tmp_path):
         run(str(ATTRIBUTES_FILE))
@@ -613,6 +618,82 @@ data_type = "character"
         output = run(locations, banks, str(ATTRIBUTES_FILE))
 
         assert Location.objects.get(code="TEST0000001").additional_attributes == {
-            "address": "1 MG Road, Kochi 682001"
+            "address": "1 MG Road, Kochi 682001",
+            "police_district": None,
         }
         assert "skipped 0" in output
+
+
+POLICE_STATIONS_FILE = (
+    settings.BASE_DIR.parent / "data" / "seed" / "kerala" / "police_stations.toml"
+)
+# The Kerala districts as the India Post-derived districts.toml names them.
+KERALA_DISTRICTS = (
+    "ALAPPUZHA",
+    "ERNAKULAM",
+    "IDUKKI",
+    "KANNUR",
+    "KASARAGOD",
+    "KOLLAM",
+    "KOTTAYAM",
+    "KOZHIKODE",
+    "MALAPPURAM",
+    "PALAKKAD",
+    "PATHANAMTHITTA",
+    "THIRUVANANTHAPURAM",
+    "THRISSUR",
+    "WAYANAD",
+)
+
+
+@pytest.mark.django_db
+class TestKeralaPoliceStations:
+    """The shipped police station file loads whole onto the Kerala districts (issue #250)."""
+
+    @pytest.fixture(autouse=True)
+    def kerala(self, tmp_path):
+        """Seed the core attribute definitions, IN_KERALA and its 14 districts."""
+        rows = "".join(
+            f'\n[[rows]]\ncode = "IN_KERALA_{name}"\nname = "{name.title()}"\n'
+            f'location_type = "district"\nparent = "IN_KERALA"\n'
+            for name in KERALA_DISTRICTS
+        )
+        kerala = (
+            '[seed]\nmodel = "locations.Location"\n\n[[rows]]\ncode = "IN"\nname = "India"\n'
+            'location_type = "country"\n\n[[rows]]\ncode = "IN_KERALA"\nname = "Kerala"\n'
+            'location_type = "state"\nparent = "IN"\n' + rows
+        )
+        run(str(ATTRIBUTES_FILE), write(tmp_path, "kerala.toml", kerala))
+
+    def test_every_station_loads(self):
+        output = run(str(POLICE_STATIONS_FILE))
+
+        assert "created 517, unchanged 0, skipped 0" in output
+        assert Location.objects.filter(location_type="police_station").count() == 517
+
+    def test_each_district_and_the_state_hold_stations(self):
+        run(str(POLICE_STATIONS_FILE))
+
+        stations = Location.objects.filter(location_type="police_station")
+        parents = set(stations.values_list("parent__code", flat=True))
+        assert parents == {"IN_KERALA"} | {f"IN_KERALA_{name}" for name in KERALA_DISTRICTS}
+        # Only the state-wide railway police and CID stations sit under the state.
+        assert {
+            station.additional_attributes["police_district"]
+            for station in stations.filter(parent__code="IN_KERALA")
+        } == {"RAILWAY POLICE", "C I D"}
+        assert stations.filter(parent__code="IN_KERALA").count() == 15
+
+    def test_a_split_police_district_keeps_its_name(self):
+        run(str(POLICE_STATIONS_FILE))
+
+        east = Location.objects.get(code="15996001")
+        assert (east.name, east.parent.code) == ("THRISSUR EAST", "IN_KERALA_THRISSUR")
+        assert east.additional_attributes == {"address": None, "police_district": "THRISSUR CITY"}
+
+    def test_rerun_is_idempotent(self):
+        run(str(POLICE_STATIONS_FILE))
+
+        output = run(str(POLICE_STATIONS_FILE))
+
+        assert "created 0, unchanged 517, skipped 0" in output

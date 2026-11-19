@@ -73,6 +73,35 @@ def make_bank(
     )
 
 
+def make_police_station(
+    parent, code="15996001", name="THRISSUR EAST", police_district=None, **overrides
+):
+    """Create a police station under ``parent`` in the issue #250 shape.
+
+    ``police_district`` is stored as an additional attribute, so its definition
+    must exist (``define_police_district_attribute``) when one is given.
+    """
+    if police_district is not None:
+        overrides["additional_attributes"] = {"police_district": police_district}
+    return make_location(
+        code=code,
+        name=name,
+        short_name=overrides.pop("short_name", ""),
+        location_type=Location.LocationType.POLICE_STATION,
+        parent=parent,
+        **overrides,
+    )
+
+
+def define_police_district_attribute():
+    """Define the ``police_district`` additional attribute on Location, as the core seed does."""
+    return AdditionalAttribute.objects.get_or_create(
+        content_type=ContentType.objects.get_for_model(Location),
+        name="police_district",
+        defaults={"data_type": "character", "is_nullable": True},
+    )[0]
+
+
 def define_address_attribute():
     """Define the ``address`` additional attribute on Location, as the core seed does."""
     return AdditionalAttribute.objects.get_or_create(
