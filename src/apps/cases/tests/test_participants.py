@@ -468,6 +468,24 @@ class TestInstitutions:
         assert body["entity_name_at_filing"] == "ABC Pvt Ltd"
         assert body["name_at_filing"] == "ABC Pvt Ltd"
 
+    @pytest.mark.parametrize(
+        "partial", [{"entity_type": "LLP"}, {"mobile_numbers": ["080-1111"]}, {}]
+    )
+    def test_a_partial_institution_patch_keeps_the_names(self, client, draft, partial):
+        participant_id = add(client, draft, institution=self.NO_IDENTIFIER).json()[
+            "case_participant_id"
+        ]
+
+        response = patch(client, participant_id, {"institution": partial})
+
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert body["institution"]["entity_name"] == "ABC Pvt Ltd"
+        assert body["entity_name_at_filing"] == "ABC Pvt Ltd"
+        assert body["name_at_filing"] == "ABC Pvt Ltd"
+        stored = Institution.objects.get(pk=body["institution_id"])
+        assert stored.entity_name == "ABC Pvt Ltd"
+
     def test_institution_contacts_alone_keep_its_details(self, client, draft):
         participant_id = add(client, draft, institution=self.NO_IDENTIFIER).json()[
             "case_participant_id"
@@ -592,6 +610,44 @@ class TestInstitutions:
         existing.refresh_from_db()
         assert existing.entity_name == "Stored Name Ltd"
         assert Institution.objects.count() == 1
+
+    @pytest.mark.parametrize("name", [None, "", "   "])
+    def test_a_blank_name_takes_the_stored_name_of_a_matched_institution(self, client, draft, name):
+        existing = make_institution(pan="AAACA1234A", entity_name="Stored Name Ltd")
+        institution = {k: v for k, v in INSTITUTION.items() if k != "entity_name"}
+        if name is not None:
+            institution["entity_name"] = name
+
+        response = add(client, draft, institution=institution)
+
+        body = response.json()
+        assert response.status_code == 201, body
+        assert body["institution_id"] == str(existing.pk)
+        assert body["entity_name_at_filing"] == "Stored Name Ltd"
+        assert body["name_at_filing"] == "Stored Name Ltd"
+        assert "Complainant #1's institution has no name." not in completeness(
+            client, draft, body["case_participant_id"]
+        )
+
+    def test_a_person_acting_for_a_matched_institution_gets_its_stored_name(self, client, draft):
+        make_institution(pan="AAACA1234A", entity_name="Stored Name Ltd")
+        institution = {k: v for k, v in INSTITUTION.items() if k != "entity_name"}
+
+        response = add(client, draft, role="accused", person=PERSON, institution=institution)
+
+        body = response.json()
+        assert response.status_code == 201, body
+        assert body["entity_name_at_filing"] == "Stored Name Ltd"
+        assert body["name_at_filing"] == "Rajesh Kumar"
+
+    def test_a_matched_institution_with_no_name_leaves_the_case_name_empty(self, client, draft):
+        make_institution(pan="AAACA1234A", entity_name=None)
+        institution = {k: v for k, v in INSTITUTION.items() if k != "entity_name"}
+
+        response = add(client, draft, institution=institution)
+
+        assert response.status_code == 201, response.json()
+        assert response.json()["entity_name_at_filing"] is None
 
     def test_pan_and_cin_of_different_institutions_is_400(self, client, draft):
         make_institution(pan="AAACA1234A")
@@ -1428,6 +1484,36 @@ class TestInstitutionRelink:
         )
 
         assert response.json()["name_at_filing"] == "ABC (India) Pvt Ltd"
+
+    @pytest.mark.parametrize("name", [None, "", "   "])
+    def test_a_blank_name_takes_the_stored_name_of_the_matched_institution(
+        self, client, draft, name
+    ):
+        existing = make_institution(pan="AAACB5678B", entity_name="Stored Name Ltd")
+        body = add(client, draft, institution=INSTITUTION).json()
+        sent = {k: v for k, v in self.CORRECTED.items() if k != "entity_name"}
+        if name is not None:
+            sent["entity_name"] = name
+
+        response = patch(client, body["case_participant_id"], {"institution": sent})
+
+        relinked = response.json()
+        assert response.status_code == 200, relinked
+        assert relinked["institution_id"] == str(existing.pk)
+        if name is None:
+            # Not sent at all: the case's names are not touched.
+            assert relinked["entity_name_at_filing"] == "ABC Pvt Ltd"
+        else:
+            assert relinked["entity_name_at_filing"] == "Stored Name Ltd"
+            assert relinked["name_at_filing"] == "Stored Name Ltd"
+
+    def test_a_name_typed_wins_over_the_stored_name_of_the_matched_institution(self, client, draft):
+        make_institution(pan="AAACB5678B", entity_name="Stored Name Ltd")
+        body = add(client, draft, institution=INSTITUTION).json()
+
+        response = patch(client, body["case_participant_id"], {"institution": self.CORRECTED})
+
+        assert response.json()["entity_name_at_filing"] == "ABC Private Ltd"
 
     def test_a_person_acting_for_it_keeps_their_snapshot_and_row(self, client, draft):
         body = add(
@@ -2724,6 +2810,93 @@ class TestInstitutionContactDetailsUnknown:
         stored = CaseParticipant.objects.get(pk=typo["case_participant_id"])
         assert str(stored.institution_id) == typo["institution_id"]
         assert self.declared(actual["case_participant_id"]) == (False, True)
+
+    def add_accused_institution(self, client, draft, pan, mobile, name):
+        institution = {**self.NO_CONTACTS, "pan": pan, "mobile_numbers": [mobile]}
+        response = add(
+            client,
+            draft,
+            "accused",
+            institution=institution,
+            person={"name": name},
+            mobile_numbers=[],
+        )
+        assert response.status_code == 201, response.json()
+        return response.json()
+
+    def institution_contacts(self, institution_id, contact_type):
+        rows = CaseContact.objects.active().filter(
+            institution_id=institution_id,
+            case_participant__isnull=True,
+            contact_type=contact_type,
+        )
+        return [(row.ordinal, row.value or row.address_id) for row in rows.order_by("ordinal")]
+
+    def test_a_relink_merges_the_contacts_of_an_institution_already_there(self, client, draft):
+        add_complainant(client, draft)
+        actual = self.add_accused_institution(client, draft, "AAACA1234A", "080-11111111", "Ravi")
+        typo = self.add_accused_institution(client, draft, "AAACB5678B", "080-33334444", "Asha")
+
+        response = self.relink_to_actual(client, typo)
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution_id"] == actual["institution_id"]
+        # Both have the default address: kept once. The numbers follow each other.
+        assert [
+            number
+            for _, number in self.institution_contacts(
+                actual["institution_id"], ContactType.MOBILE_NUMBER
+            )
+        ] == ["080-11111111", "080-33334444"]
+        assert [
+            ordinal
+            for ordinal, _ in self.institution_contacts(
+                actual["institution_id"], ContactType.MOBILE_NUMBER
+            )
+        ] == [1, 2]
+        assert len(self.institution_contacts(actual["institution_id"], ContactType.ADDRESS)) == 1
+        assert not self.institution_contacts(typo["institution_id"], ContactType.ADDRESS)
+
+    def test_a_relink_with_new_lists_replaces_the_contacts_it_would_move(self, client, draft):
+        add_complainant(client, draft)
+        actual = self.add_accused_institution(client, draft, "AAACA1234A", "080-11111111", "Ravi")
+        typo = self.add_accused_institution(client, draft, "AAACB5678B", "080-33334444", "Asha")
+
+        response = self.relink_to_actual(client, typo, mobile_numbers=["080-55556666"])
+
+        assert response.status_code == 200, response.json()
+        assert [
+            number
+            for _, number in self.institution_contacts(
+                actual["institution_id"], ContactType.MOBILE_NUMBER
+            )
+        ] == ["080-55556666"]
+        assert len(self.institution_contacts(actual["institution_id"], ContactType.ADDRESS)) == 1
+
+    def test_a_top_level_false_is_refused_for_an_accused_with_no_person(self, client, draft):
+        add_complainant(client, draft)
+        body = add(
+            client,
+            draft,
+            "accused",
+            institution={**self.NO_CONTACTS, "contact_details_unknown_declared": True},
+        ).json()
+
+        response = patch(
+            client, body["case_participant_id"], {"contact_details_unknown_declared": False}
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"contact_details_unknown_declared": ["E07023"]}
+        assert self.declared(body["case_participant_id"]) == (False, True)
+        # The institution's own field still clears it.
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {"institution_contacts": {"contact_details_unknown_declared": False}},
+        )
+        assert response.status_code == 200, response.json()
+        assert self.declared(body["case_participant_id"]) == (False, False)
 
     @pytest.mark.parametrize(
         ("role", "fields"),

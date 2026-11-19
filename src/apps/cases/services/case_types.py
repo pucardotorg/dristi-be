@@ -315,6 +315,18 @@ def _condonation_errors(data):
     ]
 
 
+def _relief_errors(data):
+    """Refuse relief whose rendered text is empty, such as an editor's ``<p><br></p>``."""
+    # Imported here: the models import this module.
+    from apps.cases.models import has_visible_text
+
+    return [
+        SchemaError(field, api_errors.BLANK.message, "blank")
+        for field in ("interim_relief", "final_relief")
+        if isinstance(data.get(field), str) and not has_visible_text(data[field])
+    ]
+
+
 def _date_of(info, key):
     """Return ``info[key]`` as a date, or ``None`` when it is missing or malformed."""
     try:
@@ -474,7 +486,10 @@ CASE_TYPES = {
             ),
         },
         section_checks={"jurisdiction_limitation": _filing_date_errors},
-        section_completeness_checks={"jurisdiction_limitation": _condonation_errors},
+        section_completeness_checks={
+            "jurisdiction_limitation": _condonation_errors,
+            "adr_other_prayer": _relief_errors,
+        },
         evidence_checks={
             EvidenceType.RETURN_MEMO: _return_memo_errors,
             EvidenceType.LEGAL_DEMAND_NOTICE: _demand_notice_errors,

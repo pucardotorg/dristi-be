@@ -995,6 +995,19 @@ class TestValidate:
 
         assert fields_of(validate(client, draft)) == {"evidence.CHEQUE"}
 
+    @pytest.mark.parametrize("relief", ["", "<p><br></p>", "<p>&nbsp;</p>"])
+    @pytest.mark.parametrize("key", ["interim_relief", "final_relief"])
+    def test_relief_with_no_visible_text_blocks_filing(self, client, draft, pdf, key, relief):
+        make_complete_case(client, draft, pdf)
+        row = ChequeBounceCase.objects.get(case_id=draft)
+        ChequeBounceCase.objects.filter(case_id=draft).update(
+            adr_other_prayer={**row.adr_other_prayer, key: relief}
+        )
+
+        body = validate(client, draft)
+
+        assert fields_of(body) == {"details.adr_other_prayer"}
+
     @pytest.mark.parametrize(
         ("section", "key", "field"),
         [

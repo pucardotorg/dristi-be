@@ -336,7 +336,7 @@ def _create_participant(case, user, role, data):
         additional_details=data["additional_details"],
         created_by=user,
         updated_by=user,
-        **_snapshot(person, data),
+        **_snapshot(person, data, institution),
     )
     if represented is not None:
         # The case's name for the institution, as its other participants have it.
@@ -449,17 +449,20 @@ def _accused_institution(case, institution_id):
     return found
 
 
-def _snapshot(person, data):
+def _snapshot(person, data, institution=None):
     """Return the ``*_at_filing`` values for a new participant.
 
     Taken from the person when there is one. An institution is recorded by the
-    name the filer entered, not the one stored for a reused institution.
+    name the filer entered, not the one stored for a reused institution; when
+    the filer gave none, by the stored one, if ``institution`` has it.
     """
-    institution = data.get("institution")
+    sent = data.get("institution")
     snapshot = {}
-    if institution is not None:
-        # Left out while drafting, it is ``None``; the completeness check asks for it.
-        name = (institution.get("entity_name") or "").strip() or None
+    if sent is not None:
+        name = (sent.get("entity_name") or "").strip()
+        # Left out while drafting and not stored either, it is ``None``; the
+        # completeness check asks for it.
+        name = name or (institution.entity_name if institution else None) or None
         snapshot = {"entity_name_at_filing": name}
     if person is not None:
         return {
@@ -720,7 +723,13 @@ def update_participant(participant, user, data):
         )
         # Only once the participant's rules allow the new institution.
         if relinked:
-            move_institution_contacts(case, user, old_institution_id, participant.institution)
+            move_institution_contacts(
+                case,
+                user,
+                old_institution_id,
+                participant.institution,
+                replaced={CONTACT_LISTS[field] for field in institution_lists},
+            )
         if old_institution_id:
             _align_representatives(participant, user, old_institution_id)
         # Spec 0021 §6.4. Compared with the first address before the lists
@@ -858,11 +867,12 @@ def _edit_institution(participant, user, fields, data):
 def _name_from(participant, fields, data):
     """Name the participant after the institution's name sent, unless the request names it itself.
 
-    With no ``entity_name`` sent, the case's names for it are kept.
+    A blank name is the institution's stored one, if it has one. With no
+    ``entity_name`` sent, the case's names for it are kept.
     """
     if "entity_name" not in fields:
         return
-    snapshot = _snapshot(None, {"institution": fields})
+    snapshot = _snapshot(None, {"institution": fields}, participant.institution)
     if participant.person_id is not None:
         snapshot = {"entity_name_at_filing": snapshot["entity_name_at_filing"]}
     for field, value in snapshot.items():
@@ -941,7 +951,9 @@ def _contact_problems(participant, own_lists, data):
             problems[field] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, INSTITUTION_CONTACTS_MESSAGE)
             ]
-        if data.get("contact_details_unknown_declared"):
+        # Whatever the value: a ``false`` here would otherwise be accepted
+        # and leave the institution's declaration as it was.
+        if "contact_details_unknown_declared" in data:
             problems["contact_details_unknown_declared"] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, models.PERSON_CONTACT_UNKNOWN_MESSAGE)
             ]

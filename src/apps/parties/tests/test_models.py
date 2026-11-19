@@ -361,7 +361,11 @@ class TestRulesOnEveryWrite:
         institution = Institution(entity_type=blank, entity_name="ABC Pvt Ltd")
 
         institution.full_clean()
+        assert institution.entity_type is None
 
+        # The column and its constraint accept it too.
+        institution = Institution.objects.create(entity_type=blank, entity_name="ABC Pvt Ltd")
+        institution.refresh_from_db()
         assert institution.entity_type is None
 
     def test_names_are_stored_trimmed(self):
