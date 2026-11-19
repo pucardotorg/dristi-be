@@ -1,5 +1,8 @@
 """Shared Location fixtures for the locations test suite."""
 
+from django.contrib.contenttypes.models import ContentType
+
+from apps.core.models import AdditionalAttribute
 from apps.locations.models import Location
 
 DEFAULTS = {
@@ -43,6 +46,40 @@ def make_district(parent=None, code="PATNA", name="Patna", **overrides):
         parent=parent,
         **overrides,
     )
+
+
+def make_bank(
+    parent,
+    code="SBIN0001234",
+    bank="State Bank of India",
+    branch="Patna Main",
+    address=None,
+    **overrides,
+):
+    """Create a bank branch under ``parent`` in the issue #249 shape.
+
+    ``address`` is stored as an additional attribute, so the ``address``
+    definition must exist (``define_address_attribute``) when one is given.
+    """
+    if address is not None:
+        overrides["additional_attributes"] = {"address": address}
+    return make_location(
+        code=code,
+        name=overrides.pop("name", f"{bank} - {branch}"),
+        short_name=overrides.pop("short_name", code),
+        location_type=Location.LocationType.BANK,
+        parent=parent,
+        **overrides,
+    )
+
+
+def define_address_attribute():
+    """Define the ``address`` additional attribute on Location, as the core seed does."""
+    return AdditionalAttribute.objects.get_or_create(
+        content_type=ContentType.objects.get_for_model(Location),
+        name="address",
+        defaults={"data_type": "character", "is_nullable": True},
+    )[0]
 
 
 def make_hierarchy():

@@ -50,6 +50,7 @@ src/apps/locations/
 | `STATE` | `state` | State |
 | `DISTRICT` | `district` | District |
 | `PINCODE` | `pincode` | Pincode |
+| `BANK` | `bank` | Bank |
 
 The list is intentionally small for v1. Additional choices (e.g. `tehsil`, `block`, `village`) can be added without breaking existing rows.
 
@@ -64,7 +65,7 @@ Inherits from `BaseModel`, `BaseExtendableModel`, and `BaseActivatableModel`.
 | `code` | `CharField(max_length=50, unique=True)` | Stable, unique machine identifier. Not null. Enforced uppercase snake_case. |
 | `name` | `CharField(max_length=255)` | Full display name. |
 | `short_name` | `CharField(max_length=100, blank=True)` | Optional short display name. |
-| `location_type` | `CharField(max_length=50)` | One of `country`, `state`, `district`, `pincode`. |
+| `location_type` | `CharField(max_length=50)` | One of `country`, `state`, `district`, `pincode`, `bank`. |
 | `parent` | `ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="children")` | Null for top-level locations. Protected from deletion while children exist. |
 | `is_active` | `BooleanField(default=True)` | Inherited from `BaseActivatableModel`. Soft-disable flag. |
 
@@ -121,7 +122,7 @@ final security model for the API.
 |--------|------|---------|
 | GET | `/locations/` | List locations. Supports filtering by `location_type`, `parent_id`, and `parent_code`. |
 | GET | `/locations/{id}/` | Retrieve a location by its `id`. |
-| GET | `/locations/code/{code}/` | Retrieve a location by its unique `code`. |
+| GET | `/locations/code/{code}/` | Retrieve a location by its unique `code`. Optional `location_type` and `is_active` make it `404` unless the location matches (see section 8). |
 | GET | `/locations/{id}/children/` | List direct children of a location identified by `id`. |
 | GET | `/locations/code/{code}/children/` | List direct children of a location identified by `code`. |
 | GET | `/locations/{id}/ancestors/` | List ancestor chain from root to immediate parent, identified by `id`. |
@@ -186,6 +187,68 @@ is insert-only: existing rows are never changed, and nothing is deleted. The
 `Location` model's `clean()` still enforces the hierarchy — a pincode's parent
 must be a district — so a malformed row is rejected rather than stored.
 
+### 8. Banks
+
+A bank branch is a `bank` location keyed by its IFSC, so the e-filing form can
+fill a cheque's bank name and branch from the IFSC the user types (issue #249):
+
+```
+GET /api/v1/locations/code/AUBL0002670/?location_type=bank&is_active=true
+→ {"code": "AUBL0002670", "name": "AU Small Finance Bank - M G ROAD KOCHI",
+   "short_name": "AUBL0002670", "location_type": "bank",
+   "parent_code": "IN_KERALA_ERNAKULAM",
+   "additional_attributes": {"address": "BUILDING DOOR NOS. 62/5202 ..., MG ROAD, KOCHI, KERALA"}, ...}
+```
+
+The client uppercases the IFSC before the call. `location_type=bank` and
+`is_active=true` make the call `404` for a code that is not a bank or for a
+closed branch; a `404` means "no pre-fill" and the user enters the bank and
+branch by hand. Filing never checks that an IFSC exists here, since new
+branches open between data releases.
+
+| Field | Value |
+|-------|-------|
+| `code` | The IFSC, e.g. `AUBL0002670`. `clean()` rejects a bank whose code is not an IFSC (`^[A-Z]{4}0[A-Z0-9]{6}$`) |
+| `name` | `<BANK> - <BRANCH>` |
+| `short_name` | The IFSC |
+| `parent` | The branch's district. `clean()` rejects any other parent, any location placed under a bank, and a type change on a district holding banks |
+| `additional_attributes.address` | The branch address. Optional; `clean()` does not require it |
+
+`address` is an additional attribute on `Location`, defined by the seed file
+`data/seed/core/additional_attributes.toml` (not a migration), which must be
+loaded before any bank rows that carry an address. It is nullable, so once it is
+defined every other location carries `"address": null`.
+
+Like pincodes, banks never appear in an organization's jurisdictions, and a
+district's `children` list them alongside its pincodes (filter by
+`location_type`).
+
+Only **Kerala** branches are seeded for now. They come from
+[razorpay/ifsc](https://github.com/razorpay/ifsc) (RBI's list), converted to
+TOML out-of-band (`ifsc_to_toml.py`, kept with the pincode converter in the
+`dristi-be-experiments` repo). Razorpay's `DISTRICT` column is free text that
+often does not match our district names, so the converter places each branch
+by the first step that works:
+
+1. the pincode in the address → its district (India Post directory);
+2. `DISTRICT`, then `CITY`, equals a district name or a known old name or
+   spelling (Trivandrum, Trichur, Calicut, Cochin, Alleppey, Quilon, …);
+3. a district name appears inside `DISTRICT`/`CITY`, then inside the address;
+4. `DISTRICT` or `CITY` is a known town (Cherthala → Alappuzha, Thiruvalla →
+   Pathanamthitta, …).
+
+On Razorpay v2.0.62 this places 8,964 of 9,029 Kerala branches (99.3%; 74%
+by pincode). The other 65 are left out — about half are branches elsewhere
+mislabelled as Kerala — so their IFSC lookup is a `404` and the user enters
+the details by hand, as for any IFSC outside Kerala. The converter's report
+lists every left-out branch and every text-matched one for review.
+
+```bash
+python manage.py seed data/seed/core/                 # defines `address`
+python manage.py seed states.toml districts.toml      # IN_KERALA and its districts
+python manage.py seed banks_kerala.toml               # about 10 seconds
+```
+
 ## Example data
 
 A location `code` may include the parent code for readability (e.g. `IN_BR_PATNA`) or be independent (e.g. `PATNA`). The system does not enforce either convention.
@@ -209,6 +272,8 @@ A location `code` may include the parent code for readability (e.g. `IN_BR_PATNA
 - `src/apps/locations/urls.py`
 - `src/apps/locations/tests/test_location.py`
 - `src/apps/locations/migrations/0003_location_type_pincode.py`
+- `src/apps/locations/migrations/0004_location_type_bank.py`
+- `data/seed/core/additional_attributes.toml`
 - `src/apps/locations/admin.py`, `src/apps/organizations/admin.py`
 
 Pincodes were originally loaded by a dedicated `import_pincodes` command; it was

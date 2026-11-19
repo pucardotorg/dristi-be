@@ -8,7 +8,12 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.api import errors
-from apps.locations.tests.factories import make_hierarchy, make_state
+from apps.locations.tests.factories import (
+    define_address_attribute,
+    make_bank,
+    make_hierarchy,
+    make_state,
+)
 from apps.users.models import User
 
 
@@ -203,6 +208,81 @@ class LocationRetrieveTests(LocationAPITestCase):
         response = self.client.get(reverse("location-by-code", args=["NOPE"]))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class LocationIfscLookupTests(LocationAPITestCase):
+    """GET /locations/code/{IFSC}/?location_type=bank&is_active=true (issue #249)."""
+
+    BANK_ONLY = {"location_type": "bank", "is_active": "true"}
+
+    def setUp(self):
+        """Add an active bank with its address and a closed one under Patna."""
+        super().setUp()
+        define_address_attribute()
+        self.bank = make_bank(self.patna, address="Fraser Road, Patna 800001")
+        make_bank(self.patna, code="SBIN0009999", branch="Closed Branch", is_active=False)
+
+    def lookup(self, code, params=None):
+        """GET the location with ``code`` with the bank-only filters by default."""
+        query = self.BANK_ONLY if params is None else params
+        return self.client.get(reverse("location-by-code", args=[code]), query)
+
+    def test_returns_the_bank_for_an_ifsc(self):
+        response = self.lookup("SBIN0001234")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertEqual(body["location_type"], "bank")
+        self.assertEqual(body["name"], "State Bank of India - Patna Main")
+        self.assertEqual(body["short_name"], "SBIN0001234")
+        self.assertEqual(body["parent_code"], "PATNA")
+        self.assertEqual(body["additional_attributes"], {"address": "Fraser Road, Patna 800001"})
+
+    def test_lookup_needs_no_login(self):
+        self.client.logout()
+
+        self.assertEqual(self.lookup("SBIN0001234").status_code, status.HTTP_200_OK)
+
+    def test_closed_branch_is_not_found(self):
+        self.assertEqual(self.lookup("SBIN0009999").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_a_code_that_is_not_a_bank_is_not_found(self):
+        self.assertEqual(self.lookup("PATNA").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_unknown_ifsc_is_not_found(self):
+        self.assertEqual(self.lookup("HDFC0000001").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_lowercase_ifsc_is_not_found(self):
+        # Codes are stored uppercase; the client uppercases what the user typed.
+        self.assertEqual(self.lookup("sbin0001234").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_without_filters_any_location_is_found(self):
+        self.assertEqual(self.lookup("SBIN0009999", {}).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.lookup("PATNA", {}).status_code, status.HTTP_200_OK)
+
+    def test_is_active_false_finds_only_inactive(self):
+        params = {"is_active": "false"}
+
+        self.assertEqual(self.lookup("SBIN0009999", params).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.lookup("SBIN0001234", params).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_rejects_unknown_location_type(self):
+        response = self.lookup("SBIN0001234", {"location_type": "branch"})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": errors.INVALID_CHOICE.code, "field": "location_type"}],
+        )
+
+    def test_rejects_non_boolean_is_active(self):
+        response = self.lookup("SBIN0001234", {"is_active": "maybe"})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": errors.INVALID.code, "field": "is_active"}],
+        )
 
 
 class LocationChildrenTests(LocationAPITestCase):

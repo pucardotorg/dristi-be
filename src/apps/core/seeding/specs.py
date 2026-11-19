@@ -2,12 +2,24 @@
 
 Importing this module registers every spec. The ``seed`` command imports it so
 the registry is populated before it runs. Load ``order`` keeps referents ahead
-of the rows that point at them (locations before organizations that cite them as
-jurisdictions; page categories before pages; groups and request types before
-approval steps).
+of the rows that point at them (attribute definitions before the rows that use
+them; locations before organizations that cite them as jurisdictions; page
+categories before pages; groups and request types before approval steps).
 """
 
 from .registry import FkRef, SeedSpec, register
+
+# Attribute definitions load first: a row's additional_attributes are
+# rejected unless each key is defined for its model (e.g. a bank's address).
+register(
+    SeedSpec(
+        model_label="core.AdditionalAttribute",
+        key=("content_type", "name"),
+        fields=("name", "data_type", "is_nullable", "default_value"),
+        fk_by_code={"content_type": FkRef("contenttypes.ContentType", natural_key=True)},
+        order=5,
+    )
+)
 
 register(
     SeedSpec(
@@ -32,6 +44,8 @@ register(
         ),
         fk_by_code={"parent": FkRef("locations.Location", "code")},
         order=10,
+        # Pincodes and banks run to lakhs of rows.
+        bulk=True,
     )
 )
 

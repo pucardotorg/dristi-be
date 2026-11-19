@@ -7,10 +7,13 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.management import CommandError, call_command
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from apps.cms.models import Page
 from apps.core import services
-from apps.core.models import Configuration, PublicConfiguration
+from apps.core.management.commands import seed as seed_command
+from apps.core.models import AdditionalAttribute, Configuration, PublicConfiguration
 from apps.dristi_requests.models import ApprovalStep
 from apps.hearings.models import HearingPurpose
 from apps.locations.models import Location
@@ -20,6 +23,7 @@ from apps.scrutiny.models import ScrutinyRuleBinding
 
 EXAMPLE_DIR = settings.BASE_DIR.parent / "data" / "seed" / "example"
 LOCAL_DIR = settings.BASE_DIR.parent / "data" / "seed" / "local"
+ATTRIBUTES_FILE = settings.BASE_DIR.parent / "data" / "seed" / "core" / "additional_attributes.toml"
 
 
 def write(tmp_path, name, content):
@@ -681,4 +685,193 @@ class TestGroupMembership:
         superuser = get_user_model().objects.create_superuser("+919999999999", password="pw")
         output = run(str(LOCAL_DIR))
         assert approvers.user_set.filter(pk=superuser.pk).exists()
+        assert "skipped 0" in output
+
+
+def bank_rows(count, parent="IN_KL_ERN", start=1):
+    """Return ``count`` bank rows as TOML, IFSCs numbered from ``start``."""
+    return "".join(
+        f"""
+[[rows]]
+code = "TEST{number:07d}"
+name = "Test Bank - Branch {number}"
+short_name = "TEST{number:07d}"
+location_type = "bank"
+parent = "{parent}"
+additional_attributes = {{ address = "{number} MG Road, Kochi 682001" }}
+"""
+        for number in range(start, start + count)
+    )
+
+
+def banks_file(tmp_path, rows, name="banks.toml"):
+    """Write a locations file holding ``rows`` and return its path."""
+    return write(tmp_path, name, '[seed]\nmodel = "locations.Location"\n' + rows)
+
+
+@pytest.mark.django_db
+class TestBulkLocations:
+    """Locations load in batches (pincodes and banks run to lakhs of rows)."""
+
+    @pytest.fixture(autouse=True)
+    def hierarchy(self, tmp_path):
+        """Seed the core attribute definitions and IN -> IN_KL -> IN_KL_ERN."""
+        run(str(ATTRIBUTES_FILE), write(tmp_path, "locations.toml", LOCATIONS))
+
+    def test_creates_banks_in_the_issue_shape(self, tmp_path):
+        output = run(banks_file(tmp_path, bank_rows(3)))
+
+        bank = Location.objects.get(code="TEST0000002")
+        assert bank.parent.code == "IN_KL_ERN"
+        assert (bank.name, bank.short_name) == ("Test Bank - Branch 2", "TEST0000002")
+        assert bank.additional_attributes == {"address": "2 MG Road, Kochi 682001"}
+        assert "created 3, unchanged 0, skipped 0" in output
+
+    def test_rerun_is_idempotent(self, tmp_path):
+        path = banks_file(tmp_path, bank_rows(3))
+        run(path)
+
+        output = run(path)
+
+        assert Location.objects.filter(location_type="bank").count() == 3
+        assert "created 0, unchanged 3, skipped 0" in output
+
+    def test_invalid_row_is_skipped_and_reported(self, tmp_path):
+        # Not an IFSC: the fifth character must be 0.
+        rows = bank_rows(2) + bank_rows(1, start=3).replace(
+            'code = "TEST0000003"', 'code = "TEST1000003"'
+        )
+
+        output = run(banks_file(tmp_path, rows))
+
+        assert not Location.objects.filter(code="TEST1000003").exists()
+        assert "row 3: skipped — code: A bank's code must be its IFSC" in output
+        assert "created 2, unchanged 0, skipped 1" in output
+
+    def test_bank_under_an_unknown_parent_is_skipped(self, tmp_path):
+        output = run(banks_file(tmp_path, bank_rows(1, parent="IN_XX")))
+
+        assert "parent: no locations.Location with code='IN_XX'" in output
+        assert "created 0, unchanged 0, skipped 1" in output
+
+    def test_list_as_a_parent_is_skipped_not_a_crash(self, tmp_path):
+        rows = bank_rows(1).replace('parent = "IN_KL_ERN"', 'parent = ["IN_KL_ERN"]')
+
+        output = run(banks_file(tmp_path, rows))
+
+        assert "skipped 1" in output
+
+    def test_duplicate_key_in_one_file_counts_as_unchanged(self, tmp_path):
+        output = run(banks_file(tmp_path, bank_rows(2) + bank_rows(1)))
+
+        assert Location.objects.filter(location_type="bank").count() == 2
+        assert "created 2, unchanged 1, skipped 0" in output
+
+    def test_parent_created_in_an_earlier_batch_resolves(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(seed_command, "BULK_BATCH_SIZE", 2)
+        district = """
+[[rows]]
+code = "IN_KL_TVM"
+name = "Thiruvananthapuram"
+location_type = "district"
+parent = "IN_KL"
+"""
+        # The district lands in the first batch, its banks in later ones.
+        rows = bank_rows(1) + district + bank_rows(4, parent="IN_KL_TVM", start=2)
+
+        output = run(banks_file(tmp_path, rows))
+
+        assert set(
+            Location.objects.filter(parent__code="IN_KL_TVM").values_list("code", flat=True)
+        ) == {"TEST0000002", "TEST0000003", "TEST0000004", "TEST0000005"}
+        assert "created 6, unchanged 0, skipped 0" in output
+
+    def test_dry_run_saves_nothing(self, tmp_path):
+        output = run(banks_file(tmp_path, bank_rows(3)), dry_run=True)
+
+        assert not Location.objects.filter(location_type="bank").exists()
+        assert "Dry run: would have created 3" in output
+
+    def test_query_count_does_not_grow_with_rows(self, tmp_path):
+        def queries(rows, name):
+            path = banks_file(tmp_path, rows, name)
+            with CaptureQueriesContext(connection) as captured:
+                run(path)
+            return len(captured.captured_queries)
+
+        few = queries(bank_rows(5), "few.toml")
+        # Under 84 rows: SQLite's bulk_create splits larger inserts by its
+        # parameter limit, which would add queries unrelated to the engine.
+        many = queries(bank_rows(80, start=6), "many.toml")
+
+        assert Location.objects.filter(location_type="bank").count() == 85
+        assert many == few
+
+
+@pytest.mark.django_db
+class TestAdditionalAttribute:
+    """Attribute definitions seed by (content type, name), the type given as app.model."""
+
+    def test_core_file_defines_the_location_address(self):
+        output = run(str(ATTRIBUTES_FILE))
+
+        attribute = AdditionalAttribute.objects.get(name="address")
+        assert attribute.content_type.model_class() is Location
+        assert (attribute.data_type, attribute.is_nullable) == ("character", True)
+        assert "created 1, unchanged 0, skipped 0" in output
+
+    def test_rerun_matches_on_content_type_and_name(self):
+        run(str(ATTRIBUTES_FILE))
+
+        output = run(str(ATTRIBUTES_FILE))
+
+        assert AdditionalAttribute.objects.filter(name="address").count() == 1
+        assert "created 0, unchanged 1, skipped 0" in output
+
+    def test_same_name_on_another_model_is_a_new_row(self, tmp_path):
+        run(str(ATTRIBUTES_FILE))
+        other = """
+[seed]
+model = "core.AdditionalAttribute"
+
+[[rows]]
+content_type = "organizations.organization"
+name = "address"
+data_type = "character"
+"""
+
+        output = run(write(tmp_path, "attributes.toml", other))
+
+        assert AdditionalAttribute.objects.filter(name="address").count() == 2
+        assert "created 1, unchanged 0, skipped 0" in output
+
+    @pytest.mark.parametrize("content_type", ["locations.nope", "locations", "a.b.c"])
+    def test_unknown_content_type_is_skipped(self, tmp_path, content_type):
+        toml = f"""
+[seed]
+model = "core.AdditionalAttribute"
+
+[[rows]]
+content_type = "{content_type}"
+name = "address"
+data_type = "character"
+"""
+
+        output = run(write(tmp_path, "attributes.toml", toml))
+
+        assert not AdditionalAttribute.objects.exists()
+        assert f"content_type: no contenttypes.ContentType with natural key '{content_type}'" in (
+            output
+        )
+
+    def test_definitions_load_before_the_locations_that_use_them(self, tmp_path):
+        # Passed after the banks, but the attribute spec's load order puts it first.
+        banks = banks_file(tmp_path, bank_rows(1))
+        locations = write(tmp_path, "locations.toml", LOCATIONS)
+
+        output = run(locations, banks, str(ATTRIBUTES_FILE))
+
+        assert Location.objects.get(code="TEST0000001").additional_attributes == {
+            "address": "1 MG Road, Kochi 682001"
+        }
         assert "skipped 0" in output

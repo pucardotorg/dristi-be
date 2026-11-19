@@ -98,6 +98,10 @@ seeded instead of shipped as data migrations:
 - `core/configurations.toml` — `tenant.state_code`, the state code that
   prefixes request numbers (`KL-REQ-00001`, spec 0010). Creating a request
   fails until it is loaded.
+- `core/additional_attributes.toml` — the additional attributes each model
+  accepts, e.g. a bank location's `address` (issue #249). A row's
+  `additional_attributes` are rejected until their keys are defined, so this
+  loads before other models whatever order the files are given in.
 
 ```sh
 python manage.py seed data/seed/core/
@@ -136,3 +140,31 @@ python manage.py seed states.toml districts.toml pincodes.toml
 
 `states.toml` must load first, then `districts.toml` (whose `parent` is a state
 code), then `pincodes.toml` (whose `parent` is a district code).
+
+## Loading banks
+
+Bank branches (issue #249, spec 0007 section 8) are `bank` locations keyed by
+IFSC, each under its district. Only Kerala is seeded for now:
+`banks_kerala.toml` is generated from
+[razorpay/ifsc](https://github.com/razorpay/ifsc) by `ifsc_to_toml.py` (in
+`dristi-be-experiments`, next to the pincode converter) and loaded after
+`core/additional_attributes.toml` (which defines `address`) and the Kerala
+districts:
+
+```toml
+[[rows]]
+code = "AUBL0002670"
+name = "AU Small Finance Bank - M G ROAD KOCHI"
+short_name = "AUBL0002670"
+location_type = "bank"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { address = "BUILDING DOOR NOS. 62/5202 ..., MG ROAD, KOCHI, KERALA" }
+```
+
+```sh
+python manage.py seed data/seed/core/
+python manage.py seed states.toml districts.toml
+python manage.py seed banks_kerala.toml
+```
+
+Locations load in batches, so the ~9,000 Kerala banks take about 10 seconds.

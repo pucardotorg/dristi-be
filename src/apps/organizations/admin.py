@@ -4,7 +4,7 @@ from django import forms
 from django.contrib import admin
 
 from apps.core.mixins import AuditUserAdminMixin
-from apps.locations.models import Location
+from apps.locations.models import LEAF_TYPES, Location
 
 from .models import Organization
 
@@ -47,9 +47,7 @@ class OrganizationAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     filter_horizontal = ("jurisdictions",)
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
-        """Offer administrative areas only as jurisdictions, never the thousands of pincodes."""
+        """Offer administrative areas only as jurisdictions, never the many pincodes or banks."""
         if db_field.name == "jurisdictions":
-            kwargs["queryset"] = Location.objects.exclude(
-                location_type=Location.LocationType.PINCODE
-            )
+            kwargs["queryset"] = Location.objects.exclude(location_type__in=LEAF_TYPES)
         return super().formfield_for_manytomany(db_field, request, **kwargs)
