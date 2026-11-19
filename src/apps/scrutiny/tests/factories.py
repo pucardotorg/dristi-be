@@ -102,6 +102,7 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
         "dispatch_date": "2026-05-10",
         "mode_of_service": "REGISTERED_POST",
         "is_delivered": delivered,
+        "accused_replied": False,
         "payment_status": "NO_PAYMENT_MADE",
     }
     if delivered:
@@ -115,8 +116,15 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
         ordinal=ordinal,
         evidence_info=notice,
     )
+    # Each notice is filed with its proof of dispatch, linked to it.
+    CaseDocument.objects.create(
+        case=case,
+        document=make_file(user=case.created_by),
+        document_type=DocumentType.PROOF_OF_DISPATCH,
+        case_evidence=notice,
+    )
     if delivered:
-        # A delivered notice is filed with its proof of delivery, linked to it.
+        # A delivered notice may be filed with its proof of delivery, linked to it.
         CaseDocument.objects.create(
             case=case,
             document=make_file(user=case.created_by),
@@ -130,6 +138,7 @@ def set_cause_of_action(case, day):
     row.jurisdiction_limitation = {
         "cheque_deposited_by_payee": False,
         "drawer_bank_police_station": "Ernakulam Central",
+        "other_complaints_pending": False,
         "cause_of_action_date": day,
         "complaint_filing_date": day,
     }
@@ -160,9 +169,10 @@ def add_address(participant):
 
 def complete_filing(case, filer):
     """Add the parties, documents and prayer a case needs to pass the completeness check."""
-    for role, name in [
-        (ParticipantRole.COMPLAINANT, "Complainant"),
-        (ParticipantRole.ACCUSED, "Accused"),
+    # Each party has a number of their own (PRD LIT-3).
+    for role, name, mobile_number in [
+        (ParticipantRole.COMPLAINANT, "Complainant", "+919876543210"),
+        (ParticipantRole.ACCUSED, "Accused", "+919812345678"),
     ]:
         complainant = role == ParticipantRole.COMPLAINANT
         participant = CaseParticipant.objects.create(
@@ -171,11 +181,19 @@ def complete_filing(case, filer):
             role=role,
             ordinal=1,
             name_at_filing=name,
+            age_at_filing=40 if complainant else None,
             is_party_in_person=complainant,
             party_in_person_affidavit="<p>I ask to appear in person.</p>" if complainant else None,
             resides_within_jurisdiction=None if complainant else True,
         )
         add_address(participant)
+        CaseContact.objects.create(
+            case=case,
+            case_participant=participant,
+            contact_type=ContactType.MOBILE_NUMBER,
+            value=mobile_number,
+            ordinal=1,
+        )
         if complainant:
             CaseDocument.objects.create(
                 case=case,
@@ -190,7 +208,11 @@ def complete_filing(case, filer):
     case.affidavit = "<p>The facts above are true.</p>"
     case.save(update_fields=["affidavit"])
     row = ports.detail(case)
-    row.adr_other_prayer = {"final_relief": "Direct the accused to pay the cheque amount."}
+    row.adr_other_prayer = {
+        "adr_preference": "NO",
+        "interim_relief": "Direct the accused to pay interim compensation.",
+        "final_relief": "Direct the accused to pay the cheque amount.",
+    }
     row.save()
 
 

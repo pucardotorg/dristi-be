@@ -190,14 +190,16 @@ One person's (or institution's) involvement in one case, in one role. Complainan
 | `name_at_filing` | varchar(256) | NULLABLE | Frozen snapshot of name: the person's, or the institution's when there is no person; 256 wide, as `person.name` and `institution.entity_name`, so any stored name fits. Required for every role but WITNESS; a witness needs this or `designation_at_filing` |
 | `gender_at_filing` | varchar(32) | NULLABLE | Frozen snapshot of gender |
 | `age_at_filing` | smallint | NULLABLE | Frozen snapshot of age: from `person.date_of_birth` when known, else `person.age` |
-| `designation_at_filing` | varchar(128) | NULLABLE | The acting person's designation at the institution, e.g. Director; required for an ACCUSED when both `person_id` and `institution_id` are set, optional for a COMPLAINANT |
+| `designation_at_filing` | varchar(128) | NULLABLE | The acting person's designation at the institution, e.g. Director; required to file when both `person_id` and `institution_id` are set on a COMPLAINANT (its authorised representative, PRD LIT-25a); optional for a person responsible for an ACCUSED institution (PRD ACC-15) |
 | `entity_name_at_filing` | varchar(256) | NULLABLE | The institution's name as the filer entered it; set only when `institution_id` is set, and may be left out while drafting (the case filing completeness check asks for it). With no person it equals `name_at_filing` |
 | `additional_details` | jsonb | NOT NULL, default '{}' | Role-specific data (see §4.3) |
 | `start_date` | timestamp | NOT NULL, default now() | When participant was added |
 | `end_date` | timestamp | NULLABLE | When participant was removed |
 | `is_party_in_person` | boolean | NOT NULL, default false | Appearing without an advocate |
+| `poa_given` | boolean | NULLABLE; NULL until answered, and NULL for everything but an individual complainant (CHECK) | The filer's answer to "Has this litigant transferred Power of Attorney to somebody else?" (PRD LIT-10). A yes needs the complainant's POA holder, the holder's identity proof and a POA document, which the completeness check asks for |
 | `resides_within_jurisdiction` | boolean | NULLABLE; NOT NULL and default true for an accused, NULL for every other role (CHECK) | The filer's answer to "Does the accused reside within the jurisdiction of this court?" (BNSS s.225). A column, not `additional_details`, because scrutiny acts on it: an accused outside jurisdiction means process is postponed for inquiry |
-| `contact_details_unknown_declared` | boolean | NOT NULL, default false; true only for an accused (CHECK), and only while the accused has no mobile number or email contact (application rule, §4.6) | The filer's declaration that they do not know the accused's phone number or email (PRD ACC-6/7), made instead of giving one |
+| `contact_details_unknown_declared` | boolean | NOT NULL, default false; true only for an ACCUSED with a `person_id` (CHECK), and only while that person has no mobile number or email of their own on the case (application rule, §4.6) | The filer's declaration that they do not know this accused person's own phone number or email (PRD ACC-6/7, ACC-16/17), made instead of giving one |
+| `institution_contact_details_unknown_declared` | boolean | NOT NULL, default false; true only for an ACCUSED with an `institution_id` (CHECK), and only while the institution has no mobile number or email of its own on the case (application rule, §4.6) | The same declaration for the accused institution's own contacts. The case's answer for the institution, so every active accused participant of one institution on a case holds the same value; the party writes keep them alike, as they do `entity_name_at_filing` (spec 0021 §4.2) |
 | `party_in_person_affidavit` | text | NULLABLE | A complainant's affidavit asking to appear in person (rich text, stored as sent, sanitized wherever rendered); COMPLAINANT only; required by the completeness check when `is_party_in_person` is true |
 | `has_signed` | boolean | NOT NULL, default false | True once they have e-signed, or uploaded a signed copy of, the case filing |
 | `signature_document_id` | uuid | FK → file, nullable, ON DELETE PROTECT | The signed filing the e-sign service stored (spec 0021 §8). When it was signed is recorded on that e-sign transaction (`completed_at`), not repeated here |
@@ -215,12 +217,11 @@ Date of birth is optional when filing: a party may be added with only an approxi
 |---|---|---|
 | set | NULL | An individual party |
 | NULL | set | An institution party, with no one named to act for it yet |
-| set | set | An institution party and the person acting for it (its director, CEO or authorised signatory); `designation_at_filing` is required for an accused |
+| set | set | An institution party and the person acting for it (its director, CEO or authorised signatory); `designation_at_filing` is required to file for a complainant's |
 
 **Constraints:**
 - `CHECK (person_id IS NOT NULL OR institution_id IS NOT NULL)` — at least one must be set; both may be
 - `CHECK (institution_id IS NULL OR role IN ('COMPLAINANT', 'ACCUSED'))` — witnesses and POA holders are always individuals
-- `CHECK (person_id IS NULL OR institution_id IS NULL OR role <> 'ACCUSED' OR designation_at_filing IS NOT NULL)` — an accused institution's officer is liable only through their role (for example a director under section 141 of the Negotiable Instruments Act), so the role is recorded; a complainant institution's representative needs authorisation to act, not a title, so a designation is optional there
 - `CHECK (role IN ('COMPLAINANT', 'ACCUSED', 'WITNESS', 'POA_HOLDER'))`
 - `UNIQUE (case_id, role, ordinal)` WHERE `is_active = true` — each active ordinal is unique per role per case; removed rows keep their old ordinal
 - Index on `(case_id, role, is_active)` — common query pattern
@@ -229,6 +230,7 @@ Date of birth is optional when filing: a party may be added with only an approxi
 - The same person cannot be both a complainant and an accused on one case, nor hold the same role twice on it (while active). An institution likewise, with one exception: an **accused** institution is one participant for each person summoned for it (its authorised representatives, of any designation), plus at most one with no person. They share the institution, so its contacts on the case (§4.6) are theirs together, and a change to the institution, or to the case's name for it, applies to all of them. A complainant may also be the POA holder for a co-complainant (§5).
 - Every party needs at least one address contact (§4.6): notices and summons must be served somewhere, witnesses included. An individual is served at their own; an institution at its own in the case, whether or not a person acts for it.
 - `name_at_filing` is required for COMPLAINANT, ACCUSED and POA_HOLDER. A witness is often known only by their post ("Branch manager, SBI Kottayam"), so a witness needs a `name_at_filing` or a `designation_at_filing`; their phone number is optional. Witnesses are optional; these apply to each witness who is added. The completeness check (spec 0021 §6.3) checks them again.
+- A person acting for an institution needs an address of their own, and a complainant institution's authorised representative, who acts and signs for it, a `designation_at_filing` too (PRD LIT-25a). A person responsible for an accused institution may leave the designation out (PRD ACC-15). A complainant institution needs an authorised representative, with their own mobile number and age, and an accused institution at least one person responsible. None of these is checked on save; the completeness check (spec 0021 §6.3) asks for them.
 
 ### 4.3 Role-Specific `additional_details`
 
@@ -342,8 +344,8 @@ Every mobile number, email and address of a party in a case, one row each, for e
 **Application-layer rules:**
 - The participant is on the same case, and an institution is the participant's own or that of an active participant on the case.
 - A person's mobile number is in E.164 form (`person.phone_number`'s rule); an institution's may be a landline (§3).
-- Every address of an accused or witness, their institution's included, needs a `police_station`.
-- Every party needs an address (§4.2); an accused may declare their contact details unknown only while they and their institution have no mobile number or email.
+- Every address of an accused, their institution's included, needs a `police_station`.
+- Every party needs an address (§4.2). An accused person may declare their own contact details unknown only while they have no mobile number or email of their own, and an accused institution its own only while it has none on the case; neither counts the other's. To be filed, every accused person and every accused institution needs a mobile number or email of their own, or their declaration (PRD ACC-6/7, ACC-16/17; spec 0021 §6.3).
 
 **Why per case, with `case_id`:**
 An institution is one row shared by every filing that names it, so its contacts cannot live on it without one filing seeing, or overwriting, another's. `case_id` plus `institution_id` identifies the institution's own contacts in one case, as `case_participant_id` identifies a person's.
@@ -460,7 +462,7 @@ A single recorded address. Rows are **immutable snapshots**: once written, never
 | `pincode` | varchar(6) | NOT NULL, may be blank | Indian postal code |
 | `district` | varchar(100) | NOT NULL, may be blank | Auto-filled from pincode, then stored |
 | `state` | varchar(100) | NOT NULL, may be blank | Auto-filled from pincode, then stored |
-| `police_station` | varchar(255) | NOT NULL, may be blank | Police station with jurisdiction over the address, needed for service of notice. Required to file for accused and witness addresses, as stored (a value of only invisible characters is blank), by the case filing completeness check (spec 0021 §6.3); complainant and POA holder addresses may leave it blank |
+| `police_station` | varchar(255) | NOT NULL, may be blank | Police station with jurisdiction over the address, needed for service of notice. Required to file for accused addresses, as stored (a value of only invisible characters is blank), by the case filing completeness check (spec 0021 §6.3); complainant, POA holder and witness addresses may leave it blank |
 | `hash` | varchar(64) | NOT NULL, UNIQUE | SHA-256 of the canonical form, see §7.4 |
 | `created_at` | timestamp | NOT NULL, default now() | Creation timestamp only, no `updated_at` |
 | `created_by` | uuid | FK → app_user, NULLABLE, ON DELETE PROTECT | Who first recorded the address; no `updated_by` |
@@ -847,13 +849,13 @@ To add a second case type (e.g., civil suit):
 | 9 | Multiple cheques in one case | `case_evidence` | `evidence_type = CHEQUE`, `ordinal = 1/2/3` |
 | 10 | Case transitions through scrutiny | `cases.status` | DRAFT_IN_PROGRESS → PENDING_SIGN → ... → REGISTERED |
 | 11 | Document replaced during scrutiny | `case_document` | Old row: `is_active = false`, new row: `is_active = true` |
-| 12 | Institution as complainant, represented by CEO | `case_participant`, `person`, `institution` | `institution_id` set (reused when its PAN or CIN matches), `person_id` set for the CEO, `designation_at_filing` set if given (optional for a complainant). A CEO entered by the filer is a new `person` with `institution_id` and `designation` set; when the filer is the CEO (`self`), their own `person` is unchanged and the designation is only in the snapshot |
+| 12 | Institution as complainant, represented by CEO | `case_participant`, `person`, `institution` | `institution_id` set (reused when its PAN or CIN matches), `person_id` set for the CEO, `designation_at_filing` set if given (required to file, spec 0021 §6.3). A CEO entered by the filer is a new `person` with `institution_id` and `designation` set; when the filer is the CEO (`self`), their own `person` is unchanged and the designation is only in the snapshot |
 
 ## 14. Validation Rules
 
 ### 14.1 Application-Layer Checks
 
-- `case_participant`: At least one of `person_id` or `institution_id` must be set; when both are set on an ACCUSED, `designation_at_filing` is required. Only COMPLAINANT and ACCUSED may have an `institution_id`.
+- `case_participant`: At least one of `person_id` or `institution_id` must be set; when both are set on a COMPLAINANT, `designation_at_filing` is required to file. Only COMPLAINANT and ACCUSED may have an `institution_id`.
 - `case_participant`: The same person cannot be a complainant and an accused on one case, nor hold one role twice there while active. Every party has an address contact (§4.6). `name_at_filing` is required except for a witness, who needs it or `designation_at_filing`.
 - `witness`: an active person is a witness at most once per side of a case.
 - `poa_mandate`: The represented participant is an active COMPLAINANT or ACCUSED on the same case, and not the holder's own person.

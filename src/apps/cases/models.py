@@ -10,7 +10,6 @@ from django.db.models import F, Q
 from django.utils import timezone
 from django.utils.html import strip_tags
 
-from apps.api import errors as api_errors
 from apps.core.models import BaseActivatableModel, BaseAuditableModel, BaseModel
 from apps.parties.models import MAX_AGE, contact_number_validator, phone_number_validator
 from apps.users.models import ApprovalStatus
@@ -152,8 +151,8 @@ OPPOSING_ROLES = {
 }
 
 # Notice to these roles is served through the police station (spec 0020 §7.2);
-# complainant and POA holder addresses may leave it blank.
-POLICE_STATION_ROLES = (ParticipantRole.ACCUSED, ParticipantRole.WITNESS)
+# every other party's addresses may leave it blank (PRD ACC-13, WIT-7).
+POLICE_STATION_ROLES = (ParticipantRole.ACCUSED,)
 
 
 def scan_type_message(scan_type):
@@ -178,6 +177,7 @@ INSTITUTION_ROLE_MESSAGE = "Only a complainant or an accused may be an instituti
 DESIGNATION_NOT_ALLOWED_MESSAGE = "Only for a person acting for an institution."
 INSTITUTION_DETAILS_NOT_ALLOWED_MESSAGE = "Only for an institution."
 COMPLAINANT_ONLY_MESSAGE = "Only for a complainant."
+POA_GIVEN_MESSAGE = "Only for an individual complainant."
 INSTITUTION_CONTACTS_MESSAGE = (
     "Only for a person. Send an institution's own contacts under institution."
 )
@@ -195,8 +195,16 @@ RESIDES_WITHIN_JURISDICTION_MESSAGE = (
     "Whether the party resides within the court's jurisdiction is recorded for an accused only."
 )
 CONTACT_UNKNOWN_MESSAGE = (
-    "Declare the accused's contact details unknown only for an accused with no phone "
-    "number or email."
+    "Declare contact details unknown only while no mobile number or email is given."
+)
+# Each accused person, and each accused institution, is declared on their own
+# (PRD ACC-6/7, ACC-16/17).
+PERSON_CONTACT_UNKNOWN_MESSAGE = (
+    "Only an accused person's own contact details are declared here; an institution's "
+    "are declared under institution."
+)
+INSTITUTION_CONTACT_UNKNOWN_MESSAGE = (
+    "Only an accused institution's contact details can be declared unknown."
 )
 SAME_CASE_MESSAGE = "Must be a participant of the same case."
 ACTIVE_PARTICIPANT_MESSAGE = "Must be an active participant."
@@ -308,6 +316,11 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     start_date = models.DateTimeField(default=timezone.now)
     end_date = models.DateTimeField(null=True, blank=True)
     is_party_in_person = models.BooleanField(default=False)
+    # The filer's answer to "Has this litigant transferred Power of Attorney to
+    # somebody else?" (PRD LIT-10): an individual complainant only, ``None``
+    # until answered. A yes needs a POA holder acting for them, the holder's ID
+    # card and the POA document (``services.filing.validation_errors``).
+    poa_given = models.BooleanField(null=True, blank=True)
     # The filer's answer to "Does the accused reside within the jurisdiction of
     # this court?" (BNSS s.225): yes by default for an accused, empty for every
     # other role. The court decides jurisdiction on the facts.
@@ -315,9 +328,16 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
     # A complainant's request to appear in person: rich-text editor output,
     # stored as sent and sanitized wherever it is rendered.
     party_in_person_affidavit = models.TextField(null=True, blank=True)
-    # The filer's declaration that they do not know the accused's phone number
-    # or email (PRD ACC-6/7), made instead of giving one. Accused only.
+    # The filer's declaration that they do not know this accused person's own
+    # phone number or email (PRD ACC-6/7, ACC-16/17), made instead of giving
+    # one. An accused with a person only.
     contact_details_unknown_declared = models.BooleanField(default=False)
+    # The same declaration for the accused institution itself: its own contacts
+    # on this case. The case's answer for the institution, so every accused
+    # participant of one institution on a case holds the same value, kept in
+    # step by the party writes (``services.participants``), as
+    # ``entity_name_at_filing`` is. An accused with an institution only.
+    institution_contact_details_unknown_declared = models.BooleanField(default=False)
     has_signed = models.BooleanField(default=False)
     signature_document = models.ForeignKey(
         "files.File",
@@ -343,6 +363,12 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 violation_error_code=case_errors.INSTITUTION_NOT_ALLOWED.code,
             ),
             models.CheckConstraint(
+                condition=Q(poa_given__isnull=True)
+                | Q(role=ParticipantRole.COMPLAINANT, institution__isnull=True),
+                name="cases_case_participant_poa_given_individual_complainant",
+                violation_error_message=POA_GIVEN_MESSAGE,
+            ),
+            models.CheckConstraint(
                 condition=(
                     Q(role=ParticipantRole.ACCUSED, resides_within_jurisdiction__isnull=False)
                     | (
@@ -357,9 +383,16 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 # That no mobile number or email is given is checked against the
                 # participant's contacts, in the party write and at validation.
                 condition=Q(contact_details_unknown_declared=False)
-                | Q(role=ParticipantRole.ACCUSED),
-                name="cases_case_participant_contact_unknown_accused_only",
-                violation_error_message=CONTACT_UNKNOWN_MESSAGE,
+                | Q(role=ParticipantRole.ACCUSED, person__isnull=False),
+                name="cases_case_participant_contact_unknown_accused_person",
+                violation_error_message=PERSON_CONTACT_UNKNOWN_MESSAGE,
+            ),
+            models.CheckConstraint(
+                # Likewise against the institution's own contacts on the case.
+                condition=Q(institution_contact_details_unknown_declared=False)
+                | Q(role=ParticipantRole.ACCUSED, institution__isnull=False),
+                name="cases_case_participant_contact_unknown_accused_institution",
+                violation_error_message=INSTITUTION_CONTACT_UNKNOWN_MESSAGE,
             ),
             models.CheckConstraint(
                 condition=Q(role__in=ParticipantRole.values),
@@ -383,11 +416,12 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         """Apply the rules the database cannot express (spec 0020 §4.2, §7.2, §14.1).
 
         What a filing must have before it is filed (a name, an institution's
-        name, an address, an accused institution's officer's designation) is
+        name, an address, a complainant's authorised representative's designation) is
         not checked here: a
         draft may be saved without it, and the completeness check reports it
-        (``services.filing.validation_errors``). Only an accused may declare
-        their contact details unknown. An institution's name is recorded
+        (``services.filing.validation_errors``). Only an accused person may
+        declare their own contact details unknown, and only for an accused
+        institution may its be declared. An institution's name is recorded
         only when there is one, and only a
         complainant has a party-in-person affidavit. While
         active, a person or an institution cannot hold one role twice on a
@@ -399,14 +433,26 @@ class CaseParticipant(BaseModel, BaseActivatableModel, BaseAuditableModel):
         # Not a ``_raise_broken_rules`` list: the role-conflict and advocate
         # checks query the database, and run only when the cheaper rules allow.
         errors = {}
-        if self.contact_details_unknown_declared and self.role != ParticipantRole.ACCUSED:
+        if self.contact_details_unknown_declared and not (
+            self.role == ParticipantRole.ACCUSED and self.person_id
+        ):
             errors["contact_details_unknown_declared"] = _rule_error(
-                api_errors.INVALID, CONTACT_UNKNOWN_MESSAGE
+                case_errors.FIELD_NOT_APPLICABLE, PERSON_CONTACT_UNKNOWN_MESSAGE
+            )
+        if self.institution_contact_details_unknown_declared and not (
+            self.role == ParticipantRole.ACCUSED and self.institution_id
+        ):
+            errors["institution_contact_details_unknown_declared"] = _rule_error(
+                case_errors.FIELD_NOT_APPLICABLE, INSTITUTION_CONTACT_UNKNOWN_MESSAGE
             )
         if self.institution_id and self.role not in INSTITUTION_ROLES:
             errors["institution"] = _rule_error(
                 case_errors.INSTITUTION_NOT_ALLOWED, INSTITUTION_ROLE_MESSAGE
             )
+        if self.poa_given is not None and not (
+            self.role == ParticipantRole.COMPLAINANT and not self.institution_id
+        ):
+            errors["poa_given"] = _rule_error(case_errors.FIELD_NOT_APPLICABLE, POA_GIVEN_MESSAGE)
         if self.party_in_person_affidavit and self.role != ParticipantRole.COMPLAINANT:
             errors["party_in_person_affidavit"] = _rule_error(
                 case_errors.FIELD_NOT_APPLICABLE, COMPLAINANT_ONLY_MESSAGE
@@ -951,9 +997,8 @@ class CaseContact(BaseModel, BaseActivatableModel, BaseAuditableModel):
 
         The owner is on the same case, and an institution is the participant's
         own or one on the case. A person's mobile number is in E.164 form; an
-        institution's may be a landline. An accused's or witness's address
-        needs a police station only to be filed: the completeness check asks
-        for it.
+        institution's may be a landline. An accused's address needs a police
+        station only to be filed: the completeness check asks for it.
         """
         super().clean()
         errors = {}

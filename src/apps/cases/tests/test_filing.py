@@ -20,6 +20,7 @@ from apps.cases.models import (
     CaseStatus,
     CaseType,
     ChequeBounceCase,
+    ContactType,
     ParticipantRole,
     Representation,
 )
@@ -35,6 +36,7 @@ from .conftest import CHEQUE_INFO, DEMAND_NOTICE_INFO, RETURN_MEMO_INFO, error_c
 from .test_api import add_cheque, add_evidence, put_section, upload
 from .test_participants import (
     INSTITUTION,
+    MOBILE,
     PERSON,
     add,
     add_advocate,
@@ -43,22 +45,32 @@ from .test_participants import (
     add_witness,
     end,
     make_advocate,
+    patch,
     remove,
 )
 
 pytestmark = pytest.mark.django_db
 
-REQUIRED_DOCUMENTS = ["BOUNCED_CHEQUE", "RETURN_MEMO", "LEGAL_DEMAND_NOTICE", "PROOF_OF_DISPATCH"]
+REQUIRED_DOCUMENTS = ["BOUNCED_CHEQUE", "RETURN_MEMO", "LEGAL_DEMAND_NOTICE"]
+ACCUSED_MOBILE = "+919812345678"
+POA_MOBILE = "+919845012345"
+# A second complainant's, which may not be the first's (PRD LIT-3).
+SECOND_MOBILE = "+919811122233"
 # Required beside the cheque.
 EVIDENCE = [("RETURN_MEMO", RETURN_MEMO_INFO), ("LEGAL_DEMAND_NOTICE", DEMAND_NOTICE_INFO)]
 
 JURISDICTION = {
     "cheque_deposited_by_payee": False,
     "drawer_bank_police_station": "Ernakulam Central",
+    "other_complaints_pending": False,
     "cause_of_action_date": "2024-02-20",
     "complaint_filing_date": "2024-03-05",
 }
-PRAYER = {"final_relief": "Direct the accused to pay the cheque amount."}
+PRAYER = {
+    "adr_preference": "NO",
+    "interim_relief": "Direct the accused to pay interim compensation.",
+    "final_relief": "Direct the accused to pay the cheque amount.",
+}
 AFFIDAVIT = "<p>I, the complainant, state on oath that the facts above are true.</p>"
 PIP_AFFIDAVIT = "<p>I request permission to appear and argue in person.</p>"
 
@@ -102,7 +114,6 @@ def add_with_scan(client, case_id, pdf, evidence_type, evidence_info):
 
 def make_complete_case(client, case_id, pdf):
     """Fill a draft until it passes the completeness check; return the complainant."""
-    assert upload(client, case_id, pdf, "PROOF_OF_DISPATCH").status_code == 201
     complainant = add(
         client,
         case_id,
@@ -111,20 +122,24 @@ def make_complete_case(client, case_id, pdf):
         party_in_person_affidavit=PIP_AFFIDAVIT,
     ).json()
     upload_identity_proof(client, case_id, pdf, complainant)
-    accused = add(client, case_id, "accused", person={**PERSON, "name": "Suresh Patel"})
+    # A number of their own: the complainant's may not be the accused's (PRD LIT-3).
+    accused = add(
+        client,
+        case_id,
+        "accused",
+        person={**PERSON, "name": "Suresh Patel"},
+        mobile_numbers=[ACCUSED_MOBILE],
+    )
     assert accused.status_code == 201
     add_with_scan(client, case_id, pdf, "CHEQUE", CHEQUE_INFO)
     for evidence_type, evidence_info in EVIDENCE:
         response = add_with_scan(client, case_id, pdf, evidence_type, evidence_info)
-    # DEMAND_NOTICE_INFO is delivered, so it needs its proof of delivery.
-    response = upload(
-        client,
-        case_id,
-        pdf,
-        "PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
-        case_evidence_id=response.json()["case_evidence_id"],
-    )
-    assert response.status_code == 201, response.json()
+    # The demand notice needs its proof of dispatch. DEMAND_NOTICE_INFO is
+    # delivered, and is filed with its proof of delivery too, which is optional.
+    notice_id = response.json()["case_evidence_id"]
+    for document_type in ("PROOF_OF_DISPATCH", "PROOF_OF_DELIVERY_OF_DEMAND_NOTICE"):
+        response = upload(client, case_id, pdf, document_type, case_evidence_id=notice_id)
+        assert response.status_code == 201, response.json()
     assert put_section(client, case_id, "jurisdiction_limitation", JURISDICTION).status_code == 200
     assert put_section(client, case_id, "adr_other_prayer", PRAYER).status_code == 200
     assert put_affidavit(client, case_id).status_code == 200
@@ -270,7 +285,12 @@ class TestPreview:
             "RETURN_MEMO",
         ]
         assert sorted(d["document_type"] for d in body["documents"]) == sorted(
-            [*REQUIRED_DOCUMENTS, "IDENTITY_PROOF", "PROOF_OF_DELIVERY_OF_DEMAND_NOTICE"]
+            [
+                *REQUIRED_DOCUMENTS,
+                "IDENTITY_PROOF",
+                "PROOF_OF_DISPATCH",
+                "PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
+            ]
         )
         assert body["details"] == {
             "jurisdiction_limitation": JURISDICTION,
@@ -541,18 +561,22 @@ class TestPartialDraft:
         assert response.status_code == 400
         assert error_codes(response) == {f"participants.{accused.pk}": ["E07005"]}
 
-    def test_an_accused_institutions_officer_needs_a_designation(self, client, draft, pdf):
+    def test_an_accused_institutions_officer_needs_no_designation(self, client, draft, pdf):
+        """PRD ACC-15: optional for a person responsible for an accused institution."""
         make_complete_case(client, draft, pdf)
-        response = add(client, draft, "accused", institution=INSTITUTION, person=PERSON)
+        response = add(
+            client,
+            draft,
+            "accused",
+            institution=INSTITUTION,
+            person=PERSON,
+            mobile_numbers=[ACCUSED_MOBILE],
+            addresses=[ADDRESS_DEFAULTS],
+        )
         assert response.status_code == 201, response.json()
-        participant_id = response.json()["case_participant_id"]
+        assert response.json()["designation_at_filing"] is None
 
-        assert validate(client, draft)["errors"] == [
-            {
-                "field": f"participants.{participant_id}",
-                "message": "Accused #2 acts for an institution but has no designation.",
-            }
-        ]
+        assert validate(client, draft)["is_valid"] is True
 
     def test_a_complainant_institution_needs_a_pan_a_cin_or_the_declaration(
         self, client, draft, pdf
@@ -607,13 +631,15 @@ class TestValidate:
             "evidence.LEGAL_DEMAND_NOTICE",
             "details.jurisdiction_limitation",
             "affidavit",
-            # Scans are asked for on their evidence items, of which there are none.
-            "documents.PROOF_OF_DISPATCH",
+            # Scans and proofs of dispatch are asked for on their evidence
+            # items, of which there are none.
         }
 
     def test_a_complainant_needs_an_advocate_or_to_appear_in_person(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)
-        second = add_complainant(client, draft, name="Anita Kumar")
+        second = add(
+            client, draft, person={**PERSON, "name": "Anita Kumar"}, mobile_numbers=[SECOND_MOBILE]
+        ).json()
         upload_identity_proof(client, draft, pdf, second)
 
         body = validate(client, draft)
@@ -682,15 +708,23 @@ class TestValidate:
         ]
 
     def test_an_institution_is_served_at_its_own_address(self, client, draft, pdf):
+        """The address of the person responsible for it does not stand in for it."""
         make_complete_case(client, draft, pdf)
         accused = add(
             client,
             draft,
             "accused",
             institution={**INSTITUTION, "mobile_numbers": ["080-22334455"]},
+            person=PERSON,
+            designation="Director",
+            mobile_numbers=[ACCUSED_MOBILE],
+            addresses=[ADDRESS_DEFAULTS],
         ).json()
         CaseContact.objects.filter(
-            case_id=draft, institution_id=accused["institution_id"], case_participant__isnull=True
+            case_id=draft,
+            institution_id=accused["institution_id"],
+            case_participant__isnull=True,
+            contact_type=ContactType.ADDRESS,
         ).update(is_active=False)
 
         assert validate(client, draft)["errors"] == [
@@ -730,7 +764,6 @@ class TestValidate:
         [
             ("CHEQUE", CHEQUE_INFO, "Cheque"),
             ("RETURN_MEMO", RETURN_MEMO_INFO, "Return memo"),
-            # Undelivered, so it needs no proof of delivery of its own.
             ("LEGAL_DEMAND_NOTICE", UNDELIVERED_NOTICE, "Legal demand notice"),
         ],
     )
@@ -738,7 +771,21 @@ class TestValidate:
         self, client, draft, pdf, evidence_type, evidence_info, label
     ):
         make_complete_case(client, draft, pdf)
+        # A cheque and its return memo come in pairs: the other half is filed whole.
+        pair = {"CHEQUE": ("RETURN_MEMO", RETURN_MEMO_INFO), "RETURN_MEMO": ("CHEQUE", CHEQUE_INFO)}
+        if evidence_type in pair:
+            add_with_scan(client, draft, pdf, *pair[evidence_type])
         second = add_evidence(client, draft, evidence_type, evidence_info).json()
+        if evidence_type == "LEGAL_DEMAND_NOTICE":
+            # Its own proof of dispatch, so only the scan is missing.
+            dispatch = upload(
+                client,
+                draft,
+                pdf,
+                "PROOF_OF_DISPATCH",
+                case_evidence_id=second["case_evidence_id"],
+            )
+            assert dispatch.status_code == 201, dispatch.json()
 
         assert validate(client, draft)["errors"] == [
             {
@@ -780,6 +827,7 @@ class TestValidate:
             reverse("case-poa-holder-list", args=[draft]),
             {
                 "person": {**PERSON, "name": "Mohan Das"},
+                "mobile_numbers": [POA_MOBILE],
                 "addresses": [ADDRESS_DEFAULTS],
                 "represented_participant_ids": [complainant["case_participant_id"]],
             },
@@ -804,6 +852,7 @@ class TestValidate:
             client,
             draft,
             person={**PERSON, "name": "Anil Rao"},
+            mobile_numbers=[SECOND_MOBILE],
             is_party_in_person=True,
             party_in_person_affidavit=PIP_AFFIDAVIT,
         )
@@ -825,7 +874,9 @@ class TestValidate:
         self, client, make_user, draft, pdf
     ):
         make_complete_case(client, draft, pdf)
-        second = add_complainant(client, draft, name="Anil Rao")
+        second = add(
+            client, draft, person={**PERSON, "name": "Anil Rao"}, mobile_numbers=[SECOND_MOBILE]
+        ).json()
         upload_identity_proof(client, draft, pdf, second)
         advocate = make_advocate(make_user)
         assert (
@@ -842,18 +893,58 @@ class TestValidate:
         upload(client, draft, pdf, "VAKALATNAMA", case_participant_id=second["case_participant_id"])
         assert validate(client, draft)["is_valid"] is True
 
-    def test_a_delivered_notice_needs_its_proof_of_delivery(self, client, draft, pdf):
+    def test_a_delivered_notice_needs_no_proof_of_delivery(self, client, draft, pdf):
+        """PRD DCM-5: proof of delivery is optional."""
         make_complete_case(client, draft, pdf)
         CaseDocument.objects.filter(
             case_id=draft, document_type="PROOF_OF_DELIVERY_OF_DEMAND_NOTICE"
         ).update(is_active=False)
 
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_notice_needs_its_proof_of_dispatch(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        CaseDocument.objects.filter(case_id=draft, document_type="PROOF_OF_DISPATCH").update(
+            is_active=False
+        )
+
         assert validate(client, draft)["errors"] == [
             {
-                "field": "documents.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
-                "message": "Demand notice #1 was delivered but has no proof of delivery.",
+                "field": "documents.PROOF_OF_DISPATCH",
+                "message": "Demand notice #1 has no proof of dispatch.",
             }
         ]
+
+    def test_an_unlinked_proof_of_dispatch_counts_for_no_notice(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        CaseDocument.objects.filter(case_id=draft, document_type="PROOF_OF_DISPATCH").update(
+            case_evidence=None
+        )
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "documents.PROOF_OF_DISPATCH",
+                "message": "Demand notice #1 has no proof of dispatch.",
+            }
+        ]
+
+    def test_each_notice_needs_its_own_proof_of_dispatch(self, client, draft, pdf):
+        """PRD DCM-4: one per demand notice; another notice's does not count."""
+        make_complete_case(client, draft, pdf)
+        second = add_with_scan(client, draft, pdf, "LEGAL_DEMAND_NOTICE", UNDELIVERED_NOTICE).json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "documents.PROOF_OF_DISPATCH",
+                "message": "Demand notice #2 has no proof of dispatch.",
+            }
+        ]
+
+        response = upload(
+            client, draft, pdf, "PROOF_OF_DISPATCH", case_evidence_id=second["case_evidence_id"]
+        )
+        assert response.status_code == 201, response.json()
+        assert validate(client, draft)["is_valid"] is True
 
     def test_an_undelivered_notice_needs_no_proof_of_delivery(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)
@@ -904,6 +995,249 @@ class TestValidate:
 
         assert fields_of(validate(client, draft)) == {"evidence.CHEQUE"}
 
+    @pytest.mark.parametrize(
+        ("section", "key", "field"),
+        [
+            (
+                "jurisdiction_limitation",
+                "other_complaints_pending",
+                "details.jurisdiction_limitation",
+            ),
+            ("adr_other_prayer", "adr_preference", "details.adr_other_prayer"),
+            ("adr_other_prayer", "interim_relief", "details.adr_other_prayer"),
+        ],
+    )
+    def test_a_section_answer_left_out_blocks_filing(self, client, draft, pdf, section, key, field):
+        make_complete_case(client, draft, pdf)
+        row = ChequeBounceCase.objects.get(case_id=draft)
+        data = {k: v for k, v in getattr(row, section).items() if k != key}
+        ChequeBounceCase.objects.filter(case_id=draft).update(**{section: data})
+
+        body = validate(client, draft)
+
+        assert any(
+            f"'{key}' is a required property" in error["message"] for error in body["errors"]
+        )
+        assert fields_of(body) == {field}
+
+    def test_whether_the_accused_replied_is_required(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        notice = CaseEvidence.objects.get(case_id=draft, evidence_type="LEGAL_DEMAND_NOTICE")
+        info = {k: v for k, v in notice.evidence_info.items() if k != "accused_replied"}
+        # Saved without it: a draft may be partial.
+        response = client.patch(
+            reverse("case-evidence-detail", args=[notice.pk]),
+            {"evidence_info": info},
+            format="json",
+        )
+        assert response.status_code == 200, response.json()
+
+        body = validate(client, draft)
+
+        assert fields_of(body) == {"evidence.LEGAL_DEMAND_NOTICE"}
+        assert "'accused_replied' is a required property" in body["errors"][0]["message"]
+
+    def test_a_return_before_presentation_is_reported_when_written_another_way(
+        self, client, draft, pdf
+    ):
+        make_complete_case(client, draft, pdf)
+        memo = CaseEvidence.objects.get(case_id=draft, evidence_type="RETURN_MEMO")
+        CaseEvidence.objects.filter(pk=memo.pk).update(
+            evidence_info={**memo.evidence_info, "return_date": "2024-01-10"}
+        )
+
+        body = validate(client, draft)
+
+        assert fields_of(body) == {"evidence.RETURN_MEMO"}
+        assert "return date cannot be before the presentation date" in body["errors"][0]["message"]
+
+    @pytest.mark.parametrize("key", ["delivery_date", "return_date"])
+    def test_a_notice_dated_before_dispatch_is_reported_when_written_another_way(
+        self, client, draft, pdf, key
+    ):
+        make_complete_case(client, draft, pdf)
+        notice = CaseEvidence.objects.get(case_id=draft, evidence_type="LEGAL_DEMAND_NOTICE")
+        CaseEvidence.objects.filter(pk=notice.pk).update(
+            evidence_info={**notice.evidence_info, key: "2024-01-30"}
+        )
+
+        body = validate(client, draft)
+
+        assert fields_of(body) == {"evidence.LEGAL_DEMAND_NOTICE"}
+        assert "cannot be before the dispatch date" in body["errors"][0]["message"]
+
+    def test_presentation_before_the_cheque_date_is_saved_and_reported(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        memo = CaseEvidence.objects.get(case_id=draft, evidence_type="RETURN_MEMO")
+        # The cheque is dated 2024-01-15; the memo is another item, so this saves.
+        response = client.patch(
+            reverse("case-evidence-detail", args=[memo.pk]),
+            {
+                "evidence_info": {
+                    **RETURN_MEMO_INFO,
+                    "presentation_date": "2024-01-10",
+                    "return_date": "2024-01-12",
+                }
+            },
+            format="json",
+        )
+        assert response.status_code == 200, response.json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "evidence.RETURN_MEMO",
+                "message": (
+                    "Return memo #1: the presentation date cannot be before the date of cheque #1."
+                ),
+            }
+        ]
+
+    def test_presentation_on_the_cheque_date_is_valid(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        memo = CaseEvidence.objects.get(case_id=draft, evidence_type="RETURN_MEMO")
+        CaseEvidence.objects.filter(pk=memo.pk).update(
+            evidence_info={**memo.evidence_info, "presentation_date": CHEQUE_INFO["cheque_date"]}
+        )
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_memo_is_compared_with_the_cheque_of_its_own_number(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        add_with_scan(client, draft, pdf, "CHEQUE", {**CHEQUE_INFO, "cheque_date": "2024-01-20"})
+        # Memo #1 is presented 01-18, before cheque #2's date but after cheque #1's;
+        # cheque #2 has no memo yet.
+        assert validate(client, draft)["errors"] == [
+            {"field": "evidence.RETURN_MEMO", "message": "Cheque #2 has no return memo."}
+        ]
+
+        add_with_scan(
+            client,
+            draft,
+            pdf,
+            "RETURN_MEMO",
+            {**RETURN_MEMO_INFO, "presentation_date": "2024-01-18", "return_date": "2024-01-22"},
+        )
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "evidence.RETURN_MEMO",
+                "message": (
+                    "Return memo #2: the presentation date cannot be before the date of cheque #2."
+                ),
+            }
+        ]
+
+    def test_each_cheque_needs_its_own_return_memo(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        add_with_scan(client, draft, pdf, "CHEQUE", CHEQUE_INFO)
+        add_with_scan(client, draft, pdf, "CHEQUE", CHEQUE_INFO)
+
+        assert validate(client, draft)["errors"] == [
+            {"field": "evidence.RETURN_MEMO", "message": "Cheque #2 has no return memo."},
+            {"field": "evidence.RETURN_MEMO", "message": "Cheque #3 has no return memo."},
+        ]
+
+        add_with_scan(client, draft, pdf, "RETURN_MEMO", RETURN_MEMO_INFO)
+        assert validate(client, draft)["errors"] == [
+            {"field": "evidence.RETURN_MEMO", "message": "Cheque #3 has no return memo."},
+        ]
+
+        add_with_scan(client, draft, pdf, "RETURN_MEMO", RETURN_MEMO_INFO)
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_return_memo_needs_a_cheque_of_the_same_number(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        add_with_scan(client, draft, pdf, "RETURN_MEMO", RETURN_MEMO_INFO)
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "evidence.RETURN_MEMO",
+                "message": "Return memo #2 has no cheque of the same number.",
+            }
+        ]
+
+    def test_a_removed_cheque_leaves_its_memo_unmatched(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        CaseEvidence.objects.filter(case_id=draft, evidence_type="CHEQUE").update(is_active=False)
+
+        body = validate(client, draft)
+
+        assert {
+            "field": "evidence.CHEQUE",
+            "message": "At least one cheque evidence is required.",
+        } in (body["errors"])
+        assert {
+            "field": "evidence.RETURN_MEMO",
+            "message": "Return memo #1 has no cheque of the same number.",
+        } in body["errors"]
+
+    def test_a_notice_needs_a_cheque_returned_on_or_before_its_dispatch(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        # The memo is returned 2024-01-22; the notice is dispatched before that.
+        notice = CaseEvidence.objects.get(case_id=draft, evidence_type="LEGAL_DEMAND_NOTICE")
+        response = client.patch(
+            reverse("case-evidence-detail", args=[notice.pk]),
+            {
+                "evidence_info": {
+                    **DEMAND_NOTICE_INFO,
+                    "dispatch_date": "2024-01-21",
+                    "delivery_date": "2024-01-25",
+                }
+            },
+            format="json",
+        )
+        assert response.status_code == 200, response.json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "evidence.LEGAL_DEMAND_NOTICE",
+                "message": (
+                    "Demand notice #1: at least one cheque must have been returned on or "
+                    "before the dispatch date."
+                ),
+            }
+        ]
+
+    def test_a_notice_dispatched_on_the_return_date_is_valid(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        notice = CaseEvidence.objects.get(case_id=draft, evidence_type="LEGAL_DEMAND_NOTICE")
+        CaseEvidence.objects.filter(pk=notice.pk).update(
+            evidence_info={
+                **notice.evidence_info,
+                "dispatch_date": RETURN_MEMO_INFO["return_date"],
+                "delivery_date": "2024-01-25",
+            }
+        )
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_one_returned_cheque_is_enough_for_a_notice(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        # A second cheque returned after the dispatch date (2024-02-01).
+        add_with_scan(client, draft, pdf, "CHEQUE", {**CHEQUE_INFO, "cheque_date": "2024-01-15"})
+        add_with_scan(
+            client,
+            draft,
+            pdf,
+            "RETURN_MEMO",
+            {**RETURN_MEMO_INFO, "presentation_date": "2024-02-10", "return_date": "2024-02-12"},
+        )
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_notice_is_not_faulted_while_no_return_date_is_given(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        memo = CaseEvidence.objects.get(case_id=draft, evidence_type="RETURN_MEMO")
+        info = {k: v for k, v in memo.evidence_info.items() if k != "return_date"}
+        CaseEvidence.objects.filter(pk=memo.pk).update(evidence_info=info)
+
+        body = validate(client, draft)
+
+        # Only the memo's own missing date is reported.
+        assert [error["message"] for error in body["errors"]] == [
+            "Return memo #1: 'return_date' is a required property"
+        ]
+
     def test_a_late_filing_without_a_condonation_reason_is_reported(self, client, draft, pdf):
         # Written another way (the admin, a shell, a rule added since saving).
         make_complete_case(client, draft, pdf)
@@ -918,6 +1252,631 @@ class TestValidate:
         response = client_for(other_user).post(reverse("case-validate", args=[draft]))
 
         assert response.status_code == 404
+
+
+def messages_on(body, participant):
+    """Return what ``body`` reports on one participant."""
+    field = f"participants.{participant['case_participant_id']}"
+    return [error["message"] for error in body["errors"] if error["field"] == field]
+
+
+def patch_participant(client, participant, body):
+    url = reverse("case-participant-detail", args=[participant["case_participant_id"]])
+    response = client.patch(url, body, format="json")
+    assert response.status_code == 200, response.json()
+    return response.json()
+
+
+class TestInstitutionsAndAccusedContacts:
+    """An institution's people, and an accused's contacts, as the completeness check asks."""
+
+    NO_CONTACT_MESSAGE = (
+        "has no mobile number or email, and {} contact details are not declared unknown."
+    )
+
+    def add_institution_complainant(self, client, draft, pdf, **body):
+        response = add(
+            client,
+            draft,
+            institution=INSTITUTION,
+            is_party_in_person=True,
+            party_in_person_affidavit=PIP_AFFIDAVIT,
+            **body,
+        )
+        assert response.status_code == 201, response.json()
+        upload_identity_proof(client, draft, pdf, response.json())
+        return response.json()
+
+    def add_person_responsible(self, client, draft, name, **body):
+        body.setdefault("designation", "Director")
+        body.setdefault("addresses", [ADDRESS_DEFAULTS])
+        body.setdefault("mobile_numbers", [ACCUSED_MOBILE])
+        response = add(client, draft, "accused", person={**PERSON, "name": name}, **body)
+        assert response.status_code == 201, response.json()
+        return response.json()
+
+    def test_an_institution_complainant_with_its_representative_is_complete(
+        self, client, draft, pdf
+    ):
+        make_complete_case(client, draft, pdf)
+
+        self.add_institution_complainant(
+            client,
+            draft,
+            pdf,
+            person=PERSON,
+            designation="Director",
+            mobile_numbers=[SECOND_MOBILE],
+            addresses=[ADDRESS_DEFAULTS],
+        )
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_an_institution_complainant_needs_an_authorised_representative(
+        self, client, draft, pdf
+    ):
+        make_complete_case(client, draft, pdf)
+        complainant = self.add_institution_complainant(client, draft, pdf)
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #2's institution has no authorised representative.",
+            }
+        ]
+        response = submit(client, draft, "signing")
+        assert response.status_code == 400
+        assert error_codes(response) == {
+            f"participants.{complainant['case_participant_id']}": ["E07005"]
+        }
+
+    def test_the_representative_needs_their_own_details(self, client, draft, pdf):
+        """The institution's own number is not its representative's."""
+        make_complete_case(client, draft, pdf)
+        unnamed = {k: v for k, v in PERSON.items() if k not in ("name", "date_of_birth")}
+        complainant = self.add_institution_complainant(
+            client, draft, pdf, person=unnamed, mobile_numbers=[]
+        )
+        assert complainant["institution"]["mobile_numbers"] == INSTITUTION["mobile_numbers"]
+
+        assert messages_on(validate(client, draft), complainant) == [
+            "Complainant #2 has no name.",
+            "Complainant #2 acts for an institution but has no address of their own.",
+            "Complainant #2 has no mobile number.",
+            "Complainant #2 has no age.",
+            "Complainant #2 acts for an institution but has no designation.",
+        ]
+
+        patch_participant(
+            client,
+            complainant,
+            {
+                "name_at_filing": "Priya Sharma",
+                "age_at_filing": 45,
+                "designation_at_filing": "Director",
+                "mobile_numbers": ["+919812345678"],
+                "addresses": [ADDRESS_DEFAULTS],
+            },
+        )
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_the_representatives_address_must_be_complete(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        partial = {k: v for k, v in ADDRESS_DEFAULTS.items() if k != "city"}
+
+        complainant = self.add_institution_complainant(
+            client, draft, pdf, person=PERSON, designation="Director", addresses=[partial]
+        )
+
+        assert messages_on(validate(client, draft), complainant) == [
+            "Complainant #2 has an incomplete address (missing city).",
+        ]
+
+    def test_an_accused_needs_a_phone_an_email_or_the_declaration(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        accused = add(
+            client, draft, "accused", person={**PERSON, "name": "Mohan"}, mobile_numbers=[]
+        ).json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{accused['case_participant_id']}",
+                "message": f"Accused #2 {self.NO_CONTACT_MESSAGE.format('their')}",
+            }
+        ]
+        response = submit(client, draft, "signing")
+        assert response.status_code == 400
+        assert error_codes(response) == {
+            f"participants.{accused['case_participant_id']}": ["E07005"]
+        }
+
+        patch_participant(client, accused, {"contact_details_unknown_declared": True})
+        assert validate(client, draft)["is_valid"] is True
+
+    @pytest.mark.parametrize(
+        "contacts",
+        [{"mobile_numbers": ["+919812345678"]}, {"email_addresses": ["mohan@example.com"]}],
+    )
+    def test_a_phone_or_an_email_is_enough_for_an_accused(self, client, draft, pdf, contacts):
+        make_complete_case(client, draft, pdf)
+
+        response = add(
+            client,
+            draft,
+            "accused",
+            person={**PERSON, "name": "Mohan"},
+            **{"mobile_numbers": [], **contacts},
+        )
+
+        assert response.status_code == 201, response.json()
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_an_accused_institution_and_each_person_are_reached_apart(self, client, draft, pdf):
+        """PRD ACC-6/7, ACC-16/17: the institution, and each person responsible, on their own."""
+        make_complete_case(client, draft, pdf)
+        institution = {**INSTITUTION, "mobile_numbers": []}
+        first = self.add_person_responsible(
+            client, draft, "Ravi", institution=institution, mobile_numbers=[]
+        )
+        second = self.add_person_responsible(
+            client, draft, "Asha", institution_id=first["institution_id"], mobile_numbers=[]
+        )
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{first['case_participant_id']}",
+                "message": f"Accused #2's institution {self.NO_CONTACT_MESSAGE.format('its')}",
+            },
+            {
+                "field": f"participants.{first['case_participant_id']}",
+                "message": f"Accused #2 {self.NO_CONTACT_MESSAGE.format('their')}",
+            },
+            {
+                "field": f"participants.{second['case_participant_id']}",
+                "message": f"Accused #3 {self.NO_CONTACT_MESSAGE.format('their')}",
+            },
+        ]
+
+        # One person's declaration is theirs alone.
+        patch_participant(client, second, {"contact_details_unknown_declared": True})
+        assert fields_of(validate(client, draft)) == {
+            f"participants.{first['case_participant_id']}"
+        }
+        patch_participant(client, first, {"mobile_numbers": ["+919845500001"]})
+        assert messages_on(validate(client, draft), first) == [
+            f"Accused #2's institution {self.NO_CONTACT_MESSAGE.format('its')}"
+        ]
+
+        # The institution's, sent through any of its people, is for it alone.
+        patch_participant(
+            client, second, {"institution_contacts": {"contact_details_unknown_declared": True}}
+        )
+        assert validate(client, draft)["is_valid"] is True
+
+    @pytest.mark.parametrize(
+        "contacts",
+        [{"email_addresses": ["legal@abc.example"]}, {"mobile_numbers": ["080-22334455"]}],
+    )
+    def test_the_institutions_own_number_or_email_reaches_it(self, client, draft, pdf, contacts):
+        make_complete_case(client, draft, pdf)
+        institution = {**INSTITUTION, "mobile_numbers": []}
+        first = self.add_person_responsible(client, draft, "Ravi", institution=institution)
+
+        assert messages_on(validate(client, draft), first) == [
+            f"Accused #2's institution {self.NO_CONTACT_MESSAGE.format('its')}"
+        ]
+
+        patch_participant(client, first, {"institution_contacts": contacts})
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_persons_number_does_not_reach_the_institution(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        institution = {**INSTITUTION, "mobile_numbers": []}
+        first = self.add_person_responsible(client, draft, "Ravi", institution=institution)
+        second = self.add_person_responsible(
+            client, draft, "Asha", institution_id=first["institution_id"]
+        )
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{first['case_participant_id']}",
+                "message": f"Accused #2's institution {self.NO_CONTACT_MESSAGE.format('its')}",
+            }
+        ]
+        assert messages_on(validate(client, draft), second) == []
+
+    def test_the_institutions_number_does_not_reach_a_person(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        first = self.add_person_responsible(
+            client, draft, "Ravi", institution=INSTITUTION, mobile_numbers=[]
+        )
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{first['case_participant_id']}",
+                "message": f"Accused #2 {self.NO_CONTACT_MESSAGE.format('their')}",
+            }
+        ]
+
+    def test_an_institution_alone_is_reached_by_its_own(self, client, draft, pdf):
+        """An accused institution's participant with no person has no contacts of its own."""
+        make_complete_case(client, draft, pdf)
+        first = self.add_person_responsible(client, draft, "Ravi", institution=INSTITUTION)
+        alone = add(client, draft, "accused", institution=INSTITUTION)
+        assert alone.status_code == 201, alone.json()
+        assert alone.json()["institution_id"] == first["institution_id"]
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_an_accused_institution_names_at_least_one_person(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        institution = add(client, draft, "accused", institution=INSTITUTION).json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{institution['case_participant_id']}",
+                "message": "Accused #2's institution names no person responsible.",
+            }
+        ]
+
+        self.add_person_responsible(
+            client, draft, "Ravi", institution_id=institution["institution_id"]
+        )
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_each_person_responsible_needs_their_own_details(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        first = self.add_person_responsible(client, draft, "Ravi", institution=INSTITUTION)
+        second = self.add_person_responsible(
+            client,
+            draft,
+            "Asha",
+            institution_id=first["institution_id"],
+            designation="",
+            addresses=[],
+        )
+        # Stored another way than the API, which keeps the name it is sent.
+        CaseParticipant.objects.filter(pk=second["case_participant_id"]).update(name_at_filing=None)
+
+        body = validate(client, draft)
+
+        assert messages_on(body, first) == []
+        assert messages_on(body, second) == [
+            "Accused #3 has no name.",
+            "Accused #3 acts for an institution but has no address of their own.",
+        ]
+
+
+class TestPoaHoldersAndNumbers:
+    """A POA holder's own details (PRD LIT-11, LIT-13), and a complainant's own number (LIT-3)."""
+
+    def add_poa_holder(self, client, draft, pdf, complainant, **body):
+        """Add a POA holder for ``complainant``, with the POA document filed; return the holder."""
+        response = add_poa_holder(client, draft, [complainant["case_participant_id"]], **body)
+        assert response.status_code == 201, response.json()
+        document = upload(
+            client,
+            draft,
+            pdf,
+            "POA_DOCUMENT",
+            case_participant_id=complainant["case_participant_id"],
+        )
+        assert document.status_code == 201, document.json()
+        return response.json()
+
+    def add_second_complainant(self, client, draft, pdf, mobile_number, **body):
+        body.setdefault("person", {**PERSON, "name": "Anita Kumar"})
+        response = add(
+            client,
+            draft,
+            mobile_numbers=[mobile_number],
+            is_party_in_person=True,
+            party_in_person_affidavit=PIP_AFFIDAVIT,
+            **body,
+        )
+        assert response.status_code == 201, response.json()
+        upload_identity_proof(client, draft, pdf, response.json())
+        return response.json()
+
+    def test_a_poa_holder_with_a_number_and_an_age_is_complete(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+
+        self.add_poa_holder(client, draft, pdf, complainant, mobile_numbers=[POA_MOBILE])
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def answer_poa(self, client, complainant, given=True):
+        response = patch(client, complainant["case_participant_id"], {"poa_given": given})
+        assert response.status_code == 200, response.json()
+
+    def test_a_poa_given_with_no_holder_is_incomplete(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        self.answer_poa(client, complainant)
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #1 has given a power of attorney but has no POA holder.",
+            },
+            {
+                "field": "documents.POA_DOCUMENT",
+                "message": "Complainant #1 has given a power of attorney but has no POA document.",
+            },
+        ]
+
+    def test_no_poa_given_or_not_answered_asks_for_nothing(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        assert validate(client, draft)["is_valid"] is True
+
+        self.answer_poa(client, complainant, given=False)
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_poa_given_needs_the_holders_id_card_and_the_poa_document(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        self.answer_poa(client, complainant)
+        response = add_poa_holder(
+            client,
+            draft,
+            [complainant["case_participant_id"]],
+            mobile_numbers=[POA_MOBILE],
+        )
+        assert response.status_code == 201, response.json()
+        holder = response.json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "documents.POA_DOCUMENT",
+                "message": "Complainant #1 acts through a POA holder but has no POA document.",
+            },
+            {
+                "field": "documents.IDENTITY_PROOF",
+                "message": "POA holder #1 has no identity proof.",
+            },
+        ]
+
+        upload(
+            client,
+            draft,
+            pdf,
+            "POA_DOCUMENT",
+            case_participant_id=complainant["case_participant_id"],
+        )
+        assert fields_of(validate(client, draft)) == {"documents.IDENTITY_PROOF"}
+
+        upload_identity_proof(client, draft, pdf, holder)
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_an_id_card_of_another_party_is_not_the_holders(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        self.answer_poa(client, complainant)
+        self.add_poa_holder(client, draft, pdf, complainant, mobile_numbers=[POA_MOBILE])
+
+        # The complainant's own ID card is already filed.
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "documents.IDENTITY_PROOF",
+                "message": "POA holder #1 has no identity proof.",
+            }
+        ]
+
+    def test_a_holder_for_two_complainants_is_asked_for_one_id_card(self, client, draft, pdf):
+        first = make_complete_case(client, draft, pdf)
+        second = self.add_second_complainant(client, draft, pdf, SECOND_MOBILE)
+        self.answer_poa(client, first)
+        self.answer_poa(client, second)
+        response = add_poa_holder(
+            client,
+            draft,
+            [first["case_participant_id"], second["case_participant_id"]],
+            mobile_numbers=[POA_MOBILE],
+        )
+        assert response.status_code == 201, response.json()
+        for complainant in (first, second):
+            upload(
+                client,
+                draft,
+                pdf,
+                "POA_DOCUMENT",
+                case_participant_id=complainant["case_participant_id"],
+            )
+
+        body = validate(client, draft)
+
+        assert body["errors"] == [
+            {
+                "field": "documents.IDENTITY_PROOF",
+                "message": "POA holder #1 has no identity proof.",
+            }
+        ]
+
+    def test_a_holder_with_no_answer_given_is_not_asked_for_an_id_card(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+
+        self.add_poa_holder(client, draft, pdf, complainant, mobile_numbers=[POA_MOBILE])
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_revoked_poa_leaves_the_answer_unmet(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        self.answer_poa(client, complainant)
+        holder = self.add_poa_holder(client, draft, pdf, complainant, mobile_numbers=[POA_MOBILE])
+        upload_identity_proof(client, draft, pdf, holder)
+        assert validate(client, draft)["is_valid"] is True
+
+        for mandate_id in holder["poa_mandate_ids"]:
+            assert (
+                client.delete(reverse("poa-mandate-detail", args=[mandate_id])).status_code == 204
+            )
+
+        assert any(
+            error["message"].endswith("has no POA holder.")
+            for error in validate(client, draft)["errors"]
+        )
+
+    def test_a_poa_holder_needs_a_mobile_number_and_an_age(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        no_age = {k: v for k, v in PERSON.items() if k != "date_of_birth"}
+        holder = self.add_poa_holder(
+            client, draft, pdf, complainant, person={**no_age, "name": "Mohan Das"}
+        )
+
+        body = validate(client, draft)
+
+        assert body["errors"] == [
+            {
+                "field": f"participants.{holder['case_participant_id']}",
+                "message": "POA holder #1 has no mobile number.",
+            },
+            {
+                "field": f"participants.{holder['case_participant_id']}",
+                "message": "POA holder #1 has no age.",
+            },
+        ]
+        response = submit(client, draft, "signing")
+        assert response.status_code == 400
+        assert error_codes(response) == {
+            f"participants.{holder['case_participant_id']}": ["E07005", "E07005"]
+        }
+
+        url = reverse("case-participant-detail", args=[holder["case_participant_id"]])
+        response = client.patch(
+            url, {"mobile_numbers": [POA_MOBILE], "age_at_filing": 52}, format="json"
+        )
+        assert response.status_code == 200, response.json()
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_complainant_may_not_give_the_accuseds_number(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        url = reverse("case-participant-detail", args=[complainant["case_participant_id"]])
+        assert (
+            client.patch(url, {"mobile_numbers": [ACCUSED_MOBILE]}, format="json").status_code
+            == 200
+        )
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #1's mobile number is also Accused #1's.",
+            }
+        ]
+
+    def test_two_complainants_sharing_a_number_are_both_reported(self, client, draft, pdf):
+        first = make_complete_case(client, draft, pdf)
+        second = self.add_second_complainant(client, draft, pdf, MOBILE)
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{first['case_participant_id']}",
+                "message": "Complainant #1's mobile number is also Complainant #2's.",
+            },
+            {
+                "field": f"participants.{second['case_participant_id']}",
+                "message": "Complainant #2's mobile number is also Complainant #1's.",
+            },
+        ]
+
+    def test_any_of_a_complainants_numbers_is_compared(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        url = reverse("case-participant-detail", args=[complainant["case_participant_id"]])
+        response = client.patch(url, {"mobile_numbers": [MOBILE, ACCUSED_MOBILE]}, format="json")
+        assert response.status_code == 200, response.json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #1's mobile number is also Accused #1's.",
+            }
+        ]
+
+    def test_a_complainant_may_not_give_a_poa_holders_number(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        self.add_poa_holder(client, draft, pdf, complainant, mobile_numbers=[MOBILE])
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #1's mobile number is also POA holder #1's.",
+            }
+        ]
+
+    def test_a_number_written_with_grouping_is_still_the_same(self, client, draft, pdf):
+        """An institution's number may be grouped; the grouping is not compared."""
+        complainant = make_complete_case(client, draft, pdf)
+        accused = add(
+            client,
+            draft,
+            "accused",
+            institution={**INSTITUTION, "mobile_numbers": ["+91 98765-43210"]},
+            person={**PERSON, "name": "Ravi"},
+            designation="Director",
+            mobile_numbers=[ACCUSED_MOBILE],
+            addresses=[ADDRESS_DEFAULTS],
+        )
+        assert accused.status_code == 201, accused.json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #1's mobile number is also Accused #2's institution's.",
+            }
+        ]
+
+    def test_the_same_person_in_another_role_may_share_it(self, client, draft, pdf):
+        """The filer, a complainant, is also the POA holder of a co-complainant."""
+        first = make_complete_case(client, draft, pdf)
+        filer = {"self": True, "mobile_numbers": [SECOND_MOBILE]}
+        second = add(
+            client,
+            draft,
+            is_party_in_person=True,
+            party_in_person_affidavit=PIP_AFFIDAVIT,
+            **filer,
+        )
+        assert second.status_code == 201, second.json()
+        upload_identity_proof(client, draft, pdf, second.json())
+
+        # The module's helper: ``self`` is a field of the request here.
+        holder = add_poa_holder(client, draft, [first["case_participant_id"]], person=None, **filer)
+        assert holder.status_code == 201, holder.json()
+        upload(client, draft, pdf, "POA_DOCUMENT", case_participant_id=first["case_participant_id"])
+
+        assert holder.json()["person_id"] == second.json()["person_id"]
+        # The filer's account holds no age; each role states it.
+        for participant in (second.json(), holder.json()):
+            url = reverse("case-participant-detail", args=[participant["case_participant_id"]])
+            assert client.patch(url, {"age_at_filing": 45}, format="json").status_code == 200
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_complainant_may_not_give_an_advocates_number(self, client, make_user, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        advocate = make_advocate(make_user)
+        second = self.add_second_complainant(client, draft, pdf, SECOND_MOBILE)
+        url = reverse("case-participant-detail", args=[second["case_participant_id"]])
+        assert client.patch(url, {"is_party_in_person": False}, format="json").status_code == 200
+        assert (
+            add_advocate(client, draft, advocate.pk, [second["case_participant_id"]]).status_code
+            == 201
+        )
+        upload(client, draft, pdf, "VAKALATNAMA", case_participant_id=second["case_participant_id"])
+        assert validate(client, draft)["is_valid"] is True
+        url = reverse("case-participant-detail", args=[complainant["case_participant_id"]])
+        number = advocate.user.mobile_number
+        assert client.patch(url, {"mobile_numbers": [number]}, format="json").status_code == 200
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #1: Please do not enter the advocate's number here.",
+            }
+        ]
+
+    def test_a_witness_may_share_a_complainants_number(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+
+        assert add_witness(client, draft, mobile_numbers=[MOBILE]).status_code == 201
+
+        assert validate(client, draft)["is_valid"] is True
 
 
 class TestSubmitForSigning:
@@ -1017,6 +1976,7 @@ class TestSign:
             client,
             draft,
             person={**PERSON, "name": "Anil Rao"},
+            mobile_numbers=[SECOND_MOBILE],
             is_party_in_person=True,
             party_in_person_affidavit=PIP_AFFIDAVIT,
         )

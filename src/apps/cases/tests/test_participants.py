@@ -14,6 +14,7 @@ from apps.cases.models import (
     CaseParticipant,
     CaseStatus,
     CaseType,
+    ContactType,
     ParticipantRole,
     PoaMandate,
     Representation,
@@ -188,6 +189,59 @@ class TestAddComplainant:
         assert response.json()["addresses"] == []
         participant_id = response.json()["case_participant_id"]
         assert "Complainant #1 has no address." in completeness(client, draft, participant_id)
+
+    def test_mobile_number_and_age_may_be_left_out_until_filing(self, client, draft):
+        no_age = {k: v for k, v in PERSON.items() if k != "date_of_birth"}
+
+        response = add(client, draft, person=no_age, mobile_numbers=[])
+
+        assert response.status_code == 201, response.json()
+        problems = completeness(client, draft, response.json()["case_participant_id"])
+        assert "Complainant #1 has no mobile number." in problems
+        assert "Complainant #1 has no age." in problems
+
+    def test_a_stated_age_and_a_mobile_number_complete_a_complainant(self, client, draft):
+        no_age = {k: v for k, v in PERSON.items() if k != "date_of_birth"}
+        participant_id = add(client, draft, person={**no_age, "age": 45}).json()[
+            "case_participant_id"
+        ]
+
+        problems = completeness(client, draft, participant_id)
+
+        assert "Complainant #1 has no mobile number." not in problems
+        assert "Complainant #1 has no age." not in problems
+
+    def test_an_institutions_representative_needs_their_own_number_and_age(self, client, draft):
+        """The institution's own number does not count for its representative."""
+        no_age = {k: v for k, v in PERSON.items() if k != "date_of_birth"}
+        response = add(client, draft, institution=INSTITUTION, person=no_age, mobile_numbers=[])
+
+        assert response.status_code == 201, response.json()
+        problems = completeness(client, draft, response.json()["case_participant_id"])
+        assert "Complainant #1 has no mobile number." in problems
+        assert "Complainant #1 has no age." in problems
+
+    def test_an_institution_alone_is_asked_for_its_representative(self, client, draft):
+        participant_id = add(client, draft, institution=INSTITUTION).json()["case_participant_id"]
+
+        problems = completeness(client, draft, participant_id)
+
+        assert "Complainant #1's institution has no authorised representative." in problems
+        assert "Complainant #1 has no mobile number." not in problems
+        assert "Complainant #1 has no age." not in problems
+
+    def test_an_accused_needs_no_mobile_number_or_age(self, client, draft):
+        no_age = {k: v for k, v in PERSON.items() if k != "date_of_birth"}
+        participant_id = add(
+            client,
+            draft,
+            "accused",
+            person=no_age,
+            mobile_numbers=[],
+            contact_details_unknown_declared=True,
+        ).json()["case_participant_id"]
+
+        assert completeness(client, draft, participant_id) == []
 
     def test_invalid_mobile_number_is_400_and_creates_nothing(self, client, draft):
         response = add(client, draft, person=PERSON, mobile_numbers=[MOBILE, "98765"])
@@ -392,12 +446,54 @@ class TestInstitutions:
         participant_id = add(client, draft, institution=self.NO_IDENTIFIER).json()[
             "case_participant_id"
         ]
-        no_type = {k: v for k, v in self.NO_IDENTIFIER.items() if k != "entity_type"}
-
-        response = patch(client, participant_id, {"institution": no_type})
+        response = patch(client, participant_id, {"institution": {"entity_type": None}})
 
         assert response.status_code == 200, response.json()
         assert response.json()["institution"]["entity_type"] is None
+
+    def test_an_institution_edited_in_place_keeps_what_is_not_sent(self, client, draft):
+        participant_id = add(
+            client,
+            draft,
+            institution={**self.NO_IDENTIFIER, "pan_cin_skip_declared": True},
+        ).json()["case_participant_id"]
+
+        response = patch(client, participant_id, {"institution": {"entity_type": "LLP"}})
+
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert body["institution"]["entity_type"] == "LLP"
+        assert body["institution"]["entity_name"] == "ABC Pvt Ltd"
+        assert body["institution"]["pan_cin_skip_declared"] is True
+        assert body["entity_name_at_filing"] == "ABC Pvt Ltd"
+        assert body["name_at_filing"] == "ABC Pvt Ltd"
+
+    def test_institution_contacts_alone_keep_its_details(self, client, draft):
+        participant_id = add(client, draft, institution=self.NO_IDENTIFIER).json()[
+            "case_participant_id"
+        ]
+
+        response = patch(client, participant_id, {"institution": {"mobile_numbers": ["080-1111"]}})
+
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert body["institution"]["mobile_numbers"] == ["080-1111"]
+        assert body["institution"]["entity_type"] == "PRIVATE_LIMITED_COMPANY"
+        assert body["institution"]["entity_name"] == "ABC Pvt Ltd"
+        assert body["entity_name_at_filing"] == "ABC Pvt Ltd"
+
+    def test_an_entity_name_sent_in_place_renames_the_case_too(self, client, draft):
+        participant_id = add(client, draft, institution=self.NO_IDENTIFIER).json()[
+            "case_participant_id"
+        ]
+
+        response = patch(client, participant_id, {"institution": {"entity_name": "XYZ Ltd"}})
+
+        assert response.status_code == 200, response.json()
+        body = response.json()
+        assert body["institution"]["entity_name"] == "XYZ Ltd"
+        assert body["entity_name_at_filing"] == "XYZ Ltd"
+        assert body["name_at_filing"] == "XYZ Ltd"
 
     def test_an_unknown_entity_type_is_still_refused(self, client, draft):
         response = add(client, draft, institution={**INSTITUTION, "entity_type": "GUILD"})
@@ -452,20 +548,24 @@ class TestInstitutions:
         assert str(person.institution_id) == body["institution_id"]
         assert person.designation == "Director"
 
-    def test_designation_is_required_with_a_person_to_file(self, client, draft):
+    def test_designation_is_optional_for_a_person_responsible(self, client, draft):
+        """PRD ACC-15: the designation of a person responsible for an accused institution."""
         response = add(client, draft, role="accused", institution=INSTITUTION, person=PERSON)
 
         assert response.status_code == 201, response.json()
         assert response.json()["designation_at_filing"] is None
-        assert "Accused #1 acts for an institution but has no designation." in completeness(
+        assert "Accused #1 acts for an institution but has no designation." not in completeness(
             client, draft, response.json()["case_participant_id"]
         )
 
-    def test_designation_is_optional_for_a_complainant(self, client, draft):
+    def test_designation_is_required_with_a_person_for_a_complainant_to_file(self, client, draft):
         response = add(client, draft, institution=INSTITUTION, person=PERSON)
 
         assert response.status_code == 201
         assert response.json()["designation_at_filing"] is None
+        assert "Complainant #1 acts for an institution but has no designation." in completeness(
+            client, draft, response.json()["case_participant_id"]
+        )
 
     def test_self_for_an_institution_leaves_the_filers_person_unchanged(self, client, user, draft):
         response = add(client, draft, institution=INSTITUTION, self=True, designation="Director")
@@ -707,6 +807,8 @@ class TestFilingSnapshot:
             "pan_cin_skip_declared": False,
             "mobile_numbers": ["080-22334455"],
             "email_addresses": ["a@abc.in"],
+            # Asked of an accused institution only.
+            "contact_details_unknown_declared": None,
         }
 
     def test_an_accused_institution_has_no_pan_or_cin(self, client, draft):
@@ -720,6 +822,7 @@ class TestFilingSnapshot:
         assert institution["pan"] is None
         assert institution["cin"] is None
         assert institution["pan_cin_skip_declared"] is None
+        assert institution["contact_details_unknown_declared"] is False
 
     def test_a_representative_keeps_the_institutions_own_contact(self, client, draft):
         body = add(
@@ -1031,6 +1134,35 @@ class TestUpdate:
 
         assert error_codes(accused) == {"party_in_person_affidavit": ["E07023"]}
         assert error_codes(changed) == {"party_in_person_affidavit": ["E07023"]}
+
+    def test_whether_a_poa_was_given_is_kept_changed_and_cleared(self, client, draft):
+        unanswered = add_complainant(client, draft)
+        given = add(client, draft, person={**PERSON, "name": "Anita"}, poa_given=True)
+        participant_id = unanswered["case_participant_id"]
+
+        assert unanswered["poa_given"] is None
+        assert given.status_code == 201, given.json()
+        assert given.json()["poa_given"] is True
+        assert CaseParticipant.objects.get(pk=given.json()["case_participant_id"]).poa_given is True
+        assert patch(client, participant_id, {"poa_given": False}).json()["poa_given"] is False
+        assert patch(client, participant_id, {"poa_given": True}).json()["poa_given"] is True
+        assert patch(client, participant_id, {"poa_given": None}).json()["poa_given"] is None
+        listed = {p["case_participant_id"]: p for p in listing(client, draft)["results"]}
+        assert listed[given.json()["case_participant_id"]]["poa_given"] is True
+
+    def test_only_an_individual_complainant_says_whether_a_poa_was_given(self, client, draft):
+        accused = add(client, draft, role="accused", person=PERSON, poa_given=True)
+        institution = add(client, draft, institution=INSTITUTION, poa_given=False)
+        added = add(client, draft, role="accused", person=PERSON).json()
+        changed = patch(client, added["case_participant_id"], {"poa_given": True})
+        company = add(client, draft, institution={**INSTITUTION, "pan": "AAACB1234B"}).json()
+        company_changed = patch(client, company["case_participant_id"], {"poa_given": True})
+
+        for response in (accused, institution, changed, company_changed):
+            assert response.status_code == 400
+            assert error_codes(response) == {"poa_given": ["E07023"]}
+        # Nothing to clear on a party that cannot have one.
+        assert patch(client, added["case_participant_id"], {"poa_given": None}).status_code == 200
 
     def test_a_contact_list_is_replaced_on_the_case_only(self, client, draft):
         body = add(client, draft, person=PERSON, email_addresses=["rajesh@example.com"]).json()
@@ -1540,15 +1672,13 @@ class TestAddWitness:
             client, draft, response.json()["case_participant_id"]
         )
 
-    def test_a_witness_address_needs_a_police_station_to_file(self, client, draft):
+    def test_a_witness_address_may_leave_out_the_police_station(self, client, draft):
         address = {**ADDRESS_DEFAULTS, "police_station": ""}
 
         response = add_witness(client, draft, addresses=[address])
 
         assert response.status_code == 201, response.json()
-        assert "Witness #1 has an address with no police station." in completeness(
-            client, draft, response.json()["case_participant_id"]
-        )
+        assert completeness(client, draft, response.json()["case_participant_id"]) == []
 
     @pytest.mark.parametrize(
         "change, field, code",
@@ -2241,6 +2371,395 @@ class TestContactDetailsUnknown:
             )
 
 
+class TestInstitutionContactDetailsUnknown:
+    """An accused institution's own contacts are declared unknown apart from its people's.
+
+    PRD ACC-6/7 and ACC-16/17: the declaration is the case's for the
+    institution, sent with its details or contacts, and held alike by every
+    accused participant of it on the case.
+    """
+
+    NO_CONTACTS = {**INSTITUTION, "mobile_numbers": []}
+
+    def add_institution(self, client, draft, **institution):
+        add_complainant(client, draft)
+        response = add(
+            client,
+            draft,
+            "accused",
+            institution={**self.NO_CONTACTS, **institution},
+            person={"name": "Ravi"},
+            mobile_numbers=[],
+        )
+        assert response.status_code == 201, response.json()
+        return response.json()
+
+    def add_person(self, client, draft, institution_id, name="Asha"):
+        response = add(
+            client,
+            draft,
+            "accused",
+            institution_id=institution_id,
+            person={"name": name},
+            mobile_numbers=[],
+        )
+        assert response.status_code == 201, response.json()
+        return response.json()
+
+    def declared(self, participant_id):
+        participant = CaseParticipant.objects.get(pk=participant_id)
+        return (
+            participant.contact_details_unknown_declared,
+            participant.institution_contact_details_unknown_declared,
+        )
+
+    def test_it_is_declared_with_the_institution(self, client, draft):
+        body = self.add_institution(client, draft, contact_details_unknown_declared=True)
+
+        assert body["institution"]["contact_details_unknown_declared"] is True
+        # The person's own are a separate answer.
+        assert body["contact_details_unknown_declared"] is False
+        assert self.declared(body["case_participant_id"]) == (False, True)
+
+    def test_it_is_false_unless_declared(self, client, draft):
+        body = self.add_institution(client, draft)
+
+        assert body["institution"]["contact_details_unknown_declared"] is False
+
+    def test_another_person_responsible_takes_the_institutions_answer(self, client, draft):
+        first = self.add_institution(client, draft, contact_details_unknown_declared=True)
+
+        second = self.add_person(client, draft, first["institution_id"])
+
+        assert second["institution"]["contact_details_unknown_declared"] is True
+        assert self.declared(second["case_participant_id"]) == (False, True)
+
+    def test_it_is_changed_for_everyone_summoned_for_the_institution(self, client, draft):
+        first = self.add_institution(client, draft)
+        second = self.add_person(client, draft, first["institution_id"])
+
+        response = patch(
+            client,
+            second["case_participant_id"],
+            {"institution_contacts": {"contact_details_unknown_declared": True}},
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution"]["contact_details_unknown_declared"] is True
+        assert self.declared(first["case_participant_id"]) == (False, True)
+        assert self.declared(second["case_participant_id"]) == (False, True)
+
+        response = patch(
+            client,
+            first["case_participant_id"],
+            {"institution": {"contact_details_unknown_declared": False}},
+        )
+
+        assert response.status_code == 200, response.json()
+        assert self.declared(first["case_participant_id"]) == (False, False)
+        assert self.declared(second["case_participant_id"]) == (False, False)
+
+    def test_it_cannot_come_with_the_institutions_number(self, client, draft):
+        add_complainant(client, draft)
+
+        response = add(
+            client,
+            draft,
+            "accused",
+            institution={**INSTITUTION, "contact_details_unknown_declared": True},
+            person={"name": "Ravi"},
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"institution.contact_details_unknown_declared": ["E00001"]}
+
+    def test_a_number_added_to_a_declared_institution_is_refused(self, client, draft):
+        body = self.add_institution(client, draft, contact_details_unknown_declared=True)
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {"institution_contacts": {"email_addresses": ["legal@abc.example"]}},
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {
+            "institution_contacts.contact_details_unknown_declared": ["E00001"]
+        }
+        # The whole write is undone.
+        assert not CaseContact.objects.active().filter(
+            institution_id=body["institution_id"], contact_type=ContactType.EMAIL
+        )
+        assert self.declared(body["case_participant_id"]) == (False, True)
+
+    def test_a_number_may_replace_the_declaration_in_one_request(self, client, draft):
+        body = self.add_institution(client, draft, contact_details_unknown_declared=True)
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {
+                "institution_contacts": {
+                    "email_addresses": ["legal@abc.example"],
+                    "contact_details_unknown_declared": False,
+                }
+            },
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution"]["email_addresses"] == ["legal@abc.example"]
+        assert self.declared(body["case_participant_id"]) == (False, False)
+
+    def test_a_persons_number_does_not_stop_the_institutions_declaration(self, client, draft):
+        body = self.add_institution(client, draft)
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {
+                "mobile_numbers": ["+919812345678"],
+                "institution_contacts": {"contact_details_unknown_declared": True},
+            },
+        )
+
+        assert response.status_code == 200, response.json()
+        assert self.declared(body["case_participant_id"]) == (False, True)
+
+    def test_the_institutions_number_does_not_stop_a_persons_declaration(self, client, draft):
+        body = self.add_institution(client, draft, mobile_numbers=["080-22334455"])
+
+        response = patch(
+            client, body["case_participant_id"], {"contact_details_unknown_declared": True}
+        )
+
+        assert response.status_code == 200, response.json()
+        assert self.declared(body["case_participant_id"]) == (True, False)
+
+    def test_it_is_sent_once(self, client, draft):
+        body = self.add_institution(client, draft)
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {
+                "institution": {"contact_details_unknown_declared": True},
+                "institution_contacts": {"contact_details_unknown_declared": True},
+            },
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {
+            "institution_contacts.contact_details_unknown_declared": ["E00001"]
+        }
+
+    def test_a_complainant_institution_may_not_send_it(self, client, draft):
+        response = add(
+            client,
+            draft,
+            institution={**self.NO_CONTACTS, "contact_details_unknown_declared": True},
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"institution.contact_details_unknown_declared": ["E07023"]}
+
+        complainant = add(client, draft, institution=self.NO_CONTACTS).json()
+        response = patch(
+            client,
+            complainant["case_participant_id"],
+            {"institution_contacts": {"contact_details_unknown_declared": True}},
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {
+            "institution_contacts.contact_details_unknown_declared": ["E07023"]
+        }
+
+    def test_an_institution_alone_declares_it_under_institution(self, client, draft):
+        add_complainant(client, draft)
+
+        response = add(
+            client,
+            draft,
+            "accused",
+            institution=self.NO_CONTACTS,
+            contact_details_unknown_declared=True,
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"contact_details_unknown_declared": ["E07023"]}
+
+        alone = add(
+            client,
+            draft,
+            "accused",
+            institution={**self.NO_CONTACTS, "contact_details_unknown_declared": True},
+        )
+        assert alone.status_code == 201, alone.json()
+        assert self.declared(alone.json()["case_participant_id"]) == (False, True)
+        response = patch(
+            client, alone.json()["case_participant_id"], {"contact_details_unknown_declared": True}
+        )
+        assert response.status_code == 400
+        assert error_codes(response) == {"contact_details_unknown_declared": ["E07023"]}
+
+    def test_a_relinked_institution_keeps_it_for_everyone(self, client, draft):
+        first = self.add_institution(client, draft, contact_details_unknown_declared=True)
+        second = self.add_person(client, draft, first["institution_id"])
+
+        response = patch(
+            client,
+            first["case_participant_id"],
+            {"institution": {**self.NO_CONTACTS, "pan": "AAACB1234B"}},
+        )
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution_id"] != first["institution_id"]
+        assert self.declared(first["case_participant_id"]) == (False, True)
+        assert self.declared(second["case_participant_id"]) == (False, True)
+
+    # Re-linking into an institution already accused on the case. The institutions
+    # here have no contacts of their own, so only the declaration is in play.
+    TYPO = {**NO_CONTACTS, "addresses": [], "pan": "AAACB5678B", "entity_name": "ABC Pvt Ltd"}
+    ACTUAL = {**NO_CONTACTS, "addresses": []}
+
+    def add_actual_and_typo(self, client, draft, *, actual_declared, typo_declared):
+        """Add Ravi for the real institution and Asha for a mistyped copy of it."""
+        add_complainant(client, draft)
+        accused = {}
+        for name, institution in (("Ravi", self.ACTUAL), ("Asha", self.TYPO)):
+            declared = actual_declared if name == "Ravi" else typo_declared
+            response = add(
+                client,
+                draft,
+                "accused",
+                institution={**institution, "contact_details_unknown_declared": declared},
+                person={"name": name},
+                mobile_numbers=[],
+            )
+            assert response.status_code == 201, response.json()
+            accused[name] = response.json()
+        assert accused["Ravi"]["institution_id"] != accused["Asha"]["institution_id"]
+        return accused["Ravi"], accused["Asha"]
+
+    def relink_to_actual(self, client, typo, **institution):
+        # No contact lists: sending one would replace the institution's own after the move.
+        details = {
+            "entity_type": INSTITUTION["entity_type"],
+            "entity_name": INSTITUTION["entity_name"],
+            "pan": INSTITUTION["pan"],
+        }
+        return patch(
+            client,
+            typo["case_participant_id"],
+            {"institution": {**details, **institution}},
+        )
+
+    def test_a_relink_into_a_declared_institution_takes_its_declaration(self, client, draft):
+        actual, typo = self.add_actual_and_typo(
+            client, draft, actual_declared=True, typo_declared=False
+        )
+
+        response = self.relink_to_actual(client, typo)
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["institution_id"] == actual["institution_id"]
+        # The institution's earlier answer is not overwritten by the mistyped copy's.
+        assert self.declared(actual["case_participant_id"]) == (False, True)
+        assert self.declared(typo["case_participant_id"]) == (False, True)
+        assert response.json()["institution"]["contact_details_unknown_declared"] is True
+
+    def test_a_relink_into_an_undeclared_institution_takes_its_declaration(self, client, draft):
+        actual, typo = self.add_actual_and_typo(
+            client, draft, actual_declared=False, typo_declared=True
+        )
+
+        response = self.relink_to_actual(client, typo)
+
+        assert response.status_code == 200, response.json()
+        assert self.declared(actual["case_participant_id"]) == (False, False)
+        assert self.declared(typo["case_participant_id"]) == (False, False)
+
+    def test_the_others_who_follow_a_relink_take_the_declaration_too(self, client, draft):
+        actual, typo = self.add_actual_and_typo(
+            client, draft, actual_declared=True, typo_declared=False
+        )
+        follower = self.add_person(client, draft, typo["institution_id"], name="Meera")
+        assert self.declared(follower["case_participant_id"]) == (False, False)
+
+        response = self.relink_to_actual(client, typo)
+
+        assert response.status_code == 200, response.json()
+        for participant in (actual, typo, follower):
+            assert self.declared(participant["case_participant_id"]) == (False, True)
+
+    def test_a_declaration_sent_with_a_relink_overrides_the_institutions(self, client, draft):
+        actual, typo = self.add_actual_and_typo(
+            client, draft, actual_declared=True, typo_declared=True
+        )
+
+        response = self.relink_to_actual(client, typo, contact_details_unknown_declared=False)
+
+        assert response.status_code == 200, response.json()
+        assert self.declared(actual["case_participant_id"]) == (False, False)
+        assert self.declared(typo["case_participant_id"]) == (False, False)
+
+    def test_a_relink_that_brings_a_number_into_a_declared_institution_is_refused(
+        self, client, draft
+    ):
+        actual, typo = self.add_actual_and_typo(
+            client, draft, actual_declared=True, typo_declared=False
+        )
+        # The mistyped copy has a number of its own on the case, which the move would carry over.
+        patch(
+            client,
+            typo["case_participant_id"],
+            {"institution_contacts": {"mobile_numbers": ["080-22334455"]}},
+        )
+
+        response = self.relink_to_actual(client, typo)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"institution.contact_details_unknown_declared": ["E00001"]}
+        # The whole write is undone: still linked to the mistyped copy.
+        stored = CaseParticipant.objects.get(pk=typo["case_participant_id"])
+        assert str(stored.institution_id) == typo["institution_id"]
+        assert self.declared(actual["case_participant_id"]) == (False, True)
+
+    @pytest.mark.parametrize(
+        ("role", "fields"),
+        [
+            (ParticipantRole.COMPLAINANT, {"institution": True}),
+            (ParticipantRole.ACCUSED, {"institution": False}),
+        ],
+    )
+    def test_the_database_refuses_it_without_an_accused_institution(
+        self, client, draft, role, fields
+    ):
+        add_complainant(client, draft)
+        endpoint = "complainant" if role == ParticipantRole.COMPLAINANT else "accused"
+        body = (
+            {"institution": self.NO_CONTACTS, "person": {"name": "Ravi"}}
+            if fields["institution"]
+            else {"person": {"name": "Ravi"}}
+        )
+        participant = add(client, draft, endpoint, **body).json()
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            CaseParticipant.objects.filter(pk=participant["case_participant_id"]).update(
+                institution_contact_details_unknown_declared=True
+            )
+
+    def test_the_database_refuses_a_persons_declaration_without_a_person(self, client, draft):
+        add_complainant(client, draft)
+        no_person = add(client, draft, "accused", institution=self.NO_CONTACTS)
+        assert no_person.status_code == 201, no_person.json()
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            CaseParticipant.objects.filter(pk=no_person.json()["case_participant_id"]).update(
+                contact_details_unknown_declared=True
+            )
+
+
 class TestPartialAddresses:
     """An address may be saved as far as it is known; validate asks for the rest."""
 
@@ -2819,7 +3338,7 @@ class TestPermanentAddress:
 
 
 class TestPoliceStation:
-    """Only accused and witness addresses need a police station."""
+    """Only accused addresses need a police station."""
 
     def test_a_complainant_address_may_leave_it_out(self, client, draft):
         response = add(client, draft, person=PERSON, addresses=[NO_POLICE_STATION])
@@ -2995,14 +3514,11 @@ class TestEmptyInputs:
         assert (body["age_at_filing"], body["gender_at_filing"]) == (None, None)
 
     def test_an_empty_designation_is_not_given(self, client, draft):
-        add_complainant(client, draft)
-
-        response = add(
-            client, draft, role="accused", person=PERSON, institution=INSTITUTION, designation=""
-        )
+        response = add(client, draft, person=PERSON, institution=INSTITUTION, designation="")
 
         assert response.status_code == 201, response.json()
-        assert "Accused #1 acts for an institution but has no designation." in completeness(
+        assert response.json()["designation_at_filing"] is None
+        assert "Complainant #1 acts for an institution but has no designation." in completeness(
             client, draft, response.json()["case_participant_id"]
         )
 

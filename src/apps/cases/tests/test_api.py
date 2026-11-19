@@ -86,7 +86,11 @@ class TestCaseTypes:
         assert body["label"] == "Cheque bounce"
         sections = {item["code"]: item["schema"] for item in body["sections"]}
         assert list(sections) == ["jurisdiction_limitation", "adr_other_prayer"]
-        assert sections["adr_other_prayer"]["required"] == ["final_relief"]
+        assert sections["adr_other_prayer"]["required"] == [
+            "adr_preference",
+            "interim_relief",
+            "final_relief",
+        ]
         assert {"code": "REPLY_TO_DEMAND_NOTICE", "label": "Reply to demand notice"} in body[
             "document_types"
         ]
@@ -549,8 +553,13 @@ class TestDetails:
                 },
                 ["complaint_filing_date"],
             ),
-            ("jurisdiction_limitation", {}, ["cheque_deposited_by_payee", "cause_of_action_date"]),
-            ("adr_other_prayer", {"adr_preference": "YES"}, ["final_relief"]),
+            (
+                "jurisdiction_limitation",
+                {},
+                ["cheque_deposited_by_payee", "other_complaints_pending", "cause_of_action_date"],
+            ),
+            ("adr_other_prayer", {"final_relief": "Convict"}, ["adr_preference", "interim_relief"]),
+            ("adr_other_prayer", {"adr_preference": "YES"}, ["interim_relief", "final_relief"]),
         ],
     )
     def test_a_partly_filled_section_is_saved_and_validate_reports_the_rest(
@@ -1045,6 +1054,68 @@ class TestEvidence:
         )
 
         assert error_codes(response) == {"evidence_info.non_delivery_reason": ["E00005"]}
+
+    @pytest.mark.parametrize(
+        ("change", "field"),
+        [
+            ({"delivery_date": "2024-01-31"}, "delivery_date"),
+            (
+                {
+                    "is_delivered": False,
+                    "delivery_date": None,
+                    "return_date": "2024-01-31",
+                    "non_delivery_reason": "UNCLAIMED",
+                },
+                "return_date",
+            ),
+        ],
+    )
+    def test_a_notice_delivered_or_returned_before_dispatch_is_refused(
+        self, client, draft, change, field
+    ):
+        info = {k: v for k, v in {**DEMAND_NOTICE_INFO, **change}.items() if v is not None}
+
+        response = add_evidence(client, draft, "LEGAL_DEMAND_NOTICE", info)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {f"evidence_info.{field}": ["E00001"]}
+
+    def test_a_notice_delivered_on_the_dispatch_date_is_saved(self, client, draft):
+        info = {**DEMAND_NOTICE_INFO, "delivery_date": DEMAND_NOTICE_INFO["dispatch_date"]}
+
+        assert add_evidence(client, draft, "LEGAL_DEMAND_NOTICE", info).status_code == 201
+
+    def test_a_partly_filled_notice_with_one_date_is_saved(self, client, draft):
+        # The rule needs both dates; one alone is a draft.
+        info = {"delivery_date": "2024-01-31"}
+
+        assert add_evidence(client, draft, "LEGAL_DEMAND_NOTICE", info).status_code == 201
+
+    def test_a_return_before_presentation_is_refused(self, client, draft):
+        info = {**RETURN_MEMO_INFO, "return_date": "2024-01-17"}
+
+        response = add_evidence(client, draft, "RETURN_MEMO", info)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"evidence_info.return_date": ["E00001"]}
+
+    def test_a_return_on_the_presentation_date_is_saved(self, client, draft):
+        info = {**RETURN_MEMO_INFO, "return_date": RETURN_MEMO_INFO["presentation_date"]}
+
+        assert add_evidence(client, draft, "RETURN_MEMO", info).status_code == 201
+
+    def test_a_patch_moving_the_return_before_presentation_is_refused(self, client, draft):
+        evidence_id = add_evidence(client, draft, "RETURN_MEMO", RETURN_MEMO_INFO).json()[
+            "case_evidence_id"
+        ]
+
+        response = client.patch(
+            reverse("case-evidence-detail", args=[evidence_id]),
+            {"evidence_info": {**RETURN_MEMO_INFO, "return_date": "2024-01-01"}},
+            format="json",
+        )
+
+        assert error_codes(response) == {"evidence_info.return_date": ["E00001"]}
 
     def test_part_payment_is_stored_with_its_amount(self, client, draft):
         info = {
