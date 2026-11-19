@@ -138,7 +138,7 @@ A key field that is also in `fk_by_code` is matched by the related row's key (`r
 
 - FK fields named in `fk_by_code` take a code string in the file and resolve to the related object by its key. A referent may be defined earlier **in the same file** (rows are processed in file order, and self-referential parents are loaded parent-before-child) or already exist in the DB.
 - M2M fields (`Organization.locations`) take a list of codes, resolved and set after the owning row is created.
-- A reference marked `natural_key` resolves through the related model's `get_by_natural_key()`, written dotted in the file (a content type is `"app_label.model"`). A key field that is a foreign key is resolved before the existing-row check, so the key matches on the related object.
+- A reference marked `natural_key` resolves through the related model's `get_by_natural_key()`, written dotted in the file (a content type is `"app_label.model"`). In the existing-row check, a key field with a `natural_key` reference is resolved to the related object and matched on it, so an unknown one skips the row; a key field with a code reference is matched by the related row's code without loading it (§5).
 - An unresolved reference is reported per `(file, row key, field, value)` and that row is skipped; it is never silently created as a stub.
 
 ### 7. Load order across files
