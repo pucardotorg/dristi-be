@@ -98,6 +98,8 @@ class Request(BaseModel):
 
     OPEN_STATUSES = (Status.DRAFT, Status.PENDING)
 
+    # Human-readable, e.g. KL-REQ-00001 (spec 0010 section 1.1).
+    request_number = models.CharField(max_length=32, unique=True, editable=False)
     request_type = models.ForeignKey(
         RequestType,
         on_delete=models.PROTECT,
@@ -127,7 +129,7 @@ class Request(BaseModel):
 
     def __str__(self):
         """Return a readable identifier for the request."""
-        return f"{self.request_type_id and self.request_type.code} ({self.pk})"
+        return self.request_number or str(self.pk)
 
     @property
     def current_approval(self):
@@ -140,6 +142,22 @@ class Request(BaseModel):
     def is_open(self):
         """Return ``True`` when the request can still move through approval."""
         return self.status in self.OPEN_STATUSES
+
+
+class RequestNumberSequence(BaseModel):
+    """The last request number handed out for one prefix, e.g. ``KL-REQ``.
+
+    Bumped with an atomic ``UPDATE`` inside the creating transaction
+    (``apps.dristi_requests.numbering``), so concurrent creations never draw
+    the same number; ``Request.request_number`` being unique is the backstop.
+    """
+
+    prefix = models.CharField(max_length=16, unique=True)
+    value = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        """Return the prefix and the last number handed out."""
+        return f"{self.prefix}: {self.value}"
 
 
 class RequestDocument(BaseModel):

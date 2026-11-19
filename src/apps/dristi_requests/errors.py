@@ -15,3 +15,6 @@ NOT_THE_ASSIGNED_APPROVER = define(
 DOCUMENT_TOO_LARGE = define("E02005", "This document is too large to download.", status=413)
 INVALID_ATTRIBUTES = define("E02006", "The attributes do not match the request type's schema.")
 INVALID_DOCUMENTS = define("E02007", "The attached documents are not acceptable.")
+REQUEST_NUMBERING_NOT_CONFIGURED = define(
+    "E02008", "Request numbering is not configured.", status=503
+)

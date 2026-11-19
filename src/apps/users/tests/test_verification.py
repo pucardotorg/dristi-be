@@ -6,6 +6,7 @@ from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 
+from apps.core.models import Configuration
 from apps.dristi_requests.exceptions import ApprovalRoutingError
 from apps.dristi_requests.models import Request, RequestApproval
 from apps.dristi_requests.services import decide
@@ -33,6 +34,9 @@ class RegistrationVerificationTests(OTPTestCase):
         super().setUp()
         self.approver = User.objects.create_user(mobile_number=APPROVER_MOBILE)
         Group.objects.get(name="BAR_ID_APPROVER").user_set.add(self.approver)
+        Configuration.objects.create(
+            config_set="tenant", config_key="state_code", config_value="KL"
+        )
 
         self.create_account()
         self.user = User.objects.get(mobile_number=MOBILE)

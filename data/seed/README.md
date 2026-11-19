@@ -55,6 +55,9 @@ seeded instead of shipped as data migrations:
 
 - `core/languages.toml` — the supported languages and the default one
   (spec 0030). Language resolution fails until it is loaded.
+- `core/configurations.toml` — `tenant.state_code`, the state code that
+  prefixes request numbers (`KL-REQ-00001`, spec 0010). Creating a request
+  fails until it is loaded.
 
 ```sh
 python manage.py seed data/seed/core/

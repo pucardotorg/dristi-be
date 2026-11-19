@@ -32,6 +32,8 @@ The first request type built on this module is `LAWYER_BAR_UPDATE`.
   chain of roles.
 - A clear, auditable trail per request: who approved or rejected, when, and
   with what comments.
+- A short, human-readable, unique number per request (`KL-REQ-00001`) that
+  users and support staff can quote instead of the UUID (§1.1).
 - Documents as first-class, access-controlled attachments on a request.
 - Support for the full lifecycle a request can go through: draft, submit,
   approve/reject per step, resubmit after rejection, cancel.
@@ -69,6 +71,7 @@ classDiagram
     +condition
   }
   class Request {
+    +request_number
     +data
     +status
     +version
@@ -120,6 +123,176 @@ attachments a submission must include, enforced at submit time (see §8.1).
 
 `RequestApproval.status`: one of `pending`, `approved`, `rejected`,
 `skipped`.
+
+#### 1.1 Request number
+
+Every `Request` gets a human-readable number alongside its UUID primary key
+(issue #141). The UUID stays the identifier in URLs and foreign keys; the
+number is what a user sees, quotes on the phone, and what staff search by.
+
+**Format:** `{STATE_CODE}-REQ-{seq:05d}`, e.g. `KL-REQ-00001`.
+
+| Part | Source | Notes |
+|---|---|---|
+| `STATE_CODE` | configuration store, `config_set = "tenant"`, `config_key = "state_code"` (see below) | Upper-case, 2–3 letters (`^[A-Z]{2,3}$`). One deployment serves one state. |
+| `REQ` | constant `REQUEST_NUMBER_KIND` in `apps.dristi_requests.numbering` | Marks the number as a request, as opposed to a case or payment. |
+| `seq` | counter row (below) | Starts at 1, zero-padded to 5 digits. Not padding-limited: after `99999` it continues as `100000`. Never resets (no year or type component). |
+
+One sequence covers all request types: the type is already a column, and a
+per-type sequence would make two different requests share a number.
+
+**Where the state code lives:** the backend-only configuration store
+(`apps.core.models.Configuration`, [0018](0018-configuration-store.md)), not
+`PublicConfiguration` ([0034](0034-public-configuration-store.md)) and not an
+environment variable.
+
+- *Not an environment variable:* the state is reference data about the
+  deployment, and it can be set or corrected in admin without a redeploy, like
+  the other operational values in the store.
+- *Not `PublicConfiguration`:* only the backend uses it, to build the number.
+  Clients get the finished `request_number` and never need the code on its
+  own. A `(config_set, config_key)` pair may live in only one of the two
+  stores (0034 §1.3). If the frontend needs the state code later, the row
+  moves to `PublicConfiguration` and the read below switches to
+  `get_public`. Nothing else changes.
+- *A generic set, `tenant`:* the code describes the deployment, not requests,
+  so other numbers (cases' `filing_number`, say) can read the same row.
+  `apps.dristi_requests` owns the read but not the key.
+
+Read at the point of use, never at import time, so an admin edit takes effect
+for the next request (0018):
+
+```python
+# apps/dristi_requests/numbering.py
+from apps.core import services as config
+
+STATE_CODE_SET = "tenant"
+STATE_CODE_KEY = "state_code"
+STATE_CODE_PATTERN = re.compile(r"^[A-Z]{2,3}$")
+
+
+def state_code() -> str:
+    try:
+        value = config.get(STATE_CODE_SET, STATE_CODE_KEY).strip().upper()
+    except config.ConfigurationNotFound:
+        raise BusinessError(errors.REQUEST_NUMBERING_NOT_CONFIGURED)
+    if not STATE_CODE_PATTERN.match(value):
+        raise BusinessError(errors.REQUEST_NUMBERING_NOT_CONFIGURED)
+    return value
+```
+
+- There is **no code default.** A wrong state code would put permanent,
+  wrong numbers on requests, so a missing, inactive or malformed row fails
+  the creation with `E02008` (503, "Request numbering is not configured.").
+  The transaction rolls back and the uploaded documents are discarded (§7.2).
+  The value is upper-cased and trimmed before it is checked, so `kl` is
+  accepted as `KL`.
+- Every environment gets the row from seed data, in
+  `data/seed/core/configurations.toml` (the reference data every environment
+  needs, `data/seed/README.md`):
+
+  ```toml
+  [seed]
+  model = "core.Configuration"
+
+  [[rows]]
+  config_set = "tenant"
+  config_key = "state_code"
+  config_value = "KL"
+  description = "Two- or three-letter state code that prefixes human-readable numbers, e.g. KL-REQ-00001."
+  ```
+
+- Tests that create requests set the row in a shared fixture.
+- **Changing the value** in admin starts a new series under the new prefix
+  (below). Existing numbers keep the old code. This is the intended behaviour
+  for correcting a mis-seeded value, not something to do routinely, so the
+  `description` says so.
+
+**Column:** `Request.request_number = CharField(max_length=32, unique=True,
+editable=False)`. Not nullable once the backfill (below) has run. The unique
+constraint is the backstop; generation never relies on it.
+
+**Generation:** a counter row, the same pattern as `DMD-`/`PAY-` numbers
+(spec 0017 §11), never `max(...) + 1` and never `count() + 1`:
+
+```python
+class RequestNumberSequence(BaseModel):
+    """The last number handed out for one prefix (e.g. ``KL-REQ``)."""
+
+    prefix = models.CharField(max_length=16, unique=True)
+    value = models.PositiveIntegerField(default=0)
+
+
+def next_request_number() -> str:
+    """Allocate the next number. Call inside the creating transaction."""
+    prefix = f"{state_code()}-{REQUEST_NUMBER_KIND}"
+    rows = RequestNumberSequence.objects.filter(prefix=prefix)
+    with transaction.atomic():
+        if not rows.update(value=F("value") + 1, updated_at=timezone.now()):
+            try:
+                with transaction.atomic():
+                    RequestNumberSequence.objects.create(prefix=prefix, value=1)
+            except IntegrityError:
+                # Another transaction created the row first.
+                rows.update(value=F("value") + 1, updated_at=timezone.now())
+        value = rows.values_list("value", flat=True).get()
+    return f"{prefix}-{value:05d}"
+```
+
+- The `UPDATE ... SET value = value + 1` takes the row lock and holds it
+  until the creating transaction commits, so two concurrent creations wait
+  for each other instead of drawing the same number.
+- Because the counter is bumped inside `_create_request`'s transaction, a
+  creation that rolls back (no approver, invalid data) gives its number
+  back: there are no gaps from failed submissions. Gaps can still appear if
+  a request row is ever hard-deleted; numbers are never reused.
+- The counter is keyed by the full prefix, so a changed state code starts a
+  new sequence at `00001` under the new prefix without colliding with
+  existing numbers.
+
+**When it is assigned:** once, in `_create_request`, before the `Request`
+row is inserted, for drafts as well as submitted requests. It never changes
+afterwards: resubmitting (§9.3) bumps `version` but keeps the number, and
+cancelled/rejected requests keep theirs.
+
+**Existing rows:** the migration adds the column nullable, backfills
+existing requests in `(created_at, id)` order as `{STATE_CODE}-REQ-00001`,
+`-00002`, …, sets the counter row to the number of rows backfilled, then
+makes the column non-null and unique. The reverse migration drops the
+column and the counter table.
+
+The backfill reads the state code from the historical `core.Configuration`
+model (`apps.get_model`), with the same normalization and pattern check. It
+does not use `apps.core.services`, because a migration must not import live
+service code. Migrations usually run before seeding, so the row may not exist
+yet. In that case the backfill uses `KL`, the only state deployed today, and
+prints a warning. A fresh database has no requests to backfill, so it never
+needs the fallback. The fallback is for the migration only; it is never used
+at runtime.
+
+**Exposure:**
+
+- Read-only `request_number` on every request representation: the request
+  list/detail serializers and the request nested in approval responses. It
+  is never accepted as input; a client sending it is ignored like any other
+  read-only field.
+- `GET /api/v1/dristi-requests/?request_number=KL-REQ-00001` and
+  `GET /api/v1/dristi-requests/approvals/?request_number=...` filter by exact,
+  case-insensitive match, still scoped to the caller's own requests /
+  approvals.
+- Admin: shown first in `RequestAdmin.list_display`, read-only on the form,
+  and in `search_fields` of `RequestAdmin` and `RequestApprovalAdmin`.
+- `Request.__str__` returns the number.
+
+One new error code, in `apps/dristi_requests/errors.py`:
+
+| Code | Status | Message | When |
+|---|---|---|---|
+| `E02008` | 503 | Request numbering is not configured. | `tenant.state_code` is missing, inactive or malformed when a request is created. |
+
+It is declared on `POST /api/v1/dristi-requests/` with `error_responses`.
+A request number is never supplied by a client, so there is no validation
+error for it, and a filter that matches nothing returns an empty page.
 
 ### 2. Request lifecycle
 
@@ -400,7 +573,8 @@ sequenceDiagram
     F-->>API: file_ids
     rect rgb(235, 245, 255)
     note over API,R: transaction.atomic
-    API->>DB: Create Request
+    API->>DB: next_request_number(): bump counter row (row lock held to commit)
+    API->>DB: Create Request (request_number = KL-REQ-nnnnn)
     API->>DB: Create RequestDocument rows (file_id, upload order)
     API->>R: create_first_approval_step(request)
     R->>DB: Create RequestApproval (step_order=0, status=pending)
@@ -454,7 +628,7 @@ sequenceDiagram
 
     U->>API: POST /api/v1/dristi-requests/{request_id}/resubmit/
     API->>DB: Assert status == rejected
-    API->>DB: version += 1, status = pending, current_step = 0
+    API->>DB: version += 1, status = pending, current_step = 0 (request_number unchanged)
     API->>R: create_first_approval_step(request)
     R->>DB: Create RequestApproval (new round)
     API-->>U: 200 OK, updated Request
@@ -501,6 +675,13 @@ is never served by `file_id` alone.
 - `src/apps/dristi_requests/services.py`
 - `src/apps/dristi_requests/documents.py` — the only module that calls `apps.files`
 - `src/apps/dristi_requests/migrations/0003_request_document_uses_files.py`
+- `src/apps/dristi_requests/numbering.py` — `next_request_number()` (§1.1)
+- `src/apps/dristi_requests/errors.py` — `E02008`
+- `src/apps/dristi_requests/migrations/0004_request_number.py` — counter table,
+  column, backfill
+- `data/seed/core/configurations.toml` — `tenant.state_code` row
+- `data/seed/README.md` — list the new core seed file
+- `src/apps/dristi_requests/tests/test_numbering.py`
 - `src/apps/dristi_requests/hooks.py`
 - `src/apps/dristi_requests/admin.py`
 - `src/apps/dristi_requests/tests/__init__.py`
@@ -531,6 +712,16 @@ is never served by `file_id` alone.
    hook outcome) be logged in a dedicated `RequestAuditLog`, since
    `RequestApproval` rows alone don't capture cancellations or resubmission
    history?
+6. Issue #141 suggests formatting the number through business rules
+   ([0019](0019-business-rules.md)). This spec uses a fixed format instead:
+   a rule cannot allocate the sequence (rules do no I/O, 0019 §4.1), so it
+   could only format a number already drawn, and the format is not policy
+   that changes between releases. Revisit if states need different formats.
+7. The state code is the `tenant.state_code` row in `Configuration`. It is
+   admin-editable, and editing it starts a new number series (§1.1). Should
+   admin warn about, or restrict, editing it once any number has been
+   issued? And when the frontend needs the code (to show the state, say),
+   should the row move to `PublicConfiguration`?
 
 ## Out of scope
 
@@ -551,3 +742,5 @@ is never served by `file_id` alone.
   API.
 - Evaluate signed-URL document storage for scale.
 - Notification/reminder system for pending approvals.
+- Consolidate the per-app counters (`PaymentSequence`, `CaseNumberSeries`,
+  `RequestNumberSequence`) into one generic number generator in `apps.core`.

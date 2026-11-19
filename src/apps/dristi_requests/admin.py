@@ -67,6 +67,7 @@ class RequestAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     """Admin configuration for requests."""
 
     list_display = (
+        "request_number",
         "id",
         "request_type",
         "requester",
@@ -76,9 +77,13 @@ class RequestAdmin(AuditUserAdminMixin, admin.ModelAdmin):
         "created_at",
     )
     list_filter = ("status", "request_type")
-    search_fields = ("id", "requester__email")
-    readonly_fields = ("id", "created_at", "updated_at")
+    search_fields = ("request_number", "id", "requester__email")
+    readonly_fields = ("id", "request_number", "created_at", "updated_at")
     inlines = [RequestDocumentInline, RequestApprovalInline]
+
+    def has_add_permission(self, request):
+        """Requests are created by ``services.create_request`` only, which numbers them."""
+        return False
 
 
 @admin.register(RequestApproval)
@@ -87,7 +92,7 @@ class RequestApprovalAdmin(AuditUserAdminMixin, admin.ModelAdmin):
 
     list_display = ("request", "version", "step_order", "approver", "status", "decided_at")
     list_filter = ("status",)
-    search_fields = ("request__id", "approver__email")
+    search_fields = ("request__request_number", "request__id", "approver__email")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
