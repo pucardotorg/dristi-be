@@ -28,6 +28,46 @@ class LocationFilterSerializer(serializers.Serializer):
         return attrs
 
 
+class LocationChildrenFilterSerializer(serializers.Serializer):
+    """Validates query params for the children routes, which filter the children.
+
+    The parent is identified by the URL path and only active children of an
+    active parent are ever listed, so ``is_active=true`` changes nothing,
+    while ``is_active=false`` and the parent filters are rejected rather than
+    ignored. As on the other routes, an empty value counts as not sent.
+    """
+
+    UNSUPPORTED_MESSAGE = (
+        "parent_id and parent_code are not supported; the parent is identified by the URL path."
+    )
+    INACTIVE_MESSAGE = "Inactive children are never listed; omit is_active or pass 'true'."
+
+    location_type = serializers.ChoiceField(
+        choices=Location.LocationType.choices,
+        required=False,
+        help_text="Only children of this type.",
+    )
+    is_active = StrictBooleanField(
+        required=False,
+        help_text=(
+            "'true' is accepted and changes nothing: only active children of an active "
+            "parent are ever listed. 'false' is rejected."
+        ),
+    )
+
+    def validate_is_active(self, value):
+        """Reject is_active=false, which can never be satisfied."""
+        if value is False:
+            raise serializers.ValidationError(self.INACTIVE_MESSAGE)
+        return value
+
+    def validate(self, attrs):
+        """Reject the parent filters, which conflict with the URL path."""
+        if any(self.initial_data.get(param) for param in ("parent_id", "parent_code")):
+            raise serializers.ValidationError(self.UNSUPPORTED_MESSAGE)
+        return attrs
+
+
 class LocationSerializer(serializers.ModelSerializer):
     """Read-only representation of a location."""
 

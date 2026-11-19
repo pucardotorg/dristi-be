@@ -14,7 +14,11 @@ from apps.api.viewsets import APIModelReadOnlyViewSet
 from apps.core.fields import StrictBooleanField
 
 from .models import Location
-from .serializers import LocationFilterSerializer, LocationSerializer
+from .serializers import (
+    LocationChildrenFilterSerializer,
+    LocationFilterSerializer,
+    LocationSerializer,
+)
 
 UUID_REGEX = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 CODE_URL_PATH = r"code/(?P<code>[^/.]+)"
@@ -29,8 +33,9 @@ ANCESTORS_IS_ACTIVE = OpenApiParameter(
         "'false': not found unless the location itself is inactive."
     ),
 )
-# Every route runs LocationFilterSerializer through get_queryset(), so each one
-# accepts these query parameters and can return these errors.
+# Every route except children runs LocationFilterSerializer through
+# get_queryset(), so each one accepts these query parameters and can return
+# these errors.
 FILTER_ERRORS = error_responses(
     errors.INVALID_CHOICE.example('"XX" is not a valid choice.', field="location_type"),
     errors.INVALID.example("Must be a valid UUID.", field="parent_id"),
@@ -42,6 +47,18 @@ FILTERED_SCHEMA = extend_schema(parameters=[LocationFilterSerializer], responses
 # ANCESTORS_IS_ACTIVE comes after the serializer, so its description wins.
 ANCESTORS_SCHEMA = extend_schema(
     parameters=[LocationFilterSerializer, ANCESTORS_IS_ACTIVE], responses=FILTER_ERRORS
+)
+# The children routes filter the children, not the parent named in the path.
+CHILDREN_SCHEMA = extend_schema(
+    parameters=[LocationChildrenFilterSerializer],
+    responses=error_responses(
+        errors.INVALID_CHOICE.example('"XX" is not a valid choice.', field="location_type"),
+        errors.INVALID.example(
+            LocationChildrenFilterSerializer.INACTIVE_MESSAGE, field="is_active"
+        ),
+        errors.INVALID.example(IS_ACTIVE_MESSAGE, field="is_active"),
+        errors.INVALID.example(LocationChildrenFilterSerializer.UNSUPPORTED_MESSAGE),
+    ),
 )
 
 
@@ -57,11 +74,22 @@ class LocationViewSet(APIModelReadOnlyViewSet):
     list_actions = {"children", "children_by_code"}
     # Ancestor chains are short and returned whole; documented as plain lists.
     unpaginated_actions = {"ancestors", "ancestors_by_code"}
+    # Their query params describe the children, not the parent in the URL path.
+    children_actions = {"children", "children_by_code"}
+
+    def is_children_action(self):
+        """Return True on the two routes that list a location's children."""
+        return getattr(self, "action", None) in self.children_actions
 
     def get_filter_params(self):
         """Return the validated query filters, raising a 400 on a bad value."""
         if not hasattr(self, "_filter_params"):
-            filters = LocationFilterSerializer(data=self.request.query_params)
+            serializer_class = (
+                LocationChildrenFilterSerializer
+                if self.is_children_action()
+                else LocationFilterSerializer
+            )
+            filters = serializer_class(data=self.request.query_params)
             filters.is_valid(raise_exception=True)
             self._filter_params = filters.validated_data
         return self._filter_params
@@ -71,8 +99,13 @@ class LocationViewSet(APIModelReadOnlyViewSet):
 
         They apply to every route built on this queryset, detail and code
         lookups included, so the id and code routes answer a query alike.
+        The children routes are the exception: their filters describe the
+        children and are applied in _children_response(), so the parent is
+        looked up unfiltered.
         """
         queryset = super().get_queryset()
+        if self.is_children_action():
+            return queryset
         params = self.get_filter_params()
 
         if "location_type" in params:
@@ -91,8 +124,19 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         return get_object_or_404(self.get_queryset(), code=code)
 
     def _children_response(self, location):
-        """Return a paginated response of the location's direct children."""
-        children = location.children.select_related("parent").order_by("code")
+        """Return a paginated response of the location's active direct children.
+
+        Call ``get_filter_params()`` before looking ``location`` up, so a bad
+        param is a 400 whether the parent is active, inactive or unknown. An
+        inactive parent is not found and inactive children are never listed.
+        """
+        if not location.is_active:
+            raise NotFound("No active location matches the given query.")
+        children = location.children.filter(is_active=True).select_related("parent")
+        params = self.get_filter_params()
+        if "location_type" in params:
+            children = children.filter(location_type=params["location_type"])
+        children = children.order_by("code")
         page = self.paginate_queryset(children)
         if page is not None:
             return self.get_paginated_response(self.get_serializer(page, many=True).data)
@@ -114,10 +158,11 @@ class LocationViewSet(APIModelReadOnlyViewSet):
             raise NotFound("No active location with an active ancestor chain was found.")
         return Response(self.get_serializer(ancestors, many=True).data)
 
-    @FILTERED_SCHEMA
+    @CHILDREN_SCHEMA
     @action(detail=True, methods=["get"], url_path="children", url_name="children")
     def children(self, request, *args, **kwargs):
         """List the direct children of a location identified by id."""
+        self.get_filter_params()
         return self._children_response(self.get_object())
 
     @ANCESTORS_SCHEMA
@@ -132,7 +177,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
         """Retrieve a location by its unique code."""
         return Response(self.get_serializer(self._get_by_code(code)).data)
 
-    @FILTERED_SCHEMA
+    @CHILDREN_SCHEMA
     @action(
         detail=False,
         methods=["get"],
@@ -141,6 +186,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
     )
     def children_by_code(self, request, code=None, *args, **kwargs):
         """List the direct children of a location identified by code."""
+        self.get_filter_params()
         return self._children_response(self._get_by_code(code))
 
     @ANCESTORS_SCHEMA
