@@ -195,13 +195,23 @@ class Command(BaseCommand):
             raise RowError(f"missing key field(s): {', '.join(missing_key)}")
         label = ", ".join(f"{name}={row[name]}" for name in key)
 
+        # A natural key that includes a foreign key (e.g. a user-group
+        # membership's user and group) is matched on the related objects, so
+        # those are resolved before the existence check. Other specs keep
+        # matching on raw values and resolve their references afterwards.
+        fk_values = None
+        if any(name in spec.fk_by_code for name in key):
+            fk_values = self._resolve_fks(spec, row)
+        lookup = {name: fk_values[name] if name in spec.fk_by_code else row[name] for name in key}
+
         # Idempotency: a row with this natural key is left exactly as it is.
-        if model.objects.filter(**{name: row[name] for name in key}).exists():
+        if model.objects.filter(**lookup).exists():
             return "unchanged", label
 
         # Resolve relationships first: an unresolved one skips the whole row,
         # so a half-built row is never saved.
-        fk_values = self._resolve_fks(spec, row)
+        if fk_values is None:
+            fk_values = self._resolve_fks(spec, row)
         m2m_values = self._resolve_m2ms(spec, row)
 
         instance = model()

@@ -43,6 +43,13 @@ A Django-based API project template using:
    docker compose --env-file .env -f docker/docker-compose.yml exec web python manage.py createsuperuser
    ```
 
+   To let advocate and clerk registration requests be approved, create the superuser with
+   mobile number `+919999999999` and add it to the `BAR_ID_APPROVER` group:
+   ```bash
+   docker compose --env-file .env -f docker/docker-compose.yml exec web python manage.py seed /data/seed/local/
+   ```
+   A requester is never their own approver, so register with a different mobile number.
+
 4. **Access the application:**
 
    | Service | URL | Notes |

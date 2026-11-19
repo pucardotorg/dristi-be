@@ -48,6 +48,14 @@ docker compose -f docker/docker-compose.yml exec web python manage.py seed /data
 
 See [data/seed/README.md](../data/seed/README.md) for what `core/` contains.
 
+On a local or test stack, also make your superuser a bar-ID approver so advocate
+and clerk registration requests can be routed. Create the superuser with mobile
+number `+919999999999`, then:
+
+```bash
+docker compose -f docker/docker-compose.yml exec web python manage.py seed /data/seed/local/
+```
+
 ### Loading location data (pincode pre-fill)
 
 The repository ships no location data. Address forms pre-fill district and

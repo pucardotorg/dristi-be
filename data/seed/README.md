@@ -60,6 +60,24 @@ seeded instead of shipped as data migrations:
 python manage.py seed data/seed/core/
 ```
 
+## Bar-ID approvers (local / test)
+
+Registration and bar-ID requests route their approval step to the
+`BAR_ID_APPROVER` group. Migrations create that group empty, so a fresh stack
+cannot route a request until someone is a member. `local/bar_id_approvers.toml`
+adds the user with mobile number `+919999999999`:
+
+```sh
+python manage.py createsuperuser        # mobile number +919999999999
+python manage.py seed data/seed/local/
+```
+
+The file seeds `users.User_groups` (a user-group membership). Users are matched
+by `mobile_number` and groups by `name`, and both must already exist; an unknown
+one skips the row. To make someone else an approver, add a row with their
+number. A requester is never their own approver, so register with a different
+number.
+
 ## Loading pincodes
 
 Pincodes (and the states and districts above them) are loaded from TOML like
