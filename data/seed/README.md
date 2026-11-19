@@ -44,6 +44,41 @@ parent = "IN"                  # a foreign key given as the parent's code
   them, so dependent data can be split across files, e.g.
   `seed states.toml districts.toml pincodes.toml`. (Files picked up from a
   directory load in sorted-name order.)
+- **JSON fields** (`data_schema`, `schema`, `condition`, `rule_input_schema`,
+  …) are written as TOML tables or inline tables. A text field holding JSON
+  (`config_value`, a gorules `rule_expression`) is written as a JSON string,
+  for a long one a multi-line literal string (`'''{ ... }'''`).
+
+Run `seed --list` for every seedable model and its natural key.
+
+### Foreign keys in the natural key
+
+Some models are identified partly by a foreign key, which is given by the
+related row's natural key. An approval step is keyed by its request type's code
+and its order:
+
+```toml
+[seed]
+model = "dristi_requests.ApprovalStep"
+
+[[rows]]
+request_type = "LAWYER_BAR_UPDATE"   # RequestType.code
+order = 0
+approver_role = "BAR_ID_APPROVER"
+approver_group = "BAR_ID_APPROVER"   # auth.Group.name
+```
+
+A nullable foreign key in the key may be left out, and then matches NULL. A
+scrutiny rule binding without an `organization` is the national default:
+
+```toml
+[seed]
+model = "scrutiny.ScrutinyRuleBinding"
+
+[[rows]]
+decision = "CHECKS"                  # no organization: national default
+rule_code = "SCRUTINY_CHECKS_DEFAULT"
+```
 
 The `example/` folder is a small, self-contained set used by the tests and as a
 worked example of the format.

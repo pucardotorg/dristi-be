@@ -3,10 +3,20 @@
 Importing this module registers every spec. The ``seed`` command imports it so
 the registry is populated before it runs. Load ``order`` keeps referents ahead
 of the rows that point at them (locations before organizations that cite them as
-jurisdictions; page categories before pages).
+jurisdictions; page categories before pages; groups and request types before
+approval steps).
 """
 
 from .registry import FkRef, SeedSpec, register
+
+register(
+    SeedSpec(
+        model_label="auth.Group",
+        key=("name",),
+        fields=("name",),
+        order=5,
+    )
+)
 
 register(
     SeedSpec(
@@ -103,6 +113,70 @@ register(
         fields=("slug", "title", "sub_title", "main_image_url", "content_type", "content"),
         m2m_by_code={"categories": FkRef("cms.PageCategory", "slug")},
         order=50,
+    )
+)
+
+register(
+    SeedSpec(
+        model_label="messaging.MessageTemplate",
+        key=("message_key", "message_type"),
+        fields=(
+            "message_key",
+            "message_type",
+            "subject",
+            "content",
+            "data_schema",
+            "priority",
+            "category",
+            "max_retries",
+            "provider_template_id",
+            "is_active",
+        ),
+        order=30,
+    )
+)
+
+register(
+    SeedSpec(
+        model_label="hearings.HearingPurpose",
+        key=("code",),
+        fields=("code", "label", "description", "sequence", "is_active"),
+        order=30,
+    )
+)
+
+register(
+    SeedSpec(
+        model_label="dristi_requests.RequestType",
+        key=("code",),
+        fields=("code", "name", "description", "schema", "min_documents", "is_active"),
+        order=30,
+    )
+)
+
+# Keyed by its request type's code and step order; the group by its name.
+register(
+    SeedSpec(
+        model_label="dristi_requests.ApprovalStep",
+        key=("request_type", "order"),
+        fields=("order", "approver_role", "condition"),
+        fk_by_code={
+            "request_type": FkRef("dristi_requests.RequestType", "code"),
+            "approver_group": FkRef("auth.Group", "name"),
+        },
+        order=60,
+    )
+)
+
+# An empty ``organization`` is the national default (matched as NULL). Loads
+# after core.BusinessRule, whose code it names in ``rule_code``.
+register(
+    SeedSpec(
+        model_label="scrutiny.ScrutinyRuleBinding",
+        key=("decision", "organization"),
+        fields=("decision", "rule_code", "note", "is_active"),
+        fk_by_code={"organization": FkRef("organizations.Organization", "code")},
+        order=60,
     )
 )
 
