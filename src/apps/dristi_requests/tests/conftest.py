@@ -7,8 +7,20 @@ from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
+from apps.core.models import Configuration
 from apps.dristi_requests.models import ApprovalStep, RequestType
 from apps.users.models import User
+
+
+@pytest.fixture(autouse=True)
+def state_code(request):
+    """Configure the state code request numbers need, for every database test."""
+    if "db" not in request.fixturenames and not request.node.get_closest_marker("django_db"):
+        return None
+    request.getfixturevalue("db")
+    return Configuration.objects.create(
+        config_set="tenant", config_key="state_code", config_value="KL"
+    )
 
 
 @pytest.fixture(autouse=True)

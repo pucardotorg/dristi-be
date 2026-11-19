@@ -21,6 +21,7 @@ from .exceptions import (
 )
 from .hooks import run_post_approval_hooks, run_rejection_hooks
 from .models import Request, RequestApproval, RequestDocument
+from .numbering import next_request_number
 from .schema import validate_against_schema
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,7 @@ def create_request(*, request_type, requester, data, files=None, file_ids=None, 
 def _create_request(*, request_type, requester, data, file_ids, submit):
     """Create the request and link its already-stored documents, atomically."""
     request = Request.objects.create(
+        request_number=next_request_number(),
         request_type=request_type,
         requester=requester,
         data=data,

@@ -1,0 +1,18 @@
+# Bar-ID approvers for a local / test stack.
+#
+# Registration and bar-ID requests route their approval step to the
+# BAR_ID_APPROVER group, which migrations create empty. Create your superuser
+# with this mobile number, then run:
+#
+#   python manage.py seed /data/seed/local/      # in the web container
+#   python manage.py seed ../data/seed/local/    # from src/
+#
+# The user must already exist; an unknown number skips the row. A requester is
+# never their own approver, so register advocates / clerks with another number.
+
+[seed]
+model = "users.User_groups"
+
+[[rows]]
+user = "+919999999999"
+group = "BAR_ID_APPROVER"

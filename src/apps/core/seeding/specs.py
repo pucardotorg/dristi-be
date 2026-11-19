@@ -122,3 +122,20 @@ register(
         order=30,
     )
 )
+
+# Group membership: adds an existing user to an existing group, e.g. a
+# BAR_ID_APPROVER so registration and bar-ID requests can be routed. The
+# membership table, not auth.Group, is the seeded model: the groups come from
+# migrations, and an existing group row would be left unchanged (insert-only).
+register(
+    SeedSpec(
+        model_label="users.User_groups",
+        key=("user", "group"),
+        fields=(),
+        fk_by_code={
+            "user": FkRef("users.User", "mobile_number"),
+            "group": FkRef("auth.Group", "name"),
+        },
+        order=60,
+    )
+)
