@@ -1,6 +1,7 @@
-# Public configuration every environment starts with (spec 0034). Each row is
-# a per-state switch: seeding is insert-only, so a state that needs a different
-# value changes the row in the admin after the first seed.
+# Public configuration every environment starts with (spec 0034): per-state
+# switches, then the e-filing drop-down options. Seeding is insert-only, so a
+# state that needs a different value changes the row in the admin after the
+# first seed.
 #
 # Every row here is PUBLIC: it is served to internet clients without
 # authentication. Never put secrets, passwords, tokens or credentials here.
@@ -17,3 +18,57 @@ config_key = "natively_digital_document_submission_on"
 value_type = "boolean"
 config_value = "true"
 description = "Show the natively digital question per uploaded document and the Natively Digital column in the complaint PDF. On for Kerala; set false for states that do not need it."
+
+# Drop-down options the e-filing frontend reads from public configuration
+# (issue #247).
+#
+# Each value is a JSON object of {code: label}, in display order. The codes
+# are closed sets the backend validates against (spec 0020 §9.4), so they
+# MUST match the enum named in each row's description, codes and order alike;
+# apps/cases/tests/test_drop_down_seed.py fails when they drift. Change the
+# enum and this file together. A code added here alone is rejected by the
+# backend on save.
+#
+# Values are TOML literal strings ('''...''') so the JSON needs no escaping;
+# triple quotes also allow the apostrophe in "Drawer's signature".
+[[rows]]
+config_set = "efiling"
+config_key = "entity_type_drop_down"
+value_type = "json"
+config_value = '''{"PRIVATE_LIMITED_COMPANY": "Private limited company", "PUBLIC_LIMITED_COMPANY": "Public limited company", "LLP": "Limited liability partnership", "PARTNERSHIP_FIRM": "Partnership firm", "PROPRIETORSHIP": "Proprietorship", "SOCIETY_TRUST": "Society / trust", "OTHER_ENTITY": "Other entity"}'''
+description = "Institution entity types. Codes mirror apps.parties.models.EntityType; edit labels only."
+
+[[rows]]
+config_set = "efiling_cheque_bounce"
+config_key = "return_reason_drop_down"
+value_type = "json"
+config_value = '''{"FUNDS_INSUFFICIENT": "Funds insufficient", "EXCEEDS_ARRANGEMENT": "Exceeds arrangement", "ACCOUNT_CLOSED": "Account closed", "PAYMENT_STOPPED_BY_DRAWER": "Payment stopped by drawer", "SIGNATURE_DIFFERS": "Drawer's signature differs / incomplete", "AMOUNT_MISMATCH": "Amount in words and figures differ", "REFER_TO_DRAWER": "Refer to drawer", "POST_DATED_OR_STALE": "Cheque post-dated / stale"}'''
+description = "Return memo reasons. Codes mirror apps.cases.services.case_types.ReturnReason; edit labels only."
+
+[[rows]]
+config_set = "efiling_cheque_bounce"
+config_key = "nature_of_debt_drop_down"
+value_type = "json"
+config_value = '''{"LOAN_OR_ADVANCE_REPAYMENT": "Loan / advance repayment", "GOODS_SUPPLIED": "Payment for goods supplied", "SERVICES_RENDERED": "Payment for services rendered", "BUSINESS_OR_TRADE_TRANSACTION": "Business / trade transaction", "BORROWED_MONEY_REPAYMENT": "Repayment of borrowed money", "OTHER_LIABILITY": "Other liability"}'''
+description = "Nature of debt. Codes mirror apps.cases.services.case_types.NatureOfDebt; edit labels only."
+
+[[rows]]
+config_set = "efiling_cheque_bounce"
+config_key = "mode_of_service_drop_down"
+value_type = "json"
+config_value = '''{"REGISTERED_POST": "Registered post (RPAD)", "SPEED_POST": "Speed post", "COURIER": "Courier", "EMAIL": "Email", "HAND_DELIVERY": "Hand delivery", "FAX": "Fax"}'''
+description = "Demand notice modes of service. Codes mirror apps.cases.services.case_types.ModeOfService; edit labels only."
+
+[[rows]]
+config_set = "efiling_cheque_bounce"
+config_key = "non_delivery_reason_drop_down"
+value_type = "json"
+config_value = '''{"ADDRESSEE_NOT_AVAILABLE": "Addressee not available", "REFUSED": "Refused to accept", "ADDRESS_INCOMPLETE_OR_INCORRECT": "Address incomplete / incorrect", "LEFT_WITHOUT_INSTRUCTIONS": "Left without instructions", "UNCLAIMED": "Unclaimed", "LOST_IN_TRANSIT": "Item lost in transit", "OTHER": "Other"}'''
+description = "Demand notice non-delivery reasons. Codes mirror apps.cases.services.case_types.NonDeliveryReason; edit labels only."
+
+[[rows]]
+config_set = "efiling_cheque_bounce"
+config_key = "payment_status_drop_down"
+value_type = "json"
+config_value = '''{"PART_PAYMENT": "Part Payment", "NO_PAYMENT_MADE": "No Payment Made"}'''
+description = "Payment against the cheque. Codes mirror apps.cases.services.case_types.PaymentStatus; edit labels only."

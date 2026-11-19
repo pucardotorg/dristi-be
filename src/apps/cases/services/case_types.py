@@ -11,6 +11,11 @@ configuration.
 
 Adding a document or evidence type: add it to the enum below (the shared
 vocabulary, with its label), then list it under each case type that accepts it.
+
+The frontend's drop-downs for the evidence choice lists (``ReturnReason`` and
+the rest) are seeded into public configuration from
+``data/seed/core/public_configurations.toml`` (issue #247). Changing one of
+those enums means changing that file too; a test fails until they match.
 """
 
 from calendar import monthrange

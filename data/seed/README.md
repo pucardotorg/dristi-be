@@ -90,11 +90,17 @@ seeded instead of shipped as data migrations:
 
 - `core/languages.toml` — the supported languages and the default one
   (spec 0030). Language resolution fails until it is loaded.
-- `core/public_configurations.toml` — per-state switches the frontend reads
-  from the public configuration API (spec 0034), seeded with Kerala's values.
+- `core/public_configurations.toml` — per-state switches and e-filing
+  drop-down options the frontend reads from the public configuration API
+  (spec 0034), seeded with Kerala's values.
   `ui_efiling.natively_digital_document_submission_on` shows the natively
   digital question on e-filing documents; a state that does not need it sets
   the row to `false` in the admin (re-seeding never overwrites it).
+  The `*_drop_down` rows (entity types and the cheque bounce evidence lists)
+  each mirror a backend enum; change both together
+  (`apps/cases/tests/test_drop_down_seed.py` checks they match). Seeding is
+  insert-only, so an environment that already has a row needs the change made
+  in admin as well.
 - `core/configurations.toml` — `tenant.state_code`, the state code that
   prefixes request numbers (`KL-REQ-00001`, spec 0010). Creating a request
   fails until it is loaded.

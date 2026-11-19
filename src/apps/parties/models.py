@@ -141,7 +141,11 @@ class VerificationLevel(models.TextChoices):
 
 
 class EntityType(models.TextChoices):
-    """Kinds of legal entity that can be a party (spec 0020 §3.3)."""
+    """Kinds of legal entity that can be a party (spec 0020 §3.3).
+
+    Mirrored for the frontend drop-down in
+    ``data/seed/core/public_configurations.toml``; change both together.
+    """
 
     PRIVATE_LIMITED_COMPANY = "PRIVATE_LIMITED_COMPANY", "Private limited company"
     PUBLIC_LIMITED_COMPANY = "PUBLIC_LIMITED_COMPANY", "Public limited company"
