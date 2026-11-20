@@ -55,13 +55,15 @@ def create_asserted_person(
     )
 
 
-def get_or_create_institution(user, fields, *, require_identifier=False):
+def get_or_create_institution(user, fields):
     """Return the institution with the PAN or CIN in ``fields``, or create one.
 
-    A match is returned as is: none of ``fields`` is applied to it. A PAN and a CIN
+    A match is returned as is: none of ``fields`` is applied to it; a type or
+    name it lacks is filled separately (``fill_missing_details``). A PAN and a CIN
     belonging to two different institutions are refused, since either could
-    be the one meant. ``require_identifier`` refuses an institution with no
-    PAN, no CIN and no skip declaration: a complainant's (spec 0020 §3.4).
+    be the one meant. A complainant's institution needs a PAN, a CIN or the
+    skip declaration (spec 0020 §3.4), but only to be filed: the case filing
+    completeness check asks for it, not this write.
     """
     # Normalized as the model stores them, so they match. Their format is
     # checked once, by the model, if a new institution is created.
@@ -69,7 +71,7 @@ def get_or_create_institution(user, fields, *, require_identifier=False):
     cin = normalize_identifier(fields.get("cin"))
     # Checked before matching too: a match is returned without saving it.
     skip_declared = fields.get("pan_cin_skip_declared", False)
-    if problems := pan_cin_errors(pan, cin, skip_declared, required=require_identifier):
+    if problems := pan_cin_errors(pan, cin, skip_declared):
         raise ValidationError(problems)
 
     found = _find_institution(pan, cin)
@@ -85,6 +87,39 @@ def get_or_create_institution(user, fields, *, require_identifier=False):
         if found is None:
             raise
         return found
+
+
+# What a filer may leave out of a new institution and a later filer may fill.
+FILLABLE_FIELDS = ("entity_type", "entity_name")
+
+
+def fill_missing_details(institution, user, fields):
+    """Give ``institution`` the type and name in ``fields`` it has none of yet; return whether it did.
+
+    Either may be left out while a filing is drafted, and the institution is
+    matched again by its PAN or CIN when the filer sends it later, so this is
+    how they are completed. A stored value is never replaced: other filings
+    share the row, and the caller refreshes what they show when this returns
+    ``True``. The row is locked, so a concurrent filer's values are kept;
+    either way ``institution`` ends up with the stored values.
+    """
+    sent = {
+        field: value
+        for field in FILLABLE_FIELDS
+        if (value := (fields.get(field) or "").strip()) and not getattr(institution, field)
+    }
+    if not sent:
+        return False
+    locked = Institution.objects.select_for_update().get(pk=institution.pk)
+    filled = [field for field in sent if getattr(locked, field) is None]
+    if filled:
+        for field in filled:
+            setattr(locked, field, sent[field])
+        locked.updated_by = user
+        locked.save(update_fields=[*filled, "updated_by", "updated_at"])
+    for field in (*FILLABLE_FIELDS, "updated_by", "updated_at"):
+        setattr(institution, field, getattr(locked, field))
+    return bool(filled)
 
 
 def _find_institution(pan, cin):

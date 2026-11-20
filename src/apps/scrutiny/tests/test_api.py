@@ -352,7 +352,11 @@ def test_filer_corrects_anything_after_a_registration_send_back(case, officer, r
 
     response = client.put(
         filer_url(case, "details", "adr_other_prayer"),
-        {"final_relief": "Pay ₹50,25,000."},
+        {
+            "adr_preference": "NO",
+            "interim_relief": "Direct the accused to pay interim compensation.",
+            "final_relief": "Pay ₹50,25,000.",
+        },
         format="json",
     )
     assert response.status_code == 200

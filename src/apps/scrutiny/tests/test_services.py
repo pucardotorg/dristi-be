@@ -252,7 +252,14 @@ def test_a_section_change_answers_the_section_flag(case, officer, filer):
     flags.draft(case.pk, officer, target_type=FlagTarget.SECTION, target_ref="PRY", note="x")
     round_ = rounds.send_back(case.pk, officer)
     case_services.save_details_section(
-        case.pk, filer, "adr_other_prayer", {"final_relief": "Pay the cheque amount."}
+        case.pk,
+        filer,
+        "adr_other_prayer",
+        {
+            "adr_preference": "NO",
+            "interim_relief": "Direct the accused to pay interim compensation.",
+            "final_relief": "Pay the cheque amount.",
+        },
     )
     response = ScrutinyFlagResponse.objects.get(flag__round=round_)
     assert (response.kind, response.value_after, response.flag.status) == (

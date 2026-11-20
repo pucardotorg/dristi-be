@@ -17,6 +17,8 @@ option a). Leaving ``DRAFT_IN_PROGRESS`` freezes the filing: every write in
 ``services`` and ``participants`` is refused from then on.
 """
 
+import re
+
 from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Prefetch, Q
@@ -26,6 +28,7 @@ from rest_framework.exceptions import NotFound
 from apps.api.errors import BusinessError
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
+from apps.parties.models import PAN_CIN_REQUIRED_MESSAGE
 
 from .. import errors
 from ..models import (
@@ -33,6 +36,7 @@ from ..models import (
     FILING_SIDE_ROLES,
     PARTICIPANT_ORDERING,
     POA_MANDATE_ORDERING,
+    POLICE_STATION_ROLES,
     REPRESENTATION_ORDERING,
     SIGNING_ROLES,
     Case,
@@ -52,11 +56,12 @@ from .case_types import (
     EVIDENCE_SCAN_TYPES,
     DocumentType,
     EvidenceType,
+    evidence_errors,
     get_config,
-    schema_errors,
     section_errors,
 )
 from .contacts import contacts_of, first, load_contacts
+from .participants import PERMANENT_ADDRESS_ROLES
 from .services import (
     PREVIEW_TTL_SECONDS,
     clear_preview_cache,
@@ -177,6 +182,19 @@ def _load_preview(case_id):
 
 # Completeness check (spec 0021 §6.3)
 
+# The parties who give their own mobile number and age to file: an individual
+# complainant or an institution's authorised representative (PRD LIT-3, LIT-5,
+# LIT-22, LIT-24), and a POA holder (LIT-11, LIT-13).
+MOBILE_AND_AGE_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.POA_HOLDER)
+# The roles whose mobile numbers an individual complainant's may not share (PRD LIT-3).
+DISTINCT_NUMBER_ROLES = (
+    ParticipantRole.COMPLAINANT,
+    ParticipantRole.ACCUSED,
+    ParticipantRole.POA_HOLDER,
+)
+# The PRD's wording (LIT-3).
+ADVOCATE_NUMBER_MESSAGE = "Please do not enter the advocate's number here."
+
 
 def validate_case(case_id, user):
     """Return ``(is_valid, errors)`` for ``user``'s case."""
@@ -197,6 +215,92 @@ def _raise_not_ready(error, items):
     raise error.validation_error(detail)
 
 
+def _number_key(value):
+    """Return a phone number without the spaces, hyphens and parentheses it may be written with.
+
+    A person's number is stored in E.164 form; an institution's may be a
+    grouped landline (``(080) 2233-4455``), so the grouping is not compared.
+    """
+    return re.sub(r"[\s()-]", "", value)
+
+
+def _mobile_keys(contacts):
+    """Return the compared form of every mobile number in ``contacts``."""
+    return {
+        _number_key(row.value)
+        for row in contacts
+        if row.contact_type == ContactType.MOBILE_NUMBER and row.value
+    }
+
+
+def _reachable(contacts):
+    """Return whether ``contacts`` hold a mobile number or an email."""
+    return any(
+        row.contact_type in (ContactType.MOBILE_NUMBER, ContactType.EMAIL) for row in contacts
+    )
+
+
+def _unreachable_message(whose):
+    """Return the end of the message for an accused with no mobile number, email or declaration."""
+    return f"has no mobile number or email, and {whose} contact details are not declared unknown."
+
+
+def _shared_number_errors(case, participants):
+    """Return ``(field, message)`` for each individual complainant whose number is not theirs alone.
+
+    PRD LIT-3: it may not be another complainant's, accused's or POA holder's
+    (their own, or their institution's on this case), nor an advocate's on the
+    case. The same person in another role (a complainant who is also a
+    co-complainant's POA holder) shares it rightly, and so does an advocate
+    who is the complainant. ``participants`` are the case's active ones, in
+    ``PARTICIPANT_ORDERING``, with their contacts loaded.
+    """
+    # Whose numbers they are: (participant, label, person id or None, numbers).
+    # An institution's are listed once, named after its first participant.
+    holders = []
+    institutions = set()
+    for participant in participants:
+        if participant.role not in DISTINCT_NUMBER_ROLES:
+            continue
+        own, of_institution = contacts_of(participant)
+        label = f"{participant.get_role_display()} #{participant.ordinal}"
+        holders.append((participant, label, participant.person_id, _mobile_keys(own)))
+        if participant.institution_id and participant.institution_id not in institutions:
+            institutions.add(participant.institution_id)
+            holders.append(
+                (participant, f"{label}'s institution", None, _mobile_keys(of_institution))
+            )
+    advocates = {}
+    for number, user_id in (
+        Representation.objects.active()
+        .filter(case=case)
+        .values_list("advocate__user__mobile_number", "advocate__user_id")
+    ):
+        if number:
+            advocates.setdefault(_number_key(number), set()).add(user_id)
+
+    problems = []
+    for participant in participants:
+        if not (
+            participant.role == ParticipantRole.COMPLAINANT
+            and participant.person_id
+            and not participant.institution_id
+        ):
+            continue
+        field = f"participants.{participant.id}"
+        label = f"Complainant #{participant.ordinal}"
+        mine = _mobile_keys(contacts_of(participant)[0])
+        for other, other_label, person_id, theirs in holders:
+            if other.pk == participant.pk or person_id == participant.person_id:
+                continue
+            if mine & theirs:
+                problems.append((field, f"{label}'s mobile number is also {other_label}'s."))
+        user_id = participant.person.user_id
+        if any(advocates.get(number, set()) - {user_id} for number in mine):
+            problems.append((field, f"{label}: {ADVOCATE_NUMBER_MESSAGE}"))
+    return problems
+
+
 def validation_errors(case):
     """Return every reason ``case`` is not yet complete, as ``{field, message}`` items."""
     problems = []
@@ -212,15 +316,25 @@ def validation_errors(case):
     if not participants.filter(role=ParticipantRole.ACCUSED).exists():
         error("participants.accused", "At least one active accused is required.")
 
-    # Writes already check these; a rule tightened since then is caught here.
-    # Witnesses are optional, but one who is added needs a name or designation;
-    # every other party needs a name. Each party is served at an address: an
-    # individual their own, an institution its own on this case.
-    for participant in load_contacts(participants.order_by(*PARTICIPANT_ORDERING)):
+    ordered = load_contacts(
+        participants.select_related("institution", "person__permanent_address").order_by(
+            *PARTICIPANT_ORDERING
+        )
+    )
+    # Each accused institution, once for everyone summoned for it: its first
+    # participant, whether it can be reached, and whether it names a person.
+    # Each accused person is reached on their own (PRD ACC-6/7, ACC-16/17).
+    accused_institutions = {}
+    unreachable_people = set()
+    for participant in ordered:
         field = f"participants.{participant.id}"
         label = f"{participant.get_role_display()} #{participant.ordinal}"
+        # An institution with no person acting for it is named by the
+        # institution's name, so a missing one is reported once, as that.
+        if participant.institution_id and not participant.entity_name_at_filing:
+            error(field, f"{label}'s institution has no name.")
         if participant.role != ParticipantRole.WITNESS:
-            if not participant.name_at_filing:
+            if not participant.name_at_filing and participant.person_id:
                 error(field, f"{label} has no name.")
         elif not (participant.name_at_filing or participant.designation_at_filing):
             error(field, f"{label} has no name or designation.")
@@ -228,6 +342,100 @@ def validation_errors(case):
         served = of_institution if participant.institution_id else own
         if not first(served, ContactType.ADDRESS):
             error(field, f"{label} has no address.")
+        # A complainant institution's authorised representative, or a person
+        # responsible for an accused one, is reached at their own address too.
+        acts_for_institution = participant.person_id and participant.institution_id
+        if acts_for_institution and not first(own, ContactType.ADDRESS):
+            error(field, f"{label} acts for an institution but has no address of their own.")
+        if participant.role in MOBILE_AND_AGE_ROLES:
+            # Only a complainant may be an institution (``INSTITUTION_ROLES``).
+            if participant.institution_id and not participant.person_id:
+                error(field, f"{label}'s institution has no authorised representative.")
+            # The individual's own: an institution's number is not its representative's.
+            elif not first(own, ContactType.MOBILE_NUMBER):
+                error(field, f"{label} has no mobile number.")
+            # From the date of birth when known, else the stated age.
+            if participant.person_id and participant.age_at_filing is None:
+                error(field, f"{label} has no age.")
+        if participant.role == ParticipantRole.ACCUSED:
+            if participant.person_id and not (
+                participant.contact_details_unknown_declared or _reachable(own)
+            ):
+                unreachable_people.add(participant.pk)
+            if participant.institution_id:
+                entry = accused_institutions.setdefault(
+                    participant.institution_id,
+                    {
+                        "participant": participant,
+                        # The institution's own contacts, the same for all of them.
+                        "reachable": _reachable(of_institution),
+                        "declared": False,
+                        "has_person": False,
+                    },
+                )
+                entry["declared"] = (
+                    entry["declared"] or participant.institution_contact_details_unknown_declared
+                )
+                entry["has_person"] = entry["has_person"] or bool(participant.person_id)
+        addresses = [row.address for row in [*own, *of_institution] if row.address_id]
+        for address in addresses:
+            if missing := address.missing_fields:
+                error(field, f"{label} has an incomplete address (missing {', '.join(missing)}).")
+        has_permanent_address = (
+            participant.role in PERMANENT_ADDRESS_ROLES
+            and participant.person_id
+            and not participant.institution_id
+        )
+        permanent = participant.person.permanent_address if has_permanent_address else None
+        # Giving an address fills it (§6.4), so it is missing only once there is one.
+        if permanent is None and has_permanent_address and first(own, ContactType.ADDRESS):
+            error(field, f"{label} has no permanent address.")
+        if permanent is not None and permanent not in addresses and permanent.missing_fields:
+            error(
+                field,
+                f"{label} has an incomplete permanent address "
+                f"(missing {', '.join(permanent.missing_fields)}).",
+            )
+        if participant.role in POLICE_STATION_ROLES and any(
+            row.address_id and not row.address.police_station for row in [*own, *of_institution]
+        ):
+            error(field, f"{label} has an address with no police station.")
+        # A complainant's authorised representative (PRD LIT-25a); the
+        # designation of a person responsible for an accused one is optional (ACC-15).
+        if (
+            acts_for_institution
+            and participant.role == ParticipantRole.COMPLAINANT
+            and not participant.designation_at_filing
+        ):
+            error(field, f"{label} acts for an institution but has no designation.")
+        institution = participant.institution
+        if institution is not None and not institution.entity_type:
+            error(field, f"{label}'s institution has no entity type.")
+        if (
+            participant.role == ParticipantRole.COMPLAINANT
+            and institution is not None
+            and not (institution.pan or institution.cin or institution.pan_cin_skip_declared)
+        ):
+            error(field, f"{label}: {PAN_CIN_REQUIRED_MESSAGE}")
+
+    # An institution's are reported once, on its first participant; then the
+    # participant's own.
+    for participant in ordered:
+        if participant.role != ParticipantRole.ACCUSED:
+            continue
+        field = f"participants.{participant.id}"
+        label = f"Accused #{participant.ordinal}"
+        entry = accused_institutions.get(participant.institution_id)
+        if entry is not None and entry["participant"] is participant:
+            if not entry["has_person"]:
+                error(field, f"{label}'s institution names no person responsible.")
+            if not (entry["reachable"] or entry["declared"]):
+                error(field, f"{label}'s institution {_unreachable_message('its')}")
+        if participant.pk in unreachable_people:
+            error(field, f"{label} {_unreachable_message('their')}")
+
+    for field, message in _shared_number_errors(case, ordered):
+        error(field, message)
 
     represented = set(
         Representation.objects.active().filter(case=case).values_list("case_participant", flat=True)
@@ -248,8 +456,6 @@ def validation_errors(case):
                 "party-in-person affidavit.",
             )
 
-    # Writes refuse empty editor output; this also catches what reached the
-    # database another way (the admin, a shell).
     if not has_visible_text(case.affidavit):
         error("affidavit", "The affidavit is required.")
 
@@ -283,7 +489,7 @@ def validation_errors(case):
                 f"Complainant #{complainant.ordinal} has an advocate but no vakalatnama.",
             )
     with_poa_document = linked(DocumentType.POA_DOCUMENT, "case_participant_id")
-    acting_for = (
+    acting_for = list(
         CaseParticipant.objects.active()
         .filter(
             case=case,
@@ -299,8 +505,47 @@ def validation_errors(case):
                 f"{party.get_role_display()} #{party.ordinal} acts through a POA holder "
                 "but has no POA document.",
             )
+    # A complainant who says a power of attorney was given (PRD LIT-10) needs
+    # the holder, the holder's ID card (DCM-10) and the POA document (DCM-11).
+    # The document of one who has a holder is asked for above.
+    acting_for_ids = {party.id for party in acting_for}
+    holders_of = {}
+    for mandate in (
+        PoaMandate.objects.active()
+        .filter(case=case, poa_participant__is_active=True)
+        .select_related("poa_participant")
+        .order_by(*POA_MANDATE_ORDERING)
+    ):
+        holders_of.setdefault(mandate.represented_participant_id, []).append(
+            mandate.poa_participant
+        )
+    without_identity = set()
+    for complainant in complainants:
+        if not complainant.poa_given:
+            continue
+        label = f"Complainant #{complainant.ordinal}"
+        if complainant.id not in holders_of:
+            error(
+                f"participants.{complainant.id}",
+                f"{label} has given a power of attorney but has no POA holder.",
+            )
+        if complainant.id not in acting_for_ids and complainant.id not in with_poa_document:
+            error(
+                "documents.POA_DOCUMENT",
+                f"{label} has given a power of attorney but has no POA document.",
+            )
+        # A holder acting for several complainants is reported once.
+        for holder in holders_of.get(complainant.id, []):
+            if holder.id not in with_identity and holder.id not in without_identity:
+                without_identity.add(holder.id)
+                error(
+                    "documents.IDENTITY_PROOF",
+                    f"POA holder #{holder.ordinal} has no identity proof.",
+                )
+    scan_types = set(EVIDENCE_SCAN_TYPES.values())
     for document_type in config.required_document_types:
-        if document_type not in uploaded:
+        # An evidence item's scan is asked for on the item, below.
+        if document_type not in uploaded and document_type not in scan_types:
             error(
                 f"documents.{document_type}",
                 f"Document type {document_type} is required but not uploaded.",
@@ -312,38 +557,46 @@ def validation_errors(case):
         if evidence_type not in present:
             label = EvidenceType(evidence_type).label.lower()
             error(f"evidence.{evidence_type}", f"At least one {label} evidence is required.")
-    # A delivered notice needs its proof of delivery; an undelivered one has none.
-    with_delivery_proof = linked(
-        DocumentType.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE, "case_evidence_id"
-    )
+    # Each demand notice needs its own proof of dispatch (PRD DCM-4). Its proof
+    # of delivery is optional (DCM-5).
+    with_dispatch_proof = linked(DocumentType.PROOF_OF_DISPATCH, "case_evidence_id")
     for item in evidence:
         if (
             item.evidence_type == EvidenceType.LEGAL_DEMAND_NOTICE
-            and item.evidence_info.get("is_delivered") is True
-            and item.id not in with_delivery_proof
+            and item.id not in with_dispatch_proof
         ):
             error(
-                "documents.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE",
-                f"Demand notice #{item.ordinal} was delivered but has no proof of delivery.",
+                "documents.PROOF_OF_DISPATCH",
+                f"Demand notice #{item.ordinal} has no proof of dispatch.",
             )
     # Writes already check these; a rule tightened since then is caught here.
+    # Each cheque, return memo and demand notice is filed with its own scan,
+    # linked from the item, of its type. That no two items share one is a
+    # database rule (``cases_case_evidence_unique_active_scan``).
     document_types = {document.id: document.document_type for document in documents}
     for item in evidence:
         scan_type = EVIDENCE_SCAN_TYPES.get(item.evidence_type)
-        if (
+        label = EvidenceType(item.evidence_type).label
+        if scan_type and not item.case_document_id:
+            error(f"documents.{scan_type}", f"{label} #{item.ordinal} has no scan linked.")
+        elif (
             item.case_document_id
             and scan_type
             and document_types.get(item.case_document_id) != scan_type
         ):
-            label = EvidenceType(item.evidence_type).label
             error(
                 f"evidence.{item.evidence_type}",
                 f"{label} #{item.ordinal}: {scan_type_message(scan_type)}",
             )
-        schema = config.evidence_schemas.get(item.evidence_type)
-        for problem in schema_errors(schema, item.evidence_info) if schema else []:
-            label = EvidenceType(item.evidence_type).label
+        has_schema = item.evidence_type in config.evidence_schemas
+        for problem in (
+            evidence_errors(config, item.evidence_type, item.evidence_info) if has_schema else []
+        ):
             error(f"evidence.{item.evidence_type}", f"{label} #{item.ordinal}: {problem}")
+
+    if config.evidence_set_checks:
+        for evidence_type, message in config.evidence_set_checks(evidence):
+            error(f"evidence.{evidence_type}", message)
 
     # An unsaved section is still ``{}``, which fails its required fields here.
     for section, data in get_detail_sections(case).items():

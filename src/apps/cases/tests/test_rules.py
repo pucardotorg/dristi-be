@@ -175,21 +175,25 @@ class TestModelRulesMatchTheApi:
 
         assert "adr_other_prayer" in exc.value.message_dict
 
-    def test_late_filing_needs_a_condonation_reason(self, case):
-        late = {
-            "cheque_deposited_by_payee": False,
-            "drawer_bank_police_station": "Ernakulam Central",
-            "cause_of_action_date": "2024-02-21",
-            "complaint_filing_date": "2024-04-30",
-        }
-        detail = ChequeBounceCase(case=case, jurisdiction_limitation=late)
+    def test_a_partly_filled_section_is_allowed(self, case):
+        # Missing values, a late filing's condonation reason included, are the
+        # completeness check's to report, not the model's.
+        late = {"cause_of_action_date": "2024-02-21", "complaint_filing_date": "2024-04-30"}
+
+        ChequeBounceCase(case=case, jurisdiction_limitation=late).full_clean()
+
+    def test_a_filing_date_before_the_cause_of_action_is_refused(self, case):
+        dates = {"cause_of_action_date": "2024-02-21", "complaint_filing_date": "2024-02-20"}
+        detail = ChequeBounceCase(case=case, jurisdiction_limitation=dates)
 
         with pytest.raises(ValidationError) as exc:
             detail.full_clean()
         assert "jurisdiction_limitation" in exc.value.message_dict
 
-        late["condonation_reason"] = "The complainant was hospitalised."
-        detail.full_clean()
+    def test_partly_filled_evidence_is_allowed(self, case):
+        CaseEvidence(
+            case=case, evidence_type="CHEQUE", ordinal=1, evidence_info={"amount": 100}
+        ).full_clean()
 
     def test_empty_sections_are_allowed(self, case):
         ChequeBounceCase(case=case).full_clean()
@@ -211,19 +215,16 @@ class TestModelRulesMatchTheApi:
         with pytest.raises(ValidationError, match="both a complainant and an accused"):
             participant(ParticipantRole.ACCUSED).full_clean()
 
-    def test_an_institution_needs_its_name_on_the_case(self, case):
+    def test_an_institution_may_have_no_name_on_the_case_while_drafting(self, case):
+        """The completeness check asks for it, not the model."""
         participant = CaseParticipant(
             case=case,
             institution=make_institution(),
             role=ParticipantRole.COMPLAINANT,
             ordinal=1,
-            name_at_filing="ABC Pvt Ltd",
         )
 
-        with pytest.raises(ValidationError) as exc:
-            participant.full_clean()
-
-        assert set(exc.value.message_dict) == {"entity_name_at_filing"}
+        participant.full_clean()
 
     def test_an_individual_cannot_have_institution_details(self, case):
         participant = CaseParticipant(

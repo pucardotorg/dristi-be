@@ -43,7 +43,14 @@ from ..models import (
     link_type_errors,
 )
 from . import correction
-from .case_types import CASE_TYPES, DOCUMENTS_PART, get_config, schema_errors, section_errors
+from .case_types import (
+    CASE_TYPES,
+    DOCUMENTS_PART,
+    evidence_errors,
+    get_config,
+    section_errors,
+    without_blanks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -576,10 +583,18 @@ def _store_file(upload, user, case_type):
 
 
 def validate_evidence(case_type, evidence_type, evidence_info):
-    """Raise a 400 unless ``case_type`` accepts ``evidence_type`` and the info fits its schema."""
-    schemas = get_config(case_type).evidence_schemas
-    _require_allowed(evidence_type, tuple(schemas), "evidence_type", case_type)
-    _raise_schema_errors(schema_errors(schemas[evidence_type], evidence_info), "evidence_info")
+    """Raise a 400 unless ``case_type`` accepts ``evidence_type`` and the info is well-formed.
+
+    Missing values are allowed: the completeness check reports them. Return
+    the info to store: a ``""`` value is not given (``without_blanks``).
+    """
+    config = get_config(case_type)
+    _require_allowed(evidence_type, tuple(config.evidence_schemas), "evidence_type", case_type)
+    evidence_info = without_blanks(evidence_info, config.evidence_schemas[evidence_type])
+    _raise_schema_errors(
+        evidence_errors(config, evidence_type, evidence_info, complete=False), "evidence_info"
+    )
+    return evidence_info
 
 
 def _raise_schema_errors(problems, field):
@@ -607,8 +622,11 @@ def add_evidence(case_or_draft_id, user, *, evidence_type, evidence_info, case_d
 
     ``CaseEvidence.clean`` checks a linked document is an active document of
     the case, of this evidence's scan type: a cheque's must be a bounced cheque.
+    A ``""`` value in ``evidence_info`` is not given (``validate_evidence``).
     """
-    validate_evidence(get_case_type(case_or_draft_id, user), evidence_type, evidence_info)
+    evidence_info = validate_evidence(
+        get_case_type(case_or_draft_id, user), evidence_type, evidence_info
+    )
     # The case lock serialises ordinal assignment.
     with editing_or_creating(case_or_draft_id, user) as case:
         ordinal = next_ordinal(
@@ -641,11 +659,14 @@ def update_evidence(evidence, user, *, evidence_info=_UNSET, case_document_id=_U
 
     ``case_document_id=None`` unlinks the document; leaving it out keeps the
     current link. This is how a scan uploaded after the evidence was entered is
-    linked to it (spec 0020 §11.4).
+    linked to it (spec 0020 §11.4). A ``""`` value in ``evidence_info`` is
+    not given (``validate_evidence``).
     """
     ensure_editable(evidence.case)
     if evidence_info is not _UNSET:
-        validate_evidence(evidence.case.case_type, evidence.evidence_type, evidence_info)
+        evidence_info = validate_evidence(
+            evidence.case.case_type, evidence.evidence_type, evidence_info
+        )
     with editing(evidence.case, user) as case:
         # Re-read under the lock: a concurrent removal is not undone, and the
         # change is measured against what is stored.
@@ -732,11 +753,15 @@ def get_detail_sections(case):
 
 
 def save_details_section(case_or_draft_id, user, section, data):
-    """Replace one details section, creating the case on first save."""
+    """Replace one details section, creating the case on first save.
+
+    A ``""`` value in ``data`` is not given (``without_blanks``).
+    """
     case_type = get_case_type(case_or_draft_id, user)
     config = get_config(case_type)
     _require_allowed(section, config.sections, "section", case_type)
-    _raise_schema_errors(section_errors(config, section, data), "data")
+    data = without_blanks(data, config.section_schemas[section])
+    _raise_schema_errors(section_errors(config, section, data, complete=False), "data")
     with editing_or_creating(case_or_draft_id, user) as case:
         detail = _get_or_create_detail_row(case, user)
         changed = correction.changes(case, section, getattr(detail, section), data, field="data")

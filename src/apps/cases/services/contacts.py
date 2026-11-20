@@ -143,16 +143,45 @@ def replace_contacts(case, user, lists, *, participant=None, institution=None, p
             validated_save(row)
 
 
-def move_institution_contacts(case, user, old_institution_id, institution):
+def move_institution_contacts(case, user, old_institution_id, institution, *, replaced=()):
     """Re-point the case's contacts of ``old_institution_id`` to ``institution``.
 
     For a re-linked institution: its own contacts in this case, and those of
     the person acting for it, follow the participant to the new institution.
+    The new institution may already have contacts on the case: those of a
+    type in ``replaced`` (which the same request sends a new list for) are
+    left behind, deactivated; the others are merged after the ones there,
+    dropping what is already held.
     """
-    for row in CaseContact.objects.active().filter(case=case, institution_id=old_institution_id):
+    moving = (
+        CaseContact.objects.active()
+        .filter(case=case, institution_id=old_institution_id)
+        .order_by("contact_type", "ordinal")
+    )
+    held = defaultdict(list)
+    for row in owner_rows(case, institution=institution):
+        held[row.contact_type].append(row)
+    taken = {
+        contact_type: {row.value or row.address_id for row in group}
+        for contact_type, group in held.items()
+    }
+    next_ordinal = {
+        contact_type: max(row.ordinal for row in group) + 1 for contact_type, group in held.items()
+    }
+    for row in moving:
+        contact_type = row.contact_type
+        # The person's own rows cannot clash: they are keyed by participant.
+        if row.case_participant_id is None:
+            key = row.value or row.address_id
+            if contact_type in replaced or key in taken.get(contact_type, ()):
+                deactivate(row, user)
+                continue
+            taken.setdefault(contact_type, set()).add(key)
+            row.ordinal = next_ordinal.get(contact_type, 1)
+            next_ordinal[contact_type] = row.ordinal + 1
         row.institution = institution
         row.updated_by = user
-        row.save(update_fields=["institution", "updated_by", "updated_at"])
+        row.save(update_fields=["institution", "ordinal", "updated_by", "updated_at"])
 
 
 def _nested(path, detail):

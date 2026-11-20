@@ -124,8 +124,8 @@ final security model for the API.
 | GET | `/locations/` | List locations. Supports filtering by `location_type`, `parent_id`, and `parent_code`. |
 | GET | `/locations/{id}/` | Retrieve a location by its `id`. |
 | GET | `/locations/code/{code}/` | Retrieve a location by its unique `code`. Optional `location_type` and `is_active` make it `404` unless the location matches (see section 8). |
-| GET | `/locations/{id}/children/` | List direct children of a location identified by `id`. |
-| GET | `/locations/code/{code}/children/` | List direct children of a location identified by `code`. |
+| GET | `/locations/{id}/children/` | List active direct children of a location identified by `id`. Supports filtering by `location_type`. 404 unless the parent itself is active. |
+| GET | `/locations/code/{code}/children/` | List active direct children of a location identified by `code`. Supports filtering by `location_type`. 404 unless the parent itself is active. |
 | GET | `/locations/{id}/ancestors/` | List ancestor chain from root to immediate parent, identified by `id`. |
 | GET | `/locations/code/{code}/ancestors/` | List ancestor chain from root to immediate parent, identified by `code`. |
 
@@ -138,8 +138,10 @@ Query examples:
 - `GET /locations/?parent_id=<state-uuid>&location_type=district` — list all districts under a given state.
 - `GET /locations/?is_active=false` — list disabled locations.
 - `GET /locations/?parent_code=IN_KERALA_THRISSUR&location_type=police_station&is_active=true&page_size=100` — a district's police stations for a dropdown (section 9).
+- `GET /locations/code/IN/children?location_type=state` — list the states under India.
 
 `parent_id` and `parent_code` are explicit, mutually-exclusive filters. Validation rejects requests that supply both. `is_active` filtering is provided because `Location` uses `BaseActivatableModel`. An empty filter value (for example `?is_active=`) is treated as not sent.
+On the two `children` endpoints the query parameters describe the children, not the parent: the parent is identified by the URL path and must be active (404 otherwise), and inactive children are never listed. `location_type` is the only filter. `is_active=true` is accepted and changes nothing; `is_active=false` (which can never be satisfied), a malformed `is_active`, and `parent_id` or `parent_code` are rejected. Query parameters are validated before the parent is looked up, so a bad one is a 400 even when the parent is inactive or unknown.
 
 Lists are paginated, 20 per page by default. `page_size` asks for up to 100 per page, so a dropdown can load all of a district's police stations in one call (issue #250).
 
