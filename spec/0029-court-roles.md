@@ -214,16 +214,12 @@ actions; each module's own spec settles them.
 | ---------------------------------- | ----------------- | ------ | --------------------- | ------------------------ |
 | `requests.approve_registration`  | `ESTABLISHMENT` |        | Account approver      | `apps.dristi_requests` |
 | `requests.reject_registration`   | `ESTABLISHMENT` |        | Account approver      | `apps.dristi_requests` |
-| `scrutiny.start`                 | `ESTABLISHMENT` |        | Scrutiny officer      | `apps.scrutiny`        |
 | `scrutiny.flag`                  | `ESTABLISHMENT` |        | Scrutiny officer      | `apps.scrutiny`        |
 | `scrutiny.send_back`             | `ESTABLISHMENT` |        | Scrutiny officer      | `apps.scrutiny`        |
 | `scrutiny.choose_courtroom`      | `ESTABLISHMENT` |        | Scrutiny officer      | `apps.scrutiny`        |
 | `scrutiny.forward`               | `ESTABLISHMENT` |        | Scrutiny officer      | `apps.scrutiny`        |
-| `scrutiny.edit_title`            | `ESTABLISHMENT` |        | Scrutiny officer      | `apps.scrutiny`        |
-| `registration.start`             | `ESTABLISHMENT` |        | Case registerer       | `apps.scrutiny`        |
 | `registration.register`          | `ESTABLISHMENT` |        | Case registerer       | `apps.scrutiny`        |
 | `registration.send_back`         | `ESTABLISHMENT` |        | Case registerer       | `apps.scrutiny`        |
-| `registration.edit_title`        | `ESTABLISHMENT` |        | Case registerer       | `apps.scrutiny`        |
 | `orders.edit_text`               | `COURTROOM`     |        | Order drafter         | orders                   |
 | `orders.send_for_signing`        | `COURTROOM`     |        | Order drafter         | orders                   |
 | `orders.move_to_draft`           | `COURTROOM`     |        | Order drafter         | orders                   |
@@ -246,6 +242,17 @@ actions; each module's own spec settles them.
 | `documents.mark_evidence`        | `COURTROOM`     |        | Evidence marker       | documents                |
 | `a_diary.edit_entry`             | `COURTROOM`     |        | A-Diary editor        | A-Diary                  |
 | `a_diary.sign`                   | `COURTROOM`     |        | A-Diary signer        | A-Diary                  |
+
+The catalogue lists only what a PRD role allows. A step a module needs but no
+PRD role names is not an action: it is allowed to whoever holds any action of
+the duty it belongs to (`access.require_any`, #7). Scrutiny has one such step
+on `main`, from 0024 (#10.1): **Start** (0024 §4.2), which claims the stage's
+task. It is the first step of the duty itself ("scrutinise a filed case",
+"register a case"), so a court cannot give it alone; it needs any action of
+that stage.
+
+A feature no PRD asks for gets no action and no rule: it is removed. *Edit case
+title* (0024 §4.6) is the one case on `main` (#10.1).
 
 #### 3.4 Adding, splitting and removing actions
 
@@ -447,7 +454,7 @@ A **grant** is the internal unit the selectors compute: `(action, organization_i
 | `actions_of(user, organization_id)`                                           | `frozenset[str]`: the codes the user is allowed there                           | `allowed_actions` in responses (`RLE-07`)     |
 | `action_holders(organization_id, action, *, process_type=None, channel=None)` | `QuerySet[User]`                                                                | 0011 task users (#10.4), approval routing (#10.2) |
 | `grants_of(user)`                                                             | `list[Grant]`                                                                   | `/court-roles/me/` (#9.2)                       |
-| `establishments_of(user, action=None)`                                        | establishments where the user is allowed any establishment action (or `action`) | default list scope (#10.1)                        |
+| `establishments_of(user, actions=None)`                                       | establishments where the user is allowed any establishment action (or any of `actions`) | default list scope (#10.1)                  |
 | `courtrooms_of(user)`                                                         | courtrooms on the user's list (`REG-35`)                                        | the courtroom choice (`REG-36`)                 |
 | `staff_of_courtroom(courtroom_id)`                                            | `QuerySet[User]` on the courtroom's list                                        | 0011 `COURTROOM` visibility (#10.4)             |
 | `courtrooms(establishment_id)`                                                | the establishment's active courtrooms                                             | the Scrutiny officer's choice (`SCR-16`)        |
@@ -490,6 +497,15 @@ access.require(user, action, organization_id, *, error, process_type=None, chann
 raises `BusinessError(error)` unless `selectors.can(...)` is true.
 `error` is the owning module's code (for scrutiny `E09008`). Read access is
 not checked this way: it stays a 404 (#6.1).
+
+```python
+access.require_any(user, actions, organization_id, *, error)
+```
+
+raises the same error unless the user is allowed at least one of `actions`
+there. It is for steps that are not actions (#3.3): a module names the actions
+of the duty the step belongs to, as a tuple in its `court_actions.py`. It takes
+no scope, so `actions` may not include a scoped action.
 
 ```python
 # apps/scrutiny/services/rounds.py
@@ -624,9 +640,14 @@ Until #10.3, a case's establishment for scrutiny is the round's
 `ScrutinyRound.establishment_id`, copied from `case.court_id` when the first
 round opens.
 
+**Steps that are not actions (#3.3)**
+
+* **Start** (0024 §4.2) uses `access.require_any` with the round's stage actions (`SCRUTINY_STAGE` / `REGISTRATION_STAGE` in `court_actions.py`).
+* ***Edit case title*** (0024 §4.6) is removed, with `edit_title` in `allowed_actions`: no PRD asks for it and the frontend does not call it.
+
 **Lists**
 
-* `require_court_reader(user, action, establishment_id=None)` returns the establishments the list covers. Without the parameter, that is `establishments_of(user, action)` — `scrutiny.start` for the scrutiny list, `registration.start` for registration. With it, just that one, refused with `E09008` where the caller is not allowed the action there. With none at all, `E09008`, as today.
+* `require_court_reader(user, stage_actions, establishment_id=None)` returns the establishments the list covers. Without the parameter, that is `establishments_of(user, stage_actions)` — `SCRUTINY_STAGE` for the scrutiny list, `REGISTRATION_STAGE` for registration. With it, just that one, refused with `E09008` where the caller is allowed none of them there. With none at all, `E09008`, as today.
 * `scrutiny_list(user, *, establishment_ids, …)` and `registration_list(user, *, establishment_ids, …)` filter `establishment_id__in`, and keep it required.
 * Whether several establishments are shown together or one at a time is open question P-4.
 
@@ -694,12 +715,12 @@ migration command.
   - `is_court_reader`, before and after a courtroom is set.
   - Inactive users, assignments, roles and organizations are ignored; a superuser with no assignment is allowed nothing.
   - A fixed number of queries per selector; repeated checks in one request reuse the memoised grants.
-* **Check helper:** `require` passes, refuses with the given error code, and passes `process_type` / `channel` to scope.
+* **Check helper:** `require` passes, refuses with the given error code, and passes `process_type` / `channel` to scope. `require_any` passes with one of the actions held, refuses with none or with them held only at another establishment, and refuses a scoped action in `actions` with `ImproperlyConfigured`.
 * **No role checks (static test, like `addon/cdac_sms_gateway/tests/test_isolation.py`):** outside `apps/organizations`, no module imports `CourtRole`, `CourtRoleAction` or `RoleAssignment`; action codes appear as string literals only in `court_actions.py` files and migrations.
 * **SCR-11 across courts:** `scrutiny.forward` at A and `registration.register` only at B is offered Forward at A, not Register.
 * **API:** `/court-roles/me/` for a user with establishment actions only, a courtroom role only, a mixed-level role, and none; `401` when anonymous.
 * **Signal:** `court_access_changed` is sent once after commit, not on rollback, and once per assigned organization on a role edit.
-* **Scrutiny, in its own suite (#10.1).** `factories.make_user` and the fixtures assign roles (built from the needed actions) with `assign_role` at the establishment instead of groups. The setting tests in `tests/test_establishment.py` go with the setting. The cross-court tests stay, rewritten on assignments. New: an officer with actions at two establishments sees both in the default list; an officer still reads a forwarded case on the *Closed* tab; an officer with `scrutiny.flag` but not `scrutiny.forward` is not offered Forward.
+* **Scrutiny, in its own suite (#10.1).** `factories.make_user` and the fixtures assign roles (built from the needed actions) with `assign_role` at the establishment instead of groups. The setting tests in `tests/test_establishment.py` go with the setting. The cross-court tests stay, rewritten on assignments. New: an officer with actions at two establishments sees both in the default list; an officer still reads a forwarded case on the *Closed* tab; an officer with `scrutiny.flag` but not `scrutiny.forward` is not offered Forward; an officer holding only `scrutiny.send_back` can start a scrutiny round and see the scrutiny list, but not start a registration round or see the registration list; a user with no stage action is refused start with `E09008`. `PATCH /scrutiny/{case_id}/title/` returns 404 and `edit_title` is never offered.
 
 ## Design decisions
 
@@ -708,6 +729,7 @@ migration command.
 | Code checks **actions**; users get them only through **roles** (data) at a court | Checking roles or staff titles in code: forbidden by `RLE-08`, and what a title does differs by court.                                                                                                                                                                                                          |
 | Called **actions**, not permissions                                                    | "Permission": clashes with Django's `auth.Permission` and `has_perm` (superusers pass every check), DRF `permission_classes` and `apps/scrutiny/permissions.py`, and drifts from the PRD's "a role is a set of actions" (`RLE-01`) and the `allowed_actions` the API already returns.                 |
 | **Fine-grained** actions, one per thing a person does                                  | The PRD's 16 roles as actions, or as fixed sets admins pick from: shorter list, but an administrator could never give part of a PRD role (send back without forward), and every PRD split (v10's dispatcher / reporter) touches call sites. The `group` label keeps the PRD's vocabulary for admin and seeding. |
+| The catalogue holds only what a PRD role allows; Start needs any action of its stage; *Edit case title* is removed (#3.3) | `scrutiny.start`, `scrutiny.edit_title` and their registration twins as actions: the PRD is the source of truth for what a role allows, and a court could give Start without anything to do after it. Keeping *Edit case title* behind a stage rule: it keeps a feature no PRD asks for. |
 | Actions declared in code by the owning module; a registry, no `choices`                    | Actions as admin-created rows: an action does nothing until code checks it. One central enum: `apps.organizations` would list every module's actions, and each new action would need a migration for `choices`.                                                                                               |
 | Roles are data, per deployment or per establishment                                          | Roles in code or settings: the point is that each court decides, without a deploy (`court-roles.md` §3).                                                                                                                                                                                                       |
 | No direct action grants; a one-person exception is an establishment-scoped role              | Direct grants: a second way to hold an action, more to show in admin and reason about.                                                                                                                                                                                                                            |
@@ -733,7 +755,6 @@ Product (from the court-roles issue):
 | P-4 | Someone allowed actions at several establishments: do lists show all of them together, or one chosen establishment at a time?                                                                                                        | `RLE-02c`, `REG-36`  |
 | P-5 | After a case gets a courtroom, do those allowed the establishment's actions keep reading it, or only the courtroom's staff?                                                                                                          | `RLE-06`               |
 | P-6 | Fine-grained actions let a court give part of a PRD role (send back without forward). Is that allowed, or should a role always hold whole PRD roles? The model allows both; this decides whether the admin warns on a partial group. | `RLE-01`, `RLE-02`   |
-
 This spec:
 
 | #   | Question                                                                                                                                                                                  |
