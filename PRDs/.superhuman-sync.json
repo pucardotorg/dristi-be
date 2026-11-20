@@ -472,17 +472,17 @@
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
       "title": "Application Lifecycle",
-      "contentHash": "6677f14beec3",
-      "pageUpdatedAt": 1794404555.09,
+      "contentHash": "b08db4d06980",
+      "pageUpdatedAt": 1795167534.068,
       "calloutElementId": "cl-QKAlG9nMxl",
       "sections": [],
-      "note": "Force-synced (cleared and rebuilt) 2026-11-10 at v38, with the owner's go-ahead; comments discarded. Diagram is an image block uploaded from application-reference/application-lifecycle-states.png (the relative image link in the markdown is not pushed as text). The Status block is split across three page blocks. `sections` not recorded: the next sync must rebuild or patch by hand. Patched 2026-11-10 later the same day: Status block, Users and actions, step 2, step 4, Application attributes and Enhancements replaced as whole sections (Application action, Outcome). Patched again the same day: Status block, Users and actions, step 2 and step 4 replaced (\"order item linked to the application\" wording restored). Patched 2026-11-11 at v40: ALC-23, ALC-28, status-table row, Q-16 (table cells), Users and actions bullet and new line, PoA Change template line, Status block and callout. `sections` still not recorded."
+      "note": "Force-synced (cleared and rebuilt) 2026-11-10 at v38, with the owner's go-ahead; comments discarded. Diagram is an image block uploaded from application-reference/application-lifecycle-states.png (the relative image link in the markdown is not pushed as text). The Status block is split across three page blocks. `sections` not recorded: the next sync must rebuild or patch by hand. Patched 2026-11-10 later the same day: Status block, Users and actions, step 2, step 4, Application attributes and Enhancements replaced as whole sections (Application action, Outcome). Patched again the same day: Status block, Users and actions, step 2 and step 4 replaced (\"order item linked to the application\" wording restored). Patched 2026-11-11 at v40: ALC-23, ALC-28, status-table row, Q-16 (table cells), Users and actions bullet and new line, PoA Change template line, Status block and callout. `sections` still not recorded. Patched 2026-11-20 at v41: Application onboarder removed — Status block and callout, Users and actions bullet deleted, cells ALC-03, ALC-04, ALC-09, ALC-10, ALC-15, ALC-21, ALC-22, ALC-25, workflow table step 2 and four status-table Actor cells. `sections` still not recorded."
     },
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "71afc45a1a32",
-      "pageUpdatedAt": 1794143845.638,
+      "contentHash": "de469f15addf",
+      "pageUpdatedAt": 1795167257.736,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -506,13 +506,13 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed."
+      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed. Patched 2026-11-20 at v10.9: Status and callout; §2 Application onboarder row deleted; §3 cells (role removed; Kerala Scrutiny officer + Account approver; P&H Typist / Steno + Evidence marker). sections hashes not recomputed."
     },
     "scrutiny-registration.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
       "title": "Scrutiny and Registration",
-      "contentHash": "5bcda683666d",
-      "pageUpdatedAt": 1794144058.467,
+      "contentHash": "cb6b6ca5f8a0",
+      "pageUpdatedAt": 1795167295.429,
       "calloutElementId": "cl-x8-19XCI0n",
       "sections": [
         {
@@ -536,7 +536,7 @@
           "elementId": "cl-9t1Ux3TNnf"
         }
       ],
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed."
+      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed. Patched 2026-11-20 at v3.7: Status and callout, SCR-16 paragraph, allocation paragraph, SCR-08 Register bullet; §4 open-questions table deleted (Q-1, Q-2 answered). sections hashes not recomputed."
     },
     "a-diary.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-pKkyj_LFi4",
@@ -581,9 +581,9 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "54c2f5f7f0a2",
-      "pageUpdatedAt": 1795001004.211,
-      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated.",
+      "contentHash": "07e340ab4e24",
+      "pageUpdatedAt": 1795167364.611,
+      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated. 2026-11-20: Application onboarder role section appended; status and callout date updated. `sections` not recorded.",
       "calloutElementId": "cl-e-XQNr8pNU"
     },
     "office-management.md": {

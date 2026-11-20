@@ -961,6 +961,8 @@ of `TME-04`. The Bail lifecycle section does not belong in the case view.
 
 > | ACC-3 | Age | Number | Positive integer; nothing else; optional | Individual |
 
+---
+
 ## Application onboarder role
 
 **Dropped 2026-11-20.** Every court act on an application is an order, so choosing to onboard, defer, dismiss, or set or move the decision date is part of drafting the order. The Order drafter does it; the Order signer signs.
