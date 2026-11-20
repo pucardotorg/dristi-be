@@ -675,42 +675,62 @@
     "signing-methods.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
       "title": "Signing Methods",
-      "contentHash": "c8fd72db3dc1",
-      "pageUpdatedAt": 1793945756.728,
-      "calloutElementId": "cl-T3V--SS-ky",
+      "contentHash": "feaef1c69630",
+      "pageUpdatedAt": 1795149616.233,
+      "calloutElementId": "cl-_69DGpvyKC",
       "sections": [
         {
           "key": "# Signing Methods",
-          "elementId": "cl-viwRGSL4rX",
-          "hash": "3327a5a75490"
+          "elementId": "cl-VKwh_vMUaD",
+          "hash": "d01f11e4da6a"
         },
         {
-          "key": "# 1. Digital signing and e-sign",
-          "elementId": "cl-bveZc1QEGI",
-          "hash": "1df0c82dad2b"
+          "key": "# 1. Terms",
+          "elementId": "cl-FQeVMUTxUC",
+          "hash": "a4b3c29eb101"
         },
         {
-          "key": "# 2. The methods — `SGM`",
-          "elementId": "cl-rwwv_n6Mo3",
-          "hash": "52cf8ac92d1b"
+          "key": "# 2. Signature types",
+          "elementId": "cl-U_BdVkI6xh",
+          "hash": "afd6b912c15e"
         },
         {
-          "key": "# 3. Who can use which method — `SGM-05`",
-          "elementId": "cl-LTegq-ZpVu",
-          "hash": "42c092e6c2fe"
+          "key": "# 3. Individual signing options",
+          "elementId": "cl-SaI9BI2kV0",
+          "hash": "91ff28073ac5"
         },
         {
-          "key": "# 4. Batch signing — `SGM-04`",
-          "elementId": "cl-OnOFxTPmdx",
-          "hash": "9f54507eaf6f"
+          "key": "# 4. Bulk signing",
+          "elementId": "cl-jBDz9b4VWI",
+          "hash": "311519a1588e"
         },
         {
-          "key": "# 5. Open questions",
-          "elementId": "cl-lLMllPUR5F",
-          "hash": "9f136b2d7ecc"
+          "key": "# 5. Signing options per state — `SGM-05`",
+          "elementId": "cl-FqJKsUo1CV",
+          "hash": "1632740b9497"
+        },
+        {
+          "key": "# 6. Batch signing — `SGM-04`",
+          "elementId": "cl-jywQ_U4IvT",
+          "hash": "47bad7b3d541"
+        },
+        {
+          "key": "# 7. Aadhaar e-sign with system-generated signatures — `SGM-13`",
+          "elementId": "cl-LMvJ4mgurA",
+          "hash": "b4bac4bc6f0e"
+        },
+        {
+          "key": "# 8. Enhancements",
+          "elementId": "cl-BPZdARklZf",
+          "hash": "99b30cfc6dcd"
+        },
+        {
+          "key": "# 9. Open questions",
+          "elementId": "cl-fJTO0oqSHN",
+          "hash": "80f5d71b5387"
         }
       ],
-      "note": "Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block. 2026-11-06: patched in place to v2.2 — §3 rewritten (new intro cl-ZjYL4VTzXo, table grid-Pbt_Tevue6, SGM-09 bullet cl-fb07EsghFx), §4 line cl-Zlg0yp4IRo, SQ-1 row deleted and SQ-3–SQ-5 added to grid-R2TeTM3dZa; ownership paragraph re-inserted as cl-NO4h3fi0-v with the efiling.md link rename. The page now matches the file, so contentHash is current."
+      "note": "Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block. 2026-11-20: rebuilt for v3.11 (restructure; no comments on the page) — new content inserted, old blocks deleted, callout recreated."
     },
     "bulk-filing.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
