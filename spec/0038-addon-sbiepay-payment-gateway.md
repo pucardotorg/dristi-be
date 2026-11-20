@@ -171,7 +171,7 @@ src/addon/sbiepay_payment_gateway/
     ├── __init__.py
     ├── conftest.py          # test key, fixed vectors
     ├── test_config.py
-    ├── test_crypto.py       # kit test vectors, round trip, deterministic IV
+    ├── test_crypto.py       # kit test vectors, round trip, random IV
     ├── test_packets.py
     ├── test_accounts.py
     ├── test_request_builder.py
@@ -364,8 +364,17 @@ report. It is used only to make settlements traceable:
 SBIePay can settle one transaction into several of the merchant's bank
 accounts. Each account is identified by an *account identifier* configured in
 the SBIePay merchant panel. This is SBIePay's counterpart of e-GRAS heads of
-account. It is **off by default**, and when off every rupee settles into the
-merchant's single account.
+account. It is **off by default** in code, and when off every rupee settles
+into the merchant's single account.
+
+The PRD expects the money to be split. e-filing handover §19.1 sends the
+Advocate Welfare Fund and Stipend Stamp to a separate remittance account
+(a TSB account under head `8031-00-102-94-07-00-00-N-V`). It leaves the other
+heads' accounts as `[GAP]`, and Q-5 makes every remittance account per-state
+configuration. So for Kerala a single-account setup is a finance workaround,
+not the target. Whether SBIePay can settle into a treasury TSB account at all
+is open (Q-6). `SBIEPAY_ACCOUNT_MAP` is per-deployment configuration, which
+matches the PRD's "per state, never hard-coded" rule.
 
 When `SBIEPAY_MULTI_ACCOUNT_ENABLED` is on, `accounts.py` builds:
 
@@ -419,11 +428,16 @@ directly.
 
 These are not code, but initiation fails without them:
 
-- **Business (source) URL.** SBIePay rejects a request whose origin is not
-  whitelisted ("Wrong Source URL"). The page that auto-submits the form must be
-  served from the whitelisted Dristi UI domain. The UI must not send
-  `Referrer-Policy: no-referrer` on that page, because the browser default
-  (`strict-origin-when-cross-origin`) sends the origin SBIePay checks.
+- **Business (source) URL.** SBIePay rejects a request that does not come
+  from the whitelisted business URL ("Wrong Source URL"), and declines any
+  request without `Origin` and `Referer` headers (Guide Annexure B, row 55).
+  The page that auto-submits the form must be served from the URL registered
+  with SBI, and it must not suppress the referrer (no
+  `Referrer-Policy: no-referrer`). The browser default,
+  `strict-origin-when-cross-origin`, sends only the *origin* cross-site. It is
+  unconfirmed whether SBI matches on the domain or on the full URL (Q-9). If it
+  matches the full URL, the UI must either use one fixed payment-hand-off route
+  or relax its referrer policy for that route.
 - **Mobile.** A mobile client that opens the form in a web view must set
   `Origin` and `Referer` headers (Guide "For Integration via Mobile"), and UPI
   requires UPI intent support in the app. Mobile clients are not in scope here.
@@ -566,6 +580,17 @@ MerchantID|TotalFee^GST|Ref1|…|Ref10
   `not_found_grace` (#6.4) pass before the payment fails and its items become
   payable again. During that window a second attempt can still succeed and be
   credited normally rather than as a late success.
+
+  *What the payer sees:* a litigant who abandons SBIePay's page and comes back
+  can resume straight away. `GET /api/v1/payments/payments/{id}/action/`
+  re-shows a pending payment's form (0032 #4.8), and posting it again is
+  another attempt on the same order number. A replay of the original
+  `client_request_id` does the same (0017 #7). SBI allows three attempts, so a fourth is refused by SBI, and the
+  payment then fails once the grace passes. What they *cannot* do for up to
+  `not_found_grace` is **cancel** it to pay another way, such as at the
+  counter: 0017 #9.8 answers `409 E06012` while `NOT_FOUND` is within grace.
+  e-GRAS has the same two-hour behaviour. The UI should offer "resume
+  payment" rather than "cancel" for a recently abandoned SBIePay payment.
 - **`CANCELLED` / `REFUND`** only happen when someone cancels or refunds
   through SBIePay, which Dristi never does (#12). They are operator actions, so
   the payment fails and is also flagged `needs_reconciliation`
@@ -595,13 +620,18 @@ MerchantID|TotalFee^GST|Ref1|…|Ref10
 ### 7.1 Format
 
 The format below follows the guide's Python integration kit ("Python Code is
-provided below for reference"). Its exact parameters must be checked against
-the kit's test vectors during onboarding (Q-1). They are kept in this one module
-so that confirming them changes nothing else.
+provided below for reference"). The guide prints only part of that function.
+It shows the checksum being appended (`message + "|" + result.hexdigest()`)
+and the SHA-256 checksum type, but not what `result` hashes or what `pad()`
+does. The checksum input and the padding below are therefore **assumptions**.
+They, and every other parameter, must be checked against the kit's test vectors
+during onboarding (Q-1). All of it is kept in this one module so that
+confirming it changes nothing else.
 
 ```text
-plaintext  = packet + "|" + hex(SHA-256(packet))                (checksum appended before encryption)
-ciphertext = AES-CBC(key, iv, PKCS#7(plaintext.encode("utf-8")))
+plaintext  = packet + "|" + hex(SHA-256(packet))                (assumed checksum input)
+ciphertext = AES-CBC(key, iv, PKCS#7(plaintext.encode("utf-8")))   (PKCS#7 assumed)
+iv         = 16 random bytes                                    (as the kit: os.urandom)
 wire value = base64(iv[16] ‖ ciphertext)
 ```
 
@@ -620,29 +650,40 @@ wire value = base64(iv[16] ‖ ciphertext)
 - The library is `cryptography`, already a dependency through e-GRAS. No new
   package is needed and the SBI Java jar or PHP kit is not vendored.
 
-### 7.2 Deterministic IV
+### 7.2 Determinism and the random IV
 
-The kit uses a random IV. The addon uses a **synthetic IV** instead:
+0017 #9.2 rule 2 asks that `initiate` be deterministic, so an idempotent replay
+can rebuild the action without storing form bodies. The addon makes the
+**packet** deterministic: the same `InitiationRequest` always gives the same
+order number and the same plaintext Transaction (and Multiaccount) packet. Only
+the IV, and therefore the ciphertext, differs on a replay.
 
-```text
-iv = HMAC-SHA256(key, plaintext)[:16]
-```
+**This deviates from the letter of 0017.** 0017 #7 says a replay "returns the
+same `provider_action`", and with a random IV the `EncryptTrans` string differs
+on every rebuild. The deviation is deliberate:
 
-The receiver reads the IV from the first 16 bytes, so SBIePay decrypts it the
-same way. This keeps `initiate` deterministic (0017 #9.2 rule 2): an idempotent
-replay of a `PENDING` payment rebuilds byte-identical form fields, so nothing
-payer-related has to be stored.
+- The rule exists so a replay can be rebuilt without storing form bodies. That
+  purpose is fully met.
+- The code that enforces it, `PaymentService._rebuild_action`, compares only
+  `provider_payment_id`.
+- Both ciphertexts decrypt to the same packet for the same order number, so
+  SBIePay treats them identically.
+- No client compares form fields. 0017 #12.2 makes them opaque.
 
-The only thing an observer learns is that two identical packets are identical.
-Packets are unique per order number, so this happens only on a replay of the
-same request. If Q-1 shows the kit uses AES-GCM, the same construction gives a
-nonce that repeats only for identical plaintexts, so nonce reuse never applies
-to different messages.
+0017 #7 should be clarified to "the same `provider_payment_id` and an
+equivalent action" when this spec lands.
+
+A deterministic ("synthetic") IV derived with HMAC from the merchant key was
+considered and rejected:
+
+- It departs from the kit, which adds onboarding risk for no functional gain.
+- It reuses the MEK for a second primitive.
+- It invents cryptography where a bank-supplied scheme already exists.
 
 ### 7.3 Replay
 
 On replay (`InitiationRequest.replay = True`) `initiate` returns the same
-order number and the same encrypted fields, and skips the `SBIEPAY_ENABLED`
+order number and an encryption of the same packet, and skips the `SBIEPAY_ENABLED`
 kill switch (0017 #9.4, as 0022 does).
 
 ---
@@ -658,7 +699,7 @@ class SBIePayPaymentProvider(PaymentProvider):
     """Collect payments through SBIePay's aggregator-hosted page."""
 
     name = "sbiepay"
-    label = "SBIePay (net banking, cards, UPI)"
+    label = "Pay online (SBIePay)"  # pay modes depend on what SBI enables, so none are named
     pending_horizon = ...  # SBIEPAY_PENDING_HORIZON, #6.4
     not_found_grace = ...  # SBIEPAY_NOT_FOUND_GRACE, #6.4
 
@@ -858,6 +899,15 @@ out**. A refund changes what a `SUCCESS` payment means for a case (0017 #10:
 reconciliation model to compare against. Calling the refund API from the addon
 or a script would move money while Dristi still shows the payment as paid.
 
+The PRD agrees that refunds are not a gateway operation:
+
+- e-filing handover `LIFE-12`: when a recalculated filing fee is lower there
+  is "no automatic refund". Instead the system auto-generates a *refund note*
+  the filer uses to claim it.
+- process handover `FEE-07`: "Nothing is refunded".
+
+So no PRD flow needs Dristi to call SBIePay's refund API.
+
 Until a follow-up spec adds a refund and reconciliation contract to 0017:
 
 - refunds are booked by finance staff in SBIePay's Merchant Panel ("Initiate
@@ -981,8 +1031,7 @@ receipt data, not secrets, and are logged.
 
 **Unit (no network)**
 - crypto: the kit's published vectors (Q-1) decrypt and re-encrypt; round trip;
-  synthetic IV is deterministic for the same plaintext and differs for
-  different plaintexts; trailing checksum checked when present; wrong key,
+  a fresh random IV per call; trailing checksum checked when present; wrong key,
   truncated value, bad padding and bad base64 each raise; key formats `text`
   and `base64`; key never appears in `repr` or exception text.
 - packets: allowed-character cleaning; `|`, `=`, `^` removed from data;
@@ -991,7 +1040,7 @@ receipt data, not secrets, and are logged.
 - request builder: every Transaction packet field and its source; field order;
   same Success and Fail URL; order number prefix, length and determinism;
   Other Details caret layout, the 30-field and 1000-character limits with
-  `AND N MORE`; `merchIdVal` plain; byte-identical output on replay; kill
+  `AND N MORE`; `merchIdVal` plain; on replay the same order number and a ciphertext that decrypts to the identical packet; kill
   switch skipped on replay.
 - accounts: map by `account_head`, by `charge_type`; precedence; an unmapped
   charge raises; grouping and summing; double-pipe layout; deterministic order;
@@ -1012,8 +1061,8 @@ receipt data, not secrets, and are logged.
 
 **Flow (DB + stub broker, mocked SBIePay endpoints, through 0017's APIs)**
 - create payment with `provider: "sbiepay"` → `201` with a `REDIRECT_FORM`
-  holding `EncryptTrans` and `merchIdVal`; idempotent replay returns identical
-  fields.
+  holding `EncryptTrans` and `merchIdVal`; idempotent replay returns the same
+  order number and a packet that decrypts identically.
 - forged plain `encData` (wrong key) → redirect `UNKNOWN`, payment still
   `PENDING`.
 - correctly encrypted `SUCCESS` browser response with DV still `BOOKED` →
@@ -1074,7 +1123,7 @@ cd src && python manage.py check
 - [ ] SBIePay ships as `src/addon/sbiepay_payment_gateway/` with no models, migrations, URLs, admin or `errors.py`.
 - [ ] SBIePay is selected only through `PAYMENT_PROVIDERS` / `PAYMENT_DEFAULT_PROVIDER` / `PAYMENT_SELECTABLE_PROVIDERS`; no caller changes.
 - [ ] The addon imports only the contract and the read-only helpers listed in #1; no module under `apps.*` imports `addon.*` or mentions SBIePay.
-- [ ] `initiate` makes no network call and returns byte-identical form fields for the same request (synthetic IV, #7.2).
+- [ ] `initiate` makes no network call and returns the same order number and the same plaintext packet for the same request (#7.2).
 - [ ] The Transaction packet matches #4.3; no payer data is sent; amounts carry paise and are never rounded.
 - [ ] Order numbers are deterministic, prefixed, ≤ 100 characters and new per payment attempt.
 - [ ] Multi-account, when on, follows #4.5 with no default account; off by default.
@@ -1095,12 +1144,13 @@ cd src && python manage.py check
 ## 20. Open questions
 
 1. **Crypto parameters.** The Python kit sample uses AES-CBC with a random IV
-   prepended, PKCS#7, the UTF-8 bytes of the key string (a 24-character MEK
-   gives AES-192), and a SHA-256 checksum appended before encryption. The guide
-   elsewhere says "AES 128-bit" for Python and ships an `AES256Bit` jar. Confirm
-   with SBI, using the kit's test vectors: cipher mode, key derivation (`text`
-   or `base64`), whether responses carry the trailing checksum, and that a
-   non-random IV is accepted. `crypto.py` is the only module affected.
+   prepended, the UTF-8 bytes of the key string (a 24-character MEK gives
+   AES-192), and a checksum appended before encryption. The guide elsewhere
+   says "AES 128-bit" for Python and ships an `AES256Bit` jar, and its printed
+   function omits what is hashed and how `pad()` pads. Confirm with SBI, using
+   the kit's test vectors: cipher mode, key encoding (`text` or `base64`),
+   padding, the checksum's input, and whether responses carry the checksum.
+   `crypto.py` is the only module affected.
 2. **DV amount.** Will SBI's DV accept a blank amount, as the guide's sample
    does? If not, the fallback is to pass the expected amount through the
    contract: a small 0017 amendment that adds the expected amount to
@@ -1111,13 +1161,23 @@ cd src && python manage.py check
    reports (`Total Fee^GST`) next to the court fee?
 4. **Customer notifications.** Does PUCAR want SBIePay's own SMS/e-mail to the
    payer? That needs the Billing packet (model BP) and sending the payer's
-   mobile and e-mail to SBI. The default here is no.
+   mobile and e-mail to SBI. The recommendation is no. Dristi already sends
+   its own "payment pending" and "case filed" SMS to the complainant side
+   (e-filing handover v47, §20.1), so SBI's messages would duplicate them in
+   different wording.
 5. **Mandatory APIs.** Will SBI sign off go-live with DV only, refunds booked in
    the Merchant Panel, and payout/MIS downloaded from the panel (#12)? If not,
    the refund/reconciliation contract for 0017 has to come first.
-6. **Settlement accounts.** Does every fee type settle into one SBI account, or
-   do court fee, legal benefit fund and process fees need separate accounts
-   (Multiaccount, #4.5)? If separate, finance needs to supply the identifiers.
+6. **Settlement accounts. This blocks Kerala go-live.** e-filing handover
+   §19.1 routes the Advocate Welfare Fund and Stipend Stamp to a treasury TSB
+   account under a government head, and leaves the other heads' accounts as
+   `[GAP]`. Three things to settle:
+   - Can SBIePay Multiaccount settle into a treasury TSB account at all, or
+     only into ordinary bank accounts?
+   - If it cannot, are those heads collected through e-GRAS instead, which
+     would split one bill across two providers (0017 has no such concept), or
+     re-remitted manually by finance?
+   - Finance must supply the identifiers for whichever accounts are used.
 7. **Same order number, several attempts.** When an order has more than one
    attempt (for example `ABORT` then `SUCCESS`), does DV by order number return
    the successful attempt, the latest, or several records? The mapper assumes
@@ -1126,6 +1186,10 @@ cd src && python manage.py check
    e-GRAS (0022 #6.3).
 8. **Push acknowledgement.** Does SBIePay expect anything specific in the
    push reply body, or just HTTP 200? Does it retry on non-200, and how often?
+9. **Business URL matching.** Does SBI match the whitelisted business URL on
+   the domain or on the full URL (path included)? Browsers send only the origin
+   cross-site by default (#4.8). This decides whether the UI needs a fixed
+   payment-hand-off route.
 
 ## 21. Design decisions
 
@@ -1136,15 +1200,15 @@ cd src && python manage.py check
 | Browser and push responses never trusted; DV by our own order number is the only proof | SBI mandates DV. AES-CBC is not authenticated. A browser `FAIL` can contradict a real success. Looking up by our own order number stops a forged response from borrowing someone else's ATRN. |
 | Same endpoint for Success and Fail URL | The outcome comes from DV, not from which URL SBIePay chose. |
 | Generic `_push` endpoint in `apps.payments` | A server must get `200`, not a browser redirect. Addons cannot own URLs, and the endpoint names no gateway, so any future provider with a server-to-server notification reuses it. |
-| Synthetic IV, `HMAC(key, plaintext)` | Keeps `initiate` deterministic (0017 #9.2 rule 2) without storing ciphertext. The receiver reads the IV from the message, so SBIePay is unaffected. |
+| Kit's random IV; determinism is of the order number and plaintext packet | 0017's replay check compares only `provider_payment_id`, and any ciphertext of the same packet is the same request to SBIePay. A home-made deterministic IV would diverge from the bank's kit and reuse the MEK, for no functional gain. |
 | Key in a mounted file, not an env value | It is a credential: file-mounted like e-GRAS's response key, never in `.env`, logs or `repr`. |
 | Paise carried, never rounded | SBIePay supports two decimals. Unlike e-GRAS (0022 Q-1), `₹12.50` court fees just work. |
-| `ABORT` → `NOT_FOUND` | No money moved, but the same order number may still be retried. The grace window avoids turning a quick retry into a late success. |
+| `ABORT` → `NOT_FOUND` | No money moved, but the same order number may still be retried. The grace window avoids turning a quick retry into a late success. Cost: no cancel within the grace, but resume works (#6.3). Mapping `ABORT` to `FAILED` was rejected because it would let a resumed attempt on the old order land as a late success needing an operator. |
 | `CANCELLED`/`REFUND` → `FAILED` plus a reconciliation flag | Money moved and came back through a channel Dristi did not start. An operator must see it. |
 | Unknown status → `PENDING` | 0017 #9.2 rule 5. Failing early risks money taken with no credit. |
 | `pending_horizon` of 8 days | `BOOKED` turns `EXPIRED` on the 7th day. One day of margin. |
 | Multi-account optional, no default account | It is the SBIePay counterpart of e-GRAS heads of account, with the same rule: money in the wrong account is worse than a refused payment. |
-| Refund, payout and MIS deferred | Each needs a refund or reconciliation model 0017 excludes. Booking a refund behind Dristi's back would leave a case showing paid money that was returned. |
+| Refund, payout and MIS deferred | Each needs a refund or reconciliation model 0017 excludes, and the PRD handles refunds by refund note, not through the gateway (`LIFE-12`, `FEE-07`). Booking a refund behind Dristi's back would leave a case showing paid money that was returned. |
 | Internal failure codes, no API codes | API codes belong to `apps.payments` ([0000](0000-api-coding-spec.md) #9.2) and must not change when a provider is swapped. |
 | `SBIEPAY_ENABLED` stops initiation only | Turning SBIePay off must not strand payments already at the bank. |
 
