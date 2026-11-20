@@ -313,11 +313,20 @@ actions = [
   { action = "orders.edit_text" },
   { action = "orders.send_for_signing" },
   # … the rest of Order drafter, Order data filler, Next hearing setter, …
-  { action = "process.sign", scope = { process_types = ["SUMMONS", "NOTICE", "PROCLAMATION", "ATTACHMENT"] } },
-  { action = "process.send", scope = { channels = ["RPAD", "POLICE", "COURIER", "EMAIL", "SMS"] } },
-  { action = "process.recall", scope = { channels = ["RPAD", "POLICE", "COURIER", "EMAIL", "SMS"] } },
+  { action = "process.sign", scope = { process_types = ["NOTICE", "SUMMONS", "PROCLAMATION", "ATTACHMENT", "CUSTOM"] } },
+  { action = "process.send", scope = { channels = ["SMS", "EMAIL", "RPAD", "POLICE_RPAD", "POLICE_ICOPS", "POLICE_NSTEP", "BY_HAND"] } },
+  { action = "process.recall", scope = { channels = ["SMS", "EMAIL", "RPAD", "POLICE_RPAD", "POLICE_ICOPS", "POLICE_NSTEP", "BY_HAND"] } },
+  { action = "process.record_outcome", scope = { channels = ["SMS", "EMAIL", "RPAD", "POLICE_RPAD", "POLICE_ICOPS", "POLICE_NSTEP", "BY_HAND"] } },
 ]
 ```
+
+The scopes are `court-roles.md` §3: Process signer except for warrants, and
+Process dispatcher and Process reporter on every channel except e-Post. The
+codes are placeholders until the process module defines them (#5.5).
+Proclamation and attachment follow §3's interim answer to its open question
+`Q-1`, whether they are signed by the same staff as notice and summons or as
+warrants. Whichever way `Q-1` is answered, only this seed data changes, not
+code.
 
 ### 5. Data model
 
@@ -431,7 +440,7 @@ the selectors (#6) and never stored.
 #### 5.5 Scope (`RLE-09`)
 
 ```json
-{"process_types": ["SUMMONS", "WARRANT"], "channels": ["RPAD", "POLICE"]}
+{"process_types": ["SUMMONS", "WARRANT"], "channels": ["RPAD", "POLICE_RPAD"]}
 ```
 
 * `scope = null` covers every process type on every channel (`RLE-09`: a role written without a scope covers everything).
