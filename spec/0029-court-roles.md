@@ -495,9 +495,9 @@ A caller that is not a reader is told the case does not exist (404), as 0021
 ### 7. Checking (`apps.organizations.access`)
 
 Checks are made in **services**, where business logic lives (AGENTS.md), so
-API calls, Dramatiq tasks and the 0011 engine are checked the same way. A view
-may call the same helper early, before loading heavy data. No DRF permission
-class is added.
+a step a person takes is checked the same way whether it arrives through the
+API, a Dramatiq task or the 0011 engine. A view may call the same helper
+early, before loading heavy data. No DRF permission class is added.
 
 ```python
 access.require(user, action, organization_id, *, error, process_type=None, channel=None)
@@ -537,6 +537,25 @@ officer at A who registers only at B is offered Forward at A.
 **Business state stays in the service.** "The round is open", "the order is
 unsigned" are checked by the module alongside the action, not encoded in
 it.
+
+**Steps the system takes are not court actions.** Court actions say what a
+*person* may do. The PRDs give some steps to the system itself, with no person
+taking them:
+
+* a status update on a channel whose update is by the system: "the system is the reporter", from what the receiving system reports "by polling or by callback" (`RLE-09`; `process-handover.md` `DSP-02`, `DSP-03`);
+* expiry: when a process's expiry date passes, the system marks it Expired and closes its tasks (`process-handover.md` `EXP-02`).
+
+The owning module runs these through a separate service entry point that never
+calls `access.require`, and records the step as the system's, not a user's.
+Where the step is triggered by an outside system calling in (a callback), the
+module checks that the request really came from that system. How each
+integration proves that is for the process module and its addons, not this
+spec. A poll or a scheduled job starts inside the application, so there is no
+caller to check.
+
+A system step that follows a person's checked action is not checked again.
+On a system-send channel the Process dispatcher clicks Send, which is checked
+against `process.send`, and the system then carries out the send (`DSP-03`).
 
 ### 8. Services and change notification
 
@@ -724,7 +743,7 @@ migration command.
   - `is_court_reader`, before and after a courtroom is set.
   - Inactive users, assignments, roles and organizations are ignored; a superuser with no assignment is allowed nothing.
   - A fixed number of queries per selector; repeated checks in one request reuse the memoised grants.
-* **Check helper:** `require` passes, refuses with the given error code, and passes `process_type` / `channel` to scope. `require_any` passes with one of the actions held, refuses with none or with them held only at another establishment, and refuses a scoped action in `actions` with `ImproperlyConfigured`.
+* **Check helper:** `require` passes, refuses with the given error code, and passes `process_type` / `channel` to scope. There is no "system user" that holds actions: `access.require` with no user, or an anonymous one, refuses. `require_any` passes with one of the actions held, refuses with none or with them held only at another establishment, and refuses a scoped action in `actions` with `ImproperlyConfigured`.
 * **No role checks (static test, like `addon/cdac_sms_gateway/tests/test_isolation.py`):** outside `apps/organizations`, no module imports `CourtRole`, `CourtRoleAction` or `RoleAssignment`; action codes appear as string literals only in `court_actions.py` files and migrations.
 * **SCR-11 across courts:** `scrutiny.forward` at A and `registration.register` only at B is offered Forward at A, not Register.
 * **API:** `/court-roles/me/` for a user with establishment actions only, a courtroom role only, a mixed-level role, and none; `401` when anonymous.
