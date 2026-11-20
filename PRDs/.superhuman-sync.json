@@ -675,14 +675,14 @@
     "signing-methods.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
       "title": "Signing Methods",
-      "contentHash": "feaef1c69630",
-      "pageUpdatedAt": 1795149616.233,
+      "contentHash": "e39787bd22a8",
+      "pageUpdatedAt": 1795158764.39,
       "calloutElementId": "cl-_69DGpvyKC",
       "sections": [
         {
           "key": "# Signing Methods",
           "elementId": "cl-VKwh_vMUaD",
-          "hash": "d01f11e4da6a"
+          "hash": "d9bf0da3037d"
         },
         {
           "key": "# 1. Terms",
@@ -697,17 +697,17 @@
         {
           "key": "# 3. Individual signing options",
           "elementId": "cl-SaI9BI2kV0",
-          "hash": "91ff28073ac5"
+          "hash": "40cd20ec99ff"
         },
         {
           "key": "# 4. Bulk signing",
           "elementId": "cl-jBDz9b4VWI",
-          "hash": "311519a1588e"
+          "hash": "b5e6e6940c34"
         },
         {
           "key": "# 5. Signing options per state — `SGM-05`",
           "elementId": "cl-FqJKsUo1CV",
-          "hash": "1632740b9497"
+          "hash": "baf125f3dcd4"
         },
         {
           "key": "# 6. Batch signing — `SGM-04`",
@@ -715,9 +715,9 @@
           "hash": "47bad7b3d541"
         },
         {
-          "key": "# 7. Aadhaar e-sign with system-generated signatures — `SGM-13`",
+          "key": "# 7. Aadhaar e-sign on the main document, plus system-generated signatures on attached documents — `SGM-13`",
           "elementId": "cl-LMvJ4mgurA",
-          "hash": "b4bac4bc6f0e"
+          "hash": "c07e59de4098"
         },
         {
           "key": "# 8. Enhancements",
@@ -727,10 +727,10 @@
         {
           "key": "# 9. Open questions",
           "elementId": "cl-fJTO0oqSHN",
-          "hash": "80f5d71b5387"
+          "hash": "069374277d1c"
         }
       ],
-      "note": "Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block. 2026-11-20: rebuilt for v3.11 (restructure; no comments on the page) — new content inserted, old blocks deleted, callout recreated."
+      "note": "Created 2026-10-24. Each chunk expands to several blocks on the page; elementId is the chunk heading block. 2026-11-20: rebuilt for v3.11 (restructure; no comments on the page) — new content inserted, old blocks deleted, callout recreated. 2026-11-20: v3.12 rename patched in place (Status line, SGM-15 bullet re-inserted, §7 heading, cells in the §3, §5 and §9 tables; the §5 ID cells hold a zero-width space between two code spans)."
     },
     "bulk-filing.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-HQEZP10hYG",
