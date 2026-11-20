@@ -8,7 +8,16 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.api import errors
-from apps.locations.tests.factories import make_hierarchy, make_state
+from apps.locations.tests.factories import (
+    define_address_attribute,
+    define_police_district_attribute,
+    make_bank,
+    make_district,
+    make_hierarchy,
+    make_location,
+    make_police_station,
+    make_state,
+)
 from apps.users.models import User
 
 
@@ -203,6 +212,81 @@ class LocationRetrieveTests(LocationAPITestCase):
         response = self.client.get(reverse("location-by-code", args=["NOPE"]))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class LocationIfscLookupTests(LocationAPITestCase):
+    """GET /locations/code/{IFSC}/?location_type=bank&is_active=true (issue #249)."""
+
+    BANK_ONLY = {"location_type": "bank", "is_active": "true"}
+
+    def setUp(self):
+        """Add an active bank with its address and a closed one under Patna."""
+        super().setUp()
+        define_address_attribute()
+        self.bank = make_bank(self.patna, address="Fraser Road, Patna 800001")
+        make_bank(self.patna, code="SBIN0009999", branch="Closed Branch", is_active=False)
+
+    def lookup(self, code, params=None):
+        """GET the location with ``code`` with the bank-only filters by default."""
+        query = self.BANK_ONLY if params is None else params
+        return self.client.get(reverse("location-by-code", args=[code]), query)
+
+    def test_returns_the_bank_for_an_ifsc(self):
+        response = self.lookup("SBIN0001234")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()
+        self.assertEqual(body["location_type"], "bank")
+        self.assertEqual(body["name"], "State Bank of India - Patna Main")
+        self.assertEqual(body["short_name"], "SBIN0001234")
+        self.assertEqual(body["parent_code"], "PATNA")
+        self.assertEqual(body["additional_attributes"], {"address": "Fraser Road, Patna 800001"})
+
+    def test_lookup_needs_no_login(self):
+        self.client.logout()
+
+        self.assertEqual(self.lookup("SBIN0001234").status_code, status.HTTP_200_OK)
+
+    def test_closed_branch_is_not_found(self):
+        self.assertEqual(self.lookup("SBIN0009999").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_a_code_that_is_not_a_bank_is_not_found(self):
+        self.assertEqual(self.lookup("PATNA").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_unknown_ifsc_is_not_found(self):
+        self.assertEqual(self.lookup("HDFC0000001").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_lowercase_ifsc_is_not_found(self):
+        # Codes are stored uppercase; the client uppercases what the user typed.
+        self.assertEqual(self.lookup("sbin0001234").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_without_filters_any_location_is_found(self):
+        self.assertEqual(self.lookup("SBIN0009999", {}).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.lookup("PATNA", {}).status_code, status.HTTP_200_OK)
+
+    def test_is_active_false_finds_only_inactive(self):
+        params = {"is_active": "false"}
+
+        self.assertEqual(self.lookup("SBIN0009999", params).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.lookup("SBIN0001234", params).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_rejects_unknown_location_type(self):
+        response = self.lookup("SBIN0001234", {"location_type": "branch"})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": errors.INVALID_CHOICE.code, "field": "location_type"}],
+        )
+
+    def test_rejects_non_boolean_is_active(self):
+        response = self.lookup("SBIN0001234", {"is_active": "maybe"})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            [{"code": e["code"], "field": e.get("field")} for e in response.json()["errors"]],
+            [{"code": errors.INVALID.code, "field": "is_active"}],
+        )
 
 
 class LocationChildrenTests(LocationAPITestCase):
@@ -657,3 +741,150 @@ class LocationURLPathTests(LocationAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["id"], str(self.bihar.pk))
+
+
+class PoliceStationSuggestionTests(LocationAPITestCase):
+    """Police station dropdown suggestions by district or pincode (issue #250)."""
+
+    def setUp(self):
+        """Put stations under Patna, a closed one, one under Nalanda and a state-wide one."""
+        super().setUp()
+        define_police_district_attribute()
+        self.east = make_police_station(
+            self.patna, code="15996001", name="THRISSUR EAST", police_district="THRISSUR CITY"
+        )
+        self.west = make_police_station(
+            self.patna, code="15996004", name="THRISSUR WEST", police_district="THRISSUR CITY"
+        )
+        make_police_station(self.patna, code="15996002", name="VANITHA", is_active=False)
+        self.pincode = make_location(
+            code="800001",
+            name="800001",
+            location_type="pincode",
+            parent=self.patna,
+        )
+        make_bank(self.patna)
+        nalanda = make_district(parent=self.bihar, code="NALANDA", name="Nalanda")
+        make_police_station(nalanda, code="15290010", name="CHALAKUDI")
+        self.railway = make_police_station(self.bihar, code="15296014", name="THRISSUR RAILWAY")
+
+    def stations(self, parent_code, **params):
+        """GET the active police stations directly under ``parent_code``."""
+        query = {
+            "parent_code": parent_code,
+            "location_type": "police_station",
+            "is_active": "true",
+            **params,
+        }
+        return self.client.get(reverse("location-list"), query)
+
+    def codes(self, response):
+        """Return the location codes in a paginated list response."""
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return [row["code"] for row in response.json()["results"]]
+
+    def test_lists_a_districts_active_stations(self):
+        response = self.stations("PATNA")
+
+        # Not the closed station, the pincode, the bank or another district's stations.
+        self.assertEqual(self.codes(response), ["15996001", "15996004"])
+        east = response.json()["results"][0]
+        self.assertEqual(east["name"], "THRISSUR EAST")
+        self.assertEqual(east["location_type"], "police_station")
+        self.assertEqual(east["parent_code"], "PATNA")
+        self.assertEqual(east["additional_attributes"], {"police_district": "THRISSUR CITY"})
+
+    def test_suggests_by_pincode_through_its_district(self):
+        # The address form reads the pincode's district from its ancestors ...
+        ancestors = self.client.get(
+            reverse("location-by-code-ancestors", args=["800001"]), {"is_active": "true"}
+        )
+        self.assertEqual(ancestors.status_code, status.HTTP_200_OK)
+        district = ancestors.json()["data"][-1]
+        self.assertEqual(district["location_type"], "district")
+
+        # ... and lists that district's stations.
+        self.assertEqual(self.codes(self.stations(district["code"])), ["15996001", "15996004"])
+
+    def test_state_wide_stations_are_not_district_suggestions(self):
+        self.assertNotIn("15296014", self.codes(self.stations("PATNA")))
+        self.assertEqual(self.codes(self.stations("BR")), ["15296014"])
+
+    def test_all_stations_in_a_state_by_type(self):
+        response = self.client.get(
+            reverse("location-list"), {"location_type": "police_station", "is_active": "true"}
+        )
+
+        self.assertEqual(
+            sorted(self.codes(response)), ["15290010", "15296014", "15996001", "15996004"]
+        )
+
+    def test_needs_no_login(self):
+        self.client.logout()
+
+        self.assertEqual(self.codes(self.stations("PATNA")), ["15996001", "15996004"])
+
+    def test_looks_a_station_up_by_its_code(self):
+        response = self.client.get(
+            reverse("location-by-code", args=["15996001"]),
+            {"location_type": "police_station", "is_active": "true"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["name"], "THRISSUR EAST")
+
+    def test_closed_station_is_not_found_by_code(self):
+        response = self.client.get(
+            reverse("location-by-code", args=["15996002"]),
+            {"location_type": "police_station", "is_active": "true"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_district_with_no_stations_lists_none(self):
+        make_district(parent=self.bihar, code="GAYA", name="Gaya")
+
+        self.assertEqual(self.codes(self.stations("GAYA")), [])
+
+
+class LocationPageSizeTests(LocationAPITestCase):
+    """``page_size`` lets a dropdown load a whole district at once (issue #250)."""
+
+    def setUp(self):
+        """Put 61 stations under Patna, as many as the largest Kerala district has."""
+        super().setUp()
+        for number in range(1, 62):
+            make_police_station(self.patna, code=f"{15285000 + number}", name=f"PS {number}")
+
+    def list_stations(self, **params):
+        """GET Patna's police stations with ``params``."""
+        query = {"parent_code": "PATNA", "location_type": "police_station", **params}
+        return self.client.get(reverse("location-list"), query)
+
+    def test_default_page_size_is_unchanged(self):
+        body = self.list_stations().json()
+
+        self.assertEqual(body["count"], 61)
+        self.assertEqual(len(body["results"]), 20)
+
+    def test_page_size_loads_the_whole_district(self):
+        body = self.list_stations(page_size=100).json()
+
+        self.assertEqual(len(body["results"]), 61)
+        self.assertIsNone(body["next"])
+
+    def test_page_size_is_capped_at_100(self):
+        for number in range(62, 122):
+            make_police_station(self.patna, code=f"{15285000 + number}", name=f"PS {number}")
+
+        body = self.list_stations(page_size=500).json()
+
+        self.assertEqual(body["count"], 121)
+        self.assertEqual(len(body["results"]), 100)
+
+    def test_page_size_applies_to_children(self):
+        response = self.client.get(
+            reverse("location-by-code-children", args=["PATNA"]), {"page_size": 100}
+        )
+
+        self.assertEqual(len(response.json()["results"]), 61)

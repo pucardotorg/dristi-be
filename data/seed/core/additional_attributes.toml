@@ -1,0 +1,23 @@
+# Additional attribute definitions. A model's additional_attributes accept only
+# the keys defined here for it, so load this before any rows that use them.
+# `content_type` is the model as "app_label.model", lowercase.
+[seed]
+model = "core.AdditionalAttribute"
+
+# A bank's branch address (issue #249, spec 0007 section 8). Nullable, so every
+# other location stores it as null.
+[[rows]]
+content_type = "locations.location"
+name = "address"
+data_type = "character"
+is_nullable = true
+
+# A police station's police district as Kerala Police and V1's MDMS name it,
+# e.g. "THRISSUR CITY" (issue #250, spec 0007 section 9). Police districts split
+# some revenue districts in two, so this tells such a district's stations apart.
+# Nullable, so every other location stores it as null.
+[[rows]]
+content_type = "locations.location"
+name = "police_district"
+data_type = "character"
+is_nullable = true

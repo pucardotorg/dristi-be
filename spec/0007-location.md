@@ -50,6 +50,8 @@ src/apps/locations/
 | `STATE` | `state` | State |
 | `DISTRICT` | `district` | District |
 | `PINCODE` | `pincode` | Pincode |
+| `BANK` | `bank` | Bank |
+| `POLICE_STATION` | `police_station` | Police station |
 
 The list is intentionally small for v1. Additional choices (e.g. `tehsil`, `block`, `village`) can be added without breaking existing rows.
 
@@ -64,7 +66,7 @@ Inherits from `BaseModel`, `BaseExtendableModel`, and `BaseActivatableModel`.
 | `code` | `CharField(max_length=50, unique=True)` | Stable, unique machine identifier. Not null. Enforced uppercase snake_case. |
 | `name` | `CharField(max_length=255)` | Full display name. |
 | `short_name` | `CharField(max_length=100, blank=True)` | Optional short display name. |
-| `location_type` | `CharField(max_length=50)` | One of `country`, `state`, `district`, `pincode`. |
+| `location_type` | `CharField(max_length=50)` | One of `country`, `state`, `district`, `pincode`, `bank`, `police_station`. |
 | `parent` | `ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="children")` | Null for top-level locations. Protected from deletion while children exist. |
 | `is_active` | `BooleanField(default=True)` | Inherited from `BaseActivatableModel`. Soft-disable flag. |
 
@@ -121,7 +123,7 @@ final security model for the API.
 |--------|------|---------|
 | GET | `/locations/` | List locations. Supports filtering by `location_type`, `parent_id`, and `parent_code`. |
 | GET | `/locations/{id}/` | Retrieve a location by its `id`. |
-| GET | `/locations/code/{code}/` | Retrieve a location by its unique `code`. |
+| GET | `/locations/code/{code}/` | Retrieve a location by its unique `code`. Optional `location_type` and `is_active` make it `404` unless the location matches (see section 8). |
 | GET | `/locations/{id}/children/` | List active direct children of a location identified by `id`. Supports filtering by `location_type`. 404 unless the parent itself is active. |
 | GET | `/locations/code/{code}/children/` | List active direct children of a location identified by `code`. Supports filtering by `location_type`. 404 unless the parent itself is active. |
 | GET | `/locations/{id}/ancestors/` | List ancestor chain from root to immediate parent, identified by `id`. |
@@ -135,10 +137,13 @@ Query examples:
 - `GET /locations/?parent_code=IN` — list all direct children of the location whose code is `IN`.
 - `GET /locations/?parent_id=<state-uuid>&location_type=district` — list all districts under a given state.
 - `GET /locations/?is_active=false` — list disabled locations.
+- `GET /locations/?parent_code=IN_KERALA_THRISSUR&location_type=police_station&is_active=true&page_size=100` — a district's police stations for a dropdown (section 9).
 - `GET /locations/code/IN/children?location_type=state` — list the states under India.
 
 `parent_id` and `parent_code` are explicit, mutually-exclusive filters. Validation rejects requests that supply both. `is_active` filtering is provided because `Location` uses `BaseActivatableModel`. An empty filter value (for example `?is_active=`) is treated as not sent.
 On the two `children` endpoints the query parameters describe the children, not the parent: the parent is identified by the URL path and must be active (404 otherwise), and inactive children are never listed. `location_type` is the only filter. `is_active=true` is accepted and changes nothing; `is_active=false` (which can never be satisfied), a malformed `is_active`, and `parent_id` or `parent_code` are rejected. Query parameters are validated before the parent is looked up, so a bad one is a 400 even when the parent is inactive or unknown.
+
+Lists are paginated, 20 per page by default. `page_size` asks for up to 100 per page, so a dropdown can load all of a district's police stations in one call (issue #250).
 
 ### 7. Pincodes
 
@@ -188,6 +193,143 @@ is insert-only: existing rows are never changed, and nothing is deleted. The
 `Location` model's `clean()` still enforces the hierarchy — a pincode's parent
 must be a district — so a malformed row is rejected rather than stored.
 
+### 8. Banks
+
+A bank branch is a `bank` location keyed by its IFSC, so the e-filing form can
+fill a cheque's bank name and branch from the IFSC the user types (issue #249):
+
+```
+GET /api/v1/locations/code/AUBL0002670/?location_type=bank&is_active=true
+→ {"code": "AUBL0002670", "name": "AU Small Finance Bank - M G ROAD KOCHI",
+   "short_name": "AUBL0002670", "location_type": "bank",
+   "parent_code": "IN_KERALA_ERNAKULAM",
+   "additional_attributes": {"address": "BUILDING DOOR NOS. 62/5202 ..., MG ROAD, KOCHI, KERALA"}, ...}
+```
+
+The client uppercases the IFSC before the call. `location_type=bank` and
+`is_active=true` make the call `404` for a code that is not a bank or for a
+closed branch; a `404` means "no pre-fill" and the user enters the bank and
+branch by hand. Filing never checks that an IFSC exists here, since new
+branches open between data releases.
+
+| Field | Value |
+|-------|-------|
+| `code` | The IFSC, e.g. `AUBL0002670`. `clean()` rejects a bank whose code is not an IFSC (`^[A-Z]{4}0[A-Z0-9]{6}$`) |
+| `name` | `<BANK> - <BRANCH>` |
+| `short_name` | The IFSC |
+| `parent` | The branch's district. `clean()` rejects any other parent, any location placed under a bank, and a type change on a district holding banks |
+| `additional_attributes.address` | The branch address. Optional; `clean()` does not require it |
+
+`address` is an additional attribute on `Location`, defined by the seed file
+`data/seed/core/additional_attributes.toml` (not a migration), which must be
+loaded before any bank rows that carry an address. It is nullable, so once it is
+defined every other location carries `"address": null`.
+
+Like pincodes, banks never appear in an organization's jurisdictions, and a
+district's `children` list them alongside its pincodes (filter by
+`location_type`).
+
+Only **Kerala** branches are seeded for now. They come from
+[razorpay/ifsc](https://github.com/razorpay/ifsc) (RBI's list), converted to
+TOML out-of-band (`ifsc_to_toml.py`, kept with the pincode converter in the
+`dristi-be-experiments` repo). Razorpay's `DISTRICT` column is free text that
+often does not match our district names, so the converter places each branch
+by the first step that works:
+
+1. the pincode in the address → its district (India Post directory);
+2. `DISTRICT`, then `CITY`, equals a district name or a known old name or
+   spelling (Trivandrum, Trichur, Calicut, Cochin, Alleppey, Quilon, …);
+3. a district name appears inside `DISTRICT`/`CITY`, then inside the address;
+4. `DISTRICT` or `CITY` is a known town (Cherthala → Alappuzha, Thiruvalla →
+   Pathanamthitta, …).
+
+On Razorpay v2.0.62 this places 8,964 of 9,029 Kerala branches (99.3%; 74%
+by pincode). The other 65 are left out — about half are branches elsewhere
+mislabelled as Kerala — so their IFSC lookup is a `404` and the user enters
+the details by hand, as for any IFSC outside Kerala. The converter's report
+lists every left-out branch and every text-matched one for review.
+
+```bash
+python manage.py seed data/seed/core/                 # defines `address`
+python manage.py seed states.toml districts.toml      # IN_KERALA and its districts
+python manage.py seed banks_kerala.toml               # about 10 seconds
+```
+
+### 9. Police stations
+
+A police station is a `police_station` location, so the address form can
+suggest the stations for the address's district or pincode (issue #250). The
+API needs nothing new; it is public for reading like every location route.
+
+**By district** — list the district's active stations:
+
+```
+GET /api/v1/locations/?parent_code=IN_KERALA_THRISSUR&location_type=police_station&is_active=true&page_size=100
+→ {"count": 41, "results": [{"code": "15996001", "name": "THRISSUR EAST",
+   "location_type": "police_station", "parent_code": "IN_KERALA_THRISSUR",
+   "additional_attributes": {"address": null, "police_district": "THRISSUR CITY"}, ...}, ...]}
+```
+
+**By pincode** — the form already reads the pincode's district from its
+ancestors to pre-fill the address (section 7); it then lists that district's
+stations as above:
+
+```
+GET /api/v1/locations/code/680001/ancestors/?is_active=true   → [..., {"code": "IN_KERALA_THRISSUR", ...}]
+```
+
+The station data has no pincodes, so a pincode suggests every station in its
+district. The largest districts (Ernakulam, Thiruvananthapuram) have 61
+stations, so `page_size=100` loads any district in one call. The list is a
+suggestion only: the address keeps the chosen station as text
+(`Address.police_station`), and filing never checks it against this list.
+
+| Field | Value |
+|-------|-------|
+| `code` | The station's 8-digit code from V1's MDMS `PoliceStation` master, unchanged (e.g. `15996001`), so V1 data maps across. `clean()` rejects any other code |
+| `name` | The station name, uppercase (e.g. `THRISSUR EAST`) |
+| `short_name` | Blank |
+| `parent` | The revenue district the station's police district lies in, or the state for a state-wide unit. `clean()` rejects any other parent, any location placed under a station, and a type change that would leave stations under something other than a district or a state |
+| `additional_attributes.police_district` | The police district as MDMS names it (e.g. `THRISSUR CITY`) |
+
+`police_district` is defined in `data/seed/core/additional_attributes.toml`,
+alongside `address`; both are nullable, so every location carries both keys.
+
+**Police districts.** Kerala Police splits five revenue districts into a city
+and a rural police district. Each maps to its revenue district:
+
+| Police district (MDMS) | Parent |
+|------------------------|--------|
+| `THIRUVANANTHAPURAM CITY`, `THIRUVANANTHAPURAM RURAL` | `IN_KERALA_THIRUVANANTHAPURAM` |
+| `KOLLAM CITY`, `KOLLAM RURAL` | `IN_KERALA_KOLLAM` |
+| `ERNAKULAM CITY`, `ERNAKULAM RURAL` | `IN_KERALA_ERNAKULAM` |
+| `THRISSUR CITY`, `THRISSUR RURAL` | `IN_KERALA_THRISSUR` |
+| `KOZHIKODE CITY`, `KOZHIKODE RURAL` | `IN_KERALA_KOZHIKODE` |
+| `WYNAD` | `IN_KERALA_WAYANAD` |
+| `KASARGODE` | `IN_KERALA_KASARAGOD` |
+| `RAILWAY POLICE` (13), `C I D` (2) | `IN_KERALA` (state-wide) |
+| any other | `IN_KERALA_<same name>` |
+
+Railway police and CID stations serve the whole state, so they sit under the
+state and do not appear in a district's suggestions. Police district
+boundaries need not follow revenue district boundaries exactly, so an address
+near a border may not see its station in the suggestions; the user can still
+type any station.
+
+Only **Kerala** is seeded: 517 stations in
+`data/seed/kerala/police_stations.toml`, converted from V1's MDMS master.
+Names are uppercased, and two railway station names are corrected
+(`HIRUVANANTHAPURAM RAILWA` → `THIRUVANANTHAPURAM RAILWAY`,
+`ERNAKUMAL RAILWAY` → `ERNAKULAM RAILWAY`). Non-territorial units in the
+master (traffic, Vanitha, coastal, Special Mobile Squad, Harbour Crime) are
+kept, as V1 offered them.
+
+```bash
+python manage.py seed data/seed/core/                        # defines `police_district`
+python manage.py seed states.toml districts.toml             # IN_KERALA and its districts
+python manage.py seed data/seed/kerala/police_stations.toml  # 517 stations
+```
+
 ## Example data
 
 A location `code` may include the parent code for readability (e.g. `IN_BR_PATNA`) or be independent (e.g. `PATNA`). The system does not enforce either convention.
@@ -211,6 +353,10 @@ A location `code` may include the parent code for readability (e.g. `IN_BR_PATNA
 - `src/apps/locations/urls.py`
 - `src/apps/locations/tests/test_location.py`
 - `src/apps/locations/migrations/0003_location_type_pincode.py`
+- `src/apps/locations/migrations/0004_location_type_bank.py`
+- `src/apps/locations/migrations/0005_location_type_police_station.py`
+- `data/seed/kerala/police_stations.toml`
+- `data/seed/core/additional_attributes.toml`
 - `src/apps/locations/admin.py`, `src/apps/organizations/admin.py`
 
 Pincodes were originally loaded by a dedicated `import_pincodes` command; it was

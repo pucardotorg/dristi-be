@@ -5,6 +5,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
@@ -62,6 +63,17 @@ CHILDREN_SCHEMA = extend_schema(
 )
 
 
+class LocationPagination(PageNumberPagination):
+    """Page-number pagination with ``page_size`` up to 100.
+
+    A dropdown loads all of one district's police stations at once; the
+    largest Kerala districts have 61 (issue #250).
+    """
+
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 @extend_schema_view(list=FILTERED_SCHEMA, retrieve=FILTERED_SCHEMA)
 class LocationViewSet(APIModelReadOnlyViewSet):
     """Read-only location API with hierarchy lookups by id or code."""
@@ -70,6 +82,7 @@ class LocationViewSet(APIModelReadOnlyViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly]
     queryset = Location.objects.select_related("parent").all()
     serializer_class = LocationSerializer
+    pagination_class = LocationPagination
     lookup_value_regex = UUID_REGEX
     list_actions = {"children", "children_by_code"}
     # Ancestor chains are short and returned whole; documented as plain lists.

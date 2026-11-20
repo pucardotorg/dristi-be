@@ -90,14 +90,25 @@ seeded instead of shipped as data migrations:
 
 - `core/languages.toml` — the supported languages and the default one
   (spec 0030). Language resolution fails until it is loaded.
-- `core/public_configurations.toml` — per-state switches the frontend reads
-  from the public configuration API (spec 0034), seeded with Kerala's values.
+- `core/public_configurations.toml` — per-state switches and e-filing
+  drop-down options the frontend reads from the public configuration API
+  (spec 0034), seeded with Kerala's values.
   `ui_efiling.natively_digital_document_submission_on` shows the natively
   digital question on e-filing documents; a state that does not need it sets
   the row to `false` in the admin (re-seeding never overwrites it).
+  The `*_drop_down` rows (entity types and the cheque bounce evidence lists)
+  each mirror a backend enum; change both together
+  (`apps/cases/tests/test_drop_down_seed.py` checks they match). Seeding is
+  insert-only, so an environment that already has a row needs the change made
+  in admin as well.
 - `core/configurations.toml` — `tenant.state_code`, the state code that
   prefixes request numbers (`KL-REQ-00001`, spec 0010). Creating a request
   fails until it is loaded.
+- `core/additional_attributes.toml` — the additional attributes each model
+  accepts, e.g. a bank location's `address` (issue #249) and a police
+  station's `police_district` (issue #250). A row's
+  `additional_attributes` are rejected until their keys are defined, so this
+  loads before other models whatever order the files are given in.
 
 ```sh
 python manage.py seed data/seed/core/
@@ -136,3 +147,54 @@ python manage.py seed states.toml districts.toml pincodes.toml
 
 `states.toml` must load first, then `districts.toml` (whose `parent` is a state
 code), then `pincodes.toml` (whose `parent` is a district code).
+
+## Loading banks
+
+Bank branches (issue #249, spec 0007 section 8) are `bank` locations keyed by
+IFSC, each under its district. Only Kerala is seeded for now:
+`banks_kerala.toml` is generated from
+[razorpay/ifsc](https://github.com/razorpay/ifsc) by `ifsc_to_toml.py` (in
+`dristi-be-experiments`, next to the pincode converter) and loaded after
+`core/additional_attributes.toml` (which defines `address`) and the Kerala
+districts:
+
+```toml
+[[rows]]
+code = "AUBL0002670"
+name = "AU Small Finance Bank - M G ROAD KOCHI"
+short_name = "AUBL0002670"
+location_type = "bank"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { address = "BUILDING DOOR NOS. 62/5202 ..., MG ROAD, KOCHI, KERALA" }
+```
+
+```sh
+python manage.py seed data/seed/core/
+python manage.py seed states.toml districts.toml
+python manage.py seed banks_kerala.toml
+```
+
+Locations load in batches, so the ~9,000 Kerala banks take about 10 seconds.
+
+## Loading police stations
+
+Police stations (issue #250, spec 0007 section 9) are `police_station`
+locations keyed by their 8-digit code from V1's MDMS master, each under its
+revenue district (railway police and CID under the state). Only Kerala is
+seeded: `kerala/police_stations.toml` is kept in this repo and loads after
+`core/` (which defines `police_district`) and the Kerala state and districts:
+
+```toml
+[[rows]]
+code = "15996001"
+name = "THRISSUR EAST"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+```
+
+```sh
+python manage.py seed data/seed/core/
+python manage.py seed states.toml districts.toml
+python manage.py seed data/seed/kerala/police_stations.toml
+```

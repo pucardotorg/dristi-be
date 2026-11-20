@@ -1,0 +1,3665 @@
+# Kerala police stations (issue #250, spec 0007 section 9).
+#
+# Converted from V1's MDMS master (case module, PoliceStation; 517 stations).
+# Codes are MDMS's 8-digit codes unchanged, so V1 data maps across. Each
+# station sits under the revenue district its police district lies in; the
+# state-wide railway police and CID stations sit under the state. The MDMS
+# district is kept as `police_district`. Names are uppercased, and two
+# truncated or misspelt railway station names are corrected.
+#
+# Load after core/ (which defines `police_district`) and the Kerala state
+# and districts:
+#   python manage.py seed data/seed/core/
+#   python manage.py seed states.toml districts.toml
+#   python manage.py seed data/seed/kerala/police_stations.toml
+[seed]
+model = "locations.Location"
+
+# IN_KERALA_ALAPPUZHA
+
+[[rows]]
+code = "15281001"
+name = "ALAPPUZHA NORTH"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281002"
+name = "ALAPPUZHA SOUTH"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281003"
+name = "AMBALAPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281004"
+name = "NEDUMUDI"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281005"
+name = "TRAFFIC PS ALAPPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281009"
+name = "CHENGANNUR"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281010"
+name = "CHERTALA"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281015"
+name = "EDATHWA"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281016"
+name = "NOORANADU"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281019"
+name = "HARIPPAD"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281021"
+name = "KAREELAKULANGARA"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281023"
+name = "KANAKAKUNNU"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281024"
+name = "KAYAMKULAM"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281026"
+name = "KUTHIATHODE"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281028"
+name = "KAINADI"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281029"
+name = "KURATHIKADU"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281031"
+name = "MANNAR"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281032"
+name = "MAVELIKKARA"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281033"
+name = "MUHAMMA"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281034"
+name = "MARARIKULAM"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281035"
+name = "MANNANCHERY"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281038"
+name = "POOCHAKAL"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281039"
+name = "PULINKUNNU"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281040"
+name = "PUNNAPRA"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281045"
+name = "RAMANKARI"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281056"
+name = "ARROOR"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281057"
+name = "THRIKUNNAPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281058"
+name = "THOTTAPPALLY"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281060"
+name = "VALLI KUNNAM"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281061"
+name = "PATTANAKADU"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281062"
+name = "VENMANI"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281063"
+name = "VEEYAPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281065"
+name = "ARTHUNGAL"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+[[rows]]
+code = "15281066"
+name = "VANITHA PS"
+location_type = "police_station"
+parent = "IN_KERALA_ALAPPUZHA"
+additional_attributes = { police_district = "ALAPPUZHA" }
+
+# IN_KERALA_ERNAKULAM
+
+[[rows]]
+code = "15285001"
+name = "MARADU PS"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285002"
+name = "ELAMAKKARA PS"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285003"
+name = "AMBALAMEDU"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285005"
+name = "CHERANALLOOR"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285007"
+name = "PALLURUTHY KASABA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285012"
+name = "ELOOR"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285013"
+name = "ERNAKULAM CENTRAL"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285014"
+name = "ERNAKULAM TOWN NORTH"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285015"
+name = "ERNAKULAM TOWN SOUTH"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285017"
+name = "ERNAKULAM CITY TRAFFIC WEST"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285018"
+name = "FORT COCHIN"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285019"
+name = "FORT KOCHI COASTAL PS"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285021"
+name = "KADAVANTHRA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285024"
+name = "HARBOUR CRIME"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285027"
+name = "HILL PALACE"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285031"
+name = "KALAMASSERRY"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285033"
+name = "KANNAMALY"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285037"
+name = "MATTANCHERRY"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285040"
+name = "MULAVUKAD"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285041"
+name = "PALARIVATTOM"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285042"
+name = "PANANGAD"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285045"
+name = "THOPPUMPADY"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285047"
+name = "THRIKKAKARA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285048"
+name = "UDAYAMPEROOR"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285049"
+name = "VANITHA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285055"
+name = "ERNAKULAM CITY TRAFFIC EAST"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15285056"
+name = "INFOPARK"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM CITY" }
+
+[[rows]]
+code = "15286001"
+name = "ALUWA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286002"
+name = "ANKAMALY"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286003"
+name = "ALUVA WEST"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286005"
+name = "BINANI PURAM"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286007"
+name = "KUTTAMPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286010"
+name = "CHENGAMANAD"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286011"
+name = "CHOTTANIKKARA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286023"
+name = "KALLOORKAD"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286024"
+name = "KALADY"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286025"
+name = "KOTTAPPADY"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286026"
+name = "KODANADU"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286027"
+name = "KOTHAMANGALAM"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286028"
+name = "KOOTHATTUKULAM"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286029"
+name = "KUNNATHUNADU"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286030"
+name = "KURUPPANPADI"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286031"
+name = "MOOVATTUPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286032"
+name = "MULANTHURUTHY"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286033"
+name = "MUNAMBAM"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286036"
+name = "NEDUMBASSERY AIRPORT"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286037"
+name = "NARAKAL"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286038"
+name = "NORTH PARUR"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286040"
+name = "OONNUKAL"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286042"
+name = "PERUMBAVOOR"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286043"
+name = "POTHANIKAD"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286044"
+name = "PUTHENCRUZE"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286045"
+name = "PIRAVAM"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286047"
+name = "PUTHANVELIKARA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286050"
+name = "RAMAMANGALAM"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286058"
+name = "VADAKKEKARA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286060"
+name = "VARAPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286062"
+name = "AYYAMPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286064"
+name = "THADIYATTAPARA MBA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286065"
+name = "VAZHAKULAM"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+[[rows]]
+code = "15286066"
+name = "EDATHALA"
+location_type = "police_station"
+parent = "IN_KERALA_ERNAKULAM"
+additional_attributes = { police_district = "ERNAKULAM RURAL" }
+
+# IN_KERALA_IDUKKI
+
+[[rows]]
+code = "15294001"
+name = "KATTAPPANA"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294003"
+name = "CUMBAMETTU"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294004"
+name = "DEVICULAM"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294008"
+name = "IDUKKI"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294009"
+name = "KARIMKUNNAM"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294010"
+name = "KALIYAR"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294011"
+name = "NEDUMKANDAM"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294012"
+name = "KARIMANNOOR"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294013"
+name = "KANJAAR"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294014"
+name = "KULAMAVU"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294015"
+name = "KUMALY"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294016"
+name = "KANJIKKUZHI"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294017"
+name = "MUNNAR"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294018"
+name = "MURIKKASSERY"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294020"
+name = "PEERUMADE"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294021"
+name = "THODUPZHA"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294022"
+name = "UPPUTHARA"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294023"
+name = "VANDIPERIYAR"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294024"
+name = "VANDANMEDU"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294025"
+name = "RAJAKKADU"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294026"
+name = "ADIMALI"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294027"
+name = "VELLATHOOVAL"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294028"
+name = "MARAYOOR"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294029"
+name = "KARIMANAL"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294030"
+name = "SANTHANPARA"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294032"
+name = "PERUVAMTHANAM"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294033"
+name = "VAGAMON"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294034"
+name = "MUTTAM"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294035"
+name = "THANKAMANI"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+[[rows]]
+code = "15294036"
+name = "MULLAPERIYAR"
+location_type = "police_station"
+parent = "IN_KERALA_IDUKKI"
+additional_attributes = { police_district = "IDUKKI" }
+
+# IN_KERALA_KANNUR
+
+[[rows]]
+code = "15283002"
+name = "ALACODE"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283003"
+name = "AZHEEKAL COASTAL PS"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283005"
+name = "ARALAM"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283010"
+name = "BALIAPATTAM"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283013"
+name = "KANNUR CITY"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283014"
+name = "KANNUR TOWN"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283016"
+name = "KANNUR TRAFFIC"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283017"
+name = "CHOKLI"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283018"
+name = "CHAKKARAKKALLU"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283021"
+name = "DHARMADOM"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283024"
+name = "EDAKKAD"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283033"
+name = "IRIKKUR"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283034"
+name = "IRITTY"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283035"
+name = "KANNAVAM"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283036"
+name = "KARIKOTTAKARI"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283037"
+name = "KANNAPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283038"
+name = "KATHIROOR"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283039"
+name = "KULAVALLUR"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283041"
+name = "KUTHUPARAMBA"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283042"
+name = "KELAKOM"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283044"
+name = "KUDIYANMALA"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283045"
+name = "MALUR"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283046"
+name = "MAYYIL"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283048"
+name = "MATTANNORE"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283050"
+name = "NEW MAHE"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283056"
+name = "PAYYAVOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283057"
+name = "PANOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283058"
+name = "PAYYANNUR"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283059"
+name = "PAZHAYANGADI"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283060"
+name = "PERAVUR"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283061"
+name = "PERINGOME"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283062"
+name = "PARIYARAM MEDICAL COLLEGE"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283065"
+name = "SREEKANDAPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283070"
+name = "THALIPARAMBA"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283071"
+name = "TELLICHERRY"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283074"
+name = "ULIKKAL"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283075"
+name = "KANNUR VANITHA"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283076"
+name = "MUZHAKKUNNU"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+[[rows]]
+code = "15283077"
+name = "CHERUPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_KANNUR"
+additional_attributes = { police_district = "KANNUR" }
+
+# IN_KERALA_KASARAGOD
+
+[[rows]]
+code = "15300001"
+name = "ADHUR"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300005"
+name = "AMBALATHARA"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300008"
+name = "BADIADKA"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300009"
+name = "BAKEL"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300010"
+name = "BAKEL COASTAL PS"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300011"
+name = "BEDAKOM"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300015"
+name = "CHANDERA"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300016"
+name = "CHITTARIKKAL"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300018"
+name = "CHEEMENI"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300029"
+name = "HOSDURG"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300038"
+name = "KASARGODE"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300040"
+name = "KUMBLA"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300047"
+name = "MANJESWAR"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300053"
+name = "NEELESWARAM"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300063"
+name = "RAJAPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300065"
+name = "VELLERIKUNDU"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300066"
+name = "VIDYANAGAR"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300067"
+name = "KASARAGODU SMS"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+[[rows]]
+code = "15300068"
+name = "KASARAGOD TRAFFIC PS"
+location_type = "police_station"
+parent = "IN_KERALA_KASARAGOD"
+additional_attributes = { police_district = "KASARGODE" }
+
+# IN_KERALA_KOLLAM
+
+[[rows]]
+code = "15293001"
+name = "EAST KALLADA"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293003"
+name = "ANCHAL"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293007"
+name = "CHADAYAMANGALAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293016"
+name = "KADAKKAL"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293019"
+name = "KOTTARAKARA"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293020"
+name = "KULATHUPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293021"
+name = "KUNDARA"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293032"
+name = "PATHANA PURAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293034"
+name = "POOYAPPALLY"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293035"
+name = "PUNALOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293037"
+name = "PUTHOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293045"
+name = "SASTHANCOTTAH"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293046"
+name = "KUNNIKODE"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293047"
+name = "EZHUKONE"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293052"
+name = "SOORANADU"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293055"
+name = "THENMALA"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293058"
+name = "YERROOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15293059"
+name = "CHITHARA"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM RURAL" }
+
+[[rows]]
+code = "15995001"
+name = "KOLLAM EAST"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995002"
+name = "PALLITHOTTAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995003"
+name = "KOLLAM WEST"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995004"
+name = "ANCHALUMMOODU"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995005"
+name = "SAKTHIKULANGARA"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995006"
+name = "KOLLAM CITY TRAFFIC"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995007"
+name = "ERAVIPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995008"
+name = "KILIKOLLOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995009"
+name = "NEENDAKARA COASTAL"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995010"
+name = "PARAVOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995011"
+name = "PARIPPALLY"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995012"
+name = "KOTTIYAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995013"
+name = "CHATHANNUR"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995014"
+name = "KARUNAGAPALLY"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995015"
+name = "OCHIRA"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995016"
+name = "CHAVARA"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995017"
+name = "CHAVARA THEKKUMBHAGAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995018"
+name = "KOLLAM CITY VANITHA PS"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+[[rows]]
+code = "15995019"
+name = "KANNANALLOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOLLAM"
+additional_attributes = { police_district = "KOLLAM CITY" }
+
+# IN_KERALA_KOTTAYAM
+
+[[rows]]
+code = "15287001"
+name = "AYARKUNNAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287009"
+name = "CHANGANASSERRY"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287010"
+name = "CHINGAVANAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287017"
+name = "ERATTUPETTAH"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287018"
+name = "ERUMELI"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287019"
+name = "ETTUMANOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287024"
+name = "KADUTHURUTHI"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287025"
+name = "KANJIRAPALLY"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287026"
+name = "KARUKACHAL"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287027"
+name = "KOTTAYAM EAST"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287028"
+name = "KOTTAYAM WEST"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287029"
+name = "KURAVILANGADU"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287030"
+name = "KUMARAKOM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287032"
+name = "KIDANGOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287033"
+name = "MANARKAD"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287035"
+name = "MANIMALA"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287036"
+name = "MARANGATTUPPALLI"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287037"
+name = "MUNDAKKAYAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287038"
+name = "MELUKAVU"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287039"
+name = "GANDHI NAGAR"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287040"
+name = "PALAI"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287041"
+name = "PALLIKATHODU"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287042"
+name = "PAMBADI"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287044"
+name = "PONKUNNAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287048"
+name = "RAMAPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287050"
+name = "THIDANADU"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287051"
+name = "THALAYOLAPARAMBU"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287052"
+name = "THRIKODITHANAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287055"
+name = "VAIKOM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287056"
+name = "VAKATHANAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287059"
+name = "VELLOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287065"
+name = "TRAFFIC PS KOTTAYAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+[[rows]]
+code = "15287066"
+name = "KOTTAYAM VANITHA PS"
+location_type = "police_station"
+parent = "IN_KERALA_KOTTAYAM"
+additional_attributes = { police_district = "KOTTAYAM" }
+
+# IN_KERALA_KOZHIKODE
+
+[[rows]]
+code = "15288004"
+name = "BEYPORE COASTAL"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288011"
+name = "CHEVAYOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288012"
+name = "CHEMMANGADU"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288019"
+name = "ELATHOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288024"
+name = "FEROKE"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288035"
+name = "KOZHIKODE CUSBA"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288036"
+name = "MEDICAL COLLEGE"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288037"
+name = "KOZHIKODE TOWN"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288038"
+name = "KUNNAMANGALAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288044"
+name = "MARAD"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288045"
+name = "MAVOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288046"
+name = "NALLALAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288053"
+name = "NADAKKAVU"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288058"
+name = "PANNIANKARA"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288079"
+name = "TRAFFIC STATION"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288080"
+name = "BEYPORE"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288086"
+name = "VANITHA"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15288088"
+name = "VELLAYIL"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE CITY" }
+
+[[rows]]
+code = "15297001"
+name = "CHOMBALA"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297003"
+name = "ATHOLY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297004"
+name = "BADAGARA"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297009"
+name = "BALUSSERY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297014"
+name = "EDACHERRY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297020"
+name = "KAKKOOR"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297024"
+name = "KOORACHUNDU"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297026"
+name = "KODENCHERRY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297027"
+name = "KODUVALLY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297028"
+name = "KUTTIADY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297030"
+name = "MEPPAYUR"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297036"
+name = "MUKKOM"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297040"
+name = "NADAPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297044"
+name = "PAYYOLY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297046"
+name = "PERAMBRA"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297048"
+name = "PERUVANNAMUZHY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297051"
+name = "QUILANDY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297059"
+name = "THAMARASSERY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297060"
+name = "THOTTILPALAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297061"
+name = "THIRUVAMBADY"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+[[rows]]
+code = "15297075"
+name = "VALAYAM"
+location_type = "police_station"
+parent = "IN_KERALA_KOZHIKODE"
+additional_attributes = { police_district = "KOZHIKODE RURAL" }
+
+# IN_KERALA_MALAPPURAM
+
+[[rows]]
+code = "15295001"
+name = "PERUMPADAPPU/ANDATHO"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295002"
+name = "AREAKKODE"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295005"
+name = "CHANGARAMKULAM"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295007"
+name = "EDAVANA"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295008"
+name = "EDAKKARA"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295009"
+name = "KARUVARAKUNDU"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295010"
+name = "KALIKAVU"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295011"
+name = "KALPAKANCHERRY"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295012"
+name = "VALANCHERRY"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295013"
+name = "KONDOTTY"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295014"
+name = "KOTTAKKAL"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295015"
+name = "KOLATHUR"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295016"
+name = "KARIPUR"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295018"
+name = "KUTTIPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295020"
+name = "MALAPPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295021"
+name = "MANCHERRY"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295022"
+name = "VAZHIKADAVU"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295023"
+name = "MELATTOOR"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295024"
+name = "MANKADA"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295026"
+name = "NILAMBUR"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295028"
+name = "PARAPPANANGADI"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295029"
+name = "PANDIKKAD"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295030"
+name = "PERINTHALMANNA"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295031"
+name = "PONNANI"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295035"
+name = "TANUR"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295036"
+name = "TENHIPALAM"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295037"
+name = "TIRUR"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295038"
+name = "TIRURANGADI"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295040"
+name = "VENGARA"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295041"
+name = "WANDOOR"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295042"
+name = "VAZHAKKAD"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295050"
+name = "POTHUKAL"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295051"
+name = "POOKOOTTUMPADAM"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295052"
+name = "KADAMPUZA"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+[[rows]]
+code = "15295053"
+name = "MALAPPURAM VANITHA PS"
+location_type = "police_station"
+parent = "IN_KERALA_MALAPPURAM"
+additional_attributes = { police_district = "MALAPPURAM" }
+
+# IN_KERALA_PALAKKAD
+
+[[rows]]
+code = "15289001"
+name = "AGALI"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289002"
+name = "ALATHUR"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289010"
+name = "CHALISSERRY"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289011"
+name = "CHERPULASSERRY"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289012"
+name = "CHITTOOR"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289013"
+name = "COYALMANNAM"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289020"
+name = "HEMAMBIKA NAGAR"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289026"
+name = "KOLLENGODE"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289027"
+name = "KONGADU"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289028"
+name = "KOZHINJAMPARA"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289030"
+name = "MANGALAM DAM"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289032"
+name = "MANKARA"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289033"
+name = "MANNARGHAT"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289034"
+name = "MALAMPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289036"
+name = "SHOLAYAR"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289038"
+name = "NATTUKAL"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289039"
+name = "NENMARA"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289043"
+name = "OTTAPPALAM"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289044"
+name = "PALGHAT TOWN NORTH"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289046"
+name = "PADAGIRI"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289047"
+name = "PALAKKAD CUSBA"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289048"
+name = "PALAKKAD TOWN SOUTH"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289049"
+name = "PARAMBIKULAM"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289050"
+name = "PATTAMBI"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289051"
+name = "KOTTAYI"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289053"
+name = "PUDUNAGARAM"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289058"
+name = "SHORNUR"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289059"
+name = "SREEKRISHNAPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289062"
+name = "THRITHALA"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289063"
+name = "TRAFFIC P.S"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289065"
+name = "VADAKKENCHERRY"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289070"
+name = "WALAYAR"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289071"
+name = "KALLADIKKODE"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289072"
+name = "MANNARCADU TRAFFIC"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+[[rows]]
+code = "15289073"
+name = "MEENAKSHIPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_PALAKKAD"
+additional_attributes = { police_district = "PALAKKAD" }
+
+# IN_KERALA_PATHANAMTHITTA
+
+[[rows]]
+code = "15299003"
+name = "MALAYALAPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299004"
+name = "SANNIDHANAM"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299005"
+name = "ADOOR"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299008"
+name = "ARANMULA"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299015"
+name = "CHITTAR"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299016"
+name = "ENATHU"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299025"
+name = "KEEZHVAIPUR"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299028"
+name = "KODUMON"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299030"
+name = "KONNY"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299032"
+name = "KOIPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299033"
+name = "KOODAL"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299036"
+name = "MODZHIYAR"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299039"
+name = "PAMBA"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299040"
+name = "PANDALAM"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299041"
+name = "PERUMPETTY"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299042"
+name = "PATHANAMTHITTA"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299043"
+name = "PULIKEEZHU"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299044"
+name = "PERINADU"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299045"
+name = "RANNY"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299048"
+name = "THANITHODE"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299050"
+name = "THIRUVALLA"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+[[rows]]
+code = "15299055"
+name = "VECHOOCHIRA"
+location_type = "police_station"
+parent = "IN_KERALA_PATHANAMTHITTA"
+additional_attributes = { police_district = "PATHANAMTHITTA" }
+
+# IN_KERALA_THIRUVANANTHAPURAM
+
+[[rows]]
+code = "15291001"
+name = "MANNANTHALA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291010"
+name = "CANTONMENT"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291015"
+name = "FORT"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291016"
+name = "CITY TRAFFIC"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291018"
+name = "KAZHAKUTTAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291028"
+name = "MUSEUM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291029"
+name = "MEDICAL COLLEGE"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291030"
+name = "PEROORKADA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291031"
+name = "PETTAH"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291032"
+name = "POOJAPPURA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291033"
+name = "POONTHURA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291034"
+name = "THAMPANOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291035"
+name = "THIRUVALLAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291040"
+name = "THUMBA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291042"
+name = "VALIATHURA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291045"
+name = "VANCHIYOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291046"
+name = "VANITHA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291047"
+name = "NEMOM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291048"
+name = "KOVALAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291049"
+name = "KARAMANA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291050"
+name = "VATTIYOORKAVU"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291051"
+name = "VIZHINJAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291052"
+name = "VIZHINJAM COASTAL"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15291055"
+name = "SREEKARYAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM CITY" }
+
+[[rows]]
+code = "15292001"
+name = "ATTINGAL"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292002"
+name = "ARYANAD"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292003"
+name = "ARIYANCODE"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292004"
+name = "BALARAMAPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292005"
+name = "ARUVIKKARA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292006"
+name = "CHIRAYINKIL"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292007"
+name = "AYIROOR"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292015"
+name = "KADAKKAVOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292016"
+name = "KANJIRAMKULAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292017"
+name = "KATTAKADA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292019"
+name = "KILIMANOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292020"
+name = "KADINAMKULAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292022"
+name = "KALLAMBALAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292025"
+name = "MALAYINKIL"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292026"
+name = "MANGALAPURAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292027"
+name = "MARANALLOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292029"
+name = "NEYYAR DAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292030"
+name = "NEDUMANGAD"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292032"
+name = "NEYYATTINKARA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292033"
+name = "PALLIKKAL"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292034"
+name = "POOVAR"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292035"
+name = "PARASSALA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292036"
+name = "PONMUDI"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292037"
+name = "PALODE"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292038"
+name = "POZHIYOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292040"
+name = "VATTAPPARA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292041"
+name = "VELLARADA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292042"
+name = "VENJARAMOODU"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292043"
+name = "VIDURA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292045"
+name = "VILAPPILSALA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292046"
+name = "VALIYAMALA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292047"
+name = "PANGODE"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292048"
+name = "ANJUTHENGU"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292050"
+name = "VARKALA"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292051"
+name = "POTHENCODE"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292054"
+name = "NARUVAMOODU"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+[[rows]]
+code = "15292055"
+name = "MARAYAMUTTAM"
+location_type = "police_station"
+parent = "IN_KERALA_THIRUVANANTHAPURAM"
+additional_attributes = { police_district = "THIRUVANANTHAPURAM RURAL" }
+
+# IN_KERALA_THRISSUR
+
+[[rows]]
+code = "15290001"
+name = "ANTHIKKAD"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290002"
+name = "AZHIKODE COASTAL"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290003"
+name = "ATHIRAPPALLI"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290010"
+name = "CHALAKUDI"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290011"
+name = "CHERPU"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290012"
+name = "CHAVAKAD"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290013"
+name = "KODUNGALLOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290014"
+name = "CHELAKKARA"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290015"
+name = "CHERUTHURUTHI"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290020"
+name = "IRINJALAKUDA"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290022"
+name = "KATTOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290024"
+name = "KODAKARA"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290025"
+name = "KUNNAMKULAM"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290026"
+name = "KORATTY"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290030"
+name = "MALA"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290031"
+name = "MATHILAKAM"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290041"
+name = "PAZHAYANNUR"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290042"
+name = "PUDUKKADU"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290050"
+name = "MALAKKAPARA"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290059"
+name = "VADAKEKAD"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290060"
+name = "VADANAPALLY"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290063"
+name = "ERUMAPETTY"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290065"
+name = "VALAPPAD"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290066"
+name = "VARANTHARAPPILLY"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290067"
+name = "VELLIKULANGARA"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290070"
+name = "WADAKKANCHERRY"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15290071"
+name = "THRISSUR RURAL VANITHA PS"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR RURAL" }
+
+[[rows]]
+code = "15996001"
+name = "THRISSUR EAST"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996002"
+name = "VANITHA"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996003"
+name = "TRAFFIC"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996004"
+name = "THRISSUR WEST"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996005"
+name = "NEDUPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996006"
+name = "OLLUR"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996007"
+name = "MANNUTHY"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996008"
+name = "PEECHI"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996010"
+name = "GURUVAYOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996011"
+name = "PAVARATTY"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996012"
+name = "PERAMANGALAM"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996013"
+name = "VIYYOOR"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996014"
+name = "GURUVAYUR TEMPLE PS"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+[[rows]]
+code = "15996057"
+name = "MEDICAL COLLEGE PS"
+location_type = "police_station"
+parent = "IN_KERALA_THRISSUR"
+additional_attributes = { police_district = "THRISSUR CITY" }
+
+# IN_KERALA_WAYANAD
+
+[[rows]]
+code = "15298001"
+name = "AMBALAVAYAL"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298008"
+name = "KALPETTA"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298012"
+name = "KUMBALAKAD"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298014"
+name = "KENICHIRA"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298015"
+name = "MANANTODDY"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298016"
+name = "MEENANGADI"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298017"
+name = "MEPPADI"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298018"
+name = "PADINJARETHARA"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298020"
+name = "PULPALLI"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298021"
+name = "PANAMARAM"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298025"
+name = "SULTHANBATHERY"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298028"
+name = "THALAPUZHA"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298030"
+name = "THIRUNELLI"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298035"
+name = "VELLAMUNDA"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298037"
+name = "VYTHIRI"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+[[rows]]
+code = "15298038"
+name = "WAYANADU SMS"
+location_type = "police_station"
+parent = "IN_KERALA_WAYANAD"
+additional_attributes = { police_district = "WYNAD" }
+
+# IN_KERALA
+
+[[rows]]
+code = "15284001"
+name = "CBCID PS"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "C I D" }
+
+[[rows]]
+code = "15284002"
+name = "CYBER CRIME PS"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "C I D" }
+
+[[rows]]
+code = "15296003"
+name = "KOZHIKODE RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296004"
+name = "KANNUR RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296005"
+name = "ERNAKULAM RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296006"
+name = "KASARAGOD RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296007"
+name = "KOTTAYAM RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296008"
+name = "PARASSALA RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296009"
+name = "PALAKKAD RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296010"
+name = "PUNALUR RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296011"
+name = "KOLLAM RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296012"
+name = "ALAPPUZHA RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296013"
+name = "SHORNUR RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296014"
+name = "THRISSUR RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
+
+[[rows]]
+code = "15296015"
+name = "THIRUVANANTHAPURAM RAILWAY"
+location_type = "police_station"
+parent = "IN_KERALA"
+additional_attributes = { police_district = "RAILWAY POLICE" }
