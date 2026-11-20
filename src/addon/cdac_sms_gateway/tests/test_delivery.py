@@ -34,7 +34,7 @@ class DeliveryTests(TestCase):
     """Stub-broker delivery against a mocked CDAC endpoint."""
 
     def setUp(self):
-        # ACCOUNT_LOGIN_OTP_SMS is seeded by migration 0005; use a dedicated key.
+        # ACCOUNT_LOGIN_OTP_SMS is seeded from data/seed/core; use a dedicated key.
         self.template = MessageTemplate.objects.create(
             message_key="GATEWAY_TEST_OTP_SMS",
             message_type=MessageTemplate.MessageType.SMS.value,

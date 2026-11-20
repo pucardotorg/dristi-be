@@ -1,0 +1,84 @@
+# The national CHECKS rule (spec 0024 #2.4, #9.2): advisory warnings shown to
+# the scrutiny officer. A state changes its checks by adding its own rule and
+# binding (rule_bindings.toml), not by editing this one.
+#
+# rule_expression is the GoRules (ZEN) decision graph as JSON: a request node,
+# a collect-hit-policy decision table with one row per check, an expression
+# node that flattens the alerts, and a response node.
+
+[seed]
+model = "core.BusinessRule"
+
+[[rows]]
+code = "SCRUTINY_CHECKS_DEFAULT"
+name = "Scrutiny advisory checks (national default)"
+description = "Warnings shown to the scrutiny officer beside the filed fields (spec 0024 #2.4). Advisory only; no alert blocks an action."
+engine = "gorules"
+rule_expression = '''
+{"nodes": [{"id": "request", "type": "inputNode", "name": "Request"}, {"id": "checks", "type": "decisionTableNode", "name": "Scrutiny checks", "content": {"hitPolicy": "collect", "outputPath": "found", "inputs": [{"id": "when", "name": "When"}], "outputs": [{"id": "check", "name": "Check", "field": "check"}, {"id": "alerts", "name": "Alerts", "field": "alerts"}], "rules": [{"_id": "PRESENTED_AFTER_VALIDITY", "when": "", "check": "\"PRESENTED_AFTER_VALIDITY\"", "alerts": "map(filter(cheques, d(#.presented_on) > d(#.valid_until)), {code: \"PRESENTED_AFTER_VALIDITY\", severity: \"WARNING\", field_refs: [\"CHQ-8[\" + string(#.index) + \"]\"], message: \"Presented after validity — valid until \" + d(#.valid_until).format(\"%d/%m/%Y\")})"}, {"_id": "PRESENTED_BEFORE_CHEQUE_DATE", "when": "", "check": "\"PRESENTED_BEFORE_CHEQUE_DATE\"", "alerts": "map(filter(cheques, d(#.presented_on) < d(#.cheque_date)), {code: \"PRESENTED_BEFORE_CHEQUE_DATE\", severity: \"WARNING\", field_refs: [\"CHQ-1[\" + string(#.index) + \"]\", \"CHQ-8[\" + string(#.index) + \"]\"], message: \"Presented before the date on the cheque.\"})"}, {"_id": "NOTICE_AFTER_30_DAYS", "when": "", "check": "\"NOTICE_AFTER_30_DAYS\"", "alerts": "map(filter(cheques, d(notice.dispatched_on) > d(#.returned_on).add(30, 'd')), {code: \"NOTICE_AFTER_30_DAYS\", severity: \"WARNING\", field_refs: [\"CHQ-9[\" + string(#.index) + \"]\", \"LDN-2[0]\"], message: \"Demand notice dispatched more than 30 days after the cheque was returned.\"})"}, {"_id": "DELAY_WITHOUT_PRAYER", "when": "delay_applicable and not delay_prayer_present", "check": "\"DELAY_WITHOUT_PRAYER\"", "alerts": "[{code: \"DELAY_WITHOUT_PRAYER\", severity: \"WARNING\", field_refs: [\"JUR-11\", \"JUR-12\"], message: \"Filed after the limitation period with no prayer for condonation of delay.\"}]"}, {"_id": "NON_FUNDS_RETURN_REASON", "when": "", "check": "\"NON_FUNDS_RETURN_REASON\"", "alerts": "map(filter(cheques, #.return_reason != \"FUNDS_INSUFFICIENT\"), {code: \"NON_FUNDS_RETURN_REASON\", severity: \"WARNING\", field_refs: [\"CHQ-9[\" + string(#.index) + \"]\"], message: \"Returned for a reason other than insufficient funds — check that S.138 applies.\"})"}, {"_id": "NO_POSTAL_RECEIPT", "when": "not notice.postal_receipt_uploaded", "check": "\"NO_POSTAL_RECEIPT\"", "alerts": "[{code: \"NO_POSTAL_RECEIPT\", severity: \"INFO\", field_refs: [\"LDN-3[0]\"], message: \"No postal receipt uploaded.\"}]"}, {"_id": "NO_DELIVERY_PROOF", "when": "not notice.delivery_proof_uploaded", "check": "\"NO_DELIVERY_PROOF\"", "alerts": "[{code: \"NO_DELIVERY_PROOF\", severity: \"INFO\", field_refs: [\"LDN-6[0]\"], message: \"No delivery proof uploaded.\"}]"}, {"_id": "INSTITUTION_WITHOUT_CIN_OR_PAN", "when": "complainant_is_institution and not complainant_cin_or_pan_present", "check": "\"INSTITUTION_WITHOUT_CIN_OR_PAN\"", "alerts": "[{code: \"INSTITUTION_WITHOUT_CIN_OR_PAN\", severity: \"WARNING\", field_refs: [\"LIT-18a[0]\"], message: \"Institutional complainant filed without a CIN or PAN.\"}]"}]}}, {"id": "flatten", "type": "expressionNode", "name": "Alerts", "content": {"expressions": [{"id": "alerts", "key": "alerts", "value": "flatMap(found, #.alerts)"}]}}, {"id": "response", "type": "outputNode", "name": "Response"}], "edges": [{"id": "request-checks", "sourceId": "request", "targetId": "checks", "type": "edge"}, {"id": "checks-flatten", "sourceId": "checks", "targetId": "flatten", "type": "edge"}, {"id": "flatten-response", "sourceId": "flatten", "targetId": "response", "type": "edge"}]}'''
+
+[rows.rule_input_schema]
+type = "object"
+required = ["case_type", "today", "cheques", "notice", "cause_of_action_on", "filed_on", "delay_applicable", "delay_prayer_present", "complainant_is_institution", "complainant_cin_or_pan_present"]
+additionalProperties = false
+
+[rows.rule_input_schema.properties]
+case_type = { type = "string", minLength = 1 }
+today = { type = "string", format = "date" }
+cause_of_action_on = { type = ["string", "null"], format = "date" }
+filed_on = { type = "string", format = "date" }
+delay_applicable = { type = "boolean" }
+delay_prayer_present = { type = "boolean" }
+complainant_is_institution = { type = "boolean" }
+complainant_cin_or_pan_present = { type = "boolean" }
+
+[rows.rule_input_schema.properties.cheques]
+type = "array"
+minItems = 1
+
+[rows.rule_input_schema.properties.cheques.items]
+type = "object"
+required = ["index", "cheque_date", "presented_on", "valid_until", "returned_on", "amount", "return_reason"]
+additionalProperties = false
+
+[rows.rule_input_schema.properties.cheques.items.properties]
+index = { type = "integer", minimum = 0 }
+cheque_date = { type = "string", format = "date" }
+presented_on = { type = "string", format = "date" }
+valid_until = { type = "string", format = "date" }
+returned_on = { type = "string", format = "date" }
+amount = { type = "number", minimum = 0 }
+return_reason = { type = "string" }
+
+[rows.rule_input_schema.properties.notice]
+type = "object"
+required = ["dispatched_on", "served_on", "delivered", "postal_receipt_uploaded", "delivery_proof_uploaded"]
+additionalProperties = false
+
+[rows.rule_input_schema.properties.notice.properties]
+dispatched_on = { type = "string", format = "date" }
+served_on = { type = ["string", "null"], format = "date" }
+delivered = { type = "boolean" }
+postal_receipt_uploaded = { type = "boolean" }
+delivery_proof_uploaded = { type = "boolean" }
+
+[rows.rule_output_schema]
+type = "object"
+required = ["alerts"]
+additionalProperties = false
+
+[rows.rule_output_schema.properties]
+
+[rows.rule_output_schema.properties.alerts]
+type = "array"
+
+[rows.rule_output_schema.properties.alerts.items]
+type = "object"
+required = ["code", "severity", "field_refs", "message"]
+additionalProperties = false
+
+[rows.rule_output_schema.properties.alerts.items.properties]
+code = { type = "string", pattern = "^[A-Z0-9_]+$" }
+severity = { enum = ["INFO", "WARNING"] }
+field_refs = { type = "array", items = { type = "string", minLength = 1 } }
+message = { type = "string", minLength = 1 }

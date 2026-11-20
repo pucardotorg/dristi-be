@@ -1,0 +1,79 @@
+# SMS templates for login, registration and password reset.
+
+[seed]
+model = "messaging.MessageTemplate"
+
+[[rows]]
+message_key = "ACCOUNT_LOGIN_OTP_SMS"
+message_type = "sms"
+subject = ""
+content = "Use OTP {{otp}} to log in to your account - On Courts"
+priority = "MEDIUM"
+category = "OTP"
+max_retries = 1
+
+[rows.data_schema]
+type = "object"
+properties = { otp = { type = "string" } }
+required = ["otp"]
+additionalProperties = false
+
+[[rows]]
+message_key = "ACCOUNT_REGISTRATION_OTP_SMS"
+message_type = "sms"
+subject = ""
+content = "Use OTP {{otp}} to verify your mobile number and create your account - On Courts"
+priority = "MEDIUM"
+category = "OTP"
+max_retries = 1
+
+[rows.data_schema]
+type = "object"
+properties = { otp = { type = "string" } }
+required = ["otp"]
+additionalProperties = false
+
+[[rows]]
+message_key = "ACCOUNT_PASSWORD_RESET_OTP_SMS"
+message_type = "sms"
+subject = ""
+content = "Use OTP {{otp}} to reset your account password."
+priority = "MEDIUM"
+category = "OTP"
+max_retries = 1
+
+[rows.data_schema]
+type = "object"
+properties = { otp = { type = "string" } }
+required = ["otp"]
+additionalProperties = false
+
+[[rows]]
+message_key = "ACCOUNT_REGISTRATION_APPROVED_SMS"
+message_type = "sms"
+subject = ""
+content = "Your account registration request has been approved. Log in to {{link}} to start using your account - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+properties = { link = { type = "string" } }
+required = ["link"]
+additionalProperties = false
+
+[[rows]]
+message_key = "ACCOUNT_REGISTRATION_REJECTED_SMS"
+message_type = "sms"
+subject = ""
+content = "Your account registration request has been rejected. Log in to {{link}} to view the reason and resubmit - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+properties = { link = { type = "string" } }
+required = ["link"]
+additionalProperties = false

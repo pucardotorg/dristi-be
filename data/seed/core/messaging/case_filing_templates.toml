@@ -1,0 +1,72 @@
+# SMS templates sent during case filing and scrutiny.
+
+[seed]
+model = "messaging.MessageTemplate"
+
+[[rows]]
+message_key = "CASE_FILING_SIGNATURE_PENDING_SMS"
+message_type = "sms"
+subject = ""
+content = "Case file is pending your signature. Log in or use link {{link}} to sign. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+properties = { link = { type = "string" } }
+required = ["link"]
+additionalProperties = false
+
+[[rows]]
+message_key = "CASE_FILING_MOBILE_VERIFICATION_OTP_SMS"
+message_type = "sms"
+subject = ""
+content = "Use OTP {{otp}} to verify your mobile number and complete case filing for {{case_number}}. View the case file using link {{link}} - On Courts"
+priority = "MEDIUM"
+category = "OTP"
+max_retries = 1
+
+[rows.data_schema]
+type = "object"
+required = ["otp", "case_number", "link"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+otp = { type = "string" }
+case_number = { type = "string" }
+link = { type = "string" }
+
+[[rows]]
+message_key = "CASE_FILING_SCRUTINY_ERRORS_SMS"
+message_type = "sms"
+subject = ""
+content = "Errors have been identified in case {{case_number}} during scrutiny. Log in to {{link}} to rectify the file within {{deadline}} days. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "link", "deadline"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+link = { type = "string" }
+deadline = { type = "string" }
+
+[[rows]]
+message_key = "CASE_FILING_SCRUTINY_PASSED_SMS"
+message_type = "sms"
+subject = ""
+content = "Case {{case_number}} has passed scrutiny and is pending registration. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+properties = { case_number = { type = "string" } }
+required = ["case_number"]
+additionalProperties = false

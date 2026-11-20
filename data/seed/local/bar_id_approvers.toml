@@ -1,8 +1,9 @@
 # Bar-ID approvers for a local / test stack.
 #
 # Registration and bar-ID requests route their approval step to the
-# BAR_ID_APPROVER group, which migrations create empty. Create your superuser
-# with this mobile number, then run:
+# BAR_ID_APPROVER group, which the core seed (core/auth/groups.toml) creates
+# empty. Seed core first, create your superuser with this mobile number, then
+# run:
 #
 #   python manage.py seed /data/seed/local/      # in the web container
 #   python manage.py seed ../data/seed/local/    # from src/

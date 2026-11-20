@@ -330,7 +330,7 @@ class Hearing(BaseModel, BaseAuditableModel):
                 violation_error_message=ONE_HOLD_PER_ORDER_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(status__in=UNSEQUENCED_STATUSES, sequence__isnull=True)
+                condition=Q(status__in=UNSEQUENCED_STATUSES, sequence__isnull=True)
                 | (
                     ~Q(status__in=UNSEQUENCED_STATUSES) & Q(sequence__isnull=False, sequence__gte=1)
                 ),
@@ -338,20 +338,20 @@ class Hearing(BaseModel, BaseAuditableModel):
                 violation_error_message=SEQUENCE_IFF_ON_BOARD_MESSAGE,
             ),
             models.CheckConstraint(
-                check=~Q(status=HearingStatus.PROVISIONAL) | Q(source_order_id__isnull=False),
+                condition=~Q(status=HearingStatus.PROVISIONAL) | Q(source_order_id__isnull=False),
                 name="hearings_hold_has_order",
                 violation_error_message=HOLD_HAS_ORDER_MESSAGE,
             ),
             # isnull=False: with no start, NULL <= ended_at is NULL, and a NULL CHECK passes.
             models.CheckConstraint(
-                check=Q(ended_at__isnull=True)
+                condition=Q(ended_at__isnull=True)
                 | Q(started_at__isnull=False, started_at__lte=F("ended_at")),
                 name="hearings_started_before_ended",
                 violation_error_message=STARTED_BEFORE_ENDED_MESSAGE,
             ),
             # save() derives status_order; this also catches update(), which skips save().
             models.CheckConstraint(
-                check=reduce(
+                condition=reduce(
                     or_,
                     (
                         Q(status=status, status_order=order)
@@ -540,21 +540,21 @@ class HearingAttendance(BaseModel):
                 name="hearings_attendance_one_mark_per_line",
             ),
             models.CheckConstraint(
-                check=Q(attendee_type__in=AttendeeType.values),
+                condition=Q(attendee_type__in=AttendeeType.values),
                 name="hearings_attendance_type_valid",
             ),
             models.CheckConstraint(
-                check=Q(mark__in=AttendanceMark.values),
+                condition=Q(mark__in=AttendanceMark.values),
                 name="hearings_attendance_mark_valid",
             ),
             models.CheckConstraint(
-                check=~Q(mark=AttendanceMark.PRESENT)
+                condition=~Q(mark=AttendanceMark.PRESENT)
                 | Q(appearance_mode__in=AppearanceMode.values),
                 name="hearings_attendance_present_has_mode",
                 violation_error_message=APPEARANCE_MODE_REQUIRED_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(mark=AttendanceMark.PRESENT) | Q(appearance_mode=""),
+                condition=Q(mark=AttendanceMark.PRESENT) | Q(appearance_mode=""),
                 name="hearings_attendance_mode_only_present",
                 violation_error_message=APPEARANCE_MODE_NOT_ALLOWED_MESSAGE,
             ),
@@ -669,20 +669,20 @@ class HearingDateChange(BaseModel):
         verbose_name_plural = "Hearing date changes"
         constraints = [
             models.CheckConstraint(
-                check=~Q(from_date=F("to_date")) | ~Q(from_purpose=F("to_purpose")),
+                condition=~Q(from_date=F("to_date")) | ~Q(from_purpose=F("to_purpose")),
                 name="hearings_date_change_moves_something",
                 violation_error_message=NOTHING_MOVED_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(reason_code__in=RescheduleReason.values),
+                condition=Q(reason_code__in=RescheduleReason.values),
                 name="hearings_date_change_reason_valid",
             ),
             models.CheckConstraint(
-                check=Q(sought_by__in=Side.values),
+                condition=Q(sought_by__in=Side.values),
                 name="hearings_date_change_sought_by_valid",
             ),
             models.CheckConstraint(
-                check=Q(
+                condition=Q(
                     reason_code=RescheduleReason.PARTY_APPLICATION,
                     sought_by__in=(Side.COMPLAINANT, Side.ACCUSED),
                 )
@@ -691,21 +691,21 @@ class HearingDateChange(BaseModel):
                 violation_error_message=SOUGHT_BY_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(source=ChangeSource.ORDER) | Q(reason_code__in=COURT_SIDE_REASONS),
+                condition=Q(source=ChangeSource.ORDER) | Q(reason_code__in=COURT_SIDE_REASONS),
                 name="hearings_date_change_order_only_reasons",
                 violation_error_message=ORDER_ONLY_REASON_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(source__in=ChangeSource.values),
+                condition=Q(source__in=ChangeSource.values),
                 name="hearings_date_change_source_valid",
             ),
             models.CheckConstraint(
-                check=Q(source=ChangeSource.COURT_ADMIN) | Q(source_ref__isnull=False),
+                condition=Q(source=ChangeSource.COURT_ADMIN) | Q(source_ref__isnull=False),
                 name="hearings_date_change_ref_required",
                 violation_error_message=SOURCE_REF_REQUIRED_MESSAGE,
             ),
             models.CheckConstraint(
-                check=~Q(source=ChangeSource.COURT_ADMIN) | Q(source_ref__isnull=True),
+                condition=~Q(source=ChangeSource.COURT_ADMIN) | Q(source_ref__isnull=True),
                 name="hearings_date_change_ref_not_for_staff",
                 violation_error_message=SOURCE_REF_NOT_ALLOWED_MESSAGE,
             ),
@@ -799,7 +799,7 @@ class BulkRescheduleJob(BaseModel):
         verbose_name_plural = "Bulk reschedule jobs"
         constraints = [
             models.CheckConstraint(
-                check=Q(
+                condition=Q(
                     mode=BulkMode.TO_DATE, target_date__isnull=False, schedule_after__isnull=True
                 )
                 | Q(
@@ -811,16 +811,16 @@ class BulkRescheduleJob(BaseModel):
                 violation_error_message=BULK_MODE_DATES_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(reason_code__in=COURT_SIDE_REASONS),
+                condition=Q(reason_code__in=COURT_SIDE_REASONS),
                 name="hearings_bulk_job_court_side_reason",
                 violation_error_message=BULK_REASON_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(status__in=BulkRescheduleStatus.values),
+                condition=Q(status__in=BulkRescheduleStatus.values),
                 name="hearings_bulk_job_status_valid",
             ),
             models.CheckConstraint(
-                check=Q(
+                condition=Q(
                     status__in=UNCONFIRMED_BULK_STATUSES,
                     confirmed_at__isnull=True,
                     confirmed_by__isnull=True,
@@ -833,7 +833,8 @@ class BulkRescheduleJob(BaseModel):
                 violation_error_message=BULK_CONFIRMATION_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(confirmed_at__isnull=True) | Q(confirmed_at__lte=F("preview_expires_at")),
+                condition=Q(confirmed_at__isnull=True)
+                | Q(confirmed_at__lte=F("preview_expires_at")),
                 name="hearings_bulk_job_confirmed_before_expiry",
                 violation_error_message=BULK_CONFIRMED_AFTER_EXPIRY_MESSAGE,
             ),
@@ -924,16 +925,16 @@ class BulkRescheduleItem(BaseModel):
                 fields=["job", "hearing"], name="hearings_bulk_item_one_per_hearing"
             ),
             models.CheckConstraint(
-                check=~Q(from_date=F("to_date")),
+                condition=~Q(from_date=F("to_date")),
                 name="hearings_bulk_item_moves",
                 violation_error_message=BULK_ITEM_MOVES_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(result__in=BulkItemResult.values),
+                condition=Q(result__in=BulkItemResult.values),
                 name="hearings_bulk_item_result_valid",
             ),
             models.CheckConstraint(
-                check=Q(result=BulkItemResult.FAILED, error_code__regex=r"^E[0-9]{5}$")
+                condition=Q(result=BulkItemResult.FAILED, error_code__regex=r"^E[0-9]{5}$")
                 | (~Q(result=BulkItemResult.FAILED) & Q(error_code="")),
                 name="hearings_bulk_item_error_code_iff_failed",
                 violation_error_message=BULK_ITEM_ERROR_CODE_MESSAGE,
@@ -1033,18 +1034,18 @@ class CourtCalendarEntry(BaseModel, BaseAuditableModel):
                 name="hearings_calendar_entry_unique_court_date",
             ),
             models.CheckConstraint(
-                check=Q(entry_type__in=CalendarEntryType.values),
+                condition=Q(entry_type__in=CalendarEntryType.values),
                 name="hearings_calendar_entry_type_valid",
             ),
             # isnull=False: NULL >= 1 is NULL, and a NULL CHECK passes.
             models.CheckConstraint(
-                check=~Q(entry_type=CalendarEntryType.REDUCED_SITTING)
+                condition=~Q(entry_type=CalendarEntryType.REDUCED_SITTING)
                 | Q(capacity_override__isnull=False, capacity_override__gte=1),
                 name="hearings_calendar_entry_capacity_required",
                 violation_error_message=CAPACITY_REQUIRED_MESSAGE,
             ),
             models.CheckConstraint(
-                check=Q(entry_type=CalendarEntryType.REDUCED_SITTING)
+                condition=Q(entry_type=CalendarEntryType.REDUCED_SITTING)
                 | Q(capacity_override__isnull=True),
                 name="hearings_calendar_entry_capacity_only_reduced",
                 violation_error_message=CAPACITY_NOT_ALLOWED_MESSAGE,

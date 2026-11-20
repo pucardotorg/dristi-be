@@ -109,6 +109,18 @@ seeded instead of shipped as data migrations:
   station's `police_district` (issue #250). A row's
   `additional_attributes` are rejected until their keys are defined, so this
   loads before other models whatever order the files are given in.
+- `core/auth/groups.toml` — `BAR_ID_APPROVER` and the placeholder court-role
+  groups used by hearings.
+- `core/cms/` — the default page categories and placeholder pages.
+- `core/dristi_requests/` — the request types (lawyer bar update, advocate and
+  clerk registration) and their approval steps.
+- `core/hearings/hearing_purposes.toml` — the hearing purposes.
+- `core/messaging/` — the SMS templates (account, case filing, hearings).
+- `core/scrutiny/` — the national `SCRUTINY_CHECKS_DEFAULT` rule and its
+  binding.
+
+This data used to be inserted by data migrations (spec 0036). Add new
+reference data here, not in a migration.
 
 ```sh
 python manage.py seed data/seed/core/
@@ -117,8 +129,8 @@ python manage.py seed data/seed/core/
 ## Bar-ID approvers (local / test)
 
 Registration and bar-ID requests route their approval step to the
-`BAR_ID_APPROVER` group. Migrations create that group empty, so a fresh stack
-cannot route a request until someone is a member. `local/bar_id_approvers.toml`
+`BAR_ID_APPROVER` group. The core seed (`core/auth/groups.toml`) creates that
+group empty, so a fresh stack cannot route a request until someone is a member. `local/bar_id_approvers.toml`
 adds the user with mobile number `+919999999999`:
 
 ```sh

@@ -1,0 +1,51 @@
+# Request types: lawyer bar details update, and the advocate and clerk
+# registration checks. Each has one approval step (approval_steps.toml).
+# CLERK_REGISTRATION needs no document: only some clerks are asked for a bar ID.
+
+[seed]
+model = "dristi_requests.RequestType"
+
+[[rows]]
+code = "LAWYER_BAR_UPDATE"
+name = "Lawyer bar details update"
+description = "Update a lawyer's name and bar registration number."
+min_documents = 1
+is_active = true
+
+[rows.schema]
+type = "object"
+required = ["name", "bar_number"]
+
+[rows.schema.properties]
+name = { type = "string", minLength = 1 }
+bar_number = { type = "string", minLength = 1 }
+
+[[rows]]
+code = "ADVOCATE_REGISTRATION"
+name = "Advocate registration"
+description = "Verify a new advocate's bar registration ID against their bar ID."
+min_documents = 1
+is_active = true
+
+[rows.schema]
+type = "object"
+required = ["name", "bar_registration_id"]
+
+[rows.schema.properties]
+name = { type = "string", minLength = 1 }
+bar_registration_id = { type = "string", minLength = 1 }
+
+[[rows]]
+code = "CLERK_REGISTRATION"
+name = "Advocate clerk registration"
+description = "Verify a new advocate clerk's registration number."
+min_documents = 0
+is_active = true
+
+[rows.schema]
+type = "object"
+required = ["name", "clerk_registration_number"]
+
+[rows.schema.properties]
+name = { type = "string", minLength = 1 }
+clerk_registration_number = { type = "string", minLength = 1 }

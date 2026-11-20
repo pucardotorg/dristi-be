@@ -1,0 +1,26 @@
+# One approval step per request type, routed to the BAR_ID_APPROVER group.
+# request_type is the RequestType code; approver_group is the Group name.
+
+[seed]
+model = "dristi_requests.ApprovalStep"
+
+[[rows]]
+request_type = "LAWYER_BAR_UPDATE"
+order = 0
+approver_role = "BAR_ID_APPROVER"
+approver_group = "BAR_ID_APPROVER"
+condition = {}
+
+[[rows]]
+request_type = "ADVOCATE_REGISTRATION"
+order = 0
+approver_role = "BAR_ID_APPROVER"
+approver_group = "BAR_ID_APPROVER"
+condition = {}
+
+[[rows]]
+request_type = "CLERK_REGISTRATION"
+order = 0
+approver_role = "BAR_ID_APPROVER"
+approver_group = "BAR_ID_APPROVER"
+condition = {}

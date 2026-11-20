@@ -1,0 +1,26 @@
+# Default CMS pages (spec 0018 section 10), each in the Main category.
+# Placeholder content; edit it in the admin.
+
+[seed]
+model = "cms.Page"
+
+[[rows]]
+slug = "terms"
+title = "Terms of Use"
+content_type = "markdown"
+content = "# Terms of Use\n\nDummy markdown content."
+categories = ["main"]
+
+[[rows]]
+slug = "privacy"
+title = "Privacy"
+content_type = "markdown"
+content = "# Privacy\n\nDummy markdown content."
+categories = ["main"]
+
+[[rows]]
+slug = "support"
+title = "Support"
+content_type = "markdown"
+content = "# Support\n\nDummy markdown content."
+categories = ["main"]

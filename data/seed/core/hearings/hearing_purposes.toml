@@ -1,0 +1,101 @@
+# Hearing purposes from the order template catalogue (spec 0023 #2.2),
+# in display order. REVIEW_APPLICATION appears twice in the catalogue and
+# is seeded once.
+
+[seed]
+model = "hearings.HearingPurpose"
+
+[[rows]]
+code = "CONDONATION_OF_DELAY"
+label = "Condonation of delay"
+sequence = 1
+
+[[rows]]
+code = "ADMISSION"
+label = "Admission"
+sequence = 2
+
+[[rows]]
+code = "DELAY_CONDONATION_AND_ADMISSION"
+label = "Delay condonation and admission"
+sequence = 3
+
+[[rows]]
+code = "COGNIZANCE"
+label = "Cognizance"
+sequence = 4
+
+[[rows]]
+code = "APPEARANCE"
+label = "Appearance"
+sequence = 5
+
+[[rows]]
+code = "BAIL"
+label = "Bail"
+sequence = 6
+
+[[rows]]
+code = "PLEA"
+label = "Plea"
+sequence = 7
+
+[[rows]]
+code = "EVIDENCE_OF_COMPLAINANT"
+label = "Evidence of the complainant"
+sequence = 8
+
+[[rows]]
+code = "EXAMINATION_OF_ACCUSED"
+label = "Examination of the accused under S. 351 BNSS"
+sequence = 9
+
+[[rows]]
+code = "EVIDENCE_OF_ACCUSED"
+label = "Evidence of the accused"
+sequence = 10
+
+[[rows]]
+code = "ARGUMENTS"
+label = "Arguments"
+sequence = 11
+
+[[rows]]
+code = "JUDGEMENT"
+label = "Judgement"
+sequence = 12
+
+[[rows]]
+code = "FOR_REPORTS"
+label = "For reports"
+sequence = 13
+
+[[rows]]
+code = "ADR"
+label = "ADR"
+sequence = 14
+
+[[rows]]
+code = "MEDIATION"
+label = "Mediation"
+sequence = 15
+
+[[rows]]
+code = "WARRANT"
+label = "Warrant"
+sequence = 16
+
+[[rows]]
+code = "EXECUTION"
+label = "Execution"
+sequence = 17
+
+[[rows]]
+code = "REVIEW_APPLICATION"
+label = "Review application"
+sequence = 18
+
+[[rows]]
+code = "TO_ISSUE_ORDER"
+label = "To issue order"
+sequence = 19

@@ -10,11 +10,17 @@ from django.core.management import CommandError, call_command
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from apps.cms.models import Page
+from apps.cms.models import Page, PageCategory
 from apps.core import services
 from apps.core.management.commands import seed as seed_command
-from apps.core.models import AdditionalAttribute, Configuration, PublicConfiguration
-from apps.dristi_requests.models import ApprovalStep
+from apps.core.models import (
+    AdditionalAttribute,
+    BusinessRule,
+    Configuration,
+    Language,
+    PublicConfiguration,
+)
+from apps.dristi_requests.models import ApprovalStep, RequestType
 from apps.hearings.models import HearingPurpose
 from apps.locations.models import Location
 from apps.messaging.models import MessageTemplate
@@ -357,8 +363,8 @@ rule_output_schema = { type = "object", properties = { fee = { type = "number" }
         assert rule.rule_input_schema["required"] == ["case_value", "case_type"]
 
 
-# Codes below are prefixed TEST_ so they never collide with the rows the data
-# migrations still insert into the test database (spec 0036 phase 1).
+# Codes below are prefixed TEST_ so they never collide with the core reference
+# data seeded into the test database (src/conftest.py, spec 0036).
 TEMPLATES = """
 [seed]
 model = "messaging.MessageTemplate"
@@ -430,7 +436,7 @@ rule_code = "TEST_CHECKS_HC"
 
 @pytest.mark.django_db
 class TestReferenceData:
-    """Models the data migrations seeded, now loadable by the command (spec 0036)."""
+    """Reference-data models that used to be data migrations (spec 0036)."""
 
     def test_message_templates_by_composite_key(self, tmp_path):
         path = write(tmp_path, "templates.toml", TEMPLATES)
@@ -470,7 +476,7 @@ class TestReferenceData:
         assert "created 0, unchanged 1, skipped 0" in run(path)
 
     def test_existing_purpose_is_unchanged(self, tmp_path):
-        # APPEARANCE is inserted by the hearings data migration today.
+        # APPEARANCE comes from data/seed/core, seeded for the test session.
         assert HearingPurpose.objects.filter(code="APPEARANCE").exists()
         toml = (
             '[seed]\nmodel = "hearings.HearingPurpose"\n\n'
@@ -506,7 +512,7 @@ class TestReferenceData:
             run(path, strict=True)
 
     def test_rule_bindings_national_and_scoped(self, tmp_path):
-        # Drop the national default the scrutiny data migration inserts.
+        # Drop the national default seeded from data/seed/core.
         ScrutinyRuleBinding.objects.all().delete()
         Organization.objects.create(
             code="TEST_HC", name="Test High Court", organization_type="high_court"
@@ -527,6 +533,68 @@ class TestReferenceData:
         )
         output = run(write(tmp_path, "bindings.toml", toml))
         assert "missing key field(s): decision" in output
+
+
+CORE_DIR = settings.BASE_DIR.parent / "data" / "seed" / "core"
+MIGRATIONS = sorted(settings.BASE_DIR.glob("apps/*/migrations/0*.py"))
+
+
+@pytest.mark.django_db
+class TestCoreSeed:
+    """data/seed/core holds the reference data every environment needs (spec 0036)."""
+
+    # Rows per model that the session seed (src/conftest.py) loads: the data
+    # the old data migrations inserted.
+    SESSION = {
+        Group: 4,
+        MessageTemplate: 12,
+        HearingPurpose: 19,
+        RequestType: 3,
+        ApprovalStep: 3,
+        BusinessRule: 1,
+        ScrutinyRuleBinding: 1,
+        PageCategory: 3,
+        Page: 3,
+    }
+    # The rest of core/, which tests seed themselves.
+    REST = {
+        Language: 3,
+        AdditionalAttribute: 2,
+        Configuration: 1,
+        PublicConfiguration: 7,
+    }
+
+    def test_session_seed_loaded_the_migrated_data(self):
+        # The empty-database load is the session seed: hearing purposes and
+        # the default language cannot be deleted to load it again here.
+        assert {m: m.objects.count() for m in self.SESSION} == self.SESSION
+
+        step = ApprovalStep.objects.get(request_type__code="LAWYER_BAR_UPDATE")
+        assert step.approver_group.name == "BAR_ID_APPROVER"
+        assert ScrutinyRuleBinding.objects.get().organization is None
+        main = PageCategory.objects.get(slug="main")
+        assert set(main.pages.values_list("slug", flat=True)) == {"terms", "privacy", "support"}
+
+    def test_whole_core_loads_then_is_a_noop(self):
+        assert not any(model.objects.exists() for model in self.REST)
+
+        output = run(str(CORE_DIR), "--strict")
+        assert "created 13, unchanged 49, skipped 0" in output
+        expected = {**self.SESSION, **self.REST}
+        assert {m: m.objects.count() for m in expected} == expected
+
+        assert "created 0, unchanged 62, skipped 0" in run(str(CORE_DIR), "--strict")
+
+
+def test_migrations_carry_no_data():
+    """Reference data goes in data/seed TOML, not data migrations (spec 0036)."""
+    assert MIGRATIONS
+    offenders = [
+        path.relative_to(settings.BASE_DIR)
+        for path in MIGRATIONS
+        if "RunPython" in path.read_text() or "RunSQL" in path.read_text()
+    ]
+    assert offenders == []
 
 
 @pytest.mark.django_db
