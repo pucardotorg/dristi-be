@@ -1,0 +1,23 @@
+# Groups that approval steps and court roles are held as.
+#
+# BAR_ID_APPROVER approves registration and bar-ID update requests
+# (dristi_requests/request_types.toml).
+#
+# HEARING_CONTROLLER, NEXT_HEARING_SETTER and ORDER_DATA_FILLER are the
+# placeholder court roles (spec 0023 #1.2, apps/hearings/ports.py). Remove
+# them with ports.py once court roles are held per courtroom (spec 0026).
+
+[seed]
+model = "auth.Group"
+
+[[rows]]
+name = "BAR_ID_APPROVER"
+
+[[rows]]
+name = "HEARING_CONTROLLER"
+
+[[rows]]
+name = "NEXT_HEARING_SETTER"
+
+[[rows]]
+name = "ORDER_DATA_FILLER"

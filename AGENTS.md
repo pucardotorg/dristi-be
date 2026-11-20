@@ -12,6 +12,7 @@ This document helps AI coding assistants work effectively inside the **Dristi** 
   - `production.py` — production, relies on injected environment variables
 - **Apps:** live under `src/apps/<app>/`. Always use the full Python path (`apps.<app>`) in `INSTALLED_APPS`, imports, and `AppConfig.name`.
 - **Models:** inherit from `apps.core.models.BaseModel` unless you have a strong reason not to.
+- **Reference data:** goes in `data/seed/` TOML and is loaded by `manage.py seed`; do not write data migrations (`RunPython`). See `data/seed/README.md`.
 - **Background jobs:** use Dramatiq. Define actors in `<app>/tasks.py` and import them where needed.
 - **APIs:** use Django REST Framework. Keep views thin; business logic belongs in services / models / tasks.
 

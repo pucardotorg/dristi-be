@@ -1,0 +1,68 @@
+# SMS templates hearings notify parties with (spec 0023 #11.1).
+
+[seed]
+model = "messaging.MessageTemplate"
+
+[[rows]]
+message_key = "HEARING_SCHEDULED"
+message_type = "sms"
+subject = ""
+content = "Case {{case_number}} ({{case_title}}) is listed on {{hearing_date}} at {{sitting_time}} for {{purpose}} before {{court}} ({{mode}}). - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "case_title", "hearing_date", "sitting_time", "purpose", "court", "mode"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+case_title = { type = "string" }
+hearing_date = { type = "string" }
+sitting_time = { type = "string" }
+purpose = { type = "string" }
+court = { type = "string" }
+mode = { type = "string" }
+
+[[rows]]
+message_key = "HEARING_RESCHEDULED"
+message_type = "sms"
+subject = ""
+content = "The hearing of case {{case_number}} ({{case_title}}) on {{old_date}} is moved to {{new_date}} for {{purpose}}. Reason: {{reason}}. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "case_title", "old_date", "new_date", "purpose", "reason"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+case_title = { type = "string" }
+old_date = { type = "string" }
+new_date = { type = "string" }
+purpose = { type = "string" }
+reason = { type = "string" }
+
+[[rows]]
+message_key = "HEARING_CANCELLED"
+message_type = "sms"
+subject = ""
+content = "The hearing of case {{case_number}} ({{case_title}}) on {{hearing_date}} is cancelled. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "case_title", "hearing_date"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+case_title = { type = "string" }
+hearing_date = { type = "string" }

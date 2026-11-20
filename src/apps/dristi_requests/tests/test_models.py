@@ -129,7 +129,7 @@ class TestModuleIsDomainAgnostic:
 
 @pytest.mark.django_db
 class TestSeededConfiguration:
-    """The LAWYER_BAR_UPDATE type is created by configuration (data migration)."""
+    """The LAWYER_BAR_UPDATE type is seeded from data/seed/core."""
 
     def test_lawyer_bar_update_type_is_seeded(self, lawyer_bar_type):
         assert lawyer_bar_type.min_documents == 1

@@ -1,0 +1,16 @@
+# Default CMS page categories (spec 0018 section 10).
+
+[seed]
+model = "cms.PageCategory"
+
+[[rows]]
+name = "Help"
+slug = "help"
+
+[[rows]]
+name = "Main"
+slug = "main"
+
+[[rows]]
+name = "FAQ"
+slug = "faq"

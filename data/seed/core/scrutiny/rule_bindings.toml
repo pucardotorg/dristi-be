@@ -1,0 +1,10 @@
+# Binds the CHECKS decision to its rule (spec 0024 #2.4, #9.2). No
+# organization: this is the national default.
+
+[seed]
+model = "scrutiny.ScrutinyRuleBinding"
+
+[[rows]]
+decision = "CHECKS"
+rule_code = "SCRUTINY_CHECKS_DEFAULT"
+note = "National default shipped with every deployment."

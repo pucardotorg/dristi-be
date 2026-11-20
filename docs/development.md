@@ -47,6 +47,25 @@ docker compose -f docker/docker-compose.yml exec web python manage.py seed /data
 ```
 
 See [data/seed/README.md](../data/seed/README.md) for what `core/` contains.
+OTP login, registration approval, scrutiny checks and hearing notifications
+all need it.
+
+### Resetting the database after the migration reset (spec 0036)
+
+The migrations were deleted and regenerated, and their data moved to
+`data/seed/core/`. A database migrated before that no longer matches the
+migration files. Drop it and start again (this deletes all local data,
+including admin users):
+
+```bash
+docker compose -f docker/docker-compose.yml down -v   # drops the postgres_data volume
+docker compose -f docker/docker-compose.yml up -d --build
+docker compose -f docker/docker-compose.yml exec web python manage.py seed /data/seed/core/
+```
+
+Without Docker, drop and recreate the database, then run `python manage.py migrate`
+and `python manage.py seed ../data/seed/core/`. Reload any other data you use
+(locations, `example/`) afterwards.
 
 On a local or test stack, also make your superuser a bar-ID approver so advocate
 and clerk registration requests can be routed. Create the superuser with mobile

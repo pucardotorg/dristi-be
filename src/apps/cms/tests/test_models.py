@@ -50,7 +50,7 @@ class TestPageModel:
 
 @pytest.mark.django_db
 class TestSeedData:
-    """The seed migration populated the default categories and pages."""
+    """The core seed (data/seed/core/cms) loads the default categories and pages."""
 
     def test_categories_seeded(self):
         slugs = set(PageCategory.objects.values_list("slug", flat=True))
