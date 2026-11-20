@@ -291,6 +291,13 @@ class Migration(migrations.Migration):
 * Both write a `simple_history` row for each change themselves, with the reason `"migration <app>.<name>"`, since historical models fire no history signals.
 * Neither sends `court_access_changed`. The people who can do anything do not change: a copy goes to those who already hold `like`, and a new action has no open tasks yet. A removal's tasks are the owning module's to close in the same migration.
 
+**New process types and channels** follow the same default: a code the process
+module adds is in no role's scope list (#5.5). The pull request that adds it
+says who gets it:
+
+* **Like an existing code** (a new police channel handled like `POLICE_NSTEP`): a data migration calling `add_scope_code_with(apps, "channels", "POLICE_X", like="POLICE_NSTEP")`. It adds the code to every scope list on that axis that holds `like`, in every role, active or not. Rows with the axis missing already cover it. Idempotent, writes history, and sends no signal, like the action helpers.
+* **Nobody yet**: no migration. Administrators add it to roles, and the pull request says so.
+
 **Seed files** (0025) are updated in the same pull request, so a new
 environment gets what an existing one gets from the migration.
 
@@ -313,17 +320,18 @@ actions = [
   { action = "orders.edit_text" },
   { action = "orders.send_for_signing" },
   # … the rest of Order drafter, Order data filler, Next hearing setter, …
-  { action = "process.sign", scope = { process_types = { except = ["WARRANT"] } } },
-  { action = "process.send", scope = { channels = { except = ["E_POST"] } } },
-  { action = "process.recall", scope = { channels = { except = ["E_POST"] } } },
-  { action = "process.record_outcome", scope = { channels = { except = ["E_POST"] } } },
+  { action = "process.sign", scope = { process_types = ["NOTICE", "SUMMONS", "PROCLAMATION", "ATTACHMENT", "CUSTOM"] } },
+  { action = "process.send", scope = { channels = ["SMS", "EMAIL", "RPAD", "POLICE_RPAD", "POLICE_ICOPS", "POLICE_NSTEP", "BY_HAND"] } },
+  { action = "process.recall", scope = { channels = ["SMS", "EMAIL", "RPAD", "POLICE_RPAD", "POLICE_ICOPS", "POLICE_NSTEP", "BY_HAND"] } },
+  { action = "process.record_outcome", scope = { channels = ["SMS", "EMAIL", "RPAD", "POLICE_RPAD", "POLICE_ICOPS", "POLICE_NSTEP", "BY_HAND"] } },
 ]
 ```
 
-The scopes copy `court-roles.md` §3 as written: Process signer except for
-warrants, and Process dispatcher and Process reporter except for e-Post. A
-process type or channel added later is covered without editing the role
-(#5.5). The codes are placeholders until the process module defines them.
+The scopes are `court-roles.md` §3 expanded to today's codes: Process signer
+except for warrants, and Process dispatcher and Process reporter except for
+e-Post. A process type or channel added later is not covered until a
+migration adds it (#3.4). The codes are placeholders until the process module
+defines them.
 Proclamation and attachment follow §3's interim answer to its open question
 `Q-1`, whether they are signed by the same staff as notice and summons or as
 warrants. Whichever way `Q-1` is answered, only this seed data changes, not
@@ -442,28 +450,18 @@ the selectors (#6) and never stored.
 
 ```json
 {"process_types": ["SUMMONS", "WARRANT"], "channels": ["RPAD", "POLICE_RPAD"]}
-{"process_types": {"except": ["WARRANT"]}}
 ```
 
-The PRD writes scopes both ways: "for warrants", "for e-Post", and "except
-for warrants", "except for e-Post" (`court-roles.md` §3). So each axis
-(`process_types`, `channels`) is one of:
-
-| Value                 | Covers                                                    |
-| --------------------- | --------------------------------------------------------- |
-| missing               | every code on that axis                                   |
-| `[codes]`             | only those codes                                          |
-| `{"except": [codes]}` | every code but those, including codes added later         |
-
 * `scope = null` covers every process type on every channel (`RLE-09`: a role written without a scope covers everything).
-* An empty list, or an empty `except` list, is invalid: write the key as missing instead.
+* A missing key covers every code on that axis. A list covers only those codes. An empty list is invalid: write the key as missing instead.
 * Values are uppercase codes. Until the process module defines its codes, they are checked for shape only; once it does, against its codes.
 * A scope matches a process when both axes match. A user may take a scoped action on a process when **any** `CourtRoleAction` row for it, across all the roles they hold at that courtroom, matches. Rows are not merged into one scope.
 
-An `except` scope is how a role written "except for …" keeps covering process
-types and channels added after it was set up. An include list stays fixed:
-when the process module adds a code, a role that should hold it with an include
-list needs a data migration, like a new action (#3.4).
+There are no exclusions. The PRD's "except for warrants" is expanded to
+today's codes, so a process type or channel added later is allowed to nobody
+until a migration says who gets it (#3.4), the same default as a new action.
+If one is missed, its processes wait unsigned or unsent and the process
+module's check names it (#9.3).
 
 ### 6. Selectors (`apps.organizations.selectors`)
 
@@ -757,8 +755,8 @@ migration command.
 
 * **Levels:** a courtroom under a non-establishment is refused; an establishment under a courtroom is refused; changing the level of an organization with assignments is refused; system checks flag an establishment without courtrooms and a courtroom with a wrong parent.
 * **Registry:** a duplicate code fails at startup; a badly formed code fails `E003`; an unregistered code in a role is refused by the services, flagged by `W004` and ignored by the selectors.
-* **Migration helpers (#3.4):** `add_action_to_roles_with` adds the code to every role holding `like`, active or not, with each row's scope, and nothing else; a second run adds nothing; history rows are written. `remove_action_from_roles` removes every row for the code and clears `W004`. Both run against historical models with the code no longer registered.
-* **Roles:** a scope on an unscoped action is refused, and so is an empty list or an empty `except` list; an unscoped action twice in one role is refused; a role scoped to establishment A cannot be assigned at B; adding a courtroom action to a role assigned at an establishment is refused; editing a role's actions changes every holder's access on the next call and is recorded in history.
+* **Migration helpers (#3.4):** `add_action_to_roles_with` adds the code to every role holding `like`, active or not, with each row's scope, and nothing else; a second run adds nothing; history rows are written. `remove_action_from_roles` removes every row for the code and clears `W004`. `add_scope_code_with` adds the code only to scope lists on that axis that hold `like`, leaves rows with the axis missing unchanged, and adds nothing on a second run. Both run against historical models with the code no longer registered.
+* **Roles:** a scope on an unscoped action is refused, and so is an empty scope list; an unscoped action twice in one role is refused; a role scoped to establishment A cannot be assigned at B; adding a courtroom action to a role assigned at an establishment is refused; editing a role's actions changes every holder's access on the next call and is recorded in history.
 * **Assignments:**
   - A courtroom assignment without the courtroom on the list is refused.
   - A role with courtroom actions assigned at an establishment is refused.
@@ -769,7 +767,7 @@ migration command.
   - A role holding only `scrutiny.send_back` (part of a PRD role) gives send back and not forward.
   - `actions_of` at A never includes an action allowed only at B.
   - Two roles: actions union; a scoped action is allowed where any row's scope matches.
-  - Scopes: an include list matches only its codes; `{"except": ["WARRANT"]}` matches every other type, including one not known when the role was saved, and not `WARRANT`; a missing axis matches everything; one role with `process_types: ["WARRANT"]` and another with `except: ["WARRANT"]` together cover every type.
+  - Scopes: a list matches only its codes, so a code added later matches nothing until it is added; a missing axis matches everything; a role with `SUMMONS` on `RPAD` and another with `WARRANT` on `POLICE_RPAD` allow those two pairs and not `SUMMONS` on `POLICE_RPAD`.
   - `action_holders` respects scope and the level rule.
   - `is_court_reader`, before and after a courtroom is set.
   - Inactive users, assignments, roles and organizations are ignored; a superuser with no assignment is allowed nothing.
@@ -791,7 +789,8 @@ migration command.
 | The catalogue holds only what a PRD role allows; Start needs any action of its stage; *Edit case title* is removed (#3.3) | `scrutiny.start`, `scrutiny.edit_title` and their registration twins as actions: the PRD is the source of truth for what a role allows, and a court could give Start without anything to do after it. Keeping *Edit case title* behind a stage rule: it keeps a feature no PRD asks for. |
 | Actions declared in code by the owning module; a registry, no `choices`                    | Actions as admin-created rows: an action does nothing until code checks it. One central enum: `apps.organizations` would list every module's actions, and each new action would need a migration for `choices`.                                                                                               |
 | Roles are data, per deployment or per establishment                                          | Roles in code or settings: the point is that each court decides, without a deploy (`court-roles.md` §3).                                                                                                                                                                                                       |
-| A scope axis is a list or `{"except": [...]}`; rows match one by one, never merged (#5.5)   | Include lists only: the PRD's "except for warrants / e-Post" must be expanded by hand, and a type or channel added later is held by nobody until every role is edited, so those processes sit stuck. Include lists plus a data migration per new code: works, but only if every future change remembers. |
+| Scopes are include lists; a new process type or channel ships with a migration saying who gets it, and the process module warns when nobody can act on one (#3.4, #5.5, #9.3) | Exclusions (`{"except": ["WARRANT"]}`), so new codes are covered automatically: a new type, such as another kind of warrant, would be signable at once by everyone holding "except warrants", with nobody deciding it. That fails open, against the deny-by-default rule for new actions (#3.4). A missed include fails closed and the check names it. |
+| Scope rows match one by one, never merged (#5.5)                                             | One merged scope per action: "summons on RPAD" plus "warrants by Police" would merge into a scope that also allows summons by Police. |
 | No direct action grants; a one-person exception is an establishment-scoped role              | Direct grants: a second way to hold an action, more to show in admin and reason about.                                                                                                                                                                                                                            |
 | One assignment at a courtroom applies establishment actions at its establishment             | Single-level roles ("Magistrate (establishment)", "Magistrate (courtroom)"): doubles every title and every assignment.                                                                                                                                                                                            |
 | Checks in services, with one helper                                                          | A DRF permission class: views only, while Dramatiq tasks and 0011 need the same checks; AGENTS.md keeps logic in services.                                                                                                                                                                                        |
