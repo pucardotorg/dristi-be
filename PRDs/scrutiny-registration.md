@@ -1,6 +1,6 @@
 # Scrutiny and Registration
 
-**Status:** v3.6 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `scrutiny-registration.md`. v3.5 — 2026-10-25; **how the scrutiny and registration lists are built is for the implementer** (`SCR-09`); the pending tasks stay, and a case is on a list exactly while its task is open. No longer says the lists *are* the pending tasks mechanism or forbids a second stage-query (`SCR-10`). v3.4 — 2026-10-24; wording: `SCR-15` says "not signing digitally", not "not e-signing" — e-sign means Aadhaar-based e-signing only ([`efiling.md`](efiling.md) §18). v3.3 — 2026-10-19; **cases go to the court establishment first** (§4): the Scrutiny officer and Case registerer roles are held per court establishment, not per courtroom, and the Scrutiny officer **chooses the courtroom** when forwarding or registering (`SCR-16`, new). Automatic courtroom allocation is removed; a later version will suggest a courtroom. Two questions open (`Q-1`, `Q-2`, §4). v3.2 — 2026-10-19; **oath review** (`SCR-14`, new): each oath is listed with whose it is and when it was recorded, plays in the centre panel, is flagged on its own, and shows when it carried over from an earlier round; **paper upload reason** shown to the scrutiny officer (`SCR-15`, new). Oath now at [`efiling.md`](efiling.md) §18.2. v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling.md`](efiling.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
+**Status:** v3.7 — 2026-11-20; `Q-1` answered: on resubmission after a send-back from Registration, the courtroom chosen earlier is pre-selected at Scrutiny and the Scrutiny officer can change it (`SCR-16`). `Q-2` answered: when a case is forwarded, the **Case registerer** can change the courtroom the Scrutiny officer chose, and the courtroom set at registration is final (`SCR-16`, `SCR-08`). v3.6 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `scrutiny-registration.md`. v3.5 — 2026-10-25; **how the scrutiny and registration lists are built is for the implementer** (`SCR-09`); the pending tasks stay, and a case is on a list exactly while its task is open. No longer says the lists *are* the pending tasks mechanism or forbids a second stage-query (`SCR-10`). v3.4 — 2026-10-24; wording: `SCR-15` says "not signing digitally", not "not e-signing" — e-sign means Aadhaar-based e-signing only ([`efiling.md`](efiling.md) §18). v3.3 — 2026-10-19; **cases go to the court establishment first** (§4): the Scrutiny officer and Case registerer roles are held per court establishment, not per courtroom, and the Scrutiny officer **chooses the courtroom** when forwarding or registering (`SCR-16`, new). Automatic courtroom allocation is removed; a later version will suggest a courtroom. Two questions open (`Q-1`, `Q-2`, §4). v3.2 — 2026-10-19; **oath review** (`SCR-14`, new): each oath is listed with whose it is and when it was recorded, plays in the centre panel, is flagged on its own, and shows when it carried over from an earlier round; **paper upload reason** shown to the scrutiny officer (`SCR-15`, new). Oath now at [`efiling.md`](efiling.md) §18.2. v3.1 — 2026-10-19; **oath video** can be flagged under `SCR-03`; it is recorded again on correction only when flagged (`OTH-5`, [`efiling.md`](efiling.md) §14a). v3 — 2026-10-19; **registration type** (`SCR-13`, new, §6): where a state registers a case as one of several types, the type is chosen at Forward for registration, editable at Register and final there; with one type there is no choice. Kerala and Punjab & Haryana have one type, Gujarat three. Numbers each step issues are in [`case-numbers.md`](case-numbers.md). v2 — 2026-10-19; **`SCR-10` reworded** (§5): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v1 — 2026-10-19; **split out of the e-filing handover** (its §20.1–§20.4, the
 court-side rows of its role matrix and lifecycle, and the scrutiny and registration
 entries of its decisions log and glossary). Requirement IDs unchanged. Changes to these
 sections before this date are in the Status line of
@@ -100,19 +100,19 @@ courtroom. Its scrutiny task goes to those who hold the Scrutiny officer role th
 `SCR-16` **The Scrutiny officer chooses the courtroom** the case goes to, from the
 establishment's courtrooms, as part of **Forward for registration** or **Register at
 Scrutiny** (§5, `SCR-06`). Where the establishment has **one** courtroom, no choice is
-shown and the case goes to it. Send back does not choose a courtroom. From Cognisance
+shown and the case goes to it. When the case is forwarded, the **Case registerer** sees
+the courtroom the Scrutiny officer chose and can change it when registering (`SCR-08`);
+the courtroom set at registration is the one the case goes to. Send back does not choose
+a courtroom. When a case sent back from Registration is resubmitted, the courtroom chosen
+earlier is pre-selected at Scrutiny, and the Scrutiny officer can change it. From Cognisance
 onward, the case's work goes to the holders of roles in that courtroom.
 
-There is no automatic allocation in this version; nothing is pre-selected. A later
+There is no automatic allocation in this version; at a case's first scrutiny nothing is
+pre-selected. A later
 version will **suggest** a courtroom that the Scrutiny officer can change — for example
 from Gujarat's mapping of financial institutions to courtrooms (HDFC → Courtroom A, with
 a default for filers who match no mapping). The filer never selects a courtroom. Moving a
 registered case to another courtroom is outside this module.
-
-| # | Open question | Blocks |
-| --- | --- | --- |
-| `Q-1` | After a send-back, the case returns to Scrutiny. Is the courtroom chosen earlier kept or pre-selected, or does the Scrutiny officer choose afresh? | `SCR-16` on resubmission |
-| `Q-2` | At Registration, can the Case registerer change the courtroom the Scrutiny officer chose? | `SCR-08`, `SCR-16` |
 
 ---
 
@@ -231,7 +231,8 @@ pending task for the holders of the court establishment's **Case registerer** ro
 task is their list of cases to register (`SCR-09`).
 
 `SCR-08` Two actions, both needing the **Case registerer** role:
-- **Register** — finalises the registration type (`SCR-13`), assigns a case number and
+- **Register** — finalises the registration type (`SCR-13`) and the courtroom (`SCR-16`),
+  assigns a case number and
   moves the case to Cognisance. Case number format and generation are in
   [`case-numbers.md`](case-numbers.md).
 - **Send back** — the Case registerer types **one single overall comment** (no individual
