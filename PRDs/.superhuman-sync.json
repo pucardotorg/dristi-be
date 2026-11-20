@@ -168,14 +168,14 @@
     "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
       "title": "View Case",
-      "contentHash": "e13c3c3b5b52",
-      "pageUpdatedAt": 1794932045.37,
+      "contentHash": "4f64e653555b",
+      "pageUpdatedAt": 1795174246.31,
       "calloutElementId": "cl-i2jpMT8bMh",
       "sections": [
         {
           "key": "# View Case",
           "elementId": "cl-MPobgQF3Nq",
-          "hash": "a7a8ea13fde0"
+          "hash": "f1b453dafb95"
         },
         {
           "key": "1",
@@ -210,7 +210,7 @@
         {
           "key": "# 5. Overview",
           "elementId": "cl-HcHZLajPsq",
-          "hash": "a68019605a42"
+          "hash": "8dcf1489d557"
         },
         {
           "key": "# 6. Case File",
@@ -245,7 +245,7 @@
         {
           "key": "# 12. Case History",
           "elementId": "cl-0ThP_2-Gnr",
-          "hash": "41d1c9397248"
+          "hash": "89701fb866b4"
         },
         {
           "key": "# 13. Open questions",
@@ -258,7 +258,7 @@
           "hash": "d6c79bfaee81"
         }
       ],
-      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key. 2026-11-17 v1.74: §10.1 rows (grid-FwlcgeGjmr), DOC-10/12/13 cells (grid-ZQe0bbC4g7), Q-12 and Q-14 rows (grid-ECWU9NBzz9), Status and callout patched. 2026-11-17 v1.75: prototype link paragraph inserted after cl-WAc-JSRNF_; Status and callout patched. 2026-11-17 v1.76: prototype link block removed; Status and callout patched."
+      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key. 2026-11-17 v1.74: §10.1 rows (grid-FwlcgeGjmr), DOC-10/12/13 cells (grid-ZQe0bbC4g7), Q-12 and Q-14 rows (grid-ECWU9NBzz9), Status and callout patched. 2026-11-17 v1.75: prototype link paragraph inserted after cl-WAc-JSRNF_; Status and callout patched. 2026-11-17 v1.76: prototype link block removed; Status and callout patched. 2026-11-20 v1.77: OVW-19 row added at end of grid-w01ZIP3sOb, TME-08 row at end of grid-z2JnhRwsle (ID cells plain text, not monospace), TME-04 cell, §12 intro block cl-itBHOYvKOj, Status and callout patched."
     },
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",

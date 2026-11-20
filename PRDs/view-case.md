@@ -145,11 +145,11 @@ Each update shows:
 
 | ID | Field | Detail |
 | --- | --- | --- |
-| `OVW-19` | Update | The event's name in the [event catalogue](https://docs.superhuman.com/d/PUCAR-Dashboard-2027_dKtL_rwN6Qw/Events_suDoUtbn#Events-Case-Updates_tudKS-s9), with the details in braces filled in for this case. For example, "{Process Type} Sent" is shown as "Summons Sent". |
 | `OVW-07` | Date | When the event occurred |
 | `OVW-09` | Category | The category of update (Filing, Orders, Submissions, Process, Hearing, Parties). Full event catalogue maintained in a [separate document](https://docs.superhuman.com/d/PUCAR-Dashboard-2027_dKtL_rwN6Qw/Events_suDoUtbn#Events-Case-Updates_tudKS-s9). |
 | `OVW-17` | Order's diary text | Orders only: the order's diary entry text ([`order-generation.md`](order-generation.md) §14.1). Other updates have no descriptive text. |
 | `OVW-08` | Link | Opens the related record (order, hearing, application, document, etc.), when one exists |
+| `OVW-19` | Update | The event's name in the [event catalogue](https://docs.superhuman.com/d/PUCAR-Dashboard-2027_dKtL_rwN6Qw/Events_suDoUtbn#Events-Case-Updates_tudKS-s9), with the details in braces filled in for this case. For example, "{Process Type} Sent" is shown as "Summons Sent". |
 
 ## 5.3 Pending tasks
 
@@ -430,11 +430,11 @@ overview's case updates (§5.2), which stop at the last order issued.
 
 | ID | Requirement |
 | --- | --- |
-| `TME-08` | The updates are the events in the [event catalogue](https://docs.superhuman.com/d/PUCAR-Dashboard-2027_dKtL_rwN6Qw/Events_suDoUtbn#Events-Case-Updates_tudKS-s9). Each time an event in it occurs on the case, the case gets one update. For each event, the catalogue says what triggers it and which record its update links to. |
 | `TME-01` | Every update on the case is shown, newest first. |
 | `TME-04` | Each update shows what it shows in the overview: its name, date, category, a link to the record it came from, and, for an order, its diary text (`OVW-19`, `OVW-07`, `OVW-08`, `OVW-09`, `OVW-17`). |
 | `TME-05` | Several updates on the same application or process can be shown together as one group, as in the overview (`OVW-18`). Updates within a group are also newest first. |
 | `TME-07` | The history can be filtered, for example by category. Filtered to orders, it still lists every order of every type ([`order-generation.md`](order-generation.md) `DEN-08`). |
+| `TME-08` | The updates are the events in the [event catalogue](https://docs.superhuman.com/d/PUCAR-Dashboard-2027_dKtL_rwN6Qw/Events_suDoUtbn#Events-Case-Updates_tudKS-s9). Each time an event in it occurs on the case, the case gets one update. For each event, the catalogue says what triggers it and which record its update links to. |
 
 ---
 
