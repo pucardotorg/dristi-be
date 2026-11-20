@@ -814,49 +814,49 @@
     "cause-list-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-1hS7eP_meC",
       "title": "Cause List Generation",
-      "contentHash": "1b19d98c149c",
-      "pageUpdatedAt": 1795074792.681,
+      "contentHash": "d66ead7dca10",
+      "pageUpdatedAt": 1795168800.531,
       "calloutElementId": "cl-F3EnmA4_Ed",
       "sections": [
         {
           "key": "# Cause List Generation",
-          "elementId": "cl-GEoRw6CfFI",
-          "hash": "3c551e4c4aa9"
+          "elementId": "cl-Jyw2mHZyQg",
+          "hash": "5e4c394c968f"
         },
         {
           "key": "## 1. How the order is worked out",
-          "elementId": "cl-nbvMy-83Zc",
-          "hash": "81569df34e0b"
+          "elementId": "cl-HlQoMYmLv9",
+          "hash": "402091bff1dd"
         },
         {
-          "key": "## 2. The ordering step",
-          "elementId": "cl-rhzlDe9ZqI",
-          "hash": "76eb8a4e86a5"
+          "key": "## 2. The cause list generator",
+          "elementId": "cl-V5c4Zr3v61",
+          "hash": "c242f4ae3bd8"
         },
         {
           "key": "## 3. Sort criteria",
-          "elementId": "cl--A4sOe-Owv",
-          "hash": "528d70a522dd"
+          "elementId": "cl-GeOMdQSHyH",
+          "hash": "ff2d05c6c363"
         },
         {
           "key": "## 4. Configuring the sort",
-          "elementId": "cl-BrRihARW5l",
-          "hash": "391cd10452b8"
+          "elementId": "cl-uDsHJG2UvS",
+          "hash": "43f093076168"
         },
         {
           "key": "## 5. Adding hearings to a day",
-          "elementId": "cl-eT03B2SN4G",
-          "hash": "43b9a7c10fb8"
+          "elementId": "cl-VtUL7l32Zt",
+          "hash": "618dfd8ec95d"
         },
         {
           "key": "## 6. Enhancements",
-          "elementId": "cl-3OsJiXbSar",
-          "hash": "833d3dc51136"
+          "elementId": "cl-liMHcK3Wm5",
+          "hash": "5b890788b850"
         },
         {
           "key": "## 7. Open questions",
-          "elementId": "cl-n6UU4BQ0_y",
-          "hash": "37f8a04d9771"
+          "elementId": "cl-Bp48EdeGW8",
+          "hash": "650bc5f9ebfc"
         },
         {
           "key": "## Linked records",
