@@ -17,7 +17,7 @@ from apps.parties.models import (
     contact_number_validator,
     today_in_india,
 )
-from apps.parties.tests.factories import make_address, make_institution, make_person
+from apps.parties.tests.factories import make_institution, make_person
 from apps.users.models import User
 
 
@@ -150,12 +150,6 @@ class TestPerson:
 
         with pytest.raises(IntegrityError), transaction.atomic():
             Person.objects.filter(pk=person.pk).update(verification_level="GUESSED")
-
-    def test_both_addresses_can_point_at_the_same_row(self):
-        address = make_address()
-        person = make_person(permanent_address=address, correspondence_address=address)
-
-        assert person.permanent_address_id == person.correspondence_address_id == address.id
 
     def test_institution_with_people_cannot_be_deleted(self):
         institution = make_institution()

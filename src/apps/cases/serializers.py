@@ -875,9 +875,8 @@ class ParticipantUpdateSerializer(ContactListsSerializer, PartialUpdateSerialize
     """Body of PATCH /case-participants/{id} (spec 0021 §4.1).
 
     Changes the case's copy of the party's details; the institution row is
-    never changed, and the person only by ``permanent_address`` and
-    ``disability_status``. The role and person cannot change. A contact list
-    sent replaces the person's whole list. ``institution_contacts`` replaces
+    never changed, and the person only by ``disability_status``. The role and
+    person cannot change. A contact list sent replaces the person's whole list. ``institution_contacts`` replaces
     the institution's own lists in this case and nothing else; ``institution``
     re-links an institution participant to the one its PAN or CIN names, and
     may carry the lists too (spec 0021 §4.1).
@@ -897,9 +896,9 @@ class ParticipantUpdateSerializer(ContactListsSerializer, PartialUpdateSerialize
     # Institutions only. For an institution with no person acting for it,
     # ``name_at_filing`` and ``entity_name_at_filing`` are kept the same.
     entity_name_at_filing = serializers.CharField(max_length=256, required=False, allow_null=True)
-    # Individual complainants and POA holders only. Set on the person, which
-    # holds current data; it has no snapshot on the participant. ``null``
-    # makes it the participant's first address again.
+    # Individual complainants and POA holders only. The case's own, a
+    # PERMANENT_ADDRESS contact; the person is not changed. ``null`` makes it
+    # the participant's first address again.
     permanent_address = AddressInputSerializer(required=False, allow_null=True)
     is_party_in_person = serializers.BooleanField(required=False)
     # Individual complainants only; ``null`` clears the answer.
@@ -1100,11 +1099,11 @@ class CaseParticipantSerializer(serializers.ModelSerializer):
 
 
 class PreviewParticipantSerializer(CaseParticipantSerializer):
-    """A participant with the person's permanent address too.
+    """A participant with their permanent address on the case too.
 
-    ``permanent_address`` is the person's (an individual complainant or POA
-    holder), shown only when it differs from their first address: ``null``
-    means the same as the residential address, or none.
+    ``permanent_address`` (an individual complainant or POA holder) is shown
+    only when it differs from their first address: ``null`` means the same as
+    the residential address, or none.
     """
 
     permanent_address = serializers.SerializerMethodField()
@@ -1117,14 +1116,9 @@ class PreviewParticipantSerializer(CaseParticipantSerializer):
 
     @extend_schema_field(AddressSerializer(allow_null=True))
     def get_permanent_address(self, participant):
-        """Return the person's permanent address when it differs from their first address."""
-        person = participant.person
-        if person is None or person.permanent_address_id is None:
-            return None
-        primary = first(contacts_of(participant)[0], ContactType.ADDRESS)
-        if primary is not None and primary.address_id == person.permanent_address_id:
-            return None
-        return AddressSerializer(person.permanent_address).data
+        """Return their permanent address, stored only when it differs from their first address."""
+        row = first(contacts_of(participant)[0], ContactType.PERMANENT_ADDRESS)
+        return AddressSerializer(row.address).data if row else None
 
 
 class CasePreviewSerializer(CaseSerializer):

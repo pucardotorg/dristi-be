@@ -38,4 +38,4 @@ class PersonAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
     search_fields = ("name", "phone_number", "email_address", "relative_name")
     readonly_fields = ("id", "created_at", "updated_at")
     list_select_related = ("institution", "user")
-    raw_id_fields = ("institution", "permanent_address", "correspondence_address", "user")
+    raw_id_fields = ("institution", "user")

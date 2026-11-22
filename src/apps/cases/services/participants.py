@@ -34,6 +34,7 @@ from ..models import (
     INSTITUTION_NAMES_DIFFER_MESSAGE,
     INSTITUTION_ROLES,
     PERMANENT_ADDRESS_MESSAGE,
+    PERMANENT_ADDRESS_ROLES,
     PERSON_OF_ANOTHER_USER_MESSAGE,
     PERSON_ONLY_MESSAGE,
     POA_GIVEN_MESSAGE,
@@ -49,10 +50,11 @@ from . import correction
 from .case_types import ADVOCATES_PART
 from .contacts import (
     CONTACT_LISTS,
+    KEEP_PERMANENT_ADDRESS,
     contacts_of,
     move_institution_contacts,
     replace_contacts,
-    save_addresses,
+    set_permanent_address,
 )
 from .services import (
     clear_preview_cache,
@@ -74,8 +76,6 @@ MANDATE_FIELD_NAMES = {"represented_participant": "represented_participant_ids"}
 # Likewise for a representation created for its advocate.
 REPRESENTATION_FIELD_NAMES = {"case_participant": "client_participant_ids"}
 
-# The parties whose person row records a permanent address (an individual only).
-PERMANENT_ADDRESS_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.POA_HOLDER)
 # What an edit in place may change on an institution no other filing shares.
 INSTITUTION_DETAILS = ("entity_type", "entity_name", "pan_cin_skip_declared")
 # Sent with an institution's details or contacts, but the case's, not the
@@ -254,8 +254,6 @@ def end_representation(representation, user):
 def _create_participant(case, user, role, data):
     """Save a new participant in ``role`` on ``case``, with its contacts, in the caller's transaction."""
     own_lists = {field: data[field] for field in CONTACT_LISTS if field in data}
-    addresses = save_addresses(own_lists.get("addresses", []), user, ("addresses",))
-    address = addresses[0] if addresses else None
 
     institution = None
     institution_lists = {}
@@ -280,30 +278,16 @@ def _create_participant(case, user, role, data):
         with errors_under("institution"):
             institution = _get_or_create_institution(user, institution_fields)
 
-    # An individual complainant or POA holder has a permanent address: the
-    # one sent when it differs from their first address, else that address.
-    permanent_address = sent_permanent_address = None
+    # An individual complainant or POA holder has a permanent address on the
+    # case: the one sent when it differs from their first address, else that one.
+    permanent_address = None
     if role in PERMANENT_ADDRESS_ROLES and institution is None:
-        sent_permanent_address = _save_address(
-            data.get("permanent_address"), user, "permanent_address"
-        )
-        permanent_address = sent_permanent_address or address
+        permanent_address = _save_address(data.get("permanent_address"), user, "permanent_address")
 
     person = None
     if data["is_self"]:
         with errors_under("self"):
             person = get_or_create_self_person(user)
-        if permanent_address is not None:
-            # Shared with the filer's other cases, which this case's lock
-            # does not serialise.
-            person = _lock_person(person.pk)
-        # The filer's own person row takes the permanent address they just
-        # gave (spec 0020 §2.5). Falling back to ``address`` only fills one
-        # they lack or have left incomplete; it never replaces a complete one.
-        if permanent_address is not None and (
-            sent_permanent_address or _is_incomplete_or_missing(person.permanent_address)
-        ):
-            _change_person(person, user, permanent_address=permanent_address)
     elif "person" in data:
         with errors_under("person"):
             person = create_asserted_person(
@@ -315,8 +299,6 @@ def _create_participant(case, user, role, data):
                 },
                 institution=institution,
                 designation=data.get("designation"),
-                address=address,
-                permanent_address=permanent_address,
             )
 
     participant = CaseParticipant(
@@ -344,6 +326,8 @@ def _create_participant(case, user, role, data):
     validated_save(participant)
     # The person acting for an institution carries it on their own contacts.
     replace_contacts(case, user, own_lists, participant=participant, institution=institution)
+    if permanent_address is not None:
+        set_permanent_address(case, user, participant, permanent_address)
     if institution is not None:
         replace_contacts(
             case, user, institution_lists, institution=institution, path=("institution",)
@@ -534,11 +518,12 @@ def update_participant(participant, user, data):
     ``data`` is a validated ``ParticipantUpdateSerializer`` body. The
     ``*_at_filing`` snapshot is changed on the participant; the institution
     row never is. ``permanent_address`` (an individual complainant or POA
-    holder) and ``disability_status`` (anyone with a person) are set on the
-    person. ``permanent_address: null`` makes it the participant's first
-    address again, as when none is sent on create, and is ignored for a party
-    that has no permanent address. Once another user has claimed the person,
-    only they or their advocate on this case may change it.
+    holder) is the case's, a contact (``contacts.set_permanent_address``);
+    ``null`` makes it the participant's first address again, as when none is
+    sent on create, and is ignored for a party that has no permanent address.
+    ``disability_status`` (anyone with a person) is set on the person; once
+    another user has claimed the person, only they or their advocate on this
+    case may change it.
     ``mobile_numbers``, ``email_addresses`` and ``addresses`` each replace the
     participant's list; inside ``institution``, the institution's own in this
     case (``contacts.replace_contacts``). A witness's side, statement and
@@ -666,15 +651,10 @@ def update_participant(participant, user, data):
             problems["disability_status"] = [
                 errors.coded(errors.FIELD_NOT_APPLICABLE, PERSON_OF_ANOTHER_USER_MESSAGE)
             ]
-    if sends_permanent_address:
-        if not has_permanent_address:
-            problems["permanent_address"] = [
-                errors.coded(errors.FIELD_NOT_APPLICABLE, PERMANENT_ADDRESS_MESSAGE)
-            ]
-        elif not _may_change_person(participant, user):
-            problems["permanent_address"] = [
-                errors.coded(errors.FIELD_NOT_APPLICABLE, PERSON_OF_ANOTHER_USER_MESSAGE)
-            ]
+    if sends_permanent_address and not has_permanent_address:
+        problems["permanent_address"] = [
+            errors.coded(errors.FIELD_NOT_APPLICABLE, PERMANENT_ADDRESS_MESSAGE)
+        ]
     if not participant.institution_id:
         if "entity_name_at_filing" in data:
             problems["entity_name_at_filing"] = [
@@ -699,7 +679,7 @@ def update_participant(participant, user, data):
         correction.check_write(case, user, participant.role, whole=True)
         # Read again under the case lock: a concurrent removal is not undone.
         participant = get_participant(participant.pk, user)
-        if has_permanent_address or person_fields:
+        if person_fields:
             # The person may be on other cases, which this case's lock does
             # not serialise.
             participant.person = _lock_person(participant.person_id)
@@ -732,30 +712,19 @@ def update_participant(participant, user, data):
             )
         if old_institution_id:
             _align_representatives(participant, user, old_institution_id)
-        # Spec 0021 §6.4. Compared with the first address before the lists
-        # are replaced.
-        permanent_address_id = (
-            participant.person.permanent_address_id if has_permanent_address else None
-        )
-        follows_first = (
-            has_permanent_address
-            and "addresses" in own_lists
-            and not sends_permanent_address
-            and (
-                _is_incomplete_or_missing(participant.person.permanent_address)
-                or (
-                    participant.person.user_id is None
-                    and permanent_address_id == _stored_first_address_id(participant)
-                )
-            )
-            and _may_change_person(participant, user)
-        )
         if participant.person_id:
             replace_contacts(
                 case, user, own_lists, participant=participant, institution=participant.institution
             )
-        if follows_first and (first_id := _stored_first_address_id(participant)) is not None:
-            person_fields["permanent_address_id"] = first_id
+        # After the addresses change: ``null`` means the first address, and a
+        # permanent address that has become the first one is no longer stored.
+        if has_permanent_address and (sends_permanent_address or "addresses" in own_lists):
+            permanent_address = (
+                _save_address(permanent_address_fields, user, "permanent_address")
+                if sends_permanent_address
+                else KEEP_PERMANENT_ADDRESS
+            )
+            set_permanent_address(case, user, participant, permanent_address)
         if participant.institution_id:
             replace_contacts(
                 case,
@@ -785,10 +754,6 @@ def update_participant(participant, user, data):
                 institution_declared,
                 (declared_in[0] if declared_in else institution_lists_field,),
             )
-        if sends_permanent_address:
-            # After the addresses change, since ``null`` falls back to the first.
-            permanent_address = _save_address(permanent_address_fields, user, "permanent_address")
-            person_fields["permanent_address"] = permanent_address or _first_address(participant)
         if person_fields:
             _change_person(participant.person, user, **person_fields)
         if witness_fields:
@@ -907,33 +872,6 @@ def _align_representatives(participant, user, old_institution_id):
             setattr(other, field, value)
         other.updated_by = user
         validated_save(other)
-
-
-def _is_incomplete_or_missing(address):
-    """Return whether a permanent address may follow the first address sent.
-
-    One that is missing or still incomplete is filled from it, also for a
-    registered user's person; a complete one is changed only when sent.
-    """
-    return address is None or bool(address.missing_fields)
-
-
-def _stored_first_address_id(participant):
-    """Return the id of the participant's own primary address as stored now, or ``None``."""
-    return (
-        CaseContact.objects.active()
-        .filter(case_participant=participant, contact_type=ContactType.ADDRESS)
-        .order_by("ordinal")
-        .values_list("address_id", flat=True)
-        .first()
-    )
-
-
-def _first_address(participant):
-    """Return the participant's own primary address, or ``None``."""
-    own, _ = contacts_of(participant)
-    row = next((row for row in own if row.address_id), None)
-    return row.address if row else None
 
 
 def _contact_problems(participant, own_lists, data):

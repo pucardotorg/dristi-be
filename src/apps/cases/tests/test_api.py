@@ -890,8 +890,58 @@ class TestEvidence:
         assert response.status_code == 201, response.json()
         assert response.json()["evidence_info"] == {"cheque_number": "123456"}
         messages = validation_messages(client, draft, "evidence.CHEQUE")
-        for key in ("cheque_date", "amount", "ifsc_code", "bank_name", "bank_branch"):
+        for key in (
+            "cheque_date",
+            "amount",
+            "ifsc_code",
+            "bank_name",
+            "bank_branch",
+            "bank_account_number",
+        ):
             assert f"Cheque #1: '{key}' is a required property" in messages
+
+    def test_a_demand_notice_of_another_nature_needs_it_described(self, client, draft):
+        notice = {**DEMAND_NOTICE_INFO, "nature_of_debt": "OTHER_LIABILITY"}
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {"evidence_type": "LEGAL_DEMAND_NOTICE", "evidence_info": notice},
+            format="json",
+        )
+        assert response.status_code == 201, response.json()
+        url = reverse("case-evidence-detail", args=[response.json()["case_evidence_id"]])
+        message = "Legal demand notice #1: 'nature_of_debt_other' is a required property"
+        assert message in validation_messages(client, draft, "evidence.LEGAL_DEMAND_NOTICE")
+
+        described = {"evidence_info": {**notice, "nature_of_debt_other": "Rent arrears"}}
+        assert client.patch(url, described, format="json").status_code == 200
+
+        assert message not in validation_messages(client, draft, "evidence.LEGAL_DEMAND_NOTICE")
+
+    def test_a_description_with_another_listed_nature_is_400(self, client, draft):
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {
+                "evidence_type": "LEGAL_DEMAND_NOTICE",
+                "evidence_info": {**DEMAND_NOTICE_INFO, "nature_of_debt_other": "Rent arrears"},
+            },
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"evidence_info.nature_of_debt_other": ["E07023"]}
+
+    def test_a_blank_nature_of_debt_description_is_400(self, client, draft):
+        notice = {**DEMAND_NOTICE_INFO, "nature_of_debt": "OTHER_LIABILITY"}
+        response = client.post(
+            reverse("case-evidence-list", args=[draft]),
+            {
+                "evidence_type": "LEGAL_DEMAND_NOTICE",
+                "evidence_info": {**notice, "nature_of_debt_other": "   "},
+            },
+            format="json",
+        )
+
+        assert response.status_code == 400
 
     def test_evidence_info_can_be_saved_empty(self, client, draft):
         response = client.post(

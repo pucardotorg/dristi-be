@@ -80,6 +80,8 @@ SCHEMA_KEYWORD_ERRORS = {
     "const": api_errors.INVALID_CHOICE,
     # Only used for code lists with labels (``case_types._choice``).
     "oneOf": api_errors.INVALID_CHOICE,
+    # A value another answer rules out (``case_types._demand_notice_errors``).
+    "not_applicable": errors.FIELD_NOT_APPLICABLE,
 }
 
 

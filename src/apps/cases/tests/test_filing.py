@@ -313,8 +313,8 @@ class TestPreview:
         shown = by_id[differs.json()["case_participant_id"]]["permanent_address"]
         assert shown["line1"] == "7 Temple Street"
 
-    def test_a_permanent_address_changed_from_another_case_is_shown(self, client, user, draft):
-        """The filer's own person appears in both filings; both previews follow it."""
+    def test_a_permanent_address_given_on_another_case_is_not_shown(self, client, user, draft):
+        """The filer's own person appears in both filings; each keeps its own permanent address."""
         elsewhere = {**ADDRESS_DEFAULTS, "line1": "7 Temple Street", "pincode": "560004"}
         add(client, draft, self=True)
         client.get(reverse("case-detail", args=[draft]))  # cached
@@ -323,7 +323,7 @@ class TestPreview:
 
         body = client.get(reverse("case-detail", args=[draft])).json()
 
-        assert body["participants"][0]["permanent_address"]["line1"] == "7 Temple Street"
+        assert body["participants"][0]["permanent_address"] is None
 
     def test_an_entity_type_filled_from_another_case_is_shown(self, client, user, draft):
         """The institution appears in both filings; both previews follow its filled type."""
@@ -1813,6 +1813,26 @@ class TestPoaHoldersAndNumbers:
             }
         ]
 
+    def test_a_co_complainants_poa_holder_may_share_it(self, client, draft, pdf):
+        """Only the POA holder acting for the complainant is compared with their number."""
+        make_complete_case(client, draft, pdf)
+        second = self.add_second_complainant(client, draft, pdf, SECOND_MOBILE)
+        self.add_poa_holder(client, draft, pdf, second, mobile_numbers=[MOBILE])
+
+        assert validate(client, draft)["is_valid"] is True
+
+    def test_a_complainant_may_not_give_their_own_poa_holders_number(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        second = self.add_second_complainant(client, draft, pdf, SECOND_MOBILE)
+        self.add_poa_holder(client, draft, pdf, second, mobile_numbers=[SECOND_MOBILE])
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{second['case_participant_id']}",
+                "message": "Complainant #2's mobile number is also POA holder #1's.",
+            }
+        ]
+
     def test_a_number_written_with_grouping_is_still_the_same(self, client, draft, pdf):
         """An institution's number may be grouped; the grouping is not compared."""
         complainant = make_complete_case(client, draft, pdf)
@@ -1884,12 +1904,114 @@ class TestPoaHoldersAndNumbers:
             }
         ]
 
-    def test_a_witness_may_share_a_complainants_number(self, client, draft, pdf):
-        make_complete_case(client, draft, pdf)
+    def test_a_complainant_may_not_give_a_witnesss_number(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
 
         assert add_witness(client, draft, mobile_numbers=[MOBILE]).status_code == 201
 
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{complainant['case_participant_id']}",
+                "message": "Complainant #1's mobile number is also Witness #1's.",
+            }
+        ]
+
+    def test_a_witness_may_not_give_the_accuseds_number(self, client, draft, pdf):
+        """Only a complainant's and an advocate's are compared with a witness's."""
+        make_complete_case(client, draft, pdf)
+
+        assert add_witness(client, draft, mobile_numbers=[ACCUSED_MOBILE]).status_code == 201
+
         assert validate(client, draft)["is_valid"] is True
+
+    def represented_case(self, client, make_user, draft, pdf):
+        """A complete case whose second complainant has an advocate; return the advocate."""
+        make_complete_case(client, draft, pdf)
+        advocate = make_advocate(make_user)
+        second = self.add_second_complainant(client, draft, pdf, SECOND_MOBILE)
+        url = reverse("case-participant-detail", args=[second["case_participant_id"]])
+        assert client.patch(url, {"is_party_in_person": False}, format="json").status_code == 200
+        assert (
+            add_advocate(client, draft, advocate.pk, [second["case_participant_id"]]).status_code
+            == 201
+        )
+        upload(client, draft, pdf, "VAKALATNAMA", case_participant_id=second["case_participant_id"])
+        assert validate(client, draft)["is_valid"] is True
+        return advocate
+
+    def test_a_witness_may_not_give_an_advocates_number(self, client, make_user, draft, pdf):
+        advocate = self.represented_case(client, make_user, draft, pdf)
+
+        witness = add_witness(client, draft, mobile_numbers=[advocate.user.mobile_number])
+        assert witness.status_code == 201, witness.json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{witness.json()['case_participant_id']}",
+                "message": "Witness #1: Please do not enter the advocate's number here.",
+            }
+        ]
+
+    def test_an_accused_may_not_give_an_advocates_number(self, client, make_user, draft, pdf):
+        advocate = self.represented_case(client, make_user, draft, pdf)
+        accused = CaseParticipant.objects.get(case_id=draft, role=ParticipantRole.ACCUSED)
+        url = reverse("case-participant-detail", args=[accused.pk])
+        number = advocate.user.mobile_number
+        assert client.patch(url, {"mobile_numbers": [number]}, format="json").status_code == 200
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{accused.pk}",
+                "message": "Accused #1: Please do not enter the advocate's number here.",
+            }
+        ]
+
+    def test_an_accused_institution_may_not_give_an_advocates_number(
+        self, client, make_user, draft, pdf
+    ):
+        """The institution's number is written as dialled locally; the advocate's is E.164."""
+        advocate = self.represented_case(client, make_user, draft, pdf)
+        digits = advocate.user.mobile_number.removeprefix("+91")
+        number = f"0{digits[:5]} {digits[5:]}"
+        accused = add(
+            client,
+            draft,
+            "accused",
+            institution={**INSTITUTION, "mobile_numbers": [number]},
+            person={**PERSON, "name": "Ravi"},
+            designation="Director",
+            mobile_numbers=[ACCUSED_MOBILE],
+            addresses=[ADDRESS_DEFAULTS],
+        )
+        assert accused.status_code == 201, accused.json()
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{accused.json()['case_participant_id']}",
+                "message": "Accused #2's institution: Please do not enter the advocate's number here.",
+            }
+        ]
+
+    def test_a_poa_holder_may_not_give_an_advocates_number(self, client, make_user, draft, pdf):
+        advocate = self.represented_case(client, make_user, draft, pdf)
+        complainant = CaseParticipant.objects.get(
+            case_id=draft, role=ParticipantRole.COMPLAINANT, ordinal=1
+        )
+        number = advocate.user.mobile_number
+        holder = self.add_poa_holder(
+            client,
+            draft,
+            pdf,
+            {"case_participant_id": str(complainant.pk)},
+            mobile_numbers=[number],
+        )
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": f"participants.{holder['case_participant_id']}",
+                "message": "POA holder #1: Please do not enter the advocate's number here.",
+            }
+        ]
 
 
 class TestSubmitForSigning:

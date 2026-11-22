@@ -4,10 +4,10 @@ import uuid
 
 import pytest
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, connection, transaction
-from django.test.utils import CaptureQueriesContext
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 
+from apps.address.models import Address
 from apps.cases.models import (
     Case,
     CaseContact,
@@ -35,6 +35,8 @@ from .conftest import error_codes
 pytestmark = pytest.mark.django_db
 
 MOBILE = "+919876543210"
+# A witness's own: a complainant's may not be a witness's (PRD LIT-3).
+WITNESS_MOBILE = "+919833344455"
 PERSON = {
     "name": "Rajesh Kumar",
     "date_of_birth": "1985-06-15",
@@ -66,6 +68,16 @@ def add_complainant(client, case_id, **person):
     response = add(client, case_id, person={**PERSON, **person})
     assert response.status_code == 201, response.json()
     return response.json()
+
+
+def stored_permanent_address(participant):
+    """Return the permanent address stored on the case for ``participant`` (a response body)."""
+    row = CaseContact.objects.filter(
+        case_participant_id=participant["case_participant_id"],
+        contact_type=ContactType.PERMANENT_ADDRESS,
+        is_active=True,
+    ).first()
+    return row.address if row else None
 
 
 def listing(client, case_id, **params):
@@ -119,14 +131,13 @@ class TestAddComplainant:
         assert "created_by" not in body
         assert case.updated_by is not None
 
-    def test_a_named_person_is_new_and_asserted_with_the_address(self, client, draft):
+    def test_a_named_person_is_new_and_asserted(self, client, draft):
         body = add_complainant(client, draft)
 
         person = Person.objects.get(pk=body["person_id"])
         assert person.verification_level == VerificationLevel.ASSERTED
         assert person.user is None
         assert person.phone_number == MOBILE
-        assert str(person.correspondence_address_id) == body["addresses"][0]["address_id"]
 
     def test_the_same_name_twice_is_never_matched(self, client, draft):
         add_complainant(client, draft)
@@ -956,7 +967,6 @@ class TestContacts:
         assert [a["line1"] for a in body["addresses"]] == ["7 Temple Street", "12 MG Road"]
         person = Person.objects.get(pk=body["person_id"])
         assert person.phone_number == "+919800000002"
-        assert person.correspondence_address.line1 == "7 Temple Street"
 
     def test_an_institutions_contacts_belong_to_each_case(self, client, user, draft):
         """One institution is shared between filings; its contacts are not."""
@@ -1365,9 +1375,11 @@ class TestUpdate:
             {"addresses": [{**ADDRESS_DEFAULTS, "line1": "456 New Street"}]},
         )
 
+        new_id = response.json()["addresses"][0]["address_id"]
         assert response.json()["addresses"][0]["line1"] == "456 New Street"
-        person = Person.objects.get(pk=body["person_id"])
-        assert str(person.correspondence_address_id) == body["addresses"][0]["address_id"]
+        assert new_id != body["addresses"][0]["address_id"]
+        # The old row is kept as it was.
+        assert Address.objects.get(pk=body["addresses"][0]["address_id"]).line1 != "456 New Street"
 
     @pytest.mark.parametrize(
         "change",
@@ -1642,7 +1654,7 @@ class TestRemove:
 def add_witness(client, case_id, side="COMPLAINANT", **body):
     body.setdefault("person", {**PERSON, "name": "Meena Rao"})
     body.setdefault("addresses", [ADDRESS_DEFAULTS])
-    body.setdefault("mobile_numbers", [MOBILE])
+    body.setdefault("mobile_numbers", [WITNESS_MOBILE])
     body.setdefault("what_will_witness_prove", "Saw the cheque being signed")
     body.setdefault("side", side)
     url = reverse("case-witness-list", args=[case_id])
@@ -1670,7 +1682,7 @@ class TestAddWitness:
         assert body["role"] == "WITNESS"
         assert body["ordinal"] == 1
         assert body["name_at_filing"] == "Meena Rao"
-        assert body["mobile_numbers"] == [MOBILE]
+        assert body["mobile_numbers"] == [WITNESS_MOBILE]
         assert len(body["addresses"]) == 1
         assert body["additional_details"] == {}
         assert body["witness"] == {
@@ -2963,9 +2975,12 @@ class TestPartialAddresses:
 
         patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
 
-        person = Person.objects.get(pk=body["person_id"])
-        assert person.permanent_address.missing_fields == []
-        assert person.permanent_address.line1 == ADDRESS_DEFAULTS["line1"]
+        # None of its own: the completed first address is the permanent one too.
+        assert stored_permanent_address(body) is None
+        assert not any(
+            "incomplete" in message
+            for message in completeness(client, draft, body["case_participant_id"])
+        )
 
     def test_a_permanent_address_of_its_own_stays(self, client, draft):
         elsewhere = {**ADDRESS_DEFAULTS, "line1": "7 Temple Street"}
@@ -2979,8 +2994,7 @@ class TestPartialAddresses:
 
         patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
 
-        person = Person.objects.get(pk=body["person_id"])
-        assert person.permanent_address.line1 == "7 Temple Street"
+        assert stored_permanent_address(body).line1 == "7 Temple Street"
 
     def test_an_institutions_partial_address_is_reported(self, client, draft):
         response = add(
@@ -3042,79 +3056,39 @@ class TestPartialAddresses:
 
 
 class TestPermanentAddress:
-    """The person's permanent address: the residential one unless a different one is sent."""
+    """The permanent address on the case: the first address unless a different one is sent.
+
+    A ``PERMANENT_ADDRESS`` contact is stored only while it differs from the
+    first address (PRD LIT-8, LIT-15); it is the case's, not the person's.
+    """
 
     ELSEWHERE = {**ADDRESS_DEFAULTS, "line1": "7 Temple Street", "pincode": "560004"}
+    OFFICE = {**ADDRESS_DEFAULTS, "line1": "Office, 9 Brigade Road"}
 
-    def person_of(self, body):
-        return Person.objects.get(pk=body["person_id"])
+    def test_the_first_address_is_not_stored_again(self, client, draft):
+        assert stored_permanent_address(add_complainant(client, draft)) is None
 
-    def person_locks(self, queries):
-        """Return the queries that lock a person row."""
-        table = Person._meta.db_table
-        return [
-            q["sql"] for q in queries if f'FROM "{table}"' in q["sql"] and "FOR UPDATE" in q["sql"]
-        ]
-
-    @pytest.mark.skipif(
-        not connection.features.has_select_for_update, reason="needs row locks (PostgreSQL)"
-    )
-    def test_patch_locks_the_person_before_filling_it(self, client, draft):
-        """Drafts on other cases may change the same person; the case lock does not cover them."""
-        body = add(client, draft, person=PERSON, addresses=[{"line1": "12 MG Road"}]).json()
-
-        with CaptureQueriesContext(connection) as queries:
-            response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
-
-        assert response.status_code == 200, response.json()
-        assert self.person_locks(queries)
-
-    @pytest.mark.skipif(
-        not connection.features.has_select_for_update, reason="needs row locks (PostgreSQL)"
-    )
-    def test_a_self_filer_is_locked_before_filling_it(self, client, draft):
-        """The filer's person is shared by all their cases."""
-        with CaptureQueriesContext(connection) as queries:
-            response = add(client, draft, self=True)
-
-        assert response.status_code == 201, response.json()
-        assert self.person_locks(queries)
-
-    def test_the_same_address_is_the_same_row(self, client, draft):
-        person = self.person_of(add_complainant(client, draft))
-
-        assert person.permanent_address_id == person.correspondence_address_id
-        assert person.permanent_address_id is not None
-
-    def test_a_different_address_is_its_own_row(self, client, draft):
+    def test_a_different_address_is_stored(self, client, draft):
         response = add(client, draft, person=PERSON, permanent_address=self.ELSEWHERE)
 
         assert response.status_code == 201, response.json()
-        person = self.person_of(response.json())
-        assert person.permanent_address_id != person.correspondence_address_id
-        assert person.permanent_address.line1 == "7 Temple Street"
+        assert stored_permanent_address(response.json()).line1 == "7 Temple Street"
 
-    def test_a_self_filer_gets_it_on_their_own_person(self, client, user, draft):
-        response = add(client, draft, self=True, permanent_address=self.ELSEWHERE)
+    def test_one_sent_equal_to_the_first_address_is_not_stored(self, client, draft):
+        response = add(client, draft, person=PERSON, permanent_address=ADDRESS_DEFAULTS)
 
         assert response.status_code == 201, response.json()
-        assert Person.objects.get(user=user).permanent_address.line1 == "7 Temple Street"
+        assert stored_permanent_address(response.json()) is None
 
-    def test_a_self_filer_keeps_theirs_when_none_is_sent(self, client, user, draft):
-        add(client, draft, self=True, permanent_address=self.ELSEWHERE)
+    def test_the_filers_is_kept_per_case(self, client, user, draft):
+        """Theirs on another case is not changed by this one (the old Person-wide address was)."""
+        first = add(client, draft, self=True, permanent_address=self.ELSEWHERE).json()
         other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
 
-        response = add(client, other_draft, self=True)
+        second = add(client, other_draft, self=True, permanent_address=self.OFFICE).json()
 
-        assert response.status_code == 201, response.json()
-        assert Person.objects.get(user=user).permanent_address.line1 == "7 Temple Street"
-
-    def test_a_self_filer_without_one_gets_the_address(self, client, user, draft):
-        response = add(client, draft, self=True)
-
-        assert response.status_code == 201, response.json()
-        person = Person.objects.get(user=user)
-        assert str(person.permanent_address_id) == response.json()["addresses"][0]["address_id"]
+        assert stored_permanent_address(first).line1 == "7 Temple Street"
+        assert stored_permanent_address(second).line1 == self.OFFICE["line1"]
 
     def test_a_poa_holder_has_one(self, client, draft):
         complainant = add_complainant(client, draft)
@@ -3124,8 +3098,7 @@ class TestPermanentAddress:
         )
 
         assert response.status_code == 201, response.json()
-        holder = CaseParticipant.objects.get(pk=response.json()["case_participant_id"])
-        assert holder.person.permanent_address.line1 == "7 Temple Street"
+        assert stored_permanent_address(response.json()).line1 == "7 Temple Street"
 
     def test_an_invalid_one_is_reported_under_its_own_name(self, client, draft):
         response = add(
@@ -3150,99 +3123,24 @@ class TestPermanentAddress:
         assert response.status_code == 400
         assert error_codes(response) == {"permanent_address": ["E07023"]}
 
-    def test_patch_sets_it_on_the_person_and_leaves_the_snapshot(self, client, draft):
+    def test_patch_sets_it_and_leaves_the_addresses(self, client, draft):
         body = add_complainant(client, draft)
 
         response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
 
         assert response.status_code == 200, response.json()
         assert response.json()["addresses"] == body["addresses"]
-        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
+        assert stored_permanent_address(body).line1 == "7 Temple Street"
 
-    OFFICE = {**ADDRESS_DEFAULTS, "line1": "Office, 9 Brigade Road"}
-
-    def test_the_filers_own_stays_when_their_case_address_changes(self, client, user, draft):
-        """Theirs on every case: as on create, the case's address does not replace it."""
-        body = add(client, draft, self=True).json()
-
-        response = patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
-
-        assert response.status_code == 200, response.json()
-        assert Person.objects.get(user=user).permanent_address.line1 == ADDRESS_DEFAULTS["line1"]
-
-    def test_the_filers_own_is_not_moved_by_another_case(self, client, user, draft):
-        add(client, draft, self=True)
-        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
-        other = add(client, other_draft, self=True).json()
-
-        patch(client, other["case_participant_id"], {"addresses": [self.OFFICE]})
-
-        assert Person.objects.get(user=user).permanent_address.line1 == ADDRESS_DEFAULTS["line1"]
-
-    def test_the_filers_missing_one_is_filled_by_a_later_address(self, client, user, draft):
-        body = client.post(
-            reverse("case-complainant-list", args=[draft]), {"self": True}, format="json"
-        ).json()
-        assert Person.objects.get(user=user).permanent_address_id is None
-
-        response = patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
-
-        assert response.status_code == 200, response.json()
-        assert Person.objects.get(user=user).permanent_address.line1 == self.OFFICE["line1"]
-
-    def test_the_filers_incomplete_one_follows_their_case_address(self, client, user, draft):
-        """Not yet usable, it is completed by the case's address, then kept."""
-        body = add(client, draft, self=True, addresses=[{"line1": "12 MG Road"}]).json()
-
-        response = patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
-
-        assert response.status_code == 200, response.json()
-        person = Person.objects.get(user=user)
-        assert person.permanent_address.line1 == self.OFFICE["line1"]
-        assert person.permanent_address.missing_fields == []
-        assert not any(
-            "permanent" in message
-            for message in completeness(client, draft, body["case_participant_id"])
-        )
-
-        patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
-
-        assert Person.objects.get(user=user).permanent_address.line1 == self.OFFICE["line1"]
-
-    def test_the_filers_incomplete_one_sent_follows_their_case_address(self, client, user, draft):
-        body = add(client, draft, self=True, permanent_address={"state": "Karnataka"}).json()
-
-        patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
-
-        assert Person.objects.get(user=user).permanent_address.line1 == self.OFFICE["line1"]
-
-    def test_the_filers_incomplete_one_is_completed_on_another_case(self, client, user, draft):
-        add(client, draft, self=True, addresses=[{"line1": "12 MG Road"}])
-        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
-
-        response = add(client, other_draft, self=True, addresses=[self.OFFICE])
-
-        assert response.status_code == 201, response.json()
-        assert Person.objects.get(user=user).permanent_address.line1 == self.OFFICE["line1"]
-
-    def test_a_claimed_persons_stays_when_the_case_address_changes(self, client, other_user, draft):
-        """Once a user claims the person, it is theirs on every case, like the filer's own."""
-        add(client, draft, self=True)  # an active complainant may change the claimed person
-        body = add(client, draft, person={**PERSON, "name": "Second"}).json()
+    def test_patch_sets_it_for_a_person_another_user_has_claimed(self, client, other_user, draft):
+        """It is the case's copy, like the other contacts, not the claimed person's."""
+        body = add_complainant(client, draft)
         Person.objects.filter(pk=body["person_id"]).update(user=other_user)
-
-        response = patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
-
-        assert response.status_code == 200, response.json()
-        assert self.person_of(body).permanent_address.line1 == ADDRESS_DEFAULTS["line1"]
-
-    def test_patch_sets_the_filers_own(self, client, user, draft):
-        body = add(client, draft, self=True).json()
 
         response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
 
         assert response.status_code == 200, response.json()
-        assert Person.objects.get(user=user).permanent_address.line1 == "7 Temple Street"
+        assert stored_permanent_address(body).line1 == "7 Temple Street"
 
     @pytest.mark.parametrize(
         ("role", "body"),
@@ -3262,53 +3160,16 @@ class TestPermanentAddress:
         assert response.status_code == 400
         assert error_codes(response) == {"permanent_address": ["E07023"]}
 
-    def test_patch_refuses_a_person_another_user_has_claimed(self, client, other_user, draft):
-        body = add_complainant(client, draft)
-        Person.objects.filter(pk=body["person_id"]).update(user=other_user)
-
-        response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
-
-        assert response.status_code == 400
-        assert error_codes(response) == {"permanent_address": ["E07023"]}
-        assert self.person_of(body).permanent_address.line1 != "7 Temple Street"
-
-    def test_patch_lets_the_filing_advocate_change_their_clients(
-        self, client, user, make_user, other_user, draft
-    ):
-        """An advocate filing for a registered client may update that client's record."""
-        body = add_complainant(client, draft)
-        Person.objects.filter(pk=body["person_id"]).update(user=other_user)
-        advocate = make_advocate(make_user, user=user)
-        add_advocate(client, draft, advocate.pk, [body["case_participant_id"]])
-
-        response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
-
-        assert response.status_code == 200, response.json()
-        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
-
-    def test_patch_lets_a_filing_complainant_change_a_co_complainants(
-        self, client, other_user, draft
-    ):
-        add(client, draft, self=True)
-        body = add_complainant(client, draft, name="Anita Kumar")
-        Person.objects.filter(pk=body["person_id"]).update(user=other_user)
-
-        response = patch(client, body["case_participant_id"], {"permanent_address": self.ELSEWHERE})
-
-        assert response.status_code == 200, response.json()
-        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
-
     def test_patch_null_makes_it_the_address_again(self, client, draft):
-        response = add(client, draft, person=PERSON, permanent_address=self.ELSEWHERE)
-        body = response.json()
+        body = add(client, draft, person=PERSON, permanent_address=self.ELSEWHERE).json()
 
         response = patch(client, body["case_participant_id"], {"permanent_address": None})
 
         assert response.status_code == 200, response.json()
-        assert str(self.person_of(body).permanent_address_id) == body["addresses"][0]["address_id"]
+        assert stored_permanent_address(body) is None
 
-    def test_patch_null_follows_an_address_changed_in_the_same_request(self, client, draft):
-        body = add_complainant(client, draft)
+    def test_patch_null_with_new_addresses_leaves_none_stored(self, client, draft):
+        body = add(client, draft, person=PERSON, permanent_address=self.OFFICE).json()
 
         response = patch(
             client,
@@ -3317,7 +3178,7 @@ class TestPermanentAddress:
         )
 
         assert response.status_code == 200, response.json()
-        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
+        assert stored_permanent_address(body) is None
 
     @pytest.mark.parametrize(
         ("role", "body"),
@@ -3346,112 +3207,57 @@ class TestPermanentAddress:
         assert response.status_code == 400
         assert error_codes(response) == {"permanent_address.pincode": ["E00001"]}
 
+    def test_one_of_its_own_stays_when_the_addresses_change(self, client, draft):
+        body = add(client, draft, person=PERSON, permanent_address=self.ELSEWHERE).json()
+
+        response = patch(client, body["case_participant_id"], {"addresses": [self.OFFICE]})
+
+        assert response.status_code == 200, response.json()
+        assert stored_permanent_address(body).line1 == "7 Temple Street"
+
+    def test_one_that_becomes_the_first_address_is_no_longer_stored(self, client, draft):
+        body = add(client, draft, person=PERSON, permanent_address=self.ELSEWHERE).json()
+
+        response = patch(client, body["case_participant_id"], {"addresses": [self.ELSEWHERE]})
+
+        assert response.status_code == 200, response.json()
+        assert stored_permanent_address(body) is None
+
+    def test_one_sent_with_new_addresses_wins(self, client, draft):
+        body = add_complainant(client, draft)
+
+        response = patch(
+            client,
+            body["case_participant_id"],
+            {"addresses": [self.OFFICE], "permanent_address": self.ELSEWHERE},
+        )
+
+        assert response.status_code == 200, response.json()
+        assert stored_permanent_address(body).line1 == "7 Temple Street"
+
+    def test_the_preview_shows_only_one_of_its_own(self, client, draft):
+        same = add_complainant(client, draft)
+        own = add(
+            client, draft, person={**PERSON, "name": "Anita"}, permanent_address=self.ELSEWHERE
+        ).json()
+
+        participants = {
+            p["case_participant_id"]: p
+            for p in client.get(reverse("case-detail", args=[draft])).json()["participants"]
+        }
+
+        assert participants[same["case_participant_id"]]["permanent_address"] is None
+        assert (
+            participants[own["case_participant_id"]]["permanent_address"]["line1"]
+            == "7 Temple Street"
+        )
+
     def add_without_address(self, client, draft, **body):
         """Add a complainant with no address, as a draft may be saved."""
         url = reverse("case-complainant-list", args=[draft])
         response = client.post(url, {"person": PERSON, **body}, format="json")
         assert response.status_code == 201, response.json()
         return response.json()
-
-    def test_none_is_set_without_an_address(self, client, draft):
-        body = self.add_without_address(client, draft)
-
-        assert self.person_of(body).permanent_address_id is None
-
-    def test_an_address_sent_later_fills_it(self, client, draft):
-        body = self.add_without_address(client, draft)
-
-        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
-
-        assert response.status_code == 200, response.json()
-        first_id = response.json()["addresses"][0]["address_id"]
-        assert str(self.person_of(body).permanent_address_id) == first_id
-
-    def test_a_partial_address_sent_later_fills_it_and_completing_it_follows(self, client, draft):
-        body = self.add_without_address(client, draft)
-        patch(client, body["case_participant_id"], {"addresses": [{"line1": "12 MG Road"}]})
-
-        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
-
-        assert response.status_code == 200, response.json()
-        first_id = response.json()["addresses"][0]["address_id"]
-        assert str(self.person_of(body).permanent_address_id) == first_id
-        assert self.person_of(body).permanent_address.missing_fields == []
-
-    def test_a_poa_holder_without_an_address_gets_it_later(self, client, draft):
-        complainant = add_complainant(client, draft)
-        response = add_poa_holder(
-            client, draft, [complainant["case_participant_id"]], addresses=None
-        )
-        assert response.status_code == 201, response.json()
-        holder = response.json()["case_participant_id"]
-
-        response = patch(client, holder, {"addresses": [ADDRESS_DEFAULTS]})
-
-        assert response.status_code == 200, response.json()
-        person = CaseParticipant.objects.get(pk=holder).person
-        assert str(person.permanent_address_id) == response.json()["addresses"][0]["address_id"]
-
-    def test_a_self_filer_without_one_gets_the_address_sent_later(self, client, user, draft):
-        url = reverse("case-complainant-list", args=[draft])
-        body = client.post(url, {"self": True}, format="json").json()
-
-        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
-
-        assert response.status_code == 200, response.json()
-        first_id = response.json()["addresses"][0]["address_id"]
-        assert str(Person.objects.get(user=user).permanent_address_id) == first_id
-
-    def test_a_self_filer_keeps_theirs_when_an_address_is_sent_later(self, client, user, draft):
-        add(client, draft, self=True, permanent_address=self.ELSEWHERE)
-        other_draft = services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
-        url = reverse("case-complainant-list", args=[other_draft])
-        body = client.post(url, {"self": True}, format="json").json()
-
-        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
-
-        assert response.status_code == 200, response.json()
-        assert Person.objects.get(user=user).permanent_address.line1 == "7 Temple Street"
-
-    def test_one_sent_with_the_later_address_wins(self, client, draft):
-        body = self.add_without_address(client, draft)
-
-        response = patch(
-            client,
-            body["case_participant_id"],
-            {"addresses": [ADDRESS_DEFAULTS], "permanent_address": self.ELSEWHERE},
-        )
-
-        assert response.status_code == 200, response.json()
-        assert self.person_of(body).permanent_address.line1 == "7 Temple Street"
-
-    def test_an_emptied_list_leaves_it_unset(self, client, draft):
-        body = self.add_without_address(client, draft)
-
-        response = patch(client, body["case_participant_id"], {"addresses": []})
-
-        assert response.status_code == 200, response.json()
-        assert self.person_of(body).permanent_address_id is None
-
-    def test_other_changes_leave_it_unset(self, client, draft):
-        body = self.add_without_address(client, draft)
-
-        response = patch(client, body["case_participant_id"], {"mobile_numbers": [MOBILE]})
-
-        assert response.status_code == 200, response.json()
-        assert self.person_of(body).permanent_address_id is None
-
-    def test_a_person_another_user_has_claimed_is_not_filled(self, client, other_user, draft):
-        body = self.add_without_address(client, draft)
-        Person.objects.filter(pk=body["person_id"]).update(user=other_user)
-
-        response = patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})
-
-        assert response.status_code == 200, response.json()
-        assert self.person_of(body).permanent_address_id is None
-        assert "Complainant #1 has no permanent address." in completeness(
-            client, draft, body["case_participant_id"]
-        )
 
     @pytest.mark.parametrize(
         ("role", "body", "lists"),
@@ -3472,20 +3278,40 @@ class TestPermanentAddress:
         response = patch(client, participant["case_participant_id"], lists)
 
         assert response.status_code == 200, response.json()
-        row = CaseParticipant.objects.get(pk=participant["case_participant_id"])
-        assert row.person is None or row.person.permanent_address_id is None
+        assert stored_permanent_address(participant) is None
         assert not any(
             "permanent" in message
             for message in completeness(client, draft, participant["case_participant_id"])
         )
 
-    def test_validate_reports_one_missing_once_there_is_an_address(self, client, draft):
-        body = add_complainant(client, draft)
-        Person.objects.filter(pk=body["person_id"]).update(permanent_address=None)
-
-        assert "Complainant #1 has no permanent address." in completeness(
-            client, draft, body["case_participant_id"]
+    def test_the_database_refuses_one_for_an_institution_alone(self, client, draft):
+        participant = add(client, draft, institution=INSTITUTION).json()
+        row = CaseContact(
+            case_id=draft,
+            institution_id=participant["institution_id"],
+            contact_type=ContactType.PERMANENT_ADDRESS,
+            address=Address.objects.first(),
+            ordinal=1,
         )
+
+        with pytest.raises(ValidationError) as excinfo:
+            row.full_clean()
+        assert "contact_type" in excinfo.value.message_dict
+
+    def test_the_database_refuses_one_for_an_accused(self, client, draft):
+        add_complainant(client, draft)
+        accused = add(client, draft, "accused", person={**PERSON, "name": "Suresh"}).json()
+        row = CaseContact(
+            case_id=draft,
+            case_participant_id=accused["case_participant_id"],
+            contact_type=ContactType.PERMANENT_ADDRESS,
+            address=Address.objects.first(),
+            ordinal=1,
+        )
+
+        with pytest.raises(ValidationError) as excinfo:
+            row.full_clean()
+        assert "contact_type" in excinfo.value.message_dict
 
     def test_validate_asks_only_for_the_address_while_there_is_none(self, client, draft):
         body = self.add_without_address(client, draft)
@@ -3495,7 +3321,7 @@ class TestPermanentAddress:
         assert "Complainant #1 has no address." in messages
         assert not any("permanent" in message for message in messages)
 
-    def test_validate_is_satisfied_once_the_address_fills_it(self, client, draft):
+    def test_validate_is_satisfied_once_the_address_is_sent(self, client, draft):
         body = self.add_without_address(client, draft)
 
         patch(client, body["case_participant_id"], {"addresses": [ADDRESS_DEFAULTS]})

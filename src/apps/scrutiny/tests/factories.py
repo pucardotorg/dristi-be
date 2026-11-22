@@ -84,6 +84,7 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
             "ifsc_code": "SBIN0001234",
             "bank_name": "SBI",
             "bank_branch": "Kochi",
+            "bank_account_number": "30012345678",
         },
     )
     CaseEvidence.objects.create(
@@ -163,8 +164,6 @@ def add_address(participant):
         address=address,
         ordinal=1,
     )
-    if participant.role == ParticipantRole.COMPLAINANT and participant.person_id:
-        Person.objects.filter(pk=participant.person_id).update(permanent_address=address)
 
 
 def complete_filing(case, filer):

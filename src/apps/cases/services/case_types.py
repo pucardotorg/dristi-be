@@ -356,11 +356,30 @@ def _return_memo_errors(info):
 
 
 def _demand_notice_errors(info):
-    """Refuse a delivery or return date before the dispatch date (LDN-6, LDN-7 >= LDN-2)."""
+    """Refuse what contradicts the notice itself.
+
+    A delivery or return date before the dispatch date (LDN-6, LDN-7 >= LDN-2),
+    and a description of the nature of debt when another listed nature is
+    chosen (LDN-1), which would leave a stale one behind.
+    """
+    problems = []
+    nature = info.get("nature_of_debt")
+    if (
+        "nature_of_debt_other" in info
+        and nature is not None
+        and nature != NatureOfDebt.OTHER_LIABILITY
+    ):
+        problems.append(
+            SchemaError(
+                "nature_of_debt_other",
+                "Only when the nature of debt is Other liability.",
+                "not_applicable",
+            )
+        )
     dispatched = _date_of(info, "dispatch_date")
     if dispatched is None:
-        return []
-    return [
+        return problems
+    return problems + [
         SchemaError(
             key,
             f"The {label} date cannot be before the dispatch date.",
@@ -541,6 +560,7 @@ CASE_TYPES = {
                     "ifsc_code",
                     "bank_name",
                     "bank_branch",
+                    "bank_account_number",
                 ],
                 properties={
                     "cheque_date": _date(),
@@ -550,8 +570,7 @@ CASE_TYPES = {
                     "ifsc_code": _ifsc(),
                     "bank_name": _text(),
                     "bank_branch": _text(),
-                    # The drawer's account the cheque is drawn on. Optional until
-                    # the form asks for it (PRD CHQ-7a).
+                    # The drawer's account the cheque is drawn on (PRD CHQ-7a).
                     "bank_account_number": {"type": "string", "pattern": "^[0-9]{9,18}$"},
                 },
             ),
@@ -574,8 +593,10 @@ CASE_TYPES = {
                     "payment_status",
                 ],
                 properties={
-                    # Nature of debt
+                    # Nature of debt (LDN-1), described in the filer's words
+                    # when none of the listed natures fits.
                     "nature_of_debt": _choice(NatureOfDebt),
+                    "nature_of_debt_other": _text(),
                     # Legal demand notice
                     "dispatch_date": _date(),
                     "mode_of_service": _choice(ModeOfService),
@@ -592,6 +613,11 @@ CASE_TYPES = {
                     "part_payment_amount": {"type": "number", "exclusiveMinimum": 0},
                 },
                 allOf=[
+                    _required_when(
+                        "nature_of_debt",
+                        NatureOfDebt.OTHER_LIABILITY.value,
+                        ["nature_of_debt_other"],
+                    ),
                     # A delivered notice needs its delivery date; an undelivered
                     # one, when it came back and why.
                     _required_when("is_delivered", True, ["delivery_date"]),
