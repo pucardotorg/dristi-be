@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
     dependencies = [
         ("address", "0002_initial"),
-        ("cases", "0003_initial"),
+        ("cases", "0004_complaint_signing_package"),
         ("parties", "0003_permanent_address_contact"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
