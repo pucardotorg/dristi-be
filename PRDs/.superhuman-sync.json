@@ -966,14 +966,14 @@
     "case-file.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WBYZ9C_w-f",
       "title": "Case File",
-      "contentHash": "0e526f56239d",
-      "pageUpdatedAt": 1794932038.281,
+      "contentHash": "8673d0e3f16d",
+      "pageUpdatedAt": 1795438102.956,
       "calloutElementId": "cl-I3IpwuxKBN",
       "sections": [
         {
           "key": "# Case File",
           "elementId": "cl-zMzgoojkww",
-          "hash": "ea72818e6ebf"
+          "hash": "ec042884c106"
         },
         {
           "key": "# 1. Categories",
@@ -1006,12 +1006,17 @@
           "hash": "974b0529afb6"
         },
         {
-          "key": "# 7. Open questions",
+          "key": "# 7. Future enhancements",
+          "elementId": "cl-EGRNCGKGfD",
+          "hash": "708a7386de39"
+        },
+        {
+          "key": "# 8. Open questions",
           "elementId": "cl-xjU3TCz9LV",
-          "hash": "ecb3ec3a9984"
+          "hash": "3be537157129"
         }
       ],
-      "note": "Body below the callout replaced 2026-11-17 at v15 (no comments on the page). Section elementIds are each chunk's first block. 2026-11-17 v29: §1/§2 cells, §3.1 (new block after cl-WESb8b6GJw) and §7 table replaced; Status split across cl-MI1RqK3r40 (v29–v16) and cl-297TnFOWoO (v15 on). 2026-11-17 v30: prototype link inserted after cl-lCsN4S7bvT (§6.2); Status and callout patched."
+      "note": "Body below the callout replaced 2026-11-17 at v15 (no comments on the page). Section elementIds are each chunk's first block. 2026-11-17 v29: §1/§2 cells, §3.1 (new block after cl-WESb8b6GJw) and §7 table replaced; Status split across cl-MI1RqK3r40 (v29–v16) and cl-297TnFOWoO (v15 on). 2026-11-17 v30: prototype link inserted after cl-lCsN4S7bvT (§6.2); Status and callout patched. 2026-11-23 v31: Status and callout patched; new §7 Future enhancements inserted after grid-m40-jTTbON (heading cl-EGRNCGKGfD, text cl-lQoca8TfVZ); Open questions heading cl-xjU3TCz9LV renamed to 8."
     },
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
