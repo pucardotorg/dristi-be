@@ -21,7 +21,7 @@ those enums means changing that file too; a test fails until they match.
 from calendar import monthrange
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 import jsonschema
 from django.apps import apps
@@ -186,6 +186,12 @@ class CaseTypeConfig:
     # ordinal order; returns ``(evidence type, message)`` pairs. Only the
     # completeness check runs it.
     evidence_set_checks: Callable[[list], list[tuple[str, str]]] | None = None
+    # Rules between the details sections and the evidence, such as a date in a
+    # section derived from evidence dates: called with the sections (as
+    # ``get_detail_sections`` returns them) and the case's active evidence in
+    # ordinal order; returns ``(section, SchemaError)`` pairs. Only the
+    # completeness check runs it, for the same reason as ``evidence_set_checks``.
+    details_evidence_checks: Callable[[dict, list], list[tuple[str, "SchemaError"]]] | None = None
     # The completeness check (spec 0021 §6.3) requires at least one of each.
     required_document_types: tuple[str, ...] = ()
     required_evidence_types: tuple[str, ...] = ()
@@ -440,6 +446,58 @@ def _evidence_set_errors(evidence):
     return problems
 
 
+# The drawer has 15 days from service of the demand notice to pay (NI Act
+# s.138(c)); the cause of action arises when they run out (PRD JUR-9).
+PAYMENT_DAYS_AFTER_SERVICE = 15
+
+
+def _service_date(info):
+    """Return when a demand notice was served: its delivery date, or its return date if undelivered.
+
+    ``None`` when undecided or the date is missing; the notice's own check reports that.
+    """
+    delivered = info.get("is_delivered")
+    if delivered is True:
+        return _date_of(info, "delivery_date")
+    if delivered is False:
+        return _date_of(info, "return_date")
+    return None
+
+
+def _cause_of_action_errors(sections, evidence):
+    """Refuse a cause of action date other than 15 days after the demand notice's service.
+
+    The cause of action arises when the drawer's 15 days to pay run out, so it
+    is exactly that day: neither earlier nor later. With several notices, the
+    earliest service counts (PRD JUR-9, JUR-11).
+    """
+    arose = _date_of(sections.get("jurisdiction_limitation") or {}, "cause_of_action_date")
+    served = [
+        (day, notice.ordinal)
+        for notice in evidence
+        if notice.evidence_type == EvidenceType.LEGAL_DEMAND_NOTICE
+        and (day := _service_date(notice.evidence_info))
+    ]
+    if arose is None or not served:
+        return []
+    earliest, ordinal = min(served)
+    expected = earliest + timedelta(days=PAYMENT_DAYS_AFTER_SERVICE)
+    if arose == expected:
+        return []
+    return [
+        (
+            "jurisdiction_limitation",
+            SchemaError(
+                "cause_of_action_date",
+                f"The cause of action date must be {PAYMENT_DAYS_AFTER_SERVICE} days after "
+                f"the service of demand notice #{ordinal} on {earliest.isoformat()}: "
+                f"{expected.isoformat()}.",
+                "const",
+            ),
+        )
+    ]
+
+
 CASE_TYPES = {
     CaseType.CHEQUE_BOUNCE: CaseTypeConfig(
         detail_model="cases.ChequeBounceCase",
@@ -519,6 +577,7 @@ CASE_TYPES = {
             EvidenceType.LEGAL_DEMAND_NOTICE: _demand_notice_errors,
         },
         evidence_set_checks=_evidence_set_errors,
+        details_evidence_checks=_cause_of_action_errors,
         document_types=(
             DocumentType.BOUNCED_CHEQUE,
             DocumentType.RETURN_MEMO,

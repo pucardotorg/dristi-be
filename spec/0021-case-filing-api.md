@@ -1169,6 +1169,15 @@ applies them. A filing date before the cause of action is refused on every
 save; a missing `condonation_reason`, like other missing required fields, is
 reported only by the completeness check (§6.3).
 
+`cause_of_action_date` must be exactly 15 days after the service of the demand
+notice, when the drawer's time to pay runs out (NI Act s.138(c), PRD JUR-9).
+Service is the notice's `delivery_date`, or its `return_date` when
+`is_delivered` is false. With several notices, the earliest service counts
+(PRD JUR-11). Any other date, earlier or later, is reported by the completeness
+check only, on `details.jurisdiction_limitation`, since the notices are saved
+separately from this section: "cause_of_action_date: The cause of action date
+must be 15 days after the service of demand notice #1 on 2024-02-05: 2024-02-20."
+
 `other_complaints_pending` records whether another Section 138 complaint is
 pending between the same parties.
 
@@ -1481,6 +1490,7 @@ POST /cases/{case_id}/validate
 6. **Case Details:**
    - `jurisdiction_limitation` and `adr_other_prayer` JSONs pass their schemas (defined per case type)
    - `jurisdiction_limitation` has a `complaint_filing_date` on or after `cause_of_action_date`, and a `condonation_reason` when it is more than one calendar month after (§5.3)
+   - `cause_of_action_date` is exactly 15 days after the earliest service of a demand notice: its delivery date, or its return date if undelivered (§5.3)
 
 7. **Affidavit:**
    - The case has an `affidavit` (§5.4); reported on the field `affidavit`.

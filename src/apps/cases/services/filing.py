@@ -641,8 +641,12 @@ def validation_errors(case):
             error(f"evidence.{evidence_type}", message)
 
     # An unsaved section is still ``{}``, which fails its required fields here.
-    for section, data in get_detail_sections(case).items():
+    sections = get_detail_sections(case)
+    for section, data in sections.items():
         for problem in section_errors(config, section, data):
+            error(f"details.{section}", str(problem))
+    if config.details_evidence_checks:
+        for section, problem in config.details_evidence_checks(sections, evidence):
             error(f"details.{section}", str(problem))
     return problems
 

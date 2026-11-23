@@ -955,7 +955,8 @@ class TestValidate:
         undelivered = {
             **DEMAND_NOTICE_INFO,
             "is_delivered": False,
-            "return_date": "2024-02-10",
+            # The same day as the delivery it replaces, so the cause of action holds.
+            "return_date": "2024-02-05",
             "non_delivery_reason": "ADDRESSEE_NOT_AVAILABLE",
         }
         undelivered.pop("delivery_date")
@@ -1073,6 +1074,9 @@ class TestValidate:
         CaseEvidence.objects.filter(pk=notice.pk).update(
             evidence_info={**notice.evidence_info, key: "2024-01-30"}
         )
+        if key == "delivery_date":
+            # 15 days after the new delivery, so only the notice is reported.
+            self.set_cause_of_action(draft, "2024-02-14")
 
         body = validate(client, draft)
 
@@ -1194,7 +1198,6 @@ class TestValidate:
                 "evidence_info": {
                     **DEMAND_NOTICE_INFO,
                     "dispatch_date": "2024-01-21",
-                    "delivery_date": "2024-01-25",
                 }
             },
             format="json",
@@ -1218,7 +1221,6 @@ class TestValidate:
             evidence_info={
                 **notice.evidence_info,
                 "dispatch_date": RETURN_MEMO_INFO["return_date"],
-                "delivery_date": "2024-01-25",
             }
         )
 
@@ -1258,6 +1260,70 @@ class TestValidate:
         ChequeBounceCase.objects.filter(case_id=draft).update(jurisdiction_limitation=section)
 
         assert fields_of(validate(client, draft)) == {"details.jurisdiction_limitation"}
+
+    # The notice was delivered on 2024-02-05, so the cause of action is
+    # 2024-02-20 (PRD JUR-9).
+    def set_cause_of_action(self, draft, day):
+        section = {**JURISDICTION, "cause_of_action_date": day}
+        ChequeBounceCase.objects.filter(case_id=draft).update(jurisdiction_limitation=section)
+
+    def test_a_cause_of_action_15_days_after_service_is_valid(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        self.set_cause_of_action(draft, "2024-02-20")
+
+        assert validate(client, draft)["is_valid"] is True
+
+    @pytest.mark.parametrize("day", ["2024-02-21", "2024-02-19", "2024-02-05"])
+    def test_any_other_cause_of_action_date_is_reported(self, client, draft, pdf, day):
+        make_complete_case(client, draft, pdf)
+        self.set_cause_of_action(draft, day)
+
+        assert validate(client, draft)["errors"] == [
+            {
+                "field": "details.jurisdiction_limitation",
+                "message": (
+                    "cause_of_action_date: The cause of action date must be 15 days after the "
+                    "service of demand notice #1 on 2024-02-05: 2024-02-20."
+                ),
+            }
+        ]
+
+    def test_an_undelivered_notice_is_served_on_its_return_date(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        notice = CaseEvidence.objects.get(case_id=draft, evidence_type="LEGAL_DEMAND_NOTICE")
+        CaseEvidence.objects.filter(pk=notice.pk).update(
+            evidence_info={**UNDELIVERED_NOTICE, "return_date": "2024-02-03"}
+        )
+
+        body = validate(client, draft)
+
+        assert fields_of(body) == {"details.jurisdiction_limitation"}
+        assert "notice #1 on 2024-02-03" in body["errors"][0]["message"]
+
+    def test_with_several_notices_the_earliest_service_counts(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        # Served on 2024-02-02, before the first notice's 2024-02-05.
+        second = add_with_scan(
+            client,
+            draft,
+            pdf,
+            "LEGAL_DEMAND_NOTICE",
+            {**DEMAND_NOTICE_INFO, "delivery_date": "2024-02-02"},
+        ).json()
+        dispatch = upload(
+            client, draft, pdf, "PROOF_OF_DISPATCH", case_evidence_id=second["case_evidence_id"]
+        )
+        assert dispatch.status_code == 201, dispatch.json()
+
+        body = validate(client, draft)
+
+        assert fields_of(body) == {"details.jurisdiction_limitation"}
+        assert "demand notice #2 on 2024-02-02" in body["errors"][0]["message"]
+        assert body["errors"][0]["message"].endswith(": 2024-02-17.")
+
+        self.set_cause_of_action(draft, "2024-02-17")
+
+        assert validate(client, draft)["is_valid"] is True
 
     def test_other_users_cases_are_not_found(self, client, client_for, other_user, draft):
         add_complainant(client, draft)
