@@ -11,7 +11,8 @@ from apps.hearings.enums import HearingStatus, ReleaseReason
 from apps.hearings.models import Hearing
 from apps.orders.enums import ItemSource, OrderStatus
 from apps.orders.models import Order
-from apps.orders.services import drafting, items
+from apps.orders.services import bulk, drafting, items
+from apps.orders.services.common import ProblemsError
 
 from .factories import TODAY, code, make_case, schedule, started_hearing
 
@@ -290,9 +291,10 @@ def test_changing_to_a_type_without_links_needs_confirmation(gujarat, case, draf
         lambda case_id: [type("D", (), {"id": document_id, "name": "Vakalatnama"})()],
     )
     drafting.link_document(order.pk, document_id, actor=drafter)
-    with pytest.raises(BusinessError) as excinfo:
+    with pytest.raises(ProblemsError) as excinfo:
         drafting.change_type(order.pk, "ROZNAMA", actor=drafter)
     assert code(excinfo) == "E14025"
+    assert [str(row) for row in excinfo.value.detail["linked_documents"]] == [str(document_id)]
     assert order.linked_documents.count() == 1
     drafting.change_type(order.pk, "ROZNAMA", actor=drafter, remove_linked_documents=True)
     order.refresh_from_db()
@@ -345,3 +347,62 @@ def test_only_a_draft_can_be_discarded(order, drafter):
         drafting.discard(order.pk, actor=drafter)
     assert code(excinfo) == "E14001"
     assert "can:" in str(excinfo.value.detail)
+
+
+@pytest.mark.parametrize(
+    ("arose", "filed", "reason", "expected"),
+    [
+        ("2026-01-01", "2026-01-15", "late", False),  # on time, reason kept
+        ("2026-01-01", "2026-02-01", "late", False),  # on the deadline
+        ("2026-01-01", "2026-02-02", "late", True),  # one day late
+        ("2026-01-31", "2026-02-28", "late", False),  # short month deadline
+        ("2026-01-31", "2026-03-01", "late", True),
+        ("2026-01-01", "2026-03-01", "", False),  # late but no reason
+        ("2026-01-01", "bad", "late", False),
+    ],
+)
+def test_delay_applicable_follows_the_filing_dates(case, arose, filed, reason, expected):
+    from apps.cases import selectors
+    from apps.cases.models import ChequeBounceCase
+
+    detail, _ = ChequeBounceCase.objects.get_or_create(case=case)
+    detail.jurisdiction_limitation = {
+        "cause_of_action_date": arose,
+        "complaint_filing_date": filed,
+        "condonation_reason": reason,
+    }
+    detail.save()
+    assert selectors.delay_applicable(case.pk) is expected
+
+
+def test_a_started_check_comes_before_an_existing_draft_is_returned(case, staff):
+    hearing = schedule(case, TODAY)
+    bulk.bulk_next_hearing(
+        actor=staff, court_id=case.court_id, hearing_ids=[hearing.pk], state="NOT_LISTED_AGAIN"
+    )
+    assert Order.objects.filter(hearing_id=hearing.pk).exists()
+    with pytest.raises(BusinessError) as excinfo:
+        drafting.create_in_hearing(hearing_id=hearing.pk, actor=staff)
+    assert code(excinfo) == "E14004"
+    order, created = drafting.create_in_hearing(
+        hearing_id=hearing.pk, actor=staff, require_started=False
+    )
+    assert created is False
+
+
+def test_changing_type_names_the_documents_it_would_remove(case, staff):
+    import uuid
+
+    from apps.orders.models import OrderLinkedDocument
+    from apps.orders.tests.test_diary import state
+
+    state("GJ")
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=staff, order_type_code="NORMAL")
+    ids = {uuid.uuid4(), uuid.uuid4()}
+    for document_id in ids:
+        OrderLinkedDocument.objects.create(order=order, document_id=document_id)
+    with pytest.raises(ProblemsError) as excinfo:
+        drafting.change_type(order.pk, "ROZNAMA", actor=staff)
+    assert excinfo.value.detail["linked_documents"]
+    assert {str(item) for item in excinfo.value.detail["linked_documents"]} == {str(i) for i in ids}
+    assert order.linked_documents.count() == 2

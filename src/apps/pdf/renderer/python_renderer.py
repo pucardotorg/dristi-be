@@ -391,7 +391,7 @@ class PythonRenderer(PDFRenderer):
         ordered = block.get("ordered", False)
         return ListFlowable(
             items,
-            bulletType="1" if ordered else "bullet",
+            bulletType=block.get("list_type", "1") if ordered else "bullet",
             start=block.get("start", 1) if ordered else None,
             bulletFormat="%s." if ordered else None,
             bulletFontName=style.fontName,

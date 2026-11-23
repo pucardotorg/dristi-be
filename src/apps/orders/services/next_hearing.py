@@ -17,10 +17,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.api.errors import BusinessError
+from apps.cases.selectors import get_listability
 from apps.hearings import selectors as hearing_selectors
 from apps.hearings.enums import ReleaseReason
 from apps.hearings.exceptions import HearingError
-from apps.hearings.services import listing
+from apps.hearings.services import calendar, listing
 
 from .. import errors
 from ..enums import EnteredFrom, ItemSource, NextHearingState
@@ -55,6 +56,9 @@ def _set_system_item(order, code, values, actor):
             item.values = values
             items._save_item(item, actor, "date item follows next hearing")
             return
+    # A new date item is order data: reopen completed data first (``SND-06``). The caller's
+    # transaction rolls this back with the hold if the item is refused.
+    _reset_complete(order, actor)
     _drop_system_items(order, actor)
     item_type = OrderItemType.objects.get(code=code)
     items.add_locked(order, item_type, values=values, source=ItemSource.SYSTEM, actor=actor)
@@ -169,6 +173,11 @@ def _hold_in_hearing(order, date, purpose, actor):
 
 
 def _hold_outside_hearing(order, date, purpose, actor):
+    # Read the listed hearing under the court lock ``listing.hold`` takes, in this
+    # transaction, so a hearing confirmed meanwhile cannot make the target stale.
+    listability = get_listability(order.case_id)
+    if listability.listable:
+        calendar.lock_court(listability.court_id)
     listed = hearing_selectors.scheduled_hearing(order.case_id)
     if listed is not None and (listed.hearing_date, listed.purpose_code) == (date, purpose):
         # Back to the listed hearing: nothing to hold, nothing to move.
@@ -182,6 +191,9 @@ def _hold_outside_hearing(order, date, purpose, actor):
         return []
 
     moves = listed.id if listed is not None else None
+    if order.next_hearing_held and order.moves_hearing_id != moves:
+        # An existing hold cannot change what it moves: replace it in this transaction.
+        listing.release(order_id=order.pk, reason=ReleaseReason.DATE_REMOVED, actor=actor)
     result = _hold(order, date, purpose, actor, moves_hearing_id=moves)
     order.next_hearing_state = NextHearingState.LISTED
     order.next_hearing_date = date

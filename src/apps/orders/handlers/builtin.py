@@ -3,6 +3,8 @@
 import datetime
 import logging
 
+from django.db import transaction
+
 from apps.cases.selectors import order_context
 from apps.hearings import selectors as hearing_selectors
 from apps.hearings.services import calendar
@@ -137,7 +139,7 @@ class MandatorySubmissionHandler(OrderItemHandler):
         deadline = values.get("deadline")
         if deadline:
             try:
-                if datetime.date.fromisoformat(deadline) < datetime.date.today():
+                if datetime.date.fromisoformat(deadline) < calendar.business_date():
                     problems.append(
                         Problem("values.deadline", "IN_PAST", "The deadline cannot be in the past.")
                     )
@@ -183,32 +185,34 @@ class CostHandler(OrderItemHandler):
         from apps.payments.models import Demand
         from apps.payments.services.demands import DemandService
 
-        existing = Demand.objects.filter(
-            reference_type=ReferenceType.ORDER, reference_id=str(ctx.item_id)
-        ).first()
-        if existing is None:
-            demand = DemandService.raise_demand(
-                case=ctx.case_id,
-                reference_type=ReferenceType.ORDER,
-                reference_id=str(ctx.item_id),
-                user_id=paying_user_id(ctx.case_id, values.get("paying_party")),
-                due_date=_end_of_day(values.get("pay_by")),
-                metadata={
-                    "order_id": str(ctx.order_id),
-                    "receiving_party": values.get("receiving_party"),
-                    "paying_party": values.get("paying_party"),
-                },
-                items=[
-                    {
-                        "charge_type": ChargeType.COST,
-                        "description": "Cost ordered by the court",
-                        "quantity": 1,
-                        "unit_amount": values["amount"],
-                    }
-                ],
-            )
-        else:
-            demand = existing
+        # Demand has no unique reference, so the item's row serialises lookup and creation:
+        # a second overlapping run waits, then finds the first run's demand.
+        with transaction.atomic():
+            OrderItem.objects.select_for_update().get(pk=ctx.item_id)
+            demand = Demand.objects.filter(
+                reference_type=ReferenceType.ORDER, reference_id=str(ctx.item_id)
+            ).first()
+            if demand is None:
+                demand = DemandService.raise_demand(
+                    case=ctx.case_id,
+                    reference_type=ReferenceType.ORDER,
+                    reference_id=str(ctx.item_id),
+                    user_id=paying_user_id(ctx.case_id, values.get("paying_party")),
+                    due_date=_end_of_day(values.get("pay_by")),
+                    metadata={
+                        "order_id": str(ctx.order_id),
+                        "receiving_party": values.get("receiving_party"),
+                        "paying_party": values.get("paying_party"),
+                    },
+                    items=[
+                        {
+                            "charge_type": ChargeType.COST,
+                            "description": "Cost ordered by the court",
+                            "quantity": 1,
+                            "unit_amount": values["amount"],
+                        }
+                    ],
+                )
         reference = ports.open_item_task(
             ctx.order_id,
             ctx.item_id,

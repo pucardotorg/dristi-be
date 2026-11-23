@@ -431,9 +431,25 @@ class Migration(migrations.Migration):
                 ("diary_same_as_text", models.BooleanField(default=True)),
                 ("diary_text", models.TextField(blank=True)),
                 ("sent_for_signing_at", models.DateTimeField(blank=True, null=True)),
-                ("number", models.CharField(blank=True, max_length=64)),
+                ("number", models.CharField(blank=True, max_length=128)),
                 ("order_date", models.DateField(blank=True, null=True)),
                 ("signing_file_id", models.CharField(blank=True, max_length=64)),
+                (
+                    "signing_heading",
+                    models.CharField(
+                        blank=True,
+                        help_text="The heading printed on the file prepared for signing; signed reads keep it.",
+                        max_length=32,
+                    ),
+                ),
+                (
+                    "signing_attendance",
+                    models.JSONField(
+                        blank=True,
+                        default=list,
+                        help_text="The attendance lines printed on the file prepared for signing.",
+                    ),
+                ),
                 ("signed_file_id", models.CharField(blank=True, max_length=64)),
                 (
                     "signing_method",
@@ -581,7 +597,7 @@ class Migration(migrations.Migration):
                         max_length=18,
                     ),
                 ),
-                ("number", models.CharField(blank=True, max_length=64)),
+                ("number", models.CharField(blank=True, max_length=128)),
                 ("signing_file_id", models.CharField(blank=True, max_length=64)),
                 ("signed_file_id", models.CharField(blank=True, max_length=64)),
                 (
@@ -1123,7 +1139,7 @@ class Migration(migrations.Migration):
                         max_length=18,
                     ),
                 ),
-                ("number", models.CharField(blank=True, max_length=64)),
+                ("number", models.CharField(blank=True, max_length=128)),
                 ("signing_file_id", models.CharField(blank=True, max_length=64)),
                 ("signed_file_id", models.CharField(blank=True, max_length=64)),
                 (
@@ -1383,9 +1399,25 @@ class Migration(migrations.Migration):
                 ("diary_same_as_text", models.BooleanField(default=True)),
                 ("diary_text", models.TextField(blank=True)),
                 ("sent_for_signing_at", models.DateTimeField(blank=True, null=True)),
-                ("number", models.CharField(blank=True, max_length=64)),
+                ("number", models.CharField(blank=True, max_length=128)),
                 ("order_date", models.DateField(blank=True, null=True)),
                 ("signing_file_id", models.CharField(blank=True, max_length=64)),
+                (
+                    "signing_heading",
+                    models.CharField(
+                        blank=True,
+                        help_text="The heading printed on the file prepared for signing; signed reads keep it.",
+                        max_length=32,
+                    ),
+                ),
+                (
+                    "signing_attendance",
+                    models.JSONField(
+                        blank=True,
+                        default=list,
+                        help_text="The attendance lines printed on the file prepared for signing.",
+                    ),
+                ),
                 ("signed_file_id", models.CharField(blank=True, max_length=64)),
                 (
                     "signing_method",
@@ -1591,6 +1623,7 @@ class Migration(migrations.Migration):
                     models.CharField(
                         choices=[
                             ("PENDING", "Pending"),
+                            ("RUNNING", "Running"),
                             ("DONE", "Done"),
                             ("FAILED", "Failed"),
                             ("BLOCKED", "Blocked"),

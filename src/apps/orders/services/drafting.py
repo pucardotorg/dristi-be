@@ -96,19 +96,19 @@ def _save_new(order, actor, reason):
 def create_in_hearing(*, hearing_id, actor, order_type_code=None, require_started=True):
     """Return ``(order, created)`` for the hearing's draft order (#5.1).
 
-    The hearing must have been started (``E14004``), except for the cause list's
-    bulk next hearing, which creates the draft to hold its value (``PLC-05``). If
-    it already has a live order, that order is returned, so everyone opening the
-    listing works one draft (``DFT-01``).
+    The hearing must have been started (``E14004``), even when it already has a
+    draft, except for the cause list's bulk next hearing, which creates the draft
+    to hold its value (``PLC-05``). If it has a live order, that order is returned,
+    so everyone opening the listing works one draft (``DFT-01``).
     """
     hearing = hearing_selectors.get_hearing(hearing_id)
     if hearing is None:
         raise NotFound("Hearing not found.")
+    if require_started and hearing.started_at is None:
+        raise BusinessError(errors.HEARING_NOT_STARTED)
     existing = live_order_for_hearing(hearing_id)
     if existing is not None:
         return existing, False
-    if require_started and hearing.started_at is None:
-        raise BusinessError(errors.HEARING_NOT_STARTED)
     case = Case.objects.get(pk=hearing.case_id)
     order_type = resolve_type(case.pk, preselect=FROM_HEARING, code=order_type_code)
     try:
@@ -309,8 +309,9 @@ def change_type(order_id, type_code, *, actor, remove_linked_documents=False):
 
     A type that allows no links removes an order's links only with
     ``remove_linked_documents`` (``E14025``). A type with no separate diary
-    entry makes the entry the order text, keeping ``diary_text`` so changing
-    back restores it (``DEN-03``). The type changes nothing else (``OTY-02``).
+    entry reads the entry as the order text without touching the stored
+    ``diary_same_as_text`` and ``diary_text``, so changing back restores them
+    (``DEN-03``). The type changes nothing else (``OTY-02``).
     """
     with transaction.atomic():
         order = common.lock_order(order_id)
@@ -321,15 +322,12 @@ def change_type(order_id, type_code, *, actor, remove_linked_documents=False):
         links = list(order.linked_documents.all())
         if links and not order_type.allows_linked_documents:
             if not remove_linked_documents:
-                raise BusinessError(
+                raise common.ProblemsError(
                     errors.LINKED_DOCUMENTS_WOULD_BE_REMOVED,
-                    f"Changing to {order_type.label} removes {len(links)} linked "
-                    "document(s). Confirm to remove them.",
+                    [("linked_documents", str(link.document_id)) for link in links],
                 )
             order.linked_documents.all().delete()
         order.order_type = order_type
-        if not order_type.separate_diary_entry:
-            order.diary_same_as_text = True
         if order.number:
             # A number allotted on a signing attempt belongs to the old type's series.
             order.number = ""

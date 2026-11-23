@@ -90,6 +90,7 @@ class RunStatus(models.TextChoices):
     """Where a workflow step is (#3.7)."""
 
     PENDING = "PENDING", "Pending"
+    RUNNING = "RUNNING", "Running"
     DONE = "DONE", "Done"
     FAILED = "FAILED", "Failed"
     BLOCKED = "BLOCKED", "Blocked"

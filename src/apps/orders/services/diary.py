@@ -26,13 +26,18 @@ def next_purpose_label(order):
     return row.label if row else order.next_hearing_purpose
 
 
+def same_as_text(order):
+    """Whether the entry is the order text: chosen, or forced by a type with no separate entry."""
+    return order.diary_same_as_text or not order.order_type.separate_diary_entry
+
+
 def composed_entry(order):
     """Return the diary entry as HTML: the order text with attendance and next hearing lines.
 
     A separate entry is returned as written. Otherwise the entry is composed on
     read, in full (``PUB-04``, ``ADY-04``).
     """
-    if not order.diary_same_as_text:
+    if not same_as_text(order):
         return order.diary_text
     parts = [
         f"<p>{html.escape(line)}</p>" for line in rendering.attendance_sentences(order.hearing_id)
@@ -116,4 +121,11 @@ def set_entry_text(order_id, text, actor):
         return order
 
 
-__all__ = ["composed_entry", "entry_for", "next_purpose_label", "set_entry", "set_entry_text"]
+__all__ = [
+    "composed_entry",
+    "entry_for",
+    "next_purpose_label",
+    "same_as_text",
+    "set_entry",
+    "set_entry_text",
+]

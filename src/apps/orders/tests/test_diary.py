@@ -87,10 +87,13 @@ def test_changing_to_roznama_makes_the_entry_the_text_and_back_restores_it(case,
     diary.set_entry(order.pk, same_as_text=False, text="<p>Mine.</p>", actor=staff)
     drafting.change_type(order.pk, "ROZNAMA", actor=staff)
     order.refresh_from_db()
-    assert order.diary_same_as_text is True and order.diary_text == "<p>Mine.</p>"
+    assert diary.same_as_text(order) is True and order.diary_text == "<p>Mine.</p>"
+    assert diary.composed_entry(order) != "<p>Mine.</p>"
     drafting.change_type(order.pk, "NORMAL", actor=staff)
     order.refresh_from_db()
     assert order.diary_text == "<p>Mine.</p>"
+    assert diary.same_as_text(order) is False
+    assert diary.composed_entry(order) == "<p>Mine.</p>"
 
 
 def test_kerala_edits_after_triggering_go_through_the_a_diary_and_never_touch_the_text(

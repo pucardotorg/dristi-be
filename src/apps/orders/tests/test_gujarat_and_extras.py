@@ -46,6 +46,7 @@ def test_a_roznama_is_listed_under_awaiting_signature_from_triggering_until_sign
     # The Roznama-type order is signed once, as an order; only the normal order's Roznama waits.
     assert row["id"] == str(normal.pk)
     assert row["kind"] == "ROZNAMA" and row["my_action"] == "sign_roznama"
+    assert row["signature"] == "AWAITING"  # the Roznama is unsigned, though the order is signed
     assert row["stages"] == ["TRIGGERED", "AWAITING_SIGNATURE"]
     assert row["type"] == {"code": "NORMAL", "label": "Normal"}  # Gujarat has two types
     assert body["counts"]["triggered"] == 2
@@ -89,9 +90,11 @@ def test_a_read_only_value_the_system_filled_survives_an_edit(case, drafter, set
     )
     item = order.items.get()
     assert item.values["original_hearing_date"] == TODAY.replace(day=19).isoformat()
-    items.update(order.pk, item.pk, {**item.values, "hearing_purpose": "ADR"}, actor=filler)
+    with pytest.raises(BusinessError):  # a system item follows the next hearing
+        items.update(order.pk, item.pk, {**item.values, "hearing_purpose": "ADR"}, actor=filler)
     item.refresh_from_db()
     assert item.values["original_hearing_date"] == TODAY.replace(day=19).isoformat()
+    assert item.values["hearing_purpose"] == "ARGUMENTS"
 
 
 def format_number(*, court_code, series, seq, year, state):

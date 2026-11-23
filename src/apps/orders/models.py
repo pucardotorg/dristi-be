@@ -1,5 +1,7 @@
 """Orders models (spec 0039 #3)."""
 
+import string
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -92,7 +94,9 @@ class OrderType(BaseModel, BaseActivatableModel, BaseAuditableModel):
         """Check that ``preselect_from`` is a list of known screens."""
         super().clean()
         known = {"HEARING", "APPLICATION_ONBOARDING"}
-        if not isinstance(self.preselect_from, list) or set(self.preselect_from) - known:
+        if not isinstance(self.preselect_from, list) or any(
+            not isinstance(screen, str) or screen not in known for screen in self.preselect_from
+        ):
             raise ValidationError({"preselect_from": f"Use a list of {sorted(known)}."})
         if not self.separate_diary_entry and self.signs_diary_entry:
             raise ValidationError(
@@ -142,8 +146,8 @@ class OrderItemType(BaseModel, BaseActivatableModel, BaseAuditableModel):
             errors["code"] = CODE_MESSAGE
         if problems := field_schema.schema_errors(self.field_schema):
             errors["field_schema"] = " ".join(problems)
-        if self.availability != Availability.DROPDOWN and not self.target_type:
-            errors["target_type"] = "A contextual item names what it applies to."
+        if self.availability != Availability.DROPDOWN and self.target_type != "APPLICATION":
+            errors["target_type"] = "A contextual item applies to an APPLICATION."
         if self.availability == Availability.CONTEXTUAL and self.category:
             errors["category"] = "A contextual item has no category."
         if errors:
@@ -167,6 +171,25 @@ class OrderItemCombinationRule(BaseModel, BaseActivatableModel, BaseAuditableMod
 
     def __str__(self):
         return self.code
+
+    def clean(self):
+        """Check the message uses only the two documented placeholders."""
+        super().clean()
+        try:
+            names = [
+                name for _, name, _, _ in string.Formatter().parse(self.message) if name is not None
+            ]
+            ok = set(names) <= {"adding", "existing"}
+            # Also catches what parsing alone allows, such as a nested ``{adding:{x}}``.
+            self.message.format(adding="", existing="")
+        except (ValueError, KeyError, IndexError, AttributeError):
+            ok = False
+        if not ok:
+            raise ValidationError(
+                {
+                    "message": "Use only the placeholders {adding} and {existing}, with braces closed."
+                }
+            )
 
 
 class Order(BaseModel, BaseAuditableModel):
@@ -218,9 +241,19 @@ class Order(BaseModel, BaseAuditableModel):
 
     sent_for_signing_by = _user()
     sent_for_signing_at = models.DateTimeField(null=True, blank=True)
-    number = models.CharField(max_length=64, blank=True)
+    number = models.CharField(max_length=128, blank=True)
     order_date = models.DateField(null=True, blank=True)
     signing_file_id = models.CharField(max_length=64, blank=True)
+    signing_heading = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text="The heading printed on the file prepared for signing; signed reads keep it.",
+    )
+    signing_attendance = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The attendance lines printed on the file prepared for signing.",
+    )
     signed_file_id = models.CharField(max_length=64, blank=True)
     signing_method = models.CharField(max_length=16, choices=SigningMethod.choices, blank=True)
     signed_by = _user()
@@ -359,7 +392,7 @@ class OrderRoznama(BaseModel, BaseAuditableModel):
     status = models.CharField(
         max_length=18, choices=RoznamaStatus.choices, default=RoznamaStatus.AWAITING_SIGNATURE
     )
-    number = models.CharField(max_length=64, blank=True)
+    number = models.CharField(max_length=128, blank=True)
     signing_file_id = models.CharField(max_length=64, blank=True)
     signed_file_id = models.CharField(max_length=64, blank=True)
     signing_method = models.CharField(max_length=16, choices=SigningMethod.choices, blank=True)

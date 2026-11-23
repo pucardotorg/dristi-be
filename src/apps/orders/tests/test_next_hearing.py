@@ -244,3 +244,146 @@ def test_started_hearings_keep_a_purpose_the_order_already_has(hearing, order, s
     order.refresh_from_db()
     assert (order.next_hearing_date, order.next_hearing_purpose) == (LATER, "ARGUMENTS")
     assert HearingError and started_hearing
+
+
+def test_bulk_items_roll_back_an_orders_earlier_items_when_a_later_one_fails(
+    order,
+    courtroom,
+    filler,
+    staff,
+):
+    result = bulk.bulk_items(
+        actor=staff,
+        order_ids=[order.pk],
+        item_specs=[{"item_type": "COST"}, {"item_type": "COST", "values": {"nope": 1}}],
+    )
+    assert result["done"] == []
+    assert [s["order_id"] for s in result["skipped"]] == [order.pk]
+    assert order.items.count() == 0
+
+
+def test_bulk_items_commit_each_order_that_succeeds(order, staff):
+    result = bulk.bulk_items(actor=staff, order_ids=[order.pk], item_specs=[{"item_type": "COST"}])
+    assert result["done"] == [order.pk] and order.items.count() == 1
+
+
+def test_bulk_text_skips_an_unstarted_hearing_even_with_a_draft(case, staff):
+    hearing = schedule(case, TODAY)  # scheduled, not started
+    bulk.bulk_next_hearing(
+        actor=staff,
+        court_id=case.court_id,
+        hearing_ids=[hearing.pk],
+        state="NOT_LISTED_AGAIN",
+    )
+    draft = Order.objects.get(hearing_id=hearing.pk)
+    assert draft.text == ""
+    result = bulk.bulk_text(
+        actor=staff, court_id=case.court_id, hearing_ids=[hearing.pk], text="<p>Hi.</p>"
+    )
+    assert result["done"] == []
+    assert [(s["hearing_id"], s["code"]) for s in result["skipped"]] == [(hearing.pk, "E14004")]
+    assert Order.objects.get(pk=draft.pk).text == ""
+
+
+def test_bulk_text_still_appends_for_a_started_hearing_with_a_draft(order, hearing, case, staff):
+    result = bulk.bulk_text(
+        actor=staff, court_id=case.court_id, hearing_ids=[hearing.pk], text="<p>Hi.</p>"
+    )
+    assert result["done"] == [hearing.pk]
+
+
+def test_bulk_next_hearing_with_the_current_purpose_refuses_a_stale_snapshot(
+    order, hearing, case, staff, monkeypatch
+):
+    real = next_hearing.set_next_hearing
+    seen = {}
+
+    def spy(order_id, **kwargs):
+        seen.update(kwargs)
+        # A concurrent edit lands between the snapshot and the locked write.
+        Order.objects.filter(pk=order_id).update(data_version=kwargs["data_version"] + 1)
+        return real(order_id, **kwargs)
+
+    monkeypatch.setattr(next_hearing, "set_next_hearing", spy)
+    result = bulk.bulk_next_hearing(
+        actor=staff,
+        court_id=case.court_id,
+        hearing_ids=[hearing.pk],
+        state="LISTED",
+        date=TODAY.replace(day=19),
+    )
+    assert seen["data_version"] is not None
+    assert result["done"] == []
+    assert [s["code"] for s in result["skipped"]] == ["E14002"]
+
+
+def test_bulk_next_hearing_with_an_explicit_purpose_keeps_last_write_wins(
+    order, hearing, case, staff, monkeypatch
+):
+    seen = {}
+    real = next_hearing.set_next_hearing
+
+    def spy(order_id, **kwargs):
+        seen.update(kwargs)
+        return real(order_id, **kwargs)
+
+    monkeypatch.setattr(next_hearing, "set_next_hearing", spy)
+    result = bulk.bulk_next_hearing(
+        actor=staff,
+        court_id=case.court_id,
+        hearing_ids=[hearing.pk],
+        state="LISTED",
+        date=TODAY.replace(day=19),
+        purpose="EVIDENCE_OF_COMPLAINANT",
+    )
+    assert seen["data_version"] is None and result["done"] == [hearing.pk]
+    assert started_hearing and drafting
+
+
+def test_a_hold_is_replaced_when_the_hearing_it_moves_changes(case, drafter, setter):
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
+    next_hearing.set_next_hearing(
+        order.pk, state="LISTED", date=TODAY.replace(day=26), purpose="ARGUMENTS", actor=setter
+    )
+    other = schedule(case, TODAY.replace(day=19), "EVIDENCE_OF_COMPLAINANT")  # another order's
+    next_hearing.set_next_hearing(
+        order.pk,
+        state="LISTED",
+        date=TODAY.replace(day=26),
+        purpose="EVIDENCE_OF_COMPLAINANT",
+        actor=setter,
+    )
+    order.refresh_from_db()
+    assert order.moves_hearing_id == other.pk
+    held = Hearing.objects.get(source_order_id=order.pk, status="PROVISIONAL")
+    assert held.moves_hearing_id == other.pk
+    assert order.items.get().item_type.code == "RESCHEDULING_OF_HEARING_DATE"
+
+
+def test_the_first_date_item_reopens_completed_order_data(case, drafter, setter):
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
+    Order.objects.filter(pk=order.pk).update(data_complete=True)
+    next_hearing.set_next_hearing(
+        order.pk, state="LISTED", date=TODAY.replace(day=26), purpose="ARGUMENTS", actor=setter
+    )
+    order.refresh_from_db()
+    assert order.data_complete is False
+    assert order.items.get().item_type.code == "SCHEDULING_OF_HEARING_DATE"
+
+
+def test_the_listed_hearing_is_read_after_the_court_lock(case, drafter, setter, monkeypatch):
+    from apps.hearings import selectors as hearing_selectors
+    from apps.hearings.services import calendar
+
+    calls = []
+    real_lock, real_read = calendar.lock_court, hearing_selectors.scheduled_hearing
+    monkeypatch.setattr(calendar, "lock_court", lambda c: (calls.append("lock"), real_lock(c))[1])
+    monkeypatch.setattr(
+        hearing_selectors, "scheduled_hearing", lambda c: (calls.append("read"), real_read(c))[1]
+    )
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
+    calls.clear()
+    next_hearing.set_next_hearing(
+        order.pk, state="LISTED", date=TODAY.replace(day=26), purpose="ARGUMENTS", actor=setter
+    )
+    assert calls.index("lock") < calls.index("read")

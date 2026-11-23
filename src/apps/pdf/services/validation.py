@@ -136,6 +136,7 @@ _BLOCKS = [
             "as": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
             "item": {"type": "string"},
             "ordered": {"type": "boolean"},
+            "list_type": {"type": "string", "enum": ["1", "a"]},
             "start": {"type": "integer", "minimum": 0},
             "indent": _NUMBER,
             "style": {"type": "string"},
