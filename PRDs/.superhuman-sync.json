@@ -17,7 +17,8 @@
       "contentHash": "433faf5d9c58",
       "pageUpdatedAt": 1795027407.165,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed. 2026-11-17 v50.16: Status line, callout and DCM-12 cells (grid-TpBE7PtM6j) patched in place. 2026-11-18 v50.17: Status line, callout, §5 police-station sentence, §8 persons-responsible line (new block), §20.2 batch 21 patched; ACC-3 row deleted and ACC-14 cell updated (grid-FAAg6kHyer); WIT-8 row added (grid-s22EreNnJR). 2026-11-19: patched in place to v50.19 (ACC-6/7, ACC-16/17, JUR-7/8, missing contacts, batch 22). Hash is of the committed file; the working copy also holds uncommitted PSS Act edits (v50.18) from another session, not synced."
+      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed. 2026-11-17 v50.16: Status line, callout and DCM-12 cells (grid-TpBE7PtM6j) patched in place. 2026-11-18 v50.17: Status line, callout, §5 police-station sentence, §8 persons-responsible line (new block), §20.2 batch 21 patched; ACC-3 row deleted and ACC-14 cell updated (grid-FAAg6kHyer); WIT-8 row added (grid-s22EreNnJR). 2026-11-19: patched in place to v50.19 (ACC-6/7, ACC-16/17, JUR-7/8, missing contacts, batch 22). Hash is of the committed file; the working copy also holds uncommitted PSS Act edits (v50.18) from another session, not synced. 2026-11-23: NOT synced. The page was edited on 2026-11-19 20:36 IST by Ashish Yadav (ashish.y@beehyv.com), after the last recorded sync; local is at v50.33 (PSS Act scope, LIT-2/LIT-17, date and IFSC validations, Visible-when wording, tooltips, JUR-9/11, synopsis field IDs). Resolve with the owner before overwriting.",
+      "pageDirty": true
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -581,9 +582,9 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "07e340ab4e24",
-      "pageUpdatedAt": 1795167364.611,
-      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated. 2026-11-20: Application onboarder role section appended; status and callout date updated. `sections` not recorded.",
+      "contentHash": "c71d02e31bb8",
+      "pageUpdatedAt": 1795452876.473,
+      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated. 2026-11-20: Application onboarder role section appended; status and callout date updated. `sections` not recorded. 2026-11-23: PSS-03 section appended at the end; status and callout date updated. `sections` not recorded.",
       "calloutElementId": "cl-e-XQNr8pNU"
     },
     "office-management.md": {
@@ -1021,14 +1022,104 @@
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
       "title": "Payment and Settlement Systems Act Cases",
-      "contentHash": "ab5e342a6c93",
-      "pageUpdatedAt": 1793856536.537,
+      "contentHash": "9df479d9b81f",
+      "pageUpdatedAt": 1795452839.633,
       "calloutElementId": "cl-8kTOmx76kL",
       "sections": [
         {
           "key": "# Payment and Settlement Systems Act Cases",
-          "elementId": "cl-kmbsO7Iml7",
-          "hash": "b256455ffefe"
+          "elementId": "cl-p3YNtnak9u",
+          "hash": "d4b10e55819b"
+        },
+        {
+          "key": "# 1. Section map",
+          "elementId": "cl-atW4I_xyVA",
+          "hash": "19ce8bb69a63"
+        },
+        {
+          "key": "# 2. Entry context",
+          "elementId": "cl-46oDXyLm5Y",
+          "hash": "9d033e5d8234"
+        },
+        {
+          "key": "# 3. Form structure",
+          "elementId": "cl-iFXOEE-OV1",
+          "hash": "df4ed9f70e89"
+        },
+        {
+          "key": "# 4. Mandate and Failed Debit — `MND`, `DBT`",
+          "elementId": "cl-9MVVl8lhyy",
+          "hash": "b3dc484d2381"
+        },
+        {
+          "key": "# 5. Legal Demand Notice — `LDN`",
+          "elementId": "cl-XYHBnOX_Ge",
+          "hash": "7e61dffb1e2d"
+        },
+        {
+          "key": "# 6. Jurisdiction & Limitation — `JUR`",
+          "elementId": "cl-ea81zYLVsO",
+          "hash": "dc3baf5e1d34"
+        },
+        {
+          "key": "# 7. Documents — `DCM`",
+          "elementId": "cl--dmRt7aPRz",
+          "hash": "ca2f76440e52"
+        },
+        {
+          "key": "# 8. Synopsis — `SYN`",
+          "elementId": "cl-gnu3Pgw_iL",
+          "hash": "e9f2410243c8"
+        },
+        {
+          "key": "# 9. Generated complaint PDF — `DOC`",
+          "elementId": "cl-XcB5Uc9SA3",
+          "hash": "a253cc5a8669"
+        },
+        {
+          "key": "# 10. Prefilled text templates",
+          "elementId": "cl-_UmZFWYMW2",
+          "hash": "f2d825b064cb"
+        },
+        {
+          "key": "# 11. Open questions — `Q`",
+          "elementId": "cl-GVQTFTaf4x",
+          "hash": "b8d246438272"
+        },
+        {
+          "key": "view: Pending tasks (Court Side) — Payment and Settlement Systems Act Cases",
+          "elementId": "table-Sj_tUIuxI-",
+          "hash": null
+        },
+        {
+          "key": "### Pending tasks (Citizen-Side)",
+          "elementId": "cl-S5CLOeBCVO",
+          "hash": "20c1668ccaf5"
+        },
+        {
+          "key": "view: Pending tasks (Citizen-Side) — Payment and Settlement Systems Act Cases",
+          "elementId": "table-7DjeTO1rRe",
+          "hash": null
+        },
+        {
+          "key": "### Notifications",
+          "elementId": "cl-BTG1Crk-KY",
+          "hash": "65ac5c2cf5a5"
+        },
+        {
+          "key": "view: Notifications — Payment and Settlement Systems Act Cases",
+          "elementId": "table-aIBhp8DV88",
+          "hash": null
+        },
+        {
+          "key": "### Events",
+          "elementId": "cl-Nh45r1_1rQ",
+          "hash": "72199396868f"
+        },
+        {
+          "key": "view: Events — Payment and Settlement Systems Act Cases",
+          "elementId": "table-jcYsLJ2peZ",
+          "hash": null
         }
       ]
     },
