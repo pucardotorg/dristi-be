@@ -7,6 +7,8 @@ in ``ESIGN_ENTITY_AUTHORIZERS`` — and this module asks. An entity type with no
 authorizer is not gated here; the endpoint's authentication still applies.
 """
 
+import inspect
+
 from django.utils.module_loading import import_string
 
 from . import conf
@@ -42,18 +44,38 @@ def resolve_authorizer(entity_type: str):
     return _registry.get(str(entity_type))
 
 
-def check_can_sign(*, user, entity_type: str, entity_id: str, organization_id=None) -> None:
-    """Raise :class:`ESignNotPermitted` unless ``user`` may sign the entity."""
+def check_can_sign(
+    *, user, entity_type: str, entity_id: str, organization_id=None, file_id=None
+) -> None:
+    """Raise :class:`ESignNotPermitted` unless ``user`` may sign the entity.
+
+    ``file_id`` -- the document about to be signed -- is passed on to an
+    authorizer that declares a ``file_id`` parameter, so the owning module can
+    insist on the exact document it expects signed.
+    """
 
     authorizer = resolve_authorizer(entity_type)
     if authorizer is None:
         return
 
-    allowed = authorizer(
-        user=user,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        organization_id=organization_id,
-    )
+    context = {
+        "user": user,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "organization_id": organization_id,
+    }
+    if _accepts(authorizer, "file_id"):
+        context["file_id"] = file_id
+    allowed = authorizer(**context)
     if not allowed:
         raise ESignNotPermitted()
+
+
+def _accepts(func, name: str) -> bool:
+    """Whether ``func`` takes a keyword argument called ``name``."""
+
+    try:
+        parameters = inspect.signature(func).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == name and p.kind != p.VAR_KEYWORD for p in parameters)

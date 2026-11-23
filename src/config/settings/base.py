@@ -255,6 +255,8 @@ PDF_SIGNATURE_HASH_ALGORITHM = env("PDF_SIGNATURE_HASH_ALGORITHM", default="SHA2
 # {"hrms": {"Authorization": "Bearer ..."}}. Configure in code or via the
 # environment-specific settings module; never stored on jobs.
 PDF_SERVICE_CREDENTIALS = {}
+# Tenant (state code) the e-filing complaint PDF is rendered for (apps.cases).
+CASE_PDF_TENANT_ID = env("CASE_PDF_TENANT_ID", default="kl")
 
 
 # ---------------------------------------------------------------------------

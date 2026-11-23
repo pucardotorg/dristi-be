@@ -20,9 +20,11 @@ from apps.cases.models import (
     CaseStatus,
     CaseType,
     ChequeBounceCase,
+    ComplaintSigningPackage,
     ContactType,
     ParticipantRole,
     Representation,
+    SigningPackageStatus,
 )
 from apps.cases.services import services
 from apps.cases.services.filing import return_to_signing
@@ -171,8 +173,32 @@ def submit(client, case_id, step):
     return client.post(reverse(f"case-submit-for-{step}", args=[case_id]))
 
 
+def open_signing_package(user, case_id):
+    """Give a case pending signature an open signing package, as preparing its PDF does.
+
+    Returns the package; the endpoint that renders the real one is tested in
+    ``test_complaint_pdf``.
+    """
+    file = make_file(user=user)
+    rounds = ComplaintSigningPackage.objects.filter(case_id=case_id).count()
+    return ComplaintSigningPackage.objects.create(
+        case_id=case_id,
+        signing_round=rounds + 1,
+        complaint_file=file,
+        signing_file=file,
+        current_file=file,
+    )
+
+
 def signed_document(user, case_id, entity_type=EntityType.CASE_FILING, completed_at=None):
-    """Return the id of a file a completed e-sign of ``case_id``'s filing stored."""
+    """Return the id of a file a completed e-sign of ``case_id``'s filing stored.
+
+    The e-sign signed the case's open signing package's current file, as
+    every signature of a filing must.
+    """
+    package = ComplaintSigningPackage.objects.filter(
+        case_id=case_id, status=SigningPackageStatus.OPEN
+    ).first()
     file = make_file(user=user)
     ESignTransaction.objects.create(
         module="cases",
@@ -180,7 +206,7 @@ def signed_document(user, case_id, entity_type=EntityType.CASE_FILING, completed
         entity_id=str(case_id),
         signer=user,
         provider="mock",
-        source_file_id=str(uuid.uuid4()),
+        source_file_id=str(package.current_file_id if package else uuid.uuid4()),
         signed_file_id=str(file.id),
         status=ESignStatus.SUCCESS.value,
         completed_at=completed_at or timezone.now(),
@@ -1934,10 +1960,15 @@ class TestSubmitForSigning:
 
 class TestSign:
     @pytest.fixture
-    def pending(self, client, draft, pdf):
-        """A case pending signature; returns its complainant."""
+    def pending(self, client, user, draft, pdf):
+        """A case pending signature, its PDF prepared; returns its complainant.
+
+        The complainant is the filer, who signs from their own account.
+        """
         complainant = make_complete_case(client, draft, pdf)
+        Person.objects.filter(pk=complainant["person_id"]).update(user=user)
         submit(client, draft, "signing")
+        open_signing_package(user, draft)
         return complainant
 
     def test_records_the_signature(self, client, user, draft, pending):
@@ -1983,7 +2014,9 @@ class TestSign:
 
         assert response.status_code == 400
 
-    def test_a_document_recorded_for_another_participant_is_refused(self, client, user, draft, pdf):
+    def test_a_document_recorded_for_another_participant_is_refused(
+        self, client, user, other_user, draft, pdf
+    ):
         first = make_complete_case(client, draft, pdf)
         second = add(
             client,
@@ -1994,7 +2027,10 @@ class TestSign:
             party_in_person_affidavit=PIP_AFFIDAVIT,
         )
         upload_identity_proof(client, draft, pdf, second.json())
+        Person.objects.filter(pk=first["person_id"]).update(user=user)
+        Person.objects.filter(pk=second.json()["person_id"]).update(user=other_user)
         assert submit(client, draft, "signing").status_code == 200
+        open_signing_package(user, draft)
         document_id = signed_document(user, draft)
         sign(client, draft, first["case_participant_id"], document_id)
 
@@ -2025,6 +2061,30 @@ class TestSign:
 
         assert response.status_code == 200
 
+    def test_a_party_without_an_account_signs_from_the_number_entered_for_them(
+        self, client, user, make_user, draft, pending
+    ):
+        """efiling §18: each party logs in with the phone number entered for them to sign."""
+        Person.objects.filter(pk=pending["person_id"]).update(user=None)
+        party = make_user()
+        party.mobile_number = MOBILE  # the complainant's number on the case
+        party.save(update_fields=["mobile_number"])
+
+        response = sign(
+            client, draft, pending["case_participant_id"], signed_document(party, draft)
+        )
+
+        assert response.status_code == 200
+
+    def test_nobody_signs_for_a_party_without_an_account(self, client, user, draft, pending):
+        """The filer's own account cannot sign for a complainant who has none."""
+        Person.objects.filter(pk=pending["person_id"]).update(user=None)
+
+        response = sign(client, draft, pending["case_participant_id"], signed_document(user, draft))
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"signature_document_id": ["E07027"]}
+
     def test_a_signature_from_before_submission_is_refused(self, client, user, draft, pending):
         submitted_at = Case.objects.get(pk=draft).history.first().history_date
         document_id = signed_document(
@@ -2054,6 +2114,11 @@ class TestSign:
         assert (participant.has_signed, participant.signature_document_id) == (False, None)
         # A save while still pending signature is not a new submission.
         case.save()
+        # The earlier round's PDF is superseded; this round renders its own.
+        assert not ComplaintSigningPackage.objects.filter(
+            case_id=draft, status=SigningPackageStatus.OPEN
+        ).exists()
+        open_signing_package(user, draft)
 
         response = sign(client, draft, participant_id, unused)
         assert error_codes(response) == {"signature_document_id": ["E07028"]}
@@ -2111,7 +2176,9 @@ class TestSubmitForPaymentAndScrutiny:
 
     def test_the_full_lifecycle(self, client, user, draft, pdf):
         complainant = make_complete_case(client, draft, pdf)
+        Person.objects.filter(pk=complainant["person_id"]).update(user=user)
         assert submit(client, draft, "signing").status_code == 200
+        open_signing_package(user, draft)
         sign(client, draft, complainant["case_participant_id"], signed_document(user, draft))
 
         payment = submit(client, draft, "payment")

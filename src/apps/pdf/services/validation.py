@@ -164,6 +164,16 @@ _BLOCKS = [
             "error_correction": {"enum": ["L", "M", "Q", "H"]},
         },
     ),
+    # One signature slot per signatory, two to a row; see composer and renderer.
+    _block(
+        "signatures",
+        {
+            "source": {"type": "string", "minLength": 1},
+            "box_height": {"type": "number", "minimum": 40, "maximum": 200},
+            "style": {"type": "string"},
+        },
+        ("source",),
+    ),
     _block(
         "group",
         {

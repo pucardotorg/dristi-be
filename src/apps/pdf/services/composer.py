@@ -18,6 +18,12 @@ Block reference (``format_config.body``)::
     {"type": "qr", "value": "https://x/{{ data.id }}", "size": 90}
     {"type": "group", "source": "records", "as": "record", "blocks": [...]}
     {"type": "spacer", "height": 12} / {"type": "line"} / {"type": "page_break"}
+    {"type": "signatures", "source": "signatories", "box_height": 64}
+
+``signatures`` lays out one signature slot per item of ``source`` (each a
+``{"key", "name", "label"}`` object), two to a row: blank space for the
+signature, a rule, the name and the label. The renderer reports where each box
+was drawn, keyed by ``key``, so signing can be placed exactly there.
 
 Any block may carry ``"when": "<expression>"`` and is skipped when it is falsy.
 Inside repeated content ``loop.index`` (1-based), ``loop.first`` and
@@ -25,6 +31,8 @@ Inside repeated content ``loop.index`` (1-based), ``loop.first`` and
 """
 
 from __future__ import annotations
+
+from markupsafe import escape
 
 from ..exceptions import PDFRequestDataError
 from ..renderer import ImageData
@@ -151,6 +159,21 @@ def _block(block: dict, variables: dict) -> list:
                 raise PDFRequestDataError(f"{block['source']!r} does not resolve to a QR image.")
         base.pop("value", None)
         return [{**base, "image": image}]
+
+    if kind == "signatures":
+        items = evaluate(block["source"], variables) or []
+        if not isinstance(items, list | tuple) or not all(isinstance(i, dict) for i in items):
+            raise PDFRequestDataError(f"{block['source']!r} is not a list of signatories.")
+        slots = [
+            {
+                "key": str(item.get("key") or index),
+                # Values from request data: escaped for the renderer's markup.
+                "name": str(escape(item.get("name") or "")),
+                "label": str(escape(item.get("label") or "")),
+            }
+            for index, item in enumerate(items)
+        ]
+        return [{**base, "slots": slots}]
 
     if kind == "group":
         if "source" not in block:

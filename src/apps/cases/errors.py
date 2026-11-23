@@ -105,3 +105,18 @@ DUPLICATE_CONTACT = define("E07034", "This contact is given more than once.")
 SCAN_ALREADY_LINKED = define(
     "E07035", "This document is already the scan of another evidence item."
 )
+
+# The complaint PDF to sign: the complaint and every uploaded document as one
+# file (efiling DOC-07, signing-methods SGM-03), signed on one chained file.
+DOCUMENT_NOT_APPENDABLE = define(
+    "E07036", "This uploaded document cannot be added to the complaint PDF; replace it."
+)
+SIGNING_FILE_TOO_LARGE = define(
+    "E07037", "The complaint PDF with its documents is too large to sign."
+)
+SIGNED_OLDER_VERSION = define(
+    "E07038", "This signature was made on an older version of the filing; sign the latest one."
+)
+SIGNING_IN_PROGRESS = define(
+    "E07039", "A signature on this case is in progress; try again once it finishes.", status=409
+)

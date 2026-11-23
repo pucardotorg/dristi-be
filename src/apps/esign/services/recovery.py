@@ -62,6 +62,7 @@ def retry_transaction(parent: ESignTransaction, *, user=None) -> InitiationResul
         entity_type=parent.entity_type,
         entity_id=parent.entity_id,
         organization_id=parent.organization_id,
+        file_id=parent.source_file_id,
     )
 
     transaction = _claim_retry(parent, provider=provider)
