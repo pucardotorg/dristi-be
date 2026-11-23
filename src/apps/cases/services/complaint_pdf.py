@@ -265,7 +265,10 @@ def render_preview(case_id, user):
     case = get_viewable_case(case_id, user)
     _require_complete(case)
     payload = build_payload(case)
-    return pdf_jobs.render_sync(TEMPLATE_KEY, _tenant_id(), payload, user=user)
+    try:
+        return pdf_jobs.render_sync(TEMPLATE_KEY, _tenant_id(), payload, user=user)
+    except PDFError as exc:
+        raise pdf_errors.api_error(exc) from exc
 
 
 # The copy to sign
@@ -305,7 +308,11 @@ def get_or_create_signing_package(case_id, user):
         if existing is not None:
             return existing, False
         _require_complete(case)
-        package = _build_package(case, user)
+        try:
+            package = _build_package(case, user)
+        except PDFError as exc:
+            # The template, renderer or file storage failed: the standard PDF codes.
+            raise pdf_errors.api_error(exc) from exc
     return package, True
 
 
@@ -319,10 +326,7 @@ def _build_package(case, user):
         entity_id=str(case.pk),
         user_id=str(user.pk),
     )
-    try:
-        complaint, anchors = render_document_with_anchors(config, payload, context)
-    except PDFError as exc:
-        raise pdf_errors.api_error(exc) from exc
+    complaint, anchors = render_document_with_anchors(config, payload, context)
 
     documents = payload["documents"]
     appended = [complaint, _appendix_page(), *(_as_pdf(d) for d in documents)]

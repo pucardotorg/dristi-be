@@ -27,7 +27,9 @@ from apps.cases.models import (
     ComplaintSigningPackage,
     SigningPackageStatus,
 )
+from apps.cases.services import complaint_pdf
 from apps.cases.services.richtext import to_paragraphs
+from apps.cases.services.signing import can_sign_case_filing
 from apps.esign.constants import ESignStatus
 from apps.esign.models import ESignTransaction
 from apps.esign.providers import reset_provider_cache
@@ -35,7 +37,8 @@ from apps.files.models import File
 from apps.files.services import get_file_content
 from apps.files.tests.factories import make_file
 from apps.parties.models import Person
-from apps.pdf.models import PDFJob
+from apps.pdf.exceptions import PDFStorageError
+from apps.pdf.models import PDFJob, PDFTemplate
 from apps.pdf.services.signing import prepare_for_signing
 from apps.pdf.tests import test_signing
 from apps.pdf.tests.factories import simple_pdf
@@ -44,12 +47,13 @@ from .conftest import error_codes
 from .test_api import upload
 from .test_filing import (
     PIP_AFFIDAVIT,
+    POA_MOBILE,
     SECOND_MOBILE,
     make_complete_case,
     submit,
     upload_identity_proof,
 )
-from .test_participants import PERSON, add
+from .test_participants import MOBILE, PERSON, add, add_poa_holder
 
 pytestmark = pytest.mark.django_db
 
@@ -163,6 +167,15 @@ class TestPreview:
         assert response.status_code == 400
         assert error_codes(response)["participants.accused"] == ["E07005"]
 
+    def test_a_missing_template_is_reported(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        PDFTemplate.objects.filter(key="case-complaint").update(is_active=False)
+
+        response = preview(client, draft)
+
+        assert response.status_code == 404
+        assert error_codes(response) == {None: ["E04001"]}
+
     def test_only_the_filing_side_sees_it(self, client, client_for, other_user, draft, pdf):
         make_complete_case(client, draft, pdf)
 
@@ -266,6 +279,238 @@ class TestSigningPackage:
         for box in boxes:
             keys = ("page", "x", "y", "width", "height", "signer_name", "reason")
             prepare_for_signing(signing, {key: box[key] for key in keys})
+
+
+class TestSigningPackageContents:
+    """Who signs, and the cases the copy to sign cannot be prepared for."""
+
+    @pytest.fixture
+    def pending(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        assert submit(client, draft, "signing").status_code == 200
+        return complainant
+
+    def test_a_poa_holder_signs_for_their_complainant(self, client, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        holder = add_poa_holder(
+            client, draft, [complainant["case_participant_id"]], mobile_numbers=[POA_MOBILE]
+        )
+        assert holder.status_code == 201, holder.json()
+        document = upload(
+            client,
+            draft,
+            pdf,
+            "POA_DOCUMENT",
+            case_participant_id=complainant["case_participant_id"],
+        )
+        assert document.status_code == 201, document.json()
+        assert submit(client, draft, "signing").status_code == 200
+
+        body = prepare(client, draft).json()
+
+        assert [(row["name"], row["label"]) for row in body["signatories"]] == [
+            ("Rajesh Kumar", "Complainant 1"),
+            ("Suresh Patel", "PoA holder for Complainant 1"),
+        ]
+        page = PdfReader(io.BytesIO(read(body["signing_file_id"]))).pages[
+            body["affidavit_page"] - 1
+        ]
+        assert "PoA holder for Complainant 1" in page.extract_text()
+        # The POA document is listed with whose it is (print §3.2).
+        complaint = text_of(read(body["complaint_file_id"]))
+        assert "Power of Attorney Authorisation - Complainant 1" in complaint
+
+    def test_the_cover_names_the_other_parties_as_a_count(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        add_second_complainant(client, draft, pdf)
+
+        assert "Rajesh Kumar +1 other v/s Suresh Patel" in text_of(preview(client, draft).content)
+
+    def test_a_missing_template_is_reported(self, client, draft, pending):
+        PDFTemplate.objects.filter(key="case-complaint").update(is_active=False)
+
+        response = prepare(client, draft)
+
+        assert response.status_code == 404
+        assert error_codes(response) == {None: ["E04001"]}
+        assert not ComplaintSigningPackage.objects.exists()
+
+    def test_an_upload_whose_file_is_gone_is_named(self, client, draft, pending):
+        document = CaseDocument.objects.filter(case_id=draft).first()
+        File.objects.filter(pk=document.document_id).update(is_active=False)
+
+        response = prepare(client, draft)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {f"documents.{document.pk}": ["E07036"]}
+
+    def test_an_image_that_cannot_be_read_is_named(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        # A PNG signature with nothing a decoder can read behind it.
+        broken = SimpleUploadedFile("scan.png", b"\x89PNG\r\n\x1a\n" + bytes(32), "image/png")
+        document = upload(client, draft, lambda *a, **k: broken, "OTHER_SUPPORTING_DOCUMENT")
+        assert document.status_code == 201, document.json()
+        submit(client, draft, "signing")
+
+        response = prepare(client, draft)
+
+        field = f"documents.{document.json()['case_document_id']}"
+        assert error_codes(response) == {field: ["E07036"]}
+
+    def test_a_pdf_upload_that_cannot_be_merged_is_refused(self, client, draft, pdf):
+        # Passes the upload check (it starts like a PDF) but is not a parsable PDF.
+        make_complete_case(
+            client,
+            draft,
+            lambda *a, **k: SimpleUploadedFile(
+                "scan.pdf", b"%PDF-1.4 not really", "application/pdf"
+            ),
+        )
+        submit(client, draft, "signing")
+
+        response = prepare(client, draft)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {None: ["E07036"]}
+        assert not ComplaintSigningPackage.objects.exists()
+
+    def test_a_copy_over_the_size_limit_is_refused(self, client, draft, pending, settings):
+        settings.FILE_MAX_SIZE_BYTES = 1024
+
+        response = prepare(client, draft)
+
+        assert response.status_code == 400
+        assert error_codes(response) == {None: ["E07037"]}
+        assert not File.objects.filter(tags__name="case-complaint").exists()
+
+    def test_stored_files_are_removed_when_the_package_is_not_saved(
+        self, client, draft, pending, monkeypatch
+    ):
+        def refuse(*args, **kwargs):
+            raise PDFStorageError()
+
+        stored = []
+        real_store = complaint_pdf.store_document
+
+        def store_then_fail(content, **kwargs):
+            if stored:
+                refuse()
+            stored.append(real_store(content, **kwargs))
+            return stored[-1]
+
+        monkeypatch.setattr(complaint_pdf, "store_document", store_then_fail)
+
+        response = prepare(client, draft)
+
+        assert response.status_code == 502
+        assert error_codes(response) == {None: ["E04009"]}
+        assert not File.objects.filter(pk__in=stored).exists()
+        assert not ComplaintSigningPackage.objects.exists()
+
+
+class TestCaseTitle:
+    def test_a_side_with_no_party_prints_a_dash(self):
+        assert complaint_pdf._side_title([]) == "-"
+
+    def test_an_institution_is_named_by_its_name_on_the_case(self):
+        parties = [
+            {"entity_name_at_filing": "Nair Traders", "name_at_filing": None},
+            {"entity_name_at_filing": None, "name_at_filing": "Anil Rao"},
+            {"entity_name_at_filing": None, "name_at_filing": "Meera Nair"},
+        ]
+
+        assert complaint_pdf._side_title(parties) == "Nair Traders +2 others"
+
+
+class TestSigningPackageModel:
+    def test_names_its_round_and_status(self, user, draft):
+        case = Case.objects.create(id=draft, case_type="CHEQUE_BOUNCE", created_by=user)
+        package = ComplaintSigningPackage(case=case, signing_round=2)
+
+        assert str(package) == f"Signing round 2 of {case.pk} (OPEN)"
+
+
+class TestCaseFilingAuthorizer:
+    """``can_sign_case_filing`` refuses anything that is not the case's awaited signature."""
+
+    @pytest.fixture
+    def awaiting(self, client, draft, pdf):
+        """A case waiting for the signature of a complainant who has no account."""
+        complainant = make_complete_case(client, draft, pdf)
+        Person.objects.filter(pk=complainant["person_id"]).update(user=None)
+        submit(client, draft, "signing")
+        return prepare(client, draft).json()
+
+    def test_a_party_without_an_account_signs_from_their_number(self, make_user, draft, awaiting):
+        """efiling §18: the party logs in with the phone number entered for them, then signs."""
+        party = make_user()
+        party.mobile_number = MOBILE
+        party.save(update_fields=["mobile_number"])
+
+        assert can_sign_case_filing(
+            user=party,
+            entity_type="CASE_FILING",
+            entity_id=draft,
+            file_id=awaiting["current_file_id"],
+        )
+
+    def test_an_account_without_a_mobile_number_matches_no_party(self, make_user, draft, awaiting):
+        account = make_user()
+        account.mobile_number = ""
+
+        assert not can_sign_case_filing(
+            user=account,
+            entity_type="CASE_FILING",
+            entity_id=draft,
+            file_id=awaiting["current_file_id"],
+        )
+
+    def test_the_filer_cannot_sign_for_a_party_without_an_account(self, user, draft, awaiting):
+        assert not can_sign_case_filing(
+            user=user,
+            entity_type="CASE_FILING",
+            entity_id=draft,
+            file_id=awaiting["current_file_id"],
+        )
+
+    def test_a_party_with_an_account_signs_only_from_it(self, client, make_user, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        owner = make_user()
+        Person.objects.filter(pk=complainant["person_id"]).update(user=owner)
+        same_number = make_user()
+        submit(client, draft, "signing")
+        current = prepare(client, draft).json()["current_file_id"]
+        # An account holding the number on the case is not the party's own account.
+        owner.mobile_number, same_number.mobile_number = "+919900000001", MOBILE
+        owner.save(update_fields=["mobile_number"])
+        same_number.save(update_fields=["mobile_number"])
+
+        def allowed(user):
+            return can_sign_case_filing(
+                user=user, entity_type="CASE_FILING", entity_id=draft, file_id=current
+            )
+
+        assert (allowed(owner), allowed(same_number)) == (True, False)
+
+    def test_an_entity_id_that_is_no_case_is_refused(self, user):
+        assert (
+            can_sign_case_filing(
+                user=user, entity_type="CASE_FILING", entity_id="not-a-uuid", file_id="x"
+            )
+            is False
+        )
+
+    def test_no_file_is_refused(self, client, user, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        submit(client, draft, "signing")
+        prepare(client, draft)
+
+        assert (
+            can_sign_case_filing(
+                user=user, entity_type="CASE_FILING", entity_id=draft, file_id=None
+            )
+            is False
+        )
 
 
 class TestSigning:
@@ -531,3 +776,7 @@ class TestRichText:
 
     def test_empty_editor_output_is_nothing(self):
         assert to_paragraphs("<p><br></p>") == []
+        assert to_paragraphs(None) == []
+
+    def test_self_closing_line_breaks_are_kept(self):
+        assert to_paragraphs("<p>first<br/>second</p>") == ["first<br/>second"]

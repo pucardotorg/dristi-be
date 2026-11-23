@@ -4,14 +4,31 @@ Registered with ``apps.esign`` as the ``CASE_FILING`` authorizer, so it runs
 before any request goes to the ESP. A signer may start a transaction only on
 the complaint PDF their case is waiting for, one signer at a time, so each
 signature lands on the copy the previous signer produced.
+
+Each party signs for themselves (efiling.md §18): "each party must log in with
+the phone number entered for them in order to sign -- creating their account".
+So a signer is the participant's own account when their person has one, and
+otherwise the account whose mobile number is the participant's mobile number
+on the case -- the number the filer entered and the party logs in with
+(account-creation.md "Implicit account creation at signing"). Nobody signs for
+another person; a filer is never a signer on someone else's behalf.
 """
 
 import uuid
 
+from django.db.models import OuterRef, Q, Subquery
+
 from apps.esign.constants import ACTIVE_STATUSES, EntityType
 from apps.esign.models import ESignTransaction
 
-from ..models import SIGNING_ROLES, CaseParticipant, CaseStatus, ComplaintSigningPackage
+from ..models import (
+    SIGNING_ROLES,
+    CaseContact,
+    CaseParticipant,
+    CaseStatus,
+    ComplaintSigningPackage,
+    ContactType,
+)
 from ..models import SigningPackageStatus as Status
 
 
@@ -34,23 +51,54 @@ def can_sign_case_filing(*, user, entity_type, entity_id, organization_id=None, 
     )
     if package is None or not file_id or str(file_id) != str(package.current_file_id):
         return False
-    is_unsigned_signer = (
-        CaseParticipant.objects.active()
-        .filter(
-            case_id=package.case_id,
-            role__in=SIGNING_ROLES,
-            has_signed=False,
-            person__user=user,
-        )
-        .exists()
+    unsigned = CaseParticipant.objects.active().filter(
+        case_id=package.case_id, role__in=SIGNING_ROLES, has_signed=False
     )
-    if not is_unsigned_signer:
+    if not unsigned.filter(signer_q(user)).exists():
         return False
     return not ESignTransaction.objects.filter(
         status__in=ACTIVE_STATUSES,
         entity_type=EntityType.CASE_FILING.value,
         entity_id=str(package.case_id),
     ).exists()
+
+
+def signer_q(user):
+    """Match the participants ``user`` signs as: their own person, else by their mobile number.
+
+    A person with an account signs only from that account. A person with none
+    signs from the account registered to their primary mobile number on the
+    case (the first ``MOBILE_NUMBER`` contact, efiling ``LIT-3``/``LIT-13``),
+    which logging in with that number creates (§18).
+    """
+    own_mobile = (
+        CaseContact.objects.active()
+        .filter(
+            case_participant_id=OuterRef("pk"),
+            contact_type=ContactType.MOBILE_NUMBER,
+        )
+        .order_by("ordinal")
+        .values("value")[:1]
+    )
+    return Q(person__user=user) | Q(
+        person__user__isnull=True, pk__in=_participants_with_mobile(user, own_mobile)
+    )
+
+
+def is_signer(participant, user):
+    """Whether ``user`` signs as ``participant`` (see ``signer_q``)."""
+    return CaseParticipant.objects.filter(pk=participant.pk).filter(signer_q(user)).exists()
+
+
+def _participants_with_mobile(user, own_mobile):
+    mobile = getattr(user, "mobile_number", None)
+    if not mobile:
+        return CaseParticipant.objects.none().values("pk")
+    return (
+        CaseParticipant.objects.annotate(primary_mobile=Subquery(own_mobile))
+        .filter(primary_mobile=mobile)
+        .values("pk")
+    )
 
 
 def _uuid_or_none(value):

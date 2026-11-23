@@ -129,8 +129,10 @@ class SignatureSlot(Flowable):
     def __init__(self, key, name, label, style, box_height, anchors):
         super().__init__()
         self.key, self.box_height, self.anchors = key, box_height, anchors
-        self.name = Paragraph(name or "&nbsp;", style)
-        self.label = Paragraph(label or "&nbsp;", style)
+        # Through the script-font fallback, as body text is: a Malayalam or
+        # Devanagari name needs that script's font.
+        self.name = Paragraph(with_script_fonts(name or "&nbsp;", style.family), style)
+        self.label = Paragraph(with_script_fonts(label or "&nbsp;", style.family), style)
 
     def wrap(self, avail_width, avail_height):
         self.width = avail_width

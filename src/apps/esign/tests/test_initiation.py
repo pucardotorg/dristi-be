@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 
 from apps.esign import permissions
 from apps.esign.constants import (
@@ -348,3 +348,19 @@ class CachingExclusionTests(ESignTestCase):
         from django.conf import settings
 
         self.assertIn(ESignTransaction._meta.db_table, settings.CACHALOT_UNCACHABLE_TABLES)
+
+
+class AuthorizerSignatureTests(SimpleTestCase):
+    """``_accepts`` decides whether an authorizer is given the document."""
+
+    def test_a_callable_without_a_readable_signature_is_not_given_extras(self):
+        from apps.esign.permissions import _accepts
+
+        # Builtins like ``max`` have no introspectable signature.
+        self.assertFalse(_accepts(max, "file_id"))
+
+    def test_a_catch_all_keyword_is_not_a_declared_parameter(self):
+        from apps.esign.permissions import _accepts
+
+        self.assertFalse(_accepts(lambda **kwargs: True, "file_id"))
+        self.assertTrue(_accepts(lambda *, file_id=None: True, "file_id"))

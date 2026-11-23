@@ -74,6 +74,7 @@ from .services import (
     lock_case,
     touch,
 )
+from .signing import is_signer
 
 # Preview (spec 0021 §6.1, §6.2)
 
@@ -889,8 +890,10 @@ def _check_signature(case, participant, esign, signature_document_id):
         raise errors.SIGNATURE_ALREADY_USED.validation_error(
             {"signature_document_id": [errors.SIGNATURE_ALREADY_USED.message]}
         )
-    person = participant.person
-    if person is not None and person.user_id is not None and esign.signer_id != person.user_id:
+    # Each party signs for themselves (efiling §18): from their own account,
+    # or, for a person without one, from the account of the mobile number
+    # entered for them on the case.
+    if esign.signer is None or not is_signer(participant, esign.signer):
         raise errors.SIGNED_BY_SOMEONE_ELSE.validation_error(
             {"signature_document_id": [errors.SIGNED_BY_SOMEONE_ELSE.message]}
         )

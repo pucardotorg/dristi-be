@@ -232,3 +232,38 @@ def test_signature_slots_two_to_a_row_report_where_each_box_is():
 def test_signatures_block_needs_a_list_of_signatories():
     with pytest.raises(Exception, match="not a list of signatories"):
         compose({"body": [{"type": "signatures", "source": "signers"}]}, {"signers": "x"})
+
+
+def test_a_renderer_without_anchors_reports_none():
+    """The base renderer's ``render_with_anchors`` falls back to ``render`` with no anchors."""
+    from apps.pdf.renderer import PDFRenderer
+
+    class Plain(PDFRenderer):
+        def render(self, document, context):
+            return b"%PDF-plain"
+
+    assert Plain().render_with_anchors({}, {}) == (b"%PDF-plain", {})
+
+
+def test_signer_names_in_indic_scripts_use_script_fonts():
+    """A Malayalam or Devanagari signer name draws with its script's font, as body text does."""
+    malayalam, devanagari = "രാജേഷ് കുമാർ", "राजेश कुमार"
+    document = compose(
+        {"body": [{"type": "signatures", "source": "signers"}]},
+        {
+            "signers": [
+                {"key": "a", "name": malayalam, "label": "Complainant 1"},
+                {"key": "b", "name": devanagari, "label": "Complainant 2"},
+            ]
+        },
+    )
+
+    pdf, _ = PythonRenderer().render_with_anchors(document, {})
+
+    page = PdfReader(io.BytesIO(pdf)).pages[0]
+    fonts = {font.get_object()["/BaseFont"] for font in page["/Resources"]["/Font"].values()}
+    assert any("NotoSansMalayalam" in name for name in fonts)
+    assert any("NotoSansDevanagari" in name for name in fonts)
+    text = page.extract_text()
+    assert malayalam in text and devanagari in text
+    assert "\x00" not in text
