@@ -1,0 +1,593 @@
+# The e-filing complaint PDF (efiling.md section 16), version 1.
+#
+# Rendered by apps.cases.services.complaint_pdf from the case's own data:
+# GET /cases/{id}/complaint-pdf/ previews it, POST stores the copy that is
+# signed with every uploaded document appended (DOC-07). Values come from the
+# case preview payload and from `extras` the service adds (display labels,
+# court name, case title and number, rich text as safe paragraphs).
+#
+# The `signatures` block draws one slot per signatory, two to a row (DOC-02),
+# and reports where each box lands so the signature is placed on it.
+#
+# A version a job has used is immutable and seeding is insert-only: change
+# the template by adding a version 2 row with is_active = true.
+[seed]
+model = "pdf.PDFTemplateVersion"
+
+[[rows]]
+template = "case-complaint"
+version = 1
+is_active = true
+
+[rows.format_config]
+
+[rows.format_config."page"]
+"size" = "A4"
+
+[rows.format_config."page"."margins"]
+"top" = 48
+"right" = 42
+"bottom" = 48
+"left" = 42
+
+[rows.format_config."metadata"]
+"title" = "Complaint {{ case_ref }}"
+"author" = "Dristi e-Filing"
+"subject" = "{{ case_title }}"
+
+[rows.format_config."styles"]
+
+[rows.format_config."styles"."default"]
+"font" = "noto-sans"
+"size" = 10
+
+[rows.format_config."styles"."label"]
+"size" = 8
+"color" = "#555555"
+"space_after" = 0
+
+[rows.format_config."styles"."cover"]
+"size" = 13
+"bold" = true
+"align" = "center"
+"space_after" = 6
+
+[rows.format_config."styles"."h1"]
+"size" = 13
+"bold" = true
+"space_before" = 10
+"space_after" = 6
+
+[rows.format_config."styles"."h2"]
+"size" = 11
+"bold" = true
+"space_before" = 8
+"space_after" = 4
+
+[rows.format_config."styles"."block"]
+"size" = 10
+"bold" = true
+"space_before" = 6
+"space_after" = 2
+
+[rows.format_config."header"]
+"right" = "{{ case_ref }}"
+"center" = "{{ 'PREVIEW - NOT FOR FILING' if data.status == 'DRAFT_IN_PROGRESS' else '' }}"
+
+[rows.format_config."footer"]
+"center" = "Page {page} of {pages}"
+"line" = true
+
+[[rows.format_config."body"]]
+"type" = "spacer"
+"height" = 90
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "cover"
+"text" = "{{ court_name }}"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "cover"
+"text" = "{{ case_title }}"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "cover"
+"text" = "{{ case_ref }}"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "cover"
+"text" = "Complaint under {{ case_type_long_title }}"
+
+[[rows.format_config."body"]]
+"type" = "page_break"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h1"
+"text" = "1. Party details"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h2"
+"text" = "1.1. Complainant"
+"when" = "complainants"
+
+[[rows.format_config."body"]]
+"type" = "group"
+"source" = "complainants"
+"as" = "p"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "paragraph"
+"style" = "block"
+"text" = "Complainant {{ p.ordinal }}"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Type</font><br/>{{ 'Institution' if p.institution else 'Individual' }}", "<font size=8 color='#555555'>Full Name</font><br/>{{ p.name_at_filing | default('-', true) }}", "<font size=8 color='#555555'>Age</font><br/>{{ p.age_at_filing | default('-', true) }}"], ["<font size=8 color='#555555'>Mobile Number</font><br/>{{ p.mobile_numbers | join('<br/>') or '-' }}", "<font size=8 color='#555555'>Email Address</font><br/>{{ p.email_addresses | join('<br/>') or '-' }}", "<font size=8 color='#555555'>Address</font><br/>{% for a in p.addresses %}{{ a.line1 }}, {{ a.city }}, {{ a.district }}, {{ a.state }} {{ a.pincode }}{% if p.role == 'ACCUSED' %}<br/><font size=8 color='#555555'>Police Station</font><br/>{{ a.police_station | default('-', true) }}{% endif %}<br/>{% else %}-{% endfor %}"], ["<font size=8 color='#555555'>Party in person</font><br/>{{ {True: 'Yes', False: 'No'}.get(p.is_party_in_person, '-') }}", "<font size=8 color='#555555'>Power of Attorney given</font><br/>{{ {True: 'Yes', False: 'No'}.get(p.poa_given, '-') }}", "<font size=8 color='#555555'>Gender</font><br/>{{ labels.gender.get(p.gender_at_filing, '-') }}"]]
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Institution</font><br/>{{ p.entity_name_at_filing | default('-', true) }}", "<font size=8 color='#555555'>Type of Institution</font><br/>{{ labels.entity_type.get(p.institution.entity_type, '-') }}", "<font size=8 color='#555555'>Designation</font><br/>{{ p.designation_at_filing | default('-', true) }}"]]
+"when" = "p.institution"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "group"
+"when" = "p.is_party_in_person"
+
+[[rows.format_config."body"."blocks"."blocks"]]
+"type" = "paragraph"
+"style" = "label"
+"text" = "Party-in-person affidavit"
+
+[[rows.format_config."body"."blocks"."blocks"]]
+"type" = "group"
+"source" = "rich.pip_affidavit.get(p.case_participant_id, [])"
+"as" = "para"
+
+[[rows.format_config."body"."blocks"."blocks"."blocks"]]
+"type" = "paragraph"
+"text" = "{{ para }}"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h2"
+"text" = "1.2. Advocate (Complainant)"
+"when" = "data.representations"
+
+[[rows.format_config."body"]]
+"type" = "table"
+"when" = "data.representations"
+"border" = false
+"source" = "data.representations"
+"as" = "r"
+
+[[rows.format_config."body"."columns"]]
+"header" = "Advocate for"
+"value" = "{{ complainant_label.get(r.client_participant_id, '-') }}"
+"width" = "30%"
+
+[[rows.format_config."body"."columns"]]
+"header" = "Full Name"
+"value" = "{{ r.advocate_name | default('-', true) }}"
+"width" = "40%"
+
+[[rows.format_config."body"."columns"]]
+"header" = "Bar Registration"
+"value" = "{{ r.bar_registration_id | default('-', true) }}"
+"width" = "30%"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h2"
+"text" = "1.3. Accused"
+"when" = "accused"
+
+[[rows.format_config."body"]]
+"type" = "group"
+"source" = "accused"
+"as" = "p"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "paragraph"
+"style" = "block"
+"text" = "Accused {{ p.ordinal }}"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Type</font><br/>{{ 'Institution' if p.institution else 'Individual' }}", "<font size=8 color='#555555'>Full Name</font><br/>{{ p.name_at_filing or p.entity_name_at_filing or '-' }}", "<font size=8 color='#555555'>Designation</font><br/>{{ p.designation_at_filing | default('-', true) }}"], ["<font size=8 color='#555555'>Mobile Number</font><br/>{{ p.mobile_numbers | join('<br/>') or '-' }}", "<font size=8 color='#555555'>Email Address</font><br/>{{ p.email_addresses | join('<br/>') or '-' }}", "<font size=8 color='#555555'>Address</font><br/>{% for a in p.addresses %}{{ a.line1 }}, {{ a.city }}, {{ a.district }}, {{ a.state }} {{ a.pincode }}{% if p.role == 'ACCUSED' %}<br/><font size=8 color='#555555'>Police Station</font><br/>{{ a.police_station | default('-', true) }}{% endif %}<br/>{% else %}-{% endfor %}"]]
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h1"
+"text" = "2. Case details"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h2"
+"text" = "2.1. Cheque and return memo details"
+"when" = "cheques"
+
+[[rows.format_config."body"]]
+"type" = "group"
+"source" = "cheques"
+"as" = "c"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "paragraph"
+"style" = "block"
+"text" = "Cheque {{ c.ordinal }}"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Date on cheque</font><br/>{{ (c.evidence_info.cheque_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Amount</font><br/>{% if c.evidence_info.amount is defined %}&#8377;{{ c.evidence_info.amount | format_number(0, 'indian') }}{% else %}-{% endif %}", "<font size=8 color='#555555'>Cheque number</font><br/>{{ c.evidence_info.cheque_number | default('-', true) }}"], ["<font size=8 color='#555555'>Bank Name</font><br/>{{ c.evidence_info.bank_name | default('-', true) }}", "<font size=8 color='#555555'>Bank Branch</font><br/>{{ c.evidence_info.bank_branch | default('-', true) }}", "<font size=8 color='#555555'>IFSC</font><br/>{{ c.evidence_info.ifsc_code | default('-', true) }}"], ["<font size=8 color='#555555'>Bank Account Number</font><br/>{{ c.evidence_info.bank_account_number | default('-', true) }}", "", ""]]
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "group"
+"source" = "memos | selectattr('ordinal', 'equalto', c.ordinal) | list"
+"as" = "m"
+
+[[rows.format_config."body"."blocks"."blocks"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Date of presentation</font><br/>{{ (m.evidence_info.presentation_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Date on return memo</font><br/>{{ (m.evidence_info.return_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Return reason</font><br/>{{ labels.return_reason.get(m.evidence_info.get('return_reason'), '-') }}"]]
+
+[[rows.format_config."body"."blocks"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."blocks"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h2"
+"text" = "2.2. Demand notice details"
+"when" = "notices"
+
+[[rows.format_config."body"]]
+"type" = "group"
+"source" = "notices"
+"as" = "n"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "paragraph"
+"style" = "block"
+"text" = "Demand Notice {{ n.ordinal }}"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Nature of debt/liability</font><br/>{{ labels.nature_of_debt.get(n.evidence_info.get('nature_of_debt'), '-') }}", "<font size=8 color='#555555'>Dispatch date</font><br/>{{ (n.evidence_info.dispatch_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Mode of service</font><br/>{{ labels.mode_of_service.get(n.evidence_info.get('mode_of_service'), '-') }}"], ["<font size=8 color='#555555'>Tracking number</font><br/>{{ n.evidence_info.tracking_number | default('-', true) }}", "<font size=8 color='#555555'>Delivered?</font><br/>{{ {True: 'Yes', False: 'No'}.get(n.evidence_info.get('is_delivered'), '-') }}", "<font size=8 color='#555555'>Payment status</font><br/>{{ labels.payment_status.get(n.evidence_info.get('payment_status'), '-') }}"]]
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Date of delivery</font><br/>{{ (n.evidence_info.delivery_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Accused replied?</font><br/>{{ {True: 'Yes', False: 'No'}.get(n.evidence_info.get('accused_replied'), '-') }}", ""]]
+"when" = "n.evidence_info.get('is_delivered') is sameas true"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Return date</font><br/>{{ (n.evidence_info.return_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Reason for non-delivery</font><br/>{{ labels.non_delivery_reason.get(n.evidence_info.get('non_delivery_reason'), '-') }}", ""]]
+"when" = "n.evidence_info.get('is_delivered') is sameas false"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h2"
+"text" = "2.3. Jurisdiction and limitation"
+
+[[rows.format_config."body"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Was the cheque deposited by the payee?</font><br/>{{ {True: 'Yes', False: 'No'}.get(jur.get('cheque_deposited_by_payee'), '-') }}", "<font size=8 color='#555555'>Cause of action date</font><br/>{{ (jur.cause_of_action_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Complaint filing date</font><br/>{{ (jur.complaint_filing_date | default('')) | format_date('%d %B %Y') or '-' }}"], ["<font size=8 color='#555555'>Other complaints pending between the parties?</font><br/>{{ {True: 'Yes', False: 'No'}.get(jur.get('other_complaints_pending'), '-') }}", "", ""]]
+
+[[rows.format_config."body"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h2"
+"text" = "2.4. ADR, prayer and other details"
+
+[[rows.format_config."body"]]
+"type" = "table"
+"border" = false
+"padding" = 3
+"rows" = [["<font size=8 color='#555555'>Would you like to settle the case outside the court?</font><br/>{{ labels.adr.get(prayer.get('adr_preference'), '-') }}", "", ""]]
+
+[[rows.format_config."body"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."columns"]]
+"width" = "33%"
+
+[[rows.format_config."body"."columns"]]
+"width" = "34%"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "label"
+"text" = "Interim Relief"
+
+[[rows.format_config."body"]]
+"type" = "group"
+"source" = "rich.interim_relief"
+"as" = "para"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "paragraph"
+"text" = "{{ para }}"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "label"
+"text" = "Final Relief"
+
+[[rows.format_config."body"]]
+"type" = "group"
+"source" = "rich.final_relief"
+"as" = "para"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "paragraph"
+"text" = "{{ para }}"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h1"
+"text" = "3. Evidence"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h2"
+"text" = "3.1. List of witnesses"
+"when" = "witnesses"
+
+[[rows.format_config."body"]]
+"type" = "list"
+"when" = "witnesses"
+"source" = "witnesses"
+"as" = "w"
+"ordered" = true
+"item" = "{{ w.name_at_filing or w.designation_at_filing or '-' }}"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h2"
+"text" = "3.2. List of documents"
+"when" = "data.documents"
+
+[[rows.format_config."body"]]
+"type" = "table"
+"when" = "data.documents"
+"border" = false
+"source" = "data.documents"
+"as" = "d"
+
+[[rows.format_config."body"."columns"]]
+"header" = "S. No."
+"value" = "{{ loop.index }}"
+"width" = 40
+
+[[rows.format_config."body"."columns"]]
+"header" = "Document Name"
+"value" = "{{ d.label }}"
+
+[[rows.format_config."body"]]
+"type" = "heading"
+"style" = "h1"
+"text" = "4. Affidavit"
+
+[[rows.format_config."body"]]
+"type" = "group"
+"source" = "rich.affidavit"
+"as" = "para"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "paragraph"
+"text" = "{{ para }}"
+
+[[rows.format_config."body"]]
+"type" = "spacer"
+"height" = 12
+
+[[rows.format_config."body"]]
+"type" = "signatures"
+"source" = "data.signatories"
+"box_height" = 64
+
+[rows.data_config]
+"sync_render" = true
+"filename" = "complaint-{{ data.case_id }}"
+
+[rows.data_config."request_schema"]
+"type" = "object"
+"required" = ["case_id", "participants", "evidence", "documents", "details", "extras", "signatories"]
+
+[rows.data_config."request_schema"."properties"]
+
+[rows.data_config."request_schema"."properties"."case_id"]
+"type" = "string"
+
+[rows.data_config."request_schema"."properties"."participants"]
+"type" = "array"
+
+[rows.data_config."request_schema"."properties"."evidence"]
+"type" = "array"
+
+[rows.data_config."request_schema"."properties"."documents"]
+"type" = "array"
+
+[rows.data_config."request_schema"."properties"."details"]
+"type" = "object"
+
+[rows.data_config."request_schema"."properties"."extras"]
+"type" = "object"
+
+[rows.data_config."request_schema"."properties"."signatories"]
+"type" = "array"
+
+[[rows.data_config."mappings"]]
+"type" = "derived"
+"target" = "complainants"
+"expression" = "data.participants | selectattr('role', 'equalto', 'COMPLAINANT') | list"
+
+[[rows.data_config."mappings"]]
+"type" = "derived"
+"target" = "accused"
+"expression" = "data.participants | selectattr('role', 'equalto', 'ACCUSED') | list"
+
+[[rows.data_config."mappings"]]
+"type" = "derived"
+"target" = "witnesses"
+"expression" = "data.participants | selectattr('role', 'equalto', 'WITNESS') | list"
+
+[[rows.data_config."mappings"]]
+"type" = "derived"
+"target" = "cheques"
+"expression" = "data.evidence | selectattr('evidence_type', 'equalto', 'CHEQUE') | list"
+
+[[rows.data_config."mappings"]]
+"type" = "derived"
+"target" = "memos"
+"expression" = "data.evidence | selectattr('evidence_type', 'equalto', 'RETURN_MEMO') | list"
+
+[[rows.data_config."mappings"]]
+"type" = "derived"
+"target" = "notices"
+"expression" = "data.evidence | selectattr('evidence_type', 'equalto', 'LEGAL_DEMAND_NOTICE') | list"
+
+[[rows.data_config."mappings"]]
+"type" = "derived"
+"target" = "jur"
+"expression" = "data.details.get('jurisdiction_limitation') or {}"
+
+[[rows.data_config."mappings"]]
+"type" = "derived"
+"target" = "prayer"
+"expression" = "data.details.get('adr_other_prayer') or {}"
+
+[[rows.data_config."mappings"]]
+"type" = "direct"
+"target" = "labels"
+"path" = "$.extras.labels"
+
+[[rows.data_config."mappings"]]
+"type" = "direct"
+"target" = "rich"
+"path" = "$.extras.rich_text"
+
+[[rows.data_config."mappings"]]
+"type" = "direct"
+"target" = "complainant_label"
+"path" = "$.extras.complainant_label"
+
+[[rows.data_config."mappings"]]
+"type" = "direct"
+"target" = "court_name"
+"path" = "$.extras.court_name"
+"default" = "-"
+
+[[rows.data_config."mappings"]]
+"type" = "direct"
+"target" = "case_type_long_title"
+"path" = "$.extras.case_type_long_title"
+
+[[rows.data_config."mappings"]]
+"type" = "direct"
+"target" = "case_title"
+"path" = "$.extras.case_title"
+
+[[rows.data_config."mappings"]]
+"type" = "direct"
+"target" = "case_ref"
+"path" = "$.extras.case_ref"

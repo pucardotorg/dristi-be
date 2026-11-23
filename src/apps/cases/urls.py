@@ -26,6 +26,21 @@ urlpatterns = [
         name="case-submit-for-signing",
     ),
     path(
+        "cases/<uuid:case_id>/complaint-pdf/",
+        views.CaseComplaintPdfView.as_view(),
+        name="case-complaint-pdf",
+    ),
+    path(
+        "cases/<uuid:case_id>/complaint-pdf/signing/",
+        views.CaseComplaintSigningView.as_view(),
+        name="case-complaint-signing",
+    ),
+    path(
+        "cases/<uuid:case_id>/return-to-draft/",
+        views.ReturnToDraftView.as_view(),
+        name="case-return-to-draft",
+    ),
+    path(
         "cases/<uuid:case_id>/submit-for-payment/",
         views.SubmitForPaymentView.as_view(),
         name="case-submit-for-payment",

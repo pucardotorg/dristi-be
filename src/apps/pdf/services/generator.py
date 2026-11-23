@@ -64,6 +64,19 @@ def render_document(config: LoadedConfig, request_data, context: RequestContext)
 
 def render_variables(config: LoadedConfig, contexts: list[dict]) -> bytes:
     """Compose and render already-mapped contexts (one section per context)."""
+    return render_variables_with_anchors(config, contexts)[0]
+
+
+def render_document_with_anchors(
+    config: LoadedConfig, request_data, context: RequestContext
+) -> tuple[bytes, dict]:
+    """Render one document; also return where each ``signatures`` slot was drawn."""
+    variables = build_context(config, request_data, context)
+    return render_variables_with_anchors(config, [variables])
+
+
+def render_variables_with_anchors(config: LoadedConfig, contexts: list[dict]) -> tuple[bytes, dict]:
+    """As ``render_variables``, returning ``(pdf_bytes, anchors)``."""
     try:
         if len(contexts) == 1:
             document = compose(config.format_config, contexts[0])
@@ -73,7 +86,7 @@ def render_variables(config: LoadedConfig, contexts: list[dict]) -> bytes:
         raise PDFConfigurationError("The format configuration could not be applied.") from exc
 
     started = time.monotonic()
-    content = get_renderer().render(document, contexts[0])
+    content, anchors = get_renderer().render_with_anchors(document, contexts[0])
     duration_ms = (time.monotonic() - started) * 1000
     logger.info(
         "event=PDF_RENDERED key=%s version=%s sections=%s bytes=%s duration_ms=%d",
@@ -83,7 +96,7 @@ def render_variables(config: LoadedConfig, contexts: list[dict]) -> bytes:
         len(content),
         duration_ms,
     )
-    return content
+    return content, anchors
 
 
 def document_filename(config: LoadedConfig, variables: dict, suffix: str = "") -> str:

@@ -26,9 +26,10 @@ from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
 from apps.api.errors import BusinessError
-from apps.esign.constants import EntityType, ESignStatus
+from apps.esign.constants import ACTIVE_STATUSES, EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 from apps.parties.models import PAN_CIN_REQUIRED_MESSAGE
+from apps.pdf.services.documents import delete_documents
 
 from .. import errors
 from ..models import (
@@ -44,10 +45,12 @@ from ..models import (
     CaseEvidence,
     CaseParticipant,
     CaseStatus,
+    ComplaintSigningPackage,
     ContactType,
     ParticipantRole,
     PoaMandate,
     Representation,
+    SigningPackageStatus,
     has_visible_text,
     scan_type_message,
 )
@@ -70,6 +73,7 @@ from .services import (
     lock_case,
     touch,
 )
+from .signing import is_signer
 
 # Preview (spec 0021 §6.1, §6.2)
 
@@ -128,7 +132,14 @@ def get_preview(case_id, user):
     Every write clears the entry (``services.touch``), so a cached preview is
     never stale. Access is checked before the cache is read.
     """
-    case = get_viewable_case(case_id, user)
+    return preview_data(get_viewable_case(case_id, user))
+
+
+def preview_data(case):
+    """Return ``case``'s assembled filing from the cache, assembling it on a miss.
+
+    Checks no access: callers resolve ``case`` through an access rule first.
+    """
     key = get_preview_cache_key(case.pk)
     data = cache.get(key)
     if data is None:
@@ -740,9 +751,14 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
     account where they have one, and not already recorded for anyone else.
     When it was signed is that transaction's ``completed_at``, set on the
     returned participant as ``signed_at``; it is not stored again here.
+
+    Every signer signs the same complaint PDF, each on top of the previous
+    signer's copy: the transaction must have signed the open signing package's
+    current file, which then becomes the newly signed one. The last signature
+    completes the package. Anyone on the filing side may record it.
     """
     with transaction.atomic():
-        case = lock_case(get_case(case_id, user))
+        case = lock_case(get_filing_side_case(case_id, user))
         if case.status != CaseStatus.PENDING_SIGN:
             raise BusinessError(
                 errors.INVALID_STATUS_TRANSITION,
@@ -771,15 +787,95 @@ def record_signature(case_id, case_participant_id, user, signature_document_id):
                 {"signature_document_id": [errors.SIGNATURE_NOT_FOUND.message]}
             )
         _check_signature(case, participant, esign, signature_document_id)
+        package = (
+            ComplaintSigningPackage.objects.select_for_update()
+            .filter(case=case, status=SigningPackageStatus.OPEN)
+            .first()
+        )
+        if package is None or esign.source_file_id != str(package.current_file_id):
+            raise errors.SIGNED_OLDER_VERSION.validation_error(
+                {"signature_document_id": [errors.SIGNED_OLDER_VERSION.message]}
+            )
         participant.has_signed = True
         participant.signature_document_id = signature_document_id
         participant.updated_by = user
         participant.save(
             update_fields=["has_signed", "signature_document", "updated_by", "updated_at"]
         )
+        package.current_file_id = signature_document_id
+        if not (
+            CaseParticipant.objects.active()
+            .filter(case=case, role__in=SIGNING_ROLES, has_signed=False)
+            .exists()
+        ):
+            package.status = SigningPackageStatus.COMPLETE
+        package.updated_by = user
+        package.save(update_fields=["current_file", "status", "updated_by", "updated_at"])
         touch(case, user)
     participant.signed_at = esign.completed_at
     return participant
+
+
+def return_to_draft(case_id, user, reason):
+    """Send a case pending signature back to draft, so the filer can edit it.
+
+    Any edit invalidates every signature (efiling ``LIFE-13``, §18), so every
+    signature is cleared and the open signing package is superseded; the next
+    ``submit-for-signing`` starts a new round with a newly rendered complaint.
+    Refused while a signature is being made, so none completes against a
+    draft. The superseded package's files -- the complaint, the copy with
+    documents and every signed version -- are deleted once this commits (§16,
+    "no retention of superseded versions"); the e-sign transactions are kept.
+    A plain ``save()``, so the step is kept in the case's history with
+    ``reason``.
+    """
+    with transaction.atomic():
+        case = lock_case(get_filing_side_case(case_id, user))
+        if case.status != CaseStatus.PENDING_SIGN:
+            raise BusinessError(
+                errors.INVALID_STATUS_TRANSITION,
+                f"Only a case in {CaseStatus.PENDING_SIGN} can return to "
+                f"{CaseStatus.DRAFT_IN_PROGRESS}; this one is {case.status}.",
+            )
+        if ESignTransaction.objects.filter(
+            entity_type=EntityType.CASE_FILING.value,
+            entity_id=str(case.pk),
+            status__in=ACTIVE_STATUSES,
+        ).exists():
+            raise BusinessError(errors.SIGNING_IN_PROGRESS)
+        _clear_signatures(case, user)
+        case.status = CaseStatus.DRAFT_IN_PROGRESS
+        case.updated_by = user
+        case._change_reason = reason[:100]
+        case.save()
+        clear_preview_cache(case.pk)
+    return case
+
+
+def _clear_signatures(case, user=None):
+    """Stop counting every signature of ``case`` and supersede its signing package.
+
+    The package is superseded whether open or complete, so the next signing
+    round renders the complaint again. Its files -- the complaint, the copy
+    with documents and every signed version -- are deleted once the caller's
+    transaction commits (efiling §16, "no retention of superseded versions");
+    the e-sign transactions are kept.
+    """
+    from .complaint_pdf import superseded_file_ids
+
+    CaseParticipant.objects.filter(case=case, has_signed=True).update(
+        has_signed=False, signature_document=None, updated_at=timezone.now()
+    )
+    file_ids = []
+    for package in ComplaintSigningPackage.objects.filter(case=case).exclude(
+        status=SigningPackageStatus.SUPERSEDED
+    ):
+        file_ids += superseded_file_ids(package)
+        package.status = SigningPackageStatus.SUPERSEDED
+        package.updated_by = user
+        package.save(update_fields=["status", "updated_by", "updated_at"])
+    if file_ids:
+        transaction.on_commit(lambda: delete_documents(file_ids))
 
 
 def return_to_signing(case):
@@ -788,7 +884,8 @@ def return_to_signing(case):
     Any edit invalidates all signatures (spec 0024 ``LIFE-13``, ``SIG-07``), so
     the case is never back in PENDING_SIGN with an earlier signature still
     counted. The old e-sign transactions are kept; only the participants stop
-    counting them. A plain ``save()``, so the new entry is kept in the case's
+    counting them, and the earlier round's complaint PDF is superseded, so the
+    corrected filing is rendered and signed anew. A plain ``save()``, so the new entry is kept in the case's
     history and ``_check_signature`` dates signatures from it.
 
     Correction can remove parties, evidence and documents, so the corrected
@@ -803,9 +900,7 @@ def return_to_signing(case):
     problems = validation_errors(case)
     if problems:
         _raise_not_ready(errors.FILING_INCOMPLETE, problems)
-    CaseParticipant.objects.filter(case=case, has_signed=True).update(
-        has_signed=False, signature_document=None, updated_at=timezone.now()
-    )
+    _clear_signatures(case)
     case.status = CaseStatus.PENDING_SIGN
     case.save()
     clear_preview_cache(case.pk)
@@ -841,8 +936,10 @@ def _check_signature(case, participant, esign, signature_document_id):
         raise errors.SIGNATURE_ALREADY_USED.validation_error(
             {"signature_document_id": [errors.SIGNATURE_ALREADY_USED.message]}
         )
-    person = participant.person
-    if person is not None and person.user_id is not None and esign.signer_id != person.user_id:
+    # Each party signs for themselves (efiling §18): from their own account,
+    # or, for a person without one, from the account of the mobile number
+    # entered for them on the case.
+    if esign.signer is None or not is_signer(participant, esign.signer):
         raise errors.SIGNED_BY_SOMEONE_ELSE.validation_error(
             {"signature_document_id": [errors.SIGNED_BY_SOMEONE_ELSE.message]}
         )

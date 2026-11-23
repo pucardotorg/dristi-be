@@ -194,6 +194,27 @@ register(
     )
 )
 
+# PDF templates (spec 0016) a module renders by key, e.g. the e-filing complaint.
+# A used version is immutable, so a changed template is a new version row.
+register(
+    SeedSpec(
+        model_label="pdf.PDFTemplate",
+        key=("key",),
+        fields=("key", "name", "description", "is_active"),
+        order=30,
+    )
+)
+
+register(
+    SeedSpec(
+        model_label="pdf.PDFTemplateVersion",
+        key=("template", "version"),
+        fields=("version", "format_config", "data_config", "is_active"),
+        fk_by_code={"template": FkRef("pdf.PDFTemplate", "key")},
+        order=40,
+    )
+)
+
 register(
     SeedSpec(
         model_label="core.Language",

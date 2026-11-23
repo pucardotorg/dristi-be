@@ -33,6 +33,10 @@ class PDFRenderer:
         """Render ``document`` (a ``format_config``) with ``context`` to PDF bytes."""
         raise NotImplementedError
 
+    def render_with_anchors(self, document: dict, context: dict) -> tuple[bytes, dict]:
+        """Return ``(pdf_bytes, anchors)``; renderers that place no anchors return ``{}``."""
+        return self.render(document, context), {}
+
 
 def get_renderer() -> PDFRenderer:
     """Return the default pure-Python renderer."""

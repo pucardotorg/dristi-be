@@ -36,6 +36,7 @@ from .models import (
     CaseDocument,
     CaseEvidence,
     CaseParticipant,
+    ComplaintSigningPackage,
     ContactType,
     ParticipantRole,
     PoaMandate,
@@ -1196,3 +1197,99 @@ class SignedSerializer(serializers.ModelSerializer):
         model = CaseParticipant
         fields = ["case_participant_id", "has_signed", "signed_at", "signature_document_id"]
         read_only_fields = fields
+
+
+class SignatorySerializer(serializers.Serializer):
+    """One required signer, as the complaint's signature block names them."""
+
+    case_participant_id = serializers.UUIDField(source="key")
+    name = serializers.CharField()
+    label = serializers.CharField()
+    has_signed = serializers.BooleanField()
+
+
+class SignaturePlaceholderSerializer(serializers.Serializer):
+    """Where one signer's signature goes: pass it to ``POST /esign/_esign`` as is."""
+
+    case_participant_id = serializers.UUIDField()
+    page = serializers.IntegerField()
+    x = serializers.FloatField()
+    y = serializers.FloatField()
+    width = serializers.FloatField()
+    height = serializers.FloatField()
+    signer_name = serializers.CharField()
+    reason = serializers.CharField()
+
+
+class ComplaintSigningPackageSerializer(serializers.ModelSerializer):
+    """The complaint PDF every signer of this round signs, and where each signs.
+
+    ``signing_file_id`` is the complaint with every uploaded document appended;
+    it never changes in a round. ``current_file_id`` is the file the next signer
+    passes to ``POST /esign/_esign``: it starts as ``signing_file_id`` and
+    becomes each signer's signed copy, so every signature is on one file.
+    """
+
+    complaint_file_id = serializers.UUIDField(read_only=True)
+    signing_file_id = serializers.UUIDField(read_only=True)
+    current_file_id = serializers.UUIDField(read_only=True)
+    signatories = serializers.SerializerMethodField()
+    signature_placeholders = serializers.SerializerMethodField()
+
+    class Meta:
+        """Meta options."""
+
+        model = ComplaintSigningPackage
+        fields = [
+            "case_id",
+            "signing_round",
+            "status",
+            "complaint_file_id",
+            "signing_file_id",
+            "current_file_id",
+            "page_count",
+            "affidavit_page",
+            "signatories",
+            "signature_placeholders",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def _signed(self, package):
+        if not hasattr(self, "_signed_ids"):
+            self._signed_ids = {
+                str(pk)
+                for pk in CaseParticipant.objects.filter(
+                    case_id=package.case_id, has_signed=True
+                ).values_list("pk", flat=True)
+            }
+        return self._signed_ids
+
+    @extend_schema_field(SignatorySerializer(many=True))
+    def get_signatories(self, package):
+        """Each signer, in signature-block order, and whether they have signed."""
+        signed = self._signed(package)
+        rows = [{**row, "has_signed": row["key"] in signed} for row in package.signatories]
+        return SignatorySerializer(rows, many=True).data
+
+    @extend_schema_field(SignaturePlaceholderSerializer(many=True))
+    def get_signature_placeholders(self, package):
+        """One box per signer, on the page the signature block printed it."""
+        rows = [
+            {
+                "case_participant_id": row["key"],
+                **package.placeholders[row["key"]],
+                "signer_name": row["name"],
+                "reason": row["label"],
+            }
+            for row in package.signatories
+            if row["key"] in package.placeholders
+        ]
+        return SignaturePlaceholderSerializer(rows, many=True).data
+
+
+class ReturnToDraftSerializer(serializers.Serializer):
+    """Body of POST /cases/{id}/return-to-draft: why the filing is reopened."""
+
+    reason = serializers.CharField(max_length=500)

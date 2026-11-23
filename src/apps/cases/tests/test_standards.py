@@ -43,6 +43,10 @@ ENDPOINTS = [
     ("post", "case-submit-for-payment", [ANY_ID]),
     ("post", "case-submit-for-scrutiny", [ANY_ID]),
     ("post", "case-participant-sign", [ANY_ID, ANY_ID]),
+    ("get", "case-complaint-pdf", [ANY_ID]),
+    ("post", "case-complaint-pdf", [ANY_ID]),
+    ("get", "case-complaint-signing", [ANY_ID]),
+    ("post", "case-return-to-draft", [ANY_ID]),
 ]
 
 
