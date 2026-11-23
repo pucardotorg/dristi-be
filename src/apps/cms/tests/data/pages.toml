@@ -1,0 +1,32 @@
+# Pages seeded once per test module by the `seeded_pages` fixture
+# (scenarious/app_cms.md, CMS-PAGES). Slugs must never collide with the
+# core-seeded terms/privacy/support — see categories.toml for why.
+
+[seed]
+model = "cms.Page"
+
+[[rows]]
+slug = "fee-refund-policy"
+title = "Fee & Refund Policy"
+sub_title = "How court fees are charged and refunded"
+main_image_url = "https://example.test/images/fee-refund-policy.png"
+content_type = "markdown"
+content = "# Fee & Refund Policy\n\nDummy markdown content."
+categories = ["guides", "policies"]
+
+[[rows]]
+slug = "kerala-courts-overview"
+title = "Kerala Courts Overview"
+sub_title = "The courts of Kerala at a glance"
+main_image_url = "https://example.test/images/kerala-courts-overview.png"
+content_type = "markdown"
+content = "# Kerala Courts Overview\n\nDummy markdown content."
+
+[[rows]]
+slug = "ecourt-services-handbook"
+title = "eCourt Services Handbook"
+sub_title = "Filing and tracking cases online"
+main_image_url = "https://example.test/images/ecourt-services-handbook.png"
+content_type = "markdown"
+content = "# eCourt Services Handbook\n\nDummy markdown content."
+categories = ["guides"]

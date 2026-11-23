@@ -1,0 +1,15 @@
+# Categories for the seeded-pages integration tests (scenarious/app_cms.md,
+# CMS-PAGES). Slugs must never collide with the core-seeded help/main/faq:
+# seed is insert-only, so a collision would keep the existing row and the
+# tests would validate someone else's data.
+
+[seed]
+model = "cms.PageCategory"
+
+[[rows]]
+name = "Guides"
+slug = "guides"
+
+[[rows]]
+name = "Policies"
+slug = "policies"
