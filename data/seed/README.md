@@ -110,12 +110,20 @@ seeded instead of shipped as data migrations:
   `additional_attributes` are rejected until their keys are defined, so this
   loads before other models whatever order the files are given in.
 - `core/auth/groups.toml` — `BAR_ID_APPROVER` and the placeholder court-role
-  groups used by hearings.
+  groups used by hearings and orders (`ORDER_DRAFTER`, `ORDER_DATA_FILLER`,
+  `ORDER_SIGNER`, `NEXT_HEARING_SETTER`, `HEARING_CONTROLLER`).
 - `core/cms/` — the default page categories and placeholder pages.
 - `core/dristi_requests/` — the request types (lawyer bar update, advocate and
   clerk registration) and their approval steps.
 - `core/hearings/hearing_purposes.toml` — the hearing purposes.
 - `core/messaging/` — the SMS templates (account, case filing, hearings).
+- `core/orders/` — the order types each state offers (`order_types.toml`:
+  Kerala, Gujarat, Punjab & Haryana), the order item catalogue
+  (`order_item_types.toml`, from `PRDs/order-template-catalogue.md`) and its
+  combination rules (`combination_rules.toml`) (spec 0039 #3.11). An item with
+  `has_workflow = true` needs a handler in `apps/orders/handlers`; a test checks
+  every seeded one has one. Items cite hearing purposes by code in
+  `suggested_for_purposes`, so they load after `core/hearings/`.
 - `core/scrutiny/` — the national `SCRUTINY_CHECKS_DEFAULT` rule and its
   binding.
 

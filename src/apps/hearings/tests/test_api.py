@@ -707,7 +707,9 @@ def test_schema_documents_the_hearings_errors(stranger):
     hearings_ops = [
         op
         for path, item in schema["paths"].items()
-        if "/hearings" in path or path.startswith(("/api/v1/hearing-purposes", "/api/v1/courts/"))
+        if ("/hearings" in path or path.startswith(("/api/v1/hearing-purposes", "/api/v1/courts/")))
+        # The cause list's Next hearing column is mounted here but owned by orders.
+        and not path.endswith("/next-hearing/")
         for method, op in item.items()
         if method in ("get", "post", "put", "delete")
     ]

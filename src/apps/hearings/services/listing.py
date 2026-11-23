@@ -502,6 +502,21 @@ def attach_order(*, hearing_id, order_id, actor=None):
         save_hearing(hearing, actor, "order attached")
 
 
+def detach_order(*, hearing_id, order_id, actor=None):
+    """Forget the order passed in this hearing: the draft was discarded (spec 0039 #5.7).
+
+    A hearing whose order was discarded may get a new one (``DFT-06``). Detaching an
+    order the hearing does not hold is a no-op, so a retried discard is safe.
+    """
+    order_id = uuid.UUID(str(order_id))
+    with transaction.atomic():
+        hearing = lock_hearing(hearing_id)
+        if hearing.order_id != order_id:
+            return
+        hearing.order_id = None
+        save_hearing(hearing, actor, "order detached")
+
+
 def cancel_open_hearings(*, case_id, reason, order_id=None, actor=None):
     """The case leaves the court's list: cancel its open hearings, release its holds (#7.6).
 

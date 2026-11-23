@@ -1,0 +1,691 @@
+"""The orders API (spec 0039 #11): routes, access, shapes and error codes.
+
+Errors are asserted by ``code`` and ``field``, never by message (spec 0000 #13).
+"""
+
+import datetime
+import uuid
+from unittest import mock
+
+import pytest
+from django.urls import reverse
+from rest_framework.test import APIClient
+
+from apps.core.models import Configuration
+from apps.orders.enums import OrderRole
+from apps.orders.models import Order, OrderShortcut
+from apps.orders.services import drafting, items, lifecycle, signing
+
+from .factories import TODAY, make_case, make_court, make_user, mark_roll, schedule, started_hearing
+
+pytestmark = pytest.mark.django_db
+
+NEXT = TODAY.replace(day=19).isoformat()
+
+
+def client_for(user=None):
+    client = APIClient()
+    if user is not None:
+        client.force_authenticate(user)
+    return client
+
+
+def errors_of(response):
+    return [(error["code"], error.get("field")) for error in response.json()["errors"]]
+
+
+def url(name, *args):
+    return reverse(name, args=args)
+
+
+@pytest.fixture
+def api(staff):
+    return client_for(staff)
+
+
+# -- routes --------------------------------------------------------------------------
+
+
+def test_routes():
+    oid, hid, cid, iid = (uuid.uuid4() for _ in range(4))
+    assert url("order-list") == "/api/v1/orders/"
+    assert url("order-detail", oid) == f"/api/v1/orders/{oid}/"
+    assert url("order-text", oid) == f"/api/v1/orders/{oid}/text/"
+    assert url("order-add-item", oid) == f"/api/v1/orders/{oid}/items/"
+    assert url("order-item", oid, iid) == f"/api/v1/orders/{oid}/items/{iid}/"
+    assert url("order-next-hearing", oid) == f"/api/v1/orders/{oid}/next-hearing/"
+    assert url("order-data-complete", oid) == f"/api/v1/orders/{oid}/data/complete/"
+    assert url("order-send-for-signing", oid) == f"/api/v1/orders/{oid}/send-for-signing/"
+    assert url("order-sign-confirm", oid) == f"/api/v1/orders/{oid}/sign/confirm/"
+    assert url("order-roznama-sign-confirm", oid) == f"/api/v1/orders/{oid}/roznama/sign/confirm/"
+    assert url("order-pending") == "/api/v1/orders/pending/"
+    assert url("order-pending-counts") == "/api/v1/orders/pending/counts/"
+    assert url("order-bulk-items") == "/api/v1/orders/bulk/items/"
+    assert url("hearing-next-hearing", hid) == f"/api/v1/hearings/{hid}/next-hearing/"
+    assert url("case-orders", cid) == f"/api/v1/cases/{cid}/orders/"
+    assert url("diary-entries") == "/api/v1/diary-entries/"
+    assert url("order-items") == "/api/v1/order-items/"
+    assert url("shortcut-list") == "/api/v1/shortcuts/"
+
+
+# -- create and read ---------------------------------------------------------------------
+
+
+def test_create_in_a_hearing_returns_201_then_200_with_the_same_draft(api, hearing):
+    first = api.post(url("order-list"), {"hearing_id": str(hearing.pk)}, format="json")
+    again = api.post(url("order-list"), {"hearing_id": str(hearing.pk)}, format="json")
+    assert (first.status_code, again.status_code) == (201, 200)
+    assert first.json()["id"] == again.json()["id"]
+    body = first.json()
+    assert body["status"] == "DRAFT" and body["stages"] == ["DRAFTING"]
+    assert body["hearing"]["purpose"]["code"] == "APPEARANCE"
+    assert "meta" in body
+    assert "rendered_html" in body and "order-page" in body["rendered_html"]
+
+
+def test_create_outside_a_hearing_with_a_preset(api, case):
+    response = api.post(
+        url("order-list"),
+        {"case_id": str(case.pk), "preset": {"kind": "COGNIZANCE", "action": "ISSUE_NOTICE"}},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert [item["item_type"]["code"] for item in response.json()["items"]] == ["ISSUE_OF_NOTICE"]
+
+
+def test_create_needs_exactly_one_of_hearing_and_case(api, case, hearing):
+    both = api.post(
+        url("order-list"), {"hearing_id": str(hearing.pk), "case_id": str(case.pk)}, format="json"
+    )
+    neither = api.post(url("order-list"), {}, format="json")
+    assert both.status_code == neither.status_code == 400
+
+
+def test_create_before_the_hearing_starts_is_e14004(api, case):
+    scheduled = schedule(case, TODAY)
+    response = api.post(url("order-list"), {"hearing_id": str(scheduled.pk)}, format="json")
+    assert (response.status_code, errors_of(response)) == (409, [("E14004", None)])
+
+
+def test_the_detail_has_the_documented_shape(api, order, filler):
+    items.add(order.pk, "COST", actor=filler)
+    body = api.get(url("order-detail", order.pk)).json()
+    assert {
+        "id",
+        "status",
+        "stages",
+        "whose_move",
+        "type",
+        "title",
+        "case",
+        "hearing",
+        "text",
+        "rendered_html",
+        "items",
+        "next_hearing",
+        "attendance_complete",
+        "diary_entry",
+        "roznama",
+        "linked_documents",
+        "data_complete",
+        "number",
+        "order_date",
+        "signed_file_id",
+        "text_version",
+        "data_version",
+        "allowed_actions",
+    } <= set(body)
+    assert body["items"][0]["problems"][0]["code"] == "REQUIRED"
+    assert body["diary_entry"]["label"] == "A-Diary text"
+    assert "send_for_signing" in body["allowed_actions"]
+    assert body["whose_move"].startswith("Being drafted")
+
+
+def test_allowed_actions_follow_the_callers_roles(order, drafter, filler, signer):
+    for user, present, absent in (
+        (drafter, "send_for_signing", "add_item"),
+        (filler, "add_item", "send_for_signing"),
+        (signer, None, "send_for_signing"),
+    ):
+        actions = client_for(user).get(url("order-detail", order.pk)).json()["allowed_actions"]
+        assert absent not in actions
+        if present:
+            assert present in actions
+
+
+# -- access ---------------------------------------------------------------------------------
+
+
+def test_an_action_without_the_role_is_403_e14019(order, drafter, filler):
+    cases = (
+        (filler, "patch", url("order-text", order.pk), {"text": "<p>x</p>"}),
+        (drafter, "post", url("order-add-item", order.pk), {"item_type": "COST"}),
+        (drafter, "put", url("order-next-hearing", order.pk), {"state": "NOT_LISTED_AGAIN"}),
+        (filler, "post", url("order-send-for-signing", order.pk), None),
+        (drafter, "post", url("order-sign", order.pk), None),
+        (drafter, "post", url("order-data-complete", order.pk), None),
+    )
+    for user, method, target, body in cases:
+        response = getattr(client_for(user), method)(target, body, format="json")
+        assert (response.status_code, errors_of(response)) == (403, [("E14019", None)]), target
+
+
+def test_a_role_held_in_another_courtroom_grants_nothing_here(order, hearing, sibling_courtroom):
+    other = make_case(sibling_courtroom)
+    from apps.orders.services import drafting as d
+
+    foreign = d.create_outside_hearing(case_id=other.pk, actor=make_user(OrderRole.ORDER_DRAFTER))
+    # Roles are groups held across the deployment's courtrooms; the courtroom of the order
+    # decides, and someone with no role anywhere is a stranger.
+    stranger = make_user(name="Nobody")
+    for target in (order, foreign):
+        assert client_for(stranger).get(url("order-detail", target.pk)).status_code == 404
+
+
+def test_staff_of_another_court_and_outsiders_get_404_not_403(
+    order, foreign_court, stranger, staff
+):
+    foreigner = make_user(*OrderRole.values, name="Kollam")
+    with mock.patch("apps.orders.ports.court_roles", side_effect=lambda user, court: frozenset()):
+        with mock.patch("apps.orders.ports.is_court_staff", return_value=False):
+            response = client_for(foreigner).get(url("order-detail", order.pk))
+    assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
+    response = client_for(stranger).patch(url("order-text", order.pk), {"text": "x"}, format="json")
+    assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
+    assert client_for().get(url("order-detail", order.pk)).status_code in (401, 403)
+
+
+def test_parties_read_signed_orders_only(api, ready, staff, signer, complainant_user):
+    party = client_for(complainant_user)
+    assert party.get(url("order-detail", ready.pk)).status_code == 404
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    assert party.get(url("order-detail", ready.pk)).status_code == 404
+    signing.record_signed_file(ready.pk, "signed", "DSC", actor=signer)
+    seen = party.get(url("order-detail", ready.pk))
+    assert seen.status_code == 200
+    assert seen.json()["status"] == "Published"
+    assert "items" not in seen.json() and "allowed_actions" not in seen.json()
+    assert party.patch(url("order-text", ready.pk), {"text": "x"}, format="json").status_code == 403
+
+
+# -- text and versions ---------------------------------------------------------------------------
+
+
+def test_text_saves_with_if_match_and_a_stale_version_is_412_e14002(api, order):
+    ok = api.patch(
+        url("order-text", order.pk), {"text": "<p>Hello</p>"}, format="json", HTTP_IF_MATCH='"t-0"'
+    )
+    assert ok.status_code == 200 and ok.json()["text_version"] == 1
+    stale = api.patch(
+        url("order-text", order.pk), {"text": "<p>Other</p>"}, format="json", HTTP_IF_MATCH='"t-0"'
+    )
+    assert (stale.status_code, errors_of(stale)) == (412, [("E14002", None)])
+    wrong_kind = api.patch(
+        url("order-text", order.pk), {"text": "<p>z</p>"}, format="json", HTTP_IF_MATCH='"d-1"'
+    )
+    assert wrong_kind.status_code == 400
+
+
+def test_read_only_fields_are_not_accepted(api, order):
+    response = api.patch(
+        url("order-title", order.pk),
+        {"title": "T", "status": "TRIGGERED", "number": "X", "data_complete": True},
+        format="json",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["title"] == "T" and body["status"] == "DRAFT" and body["number"] == ""
+    assert body["data_complete"] is False
+
+
+def test_the_text_size_limit_is_e14020(api, order):
+    Configuration.objects.update_or_create(
+        config_set="orders", config_key="text_max_bytes", defaults={"config_value": "10"}
+    )
+    response = api.patch(
+        url("order-text", order.pk), {"text": "<p>" + "x" * 40 + "</p>"}, format="json"
+    )
+    assert errors_of(response) == [("E14020", "text")]
+
+
+def test_the_live_view_returns_304_when_nothing_changed_and_names_the_editor(api, order, staff):
+    first = api.get(url("order-changes", order.pk), {"since": "0.0"})
+    assert first.status_code == 304 and first["ETag"] == '"0.0"'
+    api.patch(url("order-text", order.pk), {"text": "<p>typed</p>"}, format="json")
+    changed = api.get(url("order-changes", order.pk), {"since": "0.0"})
+    assert changed.status_code == 200
+    body = changed.json()
+    assert body["text"] == "<p>typed</p>" and body["editing"]["user"] == str(staff.pk)
+    assert changed["ETag"] == '"1.0"'
+    assert api.get(url("order-changes", order.pk), {"since": '"1.0"'}).status_code == 304
+
+
+# -- items ----------------------------------------------------------------------------------------
+
+
+def test_adding_an_item_and_its_error_codes(api, order):
+    add = api.post(
+        url("order-add-item", order.pk),
+        {"item_type": "COST", "values": {"amount": "5.00"}},
+        format="json",
+    )
+    assert add.status_code == 201
+    assert add.json()["values"] == {"amount": "5.00"}
+    cases = [
+        ("SCHEDULING_OF_HEARING_DATE", {}, ("E14008", "item_type")),
+        ("ACCEPT_APPLICATION", {}, ("E14010", "target_id")),
+        ("COST", {"amount": "-1"}, ("E14011", "values.amount")),
+    ]
+    for code, values, expected in cases:
+        response = api.post(
+            url("order-add-item", order.pk), {"item_type": code, "values": values}, format="json"
+        )
+        assert errors_of(response) == [expected], code
+    api.post(url("order-add-item", order.pk), {"item_type": "JUDGEMENT"}, format="json")
+    clash = api.post(url("order-add-item", order.pk), {"item_type": "DISMISS_CASE"}, format="json")
+    assert (clash.status_code, errors_of(clash)) == (409, [("E14009", "item_type")])
+
+
+def test_patch_and_delete_an_item(api, order, filler):
+    item = items.add(order.pk, "COST", actor=filler, values={"amount": "5.00"})
+    target = url("order-item", order.pk, item.pk)
+    assert api.patch(target, {"values": {"amount": "9.00"}}, format="json").status_code == 200
+    stale = api.patch(target, {"values": {}}, format="json", HTTP_IF_MATCH='"d-0"')
+    assert errors_of(stale) == [("E14002", None)]
+    assert api.delete(target).status_code == 200
+    assert order.items.count() == 0
+
+
+def test_mark_complete_lists_every_problem_as_e14012(api, order, filler):
+    items.add(order.pk, "COST", actor=filler)
+    response = api.post(url("order-data-complete", order.pk))
+    assert response.status_code == 409
+    fields = {field for code, field in errors_of(response) if code == "E14012"}
+    assert fields == {
+        "items[1].values.paying_party",
+        "items[1].values.amount",
+        "items[1].values.receiving_party",
+        "items[1].values.pay_by",
+    }
+
+
+def test_the_catalogue_endpoint(api, order):
+    body = api.get(url("order-items"), {"order": str(order.pk)}).json()["data"]
+    row = next(r for r in body if r["code"] == "SCHEDULING_OF_HEARING_DATE")
+    assert row["available"] is False and row["unavailable_reason"]["code"] == "IN_HEARING"
+    found = {r["code"] for r in api.get(url("order-items"), {"search": "bail"}).json()["data"]}
+    assert found == {"BAIL", "ACCEPTANCE_OF_BAIL"}
+    assert client_for(make_user(name="x")).get(url("order-items")).status_code == 403
+
+
+# -- next hearing ---------------------------------------------------------------------------------
+
+
+def test_next_hearing_put_and_pass_through_errors(api, order):
+    ok = api.put(
+        url("order-next-hearing", order.pk),
+        {"state": "LISTED", "date": NEXT, "purpose": "APPEARANCE"},
+        format="json",
+    )
+    assert ok.status_code == 200
+    assert ok.json()["next_hearing"]["purpose"] == {"code": "APPEARANCE", "label": "Appearance"}
+    half = api.put(
+        url("order-next-hearing", order.pk), {"state": "LISTED", "date": NEXT}, format="json"
+    )
+    assert errors_of(half) == [("E14011", "purpose")]
+    past = api.put(
+        url("order-next-hearing", order.pk),
+        {
+            "state": "LISTED",
+            "date": (TODAY - datetime.timedelta(days=2)).isoformat(),
+            "purpose": "APPEARANCE",
+        },
+        format="json",
+    )
+    assert errors_of(past) == [("E10005", None)]
+    removed = api.put(
+        url("order-next-hearing", order.pk), {"state": "NOT_LISTED_AGAIN"}, format="json"
+    )
+    assert removed.json()["next_hearing"]["state"] == "NOT_LISTED_AGAIN"
+
+
+def test_the_cause_list_column_writes_the_hearings_order(api, hearing, case):
+    response = api.put(
+        url("hearing-next-hearing", hearing.pk),
+        {"state": "LISTED", "date": NEXT, "purpose": "ARGUMENTS"},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json()["next_hearing"]["entered_from"] == "CAUSE_LIST"
+    scheduled = schedule(make_case(case.court), TODAY)
+    not_started = api.put(
+        url("hearing-next-hearing", scheduled.pk), {"state": "NOT_LISTED_AGAIN"}, format="json"
+    )
+    assert errors_of(not_started) == [("E14004", None)]
+
+
+# -- send, sign -------------------------------------------------------------------------------------
+
+
+def test_send_for_signing_and_its_codes(api, order, hearing, staff):
+    empty = api.post(url("order-send-for-signing", order.pk))
+    assert errors_of(empty) == [("E14005", "text")]
+    api.patch(url("order-text", order.pk), {"text": "<p>x</p>"}, format="json")
+    assert errors_of(api.post(url("order-send-for-signing", order.pk))) == [("E14006", None)]
+    api.put(url("order-next-hearing", order.pk), {"state": "NOT_LISTED_AGAIN"}, format="json")
+    assert errors_of(api.post(url("order-send-for-signing", order.pk))) == [("E14007", None)]
+    mark_roll(hearing, staff)
+    sent = api.post(url("order-send-for-signing", order.pk))
+    assert sent.status_code == 200 and sent.json()["status"] == "SENT_FOR_SIGNING"
+    assert sent.json()["stages"] == ["AWAITING_SIGNATURE", "ORDER_DATA_TO_FILL"]
+    again = api.post(url("order-send-for-signing", order.pk))
+    assert errors_of(again) == [("E14001", None)]
+    back = api.post(url("order-move-to-draft", order.pk))
+    assert back.json()["status"] == "DRAFT"
+
+
+def test_the_sign_endpoints_return_the_esign_form_and_record_the_signature(
+    api, ready, staff, signer
+):
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    initiation = mock.Mock()
+    initiation.transaction.pk = uuid.uuid4()
+    initiation.transaction.provider_transaction_id = "p-1"
+    initiation.transaction.expires_at = datetime.datetime(2026, 11, 12, tzinfo=datetime.UTC)
+    initiation.initiation.esign_url = "https://esp.example/sign"
+    initiation.initiation.form_fields = {"msg": "abc"}
+    with mock.patch.object(signing, "start_signing", return_value=initiation) as start:
+        response = client_for(signer).post(
+            url("order-sign", ready.pk), {"method": "AADHAAR_ESIGN"}, format="json"
+        )
+    assert response.status_code == 200
+    assert response.json()["esign_url"] == "https://esp.example/sign"
+    assert response.json()["form_fields"] == {"msg": "abc"}
+    start.assert_called_once()
+    bad = client_for(signer).post(
+        url("order-sign", ready.pk), {"method": "TELEPATHY"}, format="json"
+    )
+    assert bad.status_code == 400
+    with mock.patch.object(signing, "record_signature") as record:
+        client_for(signer).post(
+            url("order-sign-confirm", ready.pk),
+            {"transaction_id": str(uuid.uuid4())},
+            format="json",
+        )
+    record.assert_called_once()
+
+
+def test_a_method_not_enabled_is_e14017(ready, staff, signer):
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    response = client_for(signer).post(
+        url("order-sign", ready.pk), {"method": "DSC"}, format="json"
+    )
+    assert errors_of(response) == [("E14017", "method")]
+
+
+# -- documents, type, discard -----------------------------------------------------------------------
+
+
+def test_documents_type_and_discard(api, order):
+    nope = api.post(
+        url("order-documents", order.pk), {"document_id": str(uuid.uuid4())}, format="json"
+    )
+    assert errors_of(nope) == [("E14021", "document_id")]
+    wrong = api.patch(url("order-order-type", order.pk), {"order_type": "ROZNAMA"}, format="json")
+    assert errors_of(wrong) == [("E14024", "order_type")]
+    gone = api.post(url("order-discard", order.pk))
+    assert gone.status_code == 200 and gone.json()["status"] == "DISCARDED"
+    assert errors_of(api.post(url("order-discard", order.pk))) == [("E14001", None)]
+
+
+# -- lists ---------------------------------------------------------------------------------------------
+
+
+def test_pending_orders_tabs_counts_and_default_tab(
+    api, courtroom, ready, staff, signer, drafter, filler
+):
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    other = drafting.create_outside_hearing(case_id=ready.case_id, actor=staff)
+    query = {"court": str(courtroom.pk)}
+    body = api.get(url("order-pending"), query).json()
+    assert body["counts"] == {
+        "drafting": 1,
+        "awaiting_signature": 1,
+        "order_data": 1,
+        "triggered": 0,
+    }
+    assert body["tab"] == "awaiting_signature"  # staff hold the signer role: their move first
+    (row,) = body["results"]
+    assert row["id"] == str(ready.pk) and row["signature"] == "AWAITING"
+    assert row["order_data"] == "NOT_COMPLETE" and row["my_action"] == "sign"
+    assert row["stages"] == ["AWAITING_SIGNATURE", "ORDER_DATA_TO_FILL"]
+    assert row["hearing"]["sequence"] == 1 and row["type"] is None  # Kerala has one type
+    drafting_tab = client_for(drafter).get(url("order-pending"), query).json()
+    assert drafting_tab["tab"] == "drafting"
+    assert [r["id"] for r in drafting_tab["results"]] == [str(other.pk)]
+    assert drafting_tab["results"][0]["my_action"] == "continue_drafting"
+    fill = client_for(filler).get(url("order-pending"), query).json()
+    assert fill["tab"] == "order_data" and fill["results"][0]["my_action"] == "fill_order_data"
+    counts = client_for(drafter).get(url("order-pending-counts"), query).json()
+    assert counts["badge"] == 1
+    assert client_for(make_user(name="x")).get(url("order-pending"), query).status_code == 403
+
+
+def test_pending_orders_search_and_the_triggered_window(api, courtroom, ready, staff, signer):
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.record_signed_file(ready.pk, "signed", "DSC", actor=signer)
+    query = {"court": str(courtroom.pk), "tab": "triggered"}
+    assert len(api.get(url("order-pending"), query).json()["results"]) == 1
+    assert api.get(url("order-pending"), {**query, "search": "zzzz"}).json()["results"] == []
+    Order.objects.filter(pk=ready.pk).update(
+        triggered_at=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC)
+    )
+    assert api.get(url("order-pending"), query).json()["results"] == []
+
+
+def test_pending_orders_batch_their_case_reads(api, courtroom, django_assert_max_num_queries):
+    for _ in range(12):
+        drafting.create_outside_hearing(
+            case_id=make_case(courtroom).pk, actor=make_user(OrderRole.ORDER_DRAFTER)
+        )
+    query = {"court": str(courtroom.pk), "tab": "drafting", "page_size": 50}
+    with django_assert_max_num_queries(30):
+        assert len(api.get(url("order-pending"), query).json()["results"]) == 12
+
+
+def test_the_cases_orders_for_staff_and_parties(api, ready, staff, signer, case, complainant_user):
+    draft = drafting.create_outside_hearing(case_id=case.pk, actor=staff)
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.record_signed_file(ready.pk, "signed", "DSC", actor=signer)
+    target = url("case-orders", case.pk)
+    staff_rows = api.get(target).json()["data"]
+    assert {row["id"] for row in staff_rows} == {str(draft.pk), str(ready.pk)}
+    assert {row["status"] for row in staff_rows} == {"Draft in progress", "Published"}
+    party_rows = client_for(complainant_user).get(target).json()["data"]
+    assert [row["id"] for row in party_rows] == [str(ready.pk)]
+    assert client_for(make_user(name="x")).get(target).status_code == 404
+
+
+def test_diary_entries_endpoint(api, courtroom, ready, staff, signer):
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.record_signed_file(ready.pk, "signed", "DSC", actor=signer)
+    rows = api.get(url("diary-entries"), {"court": str(courtroom.pk)}).json()["data"]
+    assert [row["order_id"] for row in rows] == [str(ready.pk)]
+    assert rows[0]["entry_label"] == "A-Diary text"
+    assert (
+        client_for(make_user(name="x"))
+        .get(url("diary-entries"), {"court": str(courtroom.pk)})
+        .status_code
+        == 403
+    )
+
+
+# -- bulk -----------------------------------------------------------------------------------------------
+
+
+def test_bulk_items_report_done_and_skipped_per_order(api, courtroom, hearing, order, filler, case):
+    outside = drafting.create_outside_hearing(case_id=case.pk, actor=filler)
+    items.add(order.pk, "JUDGEMENT", actor=filler)
+    response = api.post(
+        url("order-bulk-items"),
+        {"order_ids": [str(order.pk), str(outside.pk)], "items": [{"item_type": "DISMISS_CASE"}]},
+        format="json",
+    )
+    body = response.json()
+    assert response.status_code == 200
+    assert body["done"] == []
+    assert {s["order_id"]: s["code"] for s in body["skipped"]} == {
+        str(order.pk): "E14009",
+        str(outside.pk): "E14001",
+    }
+    ok = api.post(
+        url("order-bulk-items"),
+        {"order_ids": [str(order.pk)], "items": [{"item_type": "COST"}]},
+        format="json",
+    )
+    assert ok.json()["done"] == [str(order.pk)]
+    assert Order.objects.get(pk=order.pk).data_complete is False
+
+
+def test_bulk_items_report_invalid_values_per_order_and_carry_on(
+    api, courtroom, hearing, order, filler
+):
+    """A validation error on one order is a skipped row, not a failed request (``ITM-10``)."""
+    response = api.post(
+        url("order-bulk-items"),
+        {
+            "order_ids": [str(order.pk)],
+            "items": [{"item_type": "COST", "values": {"not_a_field": 1}}],
+        },
+        format="json",
+    )
+    body = response.json()
+    assert response.status_code == 200
+    assert body["done"] == []
+    assert [(s["order_id"], s["code"]) for s in body["skipped"]] == [(str(order.pk), "E14011")]
+    assert Order.objects.get(pk=order.pk).items.count() == 0
+
+
+def test_bulk_text_appends_creates_and_names_what_it_skips(api, courtroom, hearing, case, staff):
+    scheduled = schedule(make_case(courtroom), TODAY)
+    response = api.post(
+        url("order-bulk-text"),
+        {
+            "court": str(courtroom.pk),
+            "hearing_ids": [str(hearing.pk), str(scheduled.pk)],
+            "text": "<p>Called.</p>",
+        },
+        format="json",
+    )
+    body = response.json()
+    assert body["done"] == [str(hearing.pk)]
+    assert [(s["hearing_id"], s["code"]) for s in body["skipped"]] == [
+        (str(scheduled.pk), "E14004")
+    ]
+    assert Order.objects.get(hearing_id=hearing.pk).text == "<p>Called.</p>"
+    api.post(
+        url("order-bulk-text"),
+        {
+            "court": str(courtroom.pk),
+            "hearing_ids": [str(hearing.pk)],
+            "text": "<p>No appearance.</p>",
+        },
+        format="json",
+    )
+    assert Order.objects.get(hearing_id=hearing.pk).text == "<p>Called.</p><p>No appearance.</p>"
+
+
+def test_bulk_size_is_limited_e14022(api, courtroom):
+    Configuration.objects.update_or_create(
+        config_set="orders", config_key="bulk_max_orders", defaults={"config_value": "1"}
+    )
+    response = api.post(
+        url("order-bulk-text"),
+        {
+            "court": str(courtroom.pk),
+            "hearing_ids": [str(uuid.uuid4()), str(uuid.uuid4())],
+            "text": "x",
+        },
+        format="json",
+    )
+    assert errors_of(response) == [("E14022", None)]
+
+
+def test_bulk_actions_need_their_roles(courtroom, hearing, drafter, filler, setter):
+    payloads = (
+        (
+            filler,
+            "order-bulk-text",
+            {"court": str(courtroom.pk), "hearing_ids": [str(hearing.pk)], "text": "x"},
+        ),
+        (
+            drafter,
+            "order-bulk-next-hearing",
+            {
+                "court": str(courtroom.pk),
+                "hearing_ids": [str(hearing.pk)],
+                "state": "NOT_LISTED_AGAIN",
+            },
+        ),
+    )
+    for user, name, body in payloads:
+        response = client_for(user).post(url(name), body, format="json")
+        assert errors_of(response) == [("E14019", None)], name
+
+
+# -- shortcuts -------------------------------------------------------------------------------------------
+
+
+def test_shortcuts_are_personal_and_unique_per_owner_case_insensitively(drafter):
+    mine = client_for(drafter)
+    created = mine.post(
+        url("shortcut-list"), {"name": "called", "body": "<p>Called.</p>"}, format="json"
+    )
+    assert created.status_code == 201 and created.json()["scope"] == ["ORDER_TEXT"]
+    clash = mine.post(url("shortcut-list"), {"name": "called", "body": "x"}, format="json")
+    assert errors_of(clash) == [("E14018", "name")]
+    bad_name = mine.post(url("shortcut-list"), {"name": "Not Valid!", "body": "x"}, format="json")
+    assert bad_name.status_code == 400
+    other = client_for(make_user(OrderRole.ORDER_DRAFTER, name="Other"))
+    assert (
+        other.post(url("shortcut-list"), {"name": "called", "body": "y"}, format="json").status_code
+        == 201
+    )
+    assert [s["name"] for s in other.get(url("shortcut-list")).json()["data"]] == ["called"]
+    found = mine.get(url("shortcut-list"), {"scope": "ORDER_TEXT", "search": "call"}).json()["data"]
+    assert len(found) == 1
+    shortcut = OrderShortcut.objects.get(owner=drafter)
+    theirs = url("shortcut-detail", shortcut.pk)
+    assert other.patch(theirs, {"body": "x"}, format="json").status_code == 404
+    assert other.delete(theirs).status_code == 404
+    assert mine.patch(theirs, {"body": "<p>New</p>"}, format="json").json()["body"] == "<p>New</p>"
+    assert mine.delete(theirs).status_code == 204
+
+
+def test_shortcut_names_are_unique_per_owner_ignoring_case_in_the_database(drafter):
+    from django.db import IntegrityError, transaction
+
+    OrderShortcut.objects.create(owner=drafter, name="called", body="x", scope=["ORDER_TEXT"])
+    with pytest.raises(IntegrityError), transaction.atomic():
+        OrderShortcut.objects.create(owner=drafter, name="CALLED", body="y", scope=["ORDER_TEXT"])
+
+
+def test_shortcuts_need_the_drafter_role(filler):
+    assert client_for(filler).get(url("shortcut-list")).status_code == 403
+    assert (
+        client_for(filler)
+        .post(url("shortcut-list"), {"name": "a", "body": "b"}, format="json")
+        .status_code
+        == 403
+    )
+
+
+def test_a_shortcut_body_is_sanitised_like_order_text(drafter):
+    response = client_for(drafter).post(
+        url("shortcut-list"), {"name": "x", "body": "<script>1</script><p>ok</p>"}, format="json"
+    )
+    assert response.json()["body"] == "<p>ok</p>"
+    assert make_court and started_hearing

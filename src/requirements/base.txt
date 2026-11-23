@@ -30,6 +30,8 @@ django-simple-history>=3.8
 # PDF service (apps.pdf, spec 0016)
 reportlab>=4.2.0
 pypdf>=4.3.0
+# Server-side HTML sanitiser for order text (spec 0039 #5.3)
+nh3>=0.3
 pyhanko>=0.35.0
 qrcode>=7.4.0
 pillow>=10.0.0

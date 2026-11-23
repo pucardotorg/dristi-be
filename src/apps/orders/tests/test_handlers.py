@@ -1,0 +1,179 @@
+"""Handlers (spec 0039 #1.2, #9.3): the registry, the system check and the built-ins."""
+
+import datetime
+
+import pytest
+from django.core.checks import Error, Warning  # noqa: A004
+from rest_framework.exceptions import NotFound
+
+from apps.api.errors import BusinessError
+from apps.orders import handlers
+from apps.orders.handlers import base, checks
+from apps.orders.handlers.base import ItemContext, OrderItemHandler, RunResult
+from apps.orders.models import OrderItemType
+from apps.orders.services import items, lifecycle, signing, triggering
+
+from .factories import code
+from .test_triggering import COST, trigger
+
+pytestmark = pytest.mark.django_db
+
+
+class Stub(OrderItemHandler):
+    item_codes = ("BAIL",)
+
+    def execute(self, ctx, values, *, run_id):
+        return RunResult("DONE", {"stub": True})
+
+
+@pytest.fixture
+def registry():
+    """Restore the registry after a test changes it."""
+    saved = base.registered()
+    yield
+    base._registry.clear()
+    base._registry.update(saved)
+
+
+def test_the_registry_refuses_a_second_real_handler(registry):
+    base.register(Stub())
+    with pytest.raises(base.DuplicateHandler):
+        base.register(Stub())
+
+
+def test_a_real_handler_replaces_a_placeholder(registry):
+    assert base.get("BAIL").placeholder is True
+    base.register(Stub())
+    assert base.get("BAIL").placeholder is False
+
+
+def test_register_builtin_never_replaces_a_real_handler_with_a_stand_in(registry):
+    base.register(Stub())
+    handlers.register_builtin()
+    assert base.get("BAIL").placeholder is False
+
+
+def test_the_check_fails_for_a_workflow_item_without_a_handler(registry):
+    base.unregister("COST")
+    errors = checks.check_workflow_items_have_handlers(None, databases=["default"])
+    assert [e.id for e in errors if isinstance(e, Error)] == ["orders.E001"]
+    assert "COST" in errors[0].msg
+
+
+def test_the_check_warns_about_placeholders_until_the_owning_modules_register(registry):
+    results = checks.check_workflow_items_have_handlers(None, databases=["default"])
+    warnings = [r for r in results if isinstance(r, Warning)]
+    assert [w.id for w in warnings] == ["orders.W001"]
+    assert "ISSUE_OF_SUMMONS" in warnings[0].msg and "ACCEPT_APPLICATION" in warnings[0].msg
+    base.register(Stub())
+    results = checks.check_workflow_items_have_handlers(None, databases=["default"])
+    listed = results[-1].msg.removeprefix("Order items using a placeholder handler: ").rstrip(".")
+    assert "BAIL" not in listed.split(", ")
+
+
+def test_a_retired_workflow_item_needs_no_handler(registry):
+    base.unregister("COST")
+    OrderItemType.objects.filter(code="COST").update(is_active=False)
+    assert (
+        checks.check_workflow_items_have_handlers(None, databases=["default"])[0].id
+        != "orders.E001"
+    )
+
+
+# -- built-ins ---------------------------------------------------------------------------
+
+
+def test_mandatory_submission_opens_a_task_for_the_directed_side(
+    ready, staff, signer, record_ports
+):
+    values = {
+        "party_type": "ACCUSED",
+        "document_type": "REPLY",
+        "document_details": "Reply to the complaint",
+        "deadline": (datetime.date.today() + datetime.timedelta(days=30)).isoformat(),
+    }
+    order = trigger(ready, staff, signer, ("MANDATORY_SUBMISSIONS", values))
+    triggering.run(order.pk)
+    (call,) = [(a, k) for n, a, k in record_ports if n == "open_item_task"]
+    assert call[0][2] == "mandatory_submission"
+    assert call[1]["side"] == "ACCUSED" and call[1]["due"] == values["deadline"]
+
+
+def test_mandatory_submission_needs_all_its_fields_to_complete(ready, staff):
+    items.add(ready.pk, "MANDATORY_SUBMISSIONS", actor=staff, values={"party_type": "ACCUSED"})
+    with pytest.raises(Exception) as excinfo:
+        lifecycle.mark_complete(ready.pk, actor=staff)
+    keys = dict(excinfo.value.problems)
+    assert {"items[1].values.document_type", "items[1].values.deadline"} <= set(keys)
+
+
+def test_cost_paying_and_receiving_party_must_differ(ready, staff):
+    bad = {**COST, "receiving_party": "ACCUSED"}
+    with pytest.raises(Exception) as excinfo:
+        items.add(ready.pk, "COST", actor=staff, values=bad)
+    assert "values.receiving_party" in excinfo.value.detail
+
+
+def test_a_cost_demand_is_raised_for_the_paying_sides_user(ready, staff, signer, case):
+    from apps.payments.models import Demand
+
+    order = trigger(
+        ready,
+        staff,
+        signer,
+        ("COST", {**COST, "paying_party": "COMPLAINANT", "receiving_party": "COURT"}),
+    )
+    triggering.run(order.pk)
+    demand = Demand.objects.get(reference_type="ORDER")
+    from apps.cases.models import CaseParticipant, ParticipantRole
+
+    complainant = CaseParticipant.objects.get(case=case, role=ParticipantRole.COMPLAINANT)
+    assert demand.user_id == complainant.person.user_id
+
+
+def test_witness_batta_opens_a_task_and_the_paying_side_confirms_it(
+    ready, staff, signer, record_ports, case, complainant_user
+):
+    from apps.cases.models import CaseParticipant, ParticipantRole
+    from apps.parties.models import Person
+
+    witness = CaseParticipant.objects.create(
+        case=case,
+        person=Person.objects.create(name="W", phone_number="+919700000001"),
+        role=ParticipantRole.WITNESS,
+        ordinal=1,
+        name_at_filing="W",
+    )
+    values = {"paying_party": "COMPLAINANT", "amount": "100.00", "pay_by": "2026-12-01"}
+    order = trigger(ready, staff, signer, ("WITNESS_BATTA", values))
+    triggering.run(order.pk)
+    item = order.items.get()
+    assert item.values["witness"] == str(witness.pk)
+    assert "witness_batta" in [args[2] for n, args, _ in record_ports if n == "open_item_task"]
+    # Not the other side, not a stranger.
+    from apps.hearings.tests.factories import make_user
+
+    for outsider in (staff, make_user(name="Nobody")):
+        with pytest.raises((NotFound, BusinessError)):
+            items.confirm_paid(order.pk, item.pk, user=outsider)
+    items.confirm_paid(order.pk, item.pk, user=complainant_user)
+    assert "witness_batta" in [args[1] for n, args, _ in record_ports if n == "complete_item_task"]
+    run = order.runs.get(order_item=item)
+    assert run.result["paid_confirmed_by"] == str(complainant_user.pk)
+
+
+def test_a_party_cannot_confirm_a_batta_on_an_order_that_is_not_yet_signed(
+    ready, staff, complainant_user
+):
+    from rest_framework.exceptions import NotFound
+
+    item = items.add(ready.pk, "WITNESS_BATTA", actor=staff)
+    with pytest.raises(NotFound):  # a draft does not exist for a party (PUB-02)
+        items.confirm_paid(ready.pk, item.pk, user=complainant_user)
+
+
+def test_placeholder_defaults_name_every_accused(ready):
+    handler = handlers.get("ISSUE_OF_SUMMONS")
+    ctx = ItemContext(case_id=ready.case_id, order_id=ready.pk)
+    assert len(handler.defaults(ctx)["party_names"]) == 1
+    assert signing and code

@@ -42,7 +42,7 @@ class InitiationTests(ESignTestCase):
             "user": self.user,
             "module": "orders",
             "file_id": self.source_file_id,
-            "entity_type": "ORDER",
+            "entity_type": "OTHER",
             "entity_id": "9f2c0001",
             "organization_id": None,
             "sign_placeholder": dict(PLACEHOLDER),
@@ -171,8 +171,8 @@ class InitiationTests(ESignTestCase):
 
     def test_permission_denial_stores_nothing(self):
         """Whether a user may sign is the owning module's decision."""
-        permissions.register_entity_authorizer("ORDER", lambda **kwargs: False)
-        self.addCleanup(permissions.unregister_entity_authorizer, "ORDER")
+        permissions.register_entity_authorizer("OTHER", lambda **kwargs: False)
+        self.addCleanup(permissions.unregister_entity_authorizer, "OTHER")
 
         with self.assertRaises(ESignNotPermitted):
             self.initiate_service()
@@ -187,13 +187,13 @@ class InitiationTests(ESignTestCase):
             seen.update(kwargs)
             return True
 
-        permissions.register_entity_authorizer("ORDER", authorizer)
-        self.addCleanup(permissions.unregister_entity_authorizer, "ORDER")
+        permissions.register_entity_authorizer("OTHER", authorizer)
+        self.addCleanup(permissions.unregister_entity_authorizer, "OTHER")
 
         self.initiate_service()
 
         self.assertEqual(seen["user"], self.user)
-        self.assertEqual(seen["entity_type"], "ORDER")
+        self.assertEqual(seen["entity_type"], "OTHER")
         self.assertEqual(seen["entity_id"], "9f2c0001")
         # Only an authorizer that declares it is given the document.
         self.assertNotIn("file_id", seen)
@@ -282,7 +282,7 @@ class InProgressGuardTests(ESignTestCase):
             "user": self.user,
             "module": "orders",
             "file_id": self.source_file_id,
-            "entity_type": "ORDER",
+            "entity_type": "OTHER",
             "entity_id": "9f2c0001",
             "organization_id": None,
             "sign_placeholder": dict(PLACEHOLDER),
