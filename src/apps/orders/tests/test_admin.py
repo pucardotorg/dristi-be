@@ -5,11 +5,14 @@ from unittest import mock
 import pytest
 from django.contrib.admin.sites import site
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.test import RequestFactory
 
 from apps.orders import handlers
 from apps.orders.admin import OrderAdmin, OrderItemTypeAdmin, OrderItemTypeForm
 from apps.orders.models import Order, OrderItemType, OrderRoznama, OrderType, OrderWorkflowRun
+
+from .factories import make_user
 
 pytestmark = pytest.mark.django_db
 
@@ -89,3 +92,43 @@ def test_retry_failed_steps_calls_the_service(admin_user_, ready):
     retry.assert_called_once_with(ready.pk)
     assert "2 step" in message.call_args.args[1]
     assert handlers and OrderItemTypeAdmin
+
+
+def _staff_with(*codenames):
+    user = make_user(name="Operator")
+    user.is_staff = True
+    user.save()
+    for codename in codenames:
+        user.user_permissions.add(
+            Permission.objects.get(content_type__app_label="orders", codename=codename)
+        )
+    return type(user).objects.get(pk=user.pk)
+
+
+@pytest.mark.parametrize(
+    ("model", "model_name"), [(Order, "order"), (OrderWorkflowRun, "orderworkflowrun")]
+)
+def test_retry_needs_the_change_permission_not_view(model, model_name):
+    model_admin = site._registry[model]
+    request = RequestFactory().get("/")
+
+    request.user = _staff_with(f"view_{model_name}")
+    assert not any(name.startswith("retry") for name in model_admin.get_actions(request))
+
+    request.user = _staff_with(f"view_{model_name}", f"change_{model_name}")
+    assert any(name.startswith("retry") for name in model_admin.get_actions(request))
+
+
+def test_a_view_only_user_cannot_run_the_retry_action(client, case, order):
+    viewer = _staff_with("view_order")
+    viewer.set_password("x")
+    viewer.save()
+    client.force_login(viewer)
+    response = client.post(
+        "/admin/orders/order/",
+        {"action": "retry_failed_steps", "_selected_action": [str(order.pk)]},
+        follow=True,
+    )
+    assert response.status_code == 200
+    assert not OrderWorkflowRun.objects.exists()
+    assert b"step(s) queued" not in response.content

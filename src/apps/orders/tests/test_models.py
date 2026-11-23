@@ -8,6 +8,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
 
+from apps.orders import field_schema
 from apps.orders.enums import NextHearingState, OrderStatus
 from apps.orders.models import (
     Order,
@@ -174,3 +175,92 @@ def test_the_seeded_rules_name_their_items():
         "RESCHEDULING_OF_HEARING_DATE",
     }
     assert uuid and OrderType
+
+
+@pytest.mark.parametrize("options", [7, "COURT", [], [1, 2], None])
+def test_enum_options_must_be_a_nonempty_list_of_strings(options):
+    schema = {"fields": [{"key": "k", "label": "L", "input": "ENUM", "options": options}]}
+    assert field_schema.schema_errors(schema)
+
+
+def test_enum_options_as_strings_are_valid():
+    schema = {"fields": [{"key": "k", "label": "L", "input": "ENUM", "options": ["A", "B"]}]}
+    assert field_schema.schema_errors(schema) == []
+
+
+@pytest.mark.parametrize("party_types", [7, "ACCUSED", [1], {"a": 1}, None])
+def test_party_types_must_be_a_list_of_strings(party_types):
+    schema = {"fields": [{"key": "k", "label": "L", "input": "PARTY", "party_types": party_types}]}
+    assert field_schema.schema_errors(schema)
+
+
+@pytest.mark.parametrize("extra", [{}, {"party_types": []}, {"party_types": ["ACCUSED"]}])
+def test_party_types_omitted_or_listed_is_valid(extra):
+    schema = {"fields": [{"key": "k", "label": "L", "input": "PARTY", **extra}]}
+    assert field_schema.schema_errors(schema) == []
+
+
+@pytest.mark.parametrize("value", [[{}], [1], ["NOPE"], "HEARING", [["HEARING"]]])
+def test_preselect_from_malformed_is_a_field_error(value):
+    order_type = OrderType.objects.first()
+    order_type.preselect_from = value
+    with pytest.raises(ValidationError) as excinfo:
+        order_type.clean()
+    assert "preselect_from" in excinfo.value.message_dict
+
+
+@pytest.mark.parametrize("value", [[], ["HEARING"], ["HEARING", "APPLICATION_ONBOARDING"]])
+def test_preselect_from_known_screens_is_valid(value):
+    order_type = OrderType.objects.first()
+    order_type.preselect_from = value
+    order_type.clean()
+
+
+def test_contextual_and_both_items_must_target_an_application():
+    for availability in ("CONTEXTUAL", "BOTH"):
+        item = OrderItemType.objects.filter(availability=availability).first()
+        assert item is not None and item.target_type == "APPLICATION"
+        item.clean()
+        item.target_type = "HEARING"
+        with pytest.raises(ValidationError) as excinfo:
+            item.clean()
+        assert "target_type" in excinfo.value.message_dict
+        item.target_type = ""
+        with pytest.raises(ValidationError):
+            item.clean()
+
+
+def test_every_seeded_item_passes_its_own_clean():
+    for item in OrderItemType.objects.all():
+        item.clean()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Cannot combine {adding} with {exsting}.",
+        "Cannot combine {adding} with {}.",
+        "Cannot combine {0}.",
+        "Cannot combine {adding.x}.",
+        "Cannot combine {adding",
+        "Cannot combine adding}",
+        "{adding:{foo}}",
+    ],
+)
+def test_combination_rule_bad_placeholders_are_rejected(message):
+    with pytest.raises(ValidationError) as excinfo:
+        OrderItemCombinationRule(code="X", kind="NO_REPEAT", message=message).clean()
+    assert "message" in excinfo.value.message_dict
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["Not allowed.", "Cannot combine {adding} with {existing}.", "{existing} then {adding}"],
+)
+def test_combination_rule_literal_and_documented_placeholders_are_valid(message):
+    OrderItemCombinationRule(code="X", kind="NO_REPEAT", message=message).clean()
+
+
+def test_seeded_combination_rules_pass_their_own_clean():
+    for rule in OrderItemCombinationRule.objects.all():
+        rule.clean()

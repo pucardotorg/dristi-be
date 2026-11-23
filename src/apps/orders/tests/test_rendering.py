@@ -176,3 +176,69 @@ def test_the_order_signed_template_is_seeded_and_renders():
     template = MessageTemplate.objects.get(message_key="ORDER_SIGNED", message_type="sms")
     assert "{{order_title}}" in template.content
     assert datetime and Order
+
+
+def test_lettered_lists_keep_their_style_in_the_pdf_blocks():
+    blocks = rendering.html_to_blocks(
+        '<ol type="a"><li>x</li></ol><ol><li>y</li></ol><ol type="1"><li>z</li></ol><ul><li>w</li></ul>'
+    )
+    assert blocks[0]["list_type"] == "a" and blocks[0]["ordered"] is True
+    assert all("list_type" not in block for block in blocks[1:])
+
+
+def test_a_lettered_list_prints_letters_in_the_pdf():
+    pypdf = pytest.importorskip("pypdf")
+    import io
+
+    from apps.pdf.renderer import get_renderer
+
+    def text(list_type):
+        block = {"type": "list", "items": ["first", "second"], "ordered": True}
+        if list_type:
+            block["list_type"] = list_type
+        pdf = get_renderer().render({"page": {"size": "A4"}, "sections": [[block]]}, {})
+        return pypdf.PdfReader(io.BytesIO(pdf)).pages[0].extract_text()
+
+    assert "a." in text("a") and "b." in text("a")
+    assert "1." in text(None) and "a." not in text(None)
+
+
+def test_top_level_inline_markup_and_its_tail_are_one_paragraph():
+    blocks = rendering.html_to_blocks("<strong>Not</strong> allowed.")
+    assert blocks == [{"type": "paragraph", "text": "<b>Not</b> allowed."}]
+    blocks = rendering.html_to_blocks("Lead <em>em</em> mid<br>line<p>Para</p>tail <u>u</u>")
+    assert [b["text"] for b in blocks] == ["Lead <i>em</i> mid<br/>line", "Para", "tail <u>u</u>"]
+
+
+def test_real_block_boundaries_stay_and_a_lone_break_adds_nothing():
+    blocks = rendering.html_to_blocks(
+        "<p>a</p><br><ol><li>x</li></ol><p>b</p><table><tr><td>c</td></tr></table>"
+    )
+    assert [b["type"] for b in blocks] == ["paragraph", "list", "paragraph", "table"]
+
+
+def test_the_roznama_entry_is_not_wrapped_in_order_lines_again(ready, staff, hearing):
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    order = Order.objects.get(pk=ready.pk)
+    entry = "<p>Complainant was present.</p><p>Entry.</p><p>Next hearing: x.</p>"
+    doc = rendering.pdf_document(order, entry_text=entry, heading="Roznama")
+    texts = [b.get("text", "") for b in doc["sections"][0]]
+    assert sum("Entry." in t for t in texts) == 1
+    assert sum("was present" in t for t in texts) == 1
+    assert not any(t.startswith("Next hearing") and "x." not in t for t in texts)
+    plain = rendering.pdf_document(order)
+    plain_texts = [b.get("text", "") for b in plain["sections"][0]]
+    assert any("was present" in t for t in plain_texts)
+    assert any(t.startswith("Next hearing") for t in plain_texts)
+
+
+def test_a_failed_summary_lookup_does_not_stop_the_later_commit_hooks(monkeypatch):
+    from apps.orders.services import notifications
+
+    def broken(case_ids):
+        raise RuntimeError("database gone")
+
+    monkeypatch.setattr(notifications, "get_case_summaries", broken)
+    notifications._notify(
+        "case-id", notifications.ORDER_SIGNED, "order-id", "Order", datetime.date(2026, 1, 1)
+    )  # logs, never raises

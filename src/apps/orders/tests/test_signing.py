@@ -9,9 +9,10 @@ from django.utils import timezone
 from apps.api.errors import BusinessError
 from apps.core.models import Configuration
 from apps.esign.models import ESignTransaction
-from apps.orders import ports
+from apps.hearings.services import courtroom as hearing_courtroom
+from apps.orders import ports, rendering
 from apps.orders.enums import NumberSeries, OrderStatus, RoznamaStatus
-from apps.orders.models import Order, OrderNumberCounter, OrderRoznama
+from apps.orders.models import Order, OrderNumberCounter, OrderRoznama, OrderType
 from apps.orders.permissions import can_sign_via_esign
 from apps.orders.services import diary, drafting, lifecycle, signing
 
@@ -350,3 +351,109 @@ def test_changing_the_type_after_signing_began_voids_that_signing(case, staff, s
         order.pk, success(order, signer, source="file-2", signed="signed-2").pk, actor=signer
     )
     assert Order.objects.get(pk=order.pk).status == OrderStatus.SIGNED
+
+
+def _flip_roll_to_absent(hearing, staff):
+    from apps.cases.selectors import get_attendance_roll
+
+    roll = get_attendance_roll(hearing.case_id)
+    marks = [
+        {
+            "attendee_type": entry.type,
+            "participant_id": entry.participant_id,
+            "mark": "ABSENT",
+            "appearance_mode": "",
+        }
+        for entry in roll
+    ]
+    hearing_courtroom.set_attendance(hearing_id=hearing.pk, marks=marks, actor=staff)
+
+
+def test_a_signed_page_keeps_the_roll_the_file_was_signed_with(
+    ready,
+    hearing,
+    staff,
+    signer,
+    started,
+):
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.start_signing(ready.pk, actor=signer)
+    order = Order.objects.get(pk=ready.pk)
+    assert order.signing_attendance and all("present" in line for line in order.signing_attendance)
+    signed = signing.record_signature(ready.pk, success(ready, signer).pk, actor=signer)
+    assert signed.is_signed
+    _flip_roll_to_absent(hearing, staff)  # the order is signed but not yet triggered
+    page = rendering.render_page(Order.objects.get(pk=ready.pk))
+    assert "was present" in page and "was absent" not in page
+
+
+def test_a_draft_preview_reads_the_live_roll(ready, hearing, staff):
+    assert "was present" in rendering.render_page(ready)
+    _flip_roll_to_absent(hearing, staff)
+    assert "was absent" in rendering.render_page(Order.objects.get(pk=ready.pk))
+
+
+def test_an_attendance_change_after_signing_began_voids_that_signing(
+    ready,
+    hearing,
+    staff,
+    signer,
+    started,
+):
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.start_signing(ready.pk, actor=signer)
+    txn = success(ready, signer)
+    _flip_roll_to_absent(hearing, staff)
+    with pytest.raises(BusinessError) as excinfo:
+        signing.record_signature(ready.pk, txn.pk, actor=signer)
+    assert code(excinfo) == "E14015"
+    order = Order.objects.get(pk=ready.pk)
+    assert order.signing_file_id == "" and not order.is_signed
+    signing.start_signing(ready.pk, actor=signer)  # signing again re-snapshots the roll
+    again = Order.objects.get(pk=ready.pk)
+    assert all("absent" in line for line in again.signing_attendance)
+    signed = signing.record_signature(
+        ready.pk, success(ready, signer, source=again.signing_file_id).pk, actor=signer
+    )
+    assert signed.is_signed
+
+
+def test_a_signed_page_keeps_the_heading_the_file_was_signed_with(
+    ready,
+    staff,
+    signer,
+    started,
+):
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.start_signing(ready.pk, actor=signer)
+    signing.record_signature(ready.pk, success(ready, signer).pk, actor=signer)
+    order = Order.objects.get(pk=ready.pk)
+    heading = order.order_type.pdf_heading
+    OrderType.objects.filter(pk=order.order_type_id).update(pdf_heading="Roznama")
+    order = Order.objects.select_related("order_type").get(pk=ready.pk)
+    assert f"<h1>{heading}</h1>" in rendering.render_page(order)
+
+
+def test_a_number_that_would_not_fit_is_refused_before_it_is_saved(order, settings):
+    from django.core.exceptions import ImproperlyConfigured
+
+    from apps.orders.services import numbering
+
+    assert Order._meta.get_field("number").max_length >= 70  # 50-char code, 10-digit sequence
+    settings.ORDERS_NUMBER_FORMATTER = "apps.orders.tests.test_signing.too_long"
+    with pytest.raises(ImproperlyConfigured):
+        numbering.allot(order, "ORDER")
+
+
+def too_long(**_):
+    return "x" * 500
+
+
+def test_a_signed_file_is_required_to_record_a_signature(ready, staff, signer):
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    with pytest.raises(BusinessError) as excinfo:
+        signing.record_signed_file(ready.pk, "", "DSC", actor=signer)
+    assert code(excinfo) == "E14015"
+    ready.refresh_from_db()
+    assert ready.status == "SENT_FOR_SIGNING"

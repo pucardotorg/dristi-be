@@ -161,7 +161,7 @@ def pending_rows(orders, roles, tab):
                 }
                 if hearing
                 else None,
-                "signature": signature_state(order),
+                "signature": "AWAITING" if kind == "ROZNAMA" else signature_state(order),
                 "order_data": "COMPLETE" if order.data_complete else "NOT_COMPLETE",
                 "stages": stage_names,
                 "my_action": _my_action(roles, stage, kind),
@@ -267,7 +267,7 @@ def order_detail(order, roles):
         "attendance_complete": attendance_complete,
         "diary_entry": {
             "label": order_type.diary_entry_label,
-            "same_as_text": order.diary_same_as_text,
+            "same_as_text": diary.same_as_text(order),
             "separate_allowed": order_type.separate_diary_entry,
             "text": diary.composed_entry(order),
         },

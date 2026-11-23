@@ -42,13 +42,23 @@ def schema_errors(schema):
             errors.append(f"{where}.label is required.")
         if field.get("input") not in FieldInput.values:
             errors.append(f"{where}.input must be one of {', '.join(FieldInput.values)}.")
-        if field.get("input") == FieldInput.ENUM and not field.get("options"):
-            errors.append(f"{where}.options is required for an ENUM field.")
+        if field.get("input") == FieldInput.ENUM and not _string_list(field.get("options")):
+            errors.append(f"{where}.options must be a non-empty list of strings for an ENUM field.")
+        if "party_types" in field and not _string_list(field["party_types"], allow_empty=True):
+            errors.append(f"{where}.party_types must be a list of strings.")
         if field.get("input") == FieldInput.MASTER and not field.get("master"):
             errors.append(f"{where}.master is required for a MASTER field.")
         if "mandatory" in field and not isinstance(field["mandatory"], bool):
             errors.append(f"{where}.mandatory must be true or false.")
     return errors
+
+
+def _string_list(value, *, allow_empty=False):
+    return (
+        isinstance(value, list)
+        and (allow_empty or bool(value))
+        and all(isinstance(item, str) for item in value)
+    )
 
 
 def fields_of(schema):
@@ -106,13 +116,23 @@ def value_problem(field, value):
         if (
             not isinstance(value, list)
             or not all(_is_uuid(item) for item in value)
-            or len(set(map(str, value))) != len(value)
+            or len({_canonical(item) for item in value}) != len(value)
         ):
             return "INVALID", f"{label} must be a list of distinct ids of people in the case."
     elif kind == FieldInput.PROCESS_RECIPIENTS:
         if not isinstance(value, list) or not all(_recipient_ok(item) for item in value):
             return "INVALID", f"{label} must list, per person, the channels and addresses."
     return None
+
+
+def canonical_id(value):
+    """Return a valid id string in canonical lowercase form."""
+    import uuid
+
+    return str(uuid.UUID(str(value)))
+
+
+_canonical = canonical_id
 
 
 def _is_uuid(value):

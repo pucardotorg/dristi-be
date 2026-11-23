@@ -102,6 +102,14 @@ class ReadOnlyAdmin(AuditUserAdminMixin, admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
+    def has_retry_permission(self, request):
+        """Retrying queues work, so it needs the model's change permission, not view (#12.8).
+
+        Read only means no edit form (``has_change_permission`` is false); the permission
+        itself is still granted to operators through their group.
+        """
+        return request.user.has_perm(f"{self.opts.app_label}.change_{self.opts.model_name}")
+
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
@@ -141,7 +149,7 @@ class OrderAdmin(ReadOnlyAdmin):
     inlines = (OrderItemInline, RunInline)
     actions = ("retry_failed_steps",)
 
-    @admin.action(description="Retry failed steps")
+    @admin.action(description="Retry failed steps", permissions=["retry"])
     def retry_failed_steps(self, request, queryset):
         retried = sum(triggering.retry_failed(order.pk) for order in queryset)
         self.message_user(request, f"{retried} step(s) queued for retry.", messages.SUCCESS)
@@ -158,7 +166,7 @@ class OrderWorkflowRunAdmin(ReadOnlyAdmin):
     list_filter = ("status", "step")
     actions = ("retry",)
 
-    @admin.action(description="Retry failed steps")
+    @admin.action(description="Retry failed steps", permissions=["retry"])
     def retry(self, request, queryset):
         retried = sum(
             triggering.retry_failed(order_id)

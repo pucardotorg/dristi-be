@@ -108,6 +108,8 @@ def start_signing(order_id, *, actor, method=SigningMethod.AADHAAR_ESIGN):
             order.number = numbering.allot(order, series)
         order.order_date = calendar.business_date()
         order.signer_designation = order.signer_designation or DEFAULT_DESIGNATION
+        order.signing_heading = order.order_type.pdf_heading
+        order.signing_attendance = rendering.attendance_sentences(order.hearing_id)
         content = rendering.render_pdf(order, signing_user=actor, **_case_facts(order))
         order.signing_file_id = _store(order, content, f"order-{order.pk}.pdf", actor)
         common.save_order(order, actor, "signing started")
@@ -137,7 +139,7 @@ def record_signature(order_id, transaction_id, *, actor):
     was signed.
     """
     txn = ESignTransaction.objects.filter(pk=transaction_id).first()
-    stale_date = False
+    stale = None
     with transaction.atomic():
         order = common.lock_order(order_id)
         if order.is_signed:
@@ -155,19 +157,22 @@ def record_signature(order_id, transaction_id, *, actor):
         if order.order_date != calendar.business_date():
             order.signing_file_id = ""
             common.save_order(order, actor, "signing expired: new business date")
-            stale_date = True
+            stale = "This signing began on an earlier date. Sign the order again."
+        elif order.signing_attendance != rendering.attendance_sentences(order.hearing_id):
+            order.signing_file_id = ""
+            common.save_order(order, actor, "signing expired: attendance changed")
+            stale = "The attendance changed after signing began. Sign the order again."
         else:
             _finalise(order, txn.signed_file_id, SigningMethod.AADHAAR_ESIGN, actor)
-    if stale_date:
-        raise BusinessError(
-            errors.SIGNATURE_NOT_VALID_FOR_ORDER,
-            "This signing began on an earlier date. Sign the order again.",
-        )
+    if stale:
+        raise BusinessError(errors.SIGNATURE_NOT_VALID_FOR_ORDER, stale)
     return order
 
 
 def record_signed_file(order_id, signed_file_id, method, *, actor):
     """Record a signature made outside ``apps.esign`` (a DSC module, per order or Roznama)."""
+    if not signed_file_id:
+        raise BusinessError(errors.SIGNATURE_NOT_VALID_FOR_ORDER, "The signed file is missing.")
     with transaction.atomic():
         order = common.lock_order(order_id)
         common.require_action(order, "sign")

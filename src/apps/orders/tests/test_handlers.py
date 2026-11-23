@@ -10,7 +10,7 @@ from apps.api.errors import BusinessError
 from apps.orders import handlers
 from apps.orders.handlers import base, checks
 from apps.orders.handlers.base import ItemContext, OrderItemHandler, RunResult
-from apps.orders.models import OrderItemType
+from apps.orders.models import OrderItem, OrderItemType, OrderWorkflowRun
 from apps.orders.services import items, lifecycle, signing, triggering
 
 from .factories import code
@@ -177,3 +177,73 @@ def test_placeholder_defaults_name_every_accused(ready):
     ctx = ItemContext(case_id=ready.case_id, order_id=ready.pk)
     assert len(handler.defaults(ctx)["party_names"]) == 1
     assert signing and code
+
+
+def test_the_mandatory_submission_deadline_uses_the_court_date(monkeypatch):
+    from apps.hearings.services import calendar
+    from apps.orders.handlers.builtin import MandatorySubmissionHandler
+
+    court_today = datetime.date(2026, 5, 10)
+    monkeypatch.setattr(calendar, "business_date", lambda: court_today)
+    handler = MandatorySubmissionHandler()
+    yesterday = (court_today - datetime.timedelta(days=1)).isoformat()
+    assert handler.validate(None, {"deadline": yesterday}, complete=True)
+    assert not handler.validate(None, {"deadline": court_today.isoformat()}, complete=True)
+
+
+def test_cost_demand_lookup_and_creation_hold_the_item_lock(ready, staff, monkeypatch):
+    """The item row is locked before the demand is looked up or raised."""
+    from django.db.models import QuerySet
+
+    from apps.orders.handlers import builtin
+    from apps.orders.handlers.base import ItemContext
+    from apps.payments.services.demands import DemandService
+
+    item = items.add(ready.pk, "COST", actor=staff)
+    locked = []
+    real = QuerySet.select_for_update
+
+    def record(self, *args, **kwargs):
+        locked.append(self.model)
+        return real(self, *args, **kwargs)
+
+    def raise_demand(**kwargs):
+        assert locked == [OrderItem], "the item row must be locked before the demand is raised"
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(QuerySet, "select_for_update", record)
+    monkeypatch.setattr(DemandService, "raise_demand", raise_demand)
+    ctx = ItemContext(
+        case_id=ready.case_id,
+        order_id=ready.pk,
+        hearing_id=ready.hearing_id,
+        target_type="",
+        target_id=None,
+        item_id=item.pk,
+        source="",
+    )
+    with pytest.raises(RuntimeError):
+        builtin.CostHandler().execute(ctx, {"amount": "10", "paying_party": "ACCUSED"}, run_id=None)
+
+
+def test_a_batta_cannot_be_confirmed_before_its_workflow_step_is_done(
+    ready, staff, signer, complainant_user, record_ports, case
+):
+    from apps.cases.models import CaseParticipant, ParticipantRole
+    from apps.orders.enums import RunStatus
+    from apps.parties.models import Person
+
+    CaseParticipant.objects.create(
+        case=case,
+        person=Person.objects.create(name="W", phone_number="+919700000001"),
+        role=ParticipantRole.WITNESS,
+        ordinal=1,
+        name_at_filing="W",
+    )
+    values = {"paying_party": "COMPLAINANT", "amount": "100.00", "pay_by": "2026-12-01"}
+    order = trigger(ready, staff, signer, ("WITNESS_BATTA", values))
+    item = order.items.get()
+    OrderWorkflowRun.objects.filter(order_item=item).update(status=RunStatus.PENDING)
+    with pytest.raises(BusinessError):
+        items.confirm_paid(order.pk, item.pk, user=complainant_user)
+    assert "paid_confirmed_by" not in order.runs.get(order_item=item).result

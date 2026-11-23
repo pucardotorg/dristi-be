@@ -505,11 +505,22 @@ def delay_applicable(case_id) -> bool:
     The cognizance preset adds *Accept application* on the delay condonation
     application only when this is true (spec 0039 #5.2).
     """
+    from datetime import date
+
     from .models import ChequeBounceCase
+    from .services.case_types import limitation_deadline
 
     detail = (
         ChequeBounceCase.objects.filter(case_id=case_id)
         .values_list("jurisdiction_limitation", flat=True)
         .first()
     )
-    return bool(detail and detail.get("condonation_reason"))
+    if not detail or not detail.get("condonation_reason"):
+        return False
+    try:
+        arose = date.fromisoformat(detail["cause_of_action_date"])
+        filed = date.fromisoformat(detail["complaint_filing_date"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    # Filing on the deadline is on time.
+    return filed > limitation_deadline(arose)

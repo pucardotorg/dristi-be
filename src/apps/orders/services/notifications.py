@@ -27,14 +27,14 @@ def notify_signed_on_commit(order):
 
 
 def _notify(case_id, message_key, order_id, title, order_date):
-    summary = get_case_summaries([case_id]).get(case_id)
-    context = {
-        "case_number": summary.display_number if summary else "",
-        "case_title": summary.title if summary else "",
-        "order_title": title,
-        "order_date": order_date.isoformat() if order_date else "",
-    }
     try:
+        summary = get_case_summaries([case_id]).get(case_id)
+        context = {
+            "case_number": summary.display_number if summary else "",
+            "case_title": summary.title if summary else "",
+            "order_title": title,
+            "order_date": order_date.isoformat() if order_date else "",
+        }
         contacts = get_case_contacts(case_id)
     except Exception:
         logger.exception("event=ORDER_NOTIFY_FAILED case=%s key=%s", case_id, message_key)

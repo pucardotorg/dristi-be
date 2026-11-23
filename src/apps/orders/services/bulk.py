@@ -5,6 +5,7 @@ and never rolls back the others. Nothing here marks an order's data complete or
 sends one for signing.
 """
 
+from django.db import transaction
 from rest_framework.exceptions import APIException
 
 from apps.api.errors import BusinessError
@@ -68,15 +69,16 @@ def bulk_items(*, actor, order_ids, item_specs):
             )
             continue
         try:
-            for spec in item_specs:
-                items.add(
-                    order_id,
-                    spec["item_type"],
-                    target_id=spec.get("target_id"),
-                    values=spec.get("values"),
-                    source=ItemSource.BULK,
-                    actor=actor,
-                )
+            with transaction.atomic():
+                for spec in item_specs:
+                    items.add(
+                        order_id,
+                        spec["item_type"],
+                        target_id=spec.get("target_id"),
+                        values=spec.get("values"),
+                        source=ItemSource.BULK,
+                        actor=actor,
+                    )
             done.append(order_id)
         except APIException as exc:
             skipped.append(_skip(order_id, exc))
@@ -109,6 +111,8 @@ def bulk_text(*, actor, court_id, hearing_ids, text):
             skipped.append({"hearing_id": hearing_id, "code": "E00105", "message": "Not found."})
             continue
         try:
+            if hearing.started_at is None:
+                raise BusinessError(errors.HEARING_NOT_STARTED)
             order = drafting.live_order_for_hearing(hearing_id)
             if order is None:
                 order, _ = drafting.create_in_hearing(hearing_id=hearing_id, actor=actor)
@@ -149,6 +153,8 @@ def bulk_next_hearing(*, actor, court_id, hearing_ids, state, date=None, purpose
                     errors.INVALID_ORDER_ACTION, "The order is already sent for signing."
                 )
             chosen = purpose or order.next_hearing_purpose or hearing.purpose_code
+            # The stored purpose was read before the lock: refuse if the order moved on since.
+            keeps_current = purpose is None and state == NextHearingState.LISTED
             _, found = next_hearing.set_next_hearing(
                 order.pk,
                 state=state,
@@ -156,6 +162,7 @@ def bulk_next_hearing(*, actor, court_id, hearing_ids, state, date=None, purpose
                 purpose=chosen if state == NextHearingState.LISTED else None,
                 actor=actor,
                 entered_from=EnteredFrom.CAUSE_LIST,
+                data_version=order.data_version if keeps_current else None,
             )
             done.append(hearing_id)
             warnings += [

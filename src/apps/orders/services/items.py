@@ -181,7 +181,7 @@ def values_problems(order, item_type, values, handler, ctx, *, complete=False):
             people = people_cache.setdefault(roles, _party_ids(order, roles))
             chosen = [value] if kind == FieldInput.PARTY else value
             for person in chosen:
-                if str(person) not in people:
+                if field_schema.canonical_id(person) not in people:
                     problems.append(
                         Problem(
                             f"values.{key}",
@@ -360,6 +360,11 @@ def update(order_id, item_id, values, *, source=ItemSource.PERSON, actor=None, d
         common.check_version(order, "data", data_version)
         common.require_data_editable(order)
         item = _item(order, item_id)
+        if item.added_by_source == ItemSource.SYSTEM and source != ItemSource.SYSTEM:
+            raise BusinessError(
+                errors.INVALID_ORDER_ACTION,
+                "This item follows from the next hearing. Change the next hearing instead.",
+            )
         handler = handler_for(item.item_type)
         ctx = context_for(order, item=item, source=str(source))
         values = dict(values or {})
@@ -497,7 +502,7 @@ def confirm_paid(order_id, item_id, *, user):
     from apps.cases.models import CaseParticipant
 
     from .. import permissions, ports
-    from ..enums import OrderStatus
+    from ..enums import OrderStatus, RunStatus
     from ..models import OrderWorkflowRun
 
     order, _, _ = permissions.visible_order(user, order_id)
@@ -514,13 +519,20 @@ def confirm_paid(order_id, item_id, *, user):
     )
     if not on_side.exists():
         raise permissions.role_error("add_item")
-    ports.complete_item_task(item.pk, "witness_batta")
-    run = OrderWorkflowRun.objects.filter(order_item=item).first()
-    if run is not None and "paid_confirmed_by" not in run.result:
-        run.result = {
-            **run.result,
-            "paid_confirmed_by": str(user.pk),
-            "paid_confirmed_at": timezone.now().isoformat(),
-        }
-        run.save(update_fields=["result", "updated_at"])
+    with transaction.atomic():
+        run = OrderWorkflowRun.objects.select_for_update().filter(order_item=item).first()
+        if run is None or run.status != RunStatus.DONE:
+            # The task opens when the item's workflow step finishes, and the worker
+            # replaces the step's result when it does: nothing to confirm before then.
+            raise BusinessError(
+                errors.INVALID_ORDER_ACTION, "The batta is not yet payable. Try again shortly."
+            )
+        if "paid_confirmed_by" not in run.result:
+            run.result = {
+                **run.result,
+                "paid_confirmed_by": str(user.pk),
+                "paid_confirmed_at": timezone.now().isoformat(),
+            }
+            run.save(update_fields=["result", "updated_at"])
+            ports.complete_item_task(item.pk, "witness_batta")
     return item

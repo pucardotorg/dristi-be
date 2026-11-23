@@ -6,6 +6,7 @@ import pytest
 from django.utils import timezone
 
 from apps.api.errors import BusinessError
+from apps.orders import field_schema
 from apps.orders.enums import ItemSource, OrderStatus
 from apps.orders.models import Order, OrderItem, OrderItemType
 from apps.orders.services import drafting, items, lifecycle
@@ -205,10 +206,27 @@ def test_values_are_checked_for_shape_on_save_but_mandatory_fields_are_not(order
     assert "values.unknown" in str(excinfo.value.detail)
 
 
-def test_a_hearing_purpose_must_be_an_active_one(order, filler):
+def test_a_deadline_must_be_a_date(order, filler):
     with pytest.raises(Exception) as excinfo:
         add(order, "MANDATORY_SUBMISSIONS", filler, values={"deadline": "not-a-date"})
     assert "values.deadline" in str(excinfo.value.detail)
+
+
+def test_a_hearing_purpose_must_be_an_active_one(order):
+    from apps.hearings.models import HearingPurpose
+
+    HearingPurpose.objects.create(code="RETIRED", label="Retired", sequence=99, is_active=False)
+    item_type = OrderItemType.objects.get(code="SCHEDULING_OF_HEARING_DATE")
+    handler = items.handler_for(item_type)
+    ctx = items.context_for(order, source="SYSTEM")
+
+    def purpose_problems(purpose):
+        values = {"hearing_date": "2030-01-01", "hearing_purpose": purpose}
+        found = items.values_problems(order, item_type, values, handler, ctx)
+        return [p for p in found if p.field == "values.hearing_purpose"]
+
+    assert purpose_problems("ARGUMENTS") == []  # active: the control
+    assert [p.code for p in purpose_problems("RETIRED")] == ["INVALID_PURPOSE"]
 
 
 def test_a_person_chosen_must_be_in_the_case(order, filler):
@@ -366,3 +384,25 @@ def test_items_of_another_case_have_their_own_defaults(order, filler, courtroom)
     theirs = add(outside, "ISSUE_OF_SUMMONS", filler)
     assert mine.values["party_names"] != theirs.values["party_names"]
     assert TODAY
+
+
+def test_participant_ids_compare_as_uuids(order):
+    item_type = OrderItemType.objects.get(code="ISSUE_OF_SUMMONS")
+    from apps.orders.services.items import _party_ids
+
+    ids = _party_ids(order, ("ACCUSED",))
+    chosen = next(iter(ids))
+    assert field_schema.canonical_id(chosen.upper()) in ids
+    field = {"key": "k", "label": "L", "input": "PARTIES"}
+    assert field_schema.value_problem(field, [chosen, chosen.upper()])
+    assert item_type
+
+
+def test_a_participant_id_in_capitals_is_one_of_the_case(order, filler):
+    from apps.orders.services.items import _party_ids
+
+    (accused,) = _party_ids(order, ("ACCUSED",))
+    item = items.add(
+        order.pk, "ISSUE_OF_SUMMONS", actor=filler, values={"party_names": [accused.upper()]}
+    )
+    assert item.pk

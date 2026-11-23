@@ -1,6 +1,9 @@
 """Triggering (spec 0039 #9): the runs, their order, idempotence, failure and retry."""
 
+import datetime
+
 import pytest
+from django.utils import timezone
 
 from apps.cases.models import Case
 from apps.hearings.enums import HearingStatus
@@ -238,3 +241,55 @@ def test_the_trigger_enqueues_the_actor_on_commit_only(
         for callback in callbacks:
             callback()
     send.assert_called_once_with(str(ready.pk))
+
+
+def test_a_rerun_stage_step_dispatches_only_what_was_not_done(
+    ready, staff, signer, record_ports, monkeypatch
+):
+    from apps.orders import ports
+    from apps.orders.enums import RunStatus
+
+    order = trigger(ready, staff, signer, "COGNIZANCE")
+    real = ports.dispatch_stage_event
+    calls = []
+
+    def dispatch(case_id, event, context):
+        calls.append((event, context["idempotency_key"]))
+        real(case_id, event, context)
+
+    monkeypatch.setattr(ports, "dispatch_stage_event", dispatch)
+    monkeypatch.setattr(
+        ports, "complete_case_task", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down"))
+    )
+    triggering.run(order.pk)
+    stage = order.runs.get(step="STAGE")
+    assert stage.status == RunStatus.FAILED and stage.result["done"]
+    monkeypatch.setattr(ports, "complete_case_task", lambda *a, **k: None)
+    triggering.retry_failed(order.pk)
+    triggering.run(order.pk)
+    assert order.runs.get(step="STAGE").status == RunStatus.DONE
+    assert len(calls) == 1  # the event sent before the failure is not sent again
+
+
+def test_a_step_another_delivery_is_running_is_not_started_twice(ready, staff, signer):
+    from apps.orders.enums import RunStatus
+
+    order = trigger(ready, staff, signer, "COGNIZANCE")
+    stage = order.runs.get(step="STAGE")
+    OrderWorkflowRun.objects.filter(pk=stage.pk).update(status=RunStatus.RUNNING)
+    assert triggering.run(order.pk) == 1  # the caller looks again later
+    stage.refresh_from_db()
+    assert stage.status == RunStatus.RUNNING and stage.attempts == 0
+
+
+def test_a_step_left_running_by_a_dead_worker_is_taken_over_after_the_lease(ready, staff, signer):
+    from apps.orders.enums import RunStatus
+
+    order = trigger(ready, staff, signer, "COGNIZANCE")
+    stage = order.runs.get(step="STAGE")
+    OrderWorkflowRun.objects.filter(pk=stage.pk).update(
+        status=RunStatus.RUNNING,
+        updated_at=timezone.now() - triggering.LEASE - datetime.timedelta(seconds=1),
+    )
+    assert triggering.run(order.pk) == 0
+    assert order.runs.get(step="STAGE").status == RunStatus.DONE

@@ -26,6 +26,37 @@ def test_seeding_the_orders_folder_twice_changes_nothing(settings):
     assert OrderItemType.objects.count() == 26
 
 
+def test_reseeding_keeps_what_an_admin_changed(settings):
+    item_type = OrderItemType.objects.get(code="COST")
+    order_type = OrderType.objects.filter(state_code="GJ").first()
+    rule = OrderItemCombinationRule.objects.first()
+    item_type.label = "Edited item"
+    item_type.save()
+    order_type.label = "Edited type"
+    order_type.save()
+    kept = list(rule.item_types.values_list("pk", flat=True))
+    rule.item_types.remove(rule.item_types.first())
+    after_edit = sorted(rule.item_types.values_list("pk", flat=True))
+    assert after_edit != sorted(kept)
+    counts = (
+        OrderItemType.objects.count(),
+        OrderType.objects.count(),
+        OrderItemCombinationRule.objects.count(),
+    )
+
+    path = str(settings.BASE_DIR.parent / "data" / "seed" / "core" / "orders")
+    call_command("seed", path, "--strict", stdout=StringIO())
+
+    assert OrderItemType.objects.get(pk=item_type.pk).label == "Edited item"
+    assert OrderType.objects.get(pk=order_type.pk).label == "Edited type"
+    assert sorted(rule.item_types.values_list("pk", flat=True)) == after_edit
+    assert counts == (
+        OrderItemType.objects.count(),
+        OrderType.objects.count(),
+        OrderItemCombinationRule.objects.count(),
+    )
+
+
 def test_every_seeded_workflow_item_has_a_handler():
     missing = [
         item.code

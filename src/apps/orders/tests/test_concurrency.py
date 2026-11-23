@@ -116,3 +116,103 @@ def test_numbers_allotted_at_once_are_distinct_and_gap_free(
         Order.objects.filter(pk__in=[o.pk for o in orders]).values_list("number", flat=True)
     )
     assert [n.rsplit("/", 2)[1] for n in numbers] == ["1", "2", "3"]
+
+
+def _wait_until_blocked_on_a_lock(timeout=10):
+    """Wait until some other connection is waiting for a row lock."""
+    import time
+
+    time.sleep(0.5)  # let the other thread connect and reach the lock
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "select count(*) from pg_stat_activity "
+                "where wait_event_type = 'Lock' and datname = current_database()"
+            )
+            if cursor.fetchone()[0]:
+                return
+        time.sleep(0.05)
+    raise AssertionError("no connection ever waited for the court lock")
+
+
+def test_a_hearing_scheduled_while_a_date_is_being_held_becomes_the_one_it_moves(
+    case, drafter, setter
+):
+    """The listed hearing is read under the court lock (spec 0039 #6.4): a hearing another
+    order confirms while this one waits for the lock is the hearing this order moves."""
+    import datetime
+    import threading
+
+    from django.db import transaction
+
+    from apps.hearings.models import Hearing
+    from apps.hearings.services import calendar
+    from apps.hearings.tests.factories import schedule
+
+    from .factories import TODAY
+
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
+    outcome = {}
+
+    def set_date():
+        try:
+            next_hearing.set_next_hearing(
+                order.pk,
+                state="LISTED",
+                date=TODAY.replace(day=26),
+                purpose="ARGUMENTS",
+                actor=setter,
+            )
+        except BaseException as exc:  # noqa: BLE001 - reported to the test
+            outcome["error"] = exc
+        finally:
+            connections.close_all()
+
+    with transaction.atomic():
+        calendar.lock_court(case.court_id)  # another order is confirming, holding the court
+        worker = threading.Thread(target=set_date, daemon=True)
+        worker.start()
+        _wait_until_blocked_on_a_lock()
+        listed = schedule(case, TODAY.replace(day=19) if TODAY.day != 19 else TODAY, "APPEARANCE")
+    worker.join(timeout=RACE_TIMEOUT_SECONDS)
+    assert not worker.is_alive()
+    assert "error" not in outcome, outcome
+    order.refresh_from_db()
+    assert order.moves_hearing_id == listed.pk
+    hold = Hearing.objects.get(source_order_id=order.pk, status="PROVISIONAL")
+    assert hold.moves_hearing_id == listed.pk
+    assert order.items.get().item_type.code == "RESCHEDULING_OF_HEARING_DATE"
+    assert datetime  # (kept for clarity of the date maths above)
+
+
+def test_two_deliveries_of_one_order_dispatch_each_stage_event_once(
+    ready, staff, signer, monkeypatch
+):
+    """The stage step is claimed under its row lock (spec 0039 #9.2): a duplicate delivery
+    that overlaps it stops instead of dispatching the events again."""
+    import time
+
+    from apps.orders import ports
+    from apps.orders.services import items as item_service
+    from apps.orders.services import triggering
+
+    item_service.add(ready.pk, "COGNIZANCE", actor=staff)
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.record_signed_file(ready.pk, "signed", "DSC", actor=signer)
+    calls = []
+
+    def slow_dispatch(case_id, event, context):
+        calls.append(event)
+        time.sleep(1.5)  # long enough for the other delivery to arrive meanwhile
+
+    monkeypatch.setattr(ports, "dispatch_stage_event", slow_dispatch)
+    # The HEARING step does not apply to this order; make sure only the stage step is left.
+    OrderWorkflowRun.objects.filter(order_id=ready.pk).exclude(step="STAGE").update(status="DONE")
+    results = race(lambda: triggering.run(ready.pk), lambda: triggering.run(ready.pk))
+    assert not [r for r in results if isinstance(r, BaseException)], results
+    assert calls == ["COGNIZANCE_TAKEN"]
+    stage = OrderWorkflowRun.objects.get(order_id=ready.pk, step="STAGE")
+    assert stage.status == "DONE" and stage.attempts == 1
+    assert sorted(results) == [0, 1]  # the loser is told to look again later

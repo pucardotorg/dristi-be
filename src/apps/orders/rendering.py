@@ -103,6 +103,8 @@ def _inline(element):
 def _list_block(element):
     items = [_inline(item).strip() for item in element.iterchildren("li")]
     block = {"type": "list", "items": items, "ordered": element.tag == "ol"}
+    if element.tag == "ol" and element.get("type") == "a":
+        block["list_type"] = "a"
     return block
 
 
@@ -125,20 +127,37 @@ def html_to_blocks(text):
         return []
     root = lxml_html.fragment_fromstring(text, create_parent="div")
     blocks = []
-    if root.text and root.text.strip():
-        blocks.append({"type": "paragraph", "text": html_lib.escape(root.text.strip())})
+    run = [html_lib.escape(root.text or "", quote=False)]
+
+    def flush():
+        # Consecutive top-level inline nodes and their tails are one paragraph.
+        markup = "".join(run).strip()
+        while markup.startswith("<br/>") or markup.endswith("<br/>"):
+            markup = markup.removeprefix("<br/>").removesuffix("<br/>").strip()
+        run.clear()
+        if markup:
+            blocks.append({"type": "paragraph", "text": markup})
+
     for child in root:
-        if child.tag in ("ol", "ul"):
-            blocks.append(_list_block(child))
-        elif child.tag == "table":
-            if block := _table_block(child):
-                blocks.append(block)
+        if child.tag in ("ol", "ul", "table", "p"):
+            flush()
+            if child.tag in ("ol", "ul"):
+                blocks.append(_list_block(child))
+            elif child.tag == "table":
+                if block := _table_block(child):
+                    blocks.append(block)
+            else:
+                markup = _inline(child).strip()
+                if markup:
+                    blocks.append({"type": "paragraph", "text": markup})
+        elif child.tag == "br":
+            run.append("<br/>")
         else:
-            markup = _inline(child).strip()
-            if markup:
-                blocks.append({"type": "paragraph", "text": markup})
-        if child.tail and child.tail.strip():
-            blocks.append({"type": "paragraph", "text": html_lib.escape(child.tail.strip())})
+            inner = _inline(child)
+            tag = INLINE_MARKUP.get(child.tag)
+            run.append(f"<{tag}>{inner}</{tag}>" if tag else inner)
+        run.append(html_lib.escape(child.tail or "", quote=False))
+    flush()
     return blocks
 
 
@@ -200,14 +219,18 @@ def page_facts(order, *, case_summary=None, purpose_label="", signing_user=None,
     elif order.signed_by_id:
         signer = order.signed_by.name or ""
     return {
-        "heading": order.order_type.pdf_heading,
+        # A signed order keeps the heading its signing file was prepared with.
+        "heading": (order.is_signed and order.signing_heading) or order.order_type.pdf_heading,
         "court": order.court.name,
         "number": order.number if number is None else number,
         "date": order.order_date.strftime("%d %B %Y").lstrip("0") if order.order_date else "",
         "case_number": case_summary.display_number if case_summary else "",
         "case_title": case_summary.title if case_summary else "",
         "title": order.title,
-        "attendance": attendance_sentences(order.hearing_id),
+        # A signed order keeps the roll its signing file was prepared with.
+        "attendance": (
+            order.signing_attendance if order.is_signed else attendance_sentences(order.hearing_id)
+        ),
         "body": order.text,
         "next_hearing": next_hearing_line(order, purpose_label),
         "signature": signature_lines(
@@ -260,7 +283,9 @@ def pdf_document(
     """Return the order as a renderer document: the same facts as ``render_page``.
 
     ``entry_text`` (sanitised HTML) replaces the body, and ``heading`` the
-    heading, for a Gujarat Roznama (#8.4), which prints the diary entry.
+    heading, for a Gujarat Roznama (#8.4), which prints the diary entry. The
+    entry is complete as composed, so the attendance and next hearing lines are
+    not added around it.
     """
     facts = page_facts(
         order,
@@ -301,9 +326,12 @@ def pdf_document(
             }
         )
     blocks.append({"type": "line"})
-    blocks += [{"type": "paragraph", "text": html_lib.escape(line)} for line in facts["attendance"]]
+    if entry_text is None:
+        blocks += [
+            {"type": "paragraph", "text": html_lib.escape(line)} for line in facts["attendance"]
+        ]
     blocks += html_to_blocks(body)
-    if facts["next_hearing"]:
+    if entry_text is None and facts["next_hearing"]:
         blocks.append({"type": "paragraph", "text": html_lib.escape(facts["next_hearing"])})
     blocks.append({"type": "spacer", "height": 18})
     for line in facts["signature"]:

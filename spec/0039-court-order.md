@@ -501,10 +501,10 @@ Every bounded enum is a `TextChoices` in `apps/orders/enums.py`.
 | `moves_hearing_id` | `UUIDField(null=True)` | outside a hearing: the hearing the date was moved from (`ORD-08`) |
 | `next_hearing_entered_from` | `CharField(16, blank=True)` | `ORDER` or `CAUSE_LIST`: where it was last written (`PLC-04`) |
 | `next_hearing_entered_by` / `_at` | | who set it, for the audit |
-| `diary_same_as_text` | `BooleanField(default=True)` | *The [diary entry] and order text are the same* (`PUB-04`); always true for a type without a separate entry (`DEN-03`) |
+| `diary_same_as_text` | `BooleanField(default=True)` | *The [diary entry] and order text are the same* (`PUB-04`); read as true for a type without a separate entry, the stored choice kept for a change back (`DEN-03`) |
 | `diary_text` | `TextField(blank=True)` | used when the option is off; sanitised as the order text |
 | `sent_for_signing_by` / `_at` | | latest send |
-| `number` | `CharField(64, blank=True)` | allotted at the first signing attempt and kept, from the type's series — an order number, or a Roznama number for a Roznama-type order (#8.3, `RZT-04`); unique when non-empty |
+| `number` | `CharField(128, blank=True)` | allotted at the first signing attempt and kept, from the type's series — an order number, or a Roznama number for a Roznama-type order (#8.3, `RZT-04`); unique when non-empty |
 | `order_date` | `DateField(null=True)` | the business date it was signed (`PUB-01`) |
 | `signing_file_id` | `CharField(64, blank=True)` | `apps.files` id of the PDF prepared for the current signing (#8.1) |
 | `signed_file_id` | `CharField(64, blank=True)` | the signed PDF |
@@ -644,7 +644,7 @@ transaction. Append-only except for status, attempts and result.
 | `order_item` | `FK(OrderItem, null=True, on_delete=PROTECT)` | empty for the hearing and stage steps |
 | `step` | `CharField(16, choices=RunStep)` | `HEARING`, `ITEM`, `STAGE` |
 | `sequence` | `PositiveSmallIntegerField` | execution order (#9.2) |
-| `status` | `CharField(16, choices=RunStatus)` | `PENDING`, `DONE`, `FAILED`, `BLOCKED` |
+| `status` | `CharField(16, choices=RunStatus)` | `PENDING`, `RUNNING`, `DONE`, `FAILED`, `BLOCKED` |
 | `attempts` | `PositiveSmallIntegerField(default=0)` | |
 | `result` | `JSONField(default=dict)` | the handler's `payload` |
 | `error_code` | `CharField(64, blank=True)` | |
@@ -688,7 +688,7 @@ type has `signs_diary_entry`.
 | --- | --- | --- |
 | `order` | `OneToOneField(Order, on_delete=PROTECT, related_name="roznama")` | |
 | `status` | `CharField(16, choices=RoznamaStatus)` | `AWAITING_SIGNATURE`, `SIGNED` |
-| `number` | `CharField(64, blank=True)` | an internal number from the `ROZNAMA` series, no legal significance (`RZN-05`) |
+| `number` | `CharField(128, blank=True)` | an internal number from the `ROZNAMA` series, no legal significance (`RZN-05`) |
 | `signing_file_id` / `signed_file_id` | `CharField(64, blank=True)` | as on `Order` (#8.1) |
 | `signing_method` | `CharField(16, blank=True)` | |
 | `signed_by` / `signed_at` | `FK(User, null=True)` / `DateTimeField(null=True)` | |
@@ -907,7 +907,7 @@ case's state offers (`400 E14024`, `field = order_type`). Kerala offers only
 Normal, so no choice is shown there.
 
 * Changing to a type that does not allow links, on an order that has some, needs `remove_linked_documents = true`; without it, `409 E14025` with the documents that would be removed, so the screen can warn (`OTY-07`). With it, the links are removed in the same transaction.
-* Changing to a type without a separate diary entry sets `diary_same_as_text = true` and keeps `diary_text`, so changing back restores it (`DEN-03`).
+* Changing to a type without a separate diary entry makes the entry read as the order text but leaves `diary_same_as_text` and `diary_text` as chosen, so changing back restores the separate entry (`DEN-03`).
 * An un-overridden title follows the new type (#5.5). The number series is read at signing, so nothing else changes (`OTY-02`).
 
 The type does not change items, workflows, tasks or the lifecycle (`OTY-02`).
@@ -1220,6 +1220,7 @@ From the catalogue's *Workflow trigger order* (`PUB-03`):
 calling the handler with `run_id = run.id`:
 
 * A step already `DONE` is skipped, so a redelivered message finishes rather than repeats.
+* A step is claimed (`RUNNING`) under its row lock before it runs, so two deliveries never run it at once; the one that finds it claimed stops, and a claim older than the lease (a crashed worker) can be taken over. The `STAGE` step records each action it completes in `result.done` and skips those on a re-run; each stage event carries an `idempotency_key` for its receivers.
 * A failed `HEARING` step marks every later step `BLOCKED`: processes and tasks point at the hearing. Any other failure is recorded and the next step runs.
 * A failed step is retried up to config `orders.run_max_retries` with backoff, then stays `FAILED`, logged at error with `order_id` and `error_code`. An admin action retries it; a `BLOCKED` step runs once the hearing step succeeds.
 

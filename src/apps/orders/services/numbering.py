@@ -7,6 +7,7 @@ defines neither).
 """
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, transaction
 from django.utils.module_loading import import_string
 
@@ -14,7 +15,7 @@ from apps.cases.selectors import state_code
 from apps.hearings.services import calendar
 
 from ..enums import NumberSeries
-from ..models import OrderNumberCounter
+from ..models import Order, OrderNumberCounter
 
 SERIES_CODE = {NumberSeries.ORDER: "ORD", NumberSeries.ROZNAMA: "RZN"}
 
@@ -48,10 +49,18 @@ def allot(order, series):
     """Return a formatted number from ``series`` for the order's courtroom, for today's year."""
     year = calendar.business_date().year
     seq = next_value(order.court_id, series, year)
-    return _formatter()(
+    number = _formatter()(
         court_code=order.court.code,
         series=series,
         seq=seq,
         year=year,
         state=state_code(order.case_id),
     )
+    limit = Order._meta.get_field("number").max_length
+    if len(number) > limit:
+        # Refused before the save, so the cause is named rather than a database error.
+        raise ImproperlyConfigured(
+            f"ORDERS_NUMBER_FORMATTER produced {number!r}, longer than the {limit} characters "
+            "an order number can hold."
+        )
+    return number
