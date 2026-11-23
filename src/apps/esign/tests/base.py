@@ -82,7 +82,7 @@ class ESignTestCase(APITestCase):
 
         payload = {
             "module": "orders",
-            "entity_type": "ORDER",
+            "entity_type": "OTHER",
             "entity_id": "9f2c0001",
             "file_id": self.source_file_id,
             "sign_placeholder": dict(PLACEHOLDER),
@@ -104,7 +104,7 @@ class ESignTestCase(APITestCase):
         placeholder_file_id = self.files.add(prepared.prepared_document)
         fields = {
             "module": "orders",
-            "entity_type": "ORDER",
+            "entity_type": "OTHER",
             "entity_id": "9f2c0001",
             "signer": self.user,
             "provider": "mock",

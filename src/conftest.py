@@ -7,11 +7,12 @@ from django.conf import settings
 from django.core.management import call_command
 
 CORE_SEED = settings.BASE_DIR.parent / "data" / "seed" / "core"
-# The reference data that data migrations used to insert (spec 0036). The rest
+# The reference data that data migrations used to insert (spec 0036), and the order
+# catalogue (spec 0039 #3.11), which was never migrated but every orders test needs. The rest
 # of core/ (languages, configurations, public configurations, attribute
 # definitions) was never in the migrated test database; the tests that need it
 # seed it themselves, and some expect those tables to start empty.
-MIGRATED_DATA = ("auth", "cms", "dristi_requests", "hearings", "messaging", "scrutiny")
+MIGRATED_DATA = ("auth", "cms", "dristi_requests", "hearings", "messaging", "orders", "scrutiny")
 
 
 @pytest.fixture(scope="session")

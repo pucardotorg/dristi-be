@@ -228,3 +228,63 @@ register(
         order=60,
     )
 )
+
+# Order types by state, then the catalogue, then its combination rules (spec 0039 #3.11).
+# Items load after hearing purposes (30), whose codes they cite as suggestions, and rules
+# after the items they name.
+register(
+    SeedSpec(
+        model_label="orders.OrderType",
+        key=("state_code", "code"),
+        fields=(
+            "state_code",
+            "code",
+            "label",
+            "allows_linked_documents",
+            "separate_diary_entry",
+            "diary_entry_label",
+            "signs_diary_entry",
+            "diary_entry_in_a_diary",
+            "number_series",
+            "pdf_heading",
+            "default_title",
+            "preselect_from",
+            "is_active",
+        ),
+        order=30,
+    )
+)
+
+register(
+    SeedSpec(
+        model_label="orders.OrderItemType",
+        key=("code",),
+        fields=(
+            "code",
+            "label",
+            "category",
+            "availability",
+            "target_type",
+            "field_schema",
+            "has_workflow",
+            "trigger_phase",
+            "stage_event",
+            "closes_case",
+            "outcome",
+            "sequence",
+            "is_active",
+        ),
+        m2m_by_code={"suggested_for_purposes": FkRef("hearings.HearingPurpose", "code")},
+        order=40,
+    )
+)
+
+register(
+    SeedSpec(
+        model_label="orders.OrderItemCombinationRule",
+        key=("code",),
+        fields=("code", "kind", "message", "is_active"),
+        m2m_by_code={"item_types": FkRef("orders.OrderItemType", "code")},
+        order=50,
+    )
+)

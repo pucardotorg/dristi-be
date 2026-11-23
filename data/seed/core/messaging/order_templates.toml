@@ -1,0 +1,24 @@
+# SMS templates orders notify parties with (spec 0039 #12.2).
+
+[seed]
+model = "messaging.MessageTemplate"
+
+[[rows]]
+message_key = "ORDER_SIGNED"
+message_type = "sms"
+subject = ""
+content = "An order dated {{order_date}} was passed in case {{case_number}} ({{case_title}}): {{order_title}}. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "case_title", "order_title", "order_date"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+case_title = { type = "string" }
+order_title = { type = "string" }
+order_date = { type = "string" }

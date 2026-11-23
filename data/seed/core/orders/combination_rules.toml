@@ -1,0 +1,38 @@
+# The catalogue's combination restrictions (spec 0039 #3.4, `ITM-07`).
+#
+# Rule 5 of the catalogue (no restriction) needs no row. A rule's message may use
+# {adding} and {existing}: the labels of the item being added and the one it clashes with.
+# NO_REPEAT is checked before EXCLUSIVE, so a repeat reads "twice", not "both X and X".
+
+[seed]
+model = "orders.OrderItemCombinationRule"
+
+[[rows]]
+code = "CASE_CLOSING_ONE_PER_ORDER"
+kind = "EXCLUSIVE"
+item_types = ["JUDGEMENT", "DISMISS_CASE", "CASE_SETTLEMENT", "WITHDRAWAL_OF_CASE", "CASE_TRANSFER", "REFERRAL_TO_ADR", "ABATE_CASE"]
+message = "You cannot add both {adding} and {existing}."
+
+[[rows]]
+code = "COGNIZANCE_DISMISS_NO_REPEAT"
+kind = "NO_REPEAT"
+item_types = ["COGNIZANCE", "DISMISS_CASE"]
+message = "You cannot add {adding} twice."
+
+[[rows]]
+code = "COGNIZANCE_DISMISS_EXCLUSIVE"
+kind = "EXCLUSIVE"
+item_types = ["COGNIZANCE", "DISMISS_CASE"]
+message = "You cannot add both {adding} and {existing}."
+
+[[rows]]
+code = "ONE_HEARING_DATE_ITEM"
+kind = "EXCLUSIVE"
+item_types = ["SCHEDULING_OF_HEARING_DATE", "RESCHEDULING_OF_HEARING_DATE"]
+message = "You cannot add two {adding} items."
+
+[[rows]]
+code = "ONE_DECISION_PER_APPLICATION"
+kind = "ONE_PER_TARGET"
+item_types = ["ACCEPT_APPLICATION", "REJECT_APPLICATION", "ACCEPTANCE_OF_BAIL", "DISMISS_APPLICATION"]
+message = "You cannot add two responses to the same application."

@@ -1,8 +1,8 @@
-# 0025 — Court Orders (`apps.orders`)
+# 0039 — Court Orders (`apps.orders`)
 
 ## Status
 
-Proposed
+Implemented, with the divergences and open follow-ups in *Implementation notes* at the end.
 
 ## References
 
@@ -117,7 +117,7 @@ Gujarat's Roznamas, because both are part of the order (`PUB-04`, §14.2 of the 
 * Create one draft order per hearing, and any number per case outside a hearing, each with its own type, text and order data.
 * Store the order text as sanitised rich text, saved as it is typed, show changes live to everyone with the draft open, and render the page and the signed PDF from one renderer.
 * Hold the order types each state offers, with what each changes: linked documents, diary entry, number series and PDF heading.
-* Hold the order-item catalogue — items, fields, availability, categories, suggested hearing purposes, combination restrictions, trigger phase — as data seeded by migration and editable in admin.
+* Hold the order-item catalogue — items, fields, availability, categories, suggested hearing purposes, combination restrictions, trigger phase — as TOML seed data loaded by the `seed` command ([`0025`](0025-data-seeding-command.md)) and editable in admin.
 * Add, edit and remove order items through one service, whether a person or a later reading layer adds them, with availability and combination checked on the server.
 * Fill defaults from the record without guessing, and check mandatory fields only when the order data is marked complete.
 * Hold the next hearing through [`0023`](0023-hearings.md) from the moment it is set, as one value edited from the order or the cause list.
@@ -156,7 +156,7 @@ apps/orders/
 │                           # OrderType, OrderItemType, OrderItemCombinationRule,
 │                           # OrderWorkflowRun, OrderRoznama, OrderNumberCounter
 ├── enums.py
-├── errors.py               # E11xxx (#11.6)
+├── errors.py               # E14xxx (#11.6)
 ├── signals.py              # order_signed, order_triggered
 ├── handlers/
 │   ├── base.py             # OrderItemHandler contract, registry (#1.2)
@@ -180,7 +180,7 @@ apps/orders/
 ├── permissions.py          # court roles in the courtroom (#2)
 ├── tasks.py                # Dramatiq actors (#12.7)
 ├── serializers.py · views.py · urls.py · admin.py
-├── migrations/             # includes catalogue and combination-rule seed rows
+├── migrations/             # schema only: reference data is seeded, never migrated (#3.11)
 └── tests/
 ```
 
@@ -248,33 +248,41 @@ spec does not depend on it.
 class ItemContext:
     case_id: UUID
     order_id: UUID
-    hearing_id: UUID | None          # the hearing the order is passed in
-    target_type: str                  # "" or "APPLICATION"
+    hearing_id: UUID | None  # the hearing the order is passed in
+    target_type: str  # "" or "APPLICATION"
     target_id: UUID | None
 
 
 @dataclass(frozen=True)
 class Problem:
-    field: str                        # values.<key>, or target_id
-    code: str                         # e.g. "REQUIRED", "NOT_A_WITNESS"
+    field: str  # values.<key>, or target_id
+    code: str  # e.g. "REQUIRED", "NOT_A_WITNESS"
     message: str
 
 
 @dataclass(frozen=True)
 class RunResult:
     status: Literal["DONE", "FAILED"]
-    payload: dict = field(default_factory=dict)   # ids created, e.g. process ids, demand id
+    payload: dict = field(default_factory=dict)  # ids created, e.g. process ids, demand id
     error_code: str = ""
 
 
 class OrderItemHandler(ABC):
     item_codes: ClassVar[tuple[str, ...]]
 
-    def unavailable_reason(self, ctx: ItemContext) -> str | None: return None   # ITM-03
-    def validate_target(self, ctx: ItemContext) -> list[Problem]: return []     # ITM-04
-    def defaults(self, ctx: ItemContext) -> dict: return {}                     # VAR-02, VAR-03
-    def validate(self, ctx: ItemContext, values: dict, *, complete: bool) -> list[Problem]: return []
-    def summary(self, ctx: ItemContext, values: dict) -> str: ...               # the item's line in lists
+    def unavailable_reason(self, ctx: ItemContext) -> str | None:
+        return None  # ITM-03
+
+    def validate_target(self, ctx: ItemContext) -> list[Problem]:
+        return []  # ITM-04
+
+    def defaults(self, ctx: ItemContext) -> dict:
+        return {}  # VAR-02, VAR-03
+
+    def validate(self, ctx: ItemContext, values: dict, *, complete: bool) -> list[Problem]:
+        return []
+
+    def summary(self, ctx: ItemContext, values: dict) -> str: ...  # the item's line in lists
 
     @abstractmethod
     def execute(self, ctx: ItemContext, values: dict, *, run_id: UUID) -> RunResult: ...
@@ -320,8 +328,9 @@ Roles are checked when the action is taken; a role change applies at once
 #### 2.2 Order types and diary entries by state
 
 Which types a state offers, and how a diary entry is named and signed there, is
-per-state data, not a court setting. It is held in `OrderType` (#3.9), seeded by
-data migration and keyed by the state code of the case's establishment:
+per-state data, not a court setting. It is held in `OrderType` (#3.9), seeded from
+`data/seed/core/orders/order_types.toml` (#3.11) and keyed by the state code of the
+case's establishment:
 
 | State | Types | Diary entry is called | A normal order's entry is signed | Source |
 | --- | --- | --- | --- | --- |
@@ -540,8 +549,8 @@ Indexes: `(court, status)`, `(case, -created_at)`, `(court, data_complete, statu
 
 #### 3.3 `OrderItemType` — the catalogue
 
-Seeded by data migration from `order-template-catalogue.md`; edited in admin;
-retired with `is_active = False`, never deleted.
+Seeded from `order-template-catalogue.md` by `data/seed/core/orders/` (#3.11);
+edited in admin; retired with `is_active = False`, never deleted.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -559,7 +568,7 @@ retired with `is_active = False`, never deleted.
 | `suggested_for_purposes` | `ManyToManyField("hearings.HearingPurpose", blank=True)` | *Suggested* (`ITM-02`) |
 | `sequence` | `PositiveSmallIntegerField` | display order within its category |
 
-The seed, from the catalogue:
+The seed (`data/seed/core/orders/order_item_types.toml`), from the catalogue:
 
 | `code` | Category | Availability | Phase | `stage_event` | `closes_case` |
 | --- | --- | --- | --- | --- | --- |
@@ -594,11 +603,12 @@ One row per restriction in the catalogue's *Combination restrictions* (`ITM-07`)
 
 | Field | Type | Notes |
 | --- | --- | --- |
+| `code` | `CharField(50, unique=True)` | upper snake case; the natural key the seed command matches by (#3.11) |
 | `kind` | `CharField(16, choices=RuleKind)` | `EXCLUSIVE` — at most one item from the set per order; `NO_REPEAT` — no item of the set twice; `ONE_PER_TARGET` — at most one item from the set per application |
 | `item_types` | `ManyToManyField(OrderItemType)` | |
 | `message` | `CharField(255)` | with `{adding}` and `{existing}` placeholders |
 
-Seeded: rule 1 (`EXCLUSIVE`, the case-closing items), rule 2 (`EXCLUSIVE` and
+Seeded (`data/seed/core/orders/combination_rules.toml`): rule 1 (`EXCLUSIVE`, the case-closing items), rule 2 (`EXCLUSIVE` and
 `NO_REPEAT`, Cognizance and Dismiss case), rule 3 (`EXCLUSIVE`, Scheduling and
 Rescheduling), rule 4 (`ONE_PER_TARGET`, Accept, Reject, Acceptance of bail,
 Dismiss application). Rule 5 (no restriction) needs no row.
@@ -649,8 +659,8 @@ transaction. Append-only except for status, attempts and result.
 
 #### 3.9 `OrderType`
 
-Seeded by data migration (#2.2); edited in admin; retired with
-`is_active = False`.
+Seeded by `data/seed/core/orders/order_types.toml` (#2.2, #3.11); edited in admin;
+retired with `is_active = False`.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -684,6 +694,36 @@ type has `signs_diary_entry`.
 | `signed_by` / `signed_at` | `FK(User, null=True)` / `DateTimeField(null=True)` | |
 
 Its text is the order's diary entry (#6.6); it has no text of its own.
+
+#### 3.11 Seed data
+
+Reference data is loaded by `manage.py seed`, never by a data migration
+(`AGENTS.md`, spec [`0036`](0036-migrations-cleanup.md)). Migrations in
+`apps/orders/migrations/` create tables only. The files live beside the other
+core reference data and load with `manage.py seed data/seed/core/`:
+
+```text
+data/seed/core/
+├── auth/groups.toml                  # + ORDER_DRAFTER, ORDER_SIGNER (placeholder court roles, below)
+└── orders/
+    ├── order_types.toml              # OrderType: Kerala, Gujarat, Punjab & Haryana (#2.2)
+    ├── order_item_types.toml         # OrderItemType: the catalogue (#3.3)
+    └── combination_rules.toml        # OrderItemCombinationRule: rules 1-4 (#3.4)
+```
+
+Each model is registered in `apps/core/seeding/specs.py` (`SeedSpec`):
+
+| Model | Natural key | Load order | By code |
+| --- | --- | --- | --- |
+| `orders.OrderType` | `(state_code, code)` | 30 | |
+| `orders.OrderItemType` | `code` | 40 (after `hearings.HearingPurpose`, 30) | `suggested_for_purposes` → `HearingPurpose.code` |
+| `orders.OrderItemCombinationRule` | `code` | 50 (after item types) | `item_types` → `OrderItemType.code` |
+
+* Seeding is insert-only: a row that exists is left exactly as it is. A deployment that already has the catalogue changes a field, a message or a suggested purpose in admin; re-seeding never overwrites it.
+* `field_schema` is a TOML table (`[rows.field_schema]` / inline); no JSON text is needed. `preselect_from` is a list of strings.
+* The placeholder court-role groups `ORDER_DRAFTER` and `ORDER_SIGNER` join the existing `HEARING_CONTROLLER`, `NEXT_HEARING_SETTER` and `ORDER_DATA_FILLER` in `core/auth/groups.toml` (`apps/orders/ports.py`, as `apps/hearings/ports.py`).
+* A new item, type or rule is a new TOML row plus, for an item with a workflow, a handler. A test loads the directory with `--strict` and checks every seeded item with `has_workflow` has a handler, so a catalogue row cannot ship without one.
+* The session test database seeds `core/orders` with the other core folders (`src/conftest.py`).
 
 ### 4. Order lifecycle
 
@@ -740,7 +780,7 @@ An order sent for signing with incomplete data is in two stages at once
 
 Rules:
 
-* Every action runs in `transaction.atomic()` under `select_for_update()` on the order. Anything not in the table is `409 E11001` with `allowed_actions`.
+* Every action runs in `transaction.atomic()` under `select_for_update()` on the order. Anything not in the table is `409 E14001` with `allowed_actions`.
 * The next hearing is frozen once sent for signing: it was a condition of sending (`SND-03`). Changing it needs a move back to draft.
 * `TRIGGERED` and `DISCARDED` are terminal. Rows are never deleted.
 * This lifecycle is not a [`0011`](0011-case-workflows.md) workflow: a case has many orders, and this state machine is small and fixed (as [`0023`](0023-hearings.md) #3).
@@ -754,7 +794,7 @@ POST /api/v1/orders/
 { "hearing_id": "6f1c…" }
 ```
 
-* The hearing must have been started — `started_at` set (`HRG-09`); otherwise `409 E11004`.
+* The hearing must have been started — `started_at` set (`HRG-09`); otherwise `409 E14004`.
 * If the hearing already has a live order, it is returned with `200`, so everyone opening the listing works one draft (`DFT-01`). Otherwise `201`.
 * `case` and `court` come from the hearing. `listing.attach_order(hearing, order)` records it on the hearing ([`0023`](0023-hearings.md) #7).
 * The type is preselected as the state's type with `HEARING` in `preselect_from` — Roznama in Gujarat, Zimni in Punjab & Haryana — else Normal (`OTY-03`, #5.8).
@@ -770,7 +810,7 @@ POST /api/v1/orders/
 }
 ```
 
-* The case must be registered and have a courtroom (`409 E11003`).
+* The case must be registered and have a courtroom (`409 E14003`).
 * Each call creates a new draft (`DFT-03`, `ORD-10`).
 * `preset` is optional. It loads order items **in advance**, as `PRESET`, removable like any other (`ORD-06`, `ORD-10a`). It is not stored: *opened from* is not an attribute of the order.
 * The type is Normal, except for `preset.kind = APPLICATION` with `"onboarding": true` — the order opened while taking an application on file (`ALC-07`, `ALC-08`) — which preselects the state's type with `APPLICATION_ONBOARDING` (`OTY-03`). An `order_type` in the body overrides the preselection.
@@ -789,7 +829,7 @@ a hearing the next hearing is set on the order and the item follows from it
 #### 5.3 Text and rendering
 
 * `text` is HTML restricted to an allow-list: `p`, `br`, `strong`, `em`, `u`, `ol` (with `type="a"` for lettered), `ul`, `li`, `table`, `thead`, `tbody`, `tr`, `th`, `td` (`colspan`, `rowspan`). Everything else is stripped on save by a server-side sanitiser (`nh3`), never trusted from the client (`TXT-02`).
-* At most config `orders.text_max_bytes` (`400 E11020`, `field = text`).
+* At most config `orders.text_max_bytes` (`400 E14020`, `field = text`).
 * `rendering.render_page(order)` builds the page from the record — court heading, case header, attendance lines (from [`0023`](0023-hearings.md), people not required left out, empty lines left out, `ATT-03`), the text, the next hearing line, and the signature block — as HTML. The same HTML is the data of the `apps.pdf` template `court-order`. The detail endpoint returns it as `rendered_html`, so the page and the signed PDF never disagree (`ORD-13`). Heading and signature block are never typed.
 
 #### 5.4 Saving and concurrency
@@ -801,7 +841,7 @@ If-Match: "t-14"
 ```
 
 * Order drafter; `status = DRAFT`.
-* `If-Match` carries `text_version`; a mismatch is `412 E11002` and the client reloads (`DFT-02`). Order data writes use `data_version` the same way, so the drafter and the filler working the same draft never block each other.
+* `If-Match` carries `text_version`; a mismatch is `412 E14002` and the client reloads (`DFT-02`). Order data writes use `data_version` the same way, so the drafter and the filler working the same draft never block each other.
 * A text change on an order whose `data_complete` is true sets it false (`SND-06`).
 * Saves are idempotent: the same text is a no-op that does not bump the version (`ORD-20`).
 
@@ -845,8 +885,8 @@ it is never changed automatically (`TIT-07`). Editable until triggered
 
 `POST /orders/{id}/documents/ {"document_id"}` and
 `DELETE /orders/{id}/documents/{document_id}/`, order drafter, until signed. The
-document must be in the case file (`400 E11021`) (`ORD-17`). An order whose type
-does not allow links refuses them (`409 E11023`, `OTY-06`).
+document must be in the case file (`400 E14021`) (`ORD-17`). An order whose type
+does not allow links refuses them (`409 E14023`, `OTY-06`).
 
 #### 5.7 Discard
 
@@ -863,10 +903,10 @@ PATCH /api/v1/orders/{id}/type/
 ```
 
 Order drafter, until the order is signed (`OTY-05`). The type must be one the
-case's state offers (`400 E11024`, `field = order_type`). Kerala offers only
+case's state offers (`400 E14024`, `field = order_type`). Kerala offers only
 Normal, so no choice is shown there.
 
-* Changing to a type that does not allow links, on an order that has some, needs `remove_linked_documents = true`; without it, `409 E11025` with the documents that would be removed, so the screen can warn (`OTY-07`). With it, the links are removed in the same transaction.
+* Changing to a type that does not allow links, on an order that has some, needs `remove_linked_documents = true`; without it, `409 E14025` with the documents that would be removed, so the screen can warn (`OTY-07`). With it, the links are removed in the same transaction.
 * Changing to a type without a separate diary entry sets `diary_same_as_text = true` and keeps `diary_text`, so changing back restores it (`DEN-03`).
 * An un-overridden title follows the new type (#5.5). The number series is read at signing, so nothing else changes (`OTY-02`).
 
@@ -921,11 +961,11 @@ way in, for a person, a preset, a bulk action or a later reading layer
 (`ITM-12`). The reading layer may also fill fields of an existing item through
 `services.items.update(…, source=READER)`:
 
-1. Order data editable: not triggered, and `data_complete` false (`409 E11013`; reopen first, `ITM-09`).
-2. Item active and available (`409 E11008`, with the reason; `field = item_type`).
-3. Contextual items need a target the handler accepts (`400 E11010`, `field = target_id`, `ITM-04`).
-4. Combination rules against the items on the order (`409 E11009` with the configured message).
-5. Merge `handler.defaults()` under the given values (#6.3); validate shape (`400 E11011`, `field = values.<key>`).
+1. Order data editable: not triggered, and `data_complete` false (`409 E14013`; reopen first, `ITM-09`).
+2. Item active and available (`409 E14008`, with the reason; `field = item_type`).
+3. Contextual items need a target the handler accepts (`400 E14010`, `field = target_id`, `ITM-04`).
+4. Combination rules against the items on the order (`409 E14009` with the configured message).
+5. Merge `handler.defaults()` under the given values (#6.3); validate shape (`400 E14011`, `field = values.<key>`).
 6. Append at the next `position`; recompute the title; bump `data_version`.
 
 An item that asks for nothing is added with empty values (`ITM-05`). The same
@@ -993,7 +1033,7 @@ order: this endpoint and the cause list (#10.5) both call
 * **In a hearing** — `LISTED` calls `listing.hold(case, date, purpose, order, previous_hearing_id = order.hearing)`; a hold already on the order is changed in place ([`0023`](0023-hearings.md) #7.1, #7.2). Scheduling and Rescheduling items are not offered (`NXT-03`).
 * **Outside a hearing** — the next hearing starts as the case's listed hearing (`selectors.next_hearing(case)`), read only (`ORD-08`). Setting a different date or purpose holds it with `moves_hearing_id` set and adds a *Rescheduling of hearing date* item, `SYSTEM`, its original and new dates filled from the change. Where the case has no listed hearing, setting a date holds a new one and adds *Scheduling of hearing date*. Returning to the listed hearing releases the hold and removes the item.
 * `NOT_LISTED_AGAIN` releases any hold (`DATE_REMOVED`) and records the decision (`NXT-01`).
-* A date without a purpose, or a purpose without a date, is refused (`400 E11011`, `NXT-02`).
+* A date without a purpose, or a purpose without a date, is refused (`400 E14011`, `NXT-02`).
 * [`0023`](0023-hearings.md) errors (`E10003`–`E10009`, `E10014`) pass through unchanged; its `warnings` (full day, adjournment limit) are returned in the response.
 
 The hold is what the date picker counts (`NXT-11`); nothing is announced until
@@ -1014,16 +1054,16 @@ order text in full, with its attendance and next hearing lines, and is composed
 on read by `selectors.diary_entry(order_id)`; it is never shortened (`PUB-04`,
 `ADY-04`). The screen labels it with the type's `diary_entry_label`.
 
-* On a type without a separate entry (Roznama), `same_as_text = false` is refused (`409 E11026`): the entry is always the order text (`DEN-03`, `RZT-02`).
+* On a type without a separate entry (Roznama), `same_as_text = false` is refused (`409 E14026`): the entry is always the order text (`DEN-03`, `RZT-02`).
 * A diary entry is text only. It carries no order data and triggers nothing (`DEN-04`).
 
 After triggering, the entry changes only in two ways:
 
 * **Kerala** — the A-Diary owns it. `services.diary.set_entry_text(order_id, text, actor)` is the one function it calls when an A-Diary editor changes the entry (`ADY-09`): it stores the text and turns `diary_same_as_text` off when the text now differs. The order text never changes. The A-Diary module checks its own role and the signed-day rule.
-* **Gujarat** — while the order's Roznama is `AWAITING_SIGNATURE`, an order data filler or an order signer may edit it on the same endpoint (`RZN-04`, `CMP-05`); after the Roznama is signed, `409 E11014`. Editing it clears any signing started on the old text (#8.4).
+* **Gujarat** — while the order's Roznama is `AWAITING_SIGNATURE`, an order data filler or an order signer may edit it on the same endpoint (`RZN-04`, `CMP-05`); after the Roznama is signed, `409 E14014`. Editing it clears any signing started on the old text (#8.4).
 
 In Punjab & Haryana the Summary is fixed once the order is triggered
-(`409 E11014`).
+(`409 E14014`).
 
 `GET /api/v1/diary-entries/?court=&date=&state_type=` lists diary entries of
 triggered orders together, whatever the order's type (`DEN-05`): case, hearing
@@ -1038,13 +1078,13 @@ of every type shows its entry.
 `POST /orders/{id}/data/complete/`, order data filler, any time before
 triggering (`CMP-01`):
 
-1. Every catalogue-mandatory field answered and every handler's `validate(complete=True)` clean; otherwise `409 E11012` with each problem's item, `field` and message (`CMP-02`).
+1. Every catalogue-mandatory field answered and every handler's `validate(complete=True)` clean; otherwise `409 E14012` with each problem's item, `field` and message (`CMP-02`).
 2. Where the order is already signed and holds a date, `listing.validate(order)` must pass (`409` with the [`0023`](0023-hearings.md) code).
 3. `data_complete = true`; complete *Fill order data* if open.
 4. Signed → trigger (#9).
 
 `POST /orders/{id}/data/reopen/` sets it false until the order is signed
-(`CMP-05`); after signing, `409 E11016`.
+(`CMP-05`); after signing, `409 E14016`.
 
 ### 7. Sending for signing
 
@@ -1052,9 +1092,9 @@ triggering (`CMP-01`):
 
 `POST /orders/{id}/send-for-signing/`, order drafter, `DRAFT`:
 
-1. Text not empty after sanitising (`400 E11005`, `SND-02`).
-2. Next hearing settled — `LISTED` or `NOT_LISTED_AGAIN` (`409 E11006`); with `LISTED`, `listing.validate(order)` passes (`SND-03`).
-3. In a hearing, `attendance_complete(hearing)` (`409 E11007`, `ATT-04`).
+1. Text not empty after sanitising (`400 E14005`, `SND-02`).
+2. Next hearing settled — `LISTED` or `NOT_LISTED_AGAIN` (`409 E14006`); with `LISTED`, `listing.validate(order)` passes (`SND-03`).
+3. In a hearing, `attendance_complete(hearing)` (`409 E14007`, `ATT-04`).
 4. `status = SENT_FOR_SIGNING`; `sent_for_signing_*`.
 5. Complete *Draft order*; open *Sign order*; open *Fill order data* unless `data_complete` (#12.1, `SND-07`). On a send after a move back, `data_complete` is first set false, keeping the values (`SND-08`).
 
@@ -1063,7 +1103,7 @@ The order data need not be filled (`SND-04`).
 #### 7.2 Move back to draft
 
 `POST /orders/{id}/move-to-draft/`, order drafter, `SENT_FOR_SIGNING` only;
-after signing `409 E11016` (`SND-05`):
+after signing `409 E14016` (`SND-05`):
 
 * `status = DRAFT`; `signing_file_id` cleared, so a signing begun on the old text can never be recorded (#8.1).
 * Expire *Sign order* and *Fill order data*; open *Draft order* again — a new task, since a closed task does not reopen (`SND-08`, pending-task drafts §1).
@@ -1079,7 +1119,7 @@ POST /api/v1/orders/{id}/sign/
 
 Order signer, `SENT_FOR_SIGNING`:
 
-1. `method` is enabled for the state (config `signing.methods`, `signing-methods.md` `SGM-05`); else `400 E11017`.
+1. `method` is enabled for the state (config `signing.methods`, `signing-methods.md` `SGM-05`); else `400 E14017`.
 2. Where the order holds a date, `listing.validate(order)` passes.
 3. Allot the number if none (#8.3); set the order date to the business date.
 4. Render the page with number, date, the type's `pdf_heading` (*Order* or *Roznama*, `RZT-05`) and the signer's name and designation; store it with `apps.files`; set `signing_file_id`.
@@ -1099,7 +1139,7 @@ POST /api/v1/orders/{id}/sign/confirm/
 
 `services.signing.record_signature(order, transaction, actor)`, idempotent:
 
-* The transaction is `SUCCESS`, for this order, by this user, and its source file is the order's current `signing_file_id`. A transaction from before a move back, or still pending, is `409 E11015`.
+* The transaction is `SUCCESS`, for this order, by this user, and its source file is the order's current `signing_file_id`. A transaction from before a move back, or still pending, is `409 E14015`.
 * Already recorded for this transaction → the order unchanged.
 * `status = SIGNED`, `signed_file_id`, `signed_by`, `signed_at`, `signing_method`; complete *Sign order*; on commit send `order_signed`.
 * `data_complete` → trigger (#9) in the same transaction.
@@ -1319,7 +1359,7 @@ Order data filler; hearing orders of one courtroom only (`ITM-10`, `PND-07`).
 Each item is added to each order through `services.items.add` with `BULK`, its
 defaults worked out against that order's case. Each order is its own
 transaction. The response lists `done` and `skipped` per order, with the reason
-(`E11001`, `E11008`, `E11009`, `E11013`). Fields that need input are left for
+(`E14001`, `E14008`, `E14009`, `E14013`). Fields that need input are left for
 each order. Adding items in bulk never marks any order's data complete: each
 order is opened and marked complete on its own (`ITM-10`, `CMP-01`).
 
@@ -1358,7 +1398,7 @@ PUT /api/v1/hearings/{hearing_id}/next-hearing/
 ```
 
 It needs the hearing to have been started, and writes that hearing's order
-(`409 E11004` otherwise, `PLC-05`). The bulk action is the exception: on a
+(`409 E14004` otherwise, `PLC-05`). The bulk action is the exception: on a
 listing not yet started, it creates the hearing's draft to hold the value
 (`PLC-05`), without starting the hearing. That draft is the hearing's one order
 (`DFT-01`); the order drafter writes its text once the hearing starts
@@ -1439,7 +1479,7 @@ are not orders.
 Baseline from [`0000`](0000-api-coding-spec.md) #6: `IsAuthenticated`,
 `IsAuthenticatedAndRegistered`. On top, in `permissions.py`:
 
-* **Court staff** — an active courtroom membership for the order's `court` ([`0023`](0023-hearings.md) #1.2). They read every order of the courtroom (`RLE-06`). Each action needs the role in #11.1–#11.2 in that courtroom, checked server-side (`RLE-04`, `ROL-06`); without it, `403 E11019`.
+* **Court staff** — an active courtroom membership for the order's `court` ([`0023`](0023-hearings.md) #1.2). They read every order of the courtroom (`RLE-06`). Each action needs the role in #11.1–#11.2 in that courtroom, checked server-side (`RLE-04`, `ROL-06`); without it, `403 E14019`.
 * **Parties** — users with an active relationship on the case ([`0003`](0003-case-relationships.md)). Read signed orders only; confirm witness batta for their side.
 * **Everyone else**, and staff of another courtroom — `404 E00105`, never `403`, so the API does not reveal an order exists. A role held in another courtroom grants nothing here (`RLE-02b`).
 
@@ -1454,39 +1494,40 @@ fields, lifecycle and roles are checked in the services under the order lock.
 #### 11.6 Error codes
 
 Codes are defined in `apps/orders/errors.py` with `apps.api.errors.define()`
-under domain prefix `11`, to be reserved for `apps.orders` in
-[`0000`](0000-api-coding-spec.md) #9.2 (after `10`, `apps.hearings`,
-[`0023`](0023-hearings.md)) and added to `apps.api.errors.DOMAINS` before the
-first code is defined.
+under domain prefix `14`, reserved for `apps.orders` in
+[`0000`](0000-api-coding-spec.md) #9.2 and added to `apps.api.errors.DOMAINS`
+before the first code is defined. (`11` is `apps.core`, spec 0030; `12` is
+`apps.processes`, [`0028`](0028-warrant-and-summons.md); `13` is
+`apps.applications`, spec 0033.)
 
 | Code | Name | Status | Raised when |
 | --- | --- | --- | --- |
-| `E11001` | `INVALID_ORDER_ACTION` | 409 | the action is not allowed in the order's status; carries `allowed_actions` |
-| `E11002` | `ORDER_STALE` | 412 | `If-Match` differs from `text_version` or `data_version` |
-| `E11003` | `CASE_NOT_IN_COURTROOM` | 409 | an order on a case not yet registered or with no courtroom |
-| `E11004` | `HEARING_NOT_STARTED` | 409 | a hearing order before the hearing has started (`HRG-09`) |
-| `E11005` | `ORDER_TEXT_EMPTY` | 400 | send for signing with no text (`SND-02`); `field = text` |
-| `E11006` | `NEXT_HEARING_NOT_SETTLED` | 409 | send for signing without a date and purpose or *Not listed again* (`SND-03`) |
-| `E11007` | `ATTENDANCE_INCOMPLETE` | 409 | send for signing a hearing order whose roll is not fully marked (`ATT-04`) |
-| `E11008` | `ITEM_NOT_AVAILABLE` | 409 | item inactive or unavailable to the case; carries the reason (`ITM-03`); `field = item_type` |
-| `E11009` | `ITEM_COMBINATION_NOT_ALLOWED` | 409 | a combination rule is broken; message is the configured one (`ITM-07`) |
-| `E11010` | `ITEM_TARGET_INVALID` | 400 | contextual item without, or with an unacceptable, application; `field = target_id` |
-| `E11011` | `ITEM_VALUES_INVALID` | 400 | a value of the wrong shape, or half a next hearing; `field = values.<key>` |
-| `E11012` | `MANDATORY_FIELDS_MISSING` | 409 | mark complete with problems; carries them (`CMP-02`) |
-| `E11013` | `ORDER_DATA_COMPLETE` | 409 | changing order data that is marked complete; reopen first |
-| `E11014` | `DIARY_ENTRY_LOCKED` | 409 | editing a diary entry after triggering where the state does not allow it, or after its Roznama is signed (#6.6) |
-| `E11015` | `SIGNATURE_NOT_VALID_FOR_ORDER` | 409 | confirming a transaction that is not a success, not this order's (or its Roznama's) current signing file, or not the caller's |
-| `E11016` | `ORDER_ALREADY_SIGNED` | 409 | move back to draft or reopen order data after signing |
-| `E11017` | `SIGNING_METHOD_NOT_ENABLED` | 400 | the method is not enabled for the state (`SGM-05`); `field = method` |
-| `E11018` | `SHORTCUT_NAME_TAKEN` | 409 | the caller already has a shortcut with that name; `field = name` |
-| `E11019` | `ROLE_REQUIRED` | 403 | the caller lacks the role the action needs in the courtroom |
-| `E11020` | `ORDER_TEXT_TOO_LARGE` | 400 | text over `text_max_bytes`; `field = text` |
-| `E11021` | `DOCUMENT_NOT_ON_CASE` | 400 | linking a document that is not in the case file; `field = document_id` |
-| `E11022` | `BULK_TOO_LARGE` | 400 | more orders or listings than `bulk_max_orders` |
-| `E11023` | `LINKS_NOT_ALLOWED_FOR_TYPE` | 409 | linking a document to an order whose type allows none (`OTY-06`) |
-| `E11024` | `ORDER_TYPE_NOT_OFFERED` | 400 | a type the case's state does not offer; `field = order_type` |
-| `E11025` | `LINKED_DOCUMENTS_WOULD_BE_REMOVED` | 409 | changing to a type without links, without `remove_linked_documents`; carries the documents (`OTY-07`) |
-| `E11026` | `DIARY_ENTRY_IS_ORDER_TEXT` | 409 | a separate diary entry on a type that has none (`DEN-03`) |
+| `E14001` | `INVALID_ORDER_ACTION` | 409 | the action is not allowed in the order's status; carries `allowed_actions` |
+| `E14002` | `ORDER_STALE` | 412 | `If-Match` differs from `text_version` or `data_version` |
+| `E14003` | `CASE_NOT_IN_COURTROOM` | 409 | an order on a case not yet registered or with no courtroom |
+| `E14004` | `HEARING_NOT_STARTED` | 409 | a hearing order before the hearing has started (`HRG-09`) |
+| `E14005` | `ORDER_TEXT_EMPTY` | 400 | send for signing with no text (`SND-02`); `field = text` |
+| `E14006` | `NEXT_HEARING_NOT_SETTLED` | 409 | send for signing without a date and purpose or *Not listed again* (`SND-03`) |
+| `E14007` | `ATTENDANCE_INCOMPLETE` | 409 | send for signing a hearing order whose roll is not fully marked (`ATT-04`) |
+| `E14008` | `ITEM_NOT_AVAILABLE` | 409 | item inactive or unavailable to the case; carries the reason (`ITM-03`); `field = item_type` |
+| `E14009` | `ITEM_COMBINATION_NOT_ALLOWED` | 409 | a combination rule is broken; message is the configured one (`ITM-07`) |
+| `E14010` | `ITEM_TARGET_INVALID` | 400 | contextual item without, or with an unacceptable, application; `field = target_id` |
+| `E14011` | `ITEM_VALUES_INVALID` | 400 | a value of the wrong shape, or half a next hearing; `field = values.<key>` |
+| `E14012` | `MANDATORY_FIELDS_MISSING` | 409 | mark complete with problems; carries them (`CMP-02`) |
+| `E14013` | `ORDER_DATA_COMPLETE` | 409 | changing order data that is marked complete; reopen first |
+| `E14014` | `DIARY_ENTRY_LOCKED` | 409 | editing a diary entry after triggering where the state does not allow it, or after its Roznama is signed (#6.6) |
+| `E14015` | `SIGNATURE_NOT_VALID_FOR_ORDER` | 409 | confirming a transaction that is not a success, not this order's (or its Roznama's) current signing file, or not the caller's |
+| `E14016` | `ORDER_ALREADY_SIGNED` | 409 | move back to draft or reopen order data after signing |
+| `E14017` | `SIGNING_METHOD_NOT_ENABLED` | 400 | the method is not enabled for the state (`SGM-05`); `field = method` |
+| `E14018` | `SHORTCUT_NAME_TAKEN` | 409 | the caller already has a shortcut with that name; `field = name` |
+| `E14019` | `ROLE_REQUIRED` | 403 | the caller lacks the role the action needs in the courtroom |
+| `E14020` | `ORDER_TEXT_TOO_LARGE` | 400 | text over `text_max_bytes`; `field = text` |
+| `E14021` | `DOCUMENT_NOT_ON_CASE` | 400 | linking a document that is not in the case file; `field = document_id` |
+| `E14022` | `BULK_TOO_LARGE` | 400 | more orders or listings than `bulk_max_orders` |
+| `E14023` | `LINKS_NOT_ALLOWED_FOR_TYPE` | 409 | linking a document to an order whose type allows none (`OTY-06`) |
+| `E14024` | `ORDER_TYPE_NOT_OFFERED` | 400 | a type the case's state does not offer; `field = order_type` |
+| `E14025` | `LINKED_DOCUMENTS_WOULD_BE_REMOVED` | 409 | changing to a type without links, without `remove_linked_documents`; carries the documents (`OTY-07`) |
+| `E14026` | `DIARY_ENTRY_IS_ORDER_TEXT` | 409 | a separate diary entry on a type that has none (`DEN-03`) |
 
 Rules:
 
@@ -1588,16 +1629,16 @@ run_order_workflows(order_id)     # #9.2
 
 ### 13. Testing
 
-* **Lifecycle:** every allowed action from #4; every other returns `409 E11001` with `allowed_actions`; terminal statuses accept nothing; Pending-orders stage read from the three facts, including both stages at once.
+* **Lifecycle:** every allowed action from #4; every other returns `409 E14001` with `allowed_actions`; terminal statuses accept nothing; Pending-orders stage read from the three facts, including both stages at once.
 * **Drafting:** one live order per hearing, a second create returns it; not before the hearing starts; several drafts per case outside a hearing; presets add removable `PRESET` items, delay acceptance only when delay applies; text sanitised to the allow-list; `If-Match` on text and data independently; a text edit resets `data_complete`; discard releases the hold and expires the task.
 * **Live view:** a save by one user appears on another's `/changes/` poll; `304` when nothing changed; `editing` names the last saver.
 * **Type:** preselected per state from a hearing, from application onboarding, otherwise Normal; Kerala offers Normal only; a type the state does not offer refused; changeable until signed only; changing to Roznama with links refused without `remove_linked_documents` and removes them with it; links refused on a Roznama-type order; a Roznama-type order refuses a separate diary entry.
 * **Title:** no items gives the type's default, one gives its label, more gives *{first} and other items*; follows type changes; never changes after an edit; fixed after triggering.
 * **Items:** availability reasons for each built-in rule and from a stub handler, unavailable items listed with their reason; each seeded combination rule refused with its message; contextual target required; defaults filled only with exactly one candidate; mandatory fields not checked on save but at mark complete; no edit while complete; removal closes the position gap; an unconfirmed item or field blocks mark complete until confirmed.
-* **Next hearing:** hold on set, change on edit, release on *Not listed again* and on discard; outside a hearing, defaults to the listed hearing, a change adds a Rescheduling item and a return removes it, no listed hearing adds Scheduling; half an answer refused; a value set on the cause list shows on the order and the other way round; the cause-list column refused before the hearing starts (`E11004`) but the bulk action allowed; [`0023`](0023-hearings.md) errors and warnings passed through.
-* **Send and move back:** each precondition (`E11005`, `E11006`, `E11007`); tasks opened, completed and expired as #12.1; re-send resets complete data and keeps values; move back after signing refused.
+* **Next hearing:** hold on set, change on edit, release on *Not listed again* and on discard; outside a hearing, defaults to the listed hearing, a change adds a Rescheduling item and a return removes it, no listed hearing adds Scheduling; half an answer refused; a value set on the cause list shows on the order and the other way round; the cause-list column refused before the hearing starts (`E14004`) but the bulk action allowed; [`0023`](0023-hearings.md) errors and warnings passed through.
+* **Send and move back:** each precondition (`E14005`, `E14006`, `E14007`); tasks opened, completed and expired as #12.1; re-send resets complete data and keeps values; move back after signing refused.
 * **Signing:** method gate; authorizer refuses a direct e-sign for someone without the role or for an order not sent for signing; confirm refuses a pending transaction, another order's, another user's, or one from before a move back; confirm is idempotent; number allotted once and kept across retries; next-day confirm refused; a Roznama-type order numbered from the `ROZNAMA` series and headed *Roznama*.
-* **Gujarat Roznama:** created and listed only once its normal order is triggered; none for a Roznama-type order; signed by an order signer; signing triggers nothing; its text editable by an order data filler or order signer until signed and not after (`E11014`); an edit clears a signing begun on the old text; internal number from the `ROZNAMA` series.
+* **Gujarat Roznama:** created and listed only once its normal order is triggered; none for a Roznama-type order; signed by an order signer; signing triggers nothing; its text editable by an order data filler or order signer until signed and not after (`E14014`); an edit clears a signing begun on the old text; internal number from the `ROZNAMA` series.
 * **Triggering:** triggers by signature when complete and by completion when signed, exactly once under a race; attendance locked; runs written in phase order; hearing step first, closing items then stage step last; a redelivered actor skips done steps; a failed hearing step blocks the rest, another failure does not; admin retry; `order_triggered` once, on commit only.
 * **Handlers:** registry refuses duplicates; system check fails for a workflow item without a handler; built-in handlers for mandatory submission, cost (demand and task) and witness batta (task and confirm by the paying side only).
 * **Stage step:** each seeded `stage_event` dispatched once; `take_cognizance` completed by Cognizance and Dismiss case, not by Issue of notice; `cancel_open_hearings` for each `closes_case` item with its reason; no write to stage or `Case.status`.
@@ -1606,7 +1647,8 @@ run_order_workflows(order_id)     # #9.2
 * **Cause list column:** `order_status_for_hearings` for a day in one query; an order sent for signing matches both of its stages.
 * **Bulk:** items added per order with each case's defaults, skipped orders reported; bulk text appends, creates drafts for started hearings, skips sent and unstarted; bulk next hearing keeps or sets purposes, skips sent orders, and reaches listings not yet started; bulk items never mark data complete; size limit.
 * **Shortcuts:** per person; name unique per owner case-insensitively; nobody else sees or changes them; offered only on screens in their scope.
-* **Permissions:** each action allowed with its role in the courtroom and `403 E11019` without it, including a role held only in another courtroom; staff of another courtroom and outsiders `404 E00105`; parties see signed orders only.
+* **Permissions:** each action allowed with its role in the courtroom and `403 E14019` without it, including a role held only in another courtroom; staff of another courtroom and outsiders `404 E00105`; parties see signed orders only.
+* **Seed:** `data/seed/core/orders/` loads with `--strict` and a second run changes nothing; the catalogue seeds exactly the items, categories, phases, `stage_event`s and `closes_case` values of #3.3, the combination rules of #3.4, and one `NORMAL` type for every state; every seeded `suggested_for_purposes` code is a seeded hearing purpose; every item with `has_workflow` has a handler.
 * **Isolation:** `apps.orders` does not import applications, processes, submissions or the A-Diary; `apps.cases`, `apps.hearings` and `apps.workflows` do not import `apps.orders`.
 * **API:** success paths, `meta` envelope, pagination, filters, read-only fields; every code in #11.6 asserted by `code` and `field`, never message ([`0000`](0000-api-coding-spec.md) #13).
 
@@ -1630,7 +1672,7 @@ cd src && python manage.py check
 | 4 | Concurrent editing | last write wins / edit lock / optimistic versions | Optimistic, with separate text and data versions, so drafter and filler never collide (`DFT-02`); simultaneous typing is the build team's call (`Q-12`) |
 | 5 | Rich text | editor JSON / sanitised HTML | Sanitised HTML on an allow-list — renders straight into the PDF |
 | 6 | Page and PDF | client preview + server PDF / one renderer | One server renderer for both (`ORD-13`) |
-| 7 | Catalogue | constants in code / business rules / models | Models seeded by migration and edited in admin; availability that needs case facts in handlers |
+| 7 | Catalogue | constants in code / business rules / models | Models seeded from TOML by the `seed` command (no data migration) and edited in admin; availability that needs case facts in handlers |
 | 8 | Item workflows | orders calls each module / modules register handlers | Registered handlers; orders imports no consumer module |
 | 9 | Next hearing outside a hearing | separate Scheduling item / next hearing with derived item | Next hearing on the order; the Scheduling or Rescheduling item follows from it (`ORD-08`) |
 | 10 | Date before triggering | stored on the order only / held in hearings | Held as a `PROVISIONAL` hearing in [`0023`](0023-hearings.md) from the moment it is set (`NXT-10`) |
@@ -1682,3 +1724,53 @@ cd src && python manage.py check
 * Sharing shortcuts, and variables in shortcuts (`SHC-06a`, `SHC-08`).
 * Real-time push for live drafts.
 * Linking a correcting order to the order it corrects (`PUB-06`).
+
+---
+
+## Implementation notes
+
+What was built, where it differs from the text above, and what is left. The spec
+above is unchanged where the build follows it.
+
+### Changes made to this spec
+
+* **Renumbered** from 0025 to 0039: 0025 is the data seeding command, and 0033, 0037 and 0038 are held by specs on other branches.
+* **Seeding, not migrations** (#3.11): the catalogue, order types and combination rules are TOML under `data/seed/core/orders/`, registered as `SeedSpec`s and loaded by `manage.py seed`.
+* **Error domain `14`**, not `11`: `11` is `apps.core` (`E11001` exists); `12` and `13` are claimed by specs 0028 and 0033.
+* `OrderItemCombinationRule.code` is added as the seed's natural key.
+
+### Built as specified
+
+Every model, the lifecycle table, drafting with presets, text sanitising (`nh3`) and the single renderer for page and PDF, the catalogue with availability and combination rules, order data with defaults and completion checks, the next hearing held through `apps.hearings`, send / move back / sign (Aadhaar e-sign, idempotent confirm checked against the current signing file) / mark complete / trigger exactly once under the order lock, numbering, the Gujarat Roznama, runs written in the trigger transaction and executed by an idempotent actor with blocking and retry, Pending orders and counts, the case's orders, diary entries, bulk items / text / next hearing, shortcuts, the live-view poll, the `ORDER` e-sign authorizer, admin, `E14001`-`E14026`, and `order_status_for_hearings`. The row-lock guarantees (#12.5) are tested on PostgreSQL only.
+
+### Divergences
+
+| Area | Spec | Build | Why |
+| --- | --- | --- | --- |
+| Arrays | `ArrayField` for `OrderType.preselect_from`, `OrderShortcut.scope` | `JSONField` lists; shortcut scope filtered in Python | local tests run on SQLite (`AGENTS.md`) |
+| Extra fields | — | `Order.next_hearing_held`, `Order.text_saved_by/at`, `OrderType.diary_entry_in_a_diary` | whether a hold exists; the live view's `editing`; Kerala's A-Diary path versus Punjab & Haryana's fixed Summary after triggering (#6.6) |
+| Combination rule 2 | one rule, kinds `EXCLUSIVE` and `NO_REPEAT` | two rows, one per kind | a rule has one `kind`; `NO_REPEAT` is checked first so a repeat reads "twice" |
+| Handler contract | `ItemContext` of five ids; `unavailable_reason` returns text | adds `item_id` and `source`; returns `(code, message)` | the reason needs a code (#6.1); some items depend on who adds them |
+| Scheduling / Rescheduling items | Rescheduling available outside a hearing when a hearing is scheduled | only the system adds them, from the next hearing; a person gets `E14008 FOLLOWS_NEXT_HEARING` | question 5 read as proposed: one source for the date |
+| Cognizance, Long Pending Register | `order_context` and the workflow stage | read from the case's own triggered orders | no `apps.workflows`; `Case` has no such flags |
+| `apps.cases` contracts | `order_context`, `case_documents`, `state_code`, `delay_applicable`, `record_outcome` | first four added as selectors; `order_context` has no *joined* or *examined* flags; `state_code` is `tenant.state_code`; `delay_applicable` reads the filing's `condonation_reason`; `record_outcome` is a stand-in | not modelled yet |
+| Court roles | `apps.organizations.selectors.court_roles` | Django groups named after the role, at the configured establishment (`apps/orders/ports.py`) | as `apps.hearings` (spec 0029 not built) |
+| Pending tasks, stage events | `apps.workflows` | `ports.py`: logged only; stage events also sent as `case_stage_event` | `apps.workflows` does not exist |
+| Process, application, bail, withdrawal-from-application handlers | registered by their modules | placeholders that fail with `HANDLER_MODULE_NOT_AVAILABLE` and warn with `orders.W001`; a real handler replaces a placeholder | those modules are not built |
+| Move reason at confirm | `PARTY_APPLICATION` when the order accepts an Advance / Postpone application | always `JUDICIAL_DIRECTION` / `COURT` | needs the applications module |
+| `apps.hearings` | `listing.hold ...` only | adds `listing.detach_order`, `selectors.scheduled_hearing`, `get_hearings`, `attendance_lines`, and `started_at` / `order_id` on `HearingRef` | a discarded order must free its hearing; list rows are batched |
+| Cause-list column | 0023's `has_order` filter takes the stages | the selector exists; the filter is not wired | `apps.hearings` may not import `apps.orders` |
+| E-sign methods | enabled methods may include DSC | a method other than Aadhaar e-sign is refused by `/sign/`; DSC modules call `signing.record_signed_file` | DSC signing does not exist (question 2) |
+| Signer designation | from the role (`RLE-08`) | `Magistrate` | no designations yet |
+| Field values | `MASTER` lists and `PROCESS_RECIPIENTS` checked by the owner | `MASTER` is checked for shape only; recipients for shape, and channels at completion | no master-data store; `apps.processes` not built |
+| Esign tests | — | generic payloads use entity type `OTHER` | `ORDER` now has a real authorizer |
+
+### Open follow-ups
+
+* **PRDs ahead of this spec.** The repo's `PRDs/` are v8.3; this spec cites v8.6; `origin/prds` is v8.9. v8.8 replaces *Accept application*, *Reject application*, *Acceptance of bail* and *Dismiss application* with one *Application action* (catalogue #27, combination rule 4 becomes one per application). The seed still has the four. Changing it is a seed change plus the applications handler; v8.7 and v8.9 (cause-list latency, load counts by purpose) belong to hearings.
+* Replace each stand-in in `ports.py` when its module lands, and register the real handlers from `AppConfig.ready()`.
+* Wire 0023's `has_order` filter to `selectors.order_status_for_hearings` through a registration in `apps.hearings`.
+* The A-Diary calls `services.diary.set_entry_text`; it is ready and unused.
+* DSC and bulk signing endpoints (#8.2), and the *Data flags* tab, are not built.
+* PDF tables ignore `colspan` / `rowspan` (the HTML keeps them); the signature box is fixed at the foot of the last page.
+* Open questions 1-14 above are unchanged and still open.

@@ -1,0 +1,80 @@
+# The order types each state offers (spec 0039 #2.2, #3.9, `OTY-01`-`OTY-07`, `DEN-06`).
+#
+# Kerala: Normal only; its diary entry (A-Diary text) is signed once a day in the A-Diary.
+# Gujarat: Normal and Roznama; a normal order's Roznama is its own signed document.
+# Punjab & Haryana: Normal and Zimni; the Summary is stored and shown, never signed.
+# A state adds a type with a row here and no code (`OTY-04`). Each state has one NORMAL.
+
+[seed]
+model = "orders.OrderType"
+key = ["state_code", "code"]
+
+[[rows]]
+state_code = "KL"
+code = "NORMAL"
+label = "Normal"
+allows_linked_documents = true
+separate_diary_entry = true
+diary_entry_label = "A-Diary text"
+signs_diary_entry = false
+diary_entry_in_a_diary = true
+number_series = "ORDER"
+pdf_heading = "Order"
+default_title = "Order"
+preselect_from = []
+
+[[rows]]
+state_code = "GJ"
+code = "NORMAL"
+label = "Normal"
+allows_linked_documents = true
+separate_diary_entry = true
+diary_entry_label = "Roznama"
+signs_diary_entry = true
+diary_entry_in_a_diary = false
+number_series = "ORDER"
+pdf_heading = "Order"
+default_title = "Order"
+preselect_from = []
+
+[[rows]]
+state_code = "GJ"
+code = "ROZNAMA"
+label = "Roznama"
+allows_linked_documents = false
+separate_diary_entry = false
+diary_entry_label = "Roznama"
+signs_diary_entry = false
+diary_entry_in_a_diary = false
+number_series = "ROZNAMA"
+pdf_heading = "Roznama"
+default_title = "Roznama"
+preselect_from = ["HEARING", "APPLICATION_ONBOARDING"]
+
+[[rows]]
+state_code = "PH"
+code = "NORMAL"
+label = "Normal"
+allows_linked_documents = true
+separate_diary_entry = true
+diary_entry_label = "Summary"
+signs_diary_entry = false
+diary_entry_in_a_diary = false
+number_series = "ORDER"
+pdf_heading = "Order"
+default_title = "Order"
+preselect_from = []
+
+[[rows]]
+state_code = "PH"
+code = "ZIMNI"
+label = "Zimni"
+allows_linked_documents = true
+separate_diary_entry = true
+diary_entry_label = "Summary"
+signs_diary_entry = false
+diary_entry_in_a_diary = false
+number_series = "ORDER"
+pdf_heading = "Order"
+default_title = "Zimni"
+preselect_from = ["HEARING", "APPLICATION_ONBOARDING"]

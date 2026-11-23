@@ -30,6 +30,8 @@ class HearingRef:
     status: str
     sequence: int | None
     mode: str
+    started_at: datetime.datetime | None = None
+    order_id: UUID | None = None
 
 
 def _ref(hearing):
@@ -43,6 +45,8 @@ def _ref(hearing):
         status=hearing.status,
         sequence=hearing.sequence,
         mode=hearing.mode,
+        started_at=hearing.started_at,
+        order_id=hearing.order_id,
     )
 
 
@@ -54,6 +58,11 @@ def get_hearing(hearing_id) -> HearingRef | None:
     """Return the hearing, or None."""
     hearing = _hearings().filter(pk=hearing_id).first()
     return _ref(hearing) if hearing else None
+
+
+def get_hearings(hearing_ids) -> dict[UUID, HearingRef]:
+    """Return ``{hearing_id: HearingRef}`` for the hearings. One query."""
+    return {hearing.pk: _ref(hearing) for hearing in _hearings().filter(pk__in=list(hearing_ids))}
 
 
 def next_hearing(case_id) -> HearingRef | None:
@@ -115,3 +124,40 @@ def stale_holds(court_id) -> int:
     return Hearing.objects.filter(
         court_id=court_id, status=HearingStatus.PROVISIONAL, created_at__lt=cutoff
     ).count()
+
+
+def scheduled_hearing(case_id) -> HearingRef | None:
+    """Return the case's ``SCHEDULED`` hearing, or None (spec 0039 #6.4, ``ORD-08``)."""
+    hearing = _hearings().filter(case_id=case_id, status=HearingStatus.SCHEDULED).first()
+    return _ref(hearing) if hearing else None
+
+
+@dataclass(frozen=True)
+class AttendanceLine:
+    """One marked line of a hearing's roll, as an order prints it (spec 0039 #5.3, ``ATT-03``)."""
+
+    attendee_type: str
+    name: str
+    mark: str
+    appearance_mode: str
+
+
+def attendance_lines(hearing_id) -> list[AttendanceLine]:
+    """Return the hearing's marked roll lines in roll order, names read from the case."""
+    from apps.cases.selectors import get_attendance_roll
+
+    from .models import Hearing, HearingAttendance
+
+    case_id = Hearing.objects.filter(pk=hearing_id).values_list("case_id", flat=True).first()
+    if case_id is None:
+        return []
+    marks = {
+        (row.attendee_type, row.participant_id): row
+        for row in HearingAttendance.objects.filter(hearing_id=hearing_id)
+    }
+    lines = []
+    for entry in get_attendance_roll(case_id):
+        row = marks.get((entry.type, entry.participant_id))
+        if row is not None:
+            lines.append(AttendanceLine(entry.type, entry.name, row.mark, row.appearance_mode))
+    return lines
