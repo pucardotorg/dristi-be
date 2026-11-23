@@ -1,6 +1,6 @@
 # E-Filing
 
-**Status:** v50.19 — 2026-11-18; **an accused needs at least one of mobile or email**, or the missing-contacts declaration (`ACC-6`, `ACC-7`, §8); **when another complaint is pending between the same parties, at least one must be listed, with its court and case number** (`JUR-7`, `JUR-8`, §11); **for an institution accused, the institution and each person responsible each need their own mobile or email, or the declaration** (`ACC-16`, `ACC-17`, §8). v50.17 — 2026-11-18; **an institution accused needs at least one person responsible** (`ACC-14`, §8); **the accused's age is no longer asked** (`ACC-3` dropped, see [`dropped-ideas.md`](dropped-ideas.md)); **a witness address takes an optional police station** (`WIT-8`, new, §13; §5). v50.16 — 2026-11-17; **one vakalatnama, mandatory, for each complainant who is not a party-in-person** (`DCM-12`, §14). v50.15 — 2026-11-13; **signatures are invalidated if the case's limitation changes while it waits for them** (`SIG-12`, new, §18; low priority). v50.14 — 2026-11-10; **every field is mandatory unless its row says otherwise** (§5); the explicit Mandatory marks on the police station fields `ACC-13`, `JUR-5` and `JUR-6a` are removed, since the default now covers them. **The representative's police station is its own row** (`ACC-23`), split out of the representative's address (now `ACC-18…22`), as §5 keeps the police station out of the address composite. v50.13 — 2026-11-06; `SIG-09`: where the signature is placed follows the signing method **the signatory uses**, no longer the method enabled for the state, since each signatory chooses among the methods available to them ([`signing-methods.md`](signing-methods.md) §3). v50.12 — 2026-11-06; **one complainant can be another complainant's PoA holder** (`LIT-3`, §6): a complainant's phone number may now match the PoA holder of a different complainant, but still not their own PoA holder's. New §24 Enhancements: less re-entry when a complainant is another's PoA holder. v50.11 — 2026-11-06; **Nature of debt/liability has an Other option** (`LDN-1`) with its own text field for what the debt is (`LDN-1a`, new, §10). v50.10 — 2026-11-04; `PAY-15` no longer caps channel-fee rounds at the court-fee rounds paid upfront (see [`dropped-ideas.md`](dropped-ideas.md)). v50.9 — 2026-11-04; `PAY-15`: the upfront channel fee's rounds and default are the state's, per process type, in [`payment-logic.md`](payment-logic.md) — expected optional everywhere — no longer a fixed opt-in default. v50.8 — 2026-11-04; **§19.2.3 E-post is now Channel fee**: no channel fee is collected at launch (`PAY-14`); once a channel with a fee is available, paying it upfront is opt-in, per selected address and round, up to the rounds whose court fee is paid upfront, with the amount from the fee service (`PAY-15`, `[OWNER]`). The ₹100 placeholder and "delivery is by e-post" are removed; `Q-1` no longer waits on the e-post charge. v50.7 — 2026-11-04; **every process is charged per address** (`PAY-12`, now `[OWNER]`): the filer selects addresses for each process paid upfront, not only summons. v50.6 — 2026-11-04; **`PAY-12` is no longer specific to summons and e-post**: any process the state charges per address (Kerala: summons) takes address selection, and its court fee and any channel fee are charged per selected address, per round. v50.5 — 2026-11-04; `PAY-10` reworded in plain language, with Kerala's summons as the example; meaning unchanged. v50.4 — 2026-11-04; **`PAY-11` takes default rounds from the state's table** in [`payment-logic.md`](payment-logic.md); a default that depends on the case, such as Kerala's notice on Delay Condonation, is still evaluated when the bill is drawn. v50.3 — 2026-11-04; **`PAY-10` follows the state's range of rounds payable upfront**: a mandatory summons round applies only where the range's minimum is 1 or more; with a minimum of 0 the filer may opt out entirely. v50.2 — 2026-11-04; **fee figures move to [`payment-logic.md`](payment-logic.md)** (§19): the Kerala case-filing fee table, remittance accounts, process court fee and upfront rounds table are removed and linked; the Parties-in-Person rule is now `PMT-02` there. Upfront process payment may be off in a state, and then §19.2 does not apply (`PMT-06`); `PAY-10` applies where summons is offered upfront. §19.2.1 is now "Rounds". `Q-5` removed — the payment PRD carries those questions. v50.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `efiling.md`. v50 — 2026-10-30; **jurisdiction bank details are asked once for the case** (§11, §20.2): the bank block (`JUR-1…5` / `JUR-6a`) no longer repeats per cheque; the complaint PDF prints one block (§16.4, §16.9). The ADR question (`PRY-5`) is now **Yes/No/Maybe** (§12, §20.2). v49 — 2026-10-24; **digital signing and e-sign are different terms** (§18, §23): digital signing covers every method — mobile OTP, DSC, Aadhaar e-sign; e-sign means Aadhaar-based e-signing only. Mode choice, the upload fallback, clerk rights, mobile verification and the signing SMS now say digital signing. §1, §3, §4, §18, §21, §23. v48 — 2026-10-24; **where the signature is placed follows the signing method** (`SIG-09`, §18.1): on every document — the complaint on its affidavit page, each attached file on its last page — if the method allows it; otherwise once. The methods themselves move to a new PRD, [`signing-methods.md`](signing-methods.md). Replaces Simple / Multi-page. §1, §16.7, §18, §20.2. v47 — 2026-10-24; **two new SMS to all users on the complainant side**: payment pending (the filer exits or the session expires before paying) and case filed (payment completed, case goes to scrutiny); rows added to the master Notifications table, draft. §20.1, §20.2. v46 — 2026-10-19; **the oath moves into Signing** as §18.2 (was §14a; `OTH` IDs unchanged), signing SMS is now §18.3; the scrutiny officer plays and flags each oath separately (`OTH-4` → `SCR-14`) and sees the reason for a paper upload (`SIG-10` → `SCR-15`). §5, §14b, §16.8, §18, §20.2. v45 — 2026-10-19; **the PoA holder records the oath** for a complainant who signs through them (`OTH-3`, `SIG-08`, `SIG-11`); **Record oath** added to the §3 permission matrix — complainant, PoA holder or Institution representative, never advocate or clerk; a leftover paragraph offering oath upload is removed from §14a (it contradicted `OTH-1`). §3, §14a, §18, §20.2. v44 — 2026-10-19; **the oath is recorded, never uploaded** (§14a, `OTH-1`); **signing SMS** (§18.2, `SIG-11`, new) — e-sign and upload, each with and without the oath, held in the master Notifications table (the two oath rows are new); in upload mode each party confirms the OTP and records the oath **on their own device** (phone or computer with a camera), through the link (`SIG-05`). §14a, §18, §20.2. v43 — 2026-10-19; **the signature is affixed Simple or Multi-page** (`SIG-09`, §18.1) — how it appears on the document, not how signing is done; Simple affixes it once for the entire case file; upload of a physically signed copy is a fallback reached from e-sign and **must be justified** with a reason (`SIG-10`); every signatory's mobile number is verified — by the SMS link or login in e-sign, by a separate phone OTP in upload mode (`SIG-05`). Multi-page to follow. §18, §20.2. v42 — 2026-10-19; **the oath moves to signing** (§14a, rewritten): no longer a form section; each complainant records it at their e-sign or OTP confirmation (`OTH-3`, `SIG-08`), only where the state requires it (`oathRequired`, `OTH-2`, `Q-6`); shown to the scrutiny officer (`OTH-4`); not re-recorded on correction unless flagged as an error (`OTH-5`, `SIG-07`). Affidavit is now form section 10, with its own sidebar heading. §5, §14a, §14b, §16.8, §18, §20.2, §21. v41 — 2026-10-19; **payment calculation is per state and not finalised** (§19): the upfront mechanism stays; every fee head, amount, slab, cap, rate and remittance account in §19 is a Kerala illustration, to be built as per-state configuration (`Q-5`, new). §19, §10 (DCA fee), §20.2, §21, §23. v40 — 2026-10-19; **pending tasks follow actions** (§20.1): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v39 — 2026-10-19; **split into two documents** — scrutiny, registration and editability on send-back (old §20.1–§20.4, the court-side columns of the §3 matrix and rows of the §4 lifecycle, and their decisions-log and glossary entries) move to [`scrutiny-registration.md`](scrutiny-registration.md); requirement IDs unchanged. §20 now holds this module's pending tasks, notifications, events and decisions log. The answered Q-2 to Q-4 rows are removed from §21. v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
+**Status:** v50.33 — 2026-11-23; every synopsis field (§15) names the form field it comes from. v50.32 — 2026-11-23; §14 and §16.1 no longer say what the ID card and Institution used to be called; the field tables already give their names. v50.31 — 2026-11-23; the delay paragraph under §11 no longer repeats the one-month rule in `JUR-11`; it says a late complaint needs a Delay Condonation Application, with links to its fee and refiling rule. v50.30 — 2026-11-23; the note on why the earliest cause-of-action date is used is removed from §11. v50.29 — 2026-11-23; `JUR-11` says "one calendar month". v50.28 — 2026-11-23; `JUR-9` names the demand notice fields it is calculated from (`LDN-6`, `LDN-7`). v50.27 — 2026-11-23; `JUR-9` and `JUR-11` say they are auto-calculated, `JUR-10` that it is auto-filled. v50.26 — 2026-11-23; `LDN-8` no longer says it is mandatory when shown, since every visible field is mandatory unless marked optional; `LDN-7`'s tooltip is the full sentence. v50.25 — 2026-11-23; a warning is called a warning (`CHQ-8`, `CHQ-11`, `LDN-2`); no rule changed. v50.24 — 2026-11-23; tooltip text starts with a capital letter; a field shown in every case no longer says "Always visible" in its logic (`ADV-1`, `ACC-6`, `ACC-7`, `CHQ-8`, `CHQ-9`, `CHQ-10`, `LDN-1`, `LDN-9`, `LDN-10`, `JUR-6b`). No rule changed. v50.23 — 2026-11-23; **conditional fields say when they are visible**, naming the field that controls them (§6, §8, §10, §11); the Complainant and Accused tables' last column is now "Logic", as in the other sections. No change to when any field shows. **Status:** v50.22 — 2026-11-23; **an IFSC must be valid**: 11 characters — four letters, then 0, then six letters or digits — stored in upper case (`CHQ-5`, `JUR-2`). v50.21 — 2026-11-23; **no date of a past event can be in the future**: `CHQ-1`, `CHQ-8`, `CHQ-9` (§9), `LDN-2`, `LDN-6`, `LDN-7` (§10). v50.20 — 2026-11-23; **with more than one demand notice, the date of cause of action is the earliest of their cause-of-action dates** (`JUR-9`, §11); `JUR-11` now counts the delay from that date, and the `[DERIVED]` mark on the rule is removed. v50.19 — 2026-11-18; **an accused needs at least one of mobile or email**, or the missing-contacts declaration (`ACC-6`, `ACC-7`, §8); **when another complaint is pending between the same parties, at least one must be listed, with its court and case number** (`JUR-7`, `JUR-8`, §11); **for an institution accused, the institution and each person responsible each need their own mobile or email, or the declaration** (`ACC-16`, `ACC-17`, §8). v50.18 — 2026-11-18; **Section 25 PSS Act cases use this flow** with the differences in [`payment-settlement-systems-act.md`](payment-settlement-systems-act.md) (§1). **The complainant type starts at the case type's default** (`LIT-2`): Institution for a PSS Act case, none for Section 138; a filing litigant is still pre-filled as an Individual (`FIL-04`). **Institution types listed, with Bank and NBFC added** (`LIT-17`). v50.17 — 2026-11-18; **an institution accused needs at least one person responsible** (`ACC-14`, §8); **the accused's age is no longer asked** (`ACC-3` dropped, see [`dropped-ideas.md`](dropped-ideas.md)); **a witness address takes an optional police station** (`WIT-8`, new, §13; §5). v50.16 — 2026-11-17; **one vakalatnama, mandatory, for each complainant who is not a party-in-person** (`DCM-12`, §14). v50.15 — 2026-11-13; **signatures are invalidated if the case's limitation changes while it waits for them** (`SIG-12`, new, §18; low priority). v50.14 — 2026-11-10; **every field is mandatory unless its row says otherwise** (§5); the explicit Mandatory marks on the police station fields `ACC-13`, `JUR-5` and `JUR-6a` are removed, since the default now covers them. **The representative's police station is its own row** (`ACC-23`), split out of the representative's address (now `ACC-18…22`), as §5 keeps the police station out of the address composite. v50.13 — 2026-11-06; `SIG-09`: where the signature is placed follows the signing method **the signatory uses**, no longer the method enabled for the state, since each signatory chooses among the methods available to them ([`signing-methods.md`](signing-methods.md) §3). v50.12 — 2026-11-06; **one complainant can be another complainant's PoA holder** (`LIT-3`, §6): a complainant's phone number may now match the PoA holder of a different complainant, but still not their own PoA holder's. New §24 Enhancements: less re-entry when a complainant is another's PoA holder. v50.11 — 2026-11-06; **Nature of debt/liability has an Other option** (`LDN-1`) with its own text field for what the debt is (`LDN-1a`, new, §10). v50.10 — 2026-11-04; `PAY-15` no longer caps channel-fee rounds at the court-fee rounds paid upfront (see [`dropped-ideas.md`](dropped-ideas.md)). v50.9 — 2026-11-04; `PAY-15`: the upfront channel fee's rounds and default are the state's, per process type, in [`payment-logic.md`](payment-logic.md) — expected optional everywhere — no longer a fixed opt-in default. v50.8 — 2026-11-04; **§19.2.3 E-post is now Channel fee**: no channel fee is collected at launch (`PAY-14`); once a channel with a fee is available, paying it upfront is opt-in, per selected address and round, up to the rounds whose court fee is paid upfront, with the amount from the fee service (`PAY-15`, `[OWNER]`). The ₹100 placeholder and "delivery is by e-post" are removed; `Q-1` no longer waits on the e-post charge. v50.7 — 2026-11-04; **every process is charged per address** (`PAY-12`, now `[OWNER]`): the filer selects addresses for each process paid upfront, not only summons. v50.6 — 2026-11-04; **`PAY-12` is no longer specific to summons and e-post**: any process the state charges per address (Kerala: summons) takes address selection, and its court fee and any channel fee are charged per selected address, per round. v50.5 — 2026-11-04; `PAY-10` reworded in plain language, with Kerala's summons as the example; meaning unchanged. v50.4 — 2026-11-04; **`PAY-11` takes default rounds from the state's table** in [`payment-logic.md`](payment-logic.md); a default that depends on the case, such as Kerala's notice on Delay Condonation, is still evaluated when the bill is drawn. v50.3 — 2026-11-04; **`PAY-10` follows the state's range of rounds payable upfront**: a mandatory summons round applies only where the range's minimum is 1 or more; with a minimum of 0 the filer may opt out entirely. v50.2 — 2026-11-04; **fee figures move to [`payment-logic.md`](payment-logic.md)** (§19): the Kerala case-filing fee table, remittance accounts, process court fee and upfront rounds table are removed and linked; the Parties-in-Person rule is now `PMT-02` there. Upfront process payment may be off in a state, and then §19.2 does not apply (`PMT-06`); `PAY-10` applies where summons is offered upfront. §19.2.1 is now "Rounds". `Q-5` removed — the payment PRD carries those questions. v50.1 — 2026-11-03; title no longer ends in "Developer & Agent Handover"; file renamed to `efiling.md`. v50 — 2026-10-30; **jurisdiction bank details are asked once for the case** (§11, §20.2): the bank block (`JUR-1…5` / `JUR-6a`) no longer repeats per cheque; the complaint PDF prints one block (§16.4, §16.9). The ADR question (`PRY-5`) is now **Yes/No/Maybe** (§12, §20.2). v49 — 2026-10-24; **digital signing and e-sign are different terms** (§18, §23): digital signing covers every method — mobile OTP, DSC, Aadhaar e-sign; e-sign means Aadhaar-based e-signing only. Mode choice, the upload fallback, clerk rights, mobile verification and the signing SMS now say digital signing. §1, §3, §4, §18, §21, §23. v48 — 2026-10-24; **where the signature is placed follows the signing method** (`SIG-09`, §18.1): on every document — the complaint on its affidavit page, each attached file on its last page — if the method allows it; otherwise once. The methods themselves move to a new PRD, [`signing-methods.md`](signing-methods.md). Replaces Simple / Multi-page. §1, §16.7, §18, §20.2. v47 — 2026-10-24; **two new SMS to all users on the complainant side**: payment pending (the filer exits or the session expires before paying) and case filed (payment completed, case goes to scrutiny); rows added to the master Notifications table, draft. §20.1, §20.2. v46 — 2026-10-19; **the oath moves into Signing** as §18.2 (was §14a; `OTH` IDs unchanged), signing SMS is now §18.3; the scrutiny officer plays and flags each oath separately (`OTH-4` → `SCR-14`) and sees the reason for a paper upload (`SIG-10` → `SCR-15`). §5, §14b, §16.8, §18, §20.2. v45 — 2026-10-19; **the PoA holder records the oath** for a complainant who signs through them (`OTH-3`, `SIG-08`, `SIG-11`); **Record oath** added to the §3 permission matrix — complainant, PoA holder or Institution representative, never advocate or clerk; a leftover paragraph offering oath upload is removed from §14a (it contradicted `OTH-1`). §3, §14a, §18, §20.2. v44 — 2026-10-19; **the oath is recorded, never uploaded** (§14a, `OTH-1`); **signing SMS** (§18.2, `SIG-11`, new) — e-sign and upload, each with and without the oath, held in the master Notifications table (the two oath rows are new); in upload mode each party confirms the OTP and records the oath **on their own device** (phone or computer with a camera), through the link (`SIG-05`). §14a, §18, §20.2. v43 — 2026-10-19; **the signature is affixed Simple or Multi-page** (`SIG-09`, §18.1) — how it appears on the document, not how signing is done; Simple affixes it once for the entire case file; upload of a physically signed copy is a fallback reached from e-sign and **must be justified** with a reason (`SIG-10`); every signatory's mobile number is verified — by the SMS link or login in e-sign, by a separate phone OTP in upload mode (`SIG-05`). Multi-page to follow. §18, §20.2. v42 — 2026-10-19; **the oath moves to signing** (§14a, rewritten): no longer a form section; each complainant records it at their e-sign or OTP confirmation (`OTH-3`, `SIG-08`), only where the state requires it (`oathRequired`, `OTH-2`, `Q-6`); shown to the scrutiny officer (`OTH-4`); not re-recorded on correction unless flagged as an error (`OTH-5`, `SIG-07`). Affidavit is now form section 10, with its own sidebar heading. §5, §14a, §14b, §16.8, §18, §20.2, §21. v41 — 2026-10-19; **payment calculation is per state and not finalised** (§19): the upfront mechanism stays; every fee head, amount, slab, cap, rate and remittance account in §19 is a Kerala illustration, to be built as per-state configuration (`Q-5`, new). §19, §10 (DCA fee), §20.2, §21, §23. v40 — 2026-10-19; **pending tasks follow actions** (§20.1): the action that changes a case creates and closes its tasks in the same transaction; tasks never move the case. v39 — 2026-10-19; **split into two documents** — scrutiny, registration and editability on send-back (old §20.1–§20.4, the court-side columns of the §3 matrix and rows of the §4 lifecycle, and their decisions-log and glossary entries) move to [`scrutiny-registration.md`](scrutiny-registration.md); requirement IDs unchanged. §20 now holds this module's pending tasks, notifications, events and decisions log. The answered Q-2 to Q-4 rows are removed from §21. v38 — 2026-10-18; **no Forward for someone holding both roles** (`SCR-11`, §20.3a): a person with the Scrutiny officer and Case registerer roles registers or sends back at Scrutiny; Forward for registration is not offered, since it would only reach themselves. §3, §4, §20.2, §20.3a. v37 — 2026-10-18; **join-a-case fees removed** — they belong to joining a case, not e-filing; §19.3 (upfront process payments) is now §19.2. Two leftovers from the role change aligned: the §4 Scrutiny action is "Forward for registration", as in `SCR-06`; Q-3's answer routes to the Scrutiny officer role holders, not a designated officer. v36 — 2026-10-18; **proof of debt / liability is optional** (`DCM-7`, §14); **natively digital is a column config only** — `nativelyDigitalColumn`, on for Kerala; when off, the complaint PDF's list of documents has no Natively Digital column and no text about it (§14, §16.4). §14, §16, §20. v35 — 2026-10-18; **Additional details is a rich text area** (`PRY-1`, §12). v34 — 2026-10-18; **the 30-day demand-notice warning is back** (`LDN-2`, §10): warning, never a block, when the notice was dispatched more than 30 days after the cheque's date of return (`CHQ-9`), matching the cognizance cheat sheet. §10, §20. v33 — 2026-10-18; **role effects at entry are prefills, not checks** — when an advocate files, PiP for Complainant 1 is pre-set to No but editable, no longer disabled (`LIT-1`); the filing advocate's juniors and a filing clerk's advocates are still auto-added and removable (`FIL-05`, `ADV-1`). `FIL-06` (filer related to the case, checked once before Preview) is the only check; its fix text now covers a clerk. §2, §5, §6, §7. v32 — 2026-10-18; **the `registrationPoint` config is removed** — whether a
 case can be registered at Scrutiny now follows from roles (`SCR-11`, §20.3a): a person who
 holds both the Scrutiny officer and Case registerer roles in the courtroom can register
 the case straight from Scrutiny, or forward it; anyone else forwards it to Registration.
@@ -142,7 +142,7 @@ commits, test names. `SCR-*` and `REF-*` are in [`scrutiny-registration.md`](scr
 From first draft until the case is paid and enters Scrutiny: data entry (field-level),
 signing, payment, the generated complaint PDF, interaction patterns; and the filer's side
 of a correction cycle — re-signing and paying any increase. Scrutiny, registration and
-what a send-back opens for editing are in [`scrutiny-registration.md`](scrutiny-registration.md). **[OWNER]** s.138 NI Act only — no other case types, no generalisation needed.
+what a send-back opens for editing are in [`scrutiny-registration.md`](scrutiny-registration.md). **[OWNER]** s.138 NI Act. A complaint under Section 25 of the Payment and Settlement Systems Act, 2007 is filed through this same flow, with the differences in [`payment-settlement-systems-act.md`](payment-settlement-systems-act.md).
 
 Out: post-registration stages; digital signing provider internals; payment-gateway integration
 itself. Signing methods, including batch signing, are in [`signing-methods.md`](signing-methods.md).
@@ -315,42 +315,42 @@ they are filing for themselves (`FIL-04`, `FIL-05`). No cross-user lookup anywhe
 
 Repeats per complainant. Individual vs Institution branches the section.
 
-| ID | Field | Type | Validation | Visible when / logic |
+| ID | Field | Type | Validation | Logic |
 | --- | --- | --- | --- | --- |
 | LIT-1 | Are you representing yourself as a Party-in-Person? | Radio Yes/No | — | **Pre-set to No for the 1st complainant if an advocate is filing** — editable, not disabled. Tooltip: "If you have an advocate, select No. You can appoint an advocate at any time during the case." |
-| LIT-2 | Complainant Type | Radio Individual/Institution | — | — |
-| LIT-3 | Phone Number | Phone | Valid; **not same as any other complainant, accused, advocate, or this complainant's own PoA holder**. **[OWNER]** It may be the same as another complainant's PoA holder, since one complainant can hold power of attorney for another. Tooltip: if it is the advocate's number, error "Please do not enter the advocate's number here." | Individual |
-| LIT-4 | Full Name | Text | Alphabetic | Individual; self-autofill only (§5) |
-| LIT-5 | Age | Number | Positive integer; nothing else | Individual |
-| LIT-5a | Gender | Dropdown: Male / Female / Other | — | Individual; **optional** |
-| LIT-5b | Differently abled? | Radio Yes/No | — | Individual; **optional** |
-| LIT-6 | Email ID | Email | Valid; optional | Individual |
-| LIT-7 | Permanent Address | Address composite (§5) | — | Individual |
-| LIT-8 | Is current address same as permanent? | Radio Yes/No | — | Individual |
-| LIT-9 | Current Address | Address composite | — | Individual AND same = No |
-| LIT-10 | Has this litigant transferred Power of Attorney to somebody else? | Radio Yes/No | — | Individual |
-| LIT-11 | PoA Phone Number | Phone | Valid | PoA = Yes |
-| LIT-12 | PoA Holder Full Name | Text | — | PoA = Yes |
-| LIT-13 | PoA Holder Age | Number | Positive integer; nothing else | PoA = Yes |
-| LIT-13a | PoA Holder Email | Email | Valid; optional | PoA = Yes |
-| LIT-14 | PoA Permanent Address | Address composite | — | PoA = Yes |
-| LIT-15 | PoA current same as permanent? | Radio Yes/No | — | PoA = Yes |
-| LIT-16 | PoA Current Address | Address composite | — | PoA = Yes AND same = No |
-| LIT-17 | Type of Institution | Dropdown | Values from MDMS | Institution |
-| LIT-18 | Institution Name | Text | — | Institution |
-| LIT-18a | CIN or PAN | Text, stored upper-case | — | Institution. **[OWNER]** **Mandatory, but skippable.** Help text: "This will be used to identify cases belonging to the same complainant." Leaving the section without it asks first; skipping needs a declaration that the filer understands the consequence — "I understand that without it, this case will not be linked to the complainant's other cases." |
-| LIT-19 | Phone Number (Institution Contact) | Phone | Valid; optional | Institution |
-| LIT-20 | Email ID (Institution Contact) | Email | Valid; optional | Institution |
-| LIT-21 | Institution Address | Address composite | — | Institution |
-| LIT-22 | Authorised Representative Phone | Phone | — | Institution |
-| LIT-23 | Authorised Representative Full Name | Text | — | Institution |
-| LIT-24 | Authorised Representative Age | Number | Positive integer; nothing else | Institution |
-| LIT-24a | Authorised Representative Gender | Dropdown: Male / Female / Other | — | Institution; **optional** |
-| LIT-24b | Authorised Representative Differently abled? | Radio Yes/No | — | Institution; **optional** |
-| LIT-25 | Authorised Representative Email | Email | Valid; optional | Institution |
-| LIT-25a | Authorised Representative Designation | Text | — | Institution |
-| LIT-26 | Authorised Representative Address | Address composite | — | Institution |
-| LIT-27 | PiP Affidavit | Rich text, pre-populated (§17 template 2), editable | — | PiP = Yes |
+| LIT-2 | Complainant Type | Radio Individual/Institution | — | **[OWNER]** Each new complainant record starts with the case type's default: none for Section 138 NI Act; **Institution** for Section 25 PSS Act ([`payment-settlement-systems-act.md`](payment-settlement-systems-act.md)). The default is configurable per case type. A litigant filing for themselves is still pre-filled as an Individual Complainant 1 (`FIL-04`) |
+| LIT-3 | Phone Number | Phone | Valid; **not same as any other complainant, accused, advocate, or this complainant's own PoA holder**. **[OWNER]** It may be the same as another complainant's PoA holder, since one complainant can hold power of attorney for another. Tooltip: If it is the advocate's number, error "Please do not enter the advocate's number here." | Visible when `LIT-2` is Individual |
+| LIT-4 | Full Name | Text | Alphabetic | Visible when `LIT-2` is Individual; self-autofill only (§5) |
+| LIT-5 | Age | Number | Positive integer; nothing else | Visible when `LIT-2` is Individual |
+| LIT-5a | Gender | Dropdown: Male / Female / Other | — | Visible when `LIT-2` is Individual; **optional** |
+| LIT-5b | Differently abled? | Radio Yes/No | — | Visible when `LIT-2` is Individual; **optional** |
+| LIT-6 | Email ID | Email | Valid; optional | Visible when `LIT-2` is Individual |
+| LIT-7 | Permanent Address | Address composite (§5) | — | Visible when `LIT-2` is Individual |
+| LIT-8 | Is current address same as permanent? | Radio Yes/No | — | Visible when `LIT-2` is Individual |
+| LIT-9 | Current Address | Address composite | — | Visible when `LIT-2` is Individual and `LIT-8` is No |
+| LIT-10 | Has this litigant transferred Power of Attorney to somebody else? | Radio Yes/No | — | Visible when `LIT-2` is Individual |
+| LIT-11 | PoA Phone Number | Phone | Valid | Visible when `LIT-10` is Yes |
+| LIT-12 | PoA Holder Full Name | Text | — | Visible when `LIT-10` is Yes |
+| LIT-13 | PoA Holder Age | Number | Positive integer; nothing else | Visible when `LIT-10` is Yes |
+| LIT-13a | PoA Holder Email | Email | Valid; optional | Visible when `LIT-10` is Yes |
+| LIT-14 | PoA Permanent Address | Address composite | — | Visible when `LIT-10` is Yes |
+| LIT-15 | PoA current same as permanent? | Radio Yes/No | — | Visible when `LIT-10` is Yes |
+| LIT-16 | PoA Current Address | Address composite | — | Visible when `LIT-10` is Yes and `LIT-15` is No |
+| LIT-17 | Type of Institution | Dropdown | Values from MDMS: Proprietorship · Partnership firm · Private limited company · Public limited company · Society / trust · LLP · Bank · NBFC | Visible when `LIT-2` is Institution |
+| LIT-18 | Institution Name | Text | — | Visible when `LIT-2` is Institution |
+| LIT-18a | CIN or PAN | Text, stored upper-case | — | Visible when `LIT-2` is Institution. **[OWNER]** **Mandatory, but skippable.** Help text: "This will be used to identify cases belonging to the same complainant." Leaving the section without it asks first; skipping needs a declaration that the filer understands the consequence — "I understand that without it, this case will not be linked to the complainant's other cases." |
+| LIT-19 | Phone Number (Institution Contact) | Phone | Valid; optional | Visible when `LIT-2` is Institution |
+| LIT-20 | Email ID (Institution Contact) | Email | Valid; optional | Visible when `LIT-2` is Institution |
+| LIT-21 | Institution Address | Address composite | — | Visible when `LIT-2` is Institution |
+| LIT-22 | Authorised Representative Phone | Phone | — | Visible when `LIT-2` is Institution |
+| LIT-23 | Authorised Representative Full Name | Text | — | Visible when `LIT-2` is Institution |
+| LIT-24 | Authorised Representative Age | Number | Positive integer; nothing else | Visible when `LIT-2` is Institution |
+| LIT-24a | Authorised Representative Gender | Dropdown: Male / Female / Other | — | Visible when `LIT-2` is Institution; **optional** |
+| LIT-24b | Authorised Representative Differently abled? | Radio Yes/No | — | Visible when `LIT-2` is Institution; **optional** |
+| LIT-25 | Authorised Representative Email | Email | Valid; optional | Visible when `LIT-2` is Institution |
+| LIT-25a | Authorised Representative Designation | Text | — | Visible when `LIT-2` is Institution |
+| LIT-26 | Authorised Representative Address | Address composite | — | Visible when `LIT-2` is Institution |
+| LIT-27 | PiP Affidavit | Rich text, pre-populated (§17 template 2), editable | — | Visible when `LIT-1` is Yes |
 
 ---
 
@@ -361,7 +361,7 @@ a PiP.
 
 | ID | Field | Type | Validation | Logic |
 | --- | --- | --- | --- | --- |
-| ADV-1 | Number of advocates | Stepper | Integer ≥ 0 | Always visible; must equal advocates added; **0 + disabled if all litigants are PiP**. **Auto-add the filing advocate and all their associated junior advocates** (removable). **[OWNER]** a filing clerk's advocates are auto-added the same way |
+| ADV-1 | Number of advocates | Stepper | Integer ≥ 0 | Must equal advocates added; **0 + disabled if all litigants are PiP**. **Auto-add the filing advocate and all their associated junior advocates** (removable). **[OWNER]** a filing clerk's advocates are auto-added the same way |
 | ADV-2 | Advocate for | Dropdown of all non-PiP complainants | — | Preselect all non-PiP complainants |
 | ADV-3 | Advocate BAR Registration | Dropdown / search | — | Fetch from backend |
 | ADV-4 | Advocate Full Name | Text, auto-filled | — | From BAR registration; **not editable** |
@@ -374,21 +374,21 @@ The advocate–complainant mapping feeds signing (§18) and payment (§19).
 
 Repeats per accused. Individual vs Institution branches.
 
-| ID | Field | Type | Validation | Visible when / logic |
+| ID | Field | Type | Validation | Logic |
 | --- | --- | --- | --- | --- |
 | ACC-1 | Accused Type | Radio Individual/Institution | — | — |
-| ACC-2 | Full Name | Text | Alphabetic; special characters allowed | Individual |
-| ACC-4 | Type of Institution | Dropdown | Values from MDMS | Institution |
-| ACC-5 | Institution Name | Text | — | Institution |
-| ACC-6 | Mobile Number (contact) | Phone | Valid | both types; **at least one of mobile and email**, unless the filer declares they know neither (below) |
-| ACC-7 | Email ID (contact) | Email | Valid | both types; **at least one of mobile and email**, unless the filer declares they know neither (below) |
+| ACC-2 | Full Name | Text | Alphabetic; special characters allowed | Visible when `ACC-1` is Individual |
+| ACC-4 | Type of Institution | Dropdown | Values from MDMS | Visible when `ACC-1` is Institution |
+| ACC-5 | Institution Name | Text | — | Visible when `ACC-1` is Institution |
+| ACC-6 | Mobile Number (contact) | Phone | Valid | **At least one of mobile and email**, unless the filer declares they know neither (below) |
+| ACC-7 | Email ID (contact) | Email | Valid | **At least one of mobile and email**, unless the filer declares they know neither (below) |
 | ACC-8…12 | Address | Address composite (§5) — **repeatable: multiple addresses per accused** (process fees are per address, §19) | — | — |
 | ACC-13 | Police Station | Dropdown | — | per address |
-| ACC-14 | Representative Full Name | Text | — | Institution; **repeatable, at least one** (below) |
-| ACC-15 | Representative Designation | Text | Optional | Institution |
-| ACC-16 | Representative Mobile | Phone | Valid | Institution; **at least one of mobile and email for each person responsible**, unless the filer declares they know neither (below) |
-| ACC-17 | Representative Email | Email | Valid | Institution; **at least one of mobile and email for each person responsible**, unless the filer declares they know neither (below) |
-| ACC-18…22 | Representative Address | Address composite (§5) | — | Institution |
+| ACC-14 | Representative Full Name | Text | — | Visible when `ACC-1` is Institution; **repeatable, at least one** (below) |
+| ACC-15 | Representative Designation | Text | Optional | Visible when `ACC-1` is Institution |
+| ACC-16 | Representative Mobile | Phone | Valid | Visible when `ACC-1` is Institution; **at least one of mobile and email for each person responsible**, unless the filer declares they know neither (below) |
+| ACC-17 | Representative Email | Email | Valid | Visible when `ACC-1` is Institution; **at least one of mobile and email for each person responsible**, unless the filer declares they know neither (below) |
+| ACC-18…22 | Representative Address | Address composite (§5) | — | Visible when `ACC-1` is Institution |
 | ACC-23 | Representative Police Station | Dropdown | — | per representative address |
 | ACC-24 | Resides within jurisdiction — "jurisdiction" links to https://oncourts.kerala.gov.in/about | Radio Yes/No | — | **[OWNER]** no in-flow effect on No — information for the magistrate's judgment |
 
@@ -416,20 +416,19 @@ Repeats per cheque.
 
 | ID | Field | Type | Validation | Logic |
 | --- | --- | --- | --- | --- |
-| CHQ-1 | Date on cheque | Date picker | — | Tooltip: as written on the cheque |
-| CHQ-2 | Amount | Number | Positive | Tooltip: as written on the cheque |
-| CHQ-3 | Cheque Number | Number | 6-digit | Tooltip: first set of six digits printed at the bottom |
+| CHQ-1 | Date on cheque | Date picker | **[OWNER]** Not in the future | Tooltip: As written on the cheque |
+| CHQ-2 | Amount | Number | Positive | Tooltip: As written on the cheque |
+| CHQ-3 | Cheque Number | Number | 6-digit | Tooltip: First set of six digits printed at the bottom |
 | CHQ-4 | Bank details same as previous cheque? | Radio Yes/No | — | Default **No**; **not shown for 1st cheque** |
-| CHQ-5 | IFSC Code | Text | — | **[OWNER]** lookup fires **automatically** on a valid IFSC (no fetch button); or carried from previous cheque |
+| CHQ-5 | IFSC Code | Text | **[OWNER]** Valid IFSC: 11 characters — four letters, then 0, then six letters or digits; stored in upper case | **[OWNER]** lookup fires **automatically** on a valid IFSC (no fetch button); or carried from previous cheque |
 | CHQ-6 | Bank Name | Text | — | Auto from IFSC / previous cheque |
 | CHQ-7 | Bank Branch | Text | — | Auto from IFSC / previous cheque |
 | CHQ-7a | Bank Account Number | Text | — | As on the cheque; feeds SYN-9 and complaint PDF §2.1 |
-| CHQ-8 | Date of presentation/deposit | Date picker | **≥ CHQ-1**; **warning, never a block,** if after the cheque's validity (`CHQ-11`) | Always visible |
-| CHQ-9 | Date of return | Date picker | **≥ CHQ-8** | Always visible; tooltip: as on the return memo |
-| CHQ-10 | Return reason | Dropdown, MDMS | **Warning if not "Insufficient Funds"** | Always visible |
+| CHQ-8 | Date of presentation/deposit | Date picker | **≥ CHQ-1**; **[OWNER]** not in the future; **warning** if after the cheque's validity (`CHQ-11`) | — |
+| CHQ-9 | Date of return | Date picker | **≥ CHQ-8**; **[OWNER]** not in the future | Tooltip: As on the return memo |
+| CHQ-10 | Return reason | Dropdown, MDMS | **Warning if not "Insufficient Funds"** | — |
 
-`CHQ-11` **[OWNER]** **Presentation within the cheque's validity — a warning, never a
-block.** A cheque is valid for presentation for **3 months from its date** (`CHQ-1`); the
+`CHQ-11` **[OWNER]** **Presentation within the cheque's validity — a warning.** A cheque is valid for presentation for **3 months from its date** (`CHQ-1`); the
 last valid day is the day before the same date three months on. When the date of
 presentation (`CHQ-8`) is later than that, the system **warns** and does nothing else: it
 is not a failed validation for gating (§5), and it does not stop Preview, signing or
@@ -449,18 +448,18 @@ Repeats per demand notice.
 
 | ID | Field | Type | Validation | Logic |
 | --- | --- | --- | --- | --- |
-| LDN-1 | Nature of debt/liability | Dropdown, MDMS, including Other | — | Always visible. Tooltip: purpose/underlying transaction for the cheque |
+| LDN-1 | Nature of debt/liability | Dropdown, MDMS, including Other | — | Tooltip: Purpose/underlying transaction for the cheque |
 | LDN-1a | Nature of debt/liability — other | Text | — | **[OWNER]** Visible only when `LDN-1` is Other. Kept as its own field, not written into `LDN-1`, so the dropdown values stay queryable |
-| LDN-2 | Date of dispatch of demand notice | Date picker | **[OWNER]** at least one cheque's date of return (CHQ-9) must be **on or before** the dispatch date. **[OWNER]** **Warning, never a block,** if the dispatch date is **more than 30 days after the date of return** (CHQ-9) of every cheque returned on or before it: *"Demand notice not issued within 30 days of the return of the cheque as unpaid."* The same check is shown to the court at cognizance ([cognizance cheat sheet](cognizance-cheat-sheet.md), row 6) | — |
+| LDN-2 | Date of dispatch of demand notice | Date picker | **[OWNER]** Not in the future. **[OWNER]** At least one cheque's date of return (CHQ-9) must be **on or before** the dispatch date. **[OWNER]** **Warning** if the dispatch date is **more than 30 days after the date of return** (CHQ-9) of every cheque returned on or before it: *"Demand notice not issued within 30 days of the return of the cheque as unpaid."* The same check is shown to the court at cognizance ([cognizance cheat sheet](cognizance-cheat-sheet.md), row 6) | — |
 | LDN-3 | Mode of service | Dropdown, MDMS | — | — |
-| LDN-4 | Tracking number | Text | Optional | Tooltip: used to track delivery |
+| LDN-4 | Tracking number | Text | Optional | Tooltip: Used to track delivery |
 | LDN-5 | Whether delivered? | Radio Yes/No | — | — |
-| LDN-6 | Date of delivery | Date picker | ≥ LDN-2 | Delivered = Yes |
-| LDN-7 | Date of Return | Date picker | ≥ LDN-2 | Delivered = No; tooltip: returned to the delivery agency undelivered |
-| LDN-8 | Reason for non-delivery | Dropdown, MDMS (values already in the MDMS sheet) | Mandatory when No | Delivered = No |
-| LDN-9 | Has the accused replied to the demand notice? | Radio Yes/No | — | Always visible |
-| LDN-10 | Has the Drawer made full or part payment due under the cheque? | Dropdown: Part Payment / No Payment Made | — | Always visible |
-| LDN-11 | How much payment has already been made? | Number | — | Part payment only |
+| LDN-6 | Date of delivery | Date picker | ≥ LDN-2; **[OWNER]** not in the future | Visible when `LDN-5` is Yes |
+| LDN-7 | Date of Return | Date picker | ≥ LDN-2; **[OWNER]** not in the future | Visible when `LDN-5` is No; Tooltip: Date on which the demand notice was returned to the delivery agency as undelivered |
+| LDN-8 | Reason for non-delivery | Dropdown, MDMS (values already in the MDMS sheet) | — | Visible when `LDN-5` is No |
+| LDN-9 | Has the accused replied to the demand notice? | Radio Yes/No | — | — |
+| LDN-10 | Has the Drawer made full or part payment due under the cheque? | Dropdown: Part Payment / No Payment Made | — | — |
+| LDN-11 | How much payment has already been made? | Number | — | Visible when `LDN-10` is Part Payment |
 
 ---
 
@@ -469,22 +468,20 @@ Repeats per demand notice.
 | ID | Field | Type | Validation | Logic |
 | --- | --- | --- | --- | --- |
 | JUR-1 | Did the Payee (Complainant) deposit the cheque in their bank account? | Radio Yes/No | — | Drives the s.142(2) jurisdiction basis: deposited → payee's bank branch; else → drawer's |
-| JUR-2 | IFSC Code (complainant's branch) | Text | — | Deposited = Yes; **[OWNER]** automatic lookup |
-| JUR-3 | Bank Name | Text | — | Deposited = Yes; auto from IFSC |
-| JUR-4 | Bank Branch | Text | — | Deposited = Yes; auto from IFSC |
-| JUR-5 | Police Station of bank branch | Dropdown, MDMS | — | Deposited = Yes |
-| JUR-6a | Police Station of Drawer (Accused) bank branch | Dropdown, MDMS | — | **[OWNER]** shown when Deposited = **No** |
-| JUR-6b | Is there any other cheque dishonour complaint pending between the same parties? | Radio Yes/No | — | Always visible |
-| JUR-7 | Court | Text | — | Other cases = Yes; repeatable per case, **at least one case** |
-| JUR-8 | Case Number | Text | — | Other cases = Yes; repeatable per case, **at least one case** |
-| JUR-9 | Date of cause of action | Date picker | — | **Auto: service of demand notice + 15 days; uneditable.** Service = date of delivery, or date of return when undelivered |
-| JUR-10 | Date of complaint filing | Date picker | — | **Auto: current date; uneditable** |
-| JUR-11 | Duration of delay | Number | — | Visible if filed **after 1 month from the date of cause of action**; auto; uneditable. Multiple notices: earliest cause-of-action date `[DERIVED]` |
+| JUR-2 | IFSC Code (complainant's branch) | Text | **[OWNER]** Valid IFSC: 11 characters — four letters, then 0, then six letters or digits; stored in upper case | Visible when `JUR-1` is Yes; **[OWNER]** automatic lookup |
+| JUR-3 | Bank Name | Text | — | Visible when `JUR-1` is Yes; auto from IFSC |
+| JUR-4 | Bank Branch | Text | — | Visible when `JUR-1` is Yes; auto from IFSC |
+| JUR-5 | Police Station of bank branch | Dropdown, MDMS | — | Visible when `JUR-1` is Yes |
+| JUR-6a | Police Station of Drawer (Accused) bank branch | Dropdown, MDMS | — | **[OWNER]** Visible when `JUR-1` is **No** |
+| JUR-6b | Is there any other cheque dishonour complaint pending between the same parties? | Radio Yes/No | — | — |
+| JUR-7 | Court | Text | — | Visible when `JUR-6b` is Yes; repeatable per case, **at least one case** |
+| JUR-8 | Case Number | Text | — | Visible when `JUR-6b` is Yes; repeatable per case, **at least one case** |
+| JUR-9 | Date of cause of action | Date picker | — | **Auto-calculated: date of service of the demand notice + 15 days; uneditable.** The date of service is the date of delivery (`LDN-6`), or the date of return (`LDN-7`) when the notice was not delivered. **[OWNER]** When there is more than one demand notice, the earliest of their cause-of-action dates is used |
+| JUR-10 | Date of complaint filing | Date picker | — | **Auto-filled: current date; uneditable** |
+| JUR-11 | Duration of delay | Number | — | Visible if filed **more than one calendar month after the date of cause of action**; auto-calculated; uneditable. Counted from the date of cause of action in `JUR-9` |
 | JUR-12 | Reason for praying condonation of delay | Textarea | — | Visible if delay exists |
 
-Delay basis **[OWNER]**: one **calendar month** from the **date of cause of action**
-— not from the date of service. When the DCA attaches
-it carries the Delay Condonation Application fee (§19) and the `REF-04` refiling rule ([`scrutiny-registration.md`](scrutiny-registration.md) §8).
+A complaint filed late needs a Delay Condonation Application, which carries its fee ([`payment-logic.md`](payment-logic.md)) and the `REF-04` refiling rule ([`scrutiny-registration.md`](scrutiny-registration.md) §8).
 
 **[OWNER]** The bank-details block (JUR-1…5 / JUR-6a) is asked **once for the case**,
 however many cheques there are. It does not repeat per cheque. JUR-1 decides which branch
@@ -530,7 +527,7 @@ and address are required.
 | DCM-2 | Cheque return memo | Yes | **[OWNER]** = number of **cheques** (sheet's "demand notices" was an error) |
 | DCM-3 | Legal Demand Notice | Yes | = number of demand notices |
 | DCM-4 | Proof of dispatch of demand notice | Yes | = number of demand notices |
-| DCM-5 | Proof of delivery of demand notice (AD Card or Tracking Report) | No | = number of demand notices; tooltip: includes documents showing delivery was attempted but unsuccessful |
+| DCM-5 | Proof of delivery of demand notice (AD Card or Tracking Report) | No | = number of demand notices; Tooltip: Includes documents showing delivery was attempted but unsuccessful |
 | DCM-6 | Reply to the demand notice | No | = number of demand notices; visible when a reply was received |
 | DCM-7 | Proof of debt / liability | **No** | Always |
 | DCM-8 | Proof of reasons for delay | No | Visible when there is delay |
@@ -543,8 +540,7 @@ and address are required.
 **Natively digital column** **[OWNER]** — a deployment config, `nativelyDigitalColumn`,
 **on for Kerala**. When on, each uploaded document carries a natively digital attribute
 (born-digital vs scanned), printed as a column in the complaint PDF's list of documents
-(§16.4, 3.2). When off, the column and all text about it are absent. **[OWNER]** DCM-9/DCM-10 are named **"ID
-Card"**, not "Aadhaar Card", wherever they are displayed or printed. **Aadhaar
+(§16.4, 3.2). When off, the column and all text about it are absent. **Aadhaar
 handling** **[OWNER]** — **no masking at launch**: the ID card is stored and appended
 exactly as uploaded (§16.7), because the court has to be able to check it. No field
 collects an Aadhaar number, and nothing else may be built on the number (no extraction,
@@ -589,13 +585,13 @@ Auto-generated; shown after the case moves to signing; cover page of the complai
 
 | ID | Section | Field | Logic |
 | --- | --- | --- | --- |
-| SYN-1/2 | Parties | Complainant Name · Accused Name | repeat per party |
-| SYN-3 | — | Complainant's Advocate Name | all advocate names |
-| SYN-4…9 | Cheque Details | Date on cheque · Amount · Cheque number · Bank Name · Bank Branch · Bank Account Number (`CHQ-7a`) | repeat per cheque |
-| SYN-10…12 | Dishonour | Date of presentation · Date on return memo · Return reason | **[OWNER]** repeat per cheque |
-| SYN-13 | Dishonour | Bank Branch (Complainant) | **[OWNER]** repeat per cheque as needed; exists only when that cheque was deposited |
-| SYN-14…21 | Demand Notice | Dispatch date · Mode of service · Tracking number · Delivered? · Delivery date (Y) · Accused replied? (delivered) · Return date (N) · Non-delivery reason (N) | repeat per demand notice |
-| SYN-22…25 | Cause of Action | Cause-of-action date · Jurisdiction under s.142(2) (deposited → complainant's branch, else accused's; bracket whose) · Other complaint pending? · Court and Case Number (if Yes, per case) | — |
+| SYN-1/2 | Parties | Complainant Name (`LIT-4` / `LIT-18`) · Accused Name (`ACC-2` / `ACC-5`) | repeat per party |
+| SYN-3 | — | Complainant's Advocate Name (`ADV-4`) | all advocate names |
+| SYN-4…9 | Cheque Details | Date on cheque (`CHQ-1`) · Amount (`CHQ-2`) · Cheque number (`CHQ-3`) · Bank Name (`CHQ-6`) · Bank Branch (`CHQ-7`) · Bank Account Number (`CHQ-7a`) | repeat per cheque |
+| SYN-10…12 | Dishonour | Date of presentation (`CHQ-8`) · Date on return memo (`CHQ-9`) · Return reason (`CHQ-10`) | **[OWNER]** repeat per cheque |
+| SYN-13 | Dishonour | Bank Branch (Complainant) (`JUR-4`) | **[OWNER]** repeat per cheque as needed; exists only when that cheque was deposited |
+| SYN-14…21 | Demand Notice | Dispatch date (`LDN-2`) · Mode of service (`LDN-3`) · Tracking number (`LDN-4`) · Delivered? (`LDN-5`) · Delivery date (`LDN-6`, Y) · Accused replied? (`LDN-9`, delivered) · Return date (`LDN-7`, N) · Non-delivery reason (`LDN-8`, N) | repeat per demand notice |
+| SYN-22…25 | Cause of Action | Cause-of-action date (`JUR-9`) · Jurisdiction under s.142(2) (deposited → complainant's branch, `JUR-4`; else accused's, `CHQ-7`; bracket whose) · Other complaint pending? (`JUR-6b`) · Court and Case Number (`JUR-7`, `JUR-8`; if Yes, per case) | — |
 | SYN-26 | — | Prayer / Relief sought | **[OWNER]** prints the **Final Relief** field (`PRY-3`) |
 
 Every synopsis field now has a collecting field (SYN-9 ← `CHQ-7a`) and explicit
@@ -680,9 +676,7 @@ hardcoded template. Two cases will have different rows, different row counts and
 different page breaks. Nothing may assume a fixed row.
 
 **Printed labels** are the field's own label from the field tables in §6–§15 — the PDF
-never invents wording. This is what makes terminology decisions carry through: it is
-**Institution**, never "Entity" (§5, `ACC-5`, `LIT-18`), and the identity document is an
-**ID Card**, never "Aadhaar Card" (§14, `DCM-9`, `DCM-10`).
+never invents wording.
 
 ## 16.2 Layout — `DOC-04`
 
