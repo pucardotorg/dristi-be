@@ -1011,7 +1011,7 @@ class CaseComplaintPdfView(APIView):
         """
         package, created = complaint_pdf.get_or_create_signing_package(case_id, request.user)
         return Response(
-            ComplaintSigningPackageSerializer(package).data,
+            ComplaintSigningPackageSerializer(package, context={"request": request}).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
@@ -1026,7 +1026,9 @@ class CaseComplaintSigningView(APIView):
         _, package = complaint_pdf.get_signing_package(case_id, request.user)
         if package is None:
             raise NotFound("No complaint PDF is being signed on this case.")
-        return Response(ComplaintSigningPackageSerializer(package).data)
+        return Response(
+            ComplaintSigningPackageSerializer(package, context={"request": request}).data
+        )
 
 
 @extend_schema(tags=TAGS)

@@ -780,3 +780,121 @@ class TestRichText:
 
     def test_self_closing_line_breaks_are_kept(self):
         assert to_paragraphs("<p>first<br/>second</p>") == ["first<br/>second"]
+
+
+class TestIsMe:
+    """``is_me`` marks the signatories the caller signs as, by the rule e-sign enforces."""
+
+    @pytest.fixture
+    def case(self, client, user, make_user, draft, pdf, settings):
+        """Two complainants: the filer, and one with no account whose number is on the case."""
+        settings.ESIGN_PROVIDER = "apps.esign.providers.mock.MockESignProvider"
+        reset_provider_cache()
+        first = make_complete_case(client, draft, pdf)
+        second = add_second_complainant(client, draft, pdf)
+        Person.objects.filter(pk=first["person_id"]).update(user=user)
+        assert submit(client, draft, "signing").status_code == 200
+        prepare(client, draft)
+        party = make_user()
+        party.mobile_number = SECOND_MOBILE
+        party.save(update_fields=["mobile_number"])
+        return {"first": first, "second": second, "party": party}
+
+    @staticmethod
+    def mine(client, case_id):
+        body = client.get(reverse("case-complaint-signing", args=[case_id])).json()
+        return {row["case_participant_id"]: row["is_me"] for row in body["signatories"]}
+
+    def test_each_user_sees_only_the_rows_they_sign_as(
+        self, client, client_for, other_user, draft, case
+    ):
+        first, second = case["first"]["case_participant_id"], case["second"]["case_participant_id"]
+
+        # The filer, by their linked account; the second party, by the number entered for them.
+        assert self.mine(client, draft) == {first: True, second: False}
+        assert self.mine(client_for(case["party"]), draft) == {first: False, second: True}
+
+    def test_the_prepare_response_carries_it_too(self, client, draft, case):
+        body = prepare(client, draft).json()
+
+        assert [row["is_me"] for row in body["signatories"]] == [True, False]
+
+    def test_it_matches_whether_e_sign_lets_the_user_start(self, client_for, user, draft, case):
+        """For each signer, true exactly on the rows the e-sign authorizer lets them start."""
+        current = ComplaintSigningPackage.objects.get(case_id=draft).current_file_id
+        for account in (user, case["party"]):
+            rows = self.mine(client_for(account), draft)
+            allowed = can_sign_case_filing(
+                user=account, entity_type="CASE_FILING", entity_id=draft, file_id=current
+            )
+            assert any(rows.values()) is allowed is True
+            assert list(rows.values()).count(True) == 1
+
+    def test_someone_who_signs_as_no_one_cannot_read_it_or_start(
+        self, client_for, make_user, draft, case
+    ):
+        stranger = make_user()
+        package = ComplaintSigningPackage.objects.get(case_id=draft)
+        box = next(iter(package.placeholders.values()))
+
+        read = client_for(stranger).get(reverse("case-complaint-signing", args=[draft]))
+        started = TestSigning.initiate(
+            client_for(stranger),
+            draft,
+            package.current_file_id,
+            {**box, "signer_name": "x", "reason": "y"},
+        )
+
+        assert (read.status_code, started.status_code) == (404, 403)
+
+    def test_a_party_without_an_account_can_read_it_from_their_own_device(
+        self, client_for, draft, case
+    ):
+        body = client_for(case["party"]).get(reverse("case-complaint-signing", args=[draft])).json()
+
+        mine = [row for row in body["signatories"] if row["is_me"]]
+        assert [row["case_participant_id"] for row in mine] == [
+            case["second"]["case_participant_id"]
+        ]
+        box = next(
+            p
+            for p in body["signature_placeholders"]
+            if p["case_participant_id"] == mine[0]["case_participant_id"]
+        )
+        started = TestSigning.initiate(
+            client_for(case["party"]), draft, body["current_file_id"], box
+        )
+        assert started.status_code == 201, started.json()
+
+    def test_it_stays_true_after_signing(self, client, user, draft, case):
+        first = case["first"]["case_participant_id"]
+        CaseParticipant.objects.filter(pk=first).update(has_signed=True)
+
+        body = client.get(reverse("case-complaint-signing", args=[draft])).json()
+        row = next(r for r in body["signatories"] if r["case_participant_id"] == first)
+
+        assert (row["has_signed"], row["is_me"]) == (True, True)
+
+    def test_one_person_in_two_roles_is_marked_twice(self, client, user, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        Person.objects.filter(pk=complainant["person_id"]).update(user=user)
+        # The holder has no account and their number on the case is the
+        # filer's login, so the filer signs as both rows.
+        holder = add_poa_holder(
+            client, draft, [complainant["case_participant_id"]], mobile_numbers=[POA_MOBILE]
+        ).json()
+        upload(
+            client,
+            draft,
+            pdf,
+            "POA_DOCUMENT",
+            case_participant_id=complainant["case_participant_id"],
+        )
+        Person.objects.filter(pk=holder["person_id"]).update(user=None)
+        user.mobile_number = POA_MOBILE
+        user.save(update_fields=["mobile_number"])
+        submit(client, draft, "signing")
+
+        body = prepare(client, draft).json()
+
+        assert [row["is_me"] for row in body["signatories"]] == [True, True]

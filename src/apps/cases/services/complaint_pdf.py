@@ -41,6 +41,7 @@ from .. import errors
 from ..models import (
     SIGNING_ROLES,
     Case,
+    CaseParticipant,
     CaseStatus,
     ComplaintSigningPackage,
     ParticipantRole,
@@ -64,6 +65,7 @@ from .filing import (
     validation_errors,
 )
 from .services import lock_case
+from .signing import signer_q
 
 TEMPLATE_KEY = "case-complaint"
 APPENDIX_HEADING = "Documents uploaded by the Complainant."
@@ -275,8 +277,17 @@ def render_preview(case_id, user):
 
 
 def get_signing_package(case_id, user):
-    """Return the case's open signing package, or ``None``."""
-    case = get_filing_side_case(case_id, user)
+    """Return the case's open signing package, or ``None``.
+
+    Readable by the filing side and by anyone who signs as one of the case's
+    signatories (``signing.signer_q``): a complainant with no account yet signs
+    from their own device by the number entered for them (efiling §18), and
+    needs the package -- its file and their placeholder -- to start the e-sign.
+    """
+    signs_here = Case.objects.filter(
+        pk__in=CaseParticipant.objects.active().filter(signer_q(user)).values("case_id")
+    )
+    case = signs_here.filter(pk=case_id).first() or get_filing_side_case(case_id, user)
     return case, open_package(case)
 
 

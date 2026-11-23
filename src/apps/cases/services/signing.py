@@ -85,6 +85,24 @@ def signer_q(user):
     )
 
 
+def signer_ids(case_id, user):
+    """Return the ids, as strings, of the active participants of the case ``user`` signs as.
+
+    The same ``signer_q`` rule the e-sign authorizer and ``record_signature``
+    apply, evaluated once for the whole case; whether each has signed yet is
+    not considered.
+    """
+    if user is None or not user.is_authenticated:
+        return set()
+    return {
+        str(pk)
+        for pk in CaseParticipant.objects.active()
+        .filter(case_id=case_id)
+        .filter(signer_q(user))
+        .values_list("pk", flat=True)
+    }
+
+
 def is_signer(participant, user):
     """Whether ``user`` signs as ``participant`` (see ``signer_q``)."""
     return CaseParticipant.objects.filter(pk=participant.pk).filter(signer_q(user)).exists()
