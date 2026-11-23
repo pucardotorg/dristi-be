@@ -201,3 +201,34 @@ def test_merge_rejects_invalid_input():
         merge([simple_pdf(), b"not a pdf"])
     with pytest.raises(PDFRenderError):
         merge([])
+
+
+def test_signature_slots_two_to_a_row_report_where_each_box_is():
+    """One slot per signatory, two to a row; each box's position is reported (efiling DOC-02)."""
+    from apps.pdf.services.signing import prepare_for_signing
+
+    filler = [{"type": "paragraph", "text": "Affidavit text"}] * 45
+    signers = [{"key": f"s{i}", "name": f"Signer {i} <b>", "label": f"Role {i}"} for i in range(5)]
+    document = compose(
+        {"body": [*filler, {"type": "signatures", "source": "signers", "box_height": 60}]},
+        {"signers": signers},
+    )
+
+    pdf, anchors = PythonRenderer().render_with_anchors(document, {})
+
+    assert list(anchors) == [f"s{i}" for i in range(5)]
+    # Paired left and right on one line, the odd one out alone on its own row.
+    assert anchors["s0"]["y"] == anchors["s1"]["y"] and anchors["s0"]["x"] < anchors["s1"]["x"]
+    assert anchors["s2"]["y"] == anchors["s3"]["y"] < anchors["s1"]["y"]
+    assert anchors["s4"]["x"] == anchors["s0"]["x"]
+    text = text_of(pdf)
+    # Names come from request data and are escaped, never read as markup.
+    assert "Signer 0 <b>" in text and "Role 4" in text
+    for anchor in anchors.values():
+        assert anchor["height"] == 60
+        prepare_for_signing(pdf, dict(anchor))
+
+
+def test_signatures_block_needs_a_list_of_signatories():
+    with pytest.raises(Exception, match="not a list of signatories"):
+        compose({"body": [{"type": "signatures", "source": "signers"}]}, {"signers": "x"})

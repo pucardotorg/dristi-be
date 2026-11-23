@@ -195,6 +195,23 @@ class InitiationTests(ESignTestCase):
         self.assertEqual(seen["user"], self.user)
         self.assertEqual(seen["entity_type"], "ORDER")
         self.assertEqual(seen["entity_id"], "9f2c0001")
+        # Only an authorizer that declares it is given the document.
+        self.assertNotIn("file_id", seen)
+
+    def test_an_authorizer_asking_for_the_document_receives_it(self):
+        """An authorizer with a ``file_id`` parameter is told which file is to be signed."""
+        seen = {}
+
+        def authorizer(*, user, entity_type, entity_id, organization_id=None, file_id=None):
+            seen["file_id"] = file_id
+            return True
+
+        permissions.register_entity_authorizer("ORDER", authorizer)
+        self.addCleanup(permissions.unregister_entity_authorizer, "ORDER")
+
+        self.initiate_service()
+
+        self.assertEqual(seen["file_id"], self.source_file_id)
 
     def test_request_audit_is_persisted_without_secrets(self):
         """Only non-sensitive request metadata is stored."""

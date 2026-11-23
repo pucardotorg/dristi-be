@@ -118,6 +118,47 @@ class PlaceholderBox(Flowable):
         self.canv.rect(0, 0, self.width, self.height)
 
 
+class SignatureSlot(Flowable):
+    """Blank space for one signature above a rule, the signer's name and their label.
+
+    Records where the blank space lands -- page and PDF points from the page's
+    bottom-left -- into ``anchors[key]`` as it is drawn, so the signature, which
+    draws its own bordered appearance, is placed exactly there later.
+    """
+
+    def __init__(self, key, name, label, style, box_height, anchors):
+        super().__init__()
+        self.key, self.box_height, self.anchors = key, box_height, anchors
+        self.name = Paragraph(name or "&nbsp;", style)
+        self.label = Paragraph(label or "&nbsp;", style)
+
+    def wrap(self, avail_width, avail_height):
+        self.width = avail_width
+        _, name_h = self.name.wrap(avail_width, avail_height)
+        _, label_h = self.label.wrap(avail_width, avail_height)
+        self.text_height = name_h + label_h
+        self.height = self.box_height + 4 + self.text_height
+        return self.width, self.height
+
+    def draw(self):
+        canvas = self.canv
+        box_bottom = self.text_height + 4
+        x, y = canvas.absolutePosition(0, box_bottom)
+        self.anchors[self.key] = {
+            "page": canvas.getPageNumber(),
+            "x": round(x, 2),
+            "y": round(y, 2),
+            "width": round(self.width, 2),
+            "height": round(self.box_height, 2),
+        }
+        canvas.saveState()
+        canvas.setLineWidth(0.5)
+        canvas.line(0, box_bottom - 2, self.width, box_bottom - 2)
+        canvas.restoreState()
+        self.label.drawOn(canvas, 0, 0)
+        self.name.drawOn(canvas, 0, self.label.height)
+
+
 class _DecoratedCanvas(Canvas):
     """Canvas that defers page decoration until the page count is known."""
 
@@ -146,8 +187,13 @@ class PythonRenderer(PDFRenderer):
 
     def render(self, document: dict, context: dict | None = None) -> bytes:
         """Return PDF bytes for a resolved ``document``."""
+        return self.render_with_anchors(document, context)[0]
+
+    def render_with_anchors(self, document: dict, context: dict | None = None):
+        """Return ``(pdf_bytes, anchors)``: where each ``signatures`` slot was drawn."""
+        self.anchors = {}
         try:
-            return self._render(document)
+            return self._render(document), self.anchors
         except PDFRenderError:
             raise
         except (KeyError, ValueError, TypeError, AttributeError, OSError) as exc:
@@ -300,6 +346,8 @@ class PythonRenderer(PDFRenderer):
             return [self._list(block)]
         if kind in ("image", "qr"):
             return [self._image(block)]
+        if kind == "signatures":
+            return self._signatures(block)
         raise PDFRenderError(f"Unknown block type {kind!r}.")
 
     def _widths(self, columns: list[dict]) -> list | None:
@@ -378,6 +426,42 @@ class PythonRenderer(PDFRenderer):
             )
         table.setStyle(TableStyle(commands))
         return table
+
+    def _signatures(self, block: dict) -> list:
+        """Two signature slots to a row, wrapping to more rows (efiling ``DOC-02``).
+
+        Each row is kept whole on one page, so a box is never split across a
+        page break.
+        """
+        style = self._style(block.get("style"))
+        box_height = float(block.get("box_height", 64))
+        gutter = 24
+        column = (self.frame_width - gutter) / 2
+        slots = [
+            SignatureSlot(slot["key"], slot["name"], slot["label"], style, box_height, self.anchors)
+            for slot in block.get("slots") or []
+        ]
+        story = []
+        for index in range(0, len(slots), 2):
+            pair = slots[index : index + 2]
+            row = Table(
+                [[pair[0], "", pair[1] if len(pair) > 1 else ""]],
+                colWidths=[column, gutter, column],
+                hAlign="LEFT",
+            )
+            row.setStyle(
+                TableStyle(
+                    [
+                        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                        ("TOPPADDING", (0, 0), (-1, -1), 6),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ]
+                )
+            )
+            story.append(row)
+        return story
 
     def _aligned(self, style: ParagraphStyle, align: str) -> ParagraphStyle:
         return self._style(style.name, align) if style.name in self.styles else style

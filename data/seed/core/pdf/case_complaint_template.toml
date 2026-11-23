@@ -1,0 +1,18 @@
+# The e-filing complaint PDF (efiling.md section 16), rendered by
+# apps.cases.services.complaint_pdf from the case's own data. Every value
+# shown comes from the case or from `extras` the service adds (labels, court
+# name, case title, rich text as safe paragraphs). The signature block lays
+# out one slot per signatory, two to a row (DOC-02), and reports where each
+# box is so signing can be placed on it.
+#
+# A version a job has used is immutable: change the template by adding a
+# version 2 row with is_active = true (it deactivates version 1).
+
+[seed]
+model = "pdf.PDFTemplate"
+
+[[rows]]
+key = "case-complaint"
+name = "E-filing complaint"
+description = "The complaint PDF shown at preview and signed at e-filing (efiling.md section 16)."
+is_active = true

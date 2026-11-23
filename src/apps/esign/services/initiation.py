@@ -84,6 +84,7 @@ def initiate_esign(
         entity_type=entity_type,
         entity_id=entity_id,
         organization_id=organization_id,
+        file_id=file_id,
     )
 
     reject_if_in_progress(file_id=file_id, entity_type=entity_type, entity_id=entity_id)

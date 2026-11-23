@@ -8,6 +8,7 @@ representation is changed by its own id (``/case-documents/{id}``,
 ``/representations/{id}``). Callers only ever reach their own cases.
 """
 
+from django.http import HttpResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import generics, status
@@ -18,6 +19,7 @@ from rest_framework.views import APIView
 
 from apps.api import errors as api_errors
 from apps.api.schema import error_responses
+from apps.pdf import errors as pdf_errors
 
 from . import errors
 from .models import (
@@ -53,6 +55,7 @@ from .serializers import (
     CaseSerializer,
     CaseTypeDescriptionSerializer,
     CaseValidationSerializer,
+    ComplaintSigningPackageSerializer,
     DetailsSectionSerializer,
     DraftSessionSerializer,
     EvidenceCreateSerializer,
@@ -63,11 +66,12 @@ from .serializers import (
     PoaHolderCreateSerializer,
     PoaMandateSerializer,
     RepresentationSerializer,
+    ReturnToDraftSerializer,
     SignatureSerializer,
     SignedSerializer,
     WitnessCreateSerializer,
 )
-from .services import case_types, filing, participants, services
+from .services import case_types, complaint_pdf, filing, participants, services
 from .services.case_types import DocumentType
 from .services.contacts import load_contacts
 
@@ -942,3 +946,106 @@ class ParticipantSignView(APIView):
             serializer.validated_data["signature_document_id"],
         )
         return Response(SignedSerializer(participant).data)
+
+
+# The complaint PDF: preview, the copy to sign, and back to draft (efiling.md §16, §18)
+
+# What any complaint render can fail with.
+RENDER_ERRORS = (
+    pdf_errors.TEMPLATE_NOT_FOUND,
+    pdf_errors.SYNC_RENDER_TIMEOUT,
+    pdf_errors.INVALID_CONFIG,
+    pdf_errors.RENDER_FAILED,
+)
+
+
+@extend_schema(tags=TAGS)
+class CaseComplaintPdfView(APIView):
+    """GET /cases/{case_id}/complaint-pdf — preview. POST — prepare the copy to sign."""
+
+    @extend_schema(
+        tags=TAGS,
+        responses={
+            (200, "application/pdf"): OpenApiTypes.BINARY,
+            **error_responses(
+                errors.FILING_INCOMPLETE.example(
+                    "At least one active accused is required.", field="participants.accused"
+                ),
+                *RENDER_ERRORS,
+            ),
+        },
+    )
+    def get(self, request, case_id):
+        """Return the complaint PDF as the case stands now; nothing is stored.
+
+        Only once the filing is complete. Marked "PREVIEW - NOT FOR FILING"
+        while the case is a draft.
+        """
+        content = complaint_pdf.render_preview(case_id, request.user)
+        response = HttpResponse(content, content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="complaint-{case_id}.pdf"'
+        return response
+
+    @extend_schema(
+        tags=TAGS,
+        request=None,
+        responses={
+            201: ComplaintSigningPackageSerializer,
+            200: ComplaintSigningPackageSerializer,
+            **error_responses(
+                errors.INVALID_STATUS_TRANSITION,
+                errors.FILING_INCOMPLETE,
+                errors.DOCUMENT_NOT_APPENDABLE.example(field="documents.<case_document_id>"),
+                errors.SIGNING_FILE_TOO_LARGE,
+                pdf_errors.STORAGE_UNAVAILABLE,
+                *RENDER_ERRORS,
+            ),
+        },
+    )
+    def post(self, request, case_id):
+        """Prepare the complaint PDF this signing round signs, with every document appended.
+
+        Only while the case is pending signature. The first call of a round
+        stores it (201); later calls return the same one (200), so every
+        signer signs the same file.
+        """
+        package, created = complaint_pdf.get_or_create_signing_package(case_id, request.user)
+        return Response(
+            ComplaintSigningPackageSerializer(package).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+@extend_schema(tags=TAGS)
+class CaseComplaintSigningView(APIView):
+    """GET /cases/{case_id}/complaint-pdf/signing — the open signing package."""
+
+    @extend_schema(tags=TAGS, responses={200: ComplaintSigningPackageSerializer})
+    def get(self, request, case_id):
+        """Return the complaint PDF being signed: what the next signer signs, and where."""
+        _, package = complaint_pdf.get_signing_package(case_id, request.user)
+        if package is None:
+            raise NotFound("No complaint PDF is being signed on this case.")
+        return Response(ComplaintSigningPackageSerializer(package).data)
+
+
+@extend_schema(tags=TAGS)
+class ReturnToDraftView(APIView):
+    """POST /cases/{case_id}/return-to-draft — reopen a case pending signature for editing."""
+
+    parser_classes = JSON_ONLY
+
+    @extend_schema(
+        tags=TAGS,
+        request=ReturnToDraftSerializer,
+        responses={
+            200: CaseSerializer,
+            **error_responses(errors.INVALID_STATUS_TRANSITION, errors.SIGNING_IN_PROGRESS),
+        },
+    )
+    def post(self, request, case_id):
+        """Clear every signature and return the case to draft; it is signed again later."""
+        serializer = ReturnToDraftSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        case = filing.return_to_draft(case_id, request.user, serializer.validated_data["reason"])
+        return Response(CaseSerializer(case).data)

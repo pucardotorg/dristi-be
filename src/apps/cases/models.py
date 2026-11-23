@@ -1161,6 +1161,65 @@ def link_type_errors(document_type, links):
     return errors
 
 
+class SigningPackageStatus(models.TextChoices):
+    """Lifecycle of the complaint PDF being signed in one signing round."""
+
+    OPEN = "OPEN", "Open"
+    COMPLETE = "COMPLETE", "Complete"
+    SUPERSEDED = "SUPERSEDED", "Superseded"
+
+
+class ComplaintSigningPackage(BaseModel):
+    """The complaint PDF every signer of one signing round signs.
+
+    Rendered once when the round starts, then never re-rendered: every signer
+    signs the same bytes (signing-methods ``SGM-07``). ``signing_file`` is the
+    complaint with every uploaded document appended (efiling ``DOC-07``,
+    ``SGM-03``); ``current_file`` starts there and becomes each signer's signed
+    copy, so all signatures end up on one file. ``placeholders`` are the
+    signature boxes the complaint drew, by ``case_participant_id``. A return
+    to draft supersedes the package; the next ``submit-for-signing`` starts a
+    new round with a new one.
+    """
+
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="signing_packages")
+    signing_round = models.PositiveIntegerField()
+    status = models.CharField(
+        max_length=16, choices=SigningPackageStatus.choices, default=SigningPackageStatus.OPEN
+    )
+    complaint_file = models.ForeignKey(
+        "files.File", on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    signing_file = models.ForeignKey(
+        "files.File", on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    current_file = models.ForeignKey(
+        "files.File", on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    page_count = models.PositiveIntegerField(default=0)
+    affidavit_page = models.PositiveIntegerField(default=0)
+    signatories = models.JSONField(default=list, blank=True)
+    placeholders = models.JSONField(default=dict, blank=True)
+    document_ids = models.JSONField(default=list, blank=True)
+
+    class Meta(BaseModel.Meta):
+        """Meta options."""
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["case", "signing_round"], name="cases_signing_package_unique_round"
+            ),
+            models.UniqueConstraint(
+                fields=["case"],
+                condition=Q(status=SigningPackageStatus.OPEN),
+                name="cases_signing_package_single_open",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Signing round {self.signing_round} of {self.case_id} ({self.status})"
+
+
 class ChequeBounceCase(BaseModel, BaseAuditableModel):
     """Cheque bounce details, one row per case (spec 0020 §10).
 
