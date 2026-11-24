@@ -9,8 +9,6 @@ history tables and the admin for audit.
 
 from rest_framework import serializers
 
-from apps.address.serializers import AddressSerializer
-
 from .models import Institution, Person
 
 
@@ -38,13 +36,14 @@ class InstitutionSerializer(serializers.ModelSerializer):
 
 
 class PersonSerializer(serializers.ModelSerializer):
-    """Read-only representation of a person, with addresses and institution nested."""
+    """Read-only representation of a person, with their institution nested.
+
+    A person's addresses are their case contacts, kept per case.
+    """
 
     institution = InstitutionSerializer(read_only=True)
     # Today's age: from the date of birth when known, else the stated age.
     age = serializers.IntegerField(source="current_age", read_only=True, allow_null=True)
-    permanent_address = AddressSerializer(read_only=True)
-    correspondence_address = AddressSerializer(read_only=True)
 
     class Meta:
         """Meta options."""
@@ -62,8 +61,6 @@ class PersonSerializer(serializers.ModelSerializer):
             "gender",
             "institution",
             "designation",
-            "permanent_address",
-            "correspondence_address",
             "disability_status",
             "verification_level",
             "user",

@@ -43,8 +43,6 @@ One row per human being the system knows of, whether registered or not. A person
 | `gender` | varchar(32) | NULLABLE | One of: MALE, FEMALE, OTHER |
 | `institution_id` | uuid | FK → institution, NULLABLE | When acting for an institution (see §3) |
 | `designation` | varchar(128) | NULLABLE | Role within the institution, e.g. Director, Branch Manager, Authorised Signatory |
-| `residential_address_id` | uuid | FK → address, NULLABLE | Current residential address |
-| `correspondence_address_id` | uuid | FK → address, NULLABLE | Current mailing address |
 | `disability_status` | boolean | NULLABLE | Whether the person is differently abled; NULL when not answered |
 | `verification_level` | varchar(16) | NOT NULL, default ASSERTED | See §2.3 |
 | `user_id` | uuid | FK → app_user, NULLABLE, UNIQUE | NULL until they register |
@@ -102,8 +100,8 @@ Identity verification is a spectrum. The `verification_level` field records how 
 The current schema permits duplicate persons with the same name and no phone number. Matching logic is implemented at the application layer, and is deliberately narrow:
 - The only `person` a party write reuses is the **filer's own**: when the filer adds themselves (`"self": true`, spec 0021 §4.1), their `person` is fetched by `user_id`, or created from their account at `VERIFIED` if they have none yet. A client never sends another person's id, so a filer cannot attach, or read back, someone else's record.
 - Every other party gets a **new** row at `ASSERTED`, with no attempt to match by name or phone.
-- The `person` row holds current data and may change; what a case must keep is its own copy, the participant's `*_at_filing` snapshot (§4.4), which only the case's own writes change. Today a party write changes two things on the person, neither of which has a snapshot: an individual complainant's or POA holder's `permanent_address`, and any person's `disability_status`, on create and on PATCH, also when the person is the filer (`"self": true`). A person another user has registered and claimed is changed only by that user, by an advocate filing the case who actively represents them, or by a filer who is an active complainant on the case.
-- `permanent_address` is the same address row as `correspondence_address` (the request's `address`) unless the write sends a different `permanent_address`, which is then stored as its own row. Only an individual complainant or POA holder has one.
+- The `person` row holds current data and may change; what a case must keep is its own copy, the participant's `*_at_filing` snapshot (§4.4), which only the case's own writes change. Today a party write changes one thing on the person, which has no snapshot: any person's `disability_status`, on create and on PATCH, also when the person is the filer (`"self": true`). A person has no addresses: each case keeps them as its contacts (§4.6). A person another user has registered and claimed is changed only by that user, by an advocate filing the case who actively represents them, or by a filer who is an active complainant on the case.
+- An individual complainant's or POA holder's permanent address is their first address on the case unless the write sends a different `permanent_address`, which is then stored as a `PERMANENT_ADDRESS` contact (§4.6). Only they have one.
 - Duplicate asserted records resolve when the person registers and claims their row (a separate flow, not part of case filing).
 
 ## 3. Legal Entities: The `institution` Table
@@ -255,7 +253,7 @@ The `additional_details` JSONB column stores data that varies by role and has no
 ### 4.4 Design Decisions
 
 **What the snapshot is, and why data is frozen (`name_at_filing`, etc.):**
-The `*_at_filing` columns are a frozen copy of the party's details as they stand for this case. Court records must not change with people: if a summons went to a phone number in January and the person changes it in June, the case must still show the January number. The `person` row holds current data and may change (§2.5); `case_participant` holds the case's copy, which a change to the person never rewrites. Editing a participant edits its snapshot, and for an individual complainant or POA holder may set the person's `permanent_address`.
+The `*_at_filing` columns are a frozen copy of the party's details as they stand for this case. Court records must not change with people: if a summons went to a phone number in January and the person changes it in June, the case must still show the January number. The `person` row holds current data and may change (§2.5); `case_participant` holds the case's copy, which a change to the person never rewrites. Editing a participant edits its snapshot and its contacts, including an individual complainant's or POA holder's permanent address.
 
 An institution reused by its PAN or CIN keeps the details stored when it was first created, which may have been entered by another filer. `entity_name_at_filing` records the name this filer entered, so the case shows, and the filer can correct, their own value without changing the shared row. The institution's other details (type, contact number, email, PAN, CIN) are read from the shared row itself, so they may be another filer's (spec 0021 §6.1).
 
@@ -266,7 +264,7 @@ An institution reused by its PAN or CIN keeps the details stored when it was fir
 - The `person`, institution, address and `case_participant` rows of one party write are created in one transaction: all of them are saved, or none.
 
 **Where the address comes from:**
-The request's `addresses` are the addresses for service of notice, in order. Each goes through the address service, so an identical address reuses its row (§7.4), and is stored as an `ADDRESS` contact (§4.6). A newly created `person` also gets the first as their `correspondence_address`, and the first mobile number and email as theirs; an existing `person`'s are left unchanged. District and state are not looked up from the pincode when saving: the client pre-fills them from the pincode lookup endpoint, so a slow or unavailable India Post API never blocks adding a party. When the filer adds themselves without an address, the case address is taken from their profile, once profiles carry one.
+The request's `addresses` are the addresses for service of notice, in order. Each goes through the address service, so an identical address reuses its row (§7.4), and is stored as an `ADDRESS` contact (§4.6). A newly created `person` gets the first mobile number and email as theirs; an existing `person`'s are left unchanged. District and state are not looked up from the pincode when saving: the client pre-fills them from the pincode lookup endpoint, so a slow or unavailable India Post API never blocks adding a party. When the filer adds themselves without an address, the case address is taken from their profile, once profiles carry one.
 
 **Why both `person_id` and `institution_id`:**
 A participant can be a natural person, a legal entity, or both: when an individual files on behalf of a company, `institution_id` points to the company and `person_id` to the individual, whose role there is recorded in `designation_at_filing`. When the filer is that individual (`"self": true` with an institution), the designation is recorded only in the snapshot; the filer's own `person` row is not changed.
@@ -321,7 +319,7 @@ Every mobile number, email and address of a party in a case, one row each, for e
 | `case_id` | uuid | FK → cases, NOT NULL, ON DELETE CASCADE | The case the contact is recorded for |
 | `case_participant_id` | uuid | FK → case_participant, NULLABLE, ON DELETE CASCADE | Set for a person's contact |
 | `institution_id` | uuid | FK → institution, NULLABLE, ON DELETE PROTECT | Set for an institution's own contact, and on the contacts of the person acting for it |
-| `contact_type` | varchar(16) | NOT NULL | `MOBILE_NUMBER`, `EMAIL` or `ADDRESS` |
+| `contact_type` | varchar(32) | NOT NULL | `MOBILE_NUMBER`, `EMAIL`, `ADDRESS` or `PERMANENT_ADDRESS` (an individual complainant's or POA holder's, only while it differs from their first `ADDRESS`; one at most, with a participant and no institution) |
 | `value` | varchar(256) | NULLABLE | The number or email; NULL for an address |
 | `address_id` | uuid | FK → address, NULLABLE, ON DELETE PROTECT | The address; set only for `ADDRESS` |
 | `ordinal` | smallint | NOT NULL | 1, 2, 3… per owner and type; 1 is the primary |
@@ -339,7 +337,7 @@ Every mobile number, email and address of a party in a case, one row each, for e
 **Constraints:**
 - `CHECK (case_participant_id IS NOT NULL OR institution_id IS NOT NULL)`
 - `CHECK` that an `ADDRESS` row has `address_id` and no `value`, and a `MOBILE_NUMBER` or `EMAIL` row a `value` and no `address_id`
-- For each owner while active: no value or address twice, and one row per `(contact_type, ordinal)`. Separate unique indexes per owner kind, since NULLs never clash: on `case_participant_id` for a person's, on `(case_id, institution_id)` for an institution's own
+- For each owner while active: no value, or address of one type, twice, and one row per `(contact_type, ordinal)`. Separate unique indexes per owner kind, since NULLs never clash: on `case_participant_id` for a person's, on `(case_id, institution_id)` for an institution's own
 
 **Application-layer rules:**
 - The participant is on the same case, and an institution is the participant's own or that of an active participant on the case.

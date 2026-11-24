@@ -134,6 +134,9 @@ class ParticipantRole(models.TextChoices):
     POA_HOLDER = "POA_HOLDER", "POA holder"
 
 
+# The roles with a permanent address on the case, when an individual (PRD LIT-7, LIT-14).
+PERMANENT_ADDRESS_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.POA_HOLDER)
+
 # Only these roles may be an institution; witnesses and POA holders are individuals.
 INSTITUTION_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.ACCUSED)
 
@@ -849,16 +852,23 @@ class ContactType(models.TextChoices):
     MOBILE_NUMBER = "MOBILE_NUMBER", "Mobile number"
     EMAIL = "EMAIL", "Email"
     ADDRESS = "ADDRESS", "Address"
+    # An individual complainant's or POA holder's permanent address, on this
+    # case, only when it is not their first address (PRD LIT-8, LIT-15).
+    PERMANENT_ADDRESS = "PERMANENT_ADDRESS", "Permanent address"
 
 
 # Where each contact type keeps its value.
 VALUE_CONTACT_TYPES = (ContactType.MOBILE_NUMBER, ContactType.EMAIL)
+ADDRESS_CONTACT_TYPES = (ContactType.ADDRESS, ContactType.PERMANENT_ADDRESS)
 
 CONTACT_OWNER_MESSAGE = "Choose a case participant, an institution, or both."
 CONTACT_SHAPE_MESSAGE = "An address contact has an address and no value; any other has a value."
 CONTACT_SAME_CASE_MESSAGE = "Must belong to the same case."
 CONTACT_INSTITUTION_MESSAGE = "Must be the institution of the participant, or of one on the case."
 DUPLICATE_CONTACT_MESSAGE = "This contact is already given."
+PERMANENT_ADDRESS_OWNER_MESSAGE = (
+    "Only an individual complainant or POA holder has a permanent address."
+)
 # The active contacts of a participant, and of an institution itself.
 _CONTACT_OF_PARTICIPANT = Q(is_active=True, case_participant__isnull=False)
 _CONTACT_OF_INSTITUTION = Q(is_active=True, case_participant__isnull=True)
@@ -877,7 +887,9 @@ class CaseContact(BaseModel, BaseActivatableModel, BaseAuditableModel):
       own.
 
     ``ordinal`` orders each owner's contacts of one type; 1 is the primary.
-    A changed list replaces the active rows, which stay as history.
+    A changed list replaces the active rows, which stay as history. A
+    ``PERMANENT_ADDRESS`` row is a participant's only one of its type, and is
+    there only while the permanent address differs from their first address.
     """
 
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="contacts")
@@ -895,7 +907,7 @@ class CaseContact(BaseModel, BaseActivatableModel, BaseAuditableModel):
         blank=True,
         related_name="case_contacts",
     )
-    contact_type = models.CharField(max_length=16, choices=ContactType.choices)
+    contact_type = models.CharField(max_length=32, choices=ContactType.choices)
     # A mobile number or an email; NULL for an address. 256 fits any email.
     value = models.CharField(max_length=256, null=True, blank=True)
     # PROTECT: an address a case uses cannot be deleted from under it.
@@ -919,7 +931,9 @@ class CaseContact(BaseModel, BaseActivatableModel, BaseAuditableModel):
             ),
             models.CheckConstraint(
                 condition=Q(
-                    contact_type=ContactType.ADDRESS, address__isnull=False, value__isnull=True
+                    contact_type__in=ADDRESS_CONTACT_TYPES,
+                    address__isnull=False,
+                    value__isnull=True,
                 )
                 | Q(
                     contact_type__in=VALUE_CONTACT_TYPES,
@@ -938,7 +952,7 @@ class CaseContact(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 violation_error_message=DUPLICATE_CONTACT_MESSAGE,
             ),
             models.UniqueConstraint(
-                fields=["case_participant", "address"],
+                fields=["case_participant", "contact_type", "address"],
                 condition=_CONTACT_OF_PARTICIPANT & Q(address__isnull=False),
                 name="cases_case_contact_unique_participant_address",
                 violation_error_message=DUPLICATE_CONTACT_MESSAGE,
@@ -950,7 +964,7 @@ class CaseContact(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 violation_error_message=DUPLICATE_CONTACT_MESSAGE,
             ),
             models.UniqueConstraint(
-                fields=["case", "institution", "address"],
+                fields=["case", "institution", "contact_type", "address"],
                 condition=_CONTACT_OF_INSTITUTION & Q(address__isnull=False),
                 name="cases_case_contact_unique_institution_address",
                 violation_error_message=DUPLICATE_CONTACT_MESSAGE,
@@ -1007,6 +1021,13 @@ class CaseContact(BaseModel, BaseActivatableModel, BaseAuditableModel):
             errors["case_participant"] = CONTACT_SAME_CASE_MESSAGE
         if self.institution_id and (party is None or party.institution_id != self.institution_id):
             errors["institution"] = CONTACT_INSTITUTION_MESSAGE
+        if self.contact_type == ContactType.PERMANENT_ADDRESS and (
+            not self.case_participant_id
+            or self.institution_id
+            or self.case_participant.institution_id
+            or self.case_participant.role not in PERMANENT_ADDRESS_ROLES
+        ):
+            errors["contact_type"] = PERMANENT_ADDRESS_OWNER_MESSAGE
         if self.value and self.contact_type == ContactType.MOBILE_NUMBER:
             validator = (
                 phone_number_validator if self.case_participant_id else contact_number_validator

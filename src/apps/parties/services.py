@@ -35,20 +35,15 @@ def get_or_create_self_person(user):
     return person
 
 
-def create_asserted_person(
-    user, fields, *, institution=None, designation=None, address=None, permanent_address=None
-):
+def create_asserted_person(user, fields, *, institution=None, designation=None):
     """Create a person ``user`` has named, at ``ASSERTED``, with no attempt to match.
 
-    ``address``, when given, becomes their correspondence address, and
-    ``permanent_address`` their permanent one (the same row when they match).
+    Their addresses are not the person's: each case keeps them as its contacts.
     """
     return Person.objects.create(
         **fields,
         institution=institution,
         designation=designation if institution else None,
-        correspondence_address=address,
-        permanent_address=permanent_address,
         verification_level=VerificationLevel.ASSERTED,
         created_by=user,
         updated_by=user,

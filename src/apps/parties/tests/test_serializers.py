@@ -7,34 +7,27 @@ from django.utils import timezone
 
 from apps.parties.models import age_on
 from apps.parties.serializers import InstitutionSerializer, PersonSerializer
-from apps.parties.tests.factories import make_address, make_institution, make_person
+from apps.parties.tests.factories import make_institution, make_person
 from apps.users.models import User
 
 pytestmark = pytest.mark.django_db
 
 
-def test_person_output_nests_institution_and_addresses():
-    address = make_address()
+def test_person_output_nests_the_institution():
     institution = make_institution()
-    person = make_person(
-        institution=institution,
-        designation="Director",
-        permanent_address=address,
-        correspondence_address=address,
-    )
+    person = make_person(institution=institution, designation="Director")
 
     data = PersonSerializer(person).data
 
     assert data["institution"]["entity_name"] == institution.entity_name
-    assert data["permanent_address"]["id"] == str(address.id)
+    # A person's addresses are their contacts on each case, not theirs.
+    assert not {"permanent_address", "correspondence_address"} & set(data)
 
 
-def test_person_without_institution_or_addresses_has_nulls():
+def test_person_without_institution_has_null():
     data = PersonSerializer(make_person()).data
 
     assert data["institution"] is None
-    assert data["permanent_address"] is None
-    assert data["correspondence_address"] is None
 
 
 @pytest.mark.parametrize("serializer_class", [PersonSerializer, InstitutionSerializer])

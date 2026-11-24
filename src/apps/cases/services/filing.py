@@ -64,7 +64,6 @@ from .case_types import (
     section_errors,
 )
 from .contacts import contacts_of, first, load_contacts
-from .participants import PERMANENT_ADDRESS_ROLES
 from .services import (
     PREVIEW_TTL_SECONDS,
     clear_preview_cache,
@@ -155,7 +154,7 @@ def _load_preview(case_id):
         Prefetch(
             "participants",
             queryset=CaseParticipant.objects.active()
-            .select_related("witness", "institution", "person__permanent_address")
+            .select_related("witness", "institution", "person")
             .order_by(*PARTICIPANT_ORDERING),
             to_attr="active_participants",
         ),
@@ -197,11 +196,13 @@ def _load_preview(case_id):
 # complainant or an institution's authorised representative (PRD LIT-3, LIT-5,
 # LIT-22, LIT-24), and a POA holder (LIT-11, LIT-13).
 MOBILE_AND_AGE_ROLES = (ParticipantRole.COMPLAINANT, ParticipantRole.POA_HOLDER)
-# The roles whose mobile numbers an individual complainant's may not share (PRD LIT-3).
+# The roles whose mobile numbers an individual complainant's may not share
+# (PRD LIT-3), and whose own may not be an advocate's on the case.
 DISTINCT_NUMBER_ROLES = (
     ParticipantRole.COMPLAINANT,
     ParticipantRole.ACCUSED,
     ParticipantRole.POA_HOLDER,
+    ParticipantRole.WITNESS,
 )
 # The PRD's wording (LIT-3).
 ADVOCATE_NUMBER_MESSAGE = "Please do not enter the advocate's number here."
@@ -227,12 +228,19 @@ def _raise_not_ready(error, items):
 
 
 def _number_key(value):
-    """Return a phone number without the spaces, hyphens and parentheses it may be written with.
+    """Return the form a phone number is compared in: its digits, without India's prefix.
 
-    A person's number is stored in E.164 form; an institution's may be a
-    grouped landline (``(080) 2233-4455``), so the grouping is not compared.
+    A person's number is stored in E.164 form (``+919876543210``); an
+    institution's may be written as dialled locally, grouped or not
+    (``98765 43210``, ``(080) 2233-4455``). So only the digits are compared,
+    without the +91 country code or the leading 0 of a domestic number.
     """
-    return re.sub(r"[\s()-]", "", value)
+    digits = re.sub(r"\D", "", value)
+    if len(digits) == 12 and digits.startswith("91"):
+        return digits[2:]
+    if len(digits) == 11 and digits.startswith("0"):
+        return digits[1:]
+    return digits
 
 
 def _mobile_keys(contacts):
@@ -256,15 +264,31 @@ def _unreachable_message(whose):
     return f"has no mobile number or email, and {whose} contact details are not declared unknown."
 
 
-def _shared_number_errors(case, participants):
-    """Return ``(field, message)`` for each individual complainant whose number is not theirs alone.
+def _advocate_numbers(case):
+    """Return ``{compared number: user ids}`` of the advocates actively on ``case``."""
+    advocates = {}
+    for number, user_id in (
+        Representation.objects.active()
+        .filter(case=case)
+        .values_list("advocate__user__mobile_number", "advocate__user_id")
+    ):
+        if number:
+            advocates.setdefault(_number_key(number), set()).add(user_id)
+    return advocates
 
-    PRD LIT-3: it may not be another complainant's, accused's or POA holder's
-    (their own, or their institution's on this case), nor an advocate's on the
-    case. The same person in another role (a complainant who is also a
-    co-complainant's POA holder) shares it rightly, and so does an advocate
-    who is the complainant. ``participants`` are the case's active ones, in
-    ``PARTICIPANT_ORDERING``, with their contacts loaded.
+
+def _shared_number_errors(case, participants):
+    """Return ``(field, message)`` for each participant whose number is not theirs alone.
+
+    PRD LIT-3: an individual complainant's may not be another complainant's,
+    accused's or witness's (their own, or their institution's on this case), nor
+    that of a POA holder acting for them; a POA holder acting only for a
+    co-complainant may share it. No individual complainant's, accused's (or accused
+    institution's), POA holder's or witness's may be an advocate's on the case,
+    whichever side the advocate is for. The same person in another role (a
+    complainant who is also a co-complainant's POA holder) shares it rightly,
+    and so does an advocate who is the participant. ``participants`` are the
+    case's active ones, in ``PARTICIPANT_ORDERING``, with their contacts loaded.
     """
     # Whose numbers they are: (participant, label, person id or None, numbers).
     # An institution's are listed once, named after its first participant.
@@ -281,34 +305,58 @@ def _shared_number_errors(case, participants):
             holders.append(
                 (participant, f"{label}'s institution", None, _mobile_keys(of_institution))
             )
-    advocates = {}
-    for number, user_id in (
-        Representation.objects.active()
+    # Each complainant's own POA holders: {represented participant id: holder ids}.
+    poa_holders_of = {}
+    for represented_id, holder_id in (
+        PoaMandate.objects.active()
         .filter(case=case)
-        .values_list("advocate__user__mobile_number", "advocate__user_id")
+        .values_list("represented_participant_id", "poa_participant_id")
     ):
-        if number:
-            advocates.setdefault(_number_key(number), set()).add(user_id)
+        poa_holders_of.setdefault(represented_id, set()).add(holder_id)
+    advocates = _advocate_numbers(case)
+
+    def is_advocates(numbers, user_id=None):
+        return any(advocates.get(number, set()) - {user_id} for number in numbers)
 
     problems = []
+    accused_institutions = set()
     for participant in participants:
-        if not (
+        if participant.role not in DISTINCT_NUMBER_ROLES:
+            continue
+        individual_complainant = (
             participant.role == ParticipantRole.COMPLAINANT
             and participant.person_id
             and not participant.institution_id
-        ):
+        )
+        # A complainant institution's numbers, and its representative's, are not compared.
+        if participant.role == ParticipantRole.COMPLAINANT and not individual_complainant:
             continue
         field = f"participants.{participant.id}"
-        label = f"Complainant #{participant.ordinal}"
-        mine = _mobile_keys(contacts_of(participant)[0])
-        for other, other_label, person_id, theirs in holders:
-            if other.pk == participant.pk or person_id == participant.person_id:
-                continue
-            if mine & theirs:
-                problems.append((field, f"{label}'s mobile number is also {other_label}'s."))
-        user_id = participant.person.user_id
-        if any(advocates.get(number, set()) - {user_id} for number in mine):
+        label = f"{participant.get_role_display()} #{participant.ordinal}"
+        own, of_institution = contacts_of(participant)
+        mine = _mobile_keys(own)
+        if individual_complainant:
+            for other, other_label, person_id, theirs in holders:
+                if other.pk == participant.pk or person_id == participant.person_id:
+                    continue
+                if other.role == ParticipantRole.POA_HOLDER and other.pk not in (
+                    poa_holders_of.get(participant.pk, set())
+                ):
+                    continue
+                if mine & theirs:
+                    problems.append((field, f"{label}'s mobile number is also {other_label}'s."))
+        user_id = participant.person.user_id if participant.person_id else None
+        if is_advocates(mine, user_id):
             problems.append((field, f"{label}: {ADVOCATE_NUMBER_MESSAGE}"))
+        # An accused institution's, once, on its first participant.
+        if (
+            participant.role == ParticipantRole.ACCUSED
+            and participant.institution_id
+            and participant.institution_id not in accused_institutions
+        ):
+            accused_institutions.add(participant.institution_id)
+            if is_advocates(_mobile_keys(of_institution)):
+                problems.append((field, f"{label}'s institution: {ADVOCATE_NUMBER_MESSAGE}"))
     return problems
 
 
@@ -328,9 +376,7 @@ def validation_errors(case):
         error("participants.accused", "At least one active accused is required.")
 
     ordered = load_contacts(
-        participants.select_related("institution", "person__permanent_address").order_by(
-            *PARTICIPANT_ORDERING
-        )
+        participants.select_related("institution", "person").order_by(*PARTICIPANT_ORDERING)
     )
     # Each accused institution, once for everyone summoned for it: its first
     # participant, whether it can be reached, and whether it names a person.
@@ -388,27 +434,23 @@ def validation_errors(case):
                     entry["declared"] or participant.institution_contact_details_unknown_declared
                 )
                 entry["has_person"] = entry["has_person"] or bool(participant.person_id)
-        addresses = [row.address for row in [*own, *of_institution] if row.address_id]
-        for address in addresses:
-            if missing := address.missing_fields:
+        address_rows = [
+            row for row in [*own, *of_institution] if row.contact_type == ContactType.ADDRESS
+        ]
+        for row in address_rows:
+            if missing := row.address.missing_fields:
                 error(field, f"{label} has an incomplete address (missing {', '.join(missing)}).")
-        has_permanent_address = (
-            participant.role in PERMANENT_ADDRESS_ROLES
-            and participant.person_id
-            and not participant.institution_id
-        )
-        permanent = participant.person.permanent_address if has_permanent_address else None
-        # Giving an address fills it (§6.4), so it is missing only once there is one.
-        if permanent is None and has_permanent_address and first(own, ContactType.ADDRESS):
-            error(field, f"{label} has no permanent address.")
-        if permanent is not None and permanent not in addresses and permanent.missing_fields:
+        # Stored only when it is not their first address, which is otherwise
+        # their permanent one too (§6.4).
+        permanent = first(own, ContactType.PERMANENT_ADDRESS)
+        if permanent is not None and permanent.address.missing_fields:
             error(
                 field,
                 f"{label} has an incomplete permanent address "
-                f"(missing {', '.join(permanent.missing_fields)}).",
+                f"(missing {', '.join(permanent.address.missing_fields)}).",
             )
         if participant.role in POLICE_STATION_ROLES and any(
-            row.address_id and not row.address.police_station for row in [*own, *of_institution]
+            not row.address.police_station for row in address_rows
         ):
             error(field, f"{label} has an address with no police station.")
         # A complainant's authorised representative (PRD LIT-25a); the
@@ -610,8 +652,12 @@ def validation_errors(case):
             error(f"evidence.{evidence_type}", message)
 
     # An unsaved section is still ``{}``, which fails its required fields here.
-    for section, data in get_detail_sections(case).items():
+    sections = get_detail_sections(case)
+    for section, data in sections.items():
         for problem in section_errors(config, section, data):
+            error(f"details.{section}", str(problem))
+    if config.details_evidence_checks:
+        for section, problem in config.details_evidence_checks(sections, evidence):
             error(f"details.{section}", str(problem))
     return problems
 

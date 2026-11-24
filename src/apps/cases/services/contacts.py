@@ -143,6 +143,52 @@ def replace_contacts(case, user, lists, *, participant=None, institution=None, p
             validated_save(row)
 
 
+# Pass to ``set_permanent_address`` to keep the stored one, unless it is now the first address.
+KEEP_PERMANENT_ADDRESS = object()
+
+
+def set_permanent_address(case, user, participant, address):
+    """Make ``address`` the participant's permanent address on ``case``.
+
+    It is stored only while it differs from their first address: ``None``, or
+    the first address itself, leaves no row, and the first address is then
+    their permanent one too (PRD LIT-8, LIT-15). ``KEEP_PERMANENT_ADDRESS``
+    keeps the stored one. Call it after the addresses change, so a permanent
+    address that has become the first is dropped.
+    """
+    rows = list(
+        owner_rows(case, participant=participant)
+        .filter(contact_type__in=(ContactType.ADDRESS, ContactType.PERMANENT_ADDRESS))
+        .order_by("ordinal")
+    )
+    first_id = next(
+        (row.address_id for row in rows if row.contact_type == ContactType.ADDRESS), None
+    )
+    current = next((row for row in rows if row.contact_type == ContactType.PERMANENT_ADDRESS), None)
+    if address is KEEP_PERMANENT_ADDRESS:
+        wanted_id = current.address_id if current else None
+    else:
+        wanted_id = address.pk if address is not None else None
+    if wanted_id == first_id:
+        wanted_id = None
+    if (current.address_id if current else None) == wanted_id:
+        return
+    if current is not None:
+        deactivate(current, user)
+    if wanted_id is not None:
+        validated_save(
+            CaseContact(
+                case=case,
+                case_participant=participant,
+                contact_type=ContactType.PERMANENT_ADDRESS,
+                ordinal=1,
+                address_id=wanted_id,
+                created_by=user,
+                updated_by=user,
+            )
+        )
+
+
 def move_institution_contacts(case, user, old_institution_id, institution, *, replaced=()):
     """Re-point the case's contacts of ``old_institution_id`` to ``institution``.
 

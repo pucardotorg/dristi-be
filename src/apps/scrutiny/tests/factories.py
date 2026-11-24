@@ -1,5 +1,6 @@
 """Builders shared by the scrutiny service and read-model tests."""
 
+import datetime
 import itertools
 
 from django.conf import settings
@@ -84,6 +85,7 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
             "ifsc_code": "SBIN0001234",
             "bank_name": "SBI",
             "bank_branch": "Kochi",
+            "bank_account_number": "30012345678",
         },
     )
     CaseEvidence.objects.create(
@@ -106,9 +108,9 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
         "payment_status": "NO_PAYMENT_MADE",
     }
     if delivered:
-        notice["delivery_date"] = "2026-05-12"
+        notice["delivery_date"] = notice_served()
     else:
-        notice.update(return_date="2026-05-12", non_delivery_reason="UNCLAIMED")
+        notice.update(return_date=notice_served(), non_delivery_reason="UNCLAIMED")
     notice = CaseEvidence.objects.create(
         case=case,
         case_document=_scan(case, EvidenceType.LEGAL_DEMAND_NOTICE),
@@ -131,6 +133,16 @@ def add_cheque(case, ordinal, delivered=True, cheque_date="2026-05-01", presente
             document_type=DocumentType.PROOF_OF_DELIVERY_OF_DEMAND_NOTICE,
             case_evidence=notice,
         )
+
+
+def cause_of_action():
+    """Today: a case filed on the day its cause of action arose, so it is in time."""
+    return timezone.localdate()
+
+
+def notice_served():
+    """When the demand notice was served: 15 days before the cause of action (PRD JUR-9)."""
+    return (cause_of_action() - datetime.timedelta(days=15)).isoformat()
 
 
 def set_cause_of_action(case, day):
@@ -163,8 +175,6 @@ def add_address(participant):
         address=address,
         ordinal=1,
     )
-    if participant.role == ParticipantRole.COMPLAINANT and participant.person_id:
-        Person.objects.filter(pk=participant.person_id).update(permanent_address=address)
 
 
 def complete_filing(case, filer):
@@ -231,7 +241,7 @@ def make_paid_case(filer, court, filing_number=None, **cheque):
     )
     add_cheque(case, 1, **cheque)
     complete_filing(case, filer)
-    set_cause_of_action(case, timezone.localdate().isoformat())
+    set_cause_of_action(case, cause_of_action().isoformat())
     return case
 
 

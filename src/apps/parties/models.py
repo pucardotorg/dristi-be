@@ -247,8 +247,8 @@ class Person(BaseModel, BaseAuditableModel):
     """One human being the system knows of, registered or not.
 
     Holds current data. What a filing must preserve is frozen separately in the
-    case participant snapshot, and addresses are immutable rows, so editing a
-    person never rewrites a court record.
+    case participant snapshot, and a person's addresses are not here: each case
+    keeps its own as contacts, so editing a person never rewrites a court record.
     """
 
     # Optional here: a witness may be named by designation alone. Each case
@@ -281,20 +281,6 @@ class Person(BaseModel, BaseAuditableModel):
         related_name="people",
     )
     designation = models.CharField(max_length=128, null=True, blank=True)
-    permanent_address = models.ForeignKey(
-        "address.Address",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="+",
-    )
-    correspondence_address = models.ForeignKey(
-        "address.Address",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="+",
-    )
     # Whether the person is differently abled; null when it was not answered.
     disability_status = models.BooleanField(null=True, blank=True)
     verification_level = models.CharField(

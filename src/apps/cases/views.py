@@ -398,6 +398,13 @@ class CaseAffidavitView(APIView):
         )
 
 
+# A demand notice's own description of its nature of debt, sent with another nature.
+NATURE_OF_DEBT_OTHER_ERROR = errors.FIELD_NOT_APPLICABLE.example(
+    field="evidence_info.nature_of_debt_other",
+    message="Only when the nature of debt is Other liability.",
+)
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=TAGS,
@@ -431,6 +438,7 @@ class CaseEvidenceListView(generics.ListAPIView):
             201: CaseEvidenceSerializer,
             **error_responses(
                 errors.NOT_ACCEPTED_FOR_CASE_TYPE.example(field="evidence_type"),
+                NATURE_OF_DEBT_OTHER_ERROR,
                 *SCAN_LINK_ERRORS,
                 errors.CASE_NOT_EDITABLE,
                 errors.FIELD_NOT_OPEN_FOR_CORRECTION,
@@ -457,6 +465,7 @@ class CaseEvidenceDetailView(APIView):
         responses={
             200: CaseEvidenceSerializer,
             **error_responses(
+                NATURE_OF_DEBT_OTHER_ERROR,
                 *SCAN_LINK_ERRORS,
                 errors.CASE_NOT_EDITABLE,
                 errors.FIELD_NOT_OPEN_FOR_CORRECTION,
