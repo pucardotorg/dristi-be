@@ -144,6 +144,53 @@ one skips the row. To make someone else an approver, add a row with their
 number. A requester is never their own approver, so register with a different
 number.
 
+## Court levels, roles and assignments (spec 0029)
+
+Court access is per environment, so nothing here is in `core/`. Mark an
+organization's place in the court hierarchy with `court_level`
+(`ESTABLISHMENT`, or `COURTROOM` under an establishment):
+
+```toml
+[seed]
+model = "organizations.Organization"
+
+[[rows]]
+code = "ERN_NI_COURT"
+organization_type = "magistrate_court"
+name = "NI Act Court, Ernakulam"
+parent = "ERN_DC"
+court_level = "ESTABLISHMENT"
+
+[[rows]]
+code = "ERN_NI_COURT_CR1"
+organization_type = "magistrate_court"
+name = "Courtroom 1"
+parent = "ERN_NI_COURT"
+court_level = "COURTROOM"
+```
+
+Roles (`organizations.CourtRole`) are keyed by `code` and `establishment`; leave
+`establishment` out for a deployment-wide role. Their actions
+(`organizations.CourtRoleAction`) name the role as `CODE`, or
+`CODE.ESTABLISHMENT_CODE` for an establishment's own role, and an action
+declared in some app's `court_actions.py`:
+
+```toml
+[seed]
+model = "organizations.CourtRoleAction"
+
+[[rows]]
+role = "BENCH_CLERK"
+action = "process.sign"
+scope = { process_types = ["NOTICE", "SUMMONS"] }
+```
+
+Test accounts get access with `organizations.CourtroomAssignment` (`user` by
+mobile number, `courtroom` by code), then `organizations.RoleAssignment`
+(`user`, `organization`, `role`). A role at a courtroom needs the courtroom on
+the user's list first; the files load in that order. Seeding is insert-only:
+change roles and assignments in admin afterwards.
+
 ## Loading pincodes
 
 Pincodes (and the states and districts above them) are loaded from TOML like

@@ -61,6 +61,7 @@ register(
             "description",
             "is_active",
             "additional_attributes",
+            "court_level",
         ),
         fk_by_code={"parent": FkRef("organizations.Organization", "code")},
         m2m_by_code={"jurisdictions": FkRef("locations.Location", "code")},
@@ -226,5 +227,62 @@ register(
             "group": FkRef("auth.Group", "name"),
         },
         order=60,
+    )
+)
+
+# Court roles (spec 0029 #4, #11). A role is keyed by its code and its
+# establishment; an empty ``establishment`` is a deployment-wide role (matched
+# as NULL). Seeding is insert-only, so a role's actions are seeded once and
+# edited in admin afterwards.
+register(
+    SeedSpec(
+        model_label="organizations.CourtRole",
+        key=("code", "establishment"),
+        fields=("code", "name", "is_active"),
+        fk_by_code={"establishment": FkRef("organizations.Organization", "code")},
+        order=25,
+    )
+)
+
+# One action of a role, with its scope for a process action. ``role`` is the
+# role's code, or ``CODE.ESTABLISHMENT_CODE`` for an establishment's own role.
+# Keyed by role and action, so a scoped action listed with several scopes in
+# one role is entered in admin (or the file sets ``key`` in its header).
+register(
+    SeedSpec(
+        model_label="organizations.CourtRoleAction",
+        key=("role", "action"),
+        fields=("action", "scope"),
+        fk_by_code={"role": FkRef("organizations.CourtRole", natural_key=True)},
+        order=26,
+    )
+)
+
+# Test and pilot accounts' court access (spec 0029 #11 step 3): a courtroom on
+# a user's list, then a role at an establishment or a listed courtroom.
+register(
+    SeedSpec(
+        model_label="organizations.CourtroomAssignment",
+        key=("user", "courtroom"),
+        fields=("is_active",),
+        fk_by_code={
+            "user": FkRef("users.User", "mobile_number"),
+            "courtroom": FkRef("organizations.Organization", "code"),
+        },
+        order=61,
+    )
+)
+
+register(
+    SeedSpec(
+        model_label="organizations.RoleAssignment",
+        key=("user", "organization", "role"),
+        fields=("is_active",),
+        fk_by_code={
+            "user": FkRef("users.User", "mobile_number"),
+            "organization": FkRef("organizations.Organization", "code"),
+            "role": FkRef("organizations.CourtRole", natural_key=True),
+        },
+        order=62,
     )
 )

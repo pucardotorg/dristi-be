@@ -1,5 +1,6 @@
 """Organization serializers."""
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.fields import StrictBooleanField
@@ -27,6 +28,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "code",
             "organization_type",
             "organization_type_display",
+            "court_level",
             "name",
             "short_name",
             "description",
@@ -62,3 +64,69 @@ class OrganizationFilterSerializer(serializers.Serializer):
             )
 
         return attrs
+
+
+# ---------------------------------------------------------------------------
+# GET /court-roles/me/ (spec 0029 #9.2)
+# ---------------------------------------------------------------------------
+
+SCOPE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "process_types": {"type": "array", "items": {"type": "string"}},
+        "channels": {"type": "array", "items": {"type": "string"}},
+    },
+    "description": "A missing key covers every code on that axis.",
+}
+ACTION_ENTRY_SCHEMA = {
+    "oneOf": [
+        {"type": "string", "description": "An action code, allowed for everything."},
+        {
+            "type": "object",
+            "description": "A scoped action: allowed where any of its scopes matches.",
+            "properties": {
+                "action": {"type": "string"},
+                "scopes": {"type": "array", "items": SCOPE_SCHEMA},
+            },
+            "required": ["action", "scopes"],
+        },
+    ]
+}
+
+
+@extend_schema_field({"type": "array", "items": ACTION_ENTRY_SCHEMA})
+class CourtActionListField(serializers.ListField):
+    """The effective actions at one court: codes, or ``{action, scopes}`` for a scoped action."""
+
+    child = serializers.JSONField()
+
+
+class CourtRoleLabelSerializer(serializers.Serializer):
+    """A role the caller holds, for display only: never branch on it (``RLE-08``)."""
+
+    code = serializers.CharField()
+    name = serializers.CharField()
+
+
+class MyCourtroomSerializer(serializers.Serializer):
+    """A courtroom on the caller's list, with what they may do there."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    roles = CourtRoleLabelSerializer(many=True)
+    actions = CourtActionListField()
+
+
+class MyEstablishmentSerializer(serializers.Serializer):
+    """An establishment where the caller acts or is staff of a courtroom."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    actions = CourtActionListField()
+    courtrooms = MyCourtroomSerializer(many=True)
+
+
+class MyCourtRolesSerializer(serializers.Serializer):
+    """The caller's courts and what they may do there."""
+
+    establishments = MyEstablishmentSerializer(many=True)

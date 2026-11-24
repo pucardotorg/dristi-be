@@ -3,6 +3,11 @@
 from django.contrib import admin
 
 from apps.core.mixins import AuditUserAdminMixin
+from apps.organizations.admin import (
+    UserCourtroomInline,
+    UserRoleInline,
+    effective_court_access,
+)
 
 from .models import (
     AdvocateProfile,
@@ -39,7 +44,11 @@ class UserAdmin(AuditUserAdminMixin, admin.ModelAdmin):
         "updated_at",
         "terms_accepted_at",
         "terms_version_accepted",
+        "court_access",
     )
+    # Court roles and courtroom lists (spec 0029 #9.1), managed on their own
+    # admin pages so every change goes through the services.
+    inlines = (UserCourtroomInline, UserRoleInline)
 
     fieldsets = (
         (None, {"fields": ("id", "mobile_number", "name", "email", "role")}),
@@ -47,9 +56,15 @@ class UserAdmin(AuditUserAdminMixin, admin.ModelAdmin):
         ("Terms", {"fields": ("terms_accepted_at", "terms_version_accepted")}),
         # Groups and per-object permissions are deliberately not editable here.
         ("Access", {"fields": ("is_active", "is_staff", "is_superuser")}),
+        ("Court access", {"fields": ("court_access",)}),
         ("Dates", {"fields": ("last_login", "created_at", "updated_at")}),
         ("Credentials", {"fields": ("password",)}),
     )
+
+    @admin.display(description="Effective court actions")
+    def court_access(self, obj):
+        """The person's effective actions per court (read-only)."""
+        return effective_court_access(obj)
 
 
 @admin.register(LitigantProfile)
