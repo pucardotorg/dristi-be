@@ -313,7 +313,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `ESIGN_SYSTEM_ACTOR_ID` | Actor recorded for callback-leg uploads when a transaction has no signer | `system` |
 | `CDAC_ESIGN_URL` | C-DAC ESP endpoint the browser posts the signing form to | `https://esign.cdac.gov.in/...` |
 | `CDAC_ESIGN_ASP_ID` | ASP identifier issued by C-DAC | `ASP-123` |
-| `CDAC_ESIGN_RESPONSE_URL` | Absolute `https://` callback URL registered with C-DAC | `https://api.example.com/api/v1/esign/_signed` |
+| `CDAC_ESIGN_RESPONSE_URL` | Absolute `https://` callback URL registered with C-DAC | `https://api.example.com/api/v1/esign/_signed/` |
 | `CDAC_ESIGN_KEYSTORE_PATH` | PKCS#12 keystore holding the ASP key and certificate | `/run/secrets/asp-keystore.p12` |
 | `CDAC_ESIGN_KEYSTORE_PASSWORD` | Keystore password; never logged or persisted | secret |
 | `CDAC_ESIGN_RESPONSE_CERT` | C-DAC certificate the response signature is verified against (required in production) | PEM or base64 |

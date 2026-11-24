@@ -1220,7 +1220,7 @@ class SignatorySerializer(serializers.Serializer):
 
 
 class SignaturePlaceholderSerializer(serializers.Serializer):
-    """Where one signer's signature goes: pass it to ``POST /esign/_esign`` as is."""
+    """Where one signer's signature goes: pass it to ``POST /esign/_esign/`` as is."""
 
     case_participant_id = serializers.UUIDField()
     page = serializers.IntegerField()
@@ -1237,7 +1237,7 @@ class ComplaintSigningPackageSerializer(serializers.ModelSerializer):
 
     ``signing_file_id`` is the complaint with every uploaded document appended;
     it never changes in a round. ``current_file_id`` is the file the next signer
-    passes to ``POST /esign/_esign``: it starts as ``signing_file_id`` and
+    passes to ``POST /esign/_esign/``: it starts as ``signing_file_id`` and
     becomes each signer's signed copy, so every signature is on one file.
     """
 
