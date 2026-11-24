@@ -94,6 +94,33 @@ its CSV-to-TOML converter live in the
 [`dristi-be-experiments`](https://github.com/pucardotorg/dristi-be-experiments)
 repo (see [data/seed/README.md](data/seed/README.md)).
 
+## Testing
+
+Tests are pytest, app-scoped under `src/apps/<app>/tests/`; see
+[docs/development.md](docs/development.md#running-tests) for how to run them
+locally and in Docker. Flow tests — several API calls in sequence, state built
+through the `seed` command or services, admin actions in between — live in the
+app's `tests/integration/` package and follow
+[spec/0037-integration-testing.md](spec/0037-integration-testing.md). They get
+the `integration` mark automatically, so the two suites can be run separately:
+
+```bash
+cd src
+pytest -m integration        # flow suites only
+pytest -m "not integration"  # unit suites only
+```
+
+A test can also be pinned to an externally tracked scenario ID with
+`@pytest.mark.scenario("CMS-PAGES-2")`. Every ID is documented in
+`scenarious/app_<domain>.md` (for example
+[scenarious/app_cms.md](scenarious/app_cms.md)). Run tests by ID, or regenerate
+the ID → test map, with:
+
+```bash
+pytest --scenario CMS-PAGES-2                        # one scenario (repeatable)
+pytest apps/cms --scenario-report scenario-map.json  # ID → tests map
+```
+
 ## Scheduled and delayed jobs
 
 Background jobs are Dramatiq actors in `src/apps/<app>/tasks.py`, run by the
