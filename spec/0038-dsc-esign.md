@@ -642,8 +642,8 @@ or PKCS#7 content are logged.
 3. **Verify the client signature.** Because DSC signatures arrive from the client,
    the server verifies digest + signature + certificate before storing, behind a
    provider hook so policy stays in the addon.
-4. **Detached CMS over the server digest** via `async_sign(data_digest=…)`, not a
-   whole signed PDF and not `async_sign_raw`.
+4. **Detached CMS over the server digest (confirmed — Option A)** via
+   `async_sign(data_digest=…)`, not a whole signed PDF and not `async_sign_raw`.
 5. **Synchronous; bulk = client loop** with one PIN entry per signing session.
 
 ---
@@ -665,9 +665,11 @@ broker.
 2. **CCA trust roots.** Which India CCA root/intermediate set is loaded into
    `DSC_ESIGN_TRUST_ROOTS`, who maintains it, and is a missing chain a hard reject
    at `_complete` or a stored-and-warned state initially?
-3. **Agent contract: detached CMS (recommended) vs whole signed PDF.** The latter
-   avoids the agent change but needs server-side checks that the signed PDF is an
-   incremental update of the exact placeholder and that its signature is valid.
+3. **Agent contract — RESOLVED: Option A (detached CMS).** The agent returns a
+   detached CMS over the server-supplied digest; the whole-signed-PDF alternative
+   is dropped. Feasible and lighter for the agent (a token natively signs a digest;
+   pyHanko exposes it via `async_sign(data_digest=…, use_pades=False)`), and the
+   backend reuses the proven C-DAC embed path. See §16.4.
 4. **Signature appearance** — server-rendered stamp vs agent seal; confirm the
    y-axis origin against a real order PDF.
 5. **`signingMethods` delivery** — a dedicated `GET /esign/methods` (#6.5) or the
