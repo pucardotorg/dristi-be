@@ -427,6 +427,7 @@ class OrderWorkflowRun(BaseModel):
     sequence = models.PositiveSmallIntegerField()
     status = models.CharField(max_length=16, choices=RunStatus.choices, default=RunStatus.PENDING)
     attempts = models.PositiveSmallIntegerField(default=0)
+    claim_token = models.UUIDField(null=True, blank=True, editable=False)
     result = models.JSONField(default=dict, blank=True)
     error_code = models.CharField(max_length=64, blank=True)
 

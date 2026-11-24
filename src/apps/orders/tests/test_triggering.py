@@ -293,3 +293,47 @@ def test_a_step_left_running_by_a_dead_worker_is_taken_over_after_the_lease(read
     )
     assert triggering.run(order.pk) == 0
     assert order.runs.get(step="STAGE").status == RunStatus.DONE
+
+
+def test_a_stale_worker_that_fails_after_a_takeover_keeps_the_done_status(
+    ready, staff, signer, monkeypatch
+):
+    import uuid
+
+    order = trigger(ready, staff, signer, "COGNIZANCE")
+    stage = order.runs.get(step="STAGE")
+
+    def overrun(order_, scheduled):
+        # The lease ran out mid-step: a second worker claimed the row and finished it.
+        OrderWorkflowRun.objects.filter(pk=scheduled.pk).update(
+            status=RunStatus.DONE, claim_token=uuid.uuid4(), attempts=0
+        )
+        raise RuntimeError("the first worker fails late")
+
+    monkeypatch.setattr(triggering, "_stage_step", overrun)
+    assert triggering._execute(order, stage) == RunStatus.DONE
+    stage.refresh_from_db()
+    assert stage.status == RunStatus.DONE and stage.error_code == ""
+
+
+def test_a_stale_worker_does_not_overwrite_a_live_claim(ready, staff, signer, monkeypatch):
+    import uuid
+
+    order = trigger(ready, staff, signer, "COGNIZANCE")
+    stage = order.runs.get(step="STAGE")
+
+    def overrun(order_, scheduled):
+        OrderWorkflowRun.objects.filter(pk=scheduled.pk).update(claim_token=uuid.uuid4())
+        return RunStatus.DONE, {}, ""
+
+    monkeypatch.setattr(triggering, "_stage_step", overrun)
+    assert triggering._execute(order, stage) == RunStatus.RUNNING  # the live claim stands
+
+
+def test_an_ordinary_completion_still_writes_its_status(ready, staff, signer, monkeypatch):
+    order = trigger(ready, staff, signer, "COGNIZANCE")
+    stage = order.runs.get(step="STAGE")
+    monkeypatch.setattr(triggering, "_stage_step", lambda o, s: (RunStatus.FAILED, {}, "BOOM"))
+    assert triggering._execute(order, stage) == RunStatus.FAILED
+    stage.refresh_from_db()
+    assert stage.error_code == "BOOM" and stage.claim_token is not None

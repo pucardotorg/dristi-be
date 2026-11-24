@@ -274,3 +274,10 @@ def test_pending_stages_are_read_from_the_facts(ready, staff, signer):
     ready.refresh_from_db()
     assert common.stages(ready) == ["TRIGGERED"]
     assert TODAY
+
+
+def test_marking_a_discarded_order_complete_is_refused(order, staff):
+    Order.objects.filter(pk=order.pk).update(status=OrderStatus.DISCARDED, data_complete=True)
+    with pytest.raises(BusinessError) as excinfo:
+        lifecycle.mark_complete(order.pk, actor=staff)
+    assert code(excinfo) == "E14001"

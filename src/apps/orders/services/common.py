@@ -28,10 +28,11 @@ class ProblemsError(APIException):
 
 
 class ActionError(BusinessError):
-    """``409 E14001`` carrying the ``allowed_actions`` the order's status allows."""
+    """``409 E14001`` carrying the ``allowed_actions`` the order's status allows, in ``errors[].data``."""
 
     def __init__(self, order, action, allowed):
         self.allowed_actions = allowed
+        self.error_data = {"allowed_actions": list(allowed)}
         shown = ", ".join(name.replace("_", " ") for name in allowed) or "nothing"
         label = order.get_status_display().lower()
         super().__init__(

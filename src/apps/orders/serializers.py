@@ -102,8 +102,9 @@ class DiaryEntrySerializer(serializers.Serializer):
 
 
 class SignSerializer(serializers.Serializer):
-    method = serializers.ChoiceField(
-        choices=SigningMethod.values, required=False, default=SigningMethod.AADHAAR_ESIGN
+    # Free text: the service answers a method this court cannot use with ``E14017``.
+    method = serializers.CharField(
+        max_length=32, required=False, default=SigningMethod.AADHAAR_ESIGN
     )
 
 

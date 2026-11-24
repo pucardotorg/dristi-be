@@ -406,6 +406,7 @@ def test_the_sign_endpoints_return_the_esign_form_and_record_the_signature(
         url("order-sign", ready.pk), {"method": "TELEPATHY"}, format="json"
     )
     assert bad.status_code == 400
+    assert errors_of(bad) == [("E14017", "method")]
     with mock.patch.object(signing, "record_signature") as record:
         client_for(signer).post(
             url("order-sign-confirm", ready.pk),
@@ -421,6 +422,18 @@ def test_a_method_not_enabled_is_e14017(ready, staff, signer):
         url("order-sign", ready.pk), {"method": "DSC"}, format="json"
     )
     assert errors_of(response) == [("E14017", "method")]
+
+
+def test_a_refused_action_returns_the_allowed_actions_as_data(api, order):
+    from apps.orders.enums import OrderStatus
+    from apps.orders.models import Order
+
+    Order.objects.filter(pk=order.pk).update(status=OrderStatus.DISCARDED)
+    response = api.post(url("order-send-for-signing", order.pk))
+    assert response.status_code == 409
+    item = response.json()["errors"][0]
+    assert item["code"] == "E14001"
+    assert item["data"] == {"allowed_actions": []}
 
 
 # -- documents, type, discard -----------------------------------------------------------------------

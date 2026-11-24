@@ -109,6 +109,8 @@ def mark_complete(order_id, *, actor):
     """
     with transaction.atomic():
         order = common.lock_order(order_id)
+        if order.status == OrderStatus.DISCARDED:
+            common.require_action(order, "mark_complete")  # terminal: E14001
         if order.data_complete and order.status != OrderStatus.TRIGGERED:
             return order
         common.require_action(order, "mark_complete")

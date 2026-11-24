@@ -74,6 +74,17 @@ BUILTIN_STYLES = {
 }
 HEADER_FOOTER_GAP = 8
 PX_TO_PT = 0.75  # 96 dpi pixels to 72 dpi points
+ALPHA_WRAP = 26  # ReportLab's alphabetic list formatter restarts at "a" after "z"
+
+
+def _alpha_label(number: int) -> str:
+    """1 -> "a", 26 -> "z", 27 -> "aa": the numbering a browser gives ``<ol type="a">``."""
+    label = ""
+    while number > 0:
+        number, remainder = divmod(number - 1, 26)
+        label = chr(ord("a") + remainder) + label
+    return label
+
 
 _TAG_SPLIT = re.compile(r"(<[^>]*>|&[#a-zA-Z0-9]+;)")
 
@@ -485,15 +496,25 @@ class PythonRenderer(PDFRenderer):
 
     def _list(self, block: dict):
         style = self._style(block.get("style"))
-        items = [
-            ListItem(self._paragraph(text, style), leftIndent=float(block.get("indent", 18)))
-            for text in block.get("items") or []
-        ]
         ordered = block.get("ordered", False)
+        list_type = block.get("list_type", "1") if ordered else "bullet"
+        start = int(block.get("start", 1)) if ordered else None
+        texts = block.get("items") or []
+        # ReportLab's alphabetic formatter wraps after 26 (item 27 reads "a" again), so a
+        # longer lettered list gets explicit "aa", "ab"... markers, as a browser prints them.
+        lettered_long = list_type == "a" and len(texts) + start - 1 > ALPHA_WRAP
+        items = [
+            ListItem(
+                self._paragraph(text, style),
+                leftIndent=float(block.get("indent", 18)),
+                value=_alpha_label(start + index) if lettered_long else None,
+            )
+            for index, text in enumerate(texts)
+        ]
         return ListFlowable(
             items,
-            bulletType=block.get("list_type", "1") if ordered else "bullet",
-            start=block.get("start", 1) if ordered else None,
+            bulletType="bullet" if lettered_long else list_type,
+            start=None if lettered_long or not ordered else start,
             bulletFormat="%s." if ordered else None,
             bulletFontName=style.fontName,
             bulletFontSize=style.fontSize,

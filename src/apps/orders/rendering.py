@@ -121,6 +121,22 @@ def _table_block(element):
     return {"type": "table", "columns": [{"header": ""} for _ in range(width)], "rows": rows}
 
 
+def _trim_breaks(markup):
+    """Strip whitespace and leading/trailing ``<br/>`` by index, slicing once."""
+    start, end = 0, len(markup)
+    while True:
+        while start < end and markup[start].isspace():
+            start += 1
+        while end > start and markup[end - 1].isspace():
+            end -= 1
+        if markup.startswith("<br/>", start, end):
+            start += len("<br/>")
+        elif end - start >= len("<br/>") and markup.endswith("<br/>", start, end):
+            end -= len("<br/>")
+        else:
+            return markup[start:end]
+
+
 def html_to_blocks(text):
     """Turn sanitised order text into renderer blocks, in order."""
     if is_blank(text):
@@ -131,9 +147,7 @@ def html_to_blocks(text):
 
     def flush():
         # Consecutive top-level inline nodes and their tails are one paragraph.
-        markup = "".join(run).strip()
-        while markup.startswith("<br/>") or markup.endswith("<br/>"):
-            markup = markup.removeprefix("<br/>").removesuffix("<br/>").strip()
+        markup = _trim_breaks("".join(run))
         run.clear()
         if markup:
             blocks.append({"type": "paragraph", "text": markup})

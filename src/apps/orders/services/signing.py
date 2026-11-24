@@ -150,6 +150,9 @@ def record_signature(order_id, transaction_id, *, actor):
             ):
                 return order
             raise BusinessError(errors.ORDER_ALREADY_SIGNED)
+        if order.status == OrderStatus.DRAFT:
+            # A transaction begun before a move back no longer belongs to the order (``E14015``).
+            raise BusinessError(errors.SIGNATURE_NOT_VALID_FOR_ORDER)
         common.require_action(order, "sign")
         _check_transaction(txn, actor, order.pk, order.signing_file_id)
         if not order.number:

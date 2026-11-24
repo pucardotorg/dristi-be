@@ -178,6 +178,17 @@ def test_a_signature_begun_before_a_move_back_cannot_be_recorded(sent, signer, s
     assert code(excinfo) == "E14015"
 
 
+def test_a_transaction_confirmed_while_the_order_is_back_in_draft_is_e14015(
+    sent, signer, started, staff
+):
+    signing.start_signing(sent.pk, actor=signer)
+    txn = success(sent, signer)
+    lifecycle.move_to_draft(sent.pk, actor=staff)
+    with pytest.raises(BusinessError) as excinfo:
+        signing.record_signature(sent.pk, txn.pk, actor=signer)
+    assert code(excinfo) == "E14015"
+
+
 def test_confirming_the_next_day_is_refused_and_the_order_is_signed_again(
     sent, signer, started, settings
 ):

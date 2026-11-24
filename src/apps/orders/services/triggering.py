@@ -10,6 +10,7 @@ then stays ``FAILED`` until an admin retries it.
 """
 
 import logging
+import uuid
 from datetime import timedelta
 
 from django.db import transaction
@@ -131,7 +132,8 @@ def _execute(order, scheduled):
             return locked.status
         locked.attempts += 1
         locked.status = RunStatus.RUNNING
-        locked.save(update_fields=["attempts", "status", "updated_at"])
+        locked.claim_token = claim = uuid.uuid4()
+        locked.save(update_fields=["attempts", "status", "claim_token", "updated_at"])
     try:
         if scheduled.step == RunStep.HEARING:
             result = _hearing_step(order)
@@ -146,13 +148,19 @@ def _execute(order, scheduled):
         logger.exception("event=ORDER_RUN_ERROR order=%s run=%s", order.pk, scheduled.pk)
         status, payload, error = RunStatus.FAILED, {}, "UNEXPECTED_ERROR"
     with transaction.atomic():
-        _mark(
-            OrderWorkflowRun.objects.select_for_update().get(pk=scheduled.pk),
-            status,
-            result=payload,
-            error_code=error,
+        row = OrderWorkflowRun.objects.select_for_update().get(pk=scheduled.pk)
+        # A later worker claimed this step after the lease ran out: its status stands.
+        owned = row.claim_token == claim
+        if owned:
+            _mark(row, status, result=payload, error_code=error)
+    if not owned:
+        logger.warning(
+            "event=ORDER_RUN_SUPERSEDED order_id=%s run=%s step=%s",
+            order.pk,
+            scheduled.pk,
+            scheduled.step,
         )
-    if status == RunStatus.FAILED:
+    elif status == RunStatus.FAILED:
         logger.error(
             "event=ORDER_RUN_FAILED order_id=%s run=%s step=%s error_code=%s",
             order.pk,

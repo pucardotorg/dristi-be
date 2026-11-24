@@ -203,6 +203,46 @@ def test_a_lettered_list_prints_letters_in_the_pdf():
     assert "1." in text(None) and "a." not in text(None)
 
 
+def test_a_long_lettered_list_gives_every_item_its_own_letters_in_the_pdf():
+    pypdf = pytest.importorskip("pypdf")
+    import io
+
+    from apps.pdf.renderer import get_renderer
+
+    block = {
+        "type": "list",
+        "items": [f"item{n:02d}" for n in range(1, 29)],
+        "ordered": True,
+        "list_type": "a",
+    }
+    pdf = get_renderer().render({"page": {"size": "A4"}, "sections": [[block]]}, {})
+    text = "\n".join(page.extract_text() for page in pypdf.PdfReader(io.BytesIO(pdf)).pages)
+    lines = text.splitlines()
+    labels = [lines[i - 1] for i, line in enumerate(lines) if line.startswith("item")]
+    assert labels[:3] == ["a.", "b.", "c."]
+    assert labels[25:] == ["z.", "aa.", "ab."]
+    assert len(set(labels)) == 28
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("<br/>", ""),
+        (" <br/> <br/> x <br/> ", "x"),
+        ("<br/>a<br/>b<br/><br/>", "a<br/>b"),
+        ("  x  ", "x"),
+        ("<br/>\n<br/>\t", ""),
+    ],
+)
+def test_trim_breaks_keeps_inner_breaks_and_whitespace_rules(raw, expected):
+    assert rendering._trim_breaks(raw) == expected
+
+
+def test_a_long_run_of_breaks_is_trimmed_in_one_pass():
+    blocks = rendering.html_to_blocks("<br>" * 50_000 + "text")
+    assert blocks == [{"type": "paragraph", "text": "text"}]
+
+
 def test_top_level_inline_markup_and_its_tail_are_one_paragraph():
     blocks = rendering.html_to_blocks("<strong>Not</strong> allowed.")
     assert blocks == [{"type": "paragraph", "text": "<b>Not</b> allowed."}]

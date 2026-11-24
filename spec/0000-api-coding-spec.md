@@ -217,6 +217,7 @@ not-found, throttling — has the same body:
 | `errors[].code` | yes | Registered error code (9.2). **Clients branch on this.** |
 | `errors[].message` | yes | Human-readable message. For display and logs only; it may vary, e.g. to name the offending value. |
 | `errors[].field` | no | Request field the error refers to. Absent when the error concerns the request as a whole. |
+| `errors[].data` | no | Machine-readable detail a client needs to act on the error (for example `{"allowed_actions": [...]}`). Set by an exception's `error_data` attribute, on its first item only. Clients never need it to branch: `code` still decides. |
 | `meta` | yes | As in section 8. |
 
 `field` is a path into the request body: nested objects are dotted
