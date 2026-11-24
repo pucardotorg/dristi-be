@@ -206,8 +206,8 @@ class InitiationTests(ESignTestCase):
             seen["file_id"] = file_id
             return True
 
-        permissions.register_entity_authorizer("ORDER", authorizer)
-        self.addCleanup(permissions.unregister_entity_authorizer, "ORDER")
+        permissions.register_entity_authorizer("OTHER", authorizer)
+        self.addCleanup(permissions.unregister_entity_authorizer, "OTHER")
 
         self.initiate_service()
 

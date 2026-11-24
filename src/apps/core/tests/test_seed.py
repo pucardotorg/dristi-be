@@ -586,11 +586,11 @@ class TestCoreSeed:
         assert not any(model.objects.exists() for model in self.REST)
 
         output = run(str(CORE_DIR), "--strict")
-        assert "created 13, unchanged 88, skipped 0" in output
+        assert "created 15, unchanged 88, skipped 0" in output
         expected = {**self.SESSION, **self.REST}
         assert {m: m.objects.count() for m in expected} == expected
 
-        assert "created 0, unchanged 101, skipped 0" in run(str(CORE_DIR), "--strict")
+        assert "created 0, unchanged 103, skipped 0" in run(str(CORE_DIR), "--strict")
 
 
 def test_migrations_carry_no_data():
