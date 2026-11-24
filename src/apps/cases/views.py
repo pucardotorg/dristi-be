@@ -971,15 +971,18 @@ class CaseComplaintPdfView(APIView):
                 errors.FILING_INCOMPLETE.example(
                     "At least one active accused is required.", field="participants.accused"
                 ),
+                pdf_errors.NO_DOCUMENT.example("The signed complaint PDF no longer exists."),
                 *RENDER_ERRORS,
             ),
         },
     )
     def get(self, request, case_id):
-        """Return the complaint PDF as the case stands now; nothing is stored.
+        """Return the complaint PDF.
 
-        Only once the filing is complete. Marked "PREVIEW - NOT FOR FILING"
-        while the case is a draft.
+        While the case is a draft, rendered as the case stands now, only once
+        the filing is complete, marked "PREVIEW - NOT FOR FILING"; nothing is
+        stored. Once it has moved to signing, the file being signed: the
+        complaint with its documents and every signature recorded so far.
         """
         content = complaint_pdf.render_preview(case_id, request.user)
         response = HttpResponse(content, content_type="application/pdf")

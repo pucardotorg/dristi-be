@@ -171,6 +171,7 @@ _BLOCKS = [
             "source": {"type": "string", "minLength": 1},
             "box_height": {"type": "number", "minimum": 40, "maximum": 200},
             "style": {"type": "string"},
+            "label_style": {"type": "string"},
         },
         ("source",),
     ),
