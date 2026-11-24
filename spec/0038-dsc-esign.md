@@ -245,6 +245,22 @@ Rules:
    Changing configuration then never re-routes a transaction already in flight.
 4. Initiation is the **only** place that chooses a provider, from the request's
    `signing_method` checked against the state's enabled `signingMethods`.
+5. **The anonymous callback is the one exception to rule 3**, because it must
+   parse the payload *before* a transaction can be found (the
+   `provider_transaction_id` comes out of parsing). So "resolve from
+   `transaction.provider`" cannot pick the parser there. Instead:
+   - `/esign/_signed` uses the **single registered `CALLBACK` provider** (#3);
+     DSC is `CLIENT_SIGNATURE`, so only C-DAC parses callbacks.
+   - A **startup check fails if more than one `CALLBACK` provider is registered**
+     (#11.1), so the parser is never ambiguous.
+   - A second callback ESP, if ever added, gets its **own route**
+     (`/esign/_signed/<provider>`); the route, not the payload, names the
+     provider. The current C-DAC URL stays byte-for-byte unchanged (the ESP is
+     configured with it; see `urls.py`).
+   - **After parsing, the gate confirms `transaction.provider == parser.name`**
+     (the existing `_gate` already filters on `provider=…`; this makes it a
+     stated invariant), so a payload cannot complete a transaction that belongs
+     to a different provider.
 
 ---
 
@@ -476,11 +492,15 @@ pair guarantees at most one `signed_file_id`.
 
 ### 8.3 Endpoint/provider separation
 
-`process_callback` (the anonymous `/esign/_signed`) **refuses any transaction
-whose provider is not `CALLBACK`**, and `_complete` refuses any that is not
-`CLIENT_SIGNATURE`. Both checks are on the capability (#3). A test asserts an
-anonymous `/esign/_signed` POST for a DSC transaction **never** changes its
-status.
+`process_callback` (the anonymous `/esign/_signed`) parses with the single
+registered `CALLBACK` provider (#4.5), then — after the parsed
+`provider_transaction_id` locates the row — **requires
+`transaction.provider == parser.name`** and refuses any transaction whose
+provider is not `CALLBACK`. `_complete` refuses any that is not
+`CLIENT_SIGNATURE`. All checks are on the capability/name, never the string
+`"dsc"` (#3). Tests assert: an anonymous `/esign/_signed` POST for a DSC
+transaction **never** changes its status; and a callback whose parsed id maps to
+a non-`CALLBACK` transaction is rejected.
 
 ---
 
@@ -545,6 +565,10 @@ Reused unchanged: `ESIGN_ENABLED`, `ESIGN_TRANSACTION_TTL`,
 
 - `apps.esign.checks` validates `ESIGN_PROVIDERS` (names resolve, classes are
   `ESignProvider`, names match) and that `ESIGN_DEFAULT_PROVIDER` is registered.
+- **At most one `CALLBACK` provider may be registered** (#4.5): the check fails
+  otherwise, because the anonymous `/esign/_signed` parses with the single
+  callback provider before a transaction exists. A second callback ESP requires
+  its own route first.
 - **`addon.cdac_esign` change (explicit):** its `is_active_provider()` becomes
   **"is registered in `ESIGN_PROVIDERS`"**, and its `apps.esign.checks` E002/E004
   guards use the same rule, so enabling DSC alongside C-DAC does not silently turn
