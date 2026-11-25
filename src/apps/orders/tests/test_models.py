@@ -168,6 +168,15 @@ def test_a_type_without_a_separate_entry_signs_none(case):
         order_type.full_clean()
 
 
+def test_a_type_without_a_separate_entry_is_not_edited_in_the_a_diary():
+    order_type = OrderType.objects.get(state_code="GJ", code="ROZNAMA")
+    order_type.signs_diary_entry = False
+    order_type.diary_entry_in_a_diary = True
+    with pytest.raises(ValidationError) as excinfo:
+        order_type.full_clean()
+    assert "diary_entry_in_a_diary" in excinfo.value.message_dict
+
+
 def test_the_seeded_rules_name_their_items():
     rule = OrderItemCombinationRule.objects.get(code="ONE_HEARING_DATE_ITEM")
     assert {i.code for i in rule.item_types.all()} == {
@@ -177,7 +186,7 @@ def test_the_seeded_rules_name_their_items():
     assert uuid and OrderType
 
 
-@pytest.mark.parametrize("options", [7, "COURT", [], [1, 2], None])
+@pytest.mark.parametrize("options", [7, "COURT", [], [1, 2], None, [""], ["A", ""]])
 def test_enum_options_must_be_a_nonempty_list_of_strings(options):
     schema = {"fields": [{"key": "k", "label": "L", "input": "ENUM", "options": options}]}
     assert field_schema.schema_errors(schema)
@@ -186,6 +195,31 @@ def test_enum_options_must_be_a_nonempty_list_of_strings(options):
 def test_enum_options_as_strings_are_valid():
     schema = {"fields": [{"key": "k", "label": "L", "input": "ENUM", "options": ["A", "B"]}]}
     assert field_schema.schema_errors(schema) == []
+
+
+@pytest.mark.parametrize("value", ["20191204", "2019-W49-3", "2019-02-30", "2019-12-4", 20191204])
+def test_a_date_value_must_be_yyyy_mm_dd(value):
+    field = {"key": "k", "label": "When", "input": "DATE"}
+    assert field_schema.value_problem(field, value) is not None
+
+
+def test_a_valid_date_value_is_accepted():
+    field = {"key": "k", "label": "When", "input": "DATE"}
+    assert field_schema.value_problem(field, "2019-12-04") is None
+
+
+@pytest.mark.parametrize("channels", [[None], [1], "SMS"])
+def test_process_recipient_channels_must_be_strings(channels):
+    field = {"key": "k", "label": "To", "input": "PROCESS_RECIPIENTS"}
+    recipient = {"party_id": "6f9619ff-8b86-d011-b42d-00cf4fc964ff", "channels": channels}
+    assert field_schema.value_problem(field, [recipient]) is not None
+    assert field_schema.value_problem(field, [{**recipient, "channels": ["SMS"]}]) is None
+
+
+@pytest.mark.parametrize("label", [["Notes"], 7, "", "  ", None])
+def test_label_must_be_a_nonempty_string(label):
+    schema = {"fields": [{"key": "k", "label": label, "input": "TEXT"}]}
+    assert field_schema.schema_errors(schema)
 
 
 @pytest.mark.parametrize("party_types", [7, "ACCUSED", [1], {"a": 1}, None])
@@ -264,3 +298,48 @@ def test_combination_rule_literal_and_documented_placeholders_are_valid(message)
 def test_seeded_combination_rules_pass_their_own_clean():
     for rule in OrderItemCombinationRule.objects.all():
         rule.clean()
+
+
+@pytest.mark.parametrize(
+    ("message", "valid"),
+    [
+        ("{adding} cannot be added to {existing}", True),
+        ("Literal {{braces}} and {adding}", True),
+        ("No placeholders at all", True),
+        ("{adding:{existing}}", False),
+        ("{adding:>10}", False),
+        ("{adding!r}", False),
+        ("{adding.x}", False),
+        ("{other}", False),
+        ("{adding", False),
+    ],
+)
+def test_rule_message_placeholders_are_plain(message, valid):
+    rule = OrderItemCombinationRule(code="X", kind="EXCLUSIVE", message=message)
+    if valid:
+        rule.clean()
+    else:
+        with pytest.raises(ValidationError):
+            rule.clean()
+
+
+def test_a_type_with_a_separate_entry_may_be_edited_in_the_a_diary():
+    order_type = OrderType.objects.get(state_code="KL", code="NORMAL")
+    assert order_type.separate_diary_entry and order_type.diary_entry_in_a_diary
+    order_type.full_clean()
+
+
+@pytest.mark.parametrize("state_code, type_code", [("KL", "NORMAL"), ("GJ", "ROZNAMA")])
+def test_turning_off_the_separate_entry_of_an_a_diary_type_is_refused(state_code, type_code):
+    order_type = OrderType.objects.get(state_code=state_code, code=type_code)
+    order_type.separate_diary_entry = False
+    order_type.signs_diary_entry = False
+    order_type.diary_entry_in_a_diary = True
+    with pytest.raises(ValidationError) as excinfo:
+        order_type.full_clean()
+    assert set(excinfo.value.message_dict) == {"diary_entry_in_a_diary"}
+
+
+def test_every_seeded_order_type_is_valid():
+    for order_type in OrderType.objects.all():
+        order_type.full_clean()

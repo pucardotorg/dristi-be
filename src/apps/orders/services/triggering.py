@@ -92,7 +92,13 @@ def run(order_id):
         if scheduled.status == RunStatus.DONE:
             continue
         if blocked:
-            _mark(scheduled, RunStatus.BLOCKED, error_code="HEARING_STEP_FAILED")
+            # One conditional write: another delivery may have finished this step since the
+            # runs were read, and its DONE must stand.
+            OrderWorkflowRun.objects.filter(pk=scheduled.pk).exclude(status=RunStatus.DONE).update(
+                status=RunStatus.BLOCKED,
+                error_code="HEARING_STEP_FAILED",
+                updated_at=timezone.now(),
+            )
             continue
         if scheduled.status == RunStatus.FAILED and scheduled.attempts >= conf.run_max_retries():
             blocked = scheduled.step == RunStep.HEARING

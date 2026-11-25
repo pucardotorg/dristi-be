@@ -11,7 +11,7 @@ from rest_framework.exceptions import APIException
 from apps.api.errors import BusinessError
 from apps.hearings import selectors as hearing_selectors
 
-from .. import conf, errors, permissions
+from .. import conf, errors, permissions, rendering
 from ..enums import EnteredFrom, ItemSource, NextHearingState, OrderStatus
 from ..models import Order
 from . import drafting, items, next_hearing
@@ -26,19 +26,21 @@ def _too_large(count):
 
 def _skip(order_id, exc):
     error = getattr(exc, "error", None)
+    detail = _first_detail(exc)
     return {
         "order_id": order_id,
-        "code": error.code if error else _code_of(exc),
-        "message": str(getattr(exc, "detail", exc)),
+        "code": error.code if error else getattr(detail, "code", None) or "ERROR",
+        # The first message itself, never the repr of a field-keyed detail.
+        "message": str(detail),
     }
 
 
-def _code_of(exc):
-    """The error code of a DRF exception that is not a ``BusinessError`` (``ERROR`` if none)."""
-    detail = getattr(exc, "detail", None)
+def _first_detail(exc):
+    """The first message of a DRF exception's ``detail``, however deeply it is nested."""
+    detail = getattr(exc, "detail", exc)
     while isinstance(detail, dict | list) and detail:
         detail = next(iter(detail.values())) if isinstance(detail, dict) else detail[0]
-    return getattr(detail, "code", None) or "ERROR"
+    return detail
 
 
 def bulk_items(*, actor, order_ids, item_specs):
@@ -103,6 +105,8 @@ def bulk_text(*, actor, court_id, hearing_ids, text):
     hearing_ids = list(dict.fromkeys(hearing_ids))
     _too_large(len(hearing_ids))
     permissions.require_role(actor, court_id, "bulk_text")
+    # The same text goes to every listing: refuse it once (``E14027``), not once per listing.
+    rendering.sanitize_html(text)
     listings = _listings(court_id, hearing_ids)
     done, skipped = [], []
     for hearing_id in hearing_ids:
@@ -113,14 +117,16 @@ def bulk_text(*, actor, court_id, hearing_ids, text):
         try:
             if hearing.started_at is None:
                 raise BusinessError(errors.HEARING_NOT_STARTED)
-            order = drafting.live_order_for_hearing(hearing_id)
-            if order is None:
-                order, _ = drafting.create_in_hearing(hearing_id=hearing_id, actor=actor)
-            if order.status != OrderStatus.DRAFT:
-                raise BusinessError(
-                    errors.INVALID_ORDER_ACTION, "The order is already sent for signing."
-                )
-            drafting.append_text(order.pk, text, actor=actor)
+            # One transaction per hearing: a failed append drops the draft it just created.
+            with transaction.atomic():
+                order = drafting.live_order_for_hearing(hearing_id)
+                if order is None:
+                    order, _ = drafting.create_in_hearing(hearing_id=hearing_id, actor=actor)
+                if order.status != OrderStatus.DRAFT:
+                    raise BusinessError(
+                        errors.INVALID_ORDER_ACTION, "The order is already sent for signing."
+                    )
+                drafting.append_text(order.pk, text, actor=actor)
             done.append(hearing_id)
         except APIException as exc:
             skipped.append({**_skip(order_id=None, exc=exc), "hearing_id": hearing_id})
@@ -145,25 +151,27 @@ def bulk_next_hearing(*, actor, court_id, hearing_ids, state, date=None, purpose
             skipped.append({"hearing_id": hearing_id, "code": "E00105", "message": "Not found."})
             continue
         try:
-            order, _ = drafting.create_in_hearing(
-                hearing_id=hearing_id, actor=actor, require_started=False
-            )
-            if order.status != OrderStatus.DRAFT:
-                raise BusinessError(
-                    errors.INVALID_ORDER_ACTION, "The order is already sent for signing."
+            # One transaction per hearing: a rejected edit drops the draft it just created.
+            with transaction.atomic():
+                order, _ = drafting.create_in_hearing(
+                    hearing_id=hearing_id, actor=actor, require_started=False
                 )
-            chosen = purpose or order.next_hearing_purpose or hearing.purpose_code
-            # The stored purpose was read before the lock: refuse if the order moved on since.
-            keeps_current = purpose is None and state == NextHearingState.LISTED
-            _, found = next_hearing.set_next_hearing(
-                order.pk,
-                state=state,
-                date=date,
-                purpose=chosen if state == NextHearingState.LISTED else None,
-                actor=actor,
-                entered_from=EnteredFrom.CAUSE_LIST,
-                data_version=order.data_version if keeps_current else None,
-            )
+                if order.status != OrderStatus.DRAFT:
+                    raise BusinessError(
+                        errors.INVALID_ORDER_ACTION, "The order is already sent for signing."
+                    )
+                chosen = purpose or order.next_hearing_purpose or hearing.purpose_code
+                # The stored purpose was read before the lock: refuse if the order moved on since.
+                keeps_current = not purpose and state == NextHearingState.LISTED
+                _, found = next_hearing.set_next_hearing(
+                    order.pk,
+                    state=state,
+                    date=date,
+                    purpose=chosen if state == NextHearingState.LISTED else None,
+                    actor=actor,
+                    entered_from=EnteredFrom.CAUSE_LIST,
+                    data_version=order.data_version if keeps_current else None,
+                )
             done.append(hearing_id)
             warnings += [
                 {"hearing_id": hearing_id, "code": w.code, "message": w.message} for w in found
@@ -178,13 +186,14 @@ def set_for_hearing(*, actor, hearing_id, state, date=None, purpose=None, data_v
 
     Writes that hearing's order; refused before the hearing starts (``E14004``).
     """
-    order, _ = drafting.create_in_hearing(hearing_id=hearing_id, actor=actor)
-    return next_hearing.set_next_hearing(
-        order.pk,
-        state=state,
-        date=date,
-        purpose=purpose,
-        actor=actor,
-        entered_from=EnteredFrom.CAUSE_LIST,
-        data_version=data_version,
-    )
+    with transaction.atomic():
+        order, _ = drafting.create_in_hearing(hearing_id=hearing_id, actor=actor)
+        return next_hearing.set_next_hearing(
+            order.pk,
+            state=state,
+            date=date,
+            purpose=purpose,
+            actor=actor,
+            entered_from=EnteredFrom.CAUSE_LIST,
+            data_version=data_version,
+        )

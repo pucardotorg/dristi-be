@@ -4,6 +4,7 @@ import datetime
 
 import pytest
 
+from apps.api.errors import BusinessError
 from apps.orders import rendering, selectors
 from apps.orders.models import Order
 from apps.orders.services import drafting, lifecycle, notifications, signing
@@ -33,6 +34,40 @@ pytestmark = pytest.mark.django_db
 )
 def test_sanitising_keeps_only_the_allow_list(dirty, clean):
     assert rendering.sanitize_html(dirty) == clean
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '<ol><li>Pay:<ol type="a"><li>A</li><li>B</li></ol></li></ol>',
+        "<ul><li>x<ul><li>y</li></ul></li></ul>",
+        "<ol><li>x<table><tr><td>y</td></tr></table></li></ol>",
+        "<table><tr><td><ol><li>x</li></ol></td></tr></table>",
+        # The PDF reads only a list's items and a table's rows: anything else would be lost.
+        "<ul><ul><li>x</li></ul></ul>",
+        "<ul>loose<li>a</li></ul>",
+        "<ol><p>para</p><li>a</li></ol>",
+        "<table><caption>c</caption><tr><td>1</td></tr></table>",
+        "<strong><ul><li>x</li></ul></strong>",
+    ],
+)
+def test_structure_the_pdf_cannot_draw_is_refused(body):
+    with pytest.raises(BusinessError) as excinfo:
+        rendering.sanitize_html(body)
+    assert excinfo.value.error.code == "E14027"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<ol><li>a</li></ol><ul><li>b</li></ul>",
+        "<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>",
+        '<table><tr><td colspan="2">A</td></tr></table>',
+        '<table><tr><td rowspan="2">A</td><td>B</td></tr><tr><td>C</td></tr></table>',
+    ],
+)
+def test_ordinary_lists_and_rectangular_tables_are_accepted(body):
+    assert rendering.sanitize_html(body)
 
 
 def test_blank_html_says_nothing():

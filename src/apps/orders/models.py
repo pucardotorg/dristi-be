@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Lower
+from simple_history.models import HistoricalRecords
 
 from apps.core.models import (
     CODE_RE,
@@ -102,6 +103,13 @@ class OrderType(BaseModel, BaseActivatableModel, BaseAuditableModel):
             raise ValidationError(
                 {"signs_diary_entry": "A type with no separate diary entry has no Roznama."}
             )
+        if not self.separate_diary_entry and self.diary_entry_in_a_diary:
+            raise ValidationError(
+                {
+                    "diary_entry_in_a_diary": "A type with no separate diary entry cannot be "
+                    "edited in the A-Diary: its entry is always the order text."
+                }
+            )
 
 
 class OrderItemType(BaseModel, BaseActivatableModel, BaseAuditableModel):
@@ -154,7 +162,7 @@ class OrderItemType(BaseModel, BaseActivatableModel, BaseAuditableModel):
             raise ValidationError(errors)
 
 
-class OrderItemCombinationRule(BaseModel, BaseActivatableModel, BaseAuditableModel):
+class OrderItemCombinationRule(BaseModel, BaseActivatableModel):
     """One restriction of the catalogue's *Combination restrictions* (spec 0039 #3.4, ``ITM-07``)."""
 
     code = models.CharField(max_length=50, unique=True)
@@ -163,6 +171,9 @@ class OrderItemCombinationRule(BaseModel, BaseActivatableModel, BaseAuditableMod
     message = models.CharField(
         max_length=255, help_text="May use {adding} and {existing}: the two items' labels."
     )
+    # Declared here instead of inherited from ``BaseAuditableModel``, which cannot track a
+    # many-to-many: membership decides what the rule restricts, so its changes are kept.
+    history = HistoricalRecords(m2m_fields=[item_types])
 
     class Meta(BaseModel.Meta):
         """Meta options."""
@@ -176,13 +187,15 @@ class OrderItemCombinationRule(BaseModel, BaseActivatableModel, BaseAuditableMod
         """Check the message uses only the two documented placeholders."""
         super().clean()
         try:
-            names = [
-                name for _, name, _, _ in string.Formatter().parse(self.message) if name is not None
-            ]
-            ok = set(names) <= {"adding", "existing"}
-            # Also catches what parsing alone allows, such as a nested ``{adding:{x}}``.
-            self.message.format(adding="", existing="")
-        except (ValueError, KeyError, IndexError, AttributeError):
+            # Literal text and escaped braces parse with no field name. A field must be plain
+            # ``{adding}`` or ``{existing}``: a format spec (even ``{adding:{existing}}``) or a
+            # conversion would be applied to a label when the message is formatted.
+            ok = all(
+                name in ("adding", "existing") and not spec and conversion is None
+                for _, name, spec, conversion in string.Formatter().parse(self.message)
+                if name is not None
+            )
+        except ValueError:
             ok = False
         if not ok:
             raise ValidationError(

@@ -192,26 +192,39 @@ def test_the_mandatory_submission_deadline_uses_the_court_date(monkeypatch):
 
 
 def test_cost_demand_lookup_and_creation_hold_the_item_lock(ready, staff, monkeypatch):
-    """The item row is locked before the demand is looked up or raised."""
+    """The run's own item row is locked before the demand is looked up or raised."""
     from django.db.models import QuerySet
 
     from apps.orders.handlers import builtin
     from apps.orders.handlers.base import ItemContext
+    from apps.payments.models import Demand
     from apps.payments.services.demands import DemandService
 
+    other = items.add(ready.pk, "COGNIZANCE", actor=staff)  # a row it must not lock instead
     item = items.add(ready.pk, "COST", actor=staff)
-    locked = []
-    real = QuerySet.select_for_update
+    events = []
+    real_get = QuerySet.get
+    real_filter = Demand.objects.filter
 
-    def record(self, *args, **kwargs):
-        locked.append(self.model)
-        return real(self, *args, **kwargs)
+    def get(self, *args, **kwargs):
+        row = real_get(self, *args, **kwargs)
+        if self.query.select_for_update:
+            events.append(("lock", self.model, row.pk))
+        return row
+
+    def lookup(*args, **kwargs):
+        events.append(("lookup", Demand))
+        return real_filter(*args, **kwargs)
 
     def raise_demand(**kwargs):
-        assert locked == [OrderItem], "the item row must be locked before the demand is raised"
+        # The sentinel stops the handler here, before any payment side effect.
+        assert events == [("lock", OrderItem, item.pk), ("lookup", Demand)], (
+            "the run's own item row must be locked before the demand is looked up"
+        )
         raise RuntimeError("stop")
 
-    monkeypatch.setattr(QuerySet, "select_for_update", record)
+    monkeypatch.setattr(QuerySet, "get", get)
+    monkeypatch.setattr(Demand.objects, "filter", lookup)
     monkeypatch.setattr(DemandService, "raise_demand", raise_demand)
     ctx = ItemContext(
         case_id=ready.case_id,
@@ -222,8 +235,9 @@ def test_cost_demand_lookup_and_creation_hold_the_item_lock(ready, staff, monkey
         item_id=item.pk,
         source="",
     )
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="stop"):
         builtin.CostHandler().execute(ctx, {"amount": "10", "paying_party": "ACCUSED"}, run_id=None)
+    assert other.pk != item.pk
 
 
 def test_a_batta_cannot_be_confirmed_before_its_workflow_step_is_done(

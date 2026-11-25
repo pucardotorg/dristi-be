@@ -212,6 +212,7 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
             **error_responses(
                 *STALE_ERRORS,
                 errors.ORDER_TEXT_TOO_LARGE.example(field="text"),
+                errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED.example(field="text"),
             ),
         },
     )
@@ -464,6 +465,7 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
                 *ACTION_ERRORS,
                 errors.DIARY_ENTRY_LOCKED,
                 errors.DIARY_ENTRY_IS_ORDER_TEXT,
+                errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED.example(field="text"),
             ),
         },
     )
@@ -700,7 +702,11 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
         request=BulkTextSerializer,
         responses={
             200: BulkResultSerializer,
-            **error_responses(errors.ROLE_REQUIRED, errors.BULK_TOO_LARGE),
+            **error_responses(
+                errors.ROLE_REQUIRED,
+                errors.BULK_TOO_LARGE,
+                errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED.example(field="text"),
+            ),
         },
     )
     @action(detail=False, methods=["post"], url_path="bulk/text")
@@ -871,7 +877,9 @@ class ShortcutViewSet(OrdersViewMixin, viewsets.GenericViewSet):
         responses={
             201: ShortcutSerializer,
             **error_responses(
-                errors.ROLE_REQUIRED, errors.SHORTCUT_NAME_TAKEN.example(field="name")
+                errors.ROLE_REQUIRED,
+                errors.SHORTCUT_NAME_TAKEN.example(field="name"),
+                errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED.example(field="body"),
             ),
         },
     )
@@ -891,7 +899,10 @@ class ShortcutViewSet(OrdersViewMixin, viewsets.GenericViewSet):
         request=ShortcutSerializer(partial=True),
         responses={
             200: ShortcutSerializer,
-            **error_responses(errors.SHORTCUT_NAME_TAKEN.example(field="name")),
+            **error_responses(
+                errors.SHORTCUT_NAME_TAKEN.example(field="name"),
+                errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED.example(field="body"),
+            ),
         },
     )
     def partial_update(self, request, pk=None):

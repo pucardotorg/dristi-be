@@ -223,12 +223,43 @@ def test_signing_with_complete_data_triggers(ready, staff, signer, started):
 def test_a_direct_esign_for_an_order_needs_the_signer_role_and_an_order_sent_for_signing(
     sent, ready, signer, staff, drafter
 ):
-    kwargs = {"entity_type": "ORDER", "entity_id": str(sent.pk)}
+    Order.objects.filter(pk=sent.pk).update(signing_file_id="file-1")
+    kwargs = {"entity_type": "ORDER", "entity_id": str(sent.pk), "file_id": "file-1"}
     assert can_sign_via_esign(user=signer, **kwargs) is True
     assert can_sign_via_esign(user=drafter, **kwargs) is False
-    assert can_sign_via_esign(user=signer, entity_type="ORDER", entity_id="nope") is False
+    assert (
+        can_sign_via_esign(user=signer, entity_type="ORDER", entity_id="nope", file_id="file-1")
+        is False
+    )
     Order.objects.filter(pk=sent.pk).update(status=OrderStatus.DRAFT)
     assert can_sign_via_esign(user=signer, **kwargs) is False
+
+
+def test_a_direct_esign_must_name_the_file_the_order_is_about_to_sign(sent, signer):
+    Order.objects.filter(pk=sent.pk).update(signing_file_id="file-1")
+    kwargs = {"user": signer, "entity_type": "ORDER", "entity_id": str(sent.pk)}
+    assert can_sign_via_esign(**kwargs, file_id="someone-elses.pdf") is False
+    assert can_sign_via_esign(**kwargs) is False
+
+
+def test_a_retry_passes_only_while_its_file_is_still_the_current_one(sent, signer, staff):
+    Order.objects.filter(pk=sent.pk).update(signing_file_id="file-1")
+    kwargs = {"user": signer, "entity_type": "ORDER", "entity_id": str(sent.pk)}
+    success(sent, signer, source="file-1", status="FAILURE")
+    assert can_sign_via_esign(**kwargs, file_id="file-1") is True
+    # Cleared (a new business date, a title or type change): the old file can never be recorded.
+    Order.objects.filter(pk=sent.pk).update(signing_file_id="")
+    assert can_sign_via_esign(**kwargs, file_id="file-1") is False
+    Order.objects.filter(pk=sent.pk).update(signing_file_id="file-2")
+    assert can_sign_via_esign(**kwargs, file_id="file-1") is False
+
+
+def test_the_roznama_path_is_bound_to_the_roznama_file(normal_triggered, signer):
+    roznama = OrderRoznama.objects.get(order=normal_triggered)
+    OrderRoznama.objects.filter(pk=roznama.pk).update(signing_file_id="roz-1")
+    kwargs = {"user": signer, "entity_type": "ORDER", "entity_id": str(normal_triggered.pk)}
+    assert can_sign_via_esign(**kwargs, file_id="roz-1") is True
+    assert can_sign_via_esign(**kwargs, file_id="other") is False
 
 
 def test_the_authorizer_is_registered_with_esign():
@@ -305,6 +336,18 @@ def test_signing_a_roznama_triggers_nothing_and_changes_nothing_on_the_order(
     assert "sign_roznama" in [args[1] for n, args, _ in record_ports if n == "complete_task"]
     # Idempotent.
     assert signing.record_roznama_signature(normal_triggered.pk, txn.pk, actor=signer).pk == done.pk
+
+
+def test_the_signer_edits_the_diary_entry_only_of_a_roznama_awaiting_signature(
+    normal_triggered, signer
+):
+    from apps.orders import permissions
+
+    order, _ = permissions.actionable_order(signer, normal_triggered.pk, "edit_diary_entry")
+    assert order.pk == normal_triggered.pk
+    roles = permissions.court_roles(signer, order.court_id)
+    assert "edit_diary_entry" in permissions.allowed_for_roles(["edit_diary_entry"], roles, order)
+    assert not permissions.permits(roles, "edit_diary_entry")
 
 
 def test_the_roznama_text_is_editable_until_signed_and_an_edit_clears_a_signing_begun(
@@ -468,3 +511,77 @@ def test_a_signed_file_is_required_to_record_a_signature(ready, staff, signer):
     assert code(excinfo) == "E14015"
     ready.refresh_from_db()
     assert ready.status == "SENT_FOR_SIGNING"
+
+
+# -- a title edit while sent for signing ---------------------------------------------
+
+
+def test_a_signature_begun_before_a_title_edit_cannot_be_recorded(sent, signer, started, staff):
+    signing.start_signing(sent.pk, actor=signer)
+    txn = success(sent, signer)
+    drafting.edit_title(sent.pk, "A new title", actor=staff)
+    assert Order.objects.get(pk=sent.pk).signing_file_id == ""
+    with pytest.raises(BusinessError) as excinfo:
+        signing.record_signature(sent.pk, txn.pk, actor=signer)
+    assert code(excinfo) == "E14015"
+    order = Order.objects.get(pk=sent.pk)
+    assert order.status == OrderStatus.SENT_FOR_SIGNING
+    assert order.signed_file_id == ""
+
+
+def test_signing_again_after_a_title_edit_signs_the_new_pdf(sent, signer, started, staff):
+    signing.start_signing(sent.pk, actor=signer)
+    number = Order.objects.get(pk=sent.pk).number
+    drafting.edit_title(sent.pk, "A new title", actor=staff)
+    signing.start_signing(sent.pk, actor=signer)
+    order = Order.objects.get(pk=sent.pk)
+    assert order.signing_file_id == "file-2"
+    assert order.number == number  # the title does not touch the number series
+    order = signing.record_signature(
+        sent.pk, success(sent, signer, source="file-2").pk, actor=signer
+    )
+    assert order.status == OrderStatus.SIGNED
+    assert order.title == "A new title"
+
+
+def test_an_unchanged_title_keeps_the_signing(sent, signer, started, staff):
+    drafting.edit_title(sent.pk, "Same title", actor=staff)
+    signing.start_signing(sent.pk, actor=signer)
+    txn = success(sent, signer)
+    drafting.edit_title(sent.pk, "  Same title ", actor=staff)
+    assert Order.objects.get(pk=sent.pk).signing_file_id == "file-1"
+    order = signing.record_signature(sent.pk, txn.pk, actor=signer)
+    assert order.status == OrderStatus.SIGNED
+
+
+def test_the_signed_pdf_prints_the_saved_roll_even_if_an_edit_is_reverted(
+    ready, hearing, staff, signer, started, monkeypatch
+):
+    """A roll edit committed between the snapshot and the render, then reverted, changes
+    neither the PDF nor the check at confirmation: both use the one snapshot."""
+    from .factories import mark_roll
+
+    printed = []
+    real_render, real_facts = rendering.render_pdf, rendering.page_facts
+
+    def facts(order, **kwargs):
+        result = real_facts(order, **kwargs)
+        printed.append(result["attendance"])
+        return result
+
+    def render_after_an_edit(order, **kwargs):
+        _flip_roll_to_absent(hearing, staff)  # commits after the snapshot, before the render
+        return real_render(order, **kwargs)
+
+    monkeypatch.setattr(rendering, "page_facts", facts)
+    monkeypatch.setattr(rendering, "render_pdf", render_after_an_edit)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.start_signing(ready.pk, actor=signer)
+    monkeypatch.setattr(rendering, "render_pdf", real_render)
+    mark_roll(hearing, staff)  # the edit is reverted before confirmation
+
+    snapshot = Order.objects.get(pk=ready.pk).signing_attendance
+    assert snapshot and all("was present" in line for line in snapshot)
+    assert printed == [snapshot]
+    signed = signing.record_signature(ready.pk, success(ready, signer).pk, actor=signer)
+    assert signed.is_signed and signed.signing_attendance == printed[0]

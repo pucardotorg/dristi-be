@@ -182,5 +182,6 @@ def trigger(order, actor=None):
             role="ORDER_SIGNER",
             court_id=order.court_id,
         )
-    common.send_on_commit(signals.order_triggered, order)
+    # Enqueue first, so the runs are on their way before any receiver is told.
     triggering.enqueue_on_commit(order.pk)
+    common.send_on_commit(signals.order_triggered, order)

@@ -406,3 +406,135 @@ def test_a_participant_id_in_capitals_is_one_of_the_case(order, filler):
         order.pk, "ISSUE_OF_SUMMONS", actor=filler, values={"party_names": [accused.upper()]}
     )
     assert item.pk
+
+
+# -- read-only (RECORD) fields on update ----------------------------------------------
+
+
+def _withdrawal(order, filler, **stored):
+    """A ``WITHDRAWAL_OF_CASE`` item whose stored values are exactly ``stored``."""
+    item = add(order, "WITHDRAWAL_OF_CASE", filler)
+    OrderItem.objects.filter(pk=item.pk).update(values=stored)
+    item.refresh_from_db()
+    return item
+
+
+def _read_only_error(excinfo, key):
+    detail = excinfo.value.detail
+    assert f"values.{key}" in detail
+    assert detail[f"values.{key}"][0].code == "E14011"
+
+
+def test_a_null_for_a_record_key_the_item_lacks_is_refused(order, filler):
+    item = _withdrawal(order, filler)
+    before = Order.objects.get(pk=order.pk).data_version
+    with pytest.raises(Exception) as excinfo:
+        items.update(order.pk, item.pk, {"application_number": None}, actor=filler)
+    _read_only_error(excinfo, "application_number")
+    item.refresh_from_db()
+    assert "application_number" not in item.values
+    assert Order.objects.get(pk=order.pk).data_version == before
+
+
+def test_a_value_for_a_record_key_the_item_lacks_is_refused(order, filler):
+    item = _withdrawal(order, filler)
+    with pytest.raises(Exception) as excinfo:
+        items.update(order.pk, item.pk, {"application_number": "A/9/2026"}, actor=filler)
+    _read_only_error(excinfo, "application_number")
+
+
+def test_changing_a_stored_record_value_is_refused(order, filler):
+    item = _withdrawal(order, filler, application_number="A/1/2026")
+    for typed in ("A/2/2026", None):
+        with pytest.raises(Exception) as excinfo:
+            items.update(order.pk, item.pk, {"application_number": typed}, actor=filler)
+        _read_only_error(excinfo, "application_number")
+    item.refresh_from_db()
+    assert item.values == {"application_number": "A/1/2026"}
+
+
+@pytest.mark.parametrize("stored", ["A/1/2026", None])
+def test_an_equal_echo_of_a_stored_record_value_passes_unchanged(order, filler, stored):
+    item = _withdrawal(order, filler, application_number=stored)
+    items.update(order.pk, item.pk, {"application_number": stored}, actor=filler)
+    item.refresh_from_db()
+    assert item.values == {"application_number": stored}
+    assert item.unconfirmed_fields == []
+
+
+def test_leaving_out_a_stored_record_key_keeps_it(order, filler):
+    item = _withdrawal(order, filler, application_number="A/1/2026")
+    items.update(order.pk, item.pk, {}, actor=filler)
+    item.refresh_from_db()
+    assert item.values == {"application_number": "A/1/2026"}
+
+
+def test_the_system_may_add_a_record_key(order, filler):
+    item = _withdrawal(order, filler)
+    items.update(
+        order.pk,
+        item.pk,
+        {"application_number": "A/1/2026"},
+        source=ItemSource.SYSTEM,
+        actor=filler,
+    )
+    item.refresh_from_db()
+    assert item.values == {"application_number": "A/1/2026"}
+
+
+# -- party lookup ------------------------------------------------------------------------
+
+
+class _NoChecks:
+    def validate(self, ctx, values, complete=False):
+        return []
+
+
+def test_fields_with_the_same_roles_share_one_party_lookup(order, monkeypatch):
+    from types import SimpleNamespace
+
+    from apps.orders.services.items import _party_ids
+
+    (accused,) = _party_ids(order, ("ACCUSED",))
+    (complainant,) = _party_ids(order, ("COMPLAINANT",))
+    calls = []
+
+    def counting(order, roles):
+        calls.append(roles)
+        return _party_ids(order, roles)
+
+    monkeypatch.setattr(items, "_party_ids", counting)
+    item_type = SimpleNamespace(
+        field_schema={
+            "fields": [
+                {"key": "a", "label": "A", "input": "PARTY", "party_types": ["ACCUSED"]},
+                {"key": "b", "label": "B", "input": "PARTIES", "party_types": ["ACCUSED"]},
+                {"key": "c", "label": "C", "input": "PARTY", "party_types": ["ACCUSED"]},
+                {"key": "d", "label": "D", "input": "PARTY", "party_types": ["COMPLAINANT"]},
+            ]
+        }
+    )
+    values = {"a": accused, "b": [accused], "c": accused, "d": complainant}
+    assert items.values_problems(order, item_type, values, _NoChecks(), None) == []
+    assert calls == [("ACCUSED",), ("COMPLAINANT",)]
+
+
+def test_a_shared_party_lookup_still_refuses_a_person_outside_the_roles(order):
+    from types import SimpleNamespace
+
+    from apps.orders.services.items import _party_ids
+
+    (accused,) = _party_ids(order, ("ACCUSED",))
+    (complainant,) = _party_ids(order, ("COMPLAINANT",))
+    item_type = SimpleNamespace(
+        field_schema={
+            "fields": [
+                {"key": "a", "label": "A", "input": "PARTY", "party_types": ["ACCUSED"]},
+                {"key": "b", "label": "B", "input": "PARTY", "party_types": ["ACCUSED"]},
+            ]
+        }
+    )
+    problems = items.values_problems(
+        order, item_type, {"a": accused, "b": complainant}, _NoChecks(), None
+    )
+    assert [(p.field, p.code) for p in problems] == [("values.b", "NOT_IN_CASE")]

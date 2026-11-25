@@ -27,7 +27,7 @@ def create(owner, *, name, body, scope):
             return OrderShortcut.objects.create(
                 owner=owner,
                 name=name,
-                body=rendering.sanitize_html(body),
+                body=rendering.sanitize_html(body, field="body"),
                 scope=list(scope),
                 created_by=owner,
                 updated_by=owner,
@@ -36,8 +36,9 @@ def create(owner, *, name, body, scope):
         raise BusinessError(errors.SHORTCUT_NAME_TAKEN, field="name") from exc
 
 
-def _own(owner, shortcut_id):
-    row = OrderShortcut.objects.filter(pk=shortcut_id, owner=owner).first()
+def _own(owner, shortcut_id, *, lock=False):
+    rows = OrderShortcut.objects.select_for_update() if lock else OrderShortcut.objects
+    row = rows.filter(pk=shortcut_id, owner=owner).first()
     if row is None:
         raise NotFound("Shortcut not found.")
     return row
@@ -45,17 +46,23 @@ def _own(owner, shortcut_id):
 
 def update(owner, shortcut_id, **changes):
     """Change a shortcut; only its owner may (``SHC-06``)."""
-    row = _own(owner, shortcut_id)
+    # The row is read under its lock and only the fields this call changes are written,
+    # so an overlapping edit of another field of the same shortcut is never overwritten.
+    fields = ["updated_by", "updated_at"]
     try:
         with transaction.atomic():
+            row = _own(owner, shortcut_id, lock=True)
             if "name" in changes:
                 row.name = changes["name"]
+                fields.append("name")
             if "body" in changes:
-                row.body = rendering.sanitize_html(changes["body"])
+                row.body = rendering.sanitize_html(changes["body"], field="body")
+                fields.append("body")
             if "scope" in changes:
                 row.scope = list(changes["scope"])
+                fields.append("scope")
             row.updated_by = owner
-            row.save()
+            row.save(update_fields=fields)
     except IntegrityError as exc:
         raise BusinessError(errors.SHORTCUT_NAME_TAKEN, field="name") from exc
     return row

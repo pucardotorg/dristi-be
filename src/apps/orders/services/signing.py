@@ -110,7 +110,14 @@ def start_signing(order_id, *, actor, method=SigningMethod.AADHAAR_ESIGN):
         order.signer_designation = order.signer_designation or DEFAULT_DESIGNATION
         order.signing_heading = order.order_type.pdf_heading
         order.signing_attendance = rendering.attendance_sentences(order.hearing_id)
-        content = rendering.render_pdf(order, signing_user=actor, **_case_facts(order))
+        # The PDF prints the snapshot, not a second read: a roll edit committed between
+        # two reads and reverted before confirmation would pass the check below.
+        content = rendering.render_pdf(
+            order,
+            signing_user=actor,
+            attendance=order.signing_attendance,
+            **_case_facts(order),
+        )
         order.signing_file_id = _store(order, content, f"order-{order.pk}.pdf", actor)
         common.save_order(order, actor, "signing started")
     return _initiate(order, actor, order.signing_file_id)

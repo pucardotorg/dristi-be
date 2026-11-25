@@ -12,6 +12,7 @@ from .enums import FieldInput
 
 FIELD_KEYS = {"key", "label", "input", "options", "mandatory", "party_types", "master"}
 KEY_RE = re.compile(r"[a-z][a-z0-9_]*")
+DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 MAX_TEXT = 2000
 MAX_AMOUNT = Decimal("99999999.99")
 
@@ -38,12 +39,17 @@ def schema_errors(schema):
             errors.append(f"{where}.key {key!r} is used twice.")
         else:
             seen.add(key)
-        if not field.get("label"):
-            errors.append(f"{where}.label is required.")
+        label = field.get("label")
+        if not isinstance(label, str) or not label.strip():
+            errors.append(f"{where}.label must be a non-empty string.")
         if field.get("input") not in FieldInput.values:
             errors.append(f"{where}.input must be one of {', '.join(FieldInput.values)}.")
-        if field.get("input") == FieldInput.ENUM and not _string_list(field.get("options")):
-            errors.append(f"{where}.options must be a non-empty list of strings for an ENUM field.")
+        if field.get("input") == FieldInput.ENUM and not (
+            _string_list(field.get("options")) and all(field["options"])
+        ):
+            errors.append(
+                f"{where}.options must be a non-empty list of non-empty strings for an ENUM field."
+            )
         if "party_types" in field and not _string_list(field["party_types"], allow_empty=True):
             errors.append(f"{where}.party_types must be a list of strings.")
         if field.get("input") == FieldInput.MASTER and not field.get("master"):
@@ -91,8 +97,11 @@ def value_problem(field, value):
             return "INVALID", f"{label} must be text of at most {MAX_TEXT} characters."
     elif kind == FieldInput.DATE:
         try:
+            # ``fromisoformat`` also takes "20191204" and week dates (3.11+): insist on the format.
+            if not isinstance(value, str) or not DATE_RE.fullmatch(value):
+                raise ValueError
             datetime.date.fromisoformat(value)
-        except (TypeError, ValueError):
+        except ValueError:
             return "INVALID", f"{label} must be a date as YYYY-MM-DD."
     elif kind == FieldInput.AMOUNT:
         try:
@@ -149,6 +158,6 @@ def _recipient_ok(item):
     return (
         isinstance(item, dict)
         and _is_uuid(item.get("party_id"))
-        and isinstance(item.get("channels", []), list)
+        and _string_list(item.get("channels", []), allow_empty=True)
         and isinstance(item.get("addresses", []), list)
     )

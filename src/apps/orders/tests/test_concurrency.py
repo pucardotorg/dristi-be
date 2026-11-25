@@ -24,10 +24,7 @@ pytestmark = [
 RACE_TIMEOUT_SECONDS = 30
 
 
-@pytest.fixture(autouse=True)
-def seeded(settings, django_db_setup):
-    """Seed the reference data again: a transactional test flushes the tables when it ends,
-    taking the session's seed with it, so every test here starts by loading its own."""
+def _seed():
     from io import StringIO
 
     from django.core.management import call_command
@@ -35,6 +32,21 @@ def seeded(settings, django_db_setup):
     from conftest import CORE_SEED, MIGRATED_DATA
 
     call_command("seed", *[str(CORE_SEED / name) for name in MIGRATED_DATA], stdout=StringIO())
+
+
+@pytest.fixture(autouse=True)
+def seeded(settings, django_db_setup):
+    """Seed the reference data again: a transactional test flushes the tables when it ends,
+    taking the session's seed with it, so every test here starts by loading its own."""
+    _seed()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def reseeded_after(django_db_setup, django_db_blocker):
+    """Leave the session's seed behind: the last test's flush ran before this teardown."""
+    yield
+    with django_db_blocker.unblock():
+        _seed()
 
 
 def race(*calls):

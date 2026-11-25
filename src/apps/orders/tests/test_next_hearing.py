@@ -9,6 +9,7 @@ from apps.api.errors import BusinessError
 from apps.hearings.enums import HearingStatus, ReleaseReason
 from apps.hearings.exceptions import HearingError
 from apps.hearings.models import Hearing
+from apps.orders import conf, errors
 from apps.orders.enums import EnteredFrom, ItemSource, NextHearingState
 from apps.orders.models import Order
 from apps.orders.services import bulk, drafting, next_hearing
@@ -387,3 +388,100 @@ def test_the_listed_hearing_is_read_after_the_court_lock(case, drafter, setter, 
         order.pk, state="LISTED", date=TODAY.replace(day=26), purpose="ARGUMENTS", actor=setter
     )
     assert calls.index("lock") < calls.index("read")
+
+
+# -- one transaction per listing in the bulk actions and the cause-list column ---------------
+
+
+def test_bulk_text_leaves_no_draft_when_the_append_fails(started, case, staff):
+    too_long = f"<p>{'x' * (conf.text_max_bytes() + 1)}</p>"
+    result = bulk.bulk_text(
+        actor=staff, court_id=case.court_id, hearing_ids=[started.pk], text=too_long
+    )
+    assert result["done"] == []
+    assert [s["hearing_id"] for s in result["skipped"]] == [started.pk]
+    assert not Order.objects.filter(hearing_id=started.pk).exists()
+
+
+def test_bulk_text_keeps_the_drafts_of_the_listings_that_succeed(started, case, staff):
+    result = bulk.bulk_text(
+        actor=staff, court_id=case.court_id, hearing_ids=[started.pk], text="<p>Hi.</p>"
+    )
+    assert result["done"] == [started.pk]
+    assert Order.objects.get(hearing_id=started.pk).text == "<p>Hi.</p>"
+
+
+def test_bulk_next_hearing_leaves_no_draft_when_the_date_is_rejected(
+    case, courtroom, staff, monkeypatch
+):
+    scheduled = schedule(case, TODAY)
+
+    def reject(order_id, **kwargs):
+        raise BusinessError(errors.INVALID_ORDER_ACTION, "The date is refused.")
+
+    monkeypatch.setattr(next_hearing, "set_next_hearing", reject)
+    result = bulk.bulk_next_hearing(
+        actor=staff,
+        court_id=courtroom.pk,
+        hearing_ids=[scheduled.pk],
+        state="LISTED",
+        date=NEXT,
+    )
+    assert result["done"] == []
+    assert [s["hearing_id"] for s in result["skipped"]] == [scheduled.pk]
+    assert not Order.objects.filter(hearing_id=scheduled.pk).exists()
+
+
+def test_set_for_hearing_leaves_no_draft_on_a_stale_version(started, staff):
+    with pytest.raises(BusinessError) as excinfo:
+        bulk.set_for_hearing(
+            actor=staff,
+            hearing_id=started.pk,
+            state="LISTED",
+            date=NEXT,
+            purpose="APPEARANCE",
+            data_version=1,
+        )
+    assert code(excinfo) == "E14002"
+    assert not Order.objects.filter(hearing_id=started.pk).exists()
+
+
+def test_set_for_hearing_creates_the_draft_on_a_valid_first_edit(started, staff):
+    order, _ = bulk.set_for_hearing(
+        actor=staff,
+        hearing_id=started.pk,
+        state="LISTED",
+        date=NEXT,
+        purpose="APPEARANCE",
+        data_version=0,
+    )
+    assert Order.objects.get(hearing_id=started.pk).pk == order.pk
+
+
+@pytest.mark.parametrize("empty", [None, ""])
+def test_bulk_next_hearing_checks_the_version_for_an_omitted_purpose(
+    order, hearing, case, staff, monkeypatch, empty
+):
+    seen = {}
+    real = next_hearing.set_next_hearing
+
+    def spy(order_id, **kwargs):
+        seen.update(kwargs)
+        return real(order_id, **kwargs)
+
+    monkeypatch.setattr(next_hearing, "set_next_hearing", spy)
+    bulk.bulk_next_hearing(
+        actor=staff,
+        court_id=case.court_id,
+        hearing_ids=[hearing.pk],
+        state="LISTED",
+        date=NEXT,
+        purpose=empty,
+    )
+    assert seen["data_version"] is not None
+
+
+@pytest.fixture
+def started(case, staff):
+    """A started hearing with no order yet."""
+    return started_hearing(case, staff)

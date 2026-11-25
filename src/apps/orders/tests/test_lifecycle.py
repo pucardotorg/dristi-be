@@ -281,3 +281,76 @@ def test_marking_a_discarded_order_complete_is_refused(order, staff):
     with pytest.raises(BusinessError) as excinfo:
         lifecycle.mark_complete(order.pk, actor=staff)
     assert code(excinfo) == "E14001"
+
+
+# -- workflow enqueueing does not depend on signal receivers ----------------------------
+
+
+def test_a_failing_order_triggered_receiver_does_not_skip_the_workflow_enqueue(
+    ready, staff, signer, monkeypatch, django_capture_on_commit_callbacks
+):
+    from apps.orders.tasks import run_order_workflows
+
+    enqueued = []
+    monkeypatch.setattr(run_order_workflows, "send", lambda order_id: enqueued.append(order_id))
+
+    def failing(**kwargs):
+        raise RuntimeError("receiver failed")
+
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    sign(ready, signer)
+    signals.order_triggered.connect(failing, weak=False)
+    try:
+        # Callbacks run as Django runs them on commit; the signal's is robust, so it is logged.
+        with django_capture_on_commit_callbacks(execute=True):
+            lifecycle.mark_complete(ready.pk, actor=staff)
+    finally:
+        signals.order_triggered.disconnect(failing)
+    assert enqueued == [str(ready.pk)]
+    assert Order.objects.get(pk=ready.pk).status == OrderStatus.TRIGGERED
+
+
+def test_a_failing_order_signed_receiver_does_not_skip_the_workflow_enqueue(
+    ready, staff, signer, monkeypatch, django_capture_on_commit_callbacks
+):
+    from apps.orders.tasks import run_order_workflows
+
+    enqueued = []
+    monkeypatch.setattr(run_order_workflows, "send", lambda order_id: enqueued.append(order_id))
+
+    def failing(**kwargs):
+        raise RuntimeError("receiver failed")
+
+    # Data complete first: the signature triggers, after ``order_signed`` is queued.
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signals.order_signed.connect(failing, weak=False)
+    try:
+        with django_capture_on_commit_callbacks(execute=True):
+            sign(ready, signer)
+    finally:
+        signals.order_signed.disconnect(failing)
+    assert enqueued == [str(ready.pk)]
+    assert Order.objects.get(pk=ready.pk).status == OrderStatus.TRIGGERED
+
+
+def test_triggering_enqueues_the_workflows_once_and_still_sends_the_signal(
+    ready, staff, signer, monkeypatch, django_capture_on_commit_callbacks
+):
+    from apps.orders.tasks import run_order_workflows
+
+    events = []
+    monkeypatch.setattr(
+        run_order_workflows, "send", lambda order_id: events.append(("enqueue", order_id))
+    )
+    receiver = lambda **kw: events.append(("signal", str(kw["order_id"])))  # noqa: E731
+
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    sign(ready, signer)
+    signals.order_triggered.connect(receiver, weak=False)
+    try:
+        with django_capture_on_commit_callbacks(execute=True):
+            lifecycle.mark_complete(ready.pk, actor=staff)
+    finally:
+        signals.order_triggered.disconnect(receiver)
+    assert events == [("enqueue", str(ready.pk)), ("signal", str(ready.pk))]

@@ -264,13 +264,13 @@ def error_items(exc: exceptions.APIException, *, field: str | None = None) -> li
     ``errors`` always tells the client something.
     """
     items = list(_flatten(exc.detail, field, exc.status_code))
-    if items and (data := getattr(exc, "error_data", None)):
-        items[0]["data"] = data
     if not items:
         error = resolve_error(None, exc.status_code)
         items = [
             {"code": error.code, "message": error.message, **({"field": field} if field else {})}
         ]
+    if data := getattr(exc, "error_data", None):
+        items[0]["data"] = data
     return items
 
 

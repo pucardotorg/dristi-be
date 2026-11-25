@@ -178,7 +178,9 @@ def values_problems(order, item_type, values, handler, ctx, *, complete=False):
         kind = field["input"]
         if kind in (FieldInput.PARTY, FieldInput.PARTIES):
             roles = tuple(field.get("party_types") or ())
-            people = people_cache.setdefault(roles, _party_ids(order, roles))
+            if roles not in people_cache:
+                people_cache[roles] = _party_ids(order, roles)
+            people = people_cache[roles]
             chosen = [value] if kind == FieldInput.PARTY else value
             for person in chosen:
                 if field_schema.canonical_id(person) not in people:
@@ -369,7 +371,10 @@ def update(order_id, item_id, values, *, source=ItemSource.PERSON, actor=None, d
         ctx = context_for(order, item=item, source=str(source))
         values = dict(values or {})
         kept = {key: item.values[key] for key in record_keys(item.item_type) if key in item.values}
-        typed = {key: value for key, value in values.items() if kept.get(key) != value}
+        # A key the item lacks is typed even as null: a person cannot add a read-only key.
+        typed = {
+            key: value for key, value in values.items() if key not in kept or kept[key] != value
+        }
         if source != ItemSource.SYSTEM and (problems := read_only_problems(item.item_type, typed)):
             _raise_invalid(problems)
         values = {**kept, **values}

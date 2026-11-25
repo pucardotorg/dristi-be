@@ -1,7 +1,5 @@
 """Helpers every orders service shares: the lock, versions, stages, allowed actions (#4, #12.5)."""
 
-from functools import partial
-
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import APIException, ErrorDetail
 
@@ -68,15 +66,18 @@ def save_order(order, actor, reason, *, update_fields=None):
 
 
 def send_on_commit(signal, order):
-    """Send ``signal`` once the transaction commits; never on a rollback (#9.5)."""
-    transaction.on_commit(
-        partial(
-            signal.send,
-            sender=None,
-            order_id=order.pk,
-            case_id=order.case_id,
-        )
-    )
+    """Send ``signal`` once the transaction commits; never on a rollback (#9.5).
+
+    Robust: a failing receiver is logged and never stops the on-commit callbacks
+    after it, such as the one that enqueues the order's runs.
+    """
+    order_id, case_id = order.pk, order.case_id
+
+    # A named function, not a ``partial``: Django logs a robust callback's ``__qualname__``.
+    def send_signal():
+        signal.send(sender=None, order_id=order_id, case_id=case_id)
+
+    transaction.on_commit(send_signal, robust=True)
 
 
 def roznama_of(order):
@@ -187,4 +188,4 @@ def allowed_for_roles_view(order, roznama, roles):
     """The actions the order's status allows that ``roles`` also permit (``ROL-06``)."""
     from ..permissions import allowed_for_roles
 
-    return allowed_for_roles(allowed_actions(order, roznama), roles)
+    return allowed_for_roles(allowed_actions(order, roznama), roles, order)

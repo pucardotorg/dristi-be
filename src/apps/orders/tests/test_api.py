@@ -611,6 +611,47 @@ def test_bulk_text_appends_creates_and_names_what_it_skips(api, courtroom, heari
     assert Order.objects.get(hearing_id=hearing.pk).text == "<p>Called.</p><p>No appearance.</p>"
 
 
+def test_bulk_text_the_pdf_cannot_draw_is_refused_once_e14027(api, courtroom, hearing):
+    response = api.post(
+        url("order-bulk-text"),
+        {
+            "court": str(courtroom.pk),
+            "hearing_ids": [str(hearing.pk)],
+            "text": "<ul><li>a<ul><li>b</li></ul></li></ul>",
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+    assert errors_of(response) == [("E14027", "text")]
+    assert not Order.objects.filter(hearing_id=hearing.pk).exists()
+
+
+def test_a_bulk_skip_carries_the_message_itself(api, courtroom, order, filler):
+    items.add(order.pk, "COGNIZANCE", actor=filler)
+    response = api.post(
+        url("order-bulk-items"),
+        {"order_ids": [str(order.pk)], "items": [{"item_type": "COGNIZANCE"}]},
+        format="json",
+    )
+    [skipped] = response.json()["skipped"]
+    assert skipped["code"] == "E14009"
+    assert skipped["message"] == "You cannot add Cognizance twice."
+
+
+def test_a_signer_cannot_set_the_diary_entry_of_an_order_not_triggered(courtroom, order, signer):
+    """The entry is order data until triggering: the order data filler's (``ROL-02``)."""
+    client = client_for(signer)
+    response = client.put(
+        f"/api/v1/orders/{order.pk}/diary-entry/",
+        {"same_as_text": False, "text": "<p>Rewritten.</p>"},
+        format="json",
+    )
+    assert response.status_code == 403
+    assert errors_of(response) == [("E14019", None)]
+    detail = client.get(url("order-detail", order.pk)).json()
+    assert "edit_diary_entry" not in detail["allowed_actions"]
+
+
 def test_bulk_size_is_limited_e14022(api, courtroom):
     Configuration.objects.update_or_create(
         config_set="orders", config_key="bulk_max_orders", defaults={"config_value": "1"}

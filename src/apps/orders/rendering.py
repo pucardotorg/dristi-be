@@ -13,9 +13,11 @@ import re
 import nh3
 from lxml import html as lxml_html
 
+from apps.api.errors import BusinessError
 from apps.hearings import selectors as hearing_selectors
 from apps.hearings.enums import AttendanceMark, AttendeeType
 
+from . import errors
 from .enums import NextHearingState
 
 ALLOWED_TAGS = {
@@ -36,6 +38,15 @@ ALLOWED_TAGS = {
 }
 ALLOWED_ATTRIBUTES = {"ol": {"type"}, "td": {"colspan", "rowspan"}, "th": {"colspan", "rowspan"}}
 SPAN_RE = re.compile(r"[1-9][0-9]?")
+# What each list or table element may hold for the PDF to draw it as the page shows it.
+STRUCTURE_PARTS = {
+    "ol": {"li"},
+    "ul": {"li"},
+    "table": {"thead", "tbody", "tr"},
+    "thead": {"tr"},
+    "tbody": {"tr"},
+    "tr": {"td", "th"},
+}
 INLINE_MARKUP = {"strong": "b", "b": "b", "em": "i", "i": "i", "u": "u"}
 
 # The signature box, in PDF points on the last page; the page's bottom margin leaves it clear.
@@ -59,9 +70,13 @@ def _attribute_filter(tag, attribute, value):
     return value
 
 
-def sanitize_html(text):
-    """Return ``text`` reduced to the allow-list, never trusting the client (``TXT-02``)."""
-    return nh3.clean(
+def sanitize_html(text, *, field="text"):
+    """Return ``text`` reduced to the allow-list, never trusting the client (``TXT-02``).
+
+    Refused with ``E14027`` on ``field`` when it uses structure the PDF cannot draw
+    (see ``unsupported_structure``): the page and the signed document must not differ.
+    """
+    clean = nh3.clean(
         text or "",
         tags=ALLOWED_TAGS,
         attributes=ALLOWED_ATTRIBUTES,
@@ -70,6 +85,35 @@ def sanitize_html(text):
         link_rel=None,
         strip_comments=True,
     ).strip()
+    if problem := unsupported_structure(clean):
+        raise BusinessError(errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED, problem, field=field)
+    return clean
+
+
+def unsupported_structure(clean):
+    """Return what in sanitised ``clean`` the PDF renderer cannot represent; ``""`` when nothing.
+
+    The renderer draws only top-level lists and tables, takes a list's items and
+    a table's cells as flat text, and skips anything else inside them, so such
+    text would print differently from the page (or not at all). (Cell spans are
+    allowed: the PDF ignores them, a documented limitation.)
+    """
+    if not clean or is_blank(clean):
+        return ""
+    root = lxml_html.fragment_fromstring(clean, create_parent="div")
+    for element in root.iter("ol", "ul", "table"):
+        if element.getparent() is not root:
+            return (
+                "Lists and tables cannot be placed inside a list item, a table cell, "
+                "another list or formatted text."
+            )
+    for element in root.iter(*STRUCTURE_PARTS):
+        allowed = STRUCTURE_PARTS[element.tag]
+        if (element.text or "").strip() or any(
+            child.tag not in allowed or (child.tail or "").strip() for child in element
+        ):
+            return "A list can hold only list items, and a table only rows of cells."
+    return ""
 
 
 def plain_text(text):
@@ -221,17 +265,25 @@ def signature_lines(order, *, signer_name="", signed=False):
     return [designation, "Not signed"]
 
 
-def page_facts(order, *, case_summary=None, purpose_label="", signing_user=None, number=None):
+def page_facts(
+    order, *, case_summary=None, purpose_label="", signing_user=None, number=None, attendance=None
+):
     """Gather everything the page shows, once, so HTML and PDF cannot differ.
 
     ``signing_user`` is the person about to sign: their name goes on the document
     being signed. ``number`` replaces the order's own (a Roznama's internal number).
+    ``attendance`` replaces the roll read now: the snapshot a signing file is prepared with.
     """
     signer = ""
     if signing_user is not None:
         signer = signing_user.name or ""
     elif order.signed_by_id:
         signer = order.signed_by.name or ""
+    if attendance is None:
+        # A signed order keeps the roll its signing file was prepared with.
+        attendance = (
+            order.signing_attendance if order.is_signed else attendance_sentences(order.hearing_id)
+        )
     return {
         # A signed order keeps the heading its signing file was prepared with.
         "heading": (order.is_signed and order.signing_heading) or order.order_type.pdf_heading,
@@ -241,10 +293,7 @@ def page_facts(order, *, case_summary=None, purpose_label="", signing_user=None,
         "case_number": case_summary.display_number if case_summary else "",
         "case_title": case_summary.title if case_summary else "",
         "title": order.title,
-        # A signed order keeps the roll its signing file was prepared with.
-        "attendance": (
-            order.signing_attendance if order.is_signed else attendance_sentences(order.hearing_id)
-        ),
+        "attendance": attendance,
         "body": order.text,
         "next_hearing": next_hearing_line(order, purpose_label),
         "signature": signature_lines(
@@ -293,6 +342,7 @@ def pdf_document(
     heading=None,
     signing_user=None,
     number=None,
+    attendance=None,
 ):
     """Return the order as a renderer document: the same facts as ``render_page``.
 
@@ -307,6 +357,7 @@ def pdf_document(
         purpose_label=purpose_label,
         signing_user=signing_user,
         number=number,
+        attendance=attendance,
     )
     body = facts["body"] if entry_text is None else entry_text
     blocks = [

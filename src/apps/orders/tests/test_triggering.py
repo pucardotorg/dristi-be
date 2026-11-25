@@ -337,3 +337,29 @@ def test_an_ordinary_completion_still_writes_its_status(ready, staff, signer, mo
     assert triggering._execute(order, stage) == RunStatus.FAILED
     stage.refresh_from_db()
     assert stage.error_code == "BOOM" and stage.claim_token is not None
+
+
+def test_a_blocked_write_never_overwrites_a_step_another_delivery_finished(
+    ready, staff, signer, monkeypatch
+):
+    """The runs are read once; a later step finished by another delivery stays DONE."""
+    order = trigger(ready, staff, signer, ("COST", COST), "COGNIZANCE")
+    cost = OrderWorkflowRun.objects.get(order=order, order_item__item_type__code="COST")
+    real = triggering._execute
+
+    def racing(order, scheduled):
+        if scheduled.step != "HEARING":
+            return real(order, scheduled)
+        # While this delivery runs the hearing step, another one finishes the COST step.
+        OrderWorkflowRun.objects.filter(pk=cost.pk).update(status=RunStatus.DONE)
+        OrderWorkflowRun.objects.filter(pk=scheduled.pk).update(
+            status=RunStatus.FAILED, attempts=1, error_code="E10023"
+        )
+        return RunStatus.FAILED
+
+    monkeypatch.setattr(triggering, "_execute", racing)
+    assert triggering.run(order.pk) == 1  # only the failed hearing step is retryable
+    statuses = {code: status for step, code, status in runs(order) if step != "HEARING"}
+    assert statuses["COST"] == RunStatus.DONE
+    assert {status for code, status in statuses.items() if code != "COST"} == {RunStatus.BLOCKED}
+    assert OrderWorkflowRun.objects.get(pk=cost.pk).error_code == ""

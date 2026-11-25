@@ -41,7 +41,7 @@ ACTION_ROLES = {
     "edit_item": (F,),
     "remove_item": (F,),
     "confirm_item": (F,),
-    "edit_diary_entry": (F, S),
+    "edit_diary_entry": (F,),
     "mark_complete": (F,),
     "reopen": (F,),
     "bulk_items": (F,),
@@ -62,17 +62,29 @@ def is_staff(user, court_id):
     return ports.is_court_staff(user, court_id)
 
 
-def role_error(action):
+def action_roles(action, order=None):
+    """The roles ``action`` needs; ``order`` decides the one that depends on its state.
+
+    The order signer also edits the diary entry, but only of a triggered order: a
+    Gujarat Roznama awaiting its signature (#2.1, ``RZN-04``). Before triggering
+    the entry is order data, the order data filler's alone (``ROL-02``).
+    """
+    if action == "edit_diary_entry" and order is not None and order.status == OrderStatus.TRIGGERED:
+        return (F, S)
+    return ACTION_ROLES[action]
+
+
+def role_error(action, order=None):
     """The ``403 E14019`` naming the roles ``action`` needs."""
-    names = " or ".join(role.label.lower() for role in ACTION_ROLES[action])
+    names = " or ".join(role.label.lower() for role in action_roles(action, order))
     return BusinessError(
         errors.ROLE_REQUIRED, f"You need the {names} role in this courtroom to do this."
     )
 
 
-def permits(roles, action):
-    """Whether any of ``roles`` allows ``action``."""
-    return bool(set(ACTION_ROLES[action]) & set(roles))
+def permits(roles, action, order=None):
+    """Whether any of ``roles`` allows ``action`` (on ``order``, see ``action_roles``)."""
+    return bool(set(action_roles(action, order)) & set(roles))
 
 
 def require_role(user, court_id, action):
@@ -88,9 +100,9 @@ def require_role(user, court_id, action):
     return roles
 
 
-def allowed_for_roles(actions, roles):
+def allowed_for_roles(actions, roles, order=None):
     """The ``allowed_actions`` the caller's roles permit (#10.2, ``ROL-06``)."""
-    return [action for action in actions if permits(roles, action)]
+    return [action for action in actions if permits(roles, action, order)]
 
 
 def is_party(user, case_id):
@@ -125,17 +137,18 @@ def actionable_order(user, order_id, action):
     Not visible: ``404``. A party, or staff without the role: ``403 E14019``.
     """
     order, roles, staff = visible_order(user, order_id)
-    if not staff or not permits(roles, action):
-        raise role_error(action)
+    if not staff or not permits(roles, action, order):
+        raise role_error(action, order)
     return order, roles
 
 
-def can_sign_via_esign(*, user, entity_type, entity_id, organization_id=None):
+def can_sign_via_esign(*, user, entity_type, entity_id, organization_id=None, file_id=None):
     """The ``ORDER`` authorizer for ``apps.esign`` (#8.1): a signer, on an order awaiting signing.
 
     A direct call to ``/esign/_esign`` for an order is refused unless the user holds
     ``ORDER_SIGNER`` in its courtroom and the order is ``SENT_FOR_SIGNING`` — or,
     in Gujarat, is a triggered order whose Roznama awaits its signature (#8.4).
+    ``file_id`` must be the document the order (or its Roznama) is about to sign.
     """
     order = (
         Order.objects.select_related("roznama").filter(pk=str(entity_id)).first()
@@ -144,14 +157,20 @@ def can_sign_via_esign(*, user, entity_type, entity_id, organization_id=None):
     )
     if order is None or not permits(court_roles(user, order.court_id), "sign"):
         return False
-    if order.status == OrderStatus.SENT_FOR_SIGNING:
-        return True
     roznama = getattr(order, "roznama", None)
-    return (
+    if order.status == OrderStatus.SENT_FOR_SIGNING:
+        expected = order.signing_file_id
+    elif (
         order.status == OrderStatus.TRIGGERED
         and roznama is not None
         and roznama.status == RoznamaStatus.AWAITING_SIGNATURE
-    )
+    ):
+        expected = roznama.signing_file_id
+    else:
+        return False
+    # Only the current file: a signature on any other could never be recorded (#8.1), so
+    # once ``signing_file_id`` is cleared even a retry is refused and the order is signed again.
+    return bool(expected) and str(file_id or "") == expected
 
 
 def _is_uuid(value):

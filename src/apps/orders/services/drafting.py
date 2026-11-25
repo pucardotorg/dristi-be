@@ -255,6 +255,10 @@ def edit_title(order_id, title, *, actor):
     with transaction.atomic():
         order = common.lock_order(order_id)
         common.require_action(order, "edit_title")
+        if title != order.title:
+            # A PDF prepared for signing carries the old title: drop it, so a signature
+            # begun on it can never be recorded (as ``change_type`` does).
+            order.signing_file_id = ""
         order.title = title
         order.title_overridden = True
         common.save_order(order, actor, "title edited")

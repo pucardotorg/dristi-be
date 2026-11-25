@@ -72,3 +72,8 @@ DIARY_ENTRY_IS_ORDER_TEXT = define(
     "An order of this type has no separate diary entry: it is the order text.",
     status=409,
 )
+ORDER_TEXT_STRUCTURE_UNSUPPORTED = define(
+    "E14027",
+    "The signed PDF cannot show nested lists, lists and tables inside list items or table "
+    "cells, or text inside a list or table outside its items and cells.",
+)

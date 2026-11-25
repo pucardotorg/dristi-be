@@ -1128,7 +1128,11 @@ Order signer, `SENT_FOR_SIGNING`:
 The order registers an `ORDER` authorizer with `apps.esign`
 (`register_entity_authorizer`), so a direct call to `/esign/_esign/` for an
 order is refused unless the user holds `ORDER_SIGNER` in its courtroom and the
-order is `SENT_FOR_SIGNING`.
+order is `SENT_FOR_SIGNING`. The authorizer also receives the `file_id` and
+refuses any file but the one the order is about to sign — its `signing_file_id`
+(the Roznama's, in #8.4). A retry of an earlier attempt passes only while that
+file is still current: once `signing_file_id` is cleared, no signature on the
+old file could be recorded, so the order is signed again.
 
 When the browser returns, the client calls:
 
@@ -1220,7 +1224,7 @@ From the catalogue's *Workflow trigger order* (`PUB-03`):
 calling the handler with `run_id = run.id`:
 
 * A step already `DONE` is skipped, so a redelivered message finishes rather than repeats.
-* A step is claimed (`RUNNING`) under its row lock before it runs, so two deliveries never run it at once; the one that finds it claimed stops, and a claim older than the lease (a crashed worker) can be taken over. The `STAGE` step records each action it completes in `result.done` and skips those on a re-run; each stage event carries an `idempotency_key` for its receivers.
+* A step is claimed (`RUNNING`) under its row lock, and the lock is released before the step runs. A delivery that finds a claim younger than the lease (15 minutes) stops. A delivery that finds an older claim takes it over, even when the earlier worker is still running, so one step can run in two deliveries at once; the stale worker's final write is skipped, but its handler calls still run, so item handlers must be idempotent for the same `run_id`. The `STAGE` step records each action it completes in `result.done` and skips those on a re-run; each stage event carries an `idempotency_key` for its receivers.
 * A failed `HEARING` step marks every later step `BLOCKED`: processes and tasks point at the hearing. Any other failure is recorded and the next step runs.
 * A failed step is retried up to config `orders.run_max_retries` with backoff, then stays `FAILED`, logged at error with `order_id` and `error_code`. An admin action retries it; a `BLOCKED` step runs once the hearing step succeeds.
 
@@ -1529,6 +1533,7 @@ before the first code is defined. (`11` is `apps.core`, spec 0030; `12` is
 | `E14024` | `ORDER_TYPE_NOT_OFFERED` | 400 | a type the case's state does not offer; `field = order_type` |
 | `E14025` | `LINKED_DOCUMENTS_WOULD_BE_REMOVED` | 409 | changing to a type without links, without `remove_linked_documents`; carries the documents (`OTY-07`) |
 | `E14026` | `DIARY_ENTRY_IS_ORDER_TEXT` | 409 | a separate diary entry on a type that has none (`DEN-03`) |
+| `E14027` | `ORDER_TEXT_STRUCTURE_UNSUPPORTED` | 400 | text (order text, diary entry, shortcut body) with a list or table that is not at the top level — inside a list item, a cell, another list or formatting — or with anything but items in a list or rows of cells in a table: the PDF draws only those, so the signed page would differ from the one the court saw (`ORD-13`); `field` is the text's |
 
 Rules:
 
@@ -1742,7 +1747,7 @@ above is unchanged where the build follows it.
 
 ### Built as specified
 
-Every model, the lifecycle table, drafting with presets, text sanitising (`nh3`) and the single renderer for page and PDF, the catalogue with availability and combination rules, order data with defaults and completion checks, the next hearing held through `apps.hearings`, send / move back / sign (Aadhaar e-sign, idempotent confirm checked against the current signing file) / mark complete / trigger exactly once under the order lock, numbering, the Gujarat Roznama, runs written in the trigger transaction and executed by an idempotent actor with blocking and retry, Pending orders and counts, the case's orders, diary entries, bulk items / text / next hearing, shortcuts, the live-view poll, the `ORDER` e-sign authorizer, admin, `E14001`-`E14026`, and `order_status_for_hearings`. The row-lock guarantees (#12.5) are tested on PostgreSQL only.
+Every model, the lifecycle table, drafting with presets, text sanitising (`nh3`) and the single renderer for page and PDF, the catalogue with availability and combination rules, order data with defaults and completion checks, the next hearing held through `apps.hearings`, send / move back / sign (Aadhaar e-sign, idempotent confirm checked against the current signing file) / mark complete / trigger exactly once under the order lock, numbering, the Gujarat Roznama, runs written in the trigger transaction and executed by an idempotent actor with blocking and retry, Pending orders and counts, the case's orders, diary entries, bulk items / text / next hearing, shortcuts, the live-view poll, the `ORDER` e-sign authorizer, admin, `E14001`-`E14027`, and `order_status_for_hearings`. The row-lock guarantees (#12.5) are tested on PostgreSQL only.
 
 ### Divergences
 
@@ -1774,4 +1779,6 @@ Every model, the lifecycle table, drafting with presets, text sanitising (`nh3`)
 * The A-Diary calls `services.diary.set_entry_text`; it is ready and unused.
 * DSC and bulk signing endpoints (#8.2), and the *Data flags* tab, are not built.
 * PDF tables ignore `colspan` / `rowspan` (the HTML keeps them); the signature box is fixed at the foot of the last page.
+* `TXT-02` lists, lettered lists and tables can only be used at the top level of the text: a list nested in a list item (a numbered list with lettered sub-items), or a list or table in a cell, is refused with `E14027`, as the PDF renderer draws items and cells as flat text.
+* The *Cognizance* rule (`COGNIZANCE_TAKEN`) is checked when an item is added, as the catalogue's combination restrictions are (`ITM-07`). Two draft orders of one case that both hold *Cognizance* before either triggers can both trigger, and the second repeats the `COGNIZANCE_TAKEN` stage event; the PRDs fix no rule at trigger time (`CMP-04`, `CMP-05`).
 * Open questions 1-14 above are unchanged and still open.
