@@ -8,7 +8,7 @@ from django.test.utils import CaptureQueriesContext
 
 from apps.api.errors import PERMISSION_DENIED, BusinessError
 from apps.organizations import access, selectors, services
-from apps.organizations.models import CourtRoleAction
+from apps.organizations.models import CourtRoleAction, RoleAssignment
 from apps.organizations.tests.court_factories import (
     TwoCourtsMixin,
     assign,
@@ -216,6 +216,10 @@ class SelectorTests(TwoCourtsMixin, TestCase):
         self.est_a.save()
         selectors.clear_cache(self.magistrate)
         self.assertFalse(selectors.can(self.magistrate, actions.REGISTER, self.est_a.pk))
+        # A courtroom action of a role not tied to an establishment still applies,
+        # and ``action_holders`` agrees with ``can``.
+        self.assertTrue(selectors.can(self.magistrate, actions.SIGN, self.room_a1.pk))
+        self.assertIn(self.magistrate, selectors.action_holders(self.room_a1.pk, actions.SIGN))
 
     def test_a_superuser_or_group_member_with_no_assignment_is_allowed_nothing(self):
         superuser = make_user(is_superuser=True, is_staff=True)
@@ -229,6 +233,31 @@ class SelectorTests(TwoCourtsMixin, TestCase):
         CourtRoleAction.objects.create(role=self.magistrate_role, action="sample.removed")
         selectors.clear_cache(self.magistrate)
         self.assertEqual(selectors.actions_of(self.magistrate, self.room_a1.pk), {"testing.sign"})
+
+    def test_assignments_made_outside_the_services_grant_nothing_against_the_rules(self):
+        user = make_user()
+        services.assign_courtroom(user, self.room_a1, actor=None)
+        # A role of establishment B held in A, and courtroom actions held at an establishment.
+        RoleAssignment.objects.create(
+            user=user,
+            organization=self.room_a1,
+            role=make_role("B_CLERK", [actions.EDIT], establishment=self.est_b),
+        )
+        RoleAssignment.objects.create(
+            user=user, organization=self.est_a, role=make_role("SIGNER", [actions.SIGN])
+        )
+        self.assertEqual(selectors.grants_of(user), [])
+
+    def test_missing_or_mismatched_inputs_allow_nothing(self):
+        anonymous = AnonymousUser()
+        self.assertFalse(selectors.can(self.magistrate, actions.SIGN, None))
+        self.assertEqual(selectors.actions_of(self.magistrate, None), frozenset())
+        # A courtroom action asked of an establishment.
+        self.assertFalse(selectors.action_holders(self.est_a.pk, actions.SIGN).exists())
+        self.assertFalse(selectors.courtrooms_of(anonymous).exists())
+        self.assertFalse(selectors.is_court_reader(anonymous, self.est_a.pk))
+        self.assertFalse(selectors.is_court_reader(self.magistrate, None))
+        self.assertEqual(selectors.court_access_summary(anonymous), {"establishments": []})
 
     def test_an_undeclared_action_argument_raises(self):
         with self.assertRaises(ImproperlyConfigured):
@@ -311,6 +340,10 @@ class AccessTests(TwoCourtsMixin, TestCase):
             access.require_any(
                 self.user, actions.SCRUTINY_STAGE, self.est_b.pk, error=PERMISSION_DENIED
             )
+
+    def test_require_any_needs_an_action(self):
+        with self.assertRaises(ImproperlyConfigured):
+            access.require_any(self.user, (), self.est_a.pk, error=PERMISSION_DENIED)
 
     def test_require_any_refuses_a_scoped_action(self):
         with self.assertRaises(ImproperlyConfigured):

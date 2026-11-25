@@ -45,6 +45,16 @@ class RegistryTests(SimpleTestCase):
                 court_actions.define(code, CourtLevel.ESTABLISHMENT, "Bad", group="G")
         self.assertTrue(all(e.id == "organizations.E003" for e in checks.check_registry(None)))
 
+    def test_e003_reports_a_malformed_code_put_in_the_registry_directly(self):
+        court_actions._REGISTRY["Sample.Bad"] = court_actions.CourtAction(
+            code="Sample.Bad", level=CourtLevel.ESTABLISHMENT, label="Bad", group="G"
+        )
+        ids = [error.id for error in checks.check_registry(None)]
+        self.assertEqual(ids, ["organizations.E003"])
+
+    def test_an_action_reads_as_its_code(self):
+        self.assertEqual(str(actions.FLAG), "testing.flag")
+
     def test_unknown_level_fails(self):
         with self.assertRaises(ImproperlyConfigured):
             court_actions.define("sample.levelless", "STATE", "Bad", group="G")

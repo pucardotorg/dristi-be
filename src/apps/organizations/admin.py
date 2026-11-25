@@ -355,10 +355,14 @@ class CourtroomAssignmentAdmin(AssignmentAdminMixin, SimpleHistoryAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def save_model(self, request, obj, form, change):
-        """Add or remove through the services (removing also revokes the roles there)."""
+        """Add or remove through the services (removing also revokes the roles there).
+
+        Remove only when this save unticks ``is_active``: the service acts on the
+        active row for the pair, so re-saving an old inactive row must not reach it.
+        """
         if obj.is_active:
             self._adopt(obj, services.assign_courtroom(obj.user, obj.courtroom, actor=request.user))
-        else:
+        elif "is_active" in form.changed_data:
             services.remove_courtroom(obj.user, obj.courtroom, actor=request.user)
 
 
@@ -397,11 +401,15 @@ class RoleAssignmentAdmin(AssignmentAdminMixin, SimpleHistoryAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def save_model(self, request, obj, form, change):
-        """Assign or revoke through the services."""
+        """Assign or revoke through the services.
+
+        Revoke only when this save unticks ``is_active``: the service acts on the
+        active row for the triple, so re-saving an old inactive row must not reach it.
+        """
         if obj.is_active:
             saved = services.assign_role(obj.user, obj.organization, obj.role, actor=request.user)
             self._adopt(obj, saved)
-        else:
+        elif "is_active" in form.changed_data:
             services.revoke_role(obj.user, obj.organization, obj.role, actor=request.user)
 
 

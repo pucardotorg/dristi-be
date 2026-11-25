@@ -20,6 +20,7 @@ from apps.organizations.tests.court_factories import (
     make_role,
     make_user,
 )
+from apps.organizations.tests.factories import make_organization
 
 from . import court_actions as actions
 
@@ -131,6 +132,47 @@ class RoleTests(TwoCourtsMixin, TestCase):
         services.set_role_actions(role, [actions.SIGN, actions.EDIT], actor=self.admin)
         self.assertTrue(role.actions.filter(pk=row.pk).exists())
 
+    def test_actions_may_be_given_as_dicts(self):
+        role = make_role("PROCESS")
+        services.set_role_actions(
+            role,
+            [
+                {"action": actions.PROCESS_SIGN, "scope": {"process_types": ["SUMMONS"]}},
+                {"action": "testing.edit"},
+            ],
+            actor=self.admin,
+        )
+        self.assertCountEqual(
+            role.actions.values_list("action", "scope"),
+            [("testing.process_sign", {"process_types": ["SUMMONS"]}), ("testing.edit", None)],
+        )
+
+    def test_role_model_validation(self):
+        with self.assertRaises(ValidationError) as caught:
+            CourtRole(code="lower case", name="Bad").clean()
+        self.assertIn("code", caught.exception.message_dict)
+        role = make_role("CLERK", establishment=self.est_a, name="Clerk")
+        self.assertEqual(role.natural_key(), ("CLERK", "EST_A"))
+        self.assertEqual(str(role), "Clerk (CLERK @ EST_A)")
+
+    def test_role_action_model_validation(self):
+        scope = {"process_types": ["SUMMONS"]}
+        role = make_role("PROCESS", [(actions.PROCESS_SIGN, scope)])
+        with self.assertRaises(ValidationError) as caught:
+            CourtRoleAction(role=role, action="sample.removed").clean()
+        self.assertIn("action", caught.exception.message_dict)
+        with self.assertRaises(ValidationError) as caught:
+            CourtRoleAction(role=role, action="testing.process_sign", scope=scope).clean()
+        self.assertIn("scope", caught.exception.message_dict)
+        # Without a role yet only the action and scope are checked.
+        CourtRoleAction(action="testing.process_sign", scope=scope).clean()
+
+        held_at_establishment = make_role("SCRUTINY", [actions.FLAG])
+        assign(make_user(), self.est_a, held_at_establishment)
+        with self.assertRaises(ValidationError) as caught:
+            CourtRoleAction(role=held_at_establishment, action="testing.sign").clean()
+        self.assertIn("action", caught.exception.message_dict)
+
     def test_role_codes_are_unique_among_active_rows_per_establishment(self):
         make_role("TYPIST")
         with self.assertRaises(ValidationError):
@@ -182,9 +224,36 @@ class AssignmentTests(TwoCourtsMixin, TestCase):
         with self.assertRaises(ValidationError):
             services.assign_role(self.user, self.est_a, inactive, actor=self.admin)
 
-    def test_only_a_courtroom_goes_on_the_list(self):
+    def test_a_role_cannot_be_held_at_an_organization_outside_the_courts(self):
+        with self.assertRaises(ValidationError) as caught:
+            services.assign_role(
+                self.user, make_organization(code="DIST"), self.scrutiny, actor=self.admin
+            )
+        self.assertIn("organization", caught.exception.message_dict)
+
+    def test_only_an_active_courtroom_goes_on_the_list(self):
         with self.assertRaises(ValidationError):
             services.assign_courtroom(self.user, self.est_a, actor=self.admin)
+        self.room_a1.is_active = False
+        self.room_a1.save()
+        with self.assertRaises(ValidationError) as caught:
+            CourtroomAssignment(user=self.user, courtroom=self.room_a1).clean()
+        self.assertIn("courtroom", caught.exception.message_dict)
+
+    def test_removing_or_revoking_what_is_not_held_does_nothing(self):
+        received = []
+
+        def receiver(**kwargs):
+            received.append(kwargs)
+
+        court_access_changed.connect(receiver)
+        self.addCleanup(court_access_changed.disconnect, receiver)
+        with self.captureOnCommitCallbacks(execute=True):
+            services.remove_courtroom(self.user, self.room_a1, actor=self.admin)
+            services.revoke_role(self.user, self.est_a, self.scrutiny, actor=self.admin)
+        self.assertEqual(received, [])
+        self.assertFalse(CourtroomAssignment.objects.filter(user=self.user).exists())
+        self.assertFalse(RoleAssignment.objects.filter(user=self.user).exists())
 
     def test_assigning_twice_keeps_one_row_and_revoked_ones_are_reactivated(self):
         first = services.assign_role(self.user, self.est_a, self.scrutiny, actor=self.admin)

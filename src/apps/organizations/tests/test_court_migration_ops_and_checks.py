@@ -1,7 +1,10 @@
 """Data-migration helpers and database system checks (spec 0029 #3.4, #9.3, #12)."""
 
+import types
+from unittest import mock
+
 from django.apps import apps as global_apps
-from django.db import connection
+from django.db import DatabaseError, connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase
 
@@ -92,6 +95,27 @@ class MigrationOpsTests(TestCase):
             CourtRoleAction.history.filter(action="sample.removed", history_type="-").count(), 1
         )
 
+    def test_history_reason_names_the_calling_migration(self):
+        def forwards(apps):
+            return migration_ops.add_action_to_roles_with(apps, "sample.new", like="testing.edit")
+
+        # Run it as if it were defined in a migration module.
+        as_migration = types.FunctionType(
+            forwards.__code__,
+            {"__name__": "apps.sample.migrations.0007_add_new", "migration_ops": migration_ops},
+        )
+        as_migration(self.apps)
+        reasons = set(
+            CourtRoleAction.history.filter(action="sample.new").values_list(
+                "history_change_reason", flat=True
+            )
+        )
+        self.assertEqual(reasons, {"migration sample.0007_add_new"})
+
+    def test_add_scope_code_with_refuses_an_unknown_axis(self):
+        with self.assertRaises(ValueError):
+            migration_ops.add_scope_code_with(self.apps, "courts", "X", like="Y")
+
     def test_add_scope_code_with(self):
         changed = migration_ops.add_scope_code_with(
             self.apps, "channels", "POLICE_X", like="POLICE_NSTEP"
@@ -151,6 +175,18 @@ class DatabaseCheckTests(TwoCourtsMixin, TestCase):
         self.assertEqual(self.ids(), ["organizations.W002"])
         RoleAssignment.objects.update(is_active=False)
         self.assertEqual(self.ids(), [])
+
+    def test_a_listed_courtroom_that_is_not_a_courtroom(self):
+        self.make_courts()
+        user = make_user()
+        services.assign_courtroom(user, self.room_a1, actor=None)
+        # Re-pointed behind the services' back, as a bad data fix would.
+        user.courtroom_assignments.update(courtroom=self.est_a)
+        self.assertEqual(self.ids(), ["organizations.W002"])
+
+    def test_skipped_before_the_tables_exist(self):
+        with mock.patch.object(checks, "_roles_without_actions", side_effect=DatabaseError):
+            self.assertEqual(checks.check_court_data(None, databases=["default"]), [])
 
     def test_role_without_actions(self):
         make_role("EMPTY_ROLE")
