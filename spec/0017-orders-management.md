@@ -1141,7 +1141,7 @@ Dramatiq actors in `apps/payments/tasks.py`, Redis broker
 ([`0012`](0012-redis-caching.md)):
 
 ```text
-poll_pending_payments()                 # periodic; fetch_status + apply_provider_status (#9.7)
+poll_pending_payments()                 # @cron every minute; fetch_status + apply_provider_status (#9.7)
 notify_payment_completed(payment_id)    # inform the raising module / messaging
 ```
 
@@ -1319,7 +1319,7 @@ open points.
 
 * **Notification (open question 7):** `notify_payment_completed` sends the Django signal `apps.payments.signals.payment_completed(payment, demand, items, demand_paid)`. Raising modules connect a receiver; this module imports none of them. A receiver identifies its demand by the id it stored, never by references (#14); with no REST create, every demand is raised in-process.
 * **Case access (#13, open question 2):** `Demand.case` is a foreign key to `cases.Case`. "Involved in the case" is read from the cases module (spec 0020), which has no `CasePersonRelationship`: the filer (`Case.created_by`); an active `CaseParticipant` whose person is the user, in the role complainant, accused or POA holder; and an advocate with an active `Representation` on the case. Witnesses are excluded (#13 does not list them). Clerks are not covered yet: the cases module does not link a clerk to an advocate or a case. Removal (soft delete, or an end date in the past) ends access at once.
-* **Polling schedule:** the project has no periodic scheduler, so `manage.py payments_poll_pending` (or `--enqueue` for a worker) is meant to run from cron every five minutes; see "Scheduled jobs" in the README.
+* **Polling schedule:** `poll_pending_payments` is scheduled every minute by the `scheduler` service (`@cron("* * * * *")`, [0026](0026-dramatiq-crontab.md) #7.1). Each payment keeps its own backoff (#9.7), so the tick only bounds the latency. `manage.py payments_poll_pending` (or `--enqueue`) runs one pass on demand.
 * **Reconciliation (open question 13):** the admin offers "re-check with provider" and "mark reconciliation as resolved" (credits nothing), each behind its own permission. No action credits a late success. Each reason is flagged at most once per payment: polling again neither overwrites it nor raises it again after an operator has resolved it. A different reason flags the payment afresh, even while an earlier flag is open (a `PAYMENT_STUCK` payment that later reports a late success is flagged and logged again); the earlier record moves to `metadata.reconciliation_history`. A resolved payment that is still `PENDING` keeps being polled.
 * **Provider-less payments (#9.3):** the admin action "Confirm payment collected outside a provider" confirms an `INITIATED` payment that has no provider.
 * **Success without an amount (#9.5):** a `SUCCESS` status whose `amount` is `None` cannot be "equal", so it is treated like a mismatch: flagged `needs_reconciliation`, never credited.

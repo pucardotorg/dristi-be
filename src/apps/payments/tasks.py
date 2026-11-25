@@ -2,9 +2,12 @@
 
 There is no initiation actor: initiation runs in the request (#9.4). Actors
 take identifiers only and are idempotent.
+
+Schedules are in UTC and run by the ``scheduler`` service (spec 0026 #7.1).
 """
 
 from dramatiq import actor
+from dramatiq_crontab import cron
 
 from .enums import DemandStatus, PaymentStatus
 from .models import DemandItem, Payment
@@ -12,6 +15,7 @@ from .services import polling
 from .signals import payment_completed
 
 
+@cron("* * * * *")  # every minute; each payment keeps its own backoff (#9.7)
 @actor(max_retries=0)
 def poll_pending_payments() -> int:
     """Resolve pending payments whose callback never came (periodic)."""
