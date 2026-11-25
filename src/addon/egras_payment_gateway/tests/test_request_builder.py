@@ -1,6 +1,6 @@
 """e-Challan form-building tests (spec 0022 #4)."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -13,6 +13,7 @@ from addon.egras_payment_gateway.request_builder import (
     build_request,
     financial_year,
     select_bank,
+    valid_upto,
 )
 from apps.payments.providers.base import ProviderPermanentError
 
@@ -24,6 +25,13 @@ class FinancialYearTests(SimpleTestCase):
         self.assertEqual(financial_year(datetime(2026, 10, 12, 9, 0, tzinfo=constants.IST)), "2627")
         self.assertEqual(financial_year(datetime(2027, 3, 31, 23, 0, tzinfo=constants.IST)), "2627")
         self.assertEqual(financial_year(datetime(2027, 4, 1, 0, 30, tzinfo=constants.IST)), "2728")
+
+
+class ValidUptoTests(SimpleTestCase):
+    def test_initiated_at_in_ist_plus_horizon(self):
+        # 20:00 UTC on 31 Dec is already 1 Jan in IST.
+        initiated = datetime.fromisoformat("2026-12-31T20:00:00+00:00")
+        self.assertEqual(valid_upto(initiated, timedelta(days=9)), "10/01/2027")
 
 
 class ApplicationNumberTests(SimpleTestCase):
@@ -84,6 +92,8 @@ class BuildRequestTests(SimpleTestCase):
         self.assertEqual(form[constants.FIELD_DTO], "01")
         self.assertEqual(form[constants.FIELD_OFFICE_NAME], "0102DDO1")
         self.assertEqual(form[constants.FIELD_PTYPE], constants.PTYPE_NET_BANKING)
+        # e-GRAS staging rejects ptype=N without it; 12 Oct + 9-day horizon.
+        self.assertEqual(form[constants.FIELD_VALID_UPTO], "21/10/2026")
         self.assertEqual(form[constants.FIELD_UURL], self.config.return_url)
         self.assertEqual(form[constants.FIELD_CHALLAN_YEAR], "2627")
         self.assertEqual(form[constants.FIELD_TOTAL_AMOUNT], "25")

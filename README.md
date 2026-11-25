@@ -401,8 +401,8 @@ entry removes the integration entirely.
 
 | Variable | Purpose | Example |
 | --- | --- | --- |
-| `EGRAS_PAYMENT_URL` | NIC e-Challan posting URL the browser submits the form to | `https://egras.<state>.gov.in/echallan` |
-| `EGRAS_VERIFY_URL` | SOAP GRN status service used for server-to-server verification | `https://egras.<state>.gov.in/grnstatus` |
+| `EGRAS_PAYMENT_URL` | NIC e-Challan posting URL the browser submits the form to (UAT: `https://staging.egrashry.nic.in/webpages/EgEChallan_Excise.aspx`) | `https://egrashry.nic.in/webpages/EgEChallan_Excise.aspx` |
+| `EGRAS_VERIFY_URL` | SOAP GRN status service used for server-to-server verification (UAT: `https://staging.egrashry.nic.in/grn_status.asmx`) | `https://egrashry.nic.in/grn_status.asmx` |
 | `EGRAS_RETURN_URL` | Absolute `https://` callback URL; must end `/api/v1/payments/providers/egras/_callback` | `https://api.example.com/api/v1/payments/providers/egras/_callback` |
 | `EGRAS_DEPT_CODE` | 3-character department code from the budget | `DRI` |
 | `EGRAS_DTO` / `EGRAS_STO` | 2-digit treasury / sub-treasury codes | `01` / `02` |
@@ -413,8 +413,8 @@ entry removes the integration entirely.
 | `EGRAS_USER_ID` | e-GRAS user id | `guest` |
 | `EGRAS_SCHEME_MAP` | JSON: `account_head` or `charge_type` → 17-character scheme code `NNNN-NN-NNN-NN-NN` | `{"COURT_FEE": "0030-01-501-01-00"}` |
 | `EGRAS_MAX_SCHEMES` | Government-charge scheme slots per transaction. Keep `1` until NIC confirms the field names of the second and later heads (spec 0022 Q-3); up to `4` once confirmed | `1` |
-| `EGRAS_BANK_OPTIONS` | JSON list of `{code, label, group}` bank/UPI choices issued by NIC | `[{"code": "SBI", "label": "State Bank of India", "group": "NET_BANKING"}]` |
-| `EGRAS_DEFAULT_BANK` | Bank code used when the client sends none; must be one of the options | `SBI` |
+| `EGRAS_BANK_OPTIONS` | JSON list of `{code, label, group}` bank/UPI choices issued by NIC (internet-banking aggregator codes, e.g. `0001509` SBI, `0300103` Canara) | `[{"code": "0001509", "label": "SBI", "group": "NET_BANKING"}]` |
+| `EGRAS_DEFAULT_BANK` | Bank code used when the client sends none; must be one of the options | `0001509` |
 | `EGRAS_APPLICATION_PREFIX` | ≤ 2 alphanumeric characters prefixing the application number | `DR` |
 | `EGRAS_REMARKS_TEMPLATE` | Remarks template; `{demand_numbers}` is filled in | `Dristi {demand_numbers}` |
 | `EGRAS_PAYER_FALLBACK_CITY` / `_ADDRESS` / `_PINCODE` | Fallbacks when a payer field is empty after sanitisation | `NA` / `NA` / `000000` |
