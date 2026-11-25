@@ -49,7 +49,7 @@ class SignPlaceholderSerializer(serializers.Serializer):
 
 
 class ESignInitiateSerializer(serializers.Serializer):
-    """Payload of ``POST /esign/_esign``."""
+    """Payload of ``POST /esign/_esign/``."""
 
     organization_id = serializers.UUIDField(required=False, allow_null=True, default=None)
     module = serializers.CharField(max_length=64)

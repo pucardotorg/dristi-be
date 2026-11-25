@@ -126,13 +126,19 @@ class SignatureSlot(Flowable):
     draws its own bordered appearance, is placed exactly there later.
     """
 
-    def __init__(self, key, name, label, style, box_height, anchors):
+    def __init__(self, key, name, label, style, box_height, anchors, label_style=None):
         super().__init__()
         self.key, self.box_height, self.anchors = key, box_height, anchors
         # Through the script-font fallback, as body text is: a Malayalam or
-        # Devanagari name needs that script's font.
-        self.name = Paragraph(with_script_fonts(name or "&nbsp;", style.family), style)
-        self.label = Paragraph(with_script_fonts(label or "&nbsp;", style.family), style)
+        # Devanagari name needs that script's font. The name is bold, the label
+        # in ``label_style`` when given (efiling §16.9 sample).
+        self.name = Paragraph(
+            with_script_fonts(f"<b>{name}</b>" if name else "&nbsp;", style.family), style
+        )
+        label_style = label_style or style
+        self.label = Paragraph(
+            with_script_fonts(label or "&nbsp;", label_style.family), label_style
+        )
 
     def wrap(self, avail_width, avail_height):
         self.width = avail_width
@@ -436,11 +442,20 @@ class PythonRenderer(PDFRenderer):
         page break.
         """
         style = self._style(block.get("style"))
+        label_style = self._style(block["label_style"]) if block.get("label_style") else None
         box_height = float(block.get("box_height", 64))
         gutter = 24
         column = (self.frame_width - gutter) / 2
         slots = [
-            SignatureSlot(slot["key"], slot["name"], slot["label"], style, box_height, self.anchors)
+            SignatureSlot(
+                slot["key"],
+                slot["name"],
+                slot["label"],
+                style,
+                box_height,
+                self.anchors,
+                label_style,
+            )
             for slot in block.get("slots") or []
         ]
         story = []

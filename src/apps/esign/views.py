@@ -81,7 +81,7 @@ def initiation_payload(result) -> dict:
 
 
 class ESignInitiateView(APIView):
-    """``POST /esign/_esign`` — prepare a document and hand back the ESP form."""
+    """``POST /esign/_esign/`` — prepare a document and hand back the ESP form."""
 
     permission_classes = [IsAuthenticated, IsAuthenticatedAndRegistered]
 
@@ -130,7 +130,7 @@ class ESignInitiateView(APIView):
 
 
 class ESignTransactionStatusView(APIView):
-    """``GET /esign/transactions/{id}`` — the UI's source of truth for the outcome."""
+    """``GET /esign/transactions/{id}/`` — the UI's source of truth for the outcome."""
 
     permission_classes = [IsAuthenticated, IsAuthenticatedAndRegistered]
 
@@ -157,7 +157,7 @@ class ESignTransactionStatusView(APIView):
 
 
 class ESignRetryView(APIView):
-    """``POST /esign/transactions/{id}/_retry`` — a fresh attempt at the same document."""
+    """``POST /esign/transactions/{id}/_retry/`` — a fresh attempt at the same document."""
 
     permission_classes = [IsAuthenticated, IsAuthenticatedAndRegistered]
 
@@ -218,7 +218,7 @@ class ESignCallbackThrottle(AnonRateThrottle):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class ESignCallbackView(APIView):
-    """``POST /esign/_signed`` — the ESP's browser form POST.
+    """``POST /esign/_signed/`` — the ESP's browser form POST.
 
     Trust comes from the response signature, not from the caller, so this
     endpoint is unauthenticated by necessity. It ignores every identifier in

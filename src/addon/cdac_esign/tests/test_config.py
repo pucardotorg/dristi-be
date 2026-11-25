@@ -81,7 +81,7 @@ class ConfigTests(CDACSettingsMixin, SimpleTestCase):
         problems = dict(
             CDACESignConfig(
                 url="http://esign.cdac.invalid",
-                response_url="/api/v1/esign/_signed",
+                response_url="/api/v1/esign/_signed/",
             ).validate()
         )
 

@@ -5,7 +5,7 @@ import io
 import pytest
 from pypdf import PdfReader
 
-from apps.pdf.exceptions import PDFRenderError
+from apps.pdf.exceptions import PDFRenderError, PDFRequestDataError
 from apps.pdf.renderer import ImageData
 from apps.pdf.renderer.fonts import script_runs
 from apps.pdf.renderer.merge import merge, page_count, split
@@ -267,3 +267,110 @@ def test_signer_names_in_indic_scripts_use_script_fonts():
     text = page.extract_text()
     assert malayalam in text and devanagari in text
     assert "\x00" not in text
+
+
+# -- composer edge cases ------------------------------------------------------
+
+
+def test_composer_refuses_a_loop_over_something_that_is_not_a_list():
+    with pytest.raises(PDFRequestDataError, match="is not a list"):
+        compose({"body": [{"type": "list", "source": "items"}]}, {"items": 5})
+
+
+def test_composer_treats_a_missing_loop_source_as_empty():
+    document = compose({"body": [{"type": "list", "source": "items"}]}, {"items": None})
+
+    assert document["sections"][0][0]["items"] == []
+
+
+def test_composer_refuses_an_image_source_that_is_not_an_image():
+    with pytest.raises(PDFRequestDataError, match="does not resolve to an image"):
+        compose({"body": [{"type": "image", "source": "seal"}]}, {"seal": "not-an-image"})
+
+
+def test_composer_draws_a_qr_from_a_value_and_checks_a_qr_source():
+    document = compose(
+        {"body": [{"type": "qr", "value": "https://x/{{ id }}", "size": 60}]}, {"id": "A1"}
+    )
+    block = document["sections"][0][0]
+    assert isinstance(block["image"], ImageData) and "value" not in block
+
+    with pytest.raises(PDFRequestDataError, match="does not resolve to a QR image"):
+        compose({"body": [{"type": "qr", "source": "code"}]}, {"code": "text"})
+
+
+def test_compose_many_needs_at_least_one_record():
+    from apps.pdf.services.composer import compose_many
+
+    with pytest.raises(PDFRequestDataError, match="no records"):
+        compose_many({"body": []}, [])
+
+
+def test_an_empty_document_still_renders_one_page():
+    pdf = render(doc())
+
+    assert len(PdfReader(io.BytesIO(pdf)).pages) == 1
+
+
+def test_merging_one_document_returns_it_unchanged():
+    single = simple_pdf()
+
+    assert merge([single]) is single
+
+
+def test_split_needs_at_least_one_page_per_part():
+    with pytest.raises(PDFRenderError, match="at least 1"):
+        split(simple_pdf(), 0)
+
+
+def test_an_unknown_font_family_is_refused():
+    from apps.pdf.renderer.fonts import register_family
+
+    with pytest.raises(KeyError, match="Unknown font family"):
+        register_family("no-such-font")
+
+
+def test_a_broken_filename_template_falls_back_to_the_key_and_entity():
+    from apps.pdf.services.config_loader import LoadedConfig
+    from apps.pdf.services.generator import document_filename
+
+    config = LoadedConfig("v", "case-complaint", 1, {"body": []}, {"filename": "{{ missing.x }}"})
+
+    name = document_filename(config, {"meta": {"entity_id": "C1"}}, suffix="part-1")
+
+    assert name == "case-complaint-C1-part-1.pdf"
+
+
+def test_a_format_config_the_composer_cannot_apply_is_a_configuration_error():
+    from apps.pdf.exceptions import PDFConfigurationError
+    from apps.pdf.services.config_loader import LoadedConfig
+    from apps.pdf.services.generator import render_variables
+
+    # A table without columns passes no schema here and breaks the composer.
+    config = LoadedConfig("v", "k", 1, {"body": [{"type": "table"}]}, {})
+
+    with pytest.raises(PDFConfigurationError, match="could not be applied"):
+        render_variables(config, [{}])
+
+
+def test_signature_names_are_bold_and_roles_take_the_label_style():
+    """As the efiling §16.9 sample: the signer's name in bold, the role in the label style."""
+    document = compose(
+        {
+            "styles": {"label": {"size": 7.5, "color": "#555555"}},
+            "body": [{"type": "signatures", "source": "s", "label_style": "label"}],
+        },
+        {"s": [{"key": "a", "name": "Rajesh Kumar", "label": "Complainant 1"}]},
+    )
+
+    pdf, _ = PythonRenderer().render_with_anchors(document, {})
+
+    found = {}
+
+    def visit(text, cm, tm, font, size):
+        if text.strip() and font:
+            found.setdefault(text.strip(), (font["/BaseFont"], round(size * tm[0], 1)))
+
+    PdfReader(io.BytesIO(pdf)).pages[0].extract_text(visitor_text=visit)
+    assert "Bold" in found["Rajesh Kumar"][0]
+    assert found["Complainant 1"][1] == 7.5

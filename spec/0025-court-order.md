@@ -1086,7 +1086,7 @@ Order signer, `SENT_FOR_SIGNING`:
 5. Call the `apps.esign` initiation service in-process with `entity_type = ORDER`, `entity_id = order.id`, `file_id = signing_file_id` and the signature-block placement. Return its `esign_url`, `form_fields` and `transaction_id` unchanged ([`0015`](0015-cdac-esign.md) #6.1).
 
 The order registers an `ORDER` authorizer with `apps.esign`
-(`register_entity_authorizer`), so a direct call to `/esign/_esign` for an
+(`register_entity_authorizer`), so a direct call to `/esign/_esign/` for an
 order is refused unless the user holds `ORDER_SIGNER` in its courtroom and the
 order is `SENT_FOR_SIGNING`.
 

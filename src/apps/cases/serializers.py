@@ -46,6 +46,7 @@ from .models import (
 )
 from .services.case_types import CaseType, DocumentType, EvidenceType
 from .services.contacts import contacts_of, first
+from .services.signing import signer_ids
 
 
 class BlankAsNotGivenMixin:
@@ -1206,10 +1207,14 @@ class SignatorySerializer(serializers.Serializer):
     name = serializers.CharField()
     label = serializers.CharField()
     has_signed = serializers.BooleanField()
+    # Whether the requesting user signs as this signatory: the rule that lets
+    # them start the e-sign with this signatory's placeholder. Several rows
+    # may be true, or none.
+    is_me = serializers.BooleanField()
 
 
 class SignaturePlaceholderSerializer(serializers.Serializer):
-    """Where one signer's signature goes: pass it to ``POST /esign/_esign`` as is."""
+    """Where one signer's signature goes: pass it to ``POST /esign/_esign/`` as is."""
 
     case_participant_id = serializers.UUIDField()
     page = serializers.IntegerField()
@@ -1226,7 +1231,7 @@ class ComplaintSigningPackageSerializer(serializers.ModelSerializer):
 
     ``signing_file_id`` is the complaint with every uploaded document appended;
     it never changes in a round. ``current_file_id`` is the file the next signer
-    passes to ``POST /esign/_esign``: it starts as ``signing_file_id`` and
+    passes to ``POST /esign/_esign/``: it starts as ``signing_file_id`` and
     becomes each signer's signed copy, so every signature is on one file.
     """
 
@@ -1268,9 +1273,18 @@ class ComplaintSigningPackageSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(SignatorySerializer(many=True))
     def get_signatories(self, package):
-        """Each signer, in signature-block order, and whether they have signed."""
+        """Each signer, in signature-block order, whether they have signed, and whether it is the caller.
+
+        ``is_me`` is worked out for the requesting user on every request, never
+        stored with the package, which answers differently for each user.
+        """
         signed = self._signed(package)
-        rows = [{**row, "has_signed": row["key"] in signed} for row in package.signatories]
+        request = self.context.get("request")
+        mine = signer_ids(package.case_id, request.user) if request else set()
+        rows = [
+            {**row, "has_signed": row["key"] in signed, "is_me": row["key"] in mine}
+            for row in package.signatories
+        ]
         return SignatorySerializer(rows, many=True).data
 
     @extend_schema_field(SignaturePlaceholderSerializer(many=True))
