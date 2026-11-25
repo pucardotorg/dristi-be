@@ -114,6 +114,15 @@ class CourtLevelValidationTests(TestCase):
         org.save()
         self.assertEqual(Organization.objects.get(pk=org.pk).court_level, CourtLevel.ESTABLISHMENT)
 
+    def test_level_change_is_not_checked_when_the_stored_row_is_gone(self):
+        # A loaded instance whose row was deleted meanwhile has nothing stored
+        # to compare against, so only the hierarchy rules apply.
+        org = make_organization(code="GONE", parent=self.district)
+        Organization.objects.filter(pk=org.pk).delete()
+        org.court_level = CourtLevel.ESTABLISHMENT
+        org.clean()
+        self.assertFalse(Organization.objects.filter(pk=org.pk).exists())
+
 
 class CourtroomsSelectorTests(TestCase):
     """``selectors.courtrooms`` and ``establishment_of``."""
