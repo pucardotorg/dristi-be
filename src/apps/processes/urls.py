@@ -20,5 +20,10 @@ router.register(
     views.CaseProcessesViewSet,
     basename="case-processes",
 )
+router.register(
+    rf"cases/(?P<case_id>{views.UUID_PATTERN})/process-recipients",
+    views.CaseProcessRecipientsViewSet,
+    basename="case-process-recipients",
+)
 
 urlpatterns = router.urls

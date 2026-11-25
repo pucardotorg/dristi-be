@@ -48,3 +48,6 @@ BULK_TOO_LARGE = define("E12016", "Too many processes in one request.")
 OUTCOME_DATE_INVALID = define(
     "E12018", "The outcome date cannot be in the future or before the process was sent."
 )
+OUTCOME_FILE_INVALID = define(
+    "E12019", "Upload the supporting file for this process first, then record the outcome."
+)

@@ -1144,9 +1144,35 @@ from the app), the `meta` envelope and the standard error shape.
 | POST | `/processes/{id}/send/` | #8.1 | `process.send` |
 | POST | `/processes/{id}/outcome/` | #8.2 | `process.record_outcome` |
 | POST | `/processes/{id}/resend/` | #8.3 | `process.send` |
+| POST | `/processes/{id}/outcome-file/` | a supporting file for the outcome (multipart `file`: PDF, JPEG or PNG), stored through `apps.files` and tagged with the process; returns `file_id` for `outcome` (`DSP-08`) | `process.record_outcome`, while recording it applies |
+| POST | `/processes/envelope/` · `/processes/send/` · `/processes/outcome/` | the same steps on a selection (below) | as for one |
 | POST | `/processes/recall/` | #8.4 | `process.recall` |
+| GET | `/cases/{case_id}/process-recipients/` | the order screen's recipients, with destinations and defaults (#5.4) | court staff of the case's courtroom |
 
 Each action is for the process's type and channel at its courtroom (#2.2).
+
+**Steps on a selection.** The screens act on a selection — a pile of covers
+received, covers posted, returns recorded (`SGN-03`, `PIA-01`). `envelope`,
+`send` and `recall` take `{"process_ids": [...]}`; `outcome` takes
+`{"outcome_date", "outcomes": [{"process_id", "status", "reason", "comment",
+"file_id", "outcome_date"}]}`, the batch's date standing for an item that
+gives none. Each returns `{"done": [...], "skipped": [...]}`. Access is all or
+nothing: one process the caller may not take the step on refuses the request
+with `403 E12015`, and one not visible to them with `404`. A process the step
+no longer applies to is skipped, never an error. A refused item refuses the
+batch, with its field under `outcomes[i]`. At most `processes.bulk_max`
+processes (`E12016`). Processes are locked in one order, so overlapping
+selections cannot deadlock. `send` on a selection never marks a proclamation
+published; that is one process at a time.
+
+**Recipients for the order screen.** `GET /cases/{case_id}/process-recipients/`
+returns each complainant, accused and witness with `type`, `name`,
+`party_taking_steps` (null where it must be chosen, `AUT-03`), `preselected`
+(`AUT-05`: the accused where there is exactly one and no accused has joined —
+claimed their record), `mobiles`, `emails` and `addresses`. `AUT-06` (the
+unexamined witness) waits for examination to be recorded; `AUT-04` (police
+station) waits on question 2. Court staff only: the contacts are not a
+party's to read.
 
 #### 11.2 `GET /api/v1/processes/`
 
@@ -1158,6 +1184,8 @@ Each action is for the process's type and channel at its courtroom (#2.2).
 | `channel` | repeatable code |
 | `reason` | repeatable `NonDeliveryReason` code; implies `NOT_DELIVERED` |
 | `my_move` | `true`: only processes whose next step the caller is allowed for its type and channel (`SGN-02`) |
+| `envelope_due` | `true`: an envelope is still to be received — exactly where *receive envelope* applies; `false`: the rest |
+| `fee_paid` | `true` / `false` |
 | `case`, `round`, `hearing` | UUIDs |
 | `search` | case number, title or recipient name |
 | `ordering` | default `status_at`; also `hearing_date` (the date at issue, #3.2), `expires_at`, `created_at`, each with `-` for descending |
@@ -1271,6 +1299,7 @@ and `11` are taken by the hearings and court orders specs.
 | `E12016` | `BULK_TOO_LARGE` | 400 | more processes than `processes.bulk_max` in one recall |
 | `E12017` | `DESTINATION_INVALID` | 400 | a destination added on the order screen is not a valid mobile number, email or postal address (`PRC-05`); `field = values.recipients[i].new_destinations[j]` |
 | `E12018` | `OUTCOME_DATE_INVALID` | 400 | `outcome_date` in the future or before the process was sent; `field = outcome_date` |
+| `E12019` | `OUTCOME_FILE_INVALID` | 400 | `file_id` is not a file uploaded for this process through `outcome-file`; `field = file_id` |
 
 Rules:
 

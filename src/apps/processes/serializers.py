@@ -13,13 +13,20 @@ import datetime
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from apps.cases.serializers import CodeLabelSerializer
+from apps.cases.serializers import AddressSerializer, CodeLabelSerializer
+from apps.files.documents import document_error
 
 from . import steps
-from .enums import OUTCOME_STATUSES, ProcessStatus
+from .enums import OUTCOME_STATUS_CHOICES, ProcessStatus, RecipientType, Side
 from .models import Channel, NonDeliveryReason, ProcessEvent, ProcessType
 
 # Input
+
+
+class OptionalBooleanField(serializers.BooleanField):
+    """A query flag that filters only when given: absent is neither true nor false."""
+
+    default_empty_html = serializers.empty
 
 
 class ListQuerySerializer(serializers.Serializer):
@@ -31,6 +38,9 @@ class ListQuerySerializer(serializers.Serializer):
     channel = serializers.ListField(child=serializers.CharField(), required=False)
     reason = serializers.ListField(child=serializers.CharField(), required=False)
     my_move = serializers.BooleanField(required=False, default=False)
+    # Its envelope is still to be received (RPAD and Police (RPAD), ``STP-02``).
+    envelope_due = OptionalBooleanField(required=False)
+    fee_paid = OptionalBooleanField(required=False)
     case = serializers.UUIDField(required=False)
     round = serializers.UUIDField(required=False)
     hearing = serializers.UUIDField(required=False)
@@ -55,22 +65,64 @@ class SendSerializer(serializers.Serializer):
 
 
 class OutcomeSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(
-        choices=[(status.value, status.label) for status in OUTCOME_STATUSES]
-    )
+    status = serializers.ChoiceField(choices=OUTCOME_STATUS_CHOICES)
     reason = serializers.CharField(required=False, allow_blank=True, default="")
     outcome_date = serializers.DateField(required=False, allow_null=True, default=None)
     comment = serializers.CharField(required=False, allow_blank=True, default="", max_length=2000)
     file_id = serializers.CharField(required=False, allow_blank=True, default="", max_length=64)
 
 
-class RecallSerializer(serializers.Serializer):
+class OutcomeFileSerializer(serializers.Serializer):
+    """A supporting file for an outcome: the acknowledgement card, a report (``DSP-08``)."""
+
+    file = serializers.FileField()
+
+    def validate_file(self, upload):
+        error = document_error(upload)
+        if error:
+            raise serializers.ValidationError(error[0].upper() + error[1:])
+        return upload
+
+
+class OutcomeFileResultSerializer(serializers.Serializer):
+    """Pass ``file_id`` as the outcome's ``file_id``."""
+
+    file_id = serializers.UUIDField()
+
+
+def _once_each(ids):
+    if len(set(ids)) != len(ids):
+        raise serializers.ValidationError("List each process once.")
+    return ids
+
+
+class ProcessIdsSerializer(serializers.Serializer):
+    """A selection of processes for one step (receive envelopes, mark sent)."""
+
     process_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
-    comment = serializers.CharField(required=False, allow_blank=True, default="", max_length=2000)
 
     def validate_process_ids(self, value):
-        if len(set(value)) != len(value):
-            raise serializers.ValidationError("List each process once.")
+        return _once_each(value)
+
+
+class RecallSerializer(ProcessIdsSerializer):
+    comment = serializers.CharField(required=False, allow_blank=True, default="", max_length=2000)
+
+
+class OutcomeItemSerializer(OutcomeSerializer):
+    """One return in a batch; its ``outcome_date``, if given, overrides the batch's."""
+
+    process_id = serializers.UUIDField()
+
+
+class OutcomesSerializer(serializers.Serializer):
+    """A pile of returns recorded together, on the day they came back (``DSP-08``)."""
+
+    outcome_date = serializers.DateField(required=False, allow_null=True, default=None)
+    outcomes = OutcomeItemSerializer(many=True, allow_empty=False)
+
+    def validate_outcomes(self, value):
+        _once_each([each["process_id"] for each in value])
         return value
 
 
@@ -165,6 +217,10 @@ class ProcessSerializer(serializers.Serializer):
     status_at = serializers.DateTimeField()
     expires_at = serializers.DateTimeField()
     fee = ProcessFeeSerializer(source="*")
+    # Each stage's own time (``SGN-04``); the fee's is ``fee.paid_at``.
+    envelope_received_at = serializers.DateTimeField()
+    signed_at = serializers.DateTimeField()
+    sent_at = serializers.DateTimeField()
     reason = CodeLabelSerializer(allow_null=True)
     remark = serializers.CharField()
     outcome_date = serializers.DateField()
@@ -194,8 +250,6 @@ class ProcessEventSerializer(serializers.ModelSerializer):
 class ProcessDetailSerializer(ProcessSerializer):
     """One process with its history."""
 
-    envelope_received_at = serializers.DateTimeField()
-    sent_at = serializers.DateTimeField()
     recalled_at = serializers.DateTimeField()
     events = ProcessEventSerializer(many=True)
 
@@ -219,12 +273,32 @@ class ProcessRegisterEntrySerializer(serializers.Serializer):
 class ProcessCountsSerializer(serializers.Serializer):
     by_status = serializers.DictField(child=serializers.IntegerField())
     by_channel = serializers.DictField(child=serializers.IntegerField())
+    # ``{status: {channel: n}}``: a pill that is one status on some channels.
+    by_status_channel = serializers.DictField(
+        child=serializers.DictField(child=serializers.IntegerField())
+    )
     my_moves = serializers.IntegerField()
 
 
-class RecallResultSerializer(serializers.Serializer):
-    recalled = ProcessSerializer(many=True)
+class BulkResultSerializer(serializers.Serializer):
+    """A step on a selection: the processes it was taken on, and those it no longer applied to."""
+
+    done = ProcessSerializer(many=True)
     skipped = ProcessSerializer(many=True)
+
+
+class OrderRecipientSerializer(serializers.Serializer):
+    """A recipient the order screen offers, with destinations and defaults (#5.4)."""
+
+    id = serializers.UUIDField()
+    type = serializers.ChoiceField(choices=RecipientType.choices)
+    name = serializers.CharField()
+    # Null where it cannot be worked out and must be chosen (``AUT-03``).
+    party_taking_steps = serializers.ChoiceField(choices=Side.choices, allow_null=True)
+    preselected = serializers.BooleanField()
+    mobiles = serializers.ListField(child=serializers.CharField())
+    emails = serializers.ListField(child=serializers.CharField())
+    addresses = AddressSerializer(many=True)
 
 
 class OfferedChannelSerializer(ChannelSerializer):

@@ -315,6 +315,7 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         # A channel's send and status update share one set of modes.
         "ProcessStepModeEnum": "apps.processes.enums.StepMode",
+        "ProcessOutcomeStatusEnum": "apps.processes.enums.OUTCOME_STATUS_CHOICES",
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
         # drf-spectacular names an enum after its field. Scrutiny's round also has a

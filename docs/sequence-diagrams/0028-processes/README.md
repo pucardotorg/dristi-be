@@ -25,7 +25,7 @@ All paths are under `/api/v1/`. List responses are `{data, meta}`, errors
 
 | Tab | Pill | Backend filter on `GET /processes/` |
 |---|---|---|
-| RPAD collection | Awaiting cover | `status=PENDING_STEPS` and `channel=RPAD&channel=POLICE_RPAD`; the cover still due needs a new filter **[gap 3]** |
+| RPAD collection | Awaiting cover | `envelope_due=true` (add `fee_paid=true` if unpaid rows stay off this tab, design question A4) |
 | Issuance | To sign | `status=PENDING_SIGNATURE` |
 | Issuance | To post | `status=SIGNED&channel=RPAD&channel=POLICE_RPAD` |
 | Issuance | To hand over | `status=SIGNED&channel=BY_HAND` |
@@ -51,8 +51,8 @@ sequenceDiagram
     OD->>FE: Choose "Issue of summons" (or warrant, notice...)
     FE->>BE: GET /process-types/ [built]
     BE-->>FE: 200 [{code, label, allowed_recipient_types,<br/>channels: [{code, label, destination_kind, preselected}]}]
-    FE->>BE: GET /cases/{case_id}/process-recipients/ [gap 6]
-    BE-->>FE: 200 [{id, type, name, addresses, mobiles, emails, defaults}]
+    FE->>BE: GET /cases/{case_id}/process-recipients/ [built]
+    BE-->>FE: 200 [{id, type, name, party_taking_steps, preselected,<br/>mobiles, emails, addresses}]
     opt A police channel is chosen
         FE->>BE: GET /locations/?location_type=police_station&search= [built]
         BE-->>FE: 200 [{code, name, ...}]
@@ -97,21 +97,19 @@ sequenceDiagram
     participant BE as Backend
 
     CO->>FE: Open Process line, RPAD collection
-    FE->>BE: GET /processes/counts/?court= [built, needs status x channel: gap 2]
-    BE-->>FE: 200 {by_status, by_channel, my_moves}
-    FE->>BE: GET /processes/?court=&status=PENDING_STEPS&channel=RPAD&channel=POLICE_RPAD<br/>&ordering=hearing_date [built, needs cover-due filter: gap 3]
-    BE-->>FE: 200 {data: [{id, case, hearing, recipient, channel, destination,<br/>status, fee, allowed_actions}], meta}
+    FE->>BE: GET /processes/counts/?court= [built]
+    BE-->>FE: 200 {by_status, by_channel, by_status_channel, my_moves}
+    FE->>BE: GET /processes/?court=&envelope_due=true&ordering=hearing_date [built]
+    BE-->>FE: 200 {data: [{id, case, hearing, recipient, channel, destination,<br/>status, fee, envelope_received_at, signed_at, sent_at, allowed_actions}], meta}
     CO->>FE: Type a case number, press Enter (pile)
-    FE->>BE: GET /processes/?court=&status=PENDING_STEPS&search={case_number} [built]
+    FE->>BE: GET /processes/?court=&envelope_due=true&search={case_number} [built]
     BE-->>FE: 200 matching rows
     CO->>FE: Send N for signature
-    loop each process in the pile [gap 1: no bulk endpoint]
-        FE->>BE: POST /processes/{id}/envelope/ [built]
-        BE-->>FE: 200 process (PENDING_SIGNATURE when the fee is paid)
-    end
+    FE->>BE: POST /processes/envelope/ {process_ids} [built]
+    BE-->>FE: 200 {done, skipped} (PENDING_SIGNATURE where the fee is paid)
     alt refused
-        BE-->>FE: 409 E12009 no envelope for this channel, or E12001 + allowed_actions
-        BE-->>FE: 403 E12015 not allowed for this type and channel
+        BE-->>FE: 403 E12015 one process not allowed for its type and channel (nothing recorded)
+        BE-->>FE: 400 E12016 too many in one request
     end
 ```
 
@@ -151,10 +149,8 @@ sequenceDiagram
 
     alt To post / To hand over / To send (e-Post)
         FE->>BE: GET /processes/?court=&status=SIGNED&channel=... [built]
-        loop each selected process [gap 1]
-            FE->>BE: POST /processes/{id}/send/ [built]
-            BE-->>FE: 200 SENT
-        end
+        FE->>BE: POST /processes/send/ {process_ids} [built]
+        BE-->>FE: 200 {done: SENT, skipped}
     else Proclamation by hand, executed on download
         FE->>BE: GET /processes/{id}/document/ [gap 4]
         FE->>BE: POST /processes/{id}/send/ {published: true} [built]
@@ -184,16 +180,15 @@ sequenceDiagram
     FE->>BE: GET /non-delivery-reasons/ [built]
     BE-->>FE: 200 [{code, label}] for the state
     R->>FE: Pile the returned covers, Record returns<br/>(one "Returned on" date, outcome per cover)
-    opt A supporting file
-        FE->>BE: Upload the file [gap 7]
+    opt A supporting file, per cover
+        FE->>BE: POST /processes/{id}/outcome-file/ (multipart file) [built]
+        BE-->>FE: 201 {file_id}
     end
-    loop each cover [gap 1]
-        FE->>BE: POST /processes/{id}/outcome/<br/>{status, reason, outcome_date, comment, file_id} [built]
-        BE-->>FE: 200 DELIVERED / NOT_DELIVERED (Executed / Not executed for warrants)
-        alt refused
-            BE-->>FE: 400 E12014 reason required / E12018 outcome date
-            BE-->>FE: 409 E12013 recorded by the system on this channel
-        end
+    FE->>BE: POST /processes/outcome/ {outcome_date,<br/>outcomes: [{process_id, status, reason, comment, file_id}]} [built]
+    BE-->>FE: 200 {done: DELIVERED / NOT_DELIVERED, skipped: system-reported channels}
+    alt refused (nothing recorded)
+        BE-->>FE: 400 E12014 / E12018 / E12019 with field outcomes[i].reason, .outcome_date, .file_id
+        BE-->>FE: 403 E12015 one process not allowed
     end
     CH->>BE: POST /processes/channels/{channel}/_callback [planned]
     BE-)CH: poll_process_statuses every 15 minutes [planned]
@@ -243,15 +238,11 @@ sequenceDiagram
 
 | # | What the design does | What the backend has | Proposal |
 |---|---|---|---|
-| 1 | Bulk acts on a selection: send for signature, sign, mark posted / sent, record returns with one date | One process per call (only recall is bulk) | Add bulk endpoints like recall's (`process_ids`, all or nothing on access), or the frontend loops. Bulk **signing** needs DSC or batch e-sign (spec open question 3). |
-| 2 | Pill counts: To post, To hand over and To send are all `SIGNED`, split by channel | `counts` returns `by_status` and `by_channel` separately | Return counts per `(status, channel)` pair. |
-| 3 | RPAD collection lists rows whose **fee is paid** and **cover is due**. The design assumes the fee always comes first. | `PENDING_STEPS` covers an unpaid fee, a missing cover, or both, in either order (`STP-03`) | Add `envelope_due` and `fee_paid` filters, and decide whether unpaid RPAD rows show on this tab. |
+| 1 | Signing a selection in one action | Signing is not built yet; with Aadhaar e-sign each document needs its own authentication (`SGM-03`) | Bulk signing needs DSC or batch e-sign (spec open question 3). Every other act on a selection has a bulk endpoint. |
 | 4 | Download the signed paper, and show it in the single-row overlay | No endpoint serves a process's document (`signing_file_id` / `signed_file_id`) | Add `GET /processes/{id}/document/`, covered by the same read permissions as the detail. |
 | 5 | Proclamation by hand is recorded Sent and Executed **when its signed copy is downloaded** | `POST /processes/{id}/send/ {"published": true}` | Frontend calls send with `published` on download. No backend change. |
-| 6 | The order dialog lists recipients with their addresses, pre-checked | `process_recipients` exists as a selector only. The §5.4 defaults are not built. | Add `GET /cases/{case_id}/process-recipients/` (or the orders module serves it) with the §5.4 defaults. |
-| 7 | Attach a supporting file to a return | `outcome` takes a `file_id`, but there is no upload endpoint for it | Reuse the case document upload, or add an upload on the process. |
+| 6 | The order dialog pre-fills the police station, and after the accused joins pre-selects the unexamined witness | The recipients endpoint does neither | `AUT-04` needs spec open question 2; `AUT-06` needs examination to be recorded. |
 | 8 | Non-delivery reasons: Address not found, Door locked, Person not present, Delivery refused, Other | Kerala seed: Addressee not available, Refused, Address incomplete, Left without instructions, Unclaimed, Lost in transit, Other | Agree on one list for Kerala (state master, `DSP-09`). |
-| 9 | Row status column shows each day: paid, sent for signature, signed, sent, returned | The list row has `status_at`, `fee.paid_at` and `outcome_date`. `envelope_received_at`, `sent_at` (detail only) and `signed_at` (nowhere) are missing. | Add those dates to the list serializer. |
 | 10 | The Post officer sees only e-Post rows, and nothing before signing | The placeholder access ignores scope | Comes with 0029's scoped grants **[blocked: 0029]**. |
 | 11 | e-Post, Email and Police (NSTEP) flows are drawn | Seeded unavailable in Kerala | Deployment choice. The flows work once a channel is made available. |
 | 12 | Open in the design: India Post article number when posting | No field | Decide, then add to `send` for postal channels. |

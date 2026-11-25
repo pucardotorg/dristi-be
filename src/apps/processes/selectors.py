@@ -1,5 +1,6 @@
 """Reads for the process lists, counts and the case's register (spec 0028 #11.2, #11.3)."""
 
+from collections import Counter
 from itertools import groupby
 from operator import attrgetter
 
@@ -8,7 +9,7 @@ from django.db.models import Count, Q
 from apps.cases.selectors import search_case_ids
 
 from . import steps
-from .enums import ProcessStatus
+from .enums import ProcessStatus, Step
 from .models import Process
 
 ORDERINGS = {
@@ -42,6 +43,13 @@ def court_processes(user, query):
     rows = rows.filter(**{lookup: value for lookup, value in filters.items() if value})
     if query.get("reason"):
         rows = rows.filter(status=ProcessStatus.NOT_DELIVERED)
+    # An envelope is due exactly where receiving one is a step that applies now.
+    for flag, where in (
+        ("envelope_due", steps.STEPS[Step.RECEIVE_ENVELOPE].where),
+        ("fee_paid", Q(fee_paid=True)),
+    ):
+        if query.get(flag) is not None:
+            rows = rows.filter(where if query[flag] else ~where)
     if query.get("my_move"):
         rows = rows.filter(steps.my_move_filter(user, court_id))
     if text := query.get("search"):
@@ -54,11 +62,23 @@ def court_processes(user, query):
 
 
 def counts(user, court_id):
-    """Counts per status and channel, and of the caller's moves, for a screen's tabs."""
+    """Counts for a screen's tabs and pills, and of the caller's moves.
+
+    ``by_status_channel`` is ``{status: {channel: n}}``, so a screen can count
+    a pill that is one status on some channels, e.g. *To post* is ``SIGNED`` on
+    RPAD and Police (RPAD). ``by_status`` and ``by_channel`` are its totals.
+    """
     rows = Process.objects.filter(round__court_id=court_id)
+    pairs = rows.values_list("status", "channel__code").annotate(n=Count("pk")).order_by()
+    by_status_channel, by_status, by_channel = {}, Counter(), Counter()
+    for status, channel, n in pairs:
+        by_status_channel.setdefault(status, {})[channel] = n
+        by_status[status] += n
+        by_channel[channel] += n
     return {
-        "by_status": dict(rows.values_list("status").annotate(n=Count("pk")).order_by()),
-        "by_channel": dict(rows.values_list("channel__code").annotate(n=Count("pk")).order_by()),
+        "by_status": dict(by_status),
+        "by_channel": dict(by_channel),
+        "by_status_channel": by_status_channel,
         "my_moves": rows.filter(steps.my_move_filter(user, court_id)).count(),
     }
 

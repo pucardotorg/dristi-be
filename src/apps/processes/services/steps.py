@@ -10,10 +10,9 @@ import logging
 from django.db import transaction
 from django.utils import timezone
 
-from .. import steps
 from ..enums import EventSource, ProcessStatus, Step
 from ..models import Process
-from . import transitions
+from . import bulk, transitions
 
 logger = logging.getLogger(__name__)
 
@@ -39,20 +38,26 @@ def _save_step(process, fields, *, source, actor, at):
     return process
 
 
+def _receive(process, actor):
+    now = timezone.now()
+    process.envelope_received_by, process.envelope_received_at = actor, now
+    return _save_step(
+        process,
+        ["envelope_received_by", "envelope_received_at"],
+        source=EventSource.USER,
+        actor=actor,
+        at=now,
+    )
+
+
 def receive_envelope(*, process_id, actor):
     """Record receipt of the process's envelope at the counter (``STP-02``)."""
-    with transaction.atomic():
-        process = transitions.locked(process_id)
-        steps.check(actor, process, Step.RECEIVE_ENVELOPE)
-        now = timezone.now()
-        process.envelope_received_by, process.envelope_received_at = actor, now
-        return _save_step(
-            process,
-            ["envelope_received_by", "envelope_received_at"],
-            source=EventSource.USER,
-            actor=actor,
-            at=now,
-        )
+    return bulk.one(process_id, actor, Step.RECEIVE_ENVELOPE, lambda p: _receive(p, actor))
+
+
+def receive_envelopes(*, process_ids, actor):
+    """Record receipt of a pile of envelopes; return ``(done, skipped)`` (``STP-02``)."""
+    return bulk.each(process_ids, actor, Step.RECEIVE_ENVELOPE, lambda p: _receive(p, actor))
 
 
 def fee_items_paid(item_ids):

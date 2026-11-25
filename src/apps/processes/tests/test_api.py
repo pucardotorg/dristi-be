@@ -4,12 +4,16 @@ Errors are asserted by ``code`` and ``field``, never by message (spec 0000 #13).
 """
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
+from apps.core.models import Configuration
+from apps.processes import conf
 from apps.processes import court_actions as actions
 from apps.processes.enums import ProcessStatus
+from apps.processes.models import Process
 
-from .factories import accused, make_staff, mark_signed, recipient, start
+from .factories import accused, address_ids, make_staff, mark_signed, recipient, start
 
 BASE = "/api/v1"
 
@@ -68,7 +72,50 @@ class TestList:
 
         assert body["by_status"] == {ProcessStatus.PENDING_STEPS: 2}
         assert body["by_channel"] == {"SMS": 1, "RPAD": 1}
+        assert body["by_status_channel"] == {ProcessStatus.PENDING_STEPS: {"SMS": 1, "RPAD": 1}}
         assert body["my_moves"] == 1
+
+    def test_counts_split_a_status_by_channel(self, staff, courtroom, processes):
+        """*To post* is SIGNED on RPAD; an SMS signed with it is not a cover to post."""
+        for process in processes:
+            mark_signed(process)
+
+        body = client_for(staff).get(f"{BASE}/processes/counts/", {"court": courtroom.pk}).json()
+
+        assert body["by_status_channel"] == {ProcessStatus.SIGNED: {"SMS": 1, "RPAD": 1}}
+
+    @pytest.mark.parametrize(
+        ("flag", "value", "channels"),
+        [
+            ("envelope_due", "true", ["RPAD"]),
+            ("envelope_due", "false", ["SMS"]),
+            ("fee_paid", "false", ["SMS", "RPAD"]),
+            ("fee_paid", "true", []),
+        ],
+    )
+    def test_step_filters(self, staff, courtroom, processes, flag, value, channels):
+        query = {"court": courtroom.pk, flag: value}
+
+        rows = client_for(staff).get(f"{BASE}/processes/", query).json()["results"]
+
+        assert [row["channel"]["code"] for row in rows] == channels
+
+    def test_an_envelope_received_is_no_longer_due(self, staff, courtroom, processes):
+        client_for(staff).post(f"{BASE}/processes/{processes[1].pk}/envelope/")
+        query = {"court": courtroom.pk, "envelope_due": "true"}
+
+        rows = client_for(staff).get(f"{BASE}/processes/", query).json()["results"]
+
+        assert rows == []
+
+    def test_rows_carry_each_stage_time(self, staff, courtroom, processes):
+        client_for(staff).post(f"{BASE}/processes/{processes[1].pk}/envelope/")
+
+        rows = client_for(staff).get(f"{BASE}/processes/", {"court": courtroom.pk}).json()
+        rpad = rows["results"][1]
+
+        assert rpad["envelope_received_at"] is not None
+        assert (rpad["signed_at"], rpad["sent_at"]) == (None, None)
 
 
 class TestOneProcess:
@@ -123,7 +170,7 @@ class TestRecall:
 
         assert response.status_code == 200
         body = response.json()
-        assert len(body["recalled"]) == 2
+        assert len(body["done"]) == 2
         assert body["skipped"] == []
 
     def test_a_process_the_caller_cannot_see(self, stranger, processes):
@@ -132,6 +179,208 @@ class TestRecall:
         )
 
         assert response.status_code == 404
+
+
+def ids(processes):
+    return [str(process.pk) for process in processes]
+
+
+class TestBulk:
+    """Steps on a selection: all or nothing on access, skipped where they no longer apply."""
+
+    def test_receive_a_pile_of_envelopes(self, staff, processes):
+        response = client_for(staff).post(
+            f"{BASE}/processes/envelope/", {"process_ids": ids(processes)}, format="json"
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [row["channel"]["code"] for row in body["done"]] == ["RPAD"]
+        assert [row["channel"]["code"] for row in body["skipped"]] == ["SMS"]
+
+    def test_mark_a_selection_sent(self, staff, processes):
+        signed = [mark_signed(process) for process in processes]
+
+        response = client_for(staff).post(
+            f"{BASE}/processes/send/", {"process_ids": ids(signed)}, format="json"
+        )
+
+        assert response.status_code == 200
+        assert {row["status"] for row in response.json()["done"]} == {ProcessStatus.SENT}
+
+    def test_one_process_without_the_action_refuses_them_all(self, case, processes):
+        signed = [mark_signed(process) for process in processes]
+        receiver = make_staff(actions.RECEIVE_ENVELOPE)
+
+        response = client_for(receiver).post(
+            f"{BASE}/processes/send/", {"process_ids": ids(signed)}, format="json"
+        )
+
+        assert (response.status_code, error(response)) == (403, ("E12015", None))
+        statuses = Process.objects.filter(pk__in=[p.pk for p in signed]).values_list("status")
+        assert set(statuses) == {(ProcessStatus.SIGNED,)}
+
+    def test_an_unseen_process_refuses_them_all(self, stranger, processes):
+        response = client_for(stranger).post(
+            f"{BASE}/processes/envelope/", {"process_ids": ids(processes)}, format="json"
+        )
+
+        assert response.status_code == 404
+
+    def test_too_many(self, staff, processes):
+        Configuration.objects.create(
+            config_set="processes", config_key="bulk_max", config_value="1"
+        )
+
+        response = client_for(staff).post(
+            f"{BASE}/processes/envelope/", {"process_ids": ids(processes)}, format="json"
+        )
+
+        assert (response.status_code, error(response)) == (400, ("E12016", "process_ids"))
+
+    def test_a_process_listed_twice(self, staff, processes):
+        response = client_for(staff).post(
+            f"{BASE}/processes/envelope/",
+            {"process_ids": ids(processes[:1]) * 2},
+            format="json",
+        )
+
+        assert (response.status_code, error(response)[1]) == (400, "process_ids")
+
+    def sent(self, staff, processes):
+        signed = [mark_signed(process) for process in processes]
+        client_for(staff).post(
+            f"{BASE}/processes/send/", {"process_ids": ids(signed)}, format="json"
+        )
+        return signed
+
+    def test_record_a_pile_of_returns_on_one_date(self, staff, processes):
+        sms, rpad = self.sent(staff, processes)
+        outcomes = [
+            {
+                "process_id": str(rpad.pk),
+                "status": ProcessStatus.NOT_DELIVERED,
+                "reason": "REFUSED",
+            },
+            {"process_id": str(sms.pk), "status": ProcessStatus.DELIVERED},
+        ]
+
+        returned_on = conf.court_date().isoformat()
+
+        response = client_for(staff).post(
+            f"{BASE}/processes/outcome/",
+            {"outcome_date": returned_on, "outcomes": outcomes},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        (done,) = body["done"]
+        assert (done["status"], done["reason"]["code"]) == (ProcessStatus.NOT_DELIVERED, "REFUSED")
+        assert done["outcome_date"] == returned_on
+        # SMS reports its own outcome.
+        assert [row["channel"]["code"] for row in body["skipped"]] == ["SMS"]
+
+    def test_a_refused_return_names_its_place_and_records_none(self, staff, processes):
+        _, rpad = self.sent(staff, processes)
+        outcomes = [{"process_id": str(rpad.pk), "status": ProcessStatus.NOT_DELIVERED}]
+
+        response = client_for(staff).post(
+            f"{BASE}/processes/outcome/", {"outcomes": outcomes}, format="json"
+        )
+
+        assert (response.status_code, error(response)) == (400, ("E12014", "outcomes[0].reason"))
+        rpad.refresh_from_db()
+        assert rpad.status == ProcessStatus.SENT
+
+
+class TestOutcomeFile:
+    """A return's supporting file, stored through ``apps.files`` (``DSP-08``)."""
+
+    def sent(self, staff, process):
+        process = mark_signed(process)
+        client_for(staff).post(f"{BASE}/processes/{process.pk}/send/", {}, format="json")
+        return process
+
+    def upload(self, user, process, name="card.pdf", content=b"%PDF-1.4 card"):
+        upload = SimpleUploadedFile(name, content, content_type="application/pdf")
+        return client_for(user).post(
+            f"{BASE}/processes/{process.pk}/outcome-file/", {"file": upload}, format="multipart"
+        )
+
+    def test_upload_then_record_with_it(self, staff, processes):
+        rpad = self.sent(staff, processes[1])
+
+        uploaded = self.upload(staff, rpad)
+        assert uploaded.status_code == 201
+        file_id = uploaded.json()["file_id"]
+        response = client_for(staff).post(
+            f"{BASE}/processes/{rpad.pk}/outcome/",
+            {"status": ProcessStatus.DELIVERED, "file_id": file_id},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["outcome_file_id"] == file_id
+
+    def test_a_file_of_another_process_is_refused(self, staff, case, processes):
+        rpad = self.sent(staff, processes[1])
+        (other,) = start(case, recipient(accused(case), "RPAD"))
+        file_id = self.upload(staff, self.sent(staff, other)).json()["file_id"]
+
+        response = client_for(staff).post(
+            f"{BASE}/processes/{rpad.pk}/outcome/",
+            {"status": ProcessStatus.DELIVERED, "file_id": file_id},
+            format="json",
+        )
+
+        assert (response.status_code, error(response)) == (400, ("E12019", "file_id"))
+
+    def test_not_a_document(self, staff, processes):
+        rpad = self.sent(staff, processes[1])
+
+        response = self.upload(staff, rpad, name="card.pdf", content=b"not a pdf")
+
+        assert (response.status_code, error(response)[1]) == (400, "file")
+
+    def test_only_where_the_outcome_can_be_recorded(self, staff, processes):
+        response = self.upload(staff, processes[1])  # not sent yet
+
+        assert (response.status_code, error(response)[0]) == (409, "E12001")
+
+
+class TestOrderRecipients:
+    def url(self, case):
+        return f"{BASE}/cases/{case.pk}/process-recipients/"
+
+    def test_recipients_with_destinations_and_defaults(self, staff, case):
+        response = client_for(staff).get(self.url(case))
+
+        assert response.status_code == 200
+        rows = {row["type"]: row for row in response.json()["data"]}
+        accused_row = rows["ACCUSED"]
+        assert accused_row["preselected"] is True
+        assert accused_row["party_taking_steps"] == "COMPLAINANT"
+        assert accused_row["mobiles"] == ["+919812345678"]
+        assert [a["address_id"] for a in accused_row["addresses"]] == [
+            str(each) for each in address_ids(accused(case))
+        ]
+        assert rows["COMPLAINANT"]["preselected"] is False
+        assert rows["COMPLAINANT"]["party_taking_steps"] == "ACCUSED"
+
+    def test_nothing_preselected_once_the_accused_has_joined(self, staff, case):
+        person = accused(case).person
+        person.user = make_staff(name="Accused")
+        person.save(update_fields=["user"])
+
+        rows = client_for(staff).get(self.url(case)).json()["data"]
+
+        assert not any(row["preselected"] for row in rows)
+
+    def test_a_party_cannot_read_the_contacts(self, complainant_user, case):
+        response = client_for(complainant_user).get(self.url(case))
+
+        assert (response.status_code, error(response)) == (404, ("E00105", None))
 
 
 class TestRegister:

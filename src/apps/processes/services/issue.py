@@ -22,14 +22,14 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.api.errors import BusinessError
-from apps.cases.models import CaseParticipant, ContactType, ParticipantRole
+from apps.cases.models import CaseParticipant, ContactType
 from apps.cases.selectors import get_case_summaries, process_recipients
 from apps.cases.services.contacts import add_contact
 from apps.hearings.selectors import get_hearing, next_hearing
 from apps.locations.models import Location
 
 from .. import errors
-from ..enums import DestinationKind, RecipientType, Side
+from ..enums import DestinationKind, Side
 from ..models import (
     DESTINATION_FIELDS,
     Process,
@@ -38,6 +38,7 @@ from ..models import (
     ProcessType,
     ProcessTypeChannel,
 )
+from ..recipients import default_party_taking_steps, recipient_type
 from . import fees, steps, transitions
 from .expiry import expires_at
 
@@ -46,11 +47,6 @@ ADDED_CONTACT_TYPES = {
     DestinationKind.MOBILE: ContactType.MOBILE_NUMBER,
     DestinationKind.EMAIL: ContactType.EMAIL,
     DestinationKind.POSTAL: ContactType.ADDRESS,
-}
-# Who is directed to take steps when the order does not say (``AUT-02``).
-OPPOSITE_SIDE = {
-    ParticipantRole.ACCUSED: Side.COMPLAINANT,
-    ParticipantRole.COMPLAINANT: Side.ACCUSED,
 }
 
 
@@ -106,18 +102,8 @@ def _refuse(error, field, message=None):
     raise BusinessError(error, message, field=f"values.{field}")
 
 
-def recipient_type(recipient):
-    if recipient.role == ParticipantRole.WITNESS:
-        return RecipientType.WITNESS
-    if recipient.role == ParticipantRole.COMPLAINANT:
-        return RecipientType.COMPLAINANT
-    if recipient.is_person_in_charge:
-        return RecipientType.ACCUSED_PERSON_IN_CHARGE
-    return RecipientType.ACCUSED
-
-
 def _party_taking_steps(recipient, given, path):
-    side = given or OPPOSITE_SIDE.get(recipient.role) or recipient.witness_side
+    side = given or default_party_taking_steps(recipient)
     if not side:
         _refuse(errors.PARTY_TAKING_STEPS_REQUIRED, f"{path}.party_taking_steps")
     return side

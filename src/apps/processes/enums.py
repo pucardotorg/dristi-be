@@ -18,6 +18,8 @@ class ProcessStatus(models.TextChoices):
 
 
 OUTCOME_STATUSES = (ProcessStatus.DELIVERED, ProcessStatus.NOT_DELIVERED)
+# What a person may record as an outcome (``DSP-08``).
+OUTCOME_STATUS_CHOICES = [(status.value, status.label) for status in OUTCOME_STATUSES]
 TERMINAL_STATUSES = (*OUTCOME_STATUSES, ProcessStatus.EXPIRED, ProcessStatus.RECALLED)
 LIVE_STATUSES = tuple(status for status in ProcessStatus if status not in TERMINAL_STATUSES)
 # Only a process that has not been sent expires (``EXP-02``).

@@ -13,33 +13,44 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from apps.api.schema import error_responses
 from apps.cases.selectors import get_case_summaries
 from apps.hearings.selectors import hearing_dates
 
-from . import conf, errors, permissions, selectors
+from . import conf, errors, permissions, recipients, selectors
 from .models import NonDeliveryReason, ProcessType
 from .serializers import (
+    BulkResultSerializer,
     CourtQuerySerializer,
     ListQuerySerializer,
     NonDeliveryReasonSerializer,
+    OrderRecipientSerializer,
+    OutcomeFileResultSerializer,
+    OutcomeFileSerializer,
     OutcomeSerializer,
+    OutcomesSerializer,
     ProcessCountsSerializer,
     ProcessDetailSerializer,
+    ProcessIdsSerializer,
     ProcessRegisterEntrySerializer,
     ProcessSerializer,
     ProcessTypeSerializer,
-    RecallResultSerializer,
     RecallSerializer,
     SendSerializer,
 )
-from .services import dispatch, steps
+from .services import bulk, dispatch, steps
 
 UUID_PATTERN = "[0-9a-fA-F-]{36}"
 # Errors every step on one process can give.
 STEP_ERRORS = (errors.PROCESS_ACTION_NOT_ALLOWED, errors.INVALID_PROCESS_ACTION)
+# Errors every step on a selection can give: a refused action refuses them all.
+BULK_ERRORS = (
+    errors.PROCESS_ACTION_NOT_ALLOWED,
+    errors.BULK_TOO_LARGE.example(field="process_ids"),
+)
 
 
 def _valid(serializer_class, data):
@@ -81,7 +92,10 @@ class ProcessViewSet(ProcessesViewMixin, viewsets.GenericViewSet):
     SERIALIZERS = {
         "retrieve": ProcessDetailSerializer,
         "counts": ProcessCountsSerializer,
-        "recall": RecallResultSerializer,
+        "recall": BulkResultSerializer,
+        "envelope_many": BulkResultSerializer,
+        "send_many": BulkResultSerializer,
+        "outcome_many": BulkResultSerializer,
     }
 
     def get_serializer_class(self):
@@ -95,6 +109,16 @@ class ProcessViewSet(ProcessesViewMixin, viewsets.GenericViewSet):
     def _one(self, process_id, serializer_class=ProcessSerializer):
         process = permissions.visible_process(self.request.user, process_id)
         return Response(self._render(process, serializer_class, many=False))
+
+    def _many(self, process_ids, take, field="process_ids"):
+        """Take a step on a selection the caller can read; render ``{done, skipped}``."""
+        bulk.check_size(process_ids, field)
+        permissions.visible_processes(self.request.user, process_ids)
+        done, skipped = take()
+        context = response_context(self.request.user, [*done, *skipped])
+        return Response(
+            BulkResultSerializer({"done": done, "skipped": skipped}, context=context).data
+        )
 
     @extend_schema(parameters=[ListQuerySerializer])
     def list(self, request):
@@ -151,6 +175,7 @@ class ProcessViewSet(ProcessesViewMixin, viewsets.GenericViewSet):
             errors.OUTCOME_RECORDED_BY_SYSTEM,
             errors.REASON_REQUIRED.example(field="reason"),
             errors.OUTCOME_DATE_INVALID.example(field="outcome_date"),
+            errors.OUTCOME_FILE_INVALID.example(field="file_id"),
         ),
     )
     @action(detail=True, methods=["post"])
@@ -162,23 +187,86 @@ class ProcessViewSet(ProcessesViewMixin, viewsets.GenericViewSet):
         return self._one(pk)
 
     @extend_schema(
-        request=RecallSerializer,
+        request={"multipart/form-data": OutcomeFileSerializer},
+        responses={
+            201: OutcomeFileResultSerializer,
+            **error_responses(*STEP_ERRORS, errors.OUTCOME_RECORDED_BY_SYSTEM),
+        },
+    )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="outcome-file",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def outcome_file(self, request, pk=None):
+        """Upload a supporting file for the outcome; pass its ``file_id`` when recording it (``DSP-08``).
+
+        A PDF, JPEG or PNG. Only where the caller may record this process's outcome now.
+        """
+        upload = _valid(OutcomeFileSerializer, request.data)["file"]
+        permissions.visible_process(request.user, pk)
+        file_id = dispatch.store_outcome_file(process_id=pk, actor=request.user, upload=upload)
+        return Response(OutcomeFileResultSerializer({"file_id": file_id}).data, status=201)
+
+    @extend_schema(
+        operation_id="v1_processes_envelope_many",
+        request=ProcessIdsSerializer,
+        responses=error_responses(*BULK_ERRORS),
+    )
+    @action(detail=False, methods=["post"], url_path="envelope", url_name="envelope-many")
+    def envelope_many(self, request):
+        """Record receipt of a pile of envelopes; those it no longer applies to come back skipped."""
+        ids = _valid(ProcessIdsSerializer, request.data)["process_ids"]
+        return self._many(ids, lambda: steps.receive_envelopes(process_ids=ids, actor=request.user))
+
+    @extend_schema(
+        operation_id="v1_processes_send_many",
+        request=ProcessIdsSerializer,
+        responses=error_responses(*BULK_ERRORS),
+    )
+    @action(detail=False, methods=["post"], url_path="send", url_name="send-many")
+    def send_many(self, request):
+        """Mark a selection sent on manual channels: covers posted, processes handed over (#8.1)."""
+        ids = _valid(ProcessIdsSerializer, request.data)["process_ids"]
+        return self._many(ids, lambda: dispatch.send_many(process_ids=ids, actor=request.user))
+
+    @extend_schema(
+        operation_id="v1_processes_outcome_many",
+        request=OutcomesSerializer,
         responses=error_responses(
-            errors.PROCESS_ACTION_NOT_ALLOWED, errors.BULK_TOO_LARGE.example(field="process_ids")
+            errors.PROCESS_ACTION_NOT_ALLOWED,
+            errors.BULK_TOO_LARGE.example(field="outcomes"),
+            errors.REASON_REQUIRED.example(field="outcomes[0].reason"),
+            errors.OUTCOME_FILE_INVALID.example(field="outcomes[0].file_id"),
+            errors.OUTCOME_DATE_INVALID.example(field="outcomes[0].outcome_date"),
         ),
     )
+    @action(detail=False, methods=["post"], url_path="outcome", url_name="outcome-many")
+    def outcome_many(self, request):
+        """Record a pile of returns, each with its outcome, on one date (#8.2, ``DSP-08``).
+
+        Processes on a channel whose outcome the system reports come back skipped.
+        """
+        data = _valid(OutcomesSerializer, request.data)
+        ids = [each["process_id"] for each in data["outcomes"]]
+        return self._many(
+            ids,
+            lambda: dispatch.record_outcomes(
+                outcomes=data["outcomes"], outcome_date=data["outcome_date"], actor=request.user
+            ),
+            field="outcomes",
+        )
+
+    @extend_schema(request=RecallSerializer, responses=error_responses(*BULK_ERRORS))
     @action(detail=False, methods=["post"])
     def recall(self, request):
         """Recall processes with no outcome yet; those already ended come back as skipped (#8.4)."""
         data = _valid(RecallSerializer, request.data)
-        dispatch.check_bulk_size(data["process_ids"])
-        permissions.visible_processes(request.user, data["process_ids"])
-        recalled, skipped = dispatch.recall(
-            process_ids=data["process_ids"], actor=request.user, comment=data["comment"]
-        )
-        context = response_context(request.user, [*recalled, *skipped])
-        return Response(
-            RecallResultSerializer({"recalled": recalled, "skipped": skipped}, context=context).data
+        ids = data["process_ids"]
+        return self._many(
+            ids,
+            lambda: dispatch.recall(process_ids=ids, actor=request.user, comment=data["comment"]),
         )
 
 
@@ -201,6 +289,21 @@ class CaseProcessesViewSet(ProcessesViewMixin, viewsets.GenericViewSet):
         ]
         context = response_context(request.user, processes)
         return Response(ProcessRegisterEntrySerializer(register, many=True, context=context).data)
+
+
+class CaseProcessRecipientsViewSet(viewsets.GenericViewSet):
+    """Who the order screen can address a process to on the case, with destinations (#5.4)."""
+
+    serializer_class = OrderRecipientSerializer
+    unpaginated_actions = {"list"}
+
+    def list(self, request, case_id=None):
+        """The case's complainants, accused and witnesses, with their defaults. Court staff only."""
+        case_id = uuid.UUID(case_id)
+        permissions.require_case_court_reader(request.user, case_id)
+        return Response(
+            OrderRecipientSerializer(recipients.for_order_screen(case_id), many=True).data
+        )
 
 
 class ProcessTypeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):

@@ -36,15 +36,36 @@ def visible_process(user, process_id):
 
 
 def visible_processes(user, process_ids):
-    """Return the processes for a step on several, refusing all if any is not visible."""
-    return [visible_process(user, process_id) for process_id in process_ids]
+    """Refuse a step on several processes unless the caller may read every one.
+
+    One unknown or unreadable process refuses them all (``NotFound``). Reads
+    each courtroom and case once, however many processes share them.
+    """
+    rows = selectors.processes().in_bulk(set(process_ids))
+    courts = {process.round.court_id for process in rows.values()}
+    readable = {court_id for court_id in courts if ports.is_court_reader(user, court_id)}
+    others = {p.case_id for p in rows.values() if p.round.court_id not in readable}
+    party_of = set(case_ids_visible_to(user).filter(pk__in=others).values_list("pk", flat=True))
+    if len(rows) != len(set(process_ids)) or any(
+        p.round.court_id not in readable and p.case_id not in party_of for p in rows.values()
+    ):
+        raise NotFound("Process not found.")
+
+
+def _case_court(case_id):
+    summary = get_case_summaries([case_id]).get(case_id)
+    return summary.court_id if summary else None
 
 
 def require_case_reader(user, case_id):
     """Court staff of the case's courtroom, or a party of the case; else ``NotFound``."""
-    summary = get_case_summaries([case_id]).get(case_id)
-    if summary is None or not (
-        (summary.court_id and ports.is_court_reader(user, summary.court_id))
-        or is_party(user, case_id)
-    ):
+    court_id = _case_court(case_id)
+    if not ((court_id and ports.is_court_reader(user, court_id)) or is_party(user, case_id)):
+        raise NotFound("Case not found.")
+
+
+def require_case_court_reader(user, case_id):
+    """Court staff of the case's courtroom only: the recipients' contact details are not a party's."""
+    court_id = _case_court(case_id)
+    if not (court_id and ports.is_court_reader(user, court_id)):
         raise NotFound("Case not found.")
