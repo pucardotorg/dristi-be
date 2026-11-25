@@ -6,3 +6,25 @@ config_set = "tenant"
 config_key = "state_code"
 config_value = "KL"
 description = "Two- or three-letter state code that prefixes human-readable numbers, e.g. KL-REQ-00001. Changing it starts a new number series; existing numbers keep the old code."
+
+# Processes (spec 0028 #12.3). The court fee per process type in the state
+# (payment-logic.md §4, process-handover.md §13.2): Kerala ₹2 for notice,
+# summons and warrant; a type with no entry costs nothing.
+
+[[rows]]
+config_set = "processes.kl"
+config_key = "court_fee.notice"
+config_value = "2.00"
+description = "Court fee for one notice in Kerala (FEE-01)."
+
+[[rows]]
+config_set = "processes.kl"
+config_key = "court_fee.summons"
+config_value = "2.00"
+description = "Court fee for one summons in Kerala (FEE-01)."
+
+[[rows]]
+config_set = "processes.kl"
+config_key = "court_fee.warrant"
+config_value = "2.00"
+description = "Court fee for one warrant in Kerala (FEE-01)."

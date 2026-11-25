@@ -1,0 +1,59 @@
+# Process types (spec 0028 #3.1, process-handover.md §2). Who a type may name
+# as recipient is backend configuration, not set from the UI.
+
+[seed]
+model = "processes.ProcessType"
+
+[[rows]]
+code = "NOTICE"
+label = "Notice"
+order_item_code = "ISSUE_OF_NOTICE"
+positive_label = "Delivered"
+negative_label = "Not delivered"
+allowed_recipient_types = ["ACCUSED", "ACCUSED_PERSON_IN_CHARGE", "WITNESS", "COMPLAINANT"]
+stage_key = "notice"
+
+[[rows]]
+code = "SUMMONS"
+label = "Summons"
+order_item_code = "ISSUE_OF_SUMMONS"
+positive_label = "Delivered"
+negative_label = "Not delivered"
+allowed_recipient_types = ["ACCUSED", "ACCUSED_PERSON_IN_CHARGE", "WITNESS", "COMPLAINANT"]
+stage_key = "summons"
+
+[[rows]]
+code = "WARRANT"
+label = "Warrant"
+order_item_code = "ISSUE_OF_WARRANTS"
+positive_label = "Executed"
+negative_label = "Not executed"
+allowed_recipient_types = ["ACCUSED", "ACCUSED_PERSON_IN_CHARGE", "WITNESS", "COMPLAINANT"]
+stage_key = "warrant"
+
+[[rows]]
+code = "PROCLAMATION"
+label = "Proclamation"
+order_item_code = "ISSUE_OF_PROCLAMATION"
+positive_label = "Executed"
+negative_label = "Not executed"
+allowed_recipient_types = ["ACCUSED", "ACCUSED_PERSON_IN_CHARGE"]
+stage_key = "proclamation"
+
+[[rows]]
+code = "ATTACHMENT"
+label = "Attachment"
+order_item_code = "ISSUE_OF_ATTACHMENT"
+positive_label = "Executed"
+negative_label = "Not executed"
+allowed_recipient_types = ["ACCUSED", "ACCUSED_PERSON_IN_CHARGE"]
+stage_key = "attachment"
+
+[[rows]]
+code = "CUSTOM"
+label = "Custom process"
+order_item_code = "ISSUE_OF_MISCELLANEOUS_PROCESS"
+positive_label = "Delivered"
+negative_label = "Not delivered"
+allowed_recipient_types = ["ACCUSED", "ACCUSED_PERSON_IN_CHARGE", "WITNESS", "COMPLAINANT"]
+stage_key = ""

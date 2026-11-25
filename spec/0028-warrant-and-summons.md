@@ -6,7 +6,8 @@ Proposed
 
 ## References
 
-- PRDs: `process.md` v14.4 (§3.1, §3.2, `PRC-`, `AUT-`, `TPL-01`, `TPL-02`, §6.2, §6.3, `FEE-`, `STP-`, `SGN-`, `DSP-`, §10.1, `EXP-`, `PIA-01`, §13, §15, `Q-15`, `Q-16`), `court-roles.md` (`RLE-02a`, `RLE-04`, `RLE-06`, `RLE-09`, §2), `order-template-catalogue.md` (#9, #10, #12, #20, #21, #25), `pending-task-drafts.md` (§4–§8), `pending-tasks.md`, `case-lifecycle.md` (§4), `efiling.md` (§19.2), `view-case.md` v1.76 (§7, `SVC-`), `signing-methods.md` (`SGM-`), `payment-logic.md` v2.7 (`PMT-04`, §4)
+- PRDs: `process.md` v14.4 (§3.1, §3.2, `PRC-`, `AUT-`, `TPL-01`, `TPL-02`, §6.2, §6.3, `FEE-`, `STP-`, `SGN-`, `DSP-`, §10.1, `EXP-`, `PIA-01`, §13, §15, `Q-15`, `Q-16`), `court-roles.md` (`RLE-02a`, `RLE-04`, `RLE-06`, `RLE-07`, `RLE-08`, `RLE-09`, §2), `order-template-catalogue.md` (#9, #10, #12, #20, #21, #25), `pending-task-drafts.md` (§4–§8), `pending-tasks.md`, `case-lifecycle.md` (§4), `efiling.md` (§19.2), `view-case.md` v1.76 (§7, `SVC-`), `signing-methods.md` (`SGM-`), `payment-logic.md` v2.7 (`PMT-04`, §4)
+- Specs: [`0029`](0029-court-roles.md) — court actions, roles and scope; every access check here goes through it (#2)
 
 > **Scope note.** A summons and a warrant are two **process types** of one
 > process workflow. The PRD specifies a single workflow for notice, summons,
@@ -109,7 +110,7 @@ The PRD fixes the rules:
 * An RPAD or Police (RPAD) process needs its own envelope, received by an Envelope receiver, before it can be signed (`STP-01`–`STP-03`).
 * Every process is signed separately by a person holding Process signer for its type and channel; signing does not send it (`SGN-01`, `SGN-03`, `SGN-04`).
 * Send and update status are separate steps, each System or Manual per channel (`DSP-01`).
-* Each manual step is a court-side pending task for the holders of its role; doing a step closes its task and opens the next in one transaction (`SGN-02`).
+* Each manual step is a court-side pending task for the people allowed to take it; doing a step closes its task and opens the next in one transaction (`SGN-02`).
 * A terminal outcome carries a comment and an optional file; a negative one also a reason from a state master (`DSP-08`, `DSP-09`).
 * A process is Errored only when the system tries to send it and the send fails; it may be resent as the same process (`DSP-11`). Non-delivery never creates a new process; a fresh process needs a fresh order (`DSP-07`).
 * A process that has not been sent expires at 00:00 IST on its hearing date; before signing the expiry follows the hearing, after signing it is fixed. A sent process never expires: it stays open until its outcome is recorded or it is recalled (`EXP-01`, `EXP-01a`, `EXP-02`).
@@ -132,7 +133,7 @@ here. It does not move the case's stage — it dispatches events to
 * Start one process per recipient, channel and address from a triggered Process-category order item, idempotently, grouped into one round per order.
 * Hold process types, channels, the type × channel matrix, the police-station master and the non-delivery reason master as data, seeded and editable.
 * Work out the round's court fee against the case's pool, and raise a demand only for the balance.
-* Gate signing on fee and envelope, gate every step on the role held for the process's type and channel, and open and close each step's pending task.
+* Gate signing on fee and envelope, gate every step on the [`0029`](0029-court-roles.md) action allowed for the process's type and channel, and open and close each step's pending task.
 * Sign each process separately through [`0015`](0015-cdac-esign.md), and render its document through [`0016`](0016-pdf-services.md).
 * Send through the channel's backend where the send is System, record it where it is Manual, and the same for status updates.
 * Record every status change with its time, actor and source, and the outcome with its comment, reason and file.
@@ -192,7 +193,9 @@ apps/processes/
 │   ├── expiry.py           # expiry dates, sweeper (#8.6)
 │   └── step_tasks.py       # pending tasks per step (#10.1)
 ├── selectors.py            # lists, register, contracts for other modules
-├── permissions.py          # scoped court roles (#2)
+├── court_actions.py        # the five process.* actions, scoped (#2, 0029 #3.1)
+├── checks.py               # processes.E001 (#9.2), processes.W001 (#2.3)
+├── permissions.py          # read access: court readers and parties (#11.5)
 ├── receivers.py            # payments, hearings (#6.3, #8.6)
 ├── tasks.py                # Dramatiq actors (#12.5)
 ├── serializers.py · views.py · urls.py · admin.py
@@ -209,7 +212,7 @@ apps.processes ── imports ──> apps.orders.handlers                     (
 apps.processes ── imports ──> apps.workflows.services                  (tasks, events, 0011)
 apps.processes ── imports ──> apps.payments.services / selectors       (0017)
 apps.processes ── imports ──> apps.esign, apps.pdf, apps.files, apps.messaging services
-apps.processes ── imports ──> apps.organizations.selectors             (scoped roles)
+apps.processes ── imports ──> apps.organizations.court_actions / access / selectors   (actions, checks, holders; 0029)
 addon.<channel> ── imports ──> apps.processes.channels.base
 apps.processes ── never imports ──> addon.*
 apps.cases, apps.hearings, apps.orders, apps.workflows, apps.payments ── never import ──> apps.processes
@@ -244,43 +247,122 @@ Rules:
 | `apps.pdf` | in-process render of the process templates (#7.2) | the document (`TPL-01`, `TPL-02`) |
 | `apps.files` | `upload_file`, `get_file` | documents, signed copies, outcome files |
 | `apps.messaging` | `enqueue_sms`, `enqueue_email`, `MessageLog` | SMS and Email channels (#9.4), notifications (#12.2) |
-| `apps.organizations` | `selectors.process_role_holders(court_id, role, process_type, channel)`, `holds_process_role(user, role, court_id, process_type, channel)` | scoped roles (#2) |
+| `apps.organizations` ([`0029`](0029-court-roles.md)) | `court_actions.define(..., scoped=True)` | declaring the process actions (#2.1) |
+| | `access.require(user, action, court_id, *, error, process_type, channel)` | every court-side step (#2.2) |
+| | `selectors.can(...)`, `grants_of(user)` | `allowed_actions`, `my_move`, counts (#11.2) |
+| | `selectors.action_holders(court_id, action, *, process_type, channel)` | task users (#10.1), the nobody-can-act check (#2.3) |
+| | `selectors.is_court_reader(user, establishment_id, courtroom_id)`, `establishment_of(courtroom_id)` | read access (#11.5) |
+| | `migration_ops.add_scope_code_with(apps, axis, code, *, like)` | a new process type or channel (#2.4) |
+| | signal `court_access_changed` | refreshing open task users (#10.1) |
 | `apps.core` | configuration store ([`0018`](0018-configuration-store.md)) | court fees, limits (#12.3) |
 
-None of the `apps.cases` functions above, nor the two scoped-role selectors,
-exist yet; they are the first work this spec needs from those modules.
+None of the `apps.cases` functions above exist yet; they are the first work
+this spec needs from that module. The `apps.organizations` contracts are
+[`0029`](0029-court-roles.md)'s and land with it; this module needs 0029
+implemented first.
 [`0011`](0011-case-workflows.md) #7.2 lists only *Pay process fee* and *Hand in
 envelope* as process tasks and says court-side process work is not a task. The
 PRD has since made each manual court-side step a task (`SGN-02`); 0011 needs
-that line updated, and a role-with-scope users rule (#10.1).
+that line updated, and its `court_action` users rule (0029 #10.4) needs a
+`scope` (#10.1).
 
-### 2. Court roles
+### 2. Court actions
 
-The four process roles of [`court-roles.md`](court-roles.md) §2 are each held
-**per courtroom** (`RLE-02a`) and for a **scope**: some or all process types, on
-some or all channels (`RLE-09`). A role held with no scope covers every type on
-every channel. A person can act on a process only where its type and channel
-fall within their scope.
+Access follows [`0029`](0029-court-roles.md): code checks **actions**, never
+roles (0029 #3.2). The four process roles of [`court-roles.md`](court-roles.md)
+§2 — Envelope receiver, Process signer, Process dispatcher, Process reporter —
+are role bundles an administrator builds from these actions (0029 #4); no code
+here names a role, a role code or a staff title (`RLE-08`).
 
-| Role | Actions | PRD |
+#### 2.1 Declaring — `apps/processes/court_actions.py`
+
+```python
+from apps.organizations.court_actions import define
+from apps.organizations.enums import CourtLevel
+
+ROOM = CourtLevel.COURTROOM
+
+RECEIVE_ENVELOPE = define("process.receive_envelope", ROOM, "Record receipt of an envelope", group="Envelope receiver", scoped=True)
+SIGN = define("process.sign", ROOM, "Sign a process", group="Process signer", scoped=True)
+SEND = define("process.send", ROOM, "Send, resend or publish a process", group="Process dispatcher", scoped=True)
+RECALL = define("process.recall", ROOM, "Recall a process", group="Process dispatcher", scoped=True)
+RECORD_OUTCOME = define("process.record_outcome", ROOM, "Record a process's outcome", group="Process reporter", scoped=True)
+```
+
+| Action | Allows | PRD |
 | --- | --- | --- |
-| `ENVELOPE_RECEIVER` | record receipt of an RPAD or Police (RPAD) envelope | `STP-02` |
-| `PROCESS_SIGNER` | sign a process; with `PROCESS_DISPATCHER`, sign and send in one action | `SGN-01`, `DSP-02` |
-| `PROCESS_DISPATCHER` | mark sent, or click Send on a system channel; resend an Errored process; recall | `DSP-03`, `DSP-11`, `PIA-01` |
-| `PROCESS_REPORTER` | record the outcome on a channel whose status update is Manual | `DSP-03`, `DSP-08` |
+| `process.receive_envelope` | record receipt of an RPAD or Police (RPAD) envelope (#7.1) | `STP-02` |
+| `process.sign` | sign a process (#7.2); with `process.send`, sign and send in one action | `SGN-01`, `DSP-02` |
+| `process.send` | mark sent, or click Send on a system channel (#8.1); resend an Errored process (#8.3); *Mark as published* on a proclamation (#8.1) | `DSP-03`, `DSP-10`, `DSP-11` |
+| `process.recall` | recall a process with no outcome (#8.4) | `PIA-01` |
+| `process.record_outcome` | record the outcome on a channel whose status update is Manual (#8.2) | `DSP-03`, `DSP-08` |
 
-Where a channel's status update is System, the system is the reporter and no
-person records it (`RLE-09`).
+All five are `COURTROOM`-level (`RLE-02a`) and scoped: each is held for some or
+all process types on some or all channels (`RLE-09`, 0029 #5.5). Resend and
+*Mark as published* are not separate actions: both are the dispatcher's send,
+so they check `process.send`. Recall is its own action, split from send as in
+0029 #3.3, though the seeded Process dispatcher role holds both.
 
-Roles are read through `holds_process_role(user, role, court_id, process_type,
-channel)`, checked when the action is taken, server-side (`RLE-04`). Who holds
-what differs by state — in Kerala the Magistrate holds Process signer for
-warrants and the Bench clerk / Reader for every other type — but no code reads a
-staff title (`RLE-08`, `court-roles.md` §3). How a scope is stored on the
-courtroom membership is open (question 1).
+Code refers to an action by the constant (`actions.SIGN`), never by its string,
+except in migrations (0029 #12).
 
-Reading is not a role: any staff of the courtroom sees its processes
-(`RLE-06`). Parties of the case see its process register (#11.3).
+#### 2.2 Checking
+
+Every court-side step is checked in its service, when it is taken (`RLE-04`),
+against the process's courtroom, type and channel:
+
+```python
+from .. import court_actions as actions
+
+access.require(
+    actor, actions.SIGN, process.round.court_id,
+    error=errors.PROCESS_ACTION_NOT_ALLOWED,
+    process_type=process.process_type.code, channel=process.channel.code,
+)
+```
+
+* A refusal is `403 E12015`. Business state (status, fee, envelope) is checked by the service alongside, never encoded in the action.
+* A step on several processes (recall, bulk sign) checks each process's own type and channel.
+* **Sign and send** needs both `process.sign` and `process.send` for the process (`DSP-02`). The send that follows is the system's carrying out of a checked action and is not checked again (0029 #7).
+* **System steps** never call `access.require` and are recorded with `source = SYSTEM`, `POLL` or `CALLBACK` and no user: a system send after the dispatcher's Send, a status update on a System status channel (`RLE-09`: the system is the reporter), and expiry (`EXP-02`). A callback is trusted only through the backend's `parse_callback` (#9.3, 0029 #7).
+
+#### 2.3 Nobody can act — `processes.W001`
+
+The `database`-tagged warning 0029 #9.3 assigns to this module, in
+`apps/processes/checks.py`, built on `action_holders`. For each active
+courtroom it names every gap where there is no active holder of:
+
+* `process.sign` for an active process type;
+* `process.send` for an available channel (`Channel.is_available`);
+* `process.record_outcome` for an available channel whose `status_mode` is `MANUAL`;
+* `process.receive_envelope` for an available channel with `needs_envelope`.
+
+Only types and channels the deployment offers are checked, so the warning names
+only work that would get stuck.
+
+#### 2.4 New process types and channels
+
+Process types and channels are master data (#3.1), but a new code is in no
+role's scope until someone says who gets it (0029 #3.4, #5.5). So adding one is
+never an admin edit alone. The pull request that adds the seeded row also ships
+either:
+
+* a data migration calling `add_scope_code_with(apps, "process_types" | "channels", "<CODE>", like="<EXISTING>")`, when it is handled like an existing code; or
+* nothing, when nobody should have it yet, saying so; administrators then add it to roles.
+
+The role seed files (0025) are updated in the same pull request. Until it is
+covered, `processes.W001` names it. Admin may edit an existing type or channel
+but cannot create one (#12.7).
+
+The codes in #3.1 are the ones 0029 #4 seeds with. Whether proclamation and
+attachment are signed like summons or like warrants is PRD `Q-1`; it decides
+only the role seed, not code.
+
+#### 2.5 Reading
+
+Reading is not an action (0029 #6.1). Court staff of the case's courtroom read
+its processes (`RLE-06`) through `is_court_reader`; parties of the case read its
+process register (#11.3, #11.5).
 
 ### 3. Data model
 
@@ -423,8 +505,9 @@ is `Q-16`.
 | `is_police` | `BooleanField` | the three police channels: a police station is entered (`PRC-03`) |
 | `is_available` | `BooleanField` | offered in this deployment (`PRC-04`, §13.1) |
 
-A new delivery mechanism is a new row (`process.md` §6.2). A system step needs a
-backend registered for the channel (#9.2); a system check fails otherwise.
+A new delivery mechanism is a new row (`process.md` §6.2), shipped with the
+role-scope migration or note of #2.4. A system step needs a backend registered
+for the channel (#9.2); a system check fails otherwise.
 
 **`ProcessTypeChannel`** — the matrix of §6.3: `process_type`, `channel`,
 `preselected` — the cells marked *Default* there (`AUT-08`). A deployment runs
@@ -453,7 +536,7 @@ All the processes one order triggers (`process.md` §3, `SVC-04`).
 | `order_id` | `UUIDField(unique=True)` | the triggering order (`SVC-08`) |
 | `hearing_id` | `UUIDField(null=True)` | the hearing set in the same order, or else the case's existing next hearing at trigger (`PRC-06`, `SVC-07`) |
 | `hearing_date` | `DateField(null=True)` | that hearing's date when the round started — the date at issue, for lists and sorting; never updated (`PRC-06`) |
-| `court_id` | `UUIDField(db_index=True)` | the case's courtroom; roles are read here |
+| `court_id` | `UUIDField(db_index=True)` | the case's courtroom — an `Organization` with `court_level = COURTROOM` (0029 #2); every action is checked here (#2.2). A process-category order is made in a courtroom, so the case always has one by then |
 
 #### 3.3 `Process`
 
@@ -574,7 +657,7 @@ stateDiagram-v2
 | Status | Terminal | Meaning (§10.1) |
 | --- | --- | --- |
 | `PENDING_STEPS` | no | the party directed to take steps still has to pay the balance, hand in the envelope, or both, in any order |
-| `PENDING_SIGNATURE` | no | steps done or none needed; waiting for a Process signer |
+| `PENDING_SIGNATURE` | no | steps done or none needed; waiting for a holder of `process.sign` |
 | `SIGNED` | no | signed, not yet sent (`SGN-04`) |
 | `SENT` | no | dispatched |
 | `DELIVERED` | yes | reached its destination; *Executed* for warrant, proclamation and attachment |
@@ -586,13 +669,13 @@ stateDiagram-v2
 | Action | From → To | Who | Where |
 | --- | --- | --- | --- |
 | create | — → `PENDING_STEPS` or `PENDING_SIGNATURE` | system, on the order item's trigger | #5 |
-| fee paid / envelope received | `PENDING_STEPS` → `PENDING_SIGNATURE` when both that apply are done | system / Envelope receiver | #6.3, #7.1 |
-| sign | `PENDING_SIGNATURE` → `SIGNED` | Process signer | #7.2 |
-| send | `SIGNED` → `SENT` | Process dispatcher; the system on a sign-and-send | #8.1 |
-| resend | `ERRORED` → `SENT` | Process dispatcher | #8.3 |
-| record outcome | `SENT` → `DELIVERED`, `NOT_DELIVERED` | Process reporter; the system on a system status channel | #8.2 |
+| fee paid / envelope received | `PENDING_STEPS` → `PENDING_SIGNATURE` when both that apply are done | system / `process.receive_envelope` | #6.3, #7.1 |
+| sign | `PENDING_SIGNATURE` → `SIGNED` | `process.sign` | #7.2 |
+| send | `SIGNED` → `SENT` | `process.send`; the system on a sign-and-send | #8.1 |
+| resend | `ERRORED` → `SENT` | `process.send` | #8.3 |
+| record outcome | `SENT` → `DELIVERED`, `NOT_DELIVERED` | `process.record_outcome`; the system on a system status channel | #8.2 |
 | error | `SIGNED` or `SENT` → `ERRORED` | the system, on a System send channel only | #8.1, #8.2 |
-| recall | any non-terminal → `RECALLED` | Process dispatcher | #8.4 |
+| recall | any non-terminal → `RECALLED` | `process.recall` | #8.4 |
 | expire | `PENDING_STEPS`, `PENDING_SIGNATURE`, `SIGNED`, `ERRORED` → `EXPIRED` | the system, at `expires_at` | #8.6 |
 
 Rules:
@@ -745,7 +828,7 @@ it.
 Every RPAD and Police (RPAD) process needs its own envelope, handed in at the
 counter by the party directed to take steps (`process.md` §8):
 
-* On creation, open *Hand in envelope* for the party's side and *Receive envelope* for the `ENVELOPE_RECEIVER` holders of the type and channel (`STP-01`, `SGN-02`).
+* On creation, open *Hand in envelope* for the party's side and *Receive envelope* for the holders of `process.receive_envelope` for the type and channel (`STP-01`, `SGN-02`).
 * `POST /processes/{id}/envelope/` records receipt: `envelope_received_by`, `_at`; both tasks close (`STP-02`). The party cannot close it.
 * The process moves to `PENDING_SIGNATURE` once its fee is also paid (`STP-03`). Other processes of the round never wait on it.
 
@@ -756,7 +839,7 @@ POST /api/v1/processes/{id}/sign/
 { "method": "AADHAAR_ESIGN", "send": false }
 ```
 
-Process signer for the type and channel, `PENDING_SIGNATURE`:
+`process.sign` for the type and channel, `PENDING_SIGNATURE`:
 
 1. `method` is enabled for the state (`signing-methods.md` `SGM-05`; `400 E12010`).
 2. Render the document with the process's `template` — set by process type, recipient and channel, falling back to the type and recipient's all-channel template (`TPL-01`, `TPL-02`) — with the case, the recipient, the destination, and the hearing's date and purpose as they stand at render. Store it with `apps.files`; set `signing_file_id`.
@@ -769,15 +852,15 @@ idempotently: the transaction is `SUCCESS`, by this user, on the current
 send task opens (`SGN-04`, `SGN-02`).
 
 **Sign and send.** `send: true` is accepted only where the channel's send is
-System and the signer also holds `PROCESS_DISPATCHER` for the process
-(`DSP-02`); otherwise `403 E12012`. On confirm the process passes through
+System and the signer is also allowed `process.send` for the process's type
+and channel (`DSP-02`, #2.2); otherwise `403 E12012`. On confirm the process passes through
 `SIGNED` to `SENT` (#8.1), both recorded, and no send task is opened.
 
 Each process is signed on its own, with its own signature, timestamp and event,
 even where its content matches another's (`SGN-03`). The module registers an
 authorizer with `apps.esign` for its entity types, so a direct e-sign of a
-process is refused unless the user holds Process signer for it and it is
-`PENDING_SIGNATURE`.
+process is refused unless `selectors.can(user, actions.SIGN, court_id,
+process_type=…, channel=…)` and it is `PENDING_SIGNATURE`.
 
 **Several at once.** The screen may select several processes and sign them in
 one action (`SGN-03`). With Aadhaar e-sign each document needs its own
@@ -804,18 +887,19 @@ rows and the process detail return both `hearing.date_at_issue` and
 POST /api/v1/processes/{id}/send/
 ```
 
-Process dispatcher for the type and channel, `SIGNED` (`DSP-03`):
+`process.send` for the type and channel, `SIGNED` (`DSP-03`):
 
 * **Manual send** — the dispatcher marks it sent once the document has left in that form: `SENT`, `sent_by`, `sent_at`.
 * **System send** — the dispatcher clicks Send: `send` calls the channel's backend (#9) on commit, through `tasks.send_process`. On acceptance the process is `SENT` with the backend's `provider_reference`. If the send fails — a technical issue on either side, the receiving system rejecting it, an invalid number — it is `ERRORED` with the error in `remark`; a transient failure is first retried by the actor (`DSP-11`).
 * A Manual send never ends in `ERRORED`: a failure at the destination is recorded as `NOT_DELIVERED` (`DSP-11`).
-* The send task closes. Where the channel's status update is Manual, *Record outcome* opens for the `PROCESS_REPORTER` holders (`SGN-02`).
+* The send task closes. Where the channel's status update is Manual, *Record outcome* opens for the holders of `process.record_outcome` (`SGN-02`).
 
 **Proclamation by hand — *Mark as published*.** A proclamation is signed, sent
-and executed — three stages (`DSP-10`). On a `BY_HAND` proclamation the Process
+and executed — three stages (`DSP-10`). On a `BY_HAND` proclamation the
 dispatcher sends `{"published": true}`; it is recorded `SENT` and *Executed*
 (`DELIVERED`) at the same time, one event each, and no *Record outcome* task
-opens. Only the dispatcher role is needed (`process.md` v14.4). Publication in a
+opens. Only `process.send` is checked, not `process.record_outcome`
+(`process.md` v14.4). Publication in a
 newspaper is recorded the same way and not tracked separately.
 
 #### 8.2 Recording the outcome
@@ -825,7 +909,7 @@ POST /api/v1/processes/{id}/outcome/
 { "status": "NOT_DELIVERED", "reason": "ADDRESSEE_NOT_FOUND", "outcome_date": "2026-11-12", "comment": "House locked for a month.", "file_id": "…" }
 ```
 
-Process reporter for the type and channel, `SENT`, on a channel whose status
+`process.record_outcome` for the type and channel, `SENT`, on a channel whose status
 update is Manual (`409 E12013` on a System one):
 
 * `status` is `DELIVERED` or `NOT_DELIVERED` (`DSP-08`). `NOT_DELIVERED` requires a `reason` from the state's `NonDeliveryReason` list (`400 E12014`, `DSP-09`). `outcome_date` defaults to today and may be neither in the future nor before `sent_at` (`400 E12018`); a batch of returns recorded together may share it. `comment` is free text; `file_id` an optional `apps.files` upload.
@@ -847,7 +931,7 @@ reports `DELIVERED` (question 4).
 
 #### 8.3 Resend
 
-`POST /processes/{id}/resend/`, Process dispatcher, `ERRORED` only: the same
+`POST /processes/{id}/resend/`, `process.send`, `ERRORED` only: the same
 process goes back to `SENT` through the backend again, `attempt += 1`
 (`DSP-11`). No new process and no new order. Non-delivery never resends:
 `NOT_DELIVERED` is terminal, and a fresh process needs a fresh order, which
@@ -860,8 +944,9 @@ POST /api/v1/processes/recall/
 { "process_ids": ["…", "…"], "comment": "Accused enlarged on bail." }
 ```
 
-Process dispatcher, holding the role for each process's type and channel
-(`PIA-01`):
+`process.recall`, checked for each process's type and channel (`PIA-01`); one
+the caller may not recall fails the request with `403 E12015` and nothing is
+recalled:
 
 * Each process must have no outcome — any non-terminal status. Others are returned under `skipped` with their status.
 * Each becomes `RECALLED`, `recalled_by`, `recalled_at`; every task open on it expires.
@@ -952,7 +1037,8 @@ Exceptions: `ChannelPermanentError` (→ `ERRORED`), `ChannelTransientError`
 lazily and cached, exactly like `MESSAGING_BACKENDS`. A system check
 (`processes.E001`) fails when an available channel with a System send or
 status step has no backend, and in production when a mock backend is
-registered.
+registered. The `database`-tagged `processes.W001` warns when nobody can act on
+a process (#2.3).
 
 #### 9.3 Backends and where they live
 
@@ -961,7 +1047,7 @@ registered.
 | SMS, Email | `apps.processes.channels.messaging` (#9.4) | the messaging log (#8.2) |
 | Police (NSTEP) | `addon.nstep_cis_police` — separate spec; via CIS, end-of-day batch | `poll_process_statuses` calls `fetch_status` |
 | Police (iCOPS) | `addon.icops_police` — separate spec; direct | iCOPS calls `POST /processes/channels/POLICE_ICOPS/_callback` |
-| RPAD, e-Post, Police (RPAD), By hand | none — Manual both ways | a Process reporter |
+| RPAD, e-Post, Police (RPAD), By hand | none — Manual both ways | a holder of `process.record_outcome` |
 
 `process.md` and `cis-integration.md` define no wire contract for NSTEP, CIS or
 iCOPS yet; until their addons exist, those channels run on
@@ -994,19 +1080,28 @@ messaging module's own retries come first. SMS templates need DLT template ids
 
 Opened and closed through [`0011`](0011-case-workflows.md) `TaskService`, with
 `reference = ("PROCESS", process.id)`, in the transaction that does the step
-(`SGN-02`). Court-side tasks use a role rule with a scope —
-`{"type": "court_role", "role": "PROCESS_SIGNER", "level": "COURTROOM", "scope": {"process_type": "WARRANT", "channel": "POLICE_NSTEP"}}` —
-resolved through `process_role_holders`; 0011's users rules need this `scope`
-key (#1.1).
+(`SGN-02`). Court-side tasks use 0029's action rule (0029 #10.4) with the
+process's type and channel as its scope, built from the constants in
+`court_actions.py`, never a string literal:
+
+```json
+{"type": "court_action", "action": "process.sign", "scope": {"process_type": "WARRANT", "channel": "POLICE_NSTEP"}}
+```
+
+It resolves through `action_holders(court_id, action, process_type=…,
+channel=…)` at the round's `court_id`. 0029 #10.4 has no `scope` key on this
+rule yet; 0011 needs it (#1.1). When `court_access_changed` names the courtroom
+and a process action (or `actions=None`), 0011's `refresh_users` updates the
+open tasks' users (0029 #8.3); this module does nothing extra.
 
 | `task_key` | Side | Users | Opened | Completed | Expired | PRD |
 | --- | --- | --- | --- | --- | --- | --- |
 | `pay_process_fee` | citizen, `PAY` | the side of the party directed to take steps | a balance is due on the round | the demand is `PAID` | every process it covers is recalled or expired | `FEE-06` |
 | `hand_in_envelope` | citizen, `FILE_SUBMIT` | that side | an RPAD or Police (RPAD) process is created | receipt recorded | recall, expiry | `STP-01` |
-| `receive_envelope` | court | `ENVELOPE_RECEIVER` for the type and channel | with `hand_in_envelope` | receipt recorded | recall, expiry | `STP-02`, drafts §4 |
-| `sign_process` | court | `PROCESS_SIGNER` | the process reaches `PENDING_SIGNATURE` | signed | recall, expiry | `SGN-02`, drafts §5 |
-| `send_process` | court | `PROCESS_DISPATCHER` | signed, unless sent in the same action | sent | recall, expiry | `DSP-03`, drafts §6 |
-| `record_process_outcome` | court | `PROCESS_REPORTER` | sent, on a Manual status channel | outcome recorded | recall, expiry | `DSP-03`, drafts §7 |
+| `receive_envelope` | court | `process.receive_envelope` for the type and channel | with `hand_in_envelope` | receipt recorded | recall, expiry | `STP-02`, drafts §4 |
+| `sign_process` | court | `process.sign` for the type and channel | the process reaches `PENDING_SIGNATURE` | signed | recall, expiry | `SGN-02`, drafts §5 |
+| `send_process` | court | `process.send` for the type and channel | signed, unless sent in the same action | sent | recall, expiry | `DSP-03`, drafts §6 |
+| `record_process_outcome` | court | `process.record_outcome` for the type and channel | sent, on a Manual status channel | outcome recorded | recall, expiry | `DSP-03`, drafts §7 |
 
 Names follow `pending-task-drafts.md` §4–§7, e.g.
 `Sign {processType} — {recipientName}`. Court tasks have no due date and
@@ -1044,12 +1139,14 @@ from the app), the `meta` envelope and the standard error shape.
 | GET | `/processes/` | the lists (#11.2) | court staff of the courtroom |
 | GET | `/processes/counts/` | counts per status and channel, and the viewer's moves, so a screen can build its own tabs | court staff |
 | GET | `/processes/{id}/` | one process, its events and tasks | court staff; parties of the case |
-| POST | `/processes/{id}/envelope/` | #7.1 | Envelope receiver |
-| POST | `/processes/{id}/sign/` · `/sign/confirm/` | #7.2 | Process signer |
-| POST | `/processes/{id}/send/` | #8.1 | Process dispatcher |
-| POST | `/processes/{id}/outcome/` | #8.2 | Process reporter |
-| POST | `/processes/{id}/resend/` | #8.3 | Process dispatcher |
-| POST | `/processes/recall/` | #8.4 | Process dispatcher |
+| POST | `/processes/{id}/envelope/` | #7.1 | `process.receive_envelope` |
+| POST | `/processes/{id}/sign/` · `/sign/confirm/` | #7.2 | `process.sign` (and `process.send` with `send: true`) |
+| POST | `/processes/{id}/send/` | #8.1 | `process.send` |
+| POST | `/processes/{id}/outcome/` | #8.2 | `process.record_outcome` |
+| POST | `/processes/{id}/resend/` | #8.3 | `process.send` |
+| POST | `/processes/recall/` | #8.4 | `process.recall` |
+
+Each action is for the process's type and channel at its courtroom (#2.2).
 
 #### 11.2 `GET /api/v1/processes/`
 
@@ -1060,7 +1157,7 @@ from the app), the `meta` envelope and the standard error shape.
 | `process_type` | repeatable code |
 | `channel` | repeatable code |
 | `reason` | repeatable `NonDeliveryReason` code; implies `NOT_DELIVERED` |
-| `my_move` | `true`: only processes whose next step the caller's roles cover (`SGN-02`) |
+| `my_move` | `true`: only processes whose next step the caller is allowed for its type and channel (`SGN-02`) |
 | `case`, `round`, `hearing` | UUIDs |
 | `search` | case number, title or recipient name |
 | `ordering` | default `status_at`; also `hearing_date` (the date at issue, #3.2), `expires_at`, `created_at`, each with `-` for descending |
@@ -1092,8 +1189,14 @@ from the app), the `meta` envelope and the standard error shape.
 ```
 
 `allowed_actions` combines the status, the channel's modes and the caller's
-scoped roles, so the screen offers only what the caller may do (`RLE-07`). Case
-columns come from one batched `get_case_summaries` call.
+scoped actions, so the screen offers only what the caller may do (`RLE-07`).
+The frontend decides on it, never on a role (0029 #9.2). It is worked out per
+row with `selectors.can(..., process_type=, channel=)`, which memoises the
+caller's grants for the request (0029 #6). `my_move` and the counts' moves need
+a queryset filter, so they read `grants_of(user)` once and turn the scoped
+grants at `court` into a `Q` over status, process type and channel; `actions_of`
+is not enough, since it drops the scope. Case columns come from one batched
+`get_case_summaries` call.
 
 #### 11.3 Case register and parties
 
@@ -1125,9 +1228,10 @@ demand; the envelope task to the process.
 #### 11.5 Permissions
 
 Baseline from [`0000`](0000-api-coding-spec.md) #6: `IsAuthenticated`,
-`IsAuthenticatedAndRegistered`. On top, in `permissions.py`:
+`IsAuthenticatedAndRegistered`. On top, in `permissions.py`, for reading only;
+actions are checked in the services (#2.2), with no DRF permission class (0029 #7):
 
-* **Court staff** — an active courtroom membership for the round's `court_id`. They read every process of the courtroom (`RLE-06`). Each action needs its role for the process's type and channel (#2), checked server-side (`RLE-04`, `RLE-09`); without it, `403 E12015`.
+* **Court staff** — `is_court_reader(user, establishment_of(court_id), court_id)`: on the round's courtroom list (`CourtroomAssignment`, 0029 #5.3). They read every process of the courtroom (`RLE-06`). Each action needs its action for the process's type and channel (#2), checked server-side (`RLE-04`, `RLE-09`); without it, `403 E12015`. The list's `court` param must be a courtroom the caller reads, else `404 E00105`.
 * **Parties** — users with an active relationship on the case ([`0003`](0003-case-relationships.md)). Read the case's register and their own processes' detail; act only through payments and their tasks.
 * **Everyone else**, and staff of another courtroom — `404 E00105`, never `403`.
 * The callback endpoint declares `AllowAny` explicitly.
@@ -1135,7 +1239,7 @@ Baseline from [`0000`](0000-api-coding-spec.md) #6: `IsAuthenticated`,
 #### 11.6 Serializer responsibilities
 
 Serializers check shape only: UUIDs, enum values, duplicate-free id lists,
-comment length. Roles, transitions, reasons and destinations are checked in the
+comment length. Actions, transitions, reasons and destinations are checked in the
 services under the process lock. `status`, `status_at`, every fee field, every
 `*_file_id`, every `*_by` / `*_at`, `attempt`, `expires_at`, `provider_reference`
 and `template` are read only.
@@ -1160,10 +1264,10 @@ and `11` are taken by the hearings and court orders specs.
 | `E12009` | `NO_ENVELOPE_FOR_CHANNEL` | 409 | recording an envelope on a channel that takes none |
 | `E12010` | `SIGNING_METHOD_NOT_ENABLED` | 400 | `SGM-05`; `field = method` |
 | `E12011` | `SIGNATURE_NOT_VALID_FOR_PROCESS` | 409 | confirming a transaction that is not a success, not this process's current file, or not the caller's |
-| `E12012` | `SIGN_AND_SEND_NOT_ALLOWED` | 403 | `send: true` without Process dispatcher, or on a Manual send channel (`DSP-02`) |
+| `E12012` | `SIGN_AND_SEND_NOT_ALLOWED` | 403 | `send: true` without `process.send` for the process, or on a Manual send channel (`DSP-02`) |
 | `E12013` | `OUTCOME_RECORDED_BY_SYSTEM` | 409 | a person recording the outcome on a System status channel (`DSP-03`) |
 | `E12014` | `REASON_REQUIRED` | 400 | a negative outcome without a reason from the state's list (`DSP-09`); `field = reason` |
-| `E12015` | `PROCESS_ROLE_REQUIRED` | 403 | the caller lacks the role for this process's type and channel (`RLE-09`) |
+| `E12015` | `PROCESS_ACTION_NOT_ALLOWED` | 403 | the caller is not allowed the step's action for this process's type and channel at its courtroom; passed as `error=` to `access.require` (#2.2, `RLE-09`) |
 | `E12016` | `BULK_TOO_LARGE` | 400 | more processes than `processes.bulk_max` in one recall |
 | `E12017` | `DESTINATION_INVALID` | 400 | a destination added on the order screen is not a valid mobile number, email or postal address (`PRC-05`); `field = values.recipients[i].new_destinations[j]` |
 | `E12018` | `OUTCOME_DATE_INVALID` | 400 | `outcome_date` in the future or before the process was sent; `field = outcome_date` |
@@ -1252,7 +1356,7 @@ added to its schedule inventory (§7) when implemented.
 
 #### 12.7 Admin
 
-* `ProcessType`, `ProcessTemplate`, `Channel`, `ProcessTypeChannel`, `PoliceStation`, `NonDeliveryReason`: editable, `AuditUserAdminMixin`, `SimpleHistoryAdmin`.
+* `ProcessType`, `ProcessTemplate`, `Channel`, `ProcessTypeChannel`, `PoliceStation`, `NonDeliveryReason`: editable, `AuditUserAdminMixin`, `SimpleHistoryAdmin`. `ProcessType` and `Channel` cannot be added in admin, since a new code needs a role-scope decision (#2.4); they are added by seed and migration.
 * `ProcessRound`, `Process`, `ProcessEvent`: read only. Admin never signs, sends, records or recalls a process.
 
 #### 12.8 Caching
@@ -1268,17 +1372,19 @@ The six master tables are added to `CACHALOT_ONLY_CACHABLE_TABLES`
 * **Templates:** a channel's own template is used where one exists, else the type and recipient's all-channel template.
 * **Defaults:** each `AUT-` rule — one accused preselected, several none; after joining, the one unexamined witness; every address; the channels marked Default per type, with only the police channel the deployment runs; party taking steps per recipient; a police station from an earlier round, from e-filing by exact name, otherwise blank.
 * **Fees:** prepaid filing fees cover a round with no task; a partial pool covers processes in creation order; the balance becomes one item per process; a zero fee needs no payment; the remainder stays in the pool; payment moves only the paid processes; `PENDING` never counts.
-* **Steps:** RPAD waits for its own envelope and fee in either order; SMS in the same round does not wait; only an Envelope receiver records receipt.
-* **Signing:** refused before fee and envelope; only a Process signer for that type and channel signs — a summons signer cannot sign a warrant; each process gets its own signature and event; sign-and-send only with both roles on a System send channel, recording `SIGNED` and `SENT` at the same time.
-* **Send and status:** manual send by a dispatcher; system send through a stub backend, a failed send to `ERRORED`, transient retried; a Manual send channel never reaches `ERRORED`; outcome by a reporter only on Manual status channels; negative outcome needs a reason; callback trusted only through the backend; poll applies reports; a report on a terminal process ignored; labels *Executed* / *Not executed* for warrants.
-* **Proclamation:** By hand only; *Mark as published* by a Process dispatcher records `SENT` and *Executed* together, with no reporter role and no outcome task.
+* **Steps:** RPAD waits for its own envelope and fee in either order; SMS in the same round does not wait; only a holder of `process.receive_envelope` for the type and channel records receipt.
+* **Signing:** refused before fee and envelope; only a holder of `process.sign` for that type and channel signs — one scoped to summons cannot sign a warrant; the e-sign authorizer refuses the same; each process gets its own signature and event; sign-and-send only with both `process.sign` and `process.send` on a System send channel, recording `SIGNED` and `SENT` at the same time.
+* **Send and status:** manual send by a holder of `process.send`; system send through a stub backend, a failed send to `ERRORED`, transient retried; a Manual send channel never reaches `ERRORED`; outcome by a holder of `process.record_outcome` only on Manual status channels; system status updates and expiry need no user and record no actor; negative outcome needs a reason; callback trusted only through the backend; poll applies reports; a report on a terminal process ignored; labels *Executed* / *Not executed* for warrants.
+* **Proclamation:** By hand only; *Mark as published* with `process.send` alone records `SENT` and *Executed* together, with no `process.record_outcome` check and no outcome task.
 * **Lists and outcome date:** filter by reason; sort by hearing date at issue; `outcome_date` stored apart from `status_at`, refused in the future or before sending (`E12018`); fee paid date per process.
-* **Resend and recall:** only `ERRORED` resends, as the same process; recall before send never dispatches and cancels an unpaid item; recall after a system send calls the backend; outcomes refuse recall; tasks expire.
+* **Resend and recall:** only `ERRORED` resends, as the same process, with `process.send`; recall needs `process.recall`, and `process.send` alone does not recall; a bulk recall with one process outside the caller's scope recalls nothing; recall before send never dispatches and cancels an unpaid item; recall after a system send calls the backend; outcomes refuse recall; tasks expire.
 * **Expiry:** 00:00 IST on the hearing date; moves with the hearing before signing, fixed after; the sweep expires `PENDING_STEPS`, `PENDING_SIGNATURE`, `SIGNED` and `ERRORED` processes and closes their tasks; a `SENT` process past its date is left alone; never dispatched after expiry.
 * **Hearing:** the order's new hearing, else the case's next hearing at trigger; a later move changes nothing on the process but an unsigned expiry; lists return the date at issue and the current date.
-* **Tasks:** each step opens its task for the scoped role holders and closes it in the same transaction; no task for a system step.
+* **Tasks:** each step opens its task with the `court_action` rule and scope, reaching exactly the `action_holders` for the type and channel, and closes it in the same transaction; no task for a system step.
 * **Stages:** `SUMMONS_TRIGGERED` on the first summons of a round; `ALL_SUMMONS_TERMINAL` only when the last live summons of the case closes; custom process dispatches nothing.
-* **Permissions:** every action with its scoped role and `403 E12015` without it, including a role held for another type, another channel or another courtroom; parties read the register only; outsiders `404 E00105`.
+* **Permissions:** every step with its action and `403 E12015` without it, including the action held for another type, another channel or another courtroom; `allowed_actions` and `my_move` match what the services allow; staff not on the courtroom's list, and outsiders, `404 E00105`; parties read the register only.
+* **Actions:** `court_actions.py` declares the five actions, `COURTROOM`-level and scoped; no code in `apps.processes` imports `CourtRole` or uses an action code as a string outside `court_actions.py` and migrations (0029 #12).
+* **Nobody can act:** `processes.W001` names a courtroom with no holder of `process.sign` for a type, `process.send` or `process.receive_envelope` for an available channel, or `process.record_outcome` for an available Manual status channel; it ignores unavailable channels and System status channels.
 * **Isolation:** `apps.processes` imports no addon; `apps.cases`, `apps.hearings`, `apps.orders`, `apps.workflows` and `apps.payments` do not import `apps.processes`.
 * **Scheduling:** both cron actors registered with their expressions in the schedule test ([`0026`](0026-dramatiq-crontab.md) §8.2).
 * **API:** success paths, `meta` envelope, pagination, filters, read-only fields; every code in #11.7 asserted by `code` and `field`, never message ([`0000`](0000-api-coding-spec.md) #13).
@@ -1300,13 +1406,13 @@ cd src && python manage.py check
 | 1 | Scope | one app per process type / one app for every type | One app; types differ only by data (`process.md` §4) |
 | 2 | The unit | process per recipient with channel rows / process per recipient, channel and address | Per recipient, channel and address — status, signing and tasks at one level (`process.md` §3) |
 | 3 | Coupling to orders | orders calls processes / processes registers a handler | Handler; orders never imports processes (`PRC-01`) |
-| 4 | Types, channels, matrix | enums in code / master data | Master data seeded per deployment; a new channel is a row (§6.2) |
+| 4 | Types, channels, matrix | enums in code / master data | Master data seeded per deployment; a new channel is a row (§6.2), added with a role-scope decision (#2.4) |
 | 5 | Fees | one demand per round / one item per process | One item per process, so each moves on its own (`FEE-08`, 0017 #3) |
 | 6 | Pool | stored balance / computed | Computed from paid fees less what earlier processes drew; nothing to drift |
 | 7 | External channels | in the app / addons behind a contract | Addons, resolved from settings, like 0013 and 0022 |
 | 8 | Stage timestamps | status history table only / explicit events | `ProcessEvent` per status, so Signed and Sent are separate even in one click (`SGN-04`) |
 | 9 | Process lifecycle | [`0011`](0011-case-workflows.md) workflow / service table | Service table — many processes per case |
-| 10 | Roles | court roles / court roles with scope | Scoped by process type and channel (`RLE-09`) |
+| 10 | Access | check process roles / check 0029 actions | Five scoped `process.*` actions, checked with `access.require` per type and channel (`RLE-08`, `RLE-09`); roles are 0029's bundles, never read here |
 | 11 | Hearing date after issue | follow the hearing / fixed at issue, looked up live | Fixed on the process; screens read the latest from the case (`PRC-06`) |
 | 13 | Templates | one per type and recipient / per channel too | Per type, recipient and channel, with an all-channel fallback (`TPL-01`, `TPL-02`) |
 | 12 | Expiry | per-process timer / sweeper | Sweeper by state every five minutes ([`0026`](0026-dramatiq-crontab.md)) |
@@ -1315,7 +1421,7 @@ cd src && python manage.py check
 
 ## Open questions
 
-1. How is a role's scope — process types and channels — stored on the courtroom membership, and who maintains it (`RLE-09`)?
+1. ~~How is a role's scope stored, and who maintains it (`RLE-09`)?~~ Answered by [`0029`](0029-court-roles.md) #5.5: as include lists of process types and channels on each `CourtRoleAction` row, maintained by administrators in the `CourtRole` admin (#2).
 2. Should a police station typed at e-filing as free text be migrated to the master, so `AUT-04` can preselect it reliably?
 3. Which signing module will sign several processes in one action — DSC or batch e-sign (`SGN-03`, `SGM-02`, `SGM-04`)?
 4. What moves an SMS or Email process from Sent to Delivered (`process.md` §6.2)? If nothing does, it stays `SENT` for good — it never expires (`EXP-02`), so the case's Notice or Summons secondary stage never ends (`case-lifecycle.md` §4) and the process stays on the court's in-progress list.

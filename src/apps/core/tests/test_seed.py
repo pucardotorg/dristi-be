@@ -26,6 +26,7 @@ from apps.locations.models import Location
 from apps.messaging.models import MessageTemplate
 from apps.organizations.models import Organization
 from apps.pdf.models import PDFTemplate, PDFTemplateVersion
+from apps.processes.models import Channel, NonDeliveryReason, ProcessType, ProcessTypeChannel
 from apps.scrutiny.models import ScrutinyRuleBinding
 
 EXAMPLE_DIR = settings.BASE_DIR.parent / "data" / "seed" / "example"
@@ -561,10 +562,14 @@ class TestCoreSeed:
     REST = {
         Language: 3,
         AdditionalAttribute: 2,
-        Configuration: 1,
+        Configuration: 4,
         PublicConfiguration: 7,
         PDFTemplate: 1,
         PDFTemplateVersion: 1,
+        ProcessType: 6,
+        Channel: 8,
+        ProcessTypeChannel: 27,
+        NonDeliveryReason: 7,
     }
 
     def test_session_seed_loaded_the_migrated_data(self):
@@ -582,11 +587,11 @@ class TestCoreSeed:
         assert not any(model.objects.exists() for model in self.REST)
 
         output = run(str(CORE_DIR), "--strict")
-        assert "created 15, unchanged 49, skipped 0" in output
+        assert "created 66, unchanged 49, skipped 0" in output
         expected = {**self.SESSION, **self.REST}
         assert {m: m.objects.count() for m in expected} == expected
 
-        assert "created 0, unchanged 64, skipped 0" in run(str(CORE_DIR), "--strict")
+        assert "created 0, unchanged 115, skipped 0" in run(str(CORE_DIR), "--strict")
 
 
 def test_migrations_carry_no_data():

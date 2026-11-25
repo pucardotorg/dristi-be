@@ -249,3 +249,57 @@ register(
         order=60,
     )
 )
+
+# Process masters (spec 0028 #3.1). A type's channels name both by code.
+for model_label, fields in (
+    (
+        "processes.ProcessType",
+        (
+            "code",
+            "label",
+            "order_item_code",
+            "positive_label",
+            "negative_label",
+            "allowed_recipient_types",
+            "stage_key",
+            "is_active",
+        ),
+    ),
+    (
+        "processes.Channel",
+        (
+            "code",
+            "label",
+            "destination_kind",
+            "send_mode",
+            "status_mode",
+            "needs_envelope",
+            "is_police",
+            "is_available",
+            "is_active",
+        ),
+    ),
+):
+    register(SeedSpec(model_label=model_label, key=("code",), fields=fields, order=30))
+
+register(
+    SeedSpec(
+        model_label="processes.ProcessTypeChannel",
+        key=("process_type", "channel"),
+        fields=("preselected", "is_active"),
+        fk_by_code={
+            "process_type": FkRef("processes.ProcessType", "code"),
+            "channel": FkRef("processes.Channel", "code"),
+        },
+        order=40,
+    )
+)
+
+register(
+    SeedSpec(
+        model_label="processes.NonDeliveryReason",
+        key=("state_code", "code"),
+        fields=("state_code", "code", "label", "sequence", "is_active"),
+        order=30,
+    )
+)

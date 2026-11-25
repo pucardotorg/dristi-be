@@ -1,0 +1,70 @@
+# Channels (spec 0028 #3.1, process-handover.md §6.2). `is_available` is
+# Kerala's at launch (§13.1): Email and e-Post come post-launch, Police (NSTEP)
+# never; another state's deployment edits it in admin.
+
+[seed]
+model = "processes.Channel"
+
+[[rows]]
+code = "SMS"
+label = "SMS"
+destination_kind = "MOBILE"
+send_mode = "SYSTEM"
+status_mode = "SYSTEM"
+
+[[rows]]
+code = "EMAIL"
+label = "Email"
+destination_kind = "EMAIL"
+send_mode = "SYSTEM"
+status_mode = "SYSTEM"
+is_available = false
+
+[[rows]]
+code = "RPAD"
+label = "RPAD"
+destination_kind = "POSTAL"
+send_mode = "MANUAL"
+status_mode = "MANUAL"
+needs_envelope = true
+
+[[rows]]
+code = "EPOST"
+label = "e-Post"
+destination_kind = "POSTAL"
+send_mode = "MANUAL"
+status_mode = "MANUAL"
+is_available = false
+
+[[rows]]
+code = "POLICE_RPAD"
+label = "Police (RPAD)"
+destination_kind = "POLICE_STATION"
+send_mode = "MANUAL"
+status_mode = "MANUAL"
+needs_envelope = true
+is_police = true
+
+[[rows]]
+code = "POLICE_NSTEP"
+label = "Police (NSTEP)"
+destination_kind = "POLICE_STATION"
+send_mode = "SYSTEM"
+status_mode = "SYSTEM"
+is_police = true
+is_available = false
+
+[[rows]]
+code = "POLICE_ICOPS"
+label = "Police (iCOPS)"
+destination_kind = "POLICE_STATION"
+send_mode = "SYSTEM"
+status_mode = "SYSTEM"
+is_police = true
+
+[[rows]]
+code = "BY_HAND"
+label = "By hand"
+destination_kind = "POSTAL"
+send_mode = "MANUAL"
+status_mode = "MANUAL"

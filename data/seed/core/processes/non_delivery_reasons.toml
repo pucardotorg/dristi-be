@@ -1,0 +1,48 @@
+# Reasons for a negative outcome (spec 0028 #3.1, DSP-09): a state-configurable
+# list. Kerala's starts from the e-filing list for a returned demand notice
+# (bulk-draft-creation-skill.md); a state edits it in admin.
+
+[seed]
+model = "processes.NonDeliveryReason"
+
+[[rows]]
+state_code = "KL"
+code = "ADDRESSEE_NOT_AVAILABLE"
+label = "Addressee not available"
+sequence = 1
+
+[[rows]]
+state_code = "KL"
+code = "REFUSED"
+label = "Refused to accept"
+sequence = 2
+
+[[rows]]
+state_code = "KL"
+code = "ADDRESS_INCOMPLETE"
+label = "Address incomplete or incorrect"
+sequence = 3
+
+[[rows]]
+state_code = "KL"
+code = "LEFT_WITHOUT_INSTRUCTIONS"
+label = "Left without instructions"
+sequence = 4
+
+[[rows]]
+state_code = "KL"
+code = "UNCLAIMED"
+label = "Unclaimed"
+sequence = 5
+
+[[rows]]
+state_code = "KL"
+code = "LOST_IN_TRANSIT"
+label = "Item lost in transit"
+sequence = 6
+
+[[rows]]
+state_code = "KL"
+code = "OTHER"
+label = "Other"
+sequence = 7
