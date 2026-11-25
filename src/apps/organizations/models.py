@@ -390,7 +390,7 @@ class CourtroomAssignment(BaseModel, BaseActivatableModel, BaseAuditableModel):
         ]
 
     def clean(self):
-        """Refuse a courtroom that is not an active courtroom."""
+        """Refuse a citizen account (spec 0029 #3.2), and a courtroom that is not an active courtroom."""
         super().clean()
         if not self.is_active or self.courtroom_id is None:
             return
