@@ -1,6 +1,6 @@
 # Pending task drafts
 
-**Status:** 2026-10-30 — §9 added: Sign documents, from [`document-submission.md`](document-submission.md); not yet written to Coda. 2026-10-25 — §4–§7 (four court-side tasks) and §8 (three notifications) from [`process.md`](process.md) written to the master **Pending tasks (Court Side)** and **Notifications** tables on Coda (PRDs label `process`). Coda is now the source of truth for them; nothing is waiting to be written. 2026-10-20 — the three order-generation tasks (§1–§3) written to the master **Pending tasks (Court Side)** table on Coda (PRDs label `order-generation`), and shown in §15 of [`order-generation.md`](order-generation.md). Coda is now the source of truth for them; this file is kept only as the record of the drafts. Nothing is waiting to be written.
+**Status:** 2026-11-25 — §9 Sign documents goes to the advocate in Raised by only (document-submission `DSB-25`), and closes when the submission is deleted (`DSB-28`); written to the master **Pending tasks (Citizen-Side)** table on Coda (PRDs label `document-submission`). Coda is now the source of truth for it. Nothing is waiting to be written. 2026-10-30 — §9 added: Sign documents, from [`document-submission.md`](document-submission.md); not yet written to Coda. 2026-10-25 — §4–§7 (four court-side tasks) and §8 (three notifications) from [`process.md`](process.md) written to the master **Pending tasks (Court Side)** and **Notifications** tables on Coda (PRDs label `process`). Coda is now the source of truth for them; nothing is waiting to be written. 2026-10-20 — the three order-generation tasks (§1–§3) written to the master **Pending tasks (Court Side)** table on Coda (PRDs label `order-generation`), and shown in §15 of [`order-generation.md`](order-generation.md). Coda is now the source of truth for them; this file is kept only as the record of the drafts. Nothing is waiting to be written.
 
 Pending tasks drafted from other PRDs, held here until they are all written to the
 pending tasks page on Coda together. **Not synced.** Each uses the attributes of §2 of
@@ -196,16 +196,16 @@ Not pending tasks: three notifications for the master **Notifications** table, P
 
 ## 9. Sign documents
 
-Source: `DSB-18`, `DSB-24` of [`document-submission.md`](document-submission.md). Not yet
-written to Coda.
+Source: `DSB-18`, `DSB-24`, `DSB-25`, `DSB-28` of [`document-submission.md`](document-submission.md). Written
+to the master **Pending tasks (Citizen-Side)** table on 2026-11-25.
 
 | # | Attribute | Value |
 |---|---|---|
 | 1 | Task Name | `Sign documents — {case name}` *(proposed)* |
 | 2 | Due Date | +0 Days |
 | 3 | Creation Trigger | A clerk sends a document submission for signing (`DSB-18`). |
-| 4 | Closure Trigger | **Completed** when any one of the advocates signs it. |
-| 5 | Users | Every advocate the clerk works for who is on the case |
+| 4 | Closure Trigger | **Completed** when the advocate in Raised by signs it. Closes when the submission is deleted (`DSB-28`). |
+| 5 | Users | The advocate in Raised by (`DSB-25`) |
 | 6 | Category | Sign |
 | 7 | Link to Workflow | Opens the submission for signing |
 | 8 | Status | Open · Completed · Expired · Archived, as §3 of the pending tasks handover |
@@ -214,5 +214,3 @@ written to Coda.
 | 11 | Creation Date | When the task was created |
 | 12 | Action Label | `Sign` *(proposed)* |
 
-**Open:** what closes the task if the submission is deleted or declined
-([`document-submission.md`](document-submission.md) `Q-5`).
