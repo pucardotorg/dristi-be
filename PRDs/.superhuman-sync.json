@@ -168,8 +168,8 @@
     "view-case.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yjafl-Ocso",
       "title": "View Case",
-      "contentHash": "4f64e653555b",
-      "pageUpdatedAt": 1795174246.31,
+      "contentHash": "8d76b6783e50",
+      "pageUpdatedAt": 1795614929.07,
       "calloutElementId": "cl-i2jpMT8bMh",
       "sections": [
         {
@@ -258,7 +258,7 @@
           "hash": "d6c79bfaee81"
         }
       ],
-      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key. 2026-11-17 v1.74: §10.1 rows (grid-FwlcgeGjmr), DOC-10/12/13 cells (grid-ZQe0bbC4g7), Q-12 and Q-14 rows (grid-ECWU9NBzz9), Status and callout patched. 2026-11-17 v1.75: prototype link paragraph inserted after cl-WAc-JSRNF_; Status and callout patched. 2026-11-17 v1.76: prototype link block removed; Status and callout patched. 2026-11-20 v1.77: OVW-19 row added at end of grid-w01ZIP3sOb, TME-08 row at end of grid-z2JnhRwsle (ID cells plain text, not monospace), TME-04 cell, §12 intro block cl-itBHOYvKOj, Status and callout patched."
+      "note": "Diff-patched 2026-11-17 at v1.72: Status line, §2.1 and ACT-01 table cells, §6 intro replaced (new block cl-WAc-JSRNF_), §6.1–§6.5 blocks deleted. Section hashes for '# ' chunks are now sha256 of the stripped chunk text, first 12 chars; the '1' and '## Sources and precedence' entries keep older hashes. Status line split across two blocks (cl-IwExIkzLsv, cl-mew3LUajQx). Section elementIds are each chunk's first block. 2026-11-17 v1.73: Status line, callout and ACT-01 cell (grid-71QLFbmVe-) patched; section hashes recomputed by key. 2026-11-17 v1.74: §10.1 rows (grid-FwlcgeGjmr), DOC-10/12/13 cells (grid-ZQe0bbC4g7), Q-12 and Q-14 rows (grid-ECWU9NBzz9), Status and callout patched. 2026-11-17 v1.75: prototype link paragraph inserted after cl-WAc-JSRNF_; Status and callout patched. 2026-11-17 v1.76: prototype link block removed; Status and callout patched. 2026-11-20 v1.77: OVW-19 row added at end of grid-w01ZIP3sOb, TME-08 row at end of grid-z2JnhRwsle (ID cells plain text, not monospace), TME-04 cell, §12 intro block cl-itBHOYvKOj, Status and callout patched. Patched 2026-11-25 at v1.83: Status and callout; ACT-02, ACT-03 and DOC-09 cells; §10.1 sources and §10.3 attributes tables replaced as markdown (new grids); §13 table replaced by 'None.' (cl-E42s6B1FJF). sections hashes not recomputed."
     },
     "cognizance-cheat-sheet.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-zUmlu_ENev",
@@ -481,8 +481,8 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "d8426ce3b3e0",
-      "pageUpdatedAt": 1795612475.546,
+      "contentHash": "16488decec6c",
+      "pageUpdatedAt": 1795614813.625,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -506,7 +506,7 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed. Patched 2026-11-20 at v10.9: Status and callout; §2 Application onboarder row deleted; §3 cells (role removed; Kerala Scrutiny officer + Account approver; P&H Typist / Steno + Evidence marker). sections hashes not recomputed. Patched 2026-11-20 at v10.10: Status and callout; §4 Q-1 table replaced by \"None open.\" (cl-zUWIng0NPs). Patched 2026-11-20 at v10.11: Status and callout; six §3 cells (Magistrate signs warrants, proclamation and attachment; Bench clerk / Reader the rest). Patched 2026-11-25 at v10.13: Status and callout; §2 Evidence marker cell; Document submitter row added at the end of the §2 table (local file moved to match); six §3 cells (Magistrate and Bench clerk / Reader gain Document submitter). sections hashes not recomputed."
+      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed. Patched 2026-11-20 at v10.9: Status and callout; §2 Application onboarder row deleted; §3 cells (role removed; Kerala Scrutiny officer + Account approver; P&H Typist / Steno + Evidence marker). sections hashes not recomputed. Patched 2026-11-20 at v10.10: Status and callout; §4 Q-1 table replaced by \"None open.\" (cl-zUWIng0NPs). Patched 2026-11-20 at v10.11: Status and callout; six §3 cells (Magistrate signs warrants, proclamation and attachment; Bench clerk / Reader the rest). Patched 2026-11-25 at v10.13: Status and callout; §2 Evidence marker cell; Document submitter row added at the end of the §2 table (local file moved to match); six §3 cells (Magistrate and Bench clerk / Reader gain Document submitter). sections hashes not recomputed. Patched 2026-11-25 at v10.14: Status and callout; Evidence marker cell (exhibit number)."
     },
     "scrutiny-registration.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
@@ -581,9 +581,9 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "99b5549d5cb5",
-      "pageUpdatedAt": 1795612510.292,
-      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated. 2026-11-20: Application onboarder role section appended; status and callout date updated. `sections` not recorded. 2026-11-23: PSS-03 section appended at the end; status and callout date updated. `sections` not recorded. 2026-11-25: Documents tab detail section (DSB-05, DSB-07–DSB-11, DSB-22, part of DSB-23) appended at the end; status and callout date updated. `sections` not recorded.",
+      "contentHash": "f80d1119c15c",
+      "pageUpdatedAt": 1795614832.232,
+      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated. 2026-11-20: Application onboarder role section appended; status and callout date updated. `sections` not recorded. 2026-11-23: PSS-03 section appended at the end; status and callout date updated. `sections` not recorded. 2026-11-25: Documents tab detail section (DSB-05, DSB-07–DSB-11, DSB-22, part of DSB-23) appended at the end; status and callout date updated. `sections` not recorded. 2026-11-25: the 'Now' line of the Documents tab section patched.",
       "calloutElementId": "cl-e-XQNr8pNU"
     },
     "office-management.md": {
@@ -644,8 +644,8 @@
     "document-submission.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-A_B7aTjEeJ",
       "title": "Document Submission",
-      "contentHash": "9b8327c768ab",
-      "pageUpdatedAt": 1795612399.883,
+      "contentHash": "bc09f85c0707",
+      "pageUpdatedAt": 1795614762.594,
       "calloutElementId": "cl-Ii1Aahcnjn",
       "sections": [
         {
@@ -699,7 +699,7 @@
           "hash": "38628f8ecc6b"
         }
       ],
-      "note": "Rebuilt 2026-11-25 at v18 (no comments on the page): callout and body replaced; four linked-record views added in §5 (Pending tasks court and citizen side, Notifications, Events). Section elementIds are each chunk's first block. The §3 MDMS chunk hash predates the recorded-statements wording fix, which went to the page as inserted."
+      "note": "Rebuilt 2026-11-25 at v18 (no comments on the page): callout and body replaced; four linked-record views added in §5 (Pending tasks court and citizen side, Notifications, Events). Section elementIds are each chunk's first block. The §3 MDMS chunk hash predates the recorded-statements wording fix, which went to the page as inserted. Patched 2026-11-25 at v20: Status and callout; 'Opened from' line; DSB-29 cell; §3 MDMS table (four rows merged into Recorded statement) and the note under it. sections hashes not recomputed."
     },
     "signing-methods.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
@@ -799,37 +799,37 @@
     "evidence-marking.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-uJ7EU__l31",
       "title": "Evidence Marking",
-      "contentHash": "3743f695897d",
-      "pageUpdatedAt": 1794143948.9,
-      "calloutElementId": "cl-902vBH8kU1",
+      "contentHash": "37fec1369987",
+      "pageUpdatedAt": 1795614855.853,
+      "calloutElementId": "cl-7uRzGyNRi6",
       "sections": [
         {
           "key": "# Evidence Marking",
-          "elementId": "cl-QLSMELQtXe",
-          "hash": "a84042d0f722"
+          "elementId": "cl-POXuBPz_vl",
+          "hash": "4a494e66dcd6"
         },
         {
           "key": "# 1. Marking a document",
-          "elementId": "cl-qkewC54TTn",
-          "hash": "8387baf5972c"
+          "elementId": "cl-QcSe1LzBZG",
+          "hash": "efd621f9dea4"
         },
         {
           "key": "# 2. Numbers",
-          "elementId": "cl-bXF15Jnmd7",
-          "hash": "f2c679539543"
+          "elementId": "cl-SOXkfa9nbM",
+          "hash": "45967e34eb27"
         },
         {
           "key": "# 3. Linked records",
-          "elementId": "cl-XpZhEYTDMH",
+          "elementId": "cl-sKHN04CSUJ",
           "hash": "ded8c0acfcef"
         },
         {
           "key": "# 4. Open questions",
-          "elementId": "cl-lCwlKol0IN",
-          "hash": "ee3f46689fb7"
+          "elementId": "cl-4Dpq6jBByV",
+          "hash": "23113079b4cc"
         }
       ],
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed."
+      "note": "Rebuilt 2026-11-25 at v1.4 (no comments on the page): callout and body replaced. Section elementIds are each chunk's first block."
     },
     "cause-list-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-1hS7eP_meC",
@@ -986,8 +986,8 @@
     "case-file.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WBYZ9C_w-f",
       "title": "Case File",
-      "contentHash": "9349695be0dd",
-      "pageUpdatedAt": 1795612818.815,
+      "contentHash": "f8434237ea0e",
+      "pageUpdatedAt": 1795614805.407,
       "calloutElementId": "cl-GBIPaWffYt",
       "sections": [
         {
@@ -1036,7 +1036,7 @@
           "hash": "3be537157129"
         }
       ],
-      "note": "Rebuilt 2026-11-25 at v32 (no comments on the page), overwriting an unidentified page edit by Sathyajith MS on 2026-11-23, on the owner's instruction. The Status line is split across two blocks (v32–v16 in the heading chunk's second block, v15 on in cl-S0Uf_LzTqU). Section elementIds are each chunk's first block."
+      "note": "Rebuilt 2026-11-25 at v32 (no comments on the page), overwriting an unidentified page edit by Sathyajith MS on 2026-11-23, on the owner's instruction. The Status line is split across two blocks (v32–v16 in the heading chunk's second block, v15 on in cl-S0Uf_LzTqU). Section elementIds are each chunk's first block. Patched 2026-11-25 at v33: Status and callout; §1 and §3.1 row 10 cells. sections hashes not recomputed."
     },
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
