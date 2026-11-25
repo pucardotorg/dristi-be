@@ -30,11 +30,17 @@ from .log import log_event
 from .models import ESignTransaction
 from .parsers import ESignResponseTextXMLParser, ESignResponseXMLParser
 from .serializers import (
+    ClientSignatureCompleteSerializer,
     ESignInitiateSerializer,
     ESignInitiationResponseSerializer,
     ESignTransactionSerializer,
 )
-from .services import initiate_esign, process_callback, retry_transaction
+from .services import (
+    complete_with_client_signature,
+    initiate_esign,
+    process_callback,
+    retry_transaction,
+)
 
 FORM_METHOD = "POST"
 
@@ -48,6 +54,11 @@ ERROR_STATUS = {
     constants.ESIGN_SOURCE_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     constants.ESIGN_TRANSACTION_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     constants.ESIGN_INVALID_REQUEST: status.HTTP_400_BAD_REQUEST,
+    constants.ESIGN_METHOD_NOT_ENABLED: status.HTTP_400_BAD_REQUEST,
+    constants.ESIGN_CLIENT_SIGNATURE_MISSING: status.HTTP_400_BAD_REQUEST,
+    constants.ESIGN_CLIENT_SIGNATURE_INVALID: status.HTTP_400_BAD_REQUEST,
+    constants.ESIGN_CLIENT_SIGNATURE_MISMATCH: status.HTTP_400_BAD_REQUEST,
+    constants.ESIGN_CERTIFICATE_NOT_PERMITTED: status.HTTP_403_FORBIDDEN,
     constants.ESIGN_NOT_A_PDF: status.HTTP_400_BAD_REQUEST,
     constants.ESIGN_INVALID_PLACEHOLDER: status.HTTP_400_BAD_REQUEST,
     constants.ESIGN_CALLBACK_MALFORMED: status.HTTP_400_BAD_REQUEST,
@@ -68,14 +79,25 @@ ERROR_STATUS = {
 
 
 def initiation_payload(result) -> dict:
-    """Shape an :class:`InitiationResult` as the documented response body."""
+    """Shape an :class:`InitiationResult` as the documented response body.
 
+    ``completion`` is read from the transaction's own provider (spec 0038 #6.1);
+    ``action_url``/``payload`` are the provider-agnostic names, with
+    ``esign_url``/``form_fields`` kept as aliases for one release.
+    """
+
+    from .providers import registry
+
+    completion = registry.get(result.transaction.provider).completion
     return {
         "transaction_id": str(result.transaction.pk),
         "provider_transaction_id": result.transaction.provider_transaction_id,
+        "completion": completion.name,
         "expires_at": result.transaction.expires_at,
+        "action_url": result.initiation.esign_url,
         "esign_url": result.initiation.esign_url,
         "form_method": FORM_METHOD,
+        "payload": dict(result.initiation.form_fields),
         "form_fields": dict(result.initiation.form_fields),
     }
 
@@ -93,6 +115,7 @@ class ESignInitiateView(APIView):
             **error_responses(
                 api_errors.DOES_NOT_EXIST.example(errors.SOURCE_NOT_FOUND.message, field="file_id"),
                 errors.NOT_A_PDF.example(field="file_id"),
+                errors.METHOD_NOT_ENABLED,
                 errors.INVALID_PLACEHOLDER,
                 errors.NOT_PERMITTED,
                 errors.ALREADY_IN_PROGRESS,
@@ -122,6 +145,7 @@ class ESignInitiateView(APIView):
                 entity_id=data.get("entity_id") or "",
                 organization_id=data.get("organization_id"),
                 sign_placeholder=data["sign_placeholder"],
+                signing_method=data.get("signing_method") or "",
             )
         except ESignError as exc:
             raise errors.api_error(exc) from exc
@@ -203,6 +227,111 @@ class ESignRetryView(APIView):
             raise errors.api_error(exc) from exc
 
         return Response(initiation_payload(result), status=status.HTTP_201_CREATED)
+
+
+class ESignMethodsView(APIView):
+    """``GET /esign/methods`` — the signing methods the UI may offer (spec 0038 #6.5)."""
+
+    permission_classes = [IsAuthenticated, IsAuthenticatedAndRegistered]
+
+    @extend_schema(
+        operation_id="esign_methods",
+        responses={200: OpenApiResponse(description="Enabled signing methods.")},
+    )
+    def get(self, request):
+        """Return the enabled methods with their completion mode."""
+
+        from .providers import registry
+
+        enabled = conf.enabled_methods()
+        methods = []
+        for name in registry.names():
+            if enabled is not None and name not in set(enabled):
+                continue
+            try:
+                provider = registry.get(name)
+            except ESignError:
+                continue
+            methods.append({"method": name, "completion": provider.completion.name})
+        return Response({"methods": methods})
+
+
+class ClientSignatureCompleteView(APIView):
+    """``POST /esign/transactions/{id}/_complete`` — complete from a client signature.
+
+    The authenticated, JSON analogue of the anonymous ESP callback, and the only
+    completion path for ``CLIENT_SIGNATURE`` providers (spec 0038 #6.3).
+    """
+
+    permission_classes = [IsAuthenticated, IsAuthenticatedAndRegistered]
+
+    @extend_schema(
+        operation_id="esign_complete",
+        request=ClientSignatureCompleteSerializer,
+        parameters=[
+            OpenApiParameter(
+                "transaction_id",
+                OpenApiTypes.UUID,
+                OpenApiParameter.PATH,
+                description="eSign transaction id to complete.",
+            )
+        ],
+        responses={
+            200: ESignTransactionSerializer,
+            **error_responses(
+                errors.CLIENT_SIGNATURE_MISSING,
+                errors.CLIENT_SIGNATURE_INVALID,
+                errors.CLIENT_SIGNATURE_MISMATCH,
+                errors.CERTIFICATE_NOT_PERMITTED,
+                errors.RESPONSE_STALE,
+                errors.TRANSACTION_NOT_PROCESSABLE,
+                errors.ALREADY_IN_PROGRESS,
+                errors.PDF_EMBED_FAILED,
+                errors.SIGNED_UPLOAD_FAILED,
+                errors.DISABLED,
+            ),
+        },
+    )
+    def post(self, request, transaction_id):
+        """Verify a client-supplied signature, embed it and store the signed PDF."""
+
+        too_large = self._reject_oversized(request)
+        if too_large is not None:
+            return too_large
+
+        serializer = ClientSignatureCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        transaction = get_object_or_404(
+            ESignTransaction.objects.filter(signer=request.user),
+            pk=transaction_id,
+        )
+        try:
+            outcome = complete_with_client_signature(
+                transaction, serializer.validated_data["pkcs7"]
+            )
+        except ESignError as exc:
+            raise errors.api_error(exc) from exc
+
+        return Response(ESignTransactionSerializer(outcome.transaction).data)
+
+    def _reject_oversized(self, request):
+        """Return 413 when the body exceeds ``ESIGN_MAX_CLIENT_SIGNATURE_BYTES``."""
+
+        limit = conf.max_client_signature_bytes()
+        if not limit:
+            return None
+        try:
+            declared = int(request.META.get("CONTENT_LENGTH") or 0)
+        except (TypeError, ValueError):
+            declared = 0
+        if declared > limit:
+            return HttpResponse(
+                "Payload too large.",
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                content_type="text/plain; charset=utf-8",
+            )
+        return None
 
 
 class ESignCallbackThrottle(AnonRateThrottle):

@@ -132,6 +132,19 @@ def reset_config_cache() -> None:
 
 
 def is_active_provider() -> bool:
-    """Return True when this addon is the configured eSign provider."""
+    """Return True when this addon is registered as an eSign provider (spec 0038 #11.1).
 
+    Multi-provider: C-DAC's settings and startup checks apply whenever it is
+    registered — by name/path in ``ESIGN_PROVIDERS`` or via the deprecated single
+    ``ESIGN_PROVIDER`` — so enabling DSC alongside it does not silently turn its
+    own validation off. Read from settings directly, so the addon stays clear of
+    the domain's provider behaviour (it depends only on the contract).
+    """
+
+    providers = getattr(settings, "ESIGN_PROVIDERS", {}) or {}
+    if providers:
+        return (
+            constants.PROVIDER_NAME in providers
+            or constants.PROVIDER_PATH in providers.values()
+        )
     return getattr(settings, "ESIGN_PROVIDER", "") == constants.PROVIDER_PATH

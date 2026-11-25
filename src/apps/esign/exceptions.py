@@ -221,3 +221,38 @@ class ESignPlaceholderMissing(ESignError):  # noqa: N818
 
     code = constants.ESIGN_PLACEHOLDER_MISSING
     default_message = "The prepared document is no longer available; start a new signature."
+
+
+class ESignMethodNotEnabled(ESignError):  # noqa: N818
+    """Raised when a requested ``signing_method`` is not enabled for the context."""
+
+    code = constants.ESIGN_METHOD_NOT_ENABLED
+    default_message = "This signing method is not enabled."
+
+
+class ESignClientSignatureMissing(ESignError):  # noqa: N818
+    """Raised when a client-signature completion carries no signature."""
+
+    code = constants.ESIGN_CLIENT_SIGNATURE_MISSING
+    default_message = "No signature was provided."
+
+
+class ESignClientSignatureInvalid(ESignError):  # noqa: N818
+    """Raised when a client-supplied signature is unusable or does not verify."""
+
+    code = constants.ESIGN_CLIENT_SIGNATURE_INVALID
+    default_message = "The signature is not valid."
+
+
+class ESignClientSignatureMismatch(ESignError):  # noqa: N818
+    """Raised when a client signature is not over this document's digest."""
+
+    code = constants.ESIGN_CLIENT_SIGNATURE_MISMATCH
+    default_message = "The signature does not match the document."
+
+
+class ESignCertificateNotPermitted(ESignError):  # noqa: N818
+    """Raised when the signing certificate fails policy or signer binding."""
+
+    code = constants.ESIGN_CERTIFICATE_NOT_PERMITTED
+    default_message = "The signing certificate is not permitted."

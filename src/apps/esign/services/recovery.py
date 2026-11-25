@@ -30,7 +30,7 @@ from ..exceptions import (
 )
 from ..log import log_event
 from ..models import ESignTransaction
-from ..providers import get_provider
+from ..providers import registry
 from .initiation import (
     InitiationResult,
     build_provider_request,
@@ -54,7 +54,9 @@ def retry_transaction(parent: ESignTransaction, *, user=None) -> InitiationResul
     if not conf.is_enabled():
         raise ESignDisabled()
 
-    provider = get_provider()
+    # A retry stays with the attempt's own provider, resolved from the stored
+    # row — never from the current default (spec 0038 #4.3).
+    provider = registry.get(parent.provider)
     actor = user if user is not None else parent.signer
 
     permissions.check_can_sign(

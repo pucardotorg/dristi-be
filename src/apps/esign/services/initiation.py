@@ -33,12 +33,13 @@ from ..exceptions import (
     ESignAlreadyInProgress,
     ESignDisabled,
     ESignError,
+    ESignMethodNotEnabled,
     ESignNotAPDF,
     ESignRequestBuildFailed,
 )
 from ..log import log_event
 from ..models import ESignTransaction
-from ..providers import ESignInitiation, get_provider
+from ..providers import ESignInitiation, registry
 
 # Audit keys that must never be persisted even if a provider offers them. The
 # anchored group keeps descriptive metadata (``signature_count``,
@@ -61,6 +62,25 @@ class InitiationResult:
     initiation: ESignInitiation
 
 
+def resolve_initiation_provider(signing_method: str = ""):
+    """Return the provider for a new signing transaction (spec 0038 #4.4).
+
+    Initiation is the only place that chooses a provider. A caller may name a
+    ``signing_method``; it must be both registered and enabled (per-state
+    ``signingMethods``, or ``ESIGN_ENABLED_METHODS``). With no method named, the
+    configured default provider is used.
+    """
+
+    if signing_method:
+        enabled = conf.enabled_methods()
+        if signing_method not in set(registry.names()):
+            raise ESignMethodNotEnabled()
+        if enabled is not None and signing_method not in set(enabled):
+            raise ESignMethodNotEnabled()
+        return registry.get(signing_method)
+    return registry.get_default()
+
+
 def initiate_esign(
     *,
     user,
@@ -70,13 +90,14 @@ def initiate_esign(
     entity_id: str = "",
     organization_id=None,
     sign_placeholder: dict | None = None,
+    signing_method: str = "",
 ) -> InitiationResult:
     """Start a signing transaction for ``file_id`` and return the ESP form."""
 
     if not conf.is_enabled():
         raise ESignDisabled()
 
-    provider = get_provider()
+    provider = resolve_initiation_provider(signing_method)
     placeholder = dict(sign_placeholder or {})
 
     permissions.check_can_sign(
@@ -204,7 +225,7 @@ def store_placeholder(
 def build_provider_request(transaction: ESignTransaction, *, provider=None) -> ESignInitiation:
     """Ask the provider for the ESP form and persist its correlation id."""
 
-    provider = provider or get_provider()
+    provider = provider or registry.get(transaction.provider)
     try:
         initiation = provider.build_initiation(transaction, transaction.document_hash)
     except ESignError as exc:

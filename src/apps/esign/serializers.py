@@ -61,6 +61,9 @@ class ESignInitiateSerializer(serializers.Serializer):
     )
     entity_id = serializers.CharField(max_length=64, required=False, allow_blank=True, default="")
     file_id = serializers.CharField(max_length=64)
+    signing_method = serializers.CharField(
+        max_length=32, required=False, allow_blank=True, default=""
+    )
     sign_placeholder = SignPlaceholderSerializer()
 
     def validate_file_id(self, value):
@@ -84,18 +87,37 @@ class ESignInitiateSerializer(serializers.Serializer):
 
 
 class ESignInitiationResponseSerializer(serializers.Serializer):
-    """Body returned by initiation and retry (spec 0015 #6.1).
+    """Body returned by initiation and retry (spec 0015 #6.1, spec 0038 #6.1).
 
-    ``form_fields`` is opaque to the client: it is posted verbatim to
-    ``esign_url`` so no provider knowledge leaks into the UI.
+    ``payload`` is opaque to the client: it is posted verbatim to ``action_url``
+    so no provider knowledge leaks into the UI. ``completion`` tells the browser
+    what to do next — ``CALLBACK`` means redirect to the ESP and await the
+    callback; ``CLIENT_SIGNATURE`` means call the local agent then ``_complete``.
+    ``esign_url``/``form_fields`` are kept as aliases of ``action_url``/``payload``
+    for one release.
     """
 
     transaction_id = serializers.UUIDField()
     provider_transaction_id = serializers.CharField()
+    completion = serializers.CharField()
     expires_at = serializers.DateTimeField()
+    action_url = serializers.URLField()
     esign_url = serializers.URLField()
     form_method = serializers.CharField()
+    payload = serializers.DictField(child=serializers.CharField())
     form_fields = serializers.DictField(child=serializers.CharField())
+
+
+class ClientSignatureCompleteSerializer(serializers.Serializer):
+    """Payload of ``POST /esign/transactions/{id}/_complete`` (spec 0038 #6.3).
+
+    The certificate metadata is never taken from the request; the server reads it
+    from the verified CMS, so a client cannot mislabel it.
+    """
+
+    # Blank is allowed through so the service reports the domain's
+    # ``ESIGN_CLIENT_SIGNATURE_MISSING`` rather than a generic field error.
+    pkcs7 = serializers.CharField(trim_whitespace=False, allow_blank=True)
 
 
 class ESignTransactionSerializer(serializers.ModelSerializer):

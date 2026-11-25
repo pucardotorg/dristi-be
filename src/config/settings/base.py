@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "addon.cdac_sms_gateway",
     "apps.esign",
     "addon.cdac_esign",
+    "addon.dsc_esign",
     "addon.egras_payment_gateway",
     "addon.offline_payment",
 ]
@@ -593,9 +594,19 @@ CDAC_SMS_DEFAULT_NUMBER = env("CDAC_SMS_DEFAULT_NUMBER", default="")
 # ---------------------------------------------------------------------------
 # eSign (spec 0015)
 # ---------------------------------------------------------------------------
-# The provider is a dotted path so a second ESP — or the mock used locally and
-# in CI — is a configuration change, never a code change.
+# Providers are a name -> dotted-path registry so several methods (C-DAC, DSC)
+# can run together (spec 0038 #4). ESIGN_DEFAULT_PROVIDER is used when a caller
+# does not name a signing_method. The deprecated single ESIGN_PROVIDER is read
+# into a one-entry registry when ESIGN_PROVIDERS is unset, so existing
+# deployments keep working unchanged.
+ESIGN_PROVIDERS = {}
+ESIGN_DEFAULT_PROVIDER = env("ESIGN_DEFAULT_PROVIDER", default="")
 ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockESignProvider")
+# Optional allow-list of enabled signing methods; empty means every registered
+# provider (per-state signingMethods, SGM-05, narrows this).
+ESIGN_ENABLED_METHODS = []
+# Largest client-supplied PKCS#7 accepted at _complete (spec 0038 #6.3).
+ESIGN_MAX_CLIENT_SIGNATURE_BYTES = env.int("ESIGN_MAX_CLIENT_SIGNATURE_BYTES", default=262144)
 ESIGN_ENABLED = env.bool("ESIGN_ENABLED", default=True)
 ESIGN_TRANSACTION_TTL = env.int("ESIGN_TRANSACTION_TTL", default=900)
 ESIGN_CALLBACK_GRACE_PERIOD = env.int("ESIGN_CALLBACK_GRACE_PERIOD", default=300)
@@ -681,6 +692,22 @@ CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE = env.bool(
 # C-DAC signs eSign 2.1 responses with RSA-SHA1; accept them only when set.
 CDAC_ESIGN_ALLOW_SHA1_RESPONSE = env.bool("CDAC_ESIGN_ALLOW_SHA1_RESPONSE", default=False)
 CDAC_ESIGN_RESPONSE_FIELD = env("CDAC_ESIGN_RESPONSE_FIELD", default="")
+
+
+# ---------------------------------------------------------------------------
+# DSC eSign addon (addon.dsc_esign, spec 0038 #11)
+# ---------------------------------------------------------------------------
+# Register it by adding "dsc": "addon.dsc_esign.provider.DSCESignProvider" to
+# ESIGN_PROVIDERS. The agent URL is the local pyHanko signing agent the browser
+# posts the digest to (returned to the UI as action_url).
+DSC_ESIGN_AGENT_URL = env("DSC_ESIGN_AGENT_URL", default="http://localhost:1620/sign")
+# Registered-DSC binding (spec 0038 #8.1.4, open question #18.1): off by default
+# until the identity source is settled; when on, DSC_ESIGN_IDENTITY_RESOLVER must
+# resolve the signer's acceptable certificate fingerprints.
+DSC_ESIGN_REQUIRE_REGISTERED_CERT = env.bool("DSC_ESIGN_REQUIRE_REGISTERED_CERT", default=False)
+DSC_ESIGN_IDENTITY_RESOLVER = env("DSC_ESIGN_IDENTITY_RESOLVER", default="")
+# India CCA trust roots for certificate-chain policy (spec 0038 #18.2).
+DSC_ESIGN_TRUST_ROOTS = env("DSC_ESIGN_TRUST_ROOTS", default="")
 
 
 # ---------------------------------------------------------------------------

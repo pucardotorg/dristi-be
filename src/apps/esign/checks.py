@@ -10,7 +10,8 @@ from django.core.checks import Error, register
 
 from . import conf, constants
 from .exceptions import ESignProviderNotConfigured
-from .providers import get_provider
+from .providers import Completion, get_provider, names
+from .providers import get as get_provider_by_name
 from .providers.mock import MockESignProvider
 
 POSITIVE_INT_SETTINGS = (
@@ -48,6 +49,37 @@ def _check_file_types():
         )
         if value not in allowed
     ]
+
+
+def _check_registry():
+    """Validate the provider registry: each resolves, at most one is CALLBACK.
+
+    The anonymous ``/esign/_signed`` parses with the single CALLBACK provider
+    before a transaction exists (spec 0038 #4.5), so a second one is ambiguous.
+    """
+
+    messages = []
+    callback_providers = []
+    for name in names():
+        try:
+            provider = get_provider_by_name(name)
+        except ESignProviderNotConfigured as exc:
+            messages.append(Error(str(exc), id="esign.E002"))
+            continue
+        if Completion.CALLBACK in provider.completion:
+            callback_providers.append(name)
+
+    if len(callback_providers) > 1:
+        messages.append(
+            Error(
+                "More than one CALLBACK eSign provider is registered "
+                f"({', '.join(sorted(callback_providers))}); the anonymous callback "
+                "cannot choose a parser.",
+                hint="Register at most one CALLBACK provider, or give each its own route.",
+                id="esign.E008",
+            )
+        )
+    return messages
 
 
 def is_production_settings() -> bool:
@@ -89,10 +121,14 @@ def check_esign_settings(app_configs, **kwargs):
         messages.append(
             Error(
                 str(exc),
-                hint="Set ESIGN_PROVIDER to an importable ESignProvider subclass.",
+                hint="Set ESIGN_PROVIDERS (or the deprecated ESIGN_PROVIDER) to an "
+                "importable ESignProvider subclass, and ESIGN_DEFAULT_PROVIDER when "
+                "more than one is registered.",
                 id="esign.E002",
             )
         )
+
+    messages.extend(_check_registry())
 
     redirect_url = conf.ui_redirect_url()
     if redirect_url and not redirect_url.startswith(("http://", "https://")):
