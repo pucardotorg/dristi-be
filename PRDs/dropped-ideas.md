@@ -993,7 +993,7 @@ As it stood in §2 of [`court-roles.md`](court-roles.md), held by the Magistrate
 
 **Dropped 2026-11-25.** The Documents tab is owned by view-case §10, which already listed what the tab holds and each document's attributes, and left the columns to the UI. Document submission kept an older copy of the columns, sources, titles and filter, which disagreed with it. `DSB-05` described how statuses are stored, not a requirement. Titles of documents from other flows are set in case-file §3.1.
 
-**Now:** [`view-case.md`](view-case.md) §10 (sources, `DOC-10`–`DOC-19`); [`case-file.md`](case-file.md) §3.1 for names, including *Deposition of [witness number]*; document-submission `DSB-23` (the filer enters a title). Later the same day, `DSB-09` (Needs attention) was withdrawn too, as display belongs in view-case: now `DOC-09`.
+**Now:** [`view-case.md`](view-case.md) §10 (sources, `DOC-10`–`DOC-19`); [`case-file.md`](case-file.md) §3.1 for names (the deposition name was later left to a future flow for recording statements, case-file v33); document-submission `DSB-23` (the filer enters a title). Later the same day, `DSB-09` (Needs attention) was withdrawn too, as display belongs in view-case: now `DOC-09`.
 
 ### From document-submission.md §2 and §3
 
