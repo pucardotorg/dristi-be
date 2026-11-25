@@ -99,18 +99,47 @@ class Organization(BaseExtendableModel, BaseModel, BaseActivatableModel):
                 )
         if self._state.adding:
             return
-        stored = Organization.objects.filter(pk=self.pk).values_list("court_level", flat=True)
-        stored_level = stored.first()
-        if stored_level == self.court_level:
+        stored = Organization.objects.filter(pk=self.pk).values("court_level", "parent_id").first()
+        if stored is None:
             return
-        in_use = (
-            RoleAssignment.objects.filter(organization_id=self.pk, is_active=True).exists()
-            or CourtroomAssignment.objects.filter(courtroom_id=self.pk, is_active=True).exists()
-        )
-        if in_use:
+        level_changed = stored["court_level"] != self.court_level
+        if level_changed and stored["court_level"] == CourtLevel.ESTABLISHMENT:
+            # Its courtrooms would be left under a non-establishment.
+            has_courtrooms = Organization.objects.filter(
+                parent_id=self.pk, court_level=CourtLevel.COURTROOM, is_active=True
+            ).exists()
+            if has_courtrooms:
+                raise ValidationError(
+                    {
+                        "court_level": (
+                            "An establishment's court level cannot change while it has "
+                            "courtrooms. Move or deactivate them first."
+                        )
+                    }
+                )
+        if level_changed and self._has_staff():
             raise ValidationError(
                 {"court_level": "The court level cannot change while staff are assigned here."}
             )
+        moved = stored["parent_id"] != self.parent_id
+        if moved and self.court_level == CourtLevel.COURTROOM and self._has_staff():
+            # Roles owned by the old establishment would stop working, and
+            # establishment actions would start applying at the new one.
+            raise ValidationError(
+                {
+                    "parent": (
+                        "A courtroom cannot move to another establishment while staff "
+                        "are assigned to it."
+                    )
+                }
+            )
+
+    def _has_staff(self):
+        """Whether active role or courtroom assignments exist at this organization."""
+        return (
+            RoleAssignment.objects.filter(organization_id=self.pk, is_active=True).exists()
+            or CourtroomAssignment.objects.filter(courtroom_id=self.pk, is_active=True).exists()
+        )
 
     def is_root(self):
         """Return True when this organization has no parent."""

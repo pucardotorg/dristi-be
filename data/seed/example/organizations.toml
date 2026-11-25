@@ -15,3 +15,31 @@ organization_type = "district_court"
 name = "Ernakulam District Court"
 parent = "KL_HC"
 jurisdictions = ["IN_KL_ERN"]
+
+# Court levels (spec 0029 #2): an establishment, and its courtrooms under it.
+[[rows]]
+code = "ERN_NI_COURT"
+organization_type = "magistrate_court"
+name = "NI Act Court, Ernakulam"
+short_name = "NI Court ERN"
+parent = "ERN_DC"
+court_level = "ESTABLISHMENT"
+jurisdictions = ["IN_KL_ERN"]
+
+[[rows]]
+code = "ERN_NI_COURT_CR1"
+organization_type = "magistrate_court"
+name = "Courtroom 1, NI Act Court, Ernakulam"
+short_name = "NI Court ERN CR1"
+parent = "ERN_NI_COURT"
+court_level = "COURTROOM"
+jurisdictions = ["IN_KL_ERN"]
+
+[[rows]]
+code = "ERN_NI_COURT_CR2"
+organization_type = "magistrate_court"
+name = "Courtroom 2, NI Act Court, Ernakulam"
+short_name = "NI Court ERN CR2"
+parent = "ERN_NI_COURT"
+court_level = "COURTROOM"
+jurisdictions = ["IN_KL_ERN"]

@@ -9,7 +9,7 @@ commit. Roles and assignments are deactivated, never deleted.
 import json
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from . import court_actions, selectors
 from .enums import CourtLevel
@@ -50,6 +50,27 @@ def _affected_organizations(organization, codes):
     return ids
 
 
+def _save_or_adopt(assignment, active):
+    """Save ``assignment``; when a concurrent call saved the same one first, return that row.
+
+    Two simultaneous assigns both pass the "already active?" check, and the
+    loser then fails the active-row unique constraint (``IntegrityError``, or
+    ``ValidationError`` from ``full_clean`` when the winner committed first).
+    The requested state already exists, so the call still succeeds.
+    Returns ``(row, saved)``; ``saved`` is False when the other call's row is returned.
+    """
+    try:
+        with transaction.atomic():
+            assignment.full_clean()
+            assignment.save()
+    except (IntegrityError, ValidationError):
+        winner = active.first()
+        if winner is None:
+            raise
+        return winner, False
+    return assignment, True
+
+
 def _role_codes(role):
     """The action codes a role holds."""
     return set(role.actions.values_list("action", flat=True))
@@ -76,10 +97,11 @@ def assign_courtroom(user, courtroom, *, actor):
         assignment = CourtroomAssignment(user=user, courtroom=courtroom)
     assignment.is_active = True
     _stamp(assignment, actor, creating=creating)
-    assignment.full_clean()
-    assignment.save()
+    active = CourtroomAssignment.objects.filter(user=user, courtroom=courtroom, is_active=True)
+    assignment, saved = _save_or_adopt(assignment, active)
     selectors.clear_cache(user)
-    send_after_commit([courtroom.pk])
+    if saved:
+        send_after_commit([courtroom.pk])
     return assignment
 
 
@@ -141,11 +163,14 @@ def assign_role(user, organization, role, *, actor):
         assignment = RoleAssignment(user=user, organization=organization, role=role)
     assignment.is_active = True
     _stamp(assignment, actor, creating=creating)
-    assignment.full_clean()
-    assignment.save()
+    active = RoleAssignment.objects.filter(
+        user=user, organization=organization, role=role, is_active=True
+    )
+    assignment, saved = _save_or_adopt(assignment, active)
     selectors.clear_cache(user)
-    codes = _role_codes(role)
-    send_after_commit(_affected_organizations(organization, codes), codes)
+    if saved:
+        codes = _role_codes(role)
+        send_after_commit(_affected_organizations(organization, codes), codes)
     return assignment
 
 

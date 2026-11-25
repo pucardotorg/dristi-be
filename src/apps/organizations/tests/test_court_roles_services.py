@@ -1,5 +1,8 @@
 """Roles, assignments and change notification (spec 0029 #4, #5, #8; #12 "Roles", "Assignments", "Signal")."""
 
+from contextlib import ExitStack
+from unittest import mock
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
@@ -198,6 +201,57 @@ class AssignmentTests(TwoCourtsMixin, TestCase):
         duplicate = RoleAssignment(user=self.user, organization=self.est_a, role=self.scrutiny)
         with self.assertRaises(ValidationError):
             duplicate.full_clean()
+
+    def _race(self, model, winner_fields, *, validate):
+        """Make a rival row land after the "already active?" check, before the save.
+
+        ``_stamp`` runs in that gap, outside the save's savepoint, so the rival
+        row survives the savepoint rollback, as a concurrent commit would.
+        ``validate=True`` hits the constraint in ``full_clean`` (``ValidationError``);
+        ``validate=False`` skips it so the database raises ``IntegrityError``.
+        """
+        real_stamp = services._stamp
+
+        def rival_saves_first(instance, *args, **kwargs):
+            model.objects.bulk_create([model(is_active=True, **winner_fields)])
+            real_stamp(instance, *args, **kwargs)
+
+        stack = ExitStack()
+        stack.enter_context(mock.patch.object(services, "_stamp", side_effect=rival_saves_first))
+        if not validate:
+            stack.enter_context(mock.patch.object(model, "full_clean"))
+        return stack
+
+    def test_concurrent_role_assign_returns_the_winning_row(self):
+        fields = {"user": self.user, "organization": self.est_a, "role": self.scrutiny}
+        for validate in (True, False):  # ValidationError, then IntegrityError at save
+            with self.subTest(validate=validate):
+                RoleAssignment.objects.filter(user=self.user).delete()
+                selectors.clear_cache(self.user)
+                self.assertFalse(selectors.can(self.user, actions.FLAG, self.est_a.pk))  # memoised
+                with (
+                    self._race(RoleAssignment, fields, validate=validate),
+                    mock.patch.object(services, "send_after_commit") as sent,
+                ):
+                    row = services.assign_role(
+                        self.user, self.est_a, self.scrutiny, actor=self.admin
+                    )
+                sent.assert_not_called()  # the winning call already notified
+                self.assertTrue(selectors.can(self.user, actions.FLAG, self.est_a.pk))
+                winner = RoleAssignment.objects.get(user=self.user, is_active=True)
+                self.assertEqual(row.pk, winner.pk)
+                self.assertEqual(RoleAssignment.objects.filter(user=self.user).count(), 1)
+
+    def test_concurrent_courtroom_assign_returns_the_winning_row(self):
+        fields = {"user": self.user, "courtroom": self.room_a1}
+        for validate in (True, False):
+            with self.subTest(validate=validate):
+                CourtroomAssignment.objects.filter(user=self.user).delete()
+                with self._race(CourtroomAssignment, fields, validate=validate):
+                    row = services.assign_courtroom(self.user, self.room_a1, actor=self.admin)
+                winner = CourtroomAssignment.objects.get(user=self.user, is_active=True)
+                self.assertEqual(row.pk, winner.pk)
+                self.assertEqual(CourtroomAssignment.objects.filter(user=self.user).count(), 1)
 
     def test_removing_a_courtroom_revokes_the_roles_there(self):
         assign(self.user, self.room_a1, self.magistrate)
