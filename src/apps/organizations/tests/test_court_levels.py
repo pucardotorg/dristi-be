@@ -1,11 +1,13 @@
 """Court levels on organizations (spec 0029 #2, #12 "Levels")."""
 
+import uuid
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from apps.organizations import selectors
 from apps.organizations.enums import CourtLevel
-from apps.organizations.models import Organization, OrganizationType
+from apps.organizations.models import Organization, OrganizationType, establishment_id_of
 from apps.organizations.tests.court_factories import (
     assign,
     make_courtroom,
@@ -88,3 +90,12 @@ class CourtroomsSelectorTests(TestCase):
         self.assertEqual(selectors.establishment_of(room.pk), est)
         self.assertIsNone(selectors.establishment_of(other.pk))
         self.assertIsNone(selectors.establishment_of(None))
+        self.assertIsNone(selectors.establishment_of(uuid.uuid4()))
+
+    def test_establishment_id_of(self):
+        est = make_establishment("EST")
+        room = make_courtroom("EST_CR", est)
+        self.assertEqual(establishment_id_of(est), est.pk)
+        self.assertEqual(establishment_id_of(room), est.pk)
+        self.assertIsNone(establishment_id_of(make_organization(code="OTHER")))
+        self.assertIsNone(establishment_id_of(None))
