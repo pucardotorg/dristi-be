@@ -986,57 +986,57 @@
     "case-file.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WBYZ9C_w-f",
       "title": "Case File",
-      "contentHash": "8673d0e3f16d",
-      "pageUpdatedAt": 1795438102.956,
-      "calloutElementId": "cl-I3IpwuxKBN",
+      "contentHash": "9349695be0dd",
+      "pageUpdatedAt": 1795612818.815,
+      "calloutElementId": "cl-GBIPaWffYt",
       "sections": [
         {
           "key": "# Case File",
-          "elementId": "cl-zMzgoojkww",
-          "hash": "ec042884c106"
+          "elementId": "cl-BmcOXCAhTU",
+          "hash": "2b0097cd505f"
         },
         {
           "key": "# 1. Categories",
-          "elementId": "cl-zyXUh5_2V0",
+          "elementId": "cl-44omDt8lrJ",
           "hash": "94239d465436"
         },
         {
           "key": "# 2. How the case file is ordered",
-          "elementId": "cl-30lbHxMQFe",
+          "elementId": "cl-2tnyyODqED",
           "hash": "f7bf9c53f20c"
         },
         {
           "key": "# 3. Viewing the case file",
-          "elementId": "cl-QLArNMKYeQ",
-          "hash": "c6a802a5873f"
+          "elementId": "cl-PrkEvbhhIu",
+          "hash": "72f3eda5d7bd"
         },
         {
           "key": "# 4. Marking as evidence",
-          "elementId": "cl-gg3iRJbVlU",
+          "elementId": "cl-qqtDx0H6Ej",
           "hash": "5eb39d523bdb"
         },
         {
           "key": "# 5. Downloading",
-          "elementId": "cl-knJtmkYOBl",
+          "elementId": "cl-3pd14T5U7U",
           "hash": "639fbd0838bd"
         },
         {
           "key": "# 6. Configuration by state",
-          "elementId": "cl-s_zMoT5XHh",
+          "elementId": "cl-AyA3l929HR",
           "hash": "974b0529afb6"
         },
         {
           "key": "# 7. Future enhancements",
-          "elementId": "cl-EGRNCGKGfD",
+          "elementId": "cl-lhl9jhqpoO",
           "hash": "708a7386de39"
         },
         {
           "key": "# 8. Open questions",
-          "elementId": "cl-xjU3TCz9LV",
+          "elementId": "cl-GjEnJmGKJW",
           "hash": "3be537157129"
         }
       ],
-      "note": "Body below the callout replaced 2026-11-17 at v15 (no comments on the page). Section elementIds are each chunk's first block. 2026-11-17 v29: §1/§2 cells, §3.1 (new block after cl-WESb8b6GJw) and §7 table replaced; Status split across cl-MI1RqK3r40 (v29–v16) and cl-297TnFOWoO (v15 on). 2026-11-17 v30: prototype link inserted after cl-lCsN4S7bvT (§6.2); Status and callout patched. 2026-11-23 v31: Status and callout patched; new §7 Future enhancements inserted after grid-m40-jTTbON (heading cl-EGRNCGKGfD, text cl-lQoca8TfVZ); Open questions heading cl-xjU3TCz9LV renamed to 8."
+      "note": "Rebuilt 2026-11-25 at v32 (no comments on the page), overwriting an unidentified page edit by Sathyajith MS on 2026-11-23, on the owner's instruction. The Status line is split across two blocks (v32–v16 in the heading chunk's second block, v15 on in cl-S0Uf_LzTqU). Section elementIds are each chunk's first block."
     },
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
