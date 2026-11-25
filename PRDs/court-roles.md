@@ -54,9 +54,9 @@ action stays in the PRD that owns it, linked from the table.
 | **Process dispatcher** | Send process — mark it sent, or click Send where the system sends it — and recall a process, sent or not, within the process types and channels held (`RLE-09`). | [`process.md`](process.md) `DSP-03`, `PIA-01` |
 | **Process reporter** | Record the outcome of process — served or executed, or not — within the process types and channels held (`RLE-09`). | [`process.md`](process.md) `DSP-03`, `DSP-08`, `DSP-09` |
 | **Evidence marker** | Mark a document in the case file as evidence, where its category allows it ([`case-file.md`](case-file.md) §1.2), as prosecution (P) or defence (D), which allots its evidence number. | [`evidence-marking.md`](evidence-marking.md) `DSB-12`–`DSB-14` |
-| **Document submitter** | Submit documents on a case, and sign their own submission. | [`document-submission.md`](document-submission.md) `DSB-04`, `DSB-18` |
 | **A-Diary editor** | Kerala only. Change an A-Diary entry's text — which also changes the A-Diary text of the order it came from — until that day's A-Diary is signed. | [`a-diary.md`](a-diary.md) `ADY-07`, `ADY-09` |
 | **A-Diary signer** | Kerala only. Sign the A-Diary. | [`a-diary.md`](a-diary.md) `ADY-12` |
+| **Document submitter** | Submit documents on a case, and sign their own submission. | [`document-submission.md`](document-submission.md) `DSB-04`, `DSB-18` |
 
 
 ---

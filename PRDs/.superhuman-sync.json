@@ -481,8 +481,8 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "6c082742f070",
-      "pageUpdatedAt": 1795169259.129,
+      "contentHash": "d8426ce3b3e0",
+      "pageUpdatedAt": 1795612475.546,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -506,7 +506,7 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed. Patched 2026-11-20 at v10.9: Status and callout; §2 Application onboarder row deleted; §3 cells (role removed; Kerala Scrutiny officer + Account approver; P&H Typist / Steno + Evidence marker). sections hashes not recomputed. Patched 2026-11-20 at v10.10: Status and callout; §4 Q-1 table replaced by \"None open.\" (cl-zUWIng0NPs). Patched 2026-11-20 at v10.11: Status and callout; six §3 cells (Magistrate signs warrants, proclamation and attachment; Bench clerk / Reader the rest)."
+      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed. Patched 2026-11-20 at v10.9: Status and callout; §2 Application onboarder row deleted; §3 cells (role removed; Kerala Scrutiny officer + Account approver; P&H Typist / Steno + Evidence marker). sections hashes not recomputed. Patched 2026-11-20 at v10.10: Status and callout; §4 Q-1 table replaced by \"None open.\" (cl-zUWIng0NPs). Patched 2026-11-20 at v10.11: Status and callout; six §3 cells (Magistrate signs warrants, proclamation and attachment; Bench clerk / Reader the rest). Patched 2026-11-25 at v10.13: Status and callout; §2 Evidence marker cell; Document submitter row added at the end of the §2 table (local file moved to match); six §3 cells (Magistrate and Bench clerk / Reader gain Document submitter). sections hashes not recomputed."
     },
     "scrutiny-registration.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
@@ -581,9 +581,9 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "c71d02e31bb8",
-      "pageUpdatedAt": 1795452876.473,
-      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated. 2026-11-20: Application onboarder role section appended; status and callout date updated. `sections` not recorded. 2026-11-23: PSS-03 section appended at the end; status and callout date updated. `sections` not recorded.",
+      "contentHash": "99b5549d5cb5",
+      "pageUpdatedAt": 1795612510.292,
+      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated. 2026-11-20: Application onboarder role section appended; status and callout date updated. `sections` not recorded. 2026-11-23: PSS-03 section appended at the end; status and callout date updated. `sections` not recorded. 2026-11-25: Documents tab detail section (DSB-05, DSB-07–DSB-11, DSB-22, part of DSB-23) appended at the end; status and callout date updated. `sections` not recorded.",
       "calloutElementId": "cl-e-XQNr8pNU"
     },
     "office-management.md": {
@@ -644,42 +644,62 @@
     "document-submission.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-A_B7aTjEeJ",
       "title": "Document Submission",
-      "contentHash": "85204bcda99f",
-      "pageUpdatedAt": 1794917494.751,
-      "calloutElementId": "cl-ata4on1p56",
+      "contentHash": "9b8327c768ab",
+      "pageUpdatedAt": 1795612399.883,
+      "calloutElementId": "cl-Ii1Aahcnjn",
       "sections": [
         {
           "key": "# Document Submission",
-          "elementId": "cl-gxiYsdbv4s",
-          "hash": "d7bbc0efcf64"
+          "elementId": "cl-uOw_FdH43I",
+          "hash": "70615bfcd082"
         },
         {
           "key": "# 1. Submitting documents",
-          "elementId": "cl-sgMF5ll1IZ",
-          "hash": "bdeb4f3b7259"
+          "elementId": "cl-35KSqGXc51",
+          "hash": "211e32667d8a"
         },
         {
           "key": "# 2. Statuses",
-          "elementId": "cl-JRWsDXJd-K",
-          "hash": "a7319e6cb476"
+          "elementId": "cl-WgGz9Jm_In",
+          "hash": "94099c847bb1"
         },
         {
-          "key": "# 3. Documents tab",
-          "elementId": "cl-XqCQbcXao0",
-          "hash": "8c2cd55d1d86"
+          "key": "# 3. MDMS",
+          "elementId": "cl-vXtPpoIhId",
+          "hash": "6f404d4b5da5"
         },
         {
-          "key": "# 4. Marking evidence",
-          "elementId": "cl-ezPjMmwwiC",
-          "hash": "c5e69683a2a0"
+          "key": "# 4. Enhancements",
+          "elementId": "cl-XcdqYQFVeT",
+          "hash": "c6407afcdba4"
         },
         {
-          "key": "# 5. Open questions",
-          "elementId": "cl-_3ENsUU2oX",
-          "hash": "585e9592a6bb"
+          "key": "# 5. Linked records",
+          "elementId": "cl-9MdO--RzVC",
+          "hash": "b012d3953ab0"
+        },
+        {
+          "key": "## Pending tasks (Citizen-Side)",
+          "elementId": "cl-bTbcNuKPdF",
+          "hash": "e24db8ad4268"
+        },
+        {
+          "key": "## Notifications",
+          "elementId": "cl-YtSE-5icN7",
+          "hash": "c005f6296b6f"
+        },
+        {
+          "key": "## Events",
+          "elementId": "cl-wzXwtnDGB4",
+          "hash": "f4776ba3d0fd"
+        },
+        {
+          "key": "# 6. Open questions",
+          "elementId": "cl-a2nKFUgBgV",
+          "hash": "38628f8ecc6b"
         }
       ],
-      "note": "Rebuilt 2026-11-17 at v8 (no comments on the page): callout and body replaced. Section elementIds are each chunk's first block."
+      "note": "Rebuilt 2026-11-25 at v18 (no comments on the page): callout and body replaced; four linked-record views added in §5 (Pending tasks court and citizen side, Notifications, Events). Section elementIds are each chunk's first block. The §3 MDMS chunk hash predates the recorded-statements wording fix, which went to the page as inserted."
     },
     "signing-methods.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-KW0hA2odq0",
