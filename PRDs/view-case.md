@@ -446,8 +446,6 @@ overview's case updates (§5.2), which stop at the last order issued.
 
 None.
 
---- | --- | --- | --- |
-
 ---
 
 # 14. Enhancements
