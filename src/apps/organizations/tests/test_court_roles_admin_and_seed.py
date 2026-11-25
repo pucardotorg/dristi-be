@@ -127,6 +127,34 @@ class CourtRoleAdminTests(TwoCourtsMixin, TestCase):
         assignment.refresh_from_db()
         self.assertFalse(assignment.is_active)
 
+    def test_resaving_an_old_inactive_row_keeps_the_current_access(self):
+        # The services reuse one row per pair, so a stale inactive duplicate can only
+        # come from outside them (shell, import); the admin must still leave access alone.
+        user = make_user()
+        role = make_role("TYPIST", [actions.EDIT])
+        current_role = assign(user, self.room_a1, role)
+        current_room = CourtroomAssignment.objects.get(user=user, is_active=True)
+        stale_room = CourtroomAssignment.objects.create(
+            user=user, courtroom=self.room_a1, is_active=False
+        )
+        stale_role = RoleAssignment.objects.create(
+            user=user, organization=self.room_a1, role=role, is_active=False
+        )
+
+        for name, stale in (
+            ("roleassignment", stale_role),
+            ("courtroomassignment", stale_room),
+        ):
+            response = self.client.post(
+                reverse(f"admin:organizations_{name}_change", args=[stale.pk]), {}
+            )
+            self.assertEqual(response.status_code, 302)
+
+        current_role.refresh_from_db()
+        current_room.refresh_from_db()
+        self.assertTrue(current_role.is_active)
+        self.assertTrue(current_room.is_active)
+
     def test_user_admin_shows_effective_actions(self):
         user = make_user()
         assign(user, self.room_a1, make_role("MAGISTRATE", [actions.SIGN, actions.REGISTER]))
