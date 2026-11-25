@@ -72,9 +72,21 @@ class CourtLevelValidationTests(TestCase):
             self.est.save()
         self.assertIn("court_level", ctx.exception.message_dict)
 
+    def test_an_inactive_staffed_courtroom_still_blocks_the_level_change(self):
+        room = make_courtroom("EST_CR1", self.est)
+        services.assign_courtroom(make_user(), room, actor=None)
+        room.is_active = False
+        room.save()
+        self.est.refresh_from_db()
+        self.est.court_level = None
+        with self.assertRaises(ValidationError) as ctx:
+            self.est.save()
+        self.assertIn("court_level", ctx.exception.message_dict)
+
     def test_establishment_level_can_change_once_its_courtrooms_are_gone(self):
         room = make_courtroom("EST_CR1", self.est)
         room.is_active = False
+        room.court_level = None
         room.save()
         self.est.refresh_from_db()
         self.est.court_level = None

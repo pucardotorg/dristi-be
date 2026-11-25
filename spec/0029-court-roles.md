@@ -154,6 +154,7 @@ Validation, in `Organization.clean()`:
 * A `COURTROOM` has a parent, and the parent is an `ESTABLISHMENT`.
 * An `ESTABLISHMENT` has no `ESTABLISHMENT` or `COURTROOM` above it.
 * `court_level` cannot change while the organization has active assignments.
+* An `ESTABLISHMENT`'s `court_level` cannot change while it has courtrooms, active or not: an inactive courtroom may still have staff, and would be left under a non-establishment. Move them or clear their level first.
 
 An establishment should have at least one active courtroom (`RLE-00`). This
 is a system check (#9.3), not a model constraint: an establishment is created
@@ -756,7 +757,7 @@ migration command.
 
 ### 12. Testing
 
-* **Levels:** a courtroom under a non-establishment is refused; an establishment under a courtroom is refused; changing the level of an organization with assignments is refused; system checks flag an establishment without courtrooms and a courtroom with a wrong parent.
+* **Levels:** a courtroom under a non-establishment is refused; an establishment under a courtroom is refused; changing the level of an organization with assignments is refused; changing an establishment's level while it has courtrooms is refused, including when the only one is inactive and still staffed; system checks flag an establishment without courtrooms and a courtroom with a wrong parent.
 * **Registry:** a duplicate code fails at startup; a badly formed code fails `E003`; an unregistered code in a role is refused by the services, flagged by `W004` and ignored by the selectors.
 * **Migration helpers (#3.4):** `add_action_to_roles_with` adds the code to every role holding `like`, active or not, with each row's scope, and nothing else; a second run adds nothing; history rows are written. `remove_action_from_roles` removes every row for the code and clears `W004`. `add_scope_code_with` adds the code only to scope lists on that axis that hold `like`, leaves rows with the axis missing unchanged, and adds nothing on a second run. Both run against historical models with the code no longer registered.
 * **Roles:** a scope on an unscoped action is refused, and so is an empty scope list; an unscoped action twice in one role is refused; a role scoped to establishment A cannot be assigned at B; adding a courtroom action to a role assigned at an establishment is refused; editing a role's actions changes every holder's access on the next call and is recorded in history.

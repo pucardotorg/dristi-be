@@ -104,16 +104,19 @@ class Organization(BaseExtendableModel, BaseModel, BaseActivatableModel):
             return
         level_changed = stored["court_level"] != self.court_level
         if level_changed and stored["court_level"] == CourtLevel.ESTABLISHMENT:
-            # Its courtrooms would be left under a non-establishment.
+            # Its courtrooms would be left under a non-establishment. Inactive
+            # ones count too: they may still have staff assigned, and every
+            # courtroom row must sit under an establishment (spec 0029 #2).
             has_courtrooms = Organization.objects.filter(
-                parent_id=self.pk, court_level=CourtLevel.COURTROOM, is_active=True
+                parent_id=self.pk, court_level=CourtLevel.COURTROOM
             ).exists()
             if has_courtrooms:
                 raise ValidationError(
                     {
                         "court_level": (
                             "An establishment's court level cannot change while it has "
-                            "courtrooms. Move or deactivate them first."
+                            "courtrooms, including inactive ones. Move them to another "
+                            "establishment or clear their court level first."
                         )
                     }
                 )
