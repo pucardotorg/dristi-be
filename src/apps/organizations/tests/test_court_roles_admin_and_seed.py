@@ -21,6 +21,7 @@ from apps.organizations.tests.court_factories import (
     make_role,
     make_user,
 )
+from apps.users.models import Role
 
 from . import court_actions as actions
 
@@ -160,6 +161,27 @@ class CourtRoleAdminTests(TwoCourtsMixin, TestCase):
         current_room.refresh_from_db()
         self.assertTrue(current_role.is_active)
         self.assertTrue(current_room.is_active)
+
+    def test_an_error_on_a_read_only_field_is_shown_not_a_500(self):
+        user = make_user()
+        assignment = assign(user, self.room_a1, make_role("TYPIST", [actions.EDIT]))
+        # Registered as a citizen after being given court access.
+        user.role = Role.LITIGANT
+        user.save()
+        listed = CourtroomAssignment.objects.get(user=user)
+        for url, row in (
+            ("admin:organizations_roleassignment_change", assignment),
+            ("admin:organizations_courtroomassignment_change", listed),
+        ):
+            with self.subTest(url=url):
+                page = reverse(url, args=[row.pk])
+                response = self.client.post(page, {"is_active": "on"})
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("citizen account", str(response.context["adminform"].form.errors))
+                # Unticking it, to remove the access, still works.
+                self.assertEqual(self.client.post(page, {}).status_code, 302)
+                row.refresh_from_db()
+                self.assertFalse(row.is_active)
 
     def test_untick_a_role_assignment_in_admin_revokes_it(self):
         user = make_user()

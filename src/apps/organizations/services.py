@@ -19,6 +19,7 @@ from .models import (
     CourtroomAssignment,
     RoleAssignment,
     assignment_problems,
+    citizen_problem,
     clean_scope,
     courtroom_action_codes,
     establishment_id_of,
@@ -87,6 +88,9 @@ def assign_courtroom(user, courtroom, *, actor):
     ).first()
     if assignment is not None:
         return assignment
+    problem = citizen_problem(user)
+    if problem:
+        raise ValidationError(problem)
     assignment = (
         CourtroomAssignment.objects.filter(user=user, courtroom=courtroom, is_active=False)
         .order_by("-updated_at")
@@ -148,7 +152,7 @@ def assign_role(user, organization, role, *, actor):
     ).first()
     if assignment is not None:
         return assignment
-    problems = assignment_problems(user.pk, organization, role)
+    problems = assignment_problems(user, organization, role)
     if problems:
         raise ValidationError(problems)
     assignment = (

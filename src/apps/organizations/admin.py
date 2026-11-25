@@ -2,7 +2,7 @@
 
 from django import forms
 from django.contrib import admin
-from django.core.exceptions import ValidationError
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.forms.models import BaseInlineFormSet
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
@@ -294,9 +294,33 @@ class CourtRoleAdmin(AuditUserAdminMixin, SimpleHistoryAdmin):
 # ---------------------------------------------------------------------------
 
 
+class AssignmentForm(forms.ModelForm):
+    """Shows a model error on a read-only field at the top of the form.
+
+    On the change page the identity fields are read-only, so they are not form
+    fields. ``clean()`` can still refuse one of them (a user who has since
+    registered as a citizen, an organization since deactivated), and Django
+    raises ``ValueError`` (a 500) for an error on a field the form lacks.
+    """
+
+    def add_error(self, field, error):
+        """Move errors on fields this form does not have to the form's own errors."""
+        if field is None and isinstance(error, ValidationError) and hasattr(error, "error_dict"):
+            errors = dict(error.error_dict)
+            missing = [
+                name for name in errors if name != NON_FIELD_ERRORS and name not in self.fields
+            ]
+            if missing:
+                moved = [message for name in missing for message in errors.pop(name)]
+                errors[NON_FIELD_ERRORS] = errors.get(NON_FIELD_ERRORS, []) + moved
+                error = ValidationError(errors)
+        super().add_error(field, error)
+
+
 class AssignmentAdminMixin:
     """Shared behaviour: save through the services, never delete."""
 
+    form = AssignmentForm
     list_select_related = True
 
     def has_delete_permission(self, request, obj=None):

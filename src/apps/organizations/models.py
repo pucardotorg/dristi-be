@@ -394,6 +394,8 @@ class CourtroomAssignment(BaseModel, BaseActivatableModel, BaseAuditableModel):
         super().clean()
         if not self.is_active or self.courtroom_id is None:
             return
+        if self.user_id is not None and (problem := citizen_problem(self.user)):
+            raise ValidationError(problem)
         if self.courtroom.court_level != CourtLevel.COURTROOM:
             raise ValidationError({"courtroom": "Must be a courtroom."})
         if not self.courtroom.is_active:
@@ -441,7 +443,7 @@ class RoleAssignment(BaseModel, BaseActivatableModel, BaseAuditableModel):
         super().clean()
         if not self.is_active or None in (self.organization_id, self.role_id, self.user_id):
             return
-        problems = assignment_problems(self.user_id, self.organization, self.role)
+        problems = assignment_problems(self.user, self.organization, self.role)
         if problems:
             raise ValidationError(problems)
 
@@ -449,18 +451,35 @@ class RoleAssignment(BaseModel, BaseActivatableModel, BaseAuditableModel):
         return f"{self.user} - {self.role.code} @ {self.organization}"
 
 
-def assignment_problems(user_id, organization, role):
-    """Return why a role cannot be held at ``organization``, as a field -> message dict.
+def citizen_problem(user):
+    """Return why ``user`` cannot hold court access, as a field -> message dict.
+
+    A citizen account (``User.role`` set: litigant, POA holder, advocate or
+    clerk, spec 0005) may hold no courtroom and no court role (spec 0029 #3.2).
+    ``User.role`` is the only marker: an account that has not finished
+    registration has no role yet and is not caught here.
+
+    Shared by both assignment models' ``clean``, the services and system check W002.
+    """
+    if user.role:
+        return {"user": f"A citizen account ({user.get_role_display()}) cannot hold court access."}
+    return {}
+
+
+def assignment_problems(user, organization, role):
+    """Return why ``user`` cannot hold ``role`` at ``organization``, as a field -> message dict.
 
     Shared by ``RoleAssignment.clean``, the services and system check W002.
     """
+    if problem := citizen_problem(user):
+        return problem
     if not organization.is_active:
         return {"organization": "The organization is not active."}
     if not organization.court_level:
         return {"organization": "Must be a court establishment or a courtroom."}
     if organization.court_level == CourtLevel.COURTROOM:
         listed = CourtroomAssignment.objects.filter(
-            user_id=user_id, courtroom_id=organization.pk, is_active=True
+            user_id=user.pk, courtroom_id=organization.pk, is_active=True
         ).exists()
         if not listed:
             return {

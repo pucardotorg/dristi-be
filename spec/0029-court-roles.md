@@ -201,6 +201,7 @@ never by a string literal, so a typo fails at import.
 
 * No code checks a role, a role's code or a role's name (`RLE-08`). A static test enforces it (#12).
 * `User.role` stays the citizen user type (spec 0005).
+* A citizen account (`User.role` set: litigant, POA holder, advocate or clerk) holds no courtroom and no court role. `User.role` is the only marker: nothing marks an employee, and an account that has not finished registration has no role yet, so it is not caught. An account that registers as a citizen after being given court access is reported by `W002` (#9.3).
 * Django groups, `is_staff` and `is_superuser` allow no court action. `is_staff` keeps its Django meaning: admin access.
 * The database stores action codes as plain strings (no `choices`), validated against the registry, so adding an action needs no migration.
 
@@ -411,6 +412,7 @@ are deactivated, never deleted.
 | `courtroom` | `ForeignKey(Organization, PROTECT, related_name="staff_assignments")` | `court_level = COURTROOM` |
 
 * One active row per `(user, courtroom)`: `UniqueConstraint(fields=["user", "courtroom"], condition=Q(is_active=True))`.
+* An active row needs an active courtroom and a user that is not a citizen account (#3.2), in `clean()` and in `assign_courtroom`.
 * It makes the user staff of the courtroom: they read its cases (`RLE-06`) and may choose it after login (`REG-36`). It grants no action.
 
 It is its own model because the PRD separates the two: a person may be on a
@@ -429,6 +431,7 @@ courtroom's list with no action there, and reading follows the list.
 
 Validation, in `clean()` and in the services (#8):
 
+* The user is not a citizen account (#3.2).
 * The organization is active and has a `court_level`.
 * At a `COURTROOM`, the user has an active `CourtroomAssignment` there (`REG-35`: actions are carried per listed courtroom).
 * The role is active, and its `establishment` is null or is this organization's establishment.
@@ -656,7 +659,7 @@ courtroom choice after login (`REG-36`) and for deciding first actions
 | ---------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `organizations.W001` | Warning | an active establishment has no active courtroom (`RLE-00`)                                                                |
 | `organizations.E001` | Error   | an active courtroom's parent is not an active establishment                                                                 |
-| `organizations.W002` | Warning | an active assignment breaks #5.4 (data edited outside the services)                                                         |
+| `organizations.W002` | Warning | an active assignment breaks #5.3 or #5.4 (data edited outside the services, or a citizen account holding court access)      |
 | `organizations.W003` | Warning | an active role has no actions                                                                                               |
 | `organizations.W004` | Warning | a `CourtRoleAction` names a code no module declares (an action was removed without a data migration); selectors ignore it |
 | `organizations.E003` | Error   | two modules declare the same code, or a code is not `<app>.<action>` lowercase                                            |
@@ -759,6 +762,7 @@ migration command.
 * **Roles:** a scope on an unscoped action is refused, and so is an empty scope list; an unscoped action twice in one role is refused; a role scoped to establishment A cannot be assigned at B; adding a courtroom action to a role assigned at an establishment is refused; editing a role's actions changes every holder's access on the next call and is recorded in history.
 * **Assignments:**
   - A courtroom assignment without the courtroom on the list is refused.
+  - A citizen account (each `User.role`) is refused a courtroom and a role by the services, both models' `clean()`, admin and seeding; one that registers after being given access is reported by `W002`.
   - A role with courtroom actions assigned at an establishment is refused.
   - A second active `(user, organization, role)` is refused; a deactivated one assigned again is reactivated.
   - Removing a courtroom deactivates the role assignments there.
@@ -818,7 +822,7 @@ This spec:
 
 | #   | Question                                                                                                                                                                                  |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| O-1 | Should an employee account be marked as such (a flag or user type) so citizens can never be assigned court roles? Today nothing marks an employee (0005 `is_staff` means admin access). |
+| O-1 | Should an employee account be marked as such (a flag or user type)? Citizens with `User.role` set are refused court access (#3.2), but an account that has not finished registration cannot be told apart from an employee (0005 `is_staff` means admin access). |
 | O-2 | Should Account approver actions be assignable at a level above the establishment (a state-wide approver), given P-3?                                                                      |
 | O-3 | Should a role edit that removes an action from many users at once need a second administrator's confirmation, or is history plus the admin warning (#9.1) enough?                         |
 | O-4 | Should `/court-roles/me/` drop `roles` entirely, so the frontend cannot branch on them, or keep them for display?                                                                     |

@@ -21,6 +21,7 @@ from apps.organizations.tests.court_factories import (
     make_user,
 )
 from apps.organizations.tests.factories import make_organization
+from apps.users.models import Role
 
 from . import court_actions as actions
 
@@ -208,6 +209,32 @@ class AssignmentTests(TwoCourtsMixin, TestCase):
             services.assign_role(self.user, self.room_a1, self.magistrate, actor=self.admin)
         services.assign_courtroom(self.user, self.room_a1, actor=self.admin)
         services.assign_role(self.user, self.room_a1, self.magistrate, actor=self.admin)
+
+    def test_a_citizen_account_gets_no_courtroom_and_no_role(self):
+        for role in Role.values:
+            with self.subTest(role=role):
+                citizen = make_user(role=role)
+                with self.assertRaises(ValidationError) as caught:
+                    services.assign_courtroom(citizen, self.room_a1, actor=self.admin)
+                self.assertEqual(list(caught.exception.message_dict), ["user"])
+                with self.assertRaises(ValidationError) as caught:
+                    services.assign_role(citizen, self.est_a, self.scrutiny, actor=self.admin)
+                self.assertEqual(list(caught.exception.message_dict), ["user"])
+                self.assertFalse(CourtroomAssignment.objects.filter(user=citizen).exists())
+                self.assertFalse(RoleAssignment.objects.filter(user=citizen).exists())
+
+    def test_the_models_refuse_a_citizen_account(self):
+        citizen = make_user(role=Role.ADVOCATE)
+        for row in (
+            CourtroomAssignment(user=citizen, courtroom=self.room_a1),
+            RoleAssignment(user=citizen, organization=self.est_a, role=self.scrutiny),
+        ):
+            with self.subTest(model=type(row).__name__):
+                with self.assertRaises(ValidationError) as caught:
+                    row.clean()
+                self.assertIn("user", caught.exception.message_dict)
+                row.is_active = False
+                row.clean()  # an inactive row grants nothing, so it is not checked
 
     def test_a_role_with_courtroom_actions_is_refused_at_an_establishment(self):
         with self.assertRaises(ValidationError):
