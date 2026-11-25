@@ -12,7 +12,6 @@ from django.utils import timezone
 
 from apps.cases.selectors import case_documents, get_case_summaries, search_case_ids
 from apps.hearings import selectors as hearing_selectors
-from apps.hearings.models import HearingPurpose
 
 from . import conf, ports
 from .enums import NextHearingState, OrderRole, OrderStatus, RoznamaStatus, Stage
@@ -418,8 +417,3 @@ def order_status_for_hearings(hearing_ids):
             else None,
         }
     return result
-
-
-def purpose_labels(codes):
-    """``{code: label}`` for hearing purpose codes, one query."""
-    return dict(HearingPurpose.objects.filter(code__in=set(codes)).values_list("code", "label"))

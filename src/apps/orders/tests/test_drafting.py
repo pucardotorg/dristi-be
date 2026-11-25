@@ -192,6 +192,44 @@ def test_text_over_the_limit_is_refused(order, drafter):
     assert code(excinfo) == "E14020"
 
 
+def test_a_text_autosave_writes_no_history_row(order, drafter):
+    before = order.history.count()
+    drafting.edit_text(order.pk, "<p>One.</p>", actor=drafter)
+    drafting.edit_text(order.pk, "<p>One. Two.</p>", actor=drafter)
+    order.refresh_from_db()
+    assert order.history.count() == before
+    assert (order.text, order.text_version, order.text_saved_by) == ("<p>One. Two.</p>", 2, drafter)
+
+
+def test_the_next_lifecycle_row_holds_the_autosaved_text(ready, staff):
+    from apps.orders.services import lifecycle
+
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    latest = Order.objects.get(pk=ready.pk).history.first()
+    assert latest.history_change_reason == "sent for signing"
+    assert latest.text == "<p>Heard. Called again on the next date.</p>"
+
+
+def test_an_autosave_that_reopens_complete_data_is_in_the_history(order, drafter):
+    Order.objects.filter(pk=order.pk).update(data_complete=True)
+    before = order.history.count()
+    drafting.edit_text(order.pk, "<p>New.</p>", actor=drafter)
+    assert order.history.count() == before + 1
+    latest = order.history.first()
+    assert (latest.text, latest.data_complete, latest.history_user) == (
+        "<p>New.</p>",
+        False,
+        drafter,
+    )
+
+
+def test_a_bulk_text_append_is_in_the_history(order, drafter):
+    before = order.history.count()
+    drafting.append_text(order.pk, "<p>Appended.</p>", actor=drafter)
+    assert order.history.count() == before + 1
+    assert order.history.first().history_change_reason == "text appended"
+
+
 def test_a_text_change_reopens_complete_order_data(order, drafter):
     Order.objects.filter(pk=order.pk).update(data_complete=True)
     drafting.edit_text(order.pk, "<p>New.</p>", actor=drafter)
@@ -406,3 +444,113 @@ def test_changing_type_names_the_documents_it_would_remove(case, staff):
     assert excinfo.value.detail["linked_documents"]
     assert {str(item) for item in excinfo.value.detail["linked_documents"]} == {str(i) for i in ids}
     assert order.linked_documents.count() == 2
+
+
+# -- refusals and edges ---------------------------------------------------------------
+
+
+def test_a_case_not_found_has_no_draft(drafter):
+    with pytest.raises(NotFound):
+        drafting.create_outside_hearing(case_id=uuid.uuid4(), actor=drafter)
+
+
+def test_a_state_offering_no_normal_type_refuses_a_draft_on_the_type(case, drafter):
+    Configuration.objects.update_or_create(
+        config_set="tenant", config_key="state_code", defaults={"config_value": "ZZ"}
+    )
+    before = Order.objects.count()
+    with pytest.raises(BusinessError) as excinfo:
+        drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
+    assert code(excinfo) == "E14024"
+    assert "order_type" in excinfo.value.detail
+    assert Order.objects.count() == before
+
+
+@pytest.mark.parametrize(
+    "preset, field",
+    [
+        ({"kind": "COGNIZANCE", "action": "NO_SUCH_ACTION"}, "preset.action"),
+        ({"kind": "NO_SUCH_KIND"}, "preset.kind"),
+    ],
+)
+def test_an_unknown_preset_is_refused_and_leaves_no_order(case, drafter, preset, field):
+    before = Order.objects.count()
+    with pytest.raises(ValidationError) as excinfo:
+        drafting.create_outside_hearing(case_id=case.pk, actor=drafter, preset=preset)
+    assert excinfo.value.detail[field][0].code == "E14011"
+    assert Order.objects.count() == before
+
+
+@pytest.mark.parametrize("title", ["", "   ", "x" * 256])
+def test_a_blank_or_too_long_title_is_refused(order, drafter, title):
+    with pytest.raises(ValidationError) as excinfo:
+        drafting.edit_title(order.pk, title, actor=drafter)
+    assert excinfo.value.detail["title"][0].code == "E14011"
+    order.refresh_from_db()
+    assert (order.title, order.title_overridden) == ("Order", False)
+
+
+def test_unlinking_a_document_removes_only_that_link(order, drafter, monkeypatch):
+    kept, removed = uuid.uuid4(), uuid.uuid4()
+    monkeypatch.setattr(
+        "apps.cases.selectors.case_documents",
+        lambda case_id: [
+            type("D", (), {"id": document_id, "name": "Document"})()
+            for document_id in (kept, removed)
+        ],
+    )
+    drafting.link_document(order.pk, kept, actor=drafter)
+    drafting.link_document(order.pk, removed, actor=drafter)
+    drafting.unlink_document(order.pk, removed, actor=drafter)
+    assert list(order.linked_documents.values_list("document_id", flat=True)) == [kept]
+    drafting.unlink_document(order.pk, removed, actor=drafter)  # already gone: no error
+    assert order.linked_documents.count() == 1
+
+
+def test_changing_to_the_current_type_changes_nothing(order, drafter):
+    Order.objects.filter(pk=order.pk).update(signing_file_id="prepared", number="C/ORD/1/2026")
+    before = order.history.count()
+    drafting.change_type(order.pk, "NORMAL", actor=drafter)
+    order.refresh_from_db()
+    assert (order.signing_file_id, order.number) == ("prepared", "C/ORD/1/2026")
+    assert order.history.count() == before
+
+
+def test_a_draft_created_by_someone_else_in_the_same_moment_is_returned(
+    hearing, order, drafter, monkeypatch
+):
+    real = drafting.live_order_for_hearing
+    calls = []
+
+    def racing(hearing_id):
+        # The first look misses the other draft; it is committed before this insert.
+        calls.append(hearing_id)
+        return None if len(calls) == 1 else real(hearing_id)
+
+    monkeypatch.setattr(drafting, "live_order_for_hearing", racing)
+    found, created = drafting.create_in_hearing(hearing_id=hearing.pk, actor=drafter)
+    assert (found.pk, created) == (order.pk, False)
+    assert Order.objects.filter(hearing_id=hearing.pk).count() == 1
+
+
+def test_a_unique_clash_that_is_not_a_live_draft_is_raised(hearing, order, drafter, monkeypatch):
+    from django.db import IntegrityError
+
+    monkeypatch.setattr(drafting, "live_order_for_hearing", lambda hearing_id: None)
+    with pytest.raises(IntegrityError):
+        drafting.create_in_hearing(hearing_id=hearing.pk, actor=drafter)
+
+
+def test_a_hearing_that_refuses_the_order_leaves_no_draft(hearing, drafter, monkeypatch):
+    from apps.hearings import errors as hearing_errors
+    from apps.hearings.exceptions import HearingError
+
+    def refuse(**kwargs):
+        raise HearingError("The hearing is off the board.", error=hearing_errors.INVALID_TRANSITION)
+
+    monkeypatch.setattr(drafting.listing, "attach_order", refuse)
+    with pytest.raises(BusinessError) as excinfo:
+        drafting.create_in_hearing(hearing_id=hearing.pk, actor=drafter)
+    assert code(excinfo) == "E10001"
+    assert str(excinfo.value.detail) == "The hearing is off the board."
+    assert not Order.objects.filter(hearing_id=hearing.pk).exists()

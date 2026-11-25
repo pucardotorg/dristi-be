@@ -146,3 +146,20 @@ def test_the_case_history_shows_every_orders_entry_as_business_of_the_day(case, 
     rows = selectors.case_orders(case.pk, staff=True)
     assert rows[0]["business_of_the_day"].count("Heard the parties.") == 1
     assert rows[0]["id"] == order.pk
+
+
+def test_the_entry_of_a_discarded_order_cannot_be_set(order, staff):
+    drafting.discard(order.pk, actor=staff)
+    with pytest.raises(BusinessError) as excinfo:
+        diary.set_entry(order.pk, same_as_text=True, actor=staff)
+    assert code(excinfo) == "E14001"
+
+
+def test_an_a_diary_save_of_the_composed_entry_changes_nothing(case, staff, signer):
+    state("KL")
+    order = triggered(case, staff, signer)
+    before = order.history.count()
+    same = diary.set_entry_text(order.pk, diary.composed_entry(order), staff)
+    same.refresh_from_db()
+    assert (same.diary_same_as_text, same.diary_text) == (True, "")
+    assert same.history.count() == before

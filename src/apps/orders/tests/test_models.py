@@ -17,6 +17,7 @@ from apps.orders.models import (
     OrderItemType,
     OrderNumberCounter,
     OrderRoznama,
+    OrderShortcut,
     OrderType,
     OrderWorkflowRun,
 )
@@ -343,3 +344,69 @@ def test_turning_off_the_separate_entry_of_an_a_diary_type_is_refused(state_code
 def test_every_seeded_order_type_is_valid():
     for order_type in OrderType.objects.all():
         order_type.full_clean()
+
+
+def test_an_item_type_code_is_upper_case_and_a_contextual_item_has_no_category():
+    item = OrderItemType(
+        code="bad code",
+        label="X",
+        availability="CONTEXTUAL",
+        target_type="APPLICATION",
+        category="PROCESS",
+        field_schema={"fields": []},
+    )
+    with pytest.raises(ValidationError) as excinfo:
+        item.clean()
+    assert set(excinfo.value.message_dict) == {"code", "category"}
+
+
+def test_models_name_themselves_by_what_admins_look_for():
+    order_id, case_id = uuid.uuid4(), uuid.uuid4()
+    assert str(OrderItemType(code="COST")) == "COST"
+    assert str(OrderItemCombinationRule(code="ONE_HEARING_DATE_ITEM")) == "ONE_HEARING_DATE_ITEM"
+    assert str(Order(title="Order", case_id=case_id)) == f"Order ({case_id})"
+    assert str(OrderItem(item_type_id=7, position=2)) == "7 #2"
+    assert str(OrderShortcut(name="adjourn")) == "adjourn"
+    run = OrderWorkflowRun(order_id=order_id, sequence=1, step="STAGE", status="PENDING")
+    assert str(run) == f"{order_id} #1 STAGE PENDING"
+
+
+@pytest.mark.parametrize(
+    ("fields", "problem"),
+    [
+        (["not an object"], "fields[0] must be an object."),
+        ([{"key": "k", "label": "L", "input": "TEXT", "extra": 1}], "has unknown keys: extra"),
+        ([{"key": "k", "label": "L", "input": "MASTER"}], "master is required"),
+        ([{"key": "k", "label": "L", "input": "TEXT", "mandatory": "yes"}], "true or false"),
+    ],
+)
+def test_a_field_schema_names_each_malformed_field(fields, problem):
+    errors = field_schema.schema_errors({"fields": fields})
+    assert any(problem in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "valid"),
+    [
+        ({"input": "TEXT"}, "fine", True),
+        ({"input": "TEXT"}, 7, False),
+        ({"input": "TEXT"}, "x" * (field_schema.MAX_TEXT + 1), False),
+        ({"input": "AMOUNT"}, "250.50", True),
+        ({"input": "AMOUNT"}, "250.505", False),
+        ({"input": "ENUM", "options": ["A", "B"]}, "A", True),
+        ({"input": "MASTER"}, "COURT_FEE", True),
+        ({"input": "MASTER"}, "not a code!", False),
+        ({"input": "HEARING_PURPOSE"}, 12, False),
+        ({"input": "PARTY"}, "6f9619ff-8b86-d011-b42d-00cf4fc964ff", True),
+        ({"input": "PARTY"}, "someone", False),
+        ({"input": "PARTY"}, ["6f9619ff-8b86-d011-b42d-00cf4fc964ff"], False),
+    ],
+)
+def test_a_value_has_the_shape_its_input_asks_for(field, value, valid):
+    problem = field_schema.value_problem({"key": "k", "label": "L", **field}, value)
+    assert (problem is None) is valid, problem
+
+
+def test_a_value_outside_the_options_names_them():
+    field = {"key": "k", "label": "Side", "input": "ENUM", "options": ["A", "B"]}
+    assert field_schema.value_problem(field, "C") == ("NOT_AN_OPTION", "Side must be one of A, B.")

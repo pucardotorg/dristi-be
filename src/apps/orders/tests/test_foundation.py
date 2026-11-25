@@ -1,12 +1,15 @@
 """The seeded catalogue and the app's own wiring (spec 0039 #3.11, #1.2)."""
 
+import logging
+import uuid
 from io import StringIO
 
 import pytest
 from django.core.management import call_command
 
-from apps.orders import handlers
-from apps.orders.enums import Availability, TriggerPhase
+from apps.hearings.enums import HearingRole
+from apps.orders import handlers, ports
+from apps.orders.enums import Availability, OrderRole, TriggerPhase
 from apps.orders.models import OrderItemCombinationRule, OrderItemType, OrderType
 
 pytestmark = pytest.mark.django_db
@@ -111,3 +114,107 @@ def test_rule_membership_changes_are_kept_in_history():
     latest, previous = rule.history.all()[:2]
     assert {m.orderitemtype_id for m in latest.item_types.all()} == after
     assert {m.orderitemtype_id for m in previous.item_types.all()} == before
+
+
+# -- the stand-ins for modules not built yet (ports) ------------------------------------
+
+# The real stand-ins, read before the autouse ``record_ports`` fixture replaces them.
+REAL_PORTS = {
+    name: getattr(ports, name)
+    for name in (
+        "open_task",
+        "complete_task",
+        "expire_task",
+        "open_item_task",
+        "complete_item_task",
+        "complete_case_task",
+        "dispatch_stage_event",
+        "record_outcome",
+    )
+}
+
+
+def test_court_roles_count_only_at_the_establishments_courtrooms(
+    settings, courtroom, foreign_court
+):
+    from django.contrib.auth.models import AnonymousUser
+
+    from .factories import make_user
+
+    drafter = make_user(OrderRole.ORDER_DRAFTER, HearingRole.HEARING_CONTROLLER)
+    assert ports.court_roles(drafter, courtroom.pk) == {OrderRole.ORDER_DRAFTER}
+    assert ports.court_roles(drafter, foreign_court.pk) == frozenset()
+    assert ports.court_roles(drafter, None) == frozenset()
+    assert ports.court_roles(AnonymousUser(), courtroom.pk) == frozenset()
+    settings.SCRUTINY_ESTABLISHMENT_ID = ""
+    assert ports.court_roles(drafter, courtroom.pk) == frozenset()
+
+
+def test_holding_a_role_anywhere_needs_the_establishment_and_the_role(settings, establishment):
+    from django.contrib.auth.models import AnonymousUser
+
+    from .factories import make_user
+
+    signer = make_user(OrderRole.ORDER_SIGNER)
+    assert ports.holds_role_anywhere(signer, OrderRole.ORDER_SIGNER)
+    assert not ports.holds_role_anywhere(signer, OrderRole.ORDER_DRAFTER)
+    assert not ports.holds_role_anywhere(AnonymousUser())
+    settings.SCRUTINY_ESTABLISHMENT_ID = ""
+    assert not ports.holds_role_anywhere(signer, OrderRole.ORDER_SIGNER)
+
+
+def test_the_task_and_outcome_stand_ins_only_log(caplog):
+    order_id, item_id, case_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    with caplog.at_level(logging.INFO, logger="apps.orders.ports"):
+        REAL_PORTS["open_task"](order_id, "sign_order", title="Sign the order")
+        REAL_PORTS["complete_task"](order_id, "sign_order")
+        REAL_PORTS["expire_task"](order_id, "sign_order")
+        REAL_PORTS["complete_item_task"](item_id, "pay_cost")
+        REAL_PORTS["complete_case_task"](case_id, "take_cognizance")
+        REAL_PORTS["record_outcome"](case_id, "DISMISSED", order_id)
+    events = [record.getMessage().split()[0] for record in caplog.records]
+    assert events == [
+        "event=ORDER_TASK_OPENED",
+        "event=ORDER_TASK_COMPLETED",
+        "event=ORDER_TASK_EXPIRED",
+        "event=ORDER_ITEM_TASK_COMPLETED",
+        "event=CASE_TASK_COMPLETED",
+        "event=CASE_OUTCOME",
+    ]
+
+
+def test_an_item_task_returns_the_reference_the_run_records():
+    order_id, item_id = uuid.uuid4(), uuid.uuid4()
+    reference = REAL_PORTS["open_item_task"](order_id, item_id, "pay_cost", side="ACCUSED")
+    assert reference == f"ORDER_ITEM:{item_id}:pay_cost"
+
+
+def test_a_stage_event_is_sent_as_a_signal_for_its_receivers():
+    received = []
+
+    def receiver(sender, **kwargs):
+        received.append(kwargs)
+
+    ports.case_stage_event.connect(receiver)
+    try:
+        case_id = uuid.uuid4()
+        REAL_PORTS["dispatch_stage_event"](case_id, "COGNIZANCE_TAKEN", {"idempotency_key": "k"})
+    finally:
+        ports.case_stage_event.disconnect(receiver)
+    assert len(received) == 1
+    assert (received[0]["case_id"], received[0]["event"], received[0]["context"]) == (
+        case_id,
+        "COGNIZANCE_TAKEN",
+        {"idempotency_key": "k"},
+    )
+
+
+def test_live_poll_interval_is_read_from_configuration():
+    from apps.core.models import Configuration
+    from apps.orders import conf
+
+    assert conf.live_poll_seconds() == 2
+    Configuration.objects.update_or_create(
+        config_set="orders", config_key="live_poll_seconds", defaults={"config_value": "5"}
+    )
+    assert conf.live_poll_seconds() == 5

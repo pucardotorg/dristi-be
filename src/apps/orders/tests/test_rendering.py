@@ -292,6 +292,35 @@ def test_real_block_boundaries_stay_and_a_lone_break_adds_nothing():
     assert [b["type"] for b in blocks] == ["paragraph", "list", "paragraph", "table"]
 
 
+def test_a_table_without_cells_draws_nothing():
+    for empty in ("<table></table>", "<table><tr></tr></table>"):
+        assert rendering.html_to_blocks(f"<p>Heard.</p>{empty}") == [
+            {"type": "paragraph", "text": "Heard."}
+        ]
+
+
+def test_paragraphs_in_a_list_item_keep_their_own_lines_in_the_pdf():
+    clean = rendering.sanitize_html("<ol><li><p>first</p><p>second</p></li><li>plain</li></ol>")
+    [block] = rendering.html_to_blocks(clean)
+    assert block["items"] == ["first<br/>second", "plain"]
+
+
+def test_paragraphs_in_a_table_cell_keep_their_own_lines_in_the_pdf():
+    clean = rendering.sanitize_html(
+        "<table><tr><td><p>100</p><p>200</p></td><th><strong><p>a</p><p>b</p></strong></th>"
+        "<td>c</td></tr></table>"
+    )
+    [block] = rendering.html_to_blocks(clean)
+    assert block["rows"] == [["100<br/>200", "<b>a<br/>b</b>", "c"]]
+
+
+def test_text_around_a_paragraph_in_an_item_starts_a_new_line():
+    [block] = rendering.html_to_blocks(
+        "<ul><li>lead<p>a</p>tail</li><li><p>x</p><br><p>y</p></li><li><p></p><p>z</p></li></ul>"
+    )
+    assert block["items"] == ["lead<br/>a<br/>tail", "x<br/><br/>y", "z"]
+
+
 def test_the_roznama_entry_is_not_wrapped_in_order_lines_again(ready, staff, hearing):
     lifecycle.send_for_signing(ready.pk, actor=staff)
     order = Order.objects.get(pk=ready.pk)

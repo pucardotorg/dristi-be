@@ -16,6 +16,8 @@ from apps.cases.models import (
     ContactType,
     ParticipantRole,
     Representation,
+    Witness,
+    WitnessSide,
 )
 from apps.hearings import ports, queries, selectors
 from apps.hearings.enums import HearingRole
@@ -41,6 +43,9 @@ pytestmark = pytest.mark.django_db
 
 
 class TestSelectors:
+    def test_attendance_lines_of_an_unknown_hearing_are_empty(self):
+        assert selectors.attendance_lines(uuid.uuid4()) == []
+
     def test_get_hearing(self, case):
         hearing = schedule(case, MON)
         ref = selectors.get_hearing(hearing.pk)
@@ -261,6 +266,19 @@ class TestCasesContract:
             "NOT_REGISTERED",
             None,
         )
+
+    def test_order_context_gives_each_witness_the_side_that_calls_them(self, case):
+        participant = CaseParticipant.objects.create(
+            case=case,
+            person=Person.objects.create(name="Meena Rao"),
+            role=ParticipantRole.WITNESS,
+            ordinal=1,
+            name_at_filing="Meena Rao",
+        )
+        Witness.objects.create(case_participant=participant, side=WitnessSide.ACCUSED)
+        context = cases.order_context(case.pk)
+        assert [w.id for w in context.witnesses] == [participant.pk]
+        assert context.witness_sides == {participant.pk: WitnessSide.ACCUSED}
 
     def test_one_advocate_for_two_parties_on_a_side_is_listed_once(self, case, advocate_user):
         second = CaseParticipant.objects.create(

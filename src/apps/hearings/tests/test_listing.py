@@ -504,6 +504,17 @@ class TestAttachOrder:
         with pytest.raises(exceptions.HearingError):
             listing.attach_order(hearing_id=held.pk, order_id=uuid.uuid4())
 
+    def test_detach_forgets_only_the_order_the_hearing_holds(self, case):
+        hearing = schedule(case, MON)
+        order = uuid.uuid4()
+        listing.attach_order(hearing_id=hearing.pk, order_id=order)
+        listing.detach_order(hearing_id=hearing.pk, order_id=uuid.uuid4())  # a retry: no-op
+        hearing.refresh_from_db()
+        assert hearing.order_id == order
+        listing.detach_order(hearing_id=hearing.pk, order_id=str(order))
+        hearing.refresh_from_db()
+        assert hearing.order_id is None
+
 
 class TestCancel:
     def test_case_closure(self, case, received, django_capture_on_commit_callbacks):

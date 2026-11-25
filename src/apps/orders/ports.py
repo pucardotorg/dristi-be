@@ -17,7 +17,6 @@ here, when the real one lands (the same arrangement as
 """
 
 import logging
-import uuid
 
 from django.dispatch import Signal
 
@@ -138,7 +137,3 @@ def current_stage(case_id):
     PLACEHOLDER: stages are not modelled until 0011.
     """
     return None
-
-
-def new_run_id():
-    return uuid.uuid4()

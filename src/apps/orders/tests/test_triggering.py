@@ -363,3 +363,143 @@ def test_a_blocked_write_never_overwrites_a_step_another_delivery_finished(
     assert statuses["COST"] == RunStatus.DONE
     assert {status for code, status in statuses.items() if code != "COST"} == {RunStatus.BLOCKED}
     assert OrderWorkflowRun.objects.get(pk=cost.pk).error_code == ""
+
+
+def test_a_blocked_write_never_overwrites_a_live_claim_another_delivery_holds(
+    ready, staff, signer, monkeypatch
+):
+    """A step another delivery claimed inside the lease keeps its claim, so no third runs it."""
+    order = trigger(ready, staff, signer, ("COST", COST), "COGNIZANCE")
+    cost = OrderWorkflowRun.objects.get(order=order, order_item__item_type__code="COST")
+    stage = order.runs.get(step="STAGE")
+    stale = timezone.now() - triggering.LEASE - datetime.timedelta(seconds=1)
+
+    def racing(order, scheduled):
+        # While this delivery runs the hearing step, another one claims COST; a claim on
+        # STAGE is past its lease.
+        OrderWorkflowRun.objects.filter(pk=cost.pk).update(status=RunStatus.RUNNING)
+        OrderWorkflowRun.objects.filter(pk=stage.pk).update(
+            status=RunStatus.RUNNING, updated_at=stale
+        )
+        OrderWorkflowRun.objects.filter(pk=scheduled.pk).update(
+            status=RunStatus.FAILED, attempts=1, error_code="E10023"
+        )
+        return RunStatus.FAILED
+
+    monkeypatch.setattr(triggering, "_execute", racing)
+    triggering.run(order.pk)
+    assert OrderWorkflowRun.objects.get(pk=cost.pk).status == RunStatus.RUNNING
+    assert OrderWorkflowRun.objects.get(pk=stage.pk).status == RunStatus.BLOCKED
+
+
+def test_a_failed_enqueue_after_commit_neither_raises_nor_stops_later_callbacks(
+    ready, staff, signer, monkeypatch, django_capture_on_commit_callbacks
+):
+    from unittest import mock
+
+    from apps.orders.tasks import run_order_workflows
+
+    later = mock.Mock()
+    with mock.patch.object(run_order_workflows, "send", side_effect=ConnectionError("broker")):
+        with django_capture_on_commit_callbacks(execute=True):
+            triggering.enqueue_on_commit(ready.pk)
+            from django.db import transaction
+
+            transaction.on_commit(later)
+    later.assert_called_once()
+
+
+def _sweep(order, now=None):
+    from unittest import mock
+
+    from apps.orders.tasks import run_order_workflows
+
+    with mock.patch.object(run_order_workflows, "send") as send:
+        count = triggering.sweep_stranded(now=now)
+    return count, [call.args[0] for call in send.call_args_list]
+
+
+def test_the_sweeper_re_enqueues_an_order_whose_runs_were_left_pending(ready, staff, signer):
+    order = trigger(ready, staff, signer, "COGNIZANCE")
+    assert _sweep(order) == (0, [])  # just triggered: its message is on its way
+    later = timezone.now() + triggering.LEASE + datetime.timedelta(seconds=1)
+    assert _sweep(order, now=later) == (1, [str(order.pk)])
+
+
+def test_the_sweeper_takes_up_a_dead_claim_and_a_retry_that_never_came(ready, staff, signer):
+    order = trigger(ready, staff, signer, ("COST", COST), "COGNIZANCE")
+    stale = timezone.now() - triggering.LEASE - datetime.timedelta(seconds=1)
+    order.runs.update(status=RunStatus.DONE, updated_at=stale)
+    stage = order.runs.get(step="STAGE")
+    OrderWorkflowRun.objects.filter(pk=stage.pk).update(status=RunStatus.RUNNING)
+    assert _sweep(order) == (1, [str(order.pk)])
+    OrderWorkflowRun.objects.filter(pk=stage.pk).update(status=RunStatus.FAILED, attempts=1)
+    assert _sweep(order) == (1, [str(order.pk)])
+
+
+def test_the_sweeper_leaves_finished_exhausted_and_live_orders_alone(ready, staff, signer):
+    order = trigger(ready, staff, signer, ("COST", COST), "COGNIZANCE")
+    stale = timezone.now() - triggering.LEASE - datetime.timedelta(seconds=1)
+    order.runs.update(status=RunStatus.DONE, updated_at=stale)
+    stage = order.runs.get(step="STAGE")
+    OrderWorkflowRun.objects.filter(pk=stage.pk).update(status=RunStatus.FAILED, attempts=3)
+    assert _sweep(order) == (0, [])  # retries exhausted: an admin's call
+    OrderWorkflowRun.objects.filter(pk=stage.pk).update(status=RunStatus.BLOCKED)
+    assert _sweep(order) == (0, [])
+    # A pending step behind a live claim waits for that delivery.
+    OrderWorkflowRun.objects.filter(pk=stage.pk).update(status=RunStatus.PENDING)
+    hearing = order.runs.get(step="HEARING")
+    OrderWorkflowRun.objects.filter(pk=hearing.pk).update(
+        status=RunStatus.RUNNING, updated_at=timezone.now()
+    )
+    assert _sweep(order) == (0, [])
+
+
+def test_writing_the_runs_again_returns_the_ones_written(ready, staff, signer):
+    order = trigger(ready, staff, signer, "COGNIZANCE")
+    written = list(order.runs.values_list("pk", flat=True))
+    assert [run.pk for run in triggering.write_runs(order)] == written
+    assert order.runs.count() == len(written)
+
+
+def test_a_delayed_enqueue_is_sent_with_its_delay_after_commit(
+    ready, django_capture_on_commit_callbacks
+):
+    from unittest import mock
+
+    from apps.orders.tasks import run_order_workflows
+
+    with mock.patch.object(run_order_workflows, "send_with_options") as later:
+        with django_capture_on_commit_callbacks(execute=True):
+            triggering.enqueue_on_commit(ready.pk, delay_ms=5_000)
+    later.assert_called_once_with(args=(str(ready.pk),), delay=5_000)
+
+
+def test_a_step_another_delivery_finished_is_not_claimed_again(ready, staff, signer):
+    order = trigger(ready, staff, signer, "COGNIZANCE")
+    stage = order.runs.get(step="STAGE")
+    OrderWorkflowRun.objects.filter(pk=stage.pk).update(status=RunStatus.DONE)
+    assert triggering._execute(order, stage) == RunStatus.DONE
+    stage.refresh_from_db()
+    assert stage.attempts == 0 and stage.claim_token is None
+
+
+def test_an_item_stating_an_outcome_records_it_once(ready, staff, signer, record_ports):
+    """No seeded item states an outcome yet; an admin may give one (#9.4)."""
+    from apps.orders.models import OrderItemType
+
+    OrderItemType.objects.filter(code="DISMISS_CASE").update(outcome="DISMISSED")
+    order = trigger(ready, staff, signer, "DISMISS_CASE")
+    triggering.run(order.pk)
+    triggering.retry_failed(order.pk)
+    triggering.run(order.pk)
+    outcomes = [args for name, args, _ in record_ports if name == "record_outcome"]
+    assert outcomes == [(order.case_id, "DISMISSED", order.pk)]
+    stage = order.runs.get(step="STAGE")
+    assert stage.status == RunStatus.DONE
+    assert any(key.startswith("outcome:") for key in stage.result["done"])
+
+
+def test_the_sweeper_actor_re_enqueues_what_the_service_finds(monkeypatch):
+    monkeypatch.setattr(triggering, "sweep_stranded", lambda: 3)
+    assert tasks.sweep_stranded_runs() == 3

@@ -829,6 +829,7 @@ a hearing the next hearing is set on the order and the item follows from it
 #### 5.3 Text and rendering
 
 * `text` is HTML restricted to an allow-list: `p`, `br`, `strong`, `em`, `u`, `ol` (with `type="a"` for lettered), `ul`, `li`, `table`, `thead`, `tbody`, `tr`, `th`, `td` (`colspan`, `rowspan`). Everything else is stripped on save by a server-side sanitiser (`nh3`), never trusted from the client (`TXT-02`).
+* Paragraphs inside a list item or a table cell (`<li><p>…</p><p>…</p></li>`, as editors write them) are kept: each starts a new line of the item or cell in the PDF, so their words never run together (`ORD-13`).
 * At most config `orders.text_max_bytes` (`400 E14020`, `field = text`).
 * `rendering.render_page(order)` builds the page from the record — court heading, case header, attendance lines (from [`0023`](0023-hearings.md), people not required left out, empty lines left out, `ATT-03`), the text, the next hearing line, and the signature block — as HTML. The same HTML is the data of the `apps.pdf` template `court-order`. The detail endpoint returns it as `rendered_html`, so the page and the signed PDF never disagree (`ORD-13`). Heading and signature block are never typed.
 
@@ -1227,6 +1228,7 @@ calling the handler with `run_id = run.id`:
 * A step is claimed (`RUNNING`) under its row lock, and the lock is released before the step runs. A delivery that finds a claim younger than the lease (15 minutes) stops. A delivery that finds an older claim takes it over, even when the earlier worker is still running, so one step can run in two deliveries at once; the stale worker's final write is skipped, but its handler calls still run, so item handlers must be idempotent for the same `run_id`. The `STAGE` step records each action it completes in `result.done` and skips those on a re-run; each stage event carries an `idempotency_key` for its receivers.
 * A failed `HEARING` step marks every later step `BLOCKED`: processes and tasks point at the hearing. Any other failure is recorded and the next step runs.
 * A failed step is retried up to config `orders.run_max_retries` with backoff, then stays `FAILED`, logged at error with `order_id` and `error_code`. An admin action retries it; a `BLOCKED` step runs once the hearing step succeeds.
+* The enqueue on commit is robust: a broker failure is logged and neither fails the trigger request nor stops the callbacks after it. `sweep_stranded_runs` (every 5 minutes) re-enqueues an order with a step `PENDING`, `RUNNING` or retryably `FAILED` and untouched for longer than the lease, unless another of its steps holds a claim inside the lease. Marking steps `BLOCKED` leaves a `DONE` step and a claim inside the lease alone.
 
 `listing.confirm` is passed the `reason_code` and `sought_by` for a move:
 `PARTY_APPLICATION` and the applicant's side when the same order accepts an
@@ -1580,7 +1582,8 @@ the badge are their notification.
 
 #### 12.3 Audit
 
-* `Order`, `OrderItem`, `OrderRoznama` and `OrderShortcut` carry `BaseAuditableModel` history: every text save, type change, item change, status change, next-hearing change and diary-entry change, with the user.
+* `Order`, `OrderItem`, `OrderRoznama` and `OrderShortcut` carry `BaseAuditableModel` history: every type change, item change, status change, next-hearing change, diary-entry change and bulk text append, with the user.
+* A text autosave (`PATCH /orders/{id}/text/`, every few seconds, `ORD-20`) writes no history row, unless it reopens order data marked complete (`SND-06`): a row holds the whole text (up to `orders.text_max_bytes`), so one per autosave would grow the history table by hundreds of rows per drafting session. The text as it stood is in the row of the next send, move back, sign, trigger or discard; the latest save's author and time are `text_saved_by` and `text_saved_at`.
 * `OrderWorkflowRun` rows are never deleted.
 * Orders are never deleted; discarding is a status.
 
@@ -1626,6 +1629,7 @@ idempotent:
 
 ```text
 run_order_workflows(order_id)     # #9.2
+sweep_stranded_runs()             # #9.2; @cron("*/5 * * * *"), max_retries=0 (0026)
 ```
 
 #### 12.8 Admin

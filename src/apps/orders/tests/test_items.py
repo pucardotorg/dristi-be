@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
 from apps.api.errors import BusinessError
 from apps.orders import field_schema
@@ -538,3 +539,100 @@ def test_a_shared_party_lookup_still_refuses_a_person_outside_the_roles(order):
         order, item_type, {"a": accused, "b": complainant}, _NoChecks(), None
     )
     assert [(p.field, p.code) for p in problems] == [("values.b", "NOT_IN_CASE")]
+
+
+# -- refusals and the reading layer on update -----------------------------------------
+
+
+class _RefusingTarget:
+    """A handler that refuses the application an item names (as ``apps.applications`` will)."""
+
+    def __init__(self, real):
+        self.real = real
+
+    def __getattr__(self, name):
+        return getattr(self.real, name)
+
+    def validate_target(self, ctx):
+        from apps.orders.handlers.base import Problem
+
+        return [Problem("target_id", "NOT_ON_CASE", "The application is not on this case.")]
+
+
+def test_an_unknown_item_code_is_not_available(order, filler):
+    with pytest.raises(BusinessError) as excinfo:
+        add(order, "NO_SUCH_ITEM", filler)
+    assert code(excinfo) == "E14008" and field(excinfo) == "item_type"
+    assert not order.items.exists()
+
+
+def test_a_handler_refusing_the_application_refuses_the_item_on_its_target(
+    order, filler, monkeypatch
+):
+    real = items.handler_for
+    monkeypatch.setattr(items, "handler_for", lambda item_type: _RefusingTarget(real(item_type)))
+    with pytest.raises(BusinessError) as excinfo:
+        add(order, "ACCEPT_APPLICATION", filler, target_id=uuid.uuid4())
+    assert code(excinfo) == "E14010" and field(excinfo) == "target_id"
+    assert str(excinfo.value.detail["target_id"][0]) == "The application is not on this case."
+    assert not order.items.exists()
+
+
+def test_a_target_refused_later_stops_the_order_data_being_complete(order, filler, monkeypatch):
+    add(order, "ACCEPT_APPLICATION", filler, target_id=uuid.uuid4())
+    assert items.completion_problems(Order.objects.get(pk=order.pk)) == []
+    real = items.handler_for
+    monkeypatch.setattr(items, "handler_for", lambda item_type: _RefusingTarget(real(item_type)))
+    assert items.completion_problems(Order.objects.get(pk=order.pk)) == [
+        ("items[1].target_id", "The application is not on this case.")
+    ]
+
+
+def test_editing_an_item_not_on_the_order_is_not_found(order, filler):
+    from rest_framework.exceptions import NotFound
+
+    with pytest.raises(NotFound):
+        items.update(order.pk, uuid.uuid4(), {"amount": "1.00"}, actor=filler)
+
+
+def test_an_edit_with_a_bad_value_is_refused_and_keeps_the_stored_values(order, filler):
+    item = add(order, "COST", filler, values={"amount": "5.00"})
+    before = Order.objects.get(pk=order.pk).data_version
+    with pytest.raises(ValidationError) as excinfo:
+        items.update(order.pk, item.pk, {"amount": "-3"}, actor=filler)
+    assert excinfo.value.detail["values.amount"][0].code == "E14011"
+    item.refresh_from_db()
+    assert item.values == {"amount": "5.00"}
+    assert Order.objects.get(pk=order.pk).data_version == before
+
+
+def test_a_reader_edit_leaves_the_changed_fields_to_confirm(order, filler):
+    item = add(order, "COST", filler, values={"amount": "5.00"})
+    assert (item.confirmed, item.unconfirmed_fields) == (True, [])
+    items.update(
+        order.pk, item.pk, {"amount": "6.00", "pay_by": "2026-12-01"}, source=ItemSource.READER
+    )
+    item.refresh_from_db()
+    assert item.confirmed is False
+    assert item.unconfirmed_fields == ["amount", "pay_by"]
+    problems = items.item_problems(Order.objects.get(pk=order.pk), item)
+    assert ("confirmed", "UNCONFIRMED") in [(p.field, p.code) for p in problems]
+
+
+def test_a_confirmed_item_shows_only_its_own_problems(order, filler):
+    item = add(order, "COST", filler, values=COST)
+    assert items.item_problems(Order.objects.get(pk=order.pk), item) == []
+
+
+def test_confirm_paid_needs_a_witness_batta_of_a_triggered_order(order, filler):
+    from rest_framework.exceptions import NotFound
+
+    cost = add(order, "COST", filler)
+    batta = add(order, "WITNESS_BATTA", filler)
+    with pytest.raises(NotFound):
+        items.confirm_paid(order.pk, cost.pk, user=filler)
+    with pytest.raises(NotFound):
+        items.confirm_paid(order.pk, uuid.uuid4(), user=filler)
+    with pytest.raises(BusinessError) as excinfo:
+        items.confirm_paid(order.pk, batta.pk, user=filler)
+    assert code(excinfo) == "E14001"

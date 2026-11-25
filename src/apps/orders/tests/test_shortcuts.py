@@ -52,3 +52,11 @@ def test_only_the_owner_may_edit(drafter, filler, shortcut):
     with pytest.raises(NotFound):
         shortcuts.update(filler, shortcut.pk, name="mine")
     assert OrderShortcut.objects.get(pk=shortcut.pk).name == "called"
+
+
+def test_an_edit_of_the_scope_moves_the_shortcut_between_screens(drafter, shortcut):
+    shortcuts.update(drafter, shortcut.pk, scope=("DIARY_ENTRY",))
+    row = OrderShortcut.objects.get(pk=shortcut.pk)
+    assert (row.name, row.body, row.scope) == ("called", "<p>Called.</p>", ["DIARY_ENTRY"])
+    assert [s.pk for s in shortcuts.list_for(drafter, scope="DIARY_ENTRY")] == [shortcut.pk]
+    assert shortcuts.list_for(drafter, scope="ORDER_TEXT") == []

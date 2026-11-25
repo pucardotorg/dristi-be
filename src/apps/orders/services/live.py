@@ -4,8 +4,6 @@
 nothing changed. Push is out of scope in this version (design decision 21).
 """
 
-from .. import conf
-
 
 def etag(order):
     """The ETag of the order's two versions."""
@@ -24,7 +22,3 @@ def parse_since(value):
 def unchanged(order, since):
     """Whether the client already has this order's current versions."""
     return parse_since(since) == (order.text_version, order.data_version)
-
-
-def poll_seconds():
-    return conf.live_poll_seconds()

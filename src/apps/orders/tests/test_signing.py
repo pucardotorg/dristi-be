@@ -585,3 +585,191 @@ def test_the_signed_pdf_prints_the_saved_roll_even_if_an_edit_is_reverted(
     assert printed == [snapshot]
     signed = signing.record_signature(ready.pk, success(ready, signer).pk, actor=signer)
     assert signed.is_signed and signed.signing_attendance == printed[0]
+
+
+# -- the file store and e-sign start ---------------------------------------------------
+
+
+def test_the_signing_pdf_is_stored_as_the_signers_file_tagged_with_the_order(
+    sent, signer, monkeypatch
+):
+    stored = {}
+
+    def store_document(content, **kwargs):
+        stored.update(kwargs, content=content)
+        return "stored-file"
+
+    monkeypatch.setattr(signing.pdf_documents, "store_document", store_document)
+    monkeypatch.setattr(signing, "_initiate", lambda order, actor, file_id: file_id)
+    assert signing.start_signing(sent.pk, actor=signer) == "stored-file"
+    assert stored["content"].startswith(b"%PDF")
+    assert stored["filename"] == f"order-{sent.pk}.pdf"
+    assert (stored["user_id"], stored["organization_id"]) == (signer.pk, sent.court_id)
+    assert stored["tags"] == ["order", str(sent.pk)]
+    assert Order.objects.get(pk=sent.pk).signing_file_id == "stored-file"
+
+
+def test_esign_is_started_for_the_order_with_the_signature_box_and_signer(
+    sent, signer, monkeypatch
+):
+    given = {}
+
+    def initiate_esign(**kwargs):
+        given.update(kwargs)
+        return "form"
+
+    monkeypatch.setattr(signing, "_store", lambda order, content, name, actor: "file-1")
+    monkeypatch.setattr(signing, "initiate_esign", initiate_esign)
+    assert signing.start_signing(sent.pk, actor=signer) == "form"
+    assert (given["module"], given["entity_type"], given["entity_id"]) == (
+        "orders",
+        signing.ENTITY_TYPE,
+        str(sent.pk),
+    )
+    assert given["file_id"] == "file-1" and given["user"] == signer
+    placeholder = given["sign_placeholder"]
+    assert placeholder["page"] == rendering.SIGN_PLACEHOLDER["page"]
+    assert placeholder["signer_name"] == (signer.name or "")
+
+
+def test_an_esign_start_failure_is_its_own_api_error_and_the_prepared_file_stays(
+    sent, signer, monkeypatch
+):
+    from apps.esign import constants as esign_constants
+    from apps.esign.exceptions import ESignError
+
+    def refuse(**_):
+        raise ESignError("Busy.", code=esign_constants.ESIGN_ALREADY_IN_PROGRESS)
+
+    monkeypatch.setattr(signing, "_store", lambda order, content, name, actor: "file-1")
+    monkeypatch.setattr(signing, "initiate_esign", refuse)
+    with pytest.raises(BusinessError) as excinfo:
+        signing.start_signing(sent.pk, actor=signer)
+    assert code(excinfo) == "E03011"
+    # The order was saved before e-sign began: a retry reuses its number.
+    order = Order.objects.get(pk=sent.pk)
+    assert order.signing_file_id == "file-1" and order.number
+
+
+# -- confirming: what is refused -------------------------------------------------------
+
+
+def test_another_transaction_for_a_signed_order_is_already_signed(sent, signer, started):
+    signing.start_signing(sent.pk, actor=signer)
+    signing.record_signature(sent.pk, success(sent, signer).pk, actor=signer)
+    other = success(sent, signer, signed="signed-elsewhere")
+    with pytest.raises(BusinessError) as excinfo:
+        signing.record_signature(sent.pk, other.pk, actor=signer)
+    assert code(excinfo) == "E14016"
+    assert Order.objects.get(pk=sent.pk).signed_file_id == "signed-1"
+
+
+def test_a_transaction_for_an_order_without_a_number_is_refused(sent, signer, started):
+    signing.start_signing(sent.pk, actor=signer)
+    Order.objects.filter(pk=sent.pk).update(number="")
+    with pytest.raises(BusinessError) as excinfo:
+        signing.record_signature(sent.pk, success(sent, signer).pk, actor=signer)
+    assert code(excinfo) == "E14015"
+    assert Order.objects.get(pk=sent.pk).status == OrderStatus.SENT_FOR_SIGNING
+
+
+def test_an_order_without_a_roznama_has_none_to_sign(sent, signer, started):
+    with pytest.raises(BusinessError) as excinfo:
+        signing.start_roznama_signing(sent.pk, actor=signer)
+    assert code(excinfo) == "E14001"
+
+
+def test_a_signed_roznama_cannot_be_signed_again(normal_triggered, signer, started):
+    signing.start_roznama_signing(normal_triggered.pk, actor=signer)
+    roznama = OrderRoznama.objects.get(order=normal_triggered)
+    txn = success(normal_triggered, signer, source=roznama.signing_file_id, signed="roz-signed")
+    signing.record_roznama_signature(normal_triggered.pk, txn.pk, actor=signer)
+    with pytest.raises(BusinessError) as excinfo:
+        signing.start_roznama_signing(normal_triggered.pk, actor=signer)
+    assert code(excinfo) == "E14014"
+    other = success(normal_triggered, signer, source=roznama.signing_file_id, signed="other")
+    with pytest.raises(BusinessError) as excinfo:
+        signing.record_roznama_signature(normal_triggered.pk, other.pk, actor=signer)
+    assert code(excinfo) == "E14016"
+    assert OrderRoznama.objects.get(order=normal_triggered).signed_file_id == "roz-signed"
+
+
+def test_a_triggered_order_whose_roznama_awaits_signature_may_still_sign_it(normal_triggered):
+    from apps.orders.services import common
+
+    roznama = OrderRoznama.objects.get(order=normal_triggered)
+    actions = common.allowed_actions(normal_triggered, roznama)
+    assert {"edit_diary_entry", "sign_roznama"} <= set(actions)
+    assert "sign_roznama" not in common.allowed_actions(normal_triggered)
+    roznama.status = RoznamaStatus.SIGNED
+    assert "sign_roznama" not in common.allowed_actions(normal_triggered, roznama)
+
+
+def test_a_counter_created_by_another_signing_in_the_same_moment_is_used(sent, monkeypatch):
+    from django.db import IntegrityError
+
+    from apps.orders.services import numbering
+
+    # Another signing created this year's counter after this one looked: the insert clashes.
+    OrderNumberCounter.objects.create(court=sent.court, series=NumberSeries.ORDER, year=2026)
+
+    def clash(**kwargs):
+        raise IntegrityError("orders_counter")
+
+    monkeypatch.setattr(OrderNumberCounter.objects, "get_or_create", clash)
+    assert numbering.next_value(sent.court_id, NumberSeries.ORDER, 2026) == 1
+    assert numbering.next_value(sent.court_id, NumberSeries.ORDER, 2026) == 2
+    assert OrderNumberCounter.objects.filter(court=sent.court, year=2026).count() == 1
+
+
+# -- telling parties --------------------------------------------------------------------
+
+
+def _contacts(monkeypatch, *contacts):
+    from apps.cases.selectors import Contact
+    from apps.orders.services import notifications
+
+    monkeypatch.setattr(
+        notifications,
+        "get_case_contacts",
+        lambda case_id: [
+            Contact(name="P", phone=phone, email=email, side="COMPLAINANT", kind="COMPLAINANT")
+            for phone, email in contacts
+        ],
+    )
+    return notifications
+
+
+def test_a_signed_order_is_sent_to_each_contacts_phone_and_email(case, monkeypatch, caplog):
+    notifications = _contacts(monkeypatch, ("9999999999", "p@example.com"), ("", ""))
+    sent = []
+    monkeypatch.setattr(notifications, "enqueue_sms", lambda *a, **k: sent.append(("sms", a[1])))
+    monkeypatch.setattr(
+        notifications, "enqueue_email", lambda *a, **k: sent.append(("email", a[1]))
+    )
+    notifications._notify(case.pk, notifications.ORDER_SIGNED, "order", "Order", TODAY)
+    assert sent == [
+        ("sms", {"phone_number": "9999999999"}),
+        ("email", {"email": "p@example.com"}),
+    ]
+    assert "ORDER_NOTIFY_NO_RECIPIENTS" not in caplog.text
+
+
+def test_a_missing_template_or_a_failed_enqueue_never_fails_the_order(case, monkeypatch, caplog):
+    from apps.messaging.services import MessageTemplateNotFound
+
+    notifications = _contacts(monkeypatch, ("9999999999", "p@example.com"))
+
+    def no_template(*args, **kwargs):
+        raise MessageTemplateNotFound("ORDER_SIGNED")
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(notifications, "enqueue_sms", no_template)
+    monkeypatch.setattr(notifications, "enqueue_email", broken)
+    with caplog.at_level("DEBUG", logger=notifications.__name__):
+        notifications._notify(case.pk, notifications.ORDER_SIGNED, "order", "Order", TODAY)
+    assert "ORDER_NOTIFY_NO_TEMPLATE" in caplog.text
+    assert "ORDER_NOTIFY_FAILED" in caplog.text
+    assert "ORDER_NOTIFY_NO_RECIPIENTS" in caplog.text

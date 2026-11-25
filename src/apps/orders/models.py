@@ -451,6 +451,10 @@ class OrderWorkflowRun(BaseModel):
         constraints = [
             models.UniqueConstraint(fields=["order", "sequence"], name="orders_run_sequence"),
         ]
+        indexes = [
+            # ``sweep_stranded``: runs not finished and not touched for a while.
+            models.Index(fields=["status", "updated_at"], name="orders_run_status_updated"),
+        ]
 
     def __str__(self):
         return f"{self.order_id} #{self.sequence} {self.step} {self.status}"

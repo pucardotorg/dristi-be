@@ -354,3 +354,50 @@ def test_triggering_enqueues_the_workflows_once_and_still_sends_the_signal(
     finally:
         signals.order_triggered.disconnect(receiver)
     assert events == [("enqueue", str(ready.pk)), ("signal", str(ready.pk))]
+
+
+def test_marking_complete_data_complete_again_changes_nothing(ready, staff):
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    before = Order.objects.get(pk=ready.pk)
+    again = lifecycle.mark_complete(ready.pk, actor=staff)
+    assert again.data_complete is True
+    assert (again.data_version, again.data_completed_at) == (
+        before.data_version,
+        before.data_completed_at,
+    )
+
+
+def test_reopening_while_sent_for_signing_opens_a_fill_order_data_task(ready, staff, record_ports):
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    assert (TaskKey.FILL_ORDER_DATA, "ORDER_DATA_FILLER") not in names(record_ports, "open_task")
+    order = lifecycle.reopen(ready.pk, actor=staff)
+    assert (order.status, order.data_complete) == (OrderStatus.SENT_FOR_SIGNING, False)
+    assert (TaskKey.FILL_ORDER_DATA, "ORDER_DATA_FILLER") in names(record_ports, "open_task")
+
+
+def test_reopening_a_draft_opens_no_task(ready, staff, record_ports):
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    record_ports.clear()
+    lifecycle.reopen(ready.pk, actor=staff)
+    assert names(record_ports, "open_task") == []
+
+
+def test_a_roll_that_cannot_be_locked_stops_the_trigger_and_writes_no_runs(
+    ready, staff, signer, monkeypatch
+):
+    from apps.hearings import errors as hearing_errors
+    from apps.hearings.exceptions import HearingError
+
+    def refuse(hearing_id, actor):
+        raise HearingError(error=hearing_errors.INVALID_TRANSITION)
+
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    sign(ready, signer)
+    monkeypatch.setattr(lifecycle.courtroom, "lock_attendance", refuse)
+    with pytest.raises(BusinessError) as excinfo:
+        lifecycle.mark_complete(ready.pk, actor=staff)
+    assert code(excinfo) == "E10001"
+    order = Order.objects.get(pk=ready.pk)
+    assert (order.status, order.data_complete) == (OrderStatus.SIGNED, False)
+    assert not OrderWorkflowRun.objects.filter(order=order).exists()

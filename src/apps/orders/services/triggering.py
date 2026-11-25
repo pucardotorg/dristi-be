@@ -6,7 +6,8 @@ order; ``run_order_workflows`` executes them after commit. A step already
 repeating it. A failed ``HEARING`` step blocks everything after it: processes
 and tasks point at the hearing. Any other failure is recorded and the next step
 runs. A failed step is retried with backoff up to ``orders.run_max_retries``,
-then stays ``FAILED`` until an admin retries it.
+then stays ``FAILED`` until an admin retries it. ``sweep_stranded`` re-enqueues
+an order whose message was lost.
 """
 
 import logging
@@ -14,6 +15,7 @@ import uuid
 from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.hearings.enums import RescheduleReason, Side
@@ -66,7 +68,12 @@ def write_runs(order):
 
 
 def enqueue_on_commit(order_id, *, delay_ms=0):
-    """Enqueue ``run_order_workflows`` once the transaction commits (#12.7)."""
+    """Enqueue ``run_order_workflows`` once the transaction commits (#12.7).
+
+    Robust: the order is already committed, so a broker failure is logged rather
+    than failing the request or the callbacks after it; ``sweep_stranded`` picks
+    the runs up.
+    """
     from ..tasks import run_order_workflows
 
     def send():
@@ -75,7 +82,39 @@ def enqueue_on_commit(order_id, *, delay_ms=0):
         else:
             run_order_workflows.send(str(order_id))
 
-    transaction.on_commit(send)
+    transaction.on_commit(send, robust=True)
+
+
+def sweep_stranded(now=None):
+    """Enqueue ``run_order_workflows`` for orders whose runs nothing is driving; return how many.
+
+    A step left ``PENDING``, ``RUNNING`` or retryably ``FAILED`` for longer than
+    the lease lost its message (a failed enqueue, a dead worker): no backoff
+    waits that long. An order with a claim still inside the lease is left to it.
+    Enqueueing twice is harmless: ``run`` skips what is done and claimed.
+    """
+    from ..tasks import run_order_workflows
+
+    now = now or timezone.now()
+    cutoff = now - LEASE
+    live = OrderWorkflowRun.objects.filter(status=RunStatus.RUNNING, updated_at__gte=cutoff)
+    stranded = (
+        OrderWorkflowRun.objects.filter(updated_at__lt=cutoff)
+        .filter(
+            Q(status__in=(RunStatus.PENDING, RunStatus.RUNNING))
+            | Q(status=RunStatus.FAILED, attempts__lt=conf.run_max_retries())
+        )
+        .exclude(order_id__in=live.values("order_id"))
+        .order_by()
+        .values_list("order_id", flat=True)
+        .distinct()
+    )
+    order_ids = list(stranded)
+    for order_id in order_ids:
+        run_order_workflows.send(str(order_id))
+    if order_ids:
+        logger.warning("event=ORDER_RUNS_SWEPT count=%s", len(order_ids))
+    return len(order_ids)
 
 
 def run(order_id):
@@ -92,12 +131,15 @@ def run(order_id):
         if scheduled.status == RunStatus.DONE:
             continue
         if blocked:
-            # One conditional write: another delivery may have finished this step since the
-            # runs were read, and its DONE must stand.
-            OrderWorkflowRun.objects.filter(pk=scheduled.pk).exclude(status=RunStatus.DONE).update(
+            # One conditional write: another delivery may have finished or claimed this step
+            # since the runs were read; its DONE, or its claim within the lease, must stand.
+            now = timezone.now()
+            OrderWorkflowRun.objects.filter(pk=scheduled.pk).exclude(status=RunStatus.DONE).exclude(
+                status=RunStatus.RUNNING, updated_at__gt=now - LEASE
+            ).update(
                 status=RunStatus.BLOCKED,
                 error_code="HEARING_STEP_FAILED",
-                updated_at=timezone.now(),
+                updated_at=now,
             )
             continue
         if scheduled.status == RunStatus.FAILED and scheduled.attempts >= conf.run_max_retries():
@@ -279,4 +321,4 @@ def retry_failed(order_id):
     return retried
 
 
-__all__ = ["enqueue_on_commit", "retry_failed", "run", "write_runs"]
+__all__ = ["enqueue_on_commit", "retry_failed", "run", "sweep_stranded", "write_runs"]

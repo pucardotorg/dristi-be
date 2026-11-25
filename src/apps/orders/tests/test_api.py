@@ -12,7 +12,7 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.core.models import Configuration
-from apps.orders.enums import OrderRole
+from apps.orders.enums import ItemSource, OrderRole
 from apps.orders.models import Order, OrderShortcut
 from apps.orders.services import drafting, items, lifecycle, signing
 
@@ -105,6 +105,39 @@ def test_create_before_the_hearing_starts_is_e14004(api, case):
     scheduled = schedule(case, TODAY)
     response = api.post(url("order-list"), {"hearing_id": str(scheduled.pk)}, format="json")
     assert (response.status_code, errors_of(response)) == (409, [("E14004", None)])
+
+
+def test_create_for_a_hearing_or_case_that_does_not_exist_is_404(api):
+    for body in ({"hearing_id": str(uuid.uuid4())}, {"case_id": str(uuid.uuid4())}):
+        response = api.post(url("order-list"), body, format="json")
+        assert (response.status_code, errors_of(response)) == (404, [("E00105", None)]), body
+
+
+def test_create_on_a_case_with_no_courtroom_is_e14003(api):
+    response = api.post(url("order-list"), {"case_id": str(make_case(None).pk)}, format="json")
+    assert (response.status_code, errors_of(response)) == (409, [("E14003", None)])
+
+
+def test_a_preset_is_refused_on_a_hearings_order(api, hearing):
+    response = api.post(
+        url("order-list"),
+        {"hearing_id": str(hearing.pk), "preset": {"kind": "COGNIZANCE"}},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert [field for _, field in errors_of(response)] == ["preset"]
+    assert not Order.objects.filter(hearing=hearing).exists()
+
+
+def test_an_order_that_does_not_exist_is_404(api):
+    response = api.get(url("order-detail", uuid.uuid4()))
+    assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
+
+
+def test_a_row_a_service_no_longer_finds_is_404_not_a_server_error(api, order):
+    with mock.patch.object(drafting, "edit_title", side_effect=Order.DoesNotExist):
+        response = api.patch(url("order-title", order.pk), {"title": "T"}, format="json")
+    assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
 
 
 def test_the_detail_has_the_documented_shape(api, order, filler):
@@ -260,6 +293,24 @@ def test_the_live_view_returns_304_when_nothing_changed_and_names_the_editor(api
     assert api.get(url("order-changes", order.pk), {"since": '"1.0"'}).status_code == 304
 
 
+def test_the_live_view_sends_the_body_for_a_malformed_since(api, order):
+    for since in ("garbage", "1.2.3", ""):
+        response = api.get(url("order-changes", order.pk), {"since": since})
+        assert response.status_code == 200, since
+        assert response["ETag"] == '"0.0"' and "text" in response.json()
+
+
+def test_a_party_does_not_get_the_live_view_of_a_signed_order(
+    ready, staff, signer, complainant_user
+):
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.record_signed_file(ready.pk, "signed", "DSC", actor=signer)
+    party = client_for(complainant_user)
+    assert party.get(url("order-detail", ready.pk)).status_code == 200
+    response = party.get(url("order-changes", ready.pk))
+    assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
+
+
 # -- items ----------------------------------------------------------------------------------------
 
 
@@ -294,6 +345,87 @@ def test_patch_and_delete_an_item(api, order, filler):
     assert errors_of(stale) == [("E14002", None)]
     assert api.delete(target).status_code == 200
     assert order.items.count() == 0
+
+
+def test_confirming_a_reader_item_lets_the_data_be_marked_complete(api, order, filler):
+    item = items.add(order.pk, "JUDGEMENT", actor=filler, source=ItemSource.READER)
+    refused = api.post(url("order-data-complete", order.pk))
+    assert {code for code, _ in errors_of(refused)} == {"E14012"}
+    confirmed = api.post(f"/api/v1/orders/{order.pk}/items/{item.pk}/confirm/")
+    assert confirmed.status_code == 200
+    assert confirmed.json()["items"][0]["confirmed"] is True
+    missing = api.post(f"/api/v1/orders/{order.pk}/items/{uuid.uuid4()}/confirm/")
+    assert (missing.status_code, errors_of(missing)) == (404, [("E00105", None)])
+    complete = api.post(url("order-data-complete", order.pk))
+    assert complete.status_code == 200 and complete.json()["data_complete"] is True
+
+
+def test_complete_data_reopens_until_the_order_is_signed(api, ready, staff, signer):
+    api.post(url("order-data-complete", ready.pk))
+    reopened = api.post(f"/api/v1/orders/{ready.pk}/data/reopen/")
+    assert reopened.status_code == 200
+    assert reopened.json()["data_complete"] is False
+    assert "ORDER_DATA_TO_FILL" not in reopened.json()["stages"]  # a draft, not yet sent
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.record_signed_file(ready.pk, "signed", "DSC", actor=signer)
+    late = api.post(f"/api/v1/orders/{ready.pk}/data/reopen/")
+    assert (late.status_code, errors_of(late)) == (409, [("E14016", None)])
+
+
+def test_the_diary_entry_endpoint_sets_a_text_of_its_own(api, order):
+    response = api.put(
+        f"/api/v1/orders/{order.pk}/diary-entry/",
+        {"same_as_text": False, "text": "<p>Own entry.</p><script>x</script>"},
+        format="json",
+    )
+    assert response.status_code == 200
+    stored = Order.objects.get(pk=order.pk)
+    assert (stored.diary_same_as_text, stored.diary_text) == (False, "<p>Own entry.</p>")
+    nested = api.put(
+        f"/api/v1/orders/{order.pk}/diary-entry/",
+        {"same_as_text": False, "text": "<ul><li>a<ul><li>b</li></ul></li></ul>"},
+        format="json",
+    )
+    assert errors_of(nested) == [("E14027", "text")]
+
+
+def test_the_paying_party_confirms_a_witness_batta_through_the_api(
+    ready, staff, signer, case, complainant_user
+):
+    from apps.cases.models import CaseParticipant, ParticipantRole
+    from apps.orders.services import triggering
+    from apps.parties.models import Person
+
+    from .test_triggering import trigger
+
+    CaseParticipant.objects.create(
+        case=case,
+        person=Person.objects.create(name="W", phone_number="+919700000002"),
+        role=ParticipantRole.WITNESS,
+        ordinal=1,
+        name_at_filing="W",
+    )
+    values = {"paying_party": "COMPLAINANT", "amount": "100.00", "pay_by": "2026-12-01"}
+    order = trigger(ready, staff, signer, ("WITNESS_BATTA", values))
+    triggering.run(order.pk)
+    item = order.items.get()
+    target = f"/api/v1/orders/{order.pk}/items/{item.pk}/confirm-paid/"
+    other_side = client_for(staff).post(target)
+    assert (other_side.status_code, errors_of(other_side)) == (403, [("E14019", None)])
+    paid = client_for(complainant_user).post(target)
+    assert paid.status_code == 200 and paid.json()["id"] == str(order.pk)
+    run = order.runs.get(order_item=item)
+    assert run.result["paid_confirmed_by"] == str(complainant_user.pk)
+
+
+def test_confirm_paid_is_only_for_a_witness_batta_of_a_triggered_order(api, order, filler):
+    cost = items.add(order.pk, "COST", actor=filler)
+    batta = items.add(order.pk, "WITNESS_BATTA", actor=filler)
+    wrong = api.post(f"/api/v1/orders/{order.pk}/items/{cost.pk}/confirm-paid/")
+    assert (wrong.status_code, errors_of(wrong)) == (404, [("E00105", None)])
+    early = api.post(f"/api/v1/orders/{order.pk}/items/{batta.pk}/confirm-paid/")
+    assert (early.status_code, errors_of(early)) == (409, [("E14001", None)])
 
 
 def test_mark_complete_lists_every_problem_as_e14012(api, order, filler):
@@ -451,6 +583,108 @@ def test_documents_type_and_discard(api, order):
     assert errors_of(api.post(url("order-discard", order.pk))) == [("E14001", None)]
 
 
+def test_a_linked_document_is_shown_and_unlinked(api, order, monkeypatch):
+    document_id = uuid.uuid4()
+    monkeypatch.setattr(
+        "apps.cases.selectors.case_documents",
+        lambda case_id: [type("D", (), {"id": document_id, "name": "Vakalatnama"})()],
+    )
+    linked = api.post(
+        url("order-documents", order.pk), {"document_id": str(document_id)}, format="json"
+    )
+    assert linked.status_code == 200
+    assert order.linked_documents.filter(document_id=document_id).exists()
+    unlinked = api.delete(f"/api/v1/orders/{order.pk}/documents/{document_id}/")
+    assert unlinked.status_code == 200
+    assert not order.linked_documents.exists()
+    assert api.delete(f"/api/v1/orders/{order.pk}/documents/{document_id}/").status_code == 200
+
+
+def test_a_type_change_that_would_drop_links_needs_confirmation(api, case, staff, monkeypatch):
+    Configuration.objects.update_or_create(
+        config_set="tenant", config_key="state_code", defaults={"config_value": "GJ"}
+    )
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=staff)
+    document_id = uuid.uuid4()
+    monkeypatch.setattr(
+        "apps.cases.selectors.case_documents",
+        lambda case_id: [type("D", (), {"id": document_id, "name": "Vakalatnama"})()],
+    )
+    drafting.link_document(order.pk, document_id, actor=staff)
+    target = url("order-order-type", order.pk)
+    refused = api.patch(target, {"order_type": "ROZNAMA"}, format="json")
+    assert errors_of(refused) == [("E14025", "linked_documents")]
+    changed = api.patch(
+        target, {"order_type": "ROZNAMA", "remove_linked_documents": True}, format="json"
+    )
+    assert changed.status_code == 200
+    assert changed.json()["type"]["code"] == "ROZNAMA"
+    assert not order.linked_documents.exists()
+
+
+# -- Gujarat Roznama -------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def roznama_order(case, staff, signer):
+    """A triggered normal order outside a hearing, in Gujarat: its Roznama awaits a signature."""
+    from apps.orders.services import next_hearing
+
+    Configuration.objects.update_or_create(
+        config_set="tenant", config_key="state_code", defaults={"config_value": "GJ"}
+    )
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=staff, order_type_code="NORMAL")
+    drafting.edit_text(order.pk, "<p>Heard.</p>", actor=staff)
+    next_hearing.set_next_hearing(order.pk, state="NOT_LISTED_AGAIN", actor=staff)
+    lifecycle.mark_complete(order.pk, actor=staff)
+    lifecycle.send_for_signing(order.pk, actor=staff)
+    signing.record_signed_file(order.pk, "signed", "DSC", actor=signer)
+    return Order.objects.get(pk=order.pk)
+
+
+def test_the_roznama_sign_endpoint_returns_the_esign_form(roznama_order, signer):
+    initiation = mock.Mock()
+    initiation.transaction.pk = uuid.uuid4()
+    initiation.transaction.provider_transaction_id = "p-2"
+    initiation.transaction.expires_at = datetime.datetime(2026, 11, 12, tzinfo=datetime.UTC)
+    initiation.initiation.esign_url = "https://esp.example/sign"
+    initiation.initiation.form_fields = {"msg": "roz"}
+    with mock.patch.object(signing, "start_roznama_signing", return_value=initiation) as start:
+        response = client_for(signer).post(
+            f"/api/v1/orders/{roznama_order.pk}/roznama/sign/",
+            {"method": "AADHAAR_ESIGN"},
+            format="json",
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["transaction_id"] == str(initiation.transaction.pk)
+    assert body["form_fields"] == {"msg": "roz"}
+    start.assert_called_once_with(roznama_order.pk, actor=mock.ANY, method="AADHAAR_ESIGN")
+
+
+def test_the_roznama_signature_is_recorded_and_triggers_nothing(roznama_order, signer):
+    from apps.orders.enums import RoznamaStatus
+    from apps.orders.models import OrderRoznama
+
+    from .test_signing import success
+
+    OrderRoznama.objects.filter(order=roznama_order).update(signing_file_id="roz-1")
+    txn = success(roznama_order, signer, source="roz-1", signed="roz-signed")
+    response = client_for(signer).post(
+        url("order-roznama-sign-confirm", roznama_order.pk),
+        {"transaction_id": str(txn.pk)},
+        format="json",
+    )
+    assert response.status_code == 200
+    roznama = OrderRoznama.objects.get(order=roznama_order)
+    assert (roznama.status, roznama.signed_file_id) == (RoznamaStatus.SIGNED, "roz-signed")
+    assert response.json()["status"] == roznama_order.status
+    again = client_for(signer).post(
+        f"/api/v1/orders/{roznama_order.pk}/roznama/sign/", {}, format="json"
+    )
+    assert again.status_code == 409
+
+
 # -- lists ---------------------------------------------------------------------------------------------
 
 
@@ -519,6 +753,18 @@ def test_the_cases_orders_for_staff_and_parties(api, ready, staff, signer, case,
     party_rows = client_for(complainant_user).get(target).json()["data"]
     assert [row["id"] for row in party_rows] == [str(ready.pk)]
     assert client_for(make_user(name="x")).get(target).status_code == 404
+
+
+def test_the_orders_of_a_case_that_does_not_exist_is_404(api):
+    response = api.get(url("case-orders", uuid.uuid4()))
+    assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
+
+
+def test_the_catalogue_for_an_order_is_staff_only(ready, staff, signer, complainant_user):
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.record_signed_file(ready.pk, "signed", "DSC", actor=signer)
+    response = client_for(complainant_user).get(url("order-items"), {"order": str(ready.pk)})
+    assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
 
 
 def test_diary_entries_endpoint(api, courtroom, ready, staff, signer):
@@ -650,6 +896,53 @@ def test_a_signer_cannot_set_the_diary_entry_of_an_order_not_triggered(courtroom
     assert errors_of(response) == [("E14019", None)]
     detail = client.get(url("order-detail", order.pk)).json()
     assert "edit_diary_entry" not in detail["allowed_actions"]
+
+
+def test_the_cause_list_column_of_a_hearing_that_does_not_exist_is_404(api):
+    response = api.put(
+        url("hearing-next-hearing", uuid.uuid4()), {"state": "NOT_LISTED_AGAIN"}, format="json"
+    )
+    assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
+
+
+def test_bulk_next_hearing_sets_each_listing_and_names_what_it_skips(api, courtroom, hearing):
+    response = api.post(
+        url("order-bulk-next-hearing"),
+        {
+            "court": str(courtroom.pk),
+            "hearing_ids": [str(hearing.pk), str(uuid.uuid4())],
+            "state": "LISTED",
+            "date": NEXT,
+            "purpose": "ARGUMENTS",
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["done"] == [str(hearing.pk)]
+    assert [s["code"] for s in body["skipped"]] == ["E00105"]
+    order = Order.objects.get(hearing_id=hearing.pk)
+    assert (order.next_hearing_date.isoformat(), order.next_hearing_purpose) == (
+        NEXT,
+        "ARGUMENTS",
+    )
+
+
+def test_bulk_requests_naming_an_id_twice_are_refused(api, courtroom, hearing, order):
+    hid = str(hearing.pk)
+    requests = (
+        ("order-bulk-items", {"order_ids": [str(order.pk)] * 2, "items": [{"item_type": "COST"}]}),
+        ("order-bulk-text", {"court": str(courtroom.pk), "hearing_ids": [hid, hid], "text": "x"}),
+        (
+            "order-bulk-next-hearing",
+            {"court": str(courtroom.pk), "hearing_ids": [hid, hid], "state": "NOT_LISTED_AGAIN"},
+        ),
+    )
+    for name, body in requests:
+        response = api.post(url(name), body, format="json")
+        field = "order_ids" if name == "order-bulk-items" else "hearing_ids"
+        assert (response.status_code, errors_of(response)) == (400, [("E00001", field)]), name
+    assert order.items.count() == 0
 
 
 def test_bulk_size_is_limited_e14022(api, courtroom):

@@ -1,6 +1,6 @@
 """Helpers every orders service shares: the lock, versions, stages, allowed actions (#4, #12.5)."""
 
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from rest_framework.exceptions import APIException, ErrorDetail
 
 from apps.api.errors import BusinessError
@@ -53,16 +53,20 @@ def lock_order(order_id, *, case=None):
     return queryset.get(pk=order_id)
 
 
-def save_order(order, actor, reason, *, update_fields=None):
-    """Save ``order`` with who did it and why on its history row (#12.3)."""
+def save_order(order, actor, reason, *, history=True):
+    """Save ``order`` with who did it and why on its history row (#12.3).
+
+    ``history=False`` writes no history row: for a text autosave, which the
+    next lifecycle row records with its text.
+    """
     if actor is not None and getattr(actor, "pk", None):
         order.updated_by = actor
         order._history_user = actor
     order._change_reason = reason[:100]
-    if update_fields is not None:
-        order.save(update_fields=[*update_fields, "updated_at", "updated_by"])
-    else:
+    if history:
         order.save()
+    else:
+        order.save_without_historical_record()
 
 
 def send_on_commit(signal, order):
@@ -173,15 +177,6 @@ def check_version(order, kind, expected):
     current = order.text_version if kind == "text" else order.data_version
     if int(expected) != current:
         raise BusinessError(errors.ORDER_STALE)
-
-
-def create_or_none(model, **kwargs):
-    """Create a row, or return ``None`` when a unique constraint says someone else did first."""
-    try:
-        with transaction.atomic():
-            return model.objects.create(**kwargs)
-    except IntegrityError:
-        return None
 
 
 def allowed_for_roles_view(order, roznama, roles):

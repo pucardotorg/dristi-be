@@ -94,8 +94,9 @@ def unsupported_structure(clean):
     """Return what in sanitised ``clean`` the PDF renderer cannot represent; ``""`` when nothing.
 
     The renderer draws only top-level lists and tables, takes a list's items and
-    a table's cells as flat text, and skips anything else inside them, so such
-    text would print differently from the page (or not at all). (Cell spans are
+    a table's cells as inline text (a paragraph inside one becomes a line of its
+    own, see ``_inline``), and skips anything else inside them, so such text
+    would print differently from the page (or not at all). (Cell spans are
     allowed: the PDF ignores them, a documented limitation.)
     """
     if not clean or is_blank(clean):
@@ -131,16 +132,39 @@ def is_blank(text):
 
 
 def _inline(element):
-    """Return the element's content as renderer markup: bold, italic, underline, breaks."""
-    out = [html_lib.escape(element.text or "", quote=False)]
+    """Return the element's content as renderer markup: bold, italic, underline, breaks.
+
+    A paragraph inside it (``<li><p>…</p><p>…</p></li>``, as editors write list
+    items and cells) starts on its own line, so its words never run into the
+    text around it (``ORD-13``).
+    """
+    out = []
+    after_paragraph = False
+
+    def add(markup):
+        nonlocal after_paragraph
+        if after_paragraph and markup.strip():
+            out.append("<br/>")
+            after_paragraph = False
+        out.append(markup)
+
+    add(html_lib.escape(element.text or "", quote=False))
     for child in element:
         if child.tag == "br":
-            out.append("<br/>")
+            out.append("<br/><br/>" if after_paragraph else "<br/>")
+            after_paragraph = False
+        elif child.tag == "p":
+            inner = _trim_breaks(_inline(child))
+            if inner:
+                if "".join(out).strip() and not "".join(out).rstrip().endswith("<br/>"):
+                    out.append("<br/>")
+                out.append(inner)
+                after_paragraph = True
         else:
             inner = _inline(child)
             tag = INLINE_MARKUP.get(child.tag)
-            out.append(f"<{tag}>{inner}</{tag}>" if tag else inner)
-        out.append(html_lib.escape(child.tail or "", quote=False))
+            add(f"<{tag}>{inner}</{tag}>" if tag else inner)
+        add(html_lib.escape(child.tail or "", quote=False))
     return "".join(out)
 
 

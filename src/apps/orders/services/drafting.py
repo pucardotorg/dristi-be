@@ -214,7 +214,7 @@ def edit_text(order_id, text, *, actor, text_version=None):
         order = common.lock_order(order_id)
         common.require_action(order, "edit_text")
         common.check_version(order, "text", text_version)
-        return edit_text_locked(order, text, actor, reason="text saved")
+        return edit_text_locked(order, text, actor, reason="text saved", autosave=True)
 
 
 def append_text(order_id, text, *, actor):
@@ -224,8 +224,14 @@ def append_text(order_id, text, *, actor):
         return edit_text_locked(order, f"{order.text}{rendering.sanitize_html(text)}", actor)
 
 
-def edit_text_locked(order, text, actor, *, reason="text appended"):
-    """``edit_text`` for a caller that already holds the order's lock."""
+def edit_text_locked(order, text, actor, *, reason="text appended", autosave=False):
+    """``edit_text`` for a caller that already holds the order's lock.
+
+    An ``autosave`` (the client saves every few seconds, ``ORD-20``) writes no
+    history row unless it reopens the order data: the row of the next send,
+    move back, sign, trigger or discard holds the text then (#12.3). The latest
+    save's author and time stay on the order (``text_saved_by``, ``text_saved_at``).
+    """
     common.require_action(order, "edit_text")
     clean = rendering.sanitize_html(text)
     if len(clean.encode()) > conf.text_max_bytes():
@@ -236,12 +242,13 @@ def edit_text_locked(order, text, actor, *, reason="text appended"):
     order.text_version += 1
     order.text_saved_by = actor
     order.text_saved_at = timezone.now()
-    if order.data_complete:
+    reopened = order.data_complete
+    if reopened:
         order.data_complete = False
         order.data_completed_by = None
         order.data_completed_at = None
         order.data_version += 1
-    common.save_order(order, actor, reason)
+    common.save_order(order, actor, reason, history=not autosave or reopened)
     return order
 
 

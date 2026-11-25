@@ -1,6 +1,7 @@
 """Handlers (spec 0039 #1.2, #9.3): the registry, the system check and the built-ins."""
 
 import datetime
+import uuid
 
 import pytest
 from django.core.checks import Error, Warning  # noqa: A004
@@ -261,3 +262,81 @@ def test_a_batta_cannot_be_confirmed_before_its_workflow_step_is_done(
     with pytest.raises(BusinessError):
         items.confirm_paid(order.pk, item.pk, user=complainant_user)
     assert "paid_confirmed_by" not in order.runs.get(order_item=item).result
+
+
+@pytest.mark.parametrize(
+    ("item_code", "payload"),
+    [
+        ("COGNIZANCE", {}),
+        ("MOVE_OUT_OF_LONG_PENDING_REGISTER", {}),
+        ("SCHEDULING_OF_HEARING_DATE", {"done_by": "HEARING"}),
+        ("RESCHEDULING_OF_HEARING_DATE", {"done_by": "HEARING"}),
+    ],
+)
+def test_items_whose_effect_is_another_step_are_done_at_once(ready, item_code, payload):
+    """Their work is the HEARING or STAGE step's, so their own run has nothing left to do."""
+    ctx = ItemContext(case_id=ready.case_id, order_id=ready.pk)
+    result = handlers.get(item_code).execute(ctx, {}, run_id=uuid.uuid4())
+    assert (result.status, result.payload) == ("DONE", payload)
+
+
+def test_an_item_with_no_workflow_of_its_own_is_done_at_once():
+    from apps.orders.handlers.builtin import NoWorkflowHandler
+
+    result = NoWorkflowHandler().execute(None, {}, run_id=uuid.uuid4())
+    assert result == RunResult("DONE")
+
+
+def test_the_contract_defaults_check_nothing_and_say_nothing(ready):
+    ctx = ItemContext(case_id=ready.case_id, order_id=ready.pk)
+    assert Stub().validate_target(ctx) == []
+    assert Stub().summary(ctx, {"any": "value"}) == ""
+
+
+def test_rescheduling_has_no_defaults_without_a_scheduled_hearing(case):
+    ctx = ItemContext(case_id=case.pk, order_id=uuid.uuid4())
+    assert handlers.get("RESCHEDULING_OF_HEARING_DATE").defaults(ctx) == {}
+
+
+def test_process_defaults_are_empty_for_a_case_without_an_accused(case):
+    from apps.cases.models import CaseParticipant, ParticipantRole
+
+    CaseParticipant.objects.filter(case=case, role=ParticipantRole.ACCUSED).delete()
+    ctx = ItemContext(case_id=case.pk, order_id=uuid.uuid4())
+    assert handlers.get("ISSUE_OF_SUMMONS").defaults(ctx) == {}
+
+
+def test_a_process_recipient_needs_a_channel_to_complete():
+    handler = handlers.get("ISSUE_OF_SUMMONS")
+    values = {"recipients": [{"party_id": str(uuid.uuid4()), "channels": ["EMAIL"]}, {}]}
+    assert handler.validate(None, values, complete=False) == []
+    problems = handler.validate(None, values, complete=True)
+    assert [(p.field, p.code) for p in problems] == [("values.recipients[1].channels", "REQUIRED")]
+
+
+def test_withdrawal_needs_the_applications_module_only_when_decided_on_an_application():
+    from apps.orders.handlers.placeholders import MODULE_NOT_AVAILABLE
+
+    handler = handlers.get("WITHDRAWAL_OF_CASE")
+    case_id, order_id = uuid.uuid4(), uuid.uuid4()
+    own = handler.execute(ItemContext(case_id=case_id, order_id=order_id), {}, run_id=uuid.uuid4())
+    assert own.status == "DONE"
+    on_application = handler.execute(
+        ItemContext(case_id=case_id, order_id=order_id, target_id=uuid.uuid4()),
+        {},
+        run_id=uuid.uuid4(),
+    )
+    assert (on_application.status, on_application.error_code) == ("FAILED", MODULE_NOT_AVAILABLE)
+    assert on_application.payload == {"module": "applications"}
+
+
+def test_the_check_is_silent_when_the_catalogue_cannot_be_read(monkeypatch):
+    from django.db import DatabaseError
+
+    from apps.orders.models import OrderItemType
+
+    def unreadable(*args, **kwargs):
+        raise DatabaseError("no such table")
+
+    monkeypatch.setattr(OrderItemType.objects, "filter", unreadable)
+    assert checks.check_workflow_items_have_handlers(None, databases=["default"]) == []

@@ -94,6 +94,34 @@ def test_retry_failed_steps_calls_the_service(admin_user_, ready):
     assert handlers and OrderItemTypeAdmin
 
 
+def test_the_order_pages_items_and_runs_cannot_be_added_to(admin_user_, ready):
+    request = request_for(admin_user_)
+    for inline_class in OrderAdmin.inlines:
+        inline = inline_class(Order, site)
+        assert not inline.has_add_permission(request, obj=ready)
+        assert not inline.can_delete
+
+
+def test_retrying_runs_retries_each_of_their_orders_once(admin_user_, ready, staff, signer):
+    from apps.orders.admin import OrderWorkflowRunAdmin
+    from apps.orders.enums import RunStatus
+    from apps.orders.services import triggering
+
+    from .test_triggering import COST, trigger
+
+    order = trigger(ready, staff, signer, ("COST", COST), "COGNIZANCE")
+    order.runs.update(status=RunStatus.FAILED, attempts=3)
+    model_admin = OrderWorkflowRunAdmin(OrderWorkflowRun, site)
+    with mock.patch.object(triggering, "enqueue_on_commit") as enqueue:
+        with mock.patch.object(model_admin, "message_user") as message:
+            model_admin.retry(request_for(admin_user_), order.runs.all())
+    count = order.runs.count()
+    assert count > 1
+    enqueue.assert_called_once_with(order.pk)  # several runs of one order: one retry
+    assert f"{count} step" in message.call_args.args[1]
+    assert set(order.runs.values_list("status", "attempts")) == {(RunStatus.PENDING, 0)}
+
+
 def _staff_with(*codenames):
     user = make_user(name="Operator")
     user.is_staff = True

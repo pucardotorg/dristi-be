@@ -485,3 +485,18 @@ def test_bulk_next_hearing_checks_the_version_for_an_omitted_purpose(
 def started(case, staff):
     """A started hearing with no order yet."""
     return started_hearing(case, staff)
+
+
+def test_a_state_other_than_listed_or_not_listed_again_is_refused(order, setter):
+    with pytest.raises(ValidationError) as excinfo:
+        set_(order, setter, state="SOMETIME", date=NEXT, purpose="EVIDENCE_OF_COMPLAINANT")
+    assert excinfo.value.detail["state"][0].code == "E14011"
+    order.refresh_from_db()
+    assert order.next_hearing_state == NextHearingState.UNSET
+    assert hold_of(order) is None
+
+
+def test_a_hearing_order_is_not_defaulted_from_the_listed_hearing(case, order):
+    schedule(case, LATER, "EVIDENCE_OF_COMPLAINANT")
+    next_hearing.default_from_listed(order)
+    assert (order.next_hearing_date, order.next_hearing_purpose) == (None, "")
