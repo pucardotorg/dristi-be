@@ -1,6 +1,6 @@
 # Order item catalogue
 
-**Status:** 2026-11-10 (22) — **one order item per application**: Accept application (#5), Reject application (#6), Acceptance of bail (#13) and Dismiss application (#26) are withdrawn and replaced by **#27 Application action**, the order item through which an order acts on an application, whose questions are owned by [`application-lifecycle.md`](application-lifecycle.md) `ALC-38`. Accepting a Bail application triggers the Bail type's workflow (`ALC-16`); there is no separate bail acceptance item. Combination rule 4 is now one Application action per application per order. "Application types covered by generic accept/reject" is replaced by a pointer to application-lifecycle.md. The withdrawn items are in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-22 (21) — rescheduling of hearing date (#4) is now a dropdown order item under Case management, offered only when the case already has a hearing scheduled and the order is not a hearing's own; it asks only the new hearing date and the purpose, the purpose defaulting to the one the hearing already has. 2026-10-20 (20) — dismissal no longer points at `APL-04`–`APL-06` of order-generation.md. 2026-10-19 (19) — templates dropped: retitled *Order item catalogue*; the Template column, the template notes and *How the template system works* moved to [`dropped-ideas.md`](dropped-ideas.md). The catalogue now holds the order items, their variables, workflows, availability, combination restrictions and hearing purposes. 2026-10-19 (18) — contextual order items can now be chosen on the order screen, and ask what they apply to (`ITM-04`). Channels, addresses and police station are fields of the order item like any other (`ITM-11` of order-generation.md removed). Locked / Optional column and the *Locked vs optional variables* section removed: a variable is mandatory to enter or not; the old text is in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
+**Status:** 2026-11-26 (24) — **#12 Issue of notice**: the notice type is chosen from one value, *Delay condonation notice*, which is also the default; more notice types may be added later. The note on the missing police station is removed. **#11 Withdrawal of case** is not linked to an application: it is chosen from the dropdown only, and has no variables. **Every variables table has a new shape**: *Mandatory to enter*, *Default value* and *Validation* (empty in every row) are merged into one **Logic** column, which says when a variable is shown, whether it is mandatory and its default; variables the system fills in say where from and that they cannot be edited. The note that bond amount and number of sureties are asked only for a bailable warrant is now in their rows. The explanation above the tables is aligned. 2026-11-25 (23) — **#10 Issue of warrants has its own variables table**, no longer shared with summons, proclamation and attachment. It gains **Warrant type** (Bailable or Non-bailable, mandatory) and, for a bailable warrant only, **Bond amount** and **Number of sureties**, both mandatory. 2026-11-10 (22) — **one order item per application**: Accept application (#5), Reject application (#6), Acceptance of bail (#13) and Dismiss application (#26) are withdrawn and replaced by **#27 Application action**, the order item through which an order acts on an application, whose questions are owned by [`application-lifecycle.md`](application-lifecycle.md) `ALC-38`. Accepting a Bail application triggers the Bail type's workflow (`ALC-16`); there is no separate bail acceptance item. Combination rule 4 is now one Application action per application per order. "Application types covered by generic accept/reject" is replaced by a pointer to application-lifecycle.md. The withdrawn items are in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-22 (21) — rescheduling of hearing date (#4) is now a dropdown order item under Case management, offered only when the case already has a hearing scheduled and the order is not a hearing's own; it asks only the new hearing date and the purpose, the purpose defaulting to the one the hearing already has. 2026-10-20 (20) — dismissal no longer points at `APL-04`–`APL-06` of order-generation.md. 2026-10-19 (19) — templates dropped: retitled *Order item catalogue*; the Template column, the template notes and *How the template system works* moved to [`dropped-ideas.md`](dropped-ideas.md). The catalogue now holds the order items, their variables, workflows, availability, combination restrictions and hearing purposes. 2026-10-19 (18) — contextual order items can now be chosen on the order screen, and ask what they apply to (`ITM-04`). Channels, addresses and police station are fields of the order item like any other (`ITM-11` of order-generation.md removed). Locked / Optional column and the *Locked vs optional variables* section removed: a variable is mandatory to enter or not; the old text is in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
 application is onboarded; before that it can only be dismissed. New contextual order item
 **26. Dismiss application**, which cites no application number and names the application
 by its type, the party that filed it and its filing date. 2026-10-06 (16) — added a stop-reading marker before "Not in V1":
@@ -75,7 +75,7 @@ How an order is drafted from this configuration is owned by
 | 8 | Case settlement | Dropdown | Disposal | |
 | 9 | Issue of summons | Dropdown | Process | Triggers the summons workflow |
 | 10 | Issue of warrants | Dropdown | Process | Triggers the warrant workflow |
-| 11 | Withdrawal of case | Dropdown or contextual | Disposal | |
+| 11 | Withdrawal of case | Dropdown | Disposal | |
 | 12 | Issue of notice | Dropdown | Process | Triggers the notice workflow |
 | 14 | Cognizance | Dropdown | Case management | |
 | 15 | Judgement | Dropdown | Disposal | |
@@ -118,9 +118,9 @@ order item itself triggers.
 
 A blank cell is not yet specified.
 
-A variable with input type *None* is taken from the record, not entered.
-**Default value** is what is preselected for the drafter to keep or change — not a value
-filled in silently.
+**Logic** says when a variable is shown, whether it is mandatory, and its default. A
+default is what is preselected for the drafter to keep or change — not a value filled in
+silently. A system-filled variable is taken from the record and cannot be edited.
 
 Where one table covers several order items, they are still separate order items; they
 share a table only because their variables are the same.
@@ -128,130 +128,138 @@ share a table only because their variables are the same.
 Input types marked *(proposed)* are a first guess, not yet confirmed.
 
 How variables are resolved on the screen is owned by `VAR-01`–`VAR-11` of
-[`order-generation.md`](order-generation.md); the default values below are what those
-rules give for each variable.
+[`order-generation.md`](order-generation.md); the defaults below are what those rules
+give for each variable.
 
 ### 1. Mandatory submissions and responses
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Party Type]` | Party directed to file | Dropdown — Complainant, Accused | Yes | | |
-| `[Document Type]` | Type of document to be filed | Dropdown — master data | Yes | | |
-| `[Document Details]` | Details of the document to be filed | Text | Yes | | |
-| `[Deadline for Submission]` | Date by which it must be filed | Date picker *(proposed)* | Yes | | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Party Type]` | Party directed to file | Dropdown — Complainant, Accused | Mandatory. |
+| `[Document Type]` | Type of document to be filed | Dropdown — master data | Mandatory. |
+| `[Document Details]` | Details of the document to be filed | Text | Mandatory. |
+| `[Deadline for Submission]` | Date by which it must be filed | Date picker *(proposed)* | Mandatory. |
 
 ### 2. Referral of case to ADR
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Mode of ADR]` | Mediation, arbitration, etc. | Dropdown — master data *(proposed)* | Yes | | |
-| `[Date of End of ADR]` | Deadline for the ADR to conclude | Date picker *(proposed)* | Yes | | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Mode of ADR]` | Mediation, arbitration, etc. | Dropdown — master data *(proposed)* | Mandatory. |
+| `[Date of End of ADR]` | Deadline for the ADR to conclude | Date picker *(proposed)* | Mandatory. |
 
 ### 3. Scheduling of hearing date
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Hearing Date]` | Date of the next hearing | Date picker *(proposed)* | Yes | None | |
-| `[Hearing Purpose]` | Purpose of the next hearing | Dropdown — MDMS hearing purposes | Yes | None — entered by the drafter | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Hearing Date]` | Date of the next hearing | Date picker *(proposed)* | Mandatory. |
+| `[Hearing Purpose]` | Purpose of the next hearing | Dropdown — MDMS hearing purposes | Mandatory. |
 
 ### 4. Rescheduling of hearing date
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[New Hearing Date]` | Date it moves to | Date picker *(proposed)* | Yes | | |
-| `[Hearing Purpose]` | Purpose of the rescheduled hearing | Dropdown — MDMS hearing purposes | Yes | The purpose the hearing already has | |
-| `[Original Hearing Date]` | Date of the hearing being moved | None — from the hearing being moved | No | The hearing the case is scheduled for | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[New Hearing Date]` | Date it moves to | Date picker *(proposed)* | Mandatory. |
+| `[Hearing Purpose]` | Purpose of the rescheduled hearing | Dropdown — MDMS hearing purposes | Mandatory. Defaults to the purpose the hearing already has. |
+| `[Original Hearing Date]` | Date of the hearing being moved | None — from the hearing being moved | System-filled with the date the case's hearing is currently scheduled for; not editable. |
 
 Offered only when the case already has a hearing scheduled. Not offered in a hearing's own
 order, where the next date is set under Next hearing. Only the new hearing date and the
 purpose are asked.
 
-### 7. Case transfer · 8. Case settlement · 14. Cognizance · 15. Judgement · 16. Dismiss case · 22–23. Moving case to / out of long pending register · 24. Abate case
+### 7. Case transfer · 8. Case settlement · 11. Withdrawal of case · 14. Cognizance · 15. Judgement · 16. Dismiss case · 22–23. Moving case to / out of long pending register · 24. Abate case
 
 No variables.
 
-### 9. Issue of summons · 10. Issue of warrants · 20. Issue of proclamation · 21. Issue of attachment
+### 9. Issue of summons · 20. Issue of proclamation · 21. Issue of attachment
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Yes | Every accused until the accused has joined the case; after that, the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`) | |
-| `[Party Type]` | That person's party type | None — from the person chosen | No | | |
-| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Yes | Worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`) | |
-| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Yes — at least one | Pre-selected by process type (`AUT-08`) | |
-| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Yes | Every address on the person's record (`AUT-07`) | |
-| Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | On a police channel | From the person's address (`AUT-04`) | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Mandatory. Defaults to every accused until the accused has joined the case; after that, to the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`). |
+| `[Party Type]` | That person's party type | None — from the person chosen | System-filled from the person chosen; not editable. |
+| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Mandatory. Defaults to a party worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`). |
+| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Mandatory — at least one. Pre-selected by process type (`AUT-08`). |
+| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Mandatory. Every address on the person's record is pre-selected (`AUT-07`). |
+| Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | Shown only on a police channel, and then mandatory. Pre-filled from the person's address (`AUT-04`). |
 
 The rules for channels, addresses and police station are owned by
 [`process.md`](process.md).
 
-### 11. Withdrawal of case
+### 10. Issue of warrants
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Application Number]` | The withdrawal application, where there is one | Read-only — from the application | Only when reached from an application | From the application the order item was reached from | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Warrant Type]` | Whether the warrant is bailable | Dropdown — Bailable, Non-bailable | Mandatory. |
+| `[Bond Amount]` | Amount of the bond, in ₹ | Number, ₹ | Shown only when the warrant type is Bailable, and then mandatory. |
+| `[Number of Sureties]` | How many sureties the bond needs | Number | Shown only when the warrant type is Bailable, and then mandatory. |
+| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Mandatory. Defaults to every accused until the accused has joined the case; after that, to the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`). |
+| `[Party Type]` | That person's party type | None — from the person chosen | System-filled from the person chosen; not editable. |
+| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Mandatory. Defaults to a party worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`). |
+| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Mandatory — at least one. Pre-selected by process type (`AUT-08`). |
+| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Mandatory. Every address on the person's record is pre-selected (`AUT-07`). |
+| Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | Shown only on a police channel, and then mandatory. Pre-filled from the person's address (`AUT-04`). |
 
-Withdrawal may be ordered on an application or directly. When it is chosen from the
-dropdown there is no application.
+The rules for channels, addresses and police station are owned by
+[`process.md`](process.md).
 
 ### 12. Issue of notice
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Notice Type]` | Type of notice | Dropdown — master data *(proposed)* | Yes | | |
-| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Yes | Every accused until the accused has joined the case; after that, the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`) | |
-| `[Party Type]` | That person's party type | None — from the person chosen | No | | |
-| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Yes | Worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`) | |
-| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Yes — at least one | Pre-selected by process type (`AUT-08`) | |
-| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Yes | Every address on the person's record (`AUT-07`) | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Notice Type]` | Type of notice | Dropdown — Delay condonation notice | Mandatory. Defaults to Delay condonation notice. |
+| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Mandatory. Defaults to every accused until the accused has joined the case; after that, to the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`). |
+| `[Party Type]` | That person's party type | None — from the person chosen | System-filled from the person chosen; not editable. |
+| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Mandatory. Defaults to a party worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`). |
+| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Mandatory — at least one. Pre-selected by process type (`AUT-08`). |
+| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Mandatory. Every address on the person's record is pre-selected (`AUT-07`). |
 
-A notice takes no police channel, so there is no police station. Otherwise as for the
-four above.
+Delay condonation notice is the only notice type for now; more may be added later, each
+with its own template where needed ([`process.md`](process.md) `TPL-01`).
 
 ### 17. Bail
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Plea]` | Guilty / not guilty | Dropdown — Guilty, Not guilty *(proposed)* | |  | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Plea]` | Guilty / not guilty | Dropdown — Guilty, Not guilty *(proposed)* | |
 
 ### 18. Cost
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Party Type]` | Paying party | Dropdown — Complainant, Accused *(proposed)* | Yes | | |
-| `[Amount]` | Amount, in ₹ | Number, ₹ *(proposed)* | Yes | | |
-| `[Party Type]` | Receiving party | Dropdown — Complainant, Accused, Court | Yes | | |
-| `[Date]` | Date by which it must be paid | Date picker *(proposed)* | Yes | | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Party Type]` | Paying party | Dropdown — Complainant, Accused *(proposed)* | Mandatory. |
+| `[Amount]` | Amount, in ₹ | Number, ₹ *(proposed)* | Mandatory. |
+| `[Party Type]` | Receiving party | Dropdown — Complainant, Accused, Court | Mandatory. |
+| `[Date]` | Date by which it must be paid | Date picker *(proposed)* | Mandatory. |
 
 ### 19. Witness batta
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Party Type]` | Paying party | Dropdown — Complainant, Accused *(proposed)* | Yes | | |
-| `[Amount]` | Amount, in ₹ | Number, ₹ *(proposed)* | Yes | | |
-| `[Party Type]` | Receiving party — always a witness | None — always Witness | No | | |
-| `[Party Name]` | The witness receiving it | Dropdown — witnesses in the case | Yes | The witness, where the case has exactly one | |
-| `[Date]` | Date by which it must be paid | Date picker *(proposed)* | Yes | | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Party Type]` | Paying party | Dropdown — Complainant, Accused *(proposed)* | Mandatory. |
+| `[Amount]` | Amount, in ₹ | Number, ₹ *(proposed)* | Mandatory. |
+| `[Party Type]` | Receiving party — always a witness | None — always Witness | System-filled as Witness; not editable. |
+| `[Party Name]` | The witness receiving it | Dropdown — witnesses in the case | Mandatory. Defaults to the witness, where the case has exactly one. |
+| `[Date]` | Date by which it must be paid | Date picker *(proposed)* | Mandatory. |
 
 ### 25. Issue of miscellaneous process
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Process Type]` | Type of process | Dropdown — master data *(proposed)* | Yes | | |
-| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Yes | Every accused until the accused has joined the case; after that, the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`) | |
-| `[Party Type]` | That person's party type | None — from the person chosen | No | | |
-| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Yes | Worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`) | |
-| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Yes — at least one | Pre-selected by process type (`AUT-08`) | |
-| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Yes | Every address on the person's record (`AUT-07`) | |
-| Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | On a police channel | From the person's address (`AUT-04`) | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Process Type]` | Type of process | Dropdown — master data *(proposed)* | Mandatory. |
+| `[Party Name]` | Person the process is addressed to | Dropdown — people in the case the process type may be addressed to; several may be chosen (`AUT-09`) | Mandatory. Defaults to every accused until the accused has joined the case; after that, to the one witness not yet examined if there is exactly one, otherwise empty (`AUT-05`, `AUT-06`). |
+| `[Party Type]` | That person's party type | None — from the person chosen | System-filled from the person chosen; not editable. |
+| `[Party Type]` | Party directed to take steps | Dropdown — Complainant, Accused *(proposed)* | Mandatory. Defaults to a party worked out from the person chosen: for the accused, the complainant; for the complainant, the accused; for a witness tagged to one side, that side; otherwise empty (`AUT-02`, `AUT-03`). |
+| Channels | Delivery channels, per person | Multi-select — the channels available in the deployment for this process type (`PRC-03`, `PRC-04`) | Mandatory — at least one. Pre-selected by process type (`AUT-08`). |
+| Addresses | Destination for each channel, per person | Multi-select — from the person's own record (`PRC-05`) | Mandatory. Every address on the person's record is pre-selected (`AUT-07`). |
+| Police station | For a police channel only | Dropdown — police-station master (`PRC-08`) | Shown only on a police channel, and then mandatory. Pre-filled from the person's address (`AUT-04`). |
 
 As for the four above, with the type of process added.
 
 ### 27. Application action
 
-| Variable | Meaning | Input type | Mandatory to enter | Default value | Validation |
-|---|---|---|---|---|---|
-| `[Application Number]` | The application acted on | Read-only — from the application | Yes | From the application the order item was reached from | |
-| `[Application Type]` | Its type | Read-only — from the application | Yes | From the application the order item was reached from | |
+| Variable | Meaning | Input type | Logic |
+|---|---|---|---|
+| `[Application Number]` | The application acted on | Read-only — from the application | System-filled from the application the order item was reached from; not editable. |
+| `[Application Type]` | Its type | Read-only — from the application | System-filled from the application the order item was reached from; not editable. |
 
 Its questions are not variables: they are listed in [`application-lifecycle.md`](application-lifecycle.md) `ALC-38`.
 
