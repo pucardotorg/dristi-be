@@ -10,6 +10,7 @@ from django.core.management import CommandError, call_command
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
+from apps.applications.models import ApplicationType
 from apps.cms.models import Page, PageCategory
 from apps.core import services
 from apps.core.management.commands import seed as seed_command
@@ -548,7 +549,7 @@ class TestCoreSeed:
     # the old data migrations inserted.
     SESSION = {
         Group: 4,
-        MessageTemplate: 12,
+        MessageTemplate: 20,
         HearingPurpose: 19,
         RequestType: 3,
         ApprovalStep: 3,
@@ -563,8 +564,9 @@ class TestCoreSeed:
         AdditionalAttribute: 2,
         Configuration: 1,
         PublicConfiguration: 7,
-        PDFTemplate: 1,
-        PDFTemplateVersion: 1,
+        PDFTemplate: 2,
+        PDFTemplateVersion: 2,
+        ApplicationType: 16,
     }
 
     def test_session_seed_loaded_the_migrated_data(self):
@@ -582,11 +584,11 @@ class TestCoreSeed:
         assert not any(model.objects.exists() for model in self.REST)
 
         output = run(str(CORE_DIR), "--strict")
-        assert "created 15, unchanged 49, skipped 0" in output
+        assert "created 33, unchanged 57, skipped 0" in output
         expected = {**self.SESSION, **self.REST}
         assert {m: m.objects.count() for m in expected} == expected
 
-        assert "created 0, unchanged 64, skipped 0" in run(str(CORE_DIR), "--strict")
+        assert "created 0, unchanged 90, skipped 0" in run(str(CORE_DIR), "--strict")
 
 
 def test_migrations_carry_no_data():

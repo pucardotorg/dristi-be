@@ -1,0 +1,20 @@
+# The default application template (spec 0033 #6.5): every type without a
+# template of its own prints through it. Rendered by
+# apps.applications.services.rendering from the same structure the preview
+# endpoint returns (#6.5a): court heading, case number, cause title and date;
+# the parties table with each litigant's advocates, then the offence; the
+# title; every value of the type's fields as term and value; the application
+# details as the filer formatted them; the "Dated this" line; the signature
+# block, whose drawn box is where the e-sign is placed.
+#
+# A version a job has used is immutable: change the template by adding a
+# version 2 row with is_active = true.
+
+[seed]
+model = "pdf.PDFTemplate"
+
+[[rows]]
+key = "application-default"
+name = "Court application"
+description = "A party's application to the court, signed before it is filed (spec 0033 #6.5)."
+is_active = true

@@ -25,6 +25,9 @@ EXPECTED = {
     "expire_bulk_previews": "*/5 * * * *",
     "end_hearing_days": "30 18 * * *",
     "poll_pending_payments": "* * * * *",
+    # spec 0033 #16.6: daily at 00:05 IST
+    "expire_hearing_linked_applications": "35 18 * * *",
+    "close_objection_windows": "35 18 * * *",
 }
 
 

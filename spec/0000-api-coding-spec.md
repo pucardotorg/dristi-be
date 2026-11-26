@@ -247,6 +247,7 @@ example `E01001`.
 | `09` | `apps.scrutiny` | scrutiny and registration (spec 0024) |
 | `10` | `apps.hearings` | hearings, court calendar and bulk rescheduling (spec 0023) |
 | `11` | `apps.core` | shared reference data: languages (spec 0030) |
+| `13` | `apps.applications` | court applications (spec 0033) |
 
 
 Rules:

@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "apps.scrutiny",
     "apps.payments",
     "apps.hearings",
+    "apps.applications",
     "apps.notifications",
     # Addons
     "addon.cdac_sms_gateway",

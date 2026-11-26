@@ -1,0 +1,161 @@
+# SMS templates the applications module notifies with (spec 0033 #16.2).
+# The copy is provisional: the master Notifications table owns it.
+
+[seed]
+model = "messaging.MessageTemplate"
+
+[[rows]]
+message_key = "APPLICATION_PENDING_SIGNATURE"
+message_type = "sms"
+subject = ""
+content = "The {{application_type}} application in case {{case_number}} is ready for your signature. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "application_type", "application_number"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+application_type = { type = "string" }
+application_number = { type = "string" }
+
+[[rows]]
+message_key = "APPLICATION_SUBMITTED"
+message_type = "sms"
+subject = ""
+content = "The {{application_type}} application {{application_number}} in case {{case_number}} has been filed with the court. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "application_type", "application_number"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+application_type = { type = "string" }
+application_number = { type = "string" }
+
+[[rows]]
+message_key = "APPLICATION_RESPONSE_REQUESTED"
+message_type = "sms"
+subject = ""
+content = "The court asks you to respond to the {{application_type}} application {{application_number}} in case {{case_number}} by {{respond_by}}. It will decide on {{decision_date}}. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "application_type", "application_number", "respond_by", "decision_date"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+application_type = { type = "string" }
+application_number = { type = "string" }
+respond_by = { type = "string" }
+decision_date = { type = "string" }
+
+[[rows]]
+message_key = "APPLICATION_DECIDED"
+message_type = "sms"
+subject = ""
+content = "The {{application_type}} application {{application_number}} in case {{case_number}} has been decided: {{outcome}}. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "application_type", "application_number", "outcome"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+application_type = { type = "string" }
+application_number = { type = "string" }
+outcome = { type = "string" }
+
+[[rows]]
+message_key = "APPLICATION_DISMISSED"
+message_type = "sms"
+subject = ""
+content = "The {{application_type}} application {{application_number}} in case {{case_number}} has been dismissed. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "application_type", "application_number"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+application_type = { type = "string" }
+application_number = { type = "string" }
+
+[[rows]]
+message_key = "APPLICATION_EXPIRED"
+message_type = "sms"
+subject = ""
+content = "The {{application_type}} application {{application_number}} in case {{case_number}} has expired: its hearing passed or moved. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "application_type", "application_number"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+application_type = { type = "string" }
+application_number = { type = "string" }
+
+[[rows]]
+message_key = "APPLICATION_DECISION_DATE_MOVED"
+message_type = "sms"
+subject = ""
+content = "The court will now decide the {{application_type}} application {{application_number}} in case {{case_number}} on {{decision_date}}. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "application_type", "application_number", "decision_date"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+application_type = { type = "string" }
+application_number = { type = "string" }
+decision_date = { type = "string" }
+
+[[rows]]
+message_key = "APPLICATION_OBJECTION_FILED"
+message_type = "sms"
+subject = ""
+content = "An objection has been filed to the {{application_type}} application {{application_number}} in case {{case_number}}. - On Courts"
+priority = "MEDIUM"
+category = "NOTIFICATION"
+max_retries = 0
+
+[rows.data_schema]
+type = "object"
+required = ["case_number", "application_type", "application_number"]
+additionalProperties = false
+
+[rows.data_schema.properties]
+case_number = { type = "string" }
+application_type = { type = "string" }
+application_number = { type = "string" }
