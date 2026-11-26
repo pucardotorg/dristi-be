@@ -48,21 +48,10 @@ CASE_NUMBER_TAKEN = define(
     "E09020", "The case number was just taken. Try registering again.", status=409
 )
 
-# No longer raised: scrutiny read SCRUTINY_ESTABLISHMENT_ID until it moved to
-# court roles (spec 0029 #10.1). Kept defined so the code is never reused.
+# Routing (#2.5): SCRUTINY_ESTABLISHMENT_ID is unset or malformed, so a case
+# entering scrutiny or registration has nowhere to go; the move is refused.
 SCRUTINY_NOT_CONFIGURED = define(
     "E09019", "Scrutiny is not available: no court establishment is configured.", status=503
-)
-# Routing (#2.5): the case's court_id is missing, or is neither a court
-# establishment nor one of its courtrooms, so a case entering scrutiny has
-# nowhere to go; the move is refused and rolled back. Filing refuses such a
-# court at draft start and before signing, so this is reached only when the
-# establishment stops being one, or is deactivated, after the case was signed.
-NO_ESTABLISHMENT = define(
-    "E09021",
-    "This case is not filed in an active court establishment or one of its courtrooms, "
-    "so the court cannot receive it.",
-    status=409,
 )
 
 # Correction (#5)

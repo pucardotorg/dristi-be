@@ -251,7 +251,7 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `OTP_MAX_ATTEMPTS` | Wrong guesses allowed against one OTP before it is destroyed | `5` |
 | `ADVOCATE_SEARCH_THROTTLE_RATE` | Per-user rate of `GET /advocates?search=` (finding an advocate to add to a case); blank disables it | `60/min` |
 | `PASSWORD_RESET_WINDOW_SECONDS` | How long a verified password-reset code allows the new password to be set, in seconds | `600` |
-| `SCRUTINY_ESTABLISHMENT_ID` | Stop-gap: the court establishment whose courtrooms the hearing groups act in, and where a case is filed when its draft names no court (spec 0021 §1). Scrutiny uses court roles and places a case at the establishment of its court (spec 0029 #10.1). Removed when hearings move to court roles and P-2 decides how a case is placed at an establishment. | `3f2b…-uuid` |
+| `SCRUTINY_ESTABLISHMENT_ID` | Organization id of the one court establishment this deployment scrutinises and registers for (`RLE-00`): every case submitted for scrutiny goes there, and its courtrooms are the ones a case can be sent to. Empty refuses every submission for scrutiny (`503 E09019`); `manage.py check` warns (`scrutiny.W001`) and `check --database` refuses one that is not an active court establishment (`scrutiny.E002`). Hearings also read it until they move to court roles. | `3f2b…-uuid` |
 | `CDAC_SMS_URL` | CDAC gateway endpoint (required when the CDAC backend is active) | `https://msdgweb.mgov.gov.in/esms/sendsmsrequestDLT` |
 | `CDAC_SMS_USERNAME` | CDAC username | `dristi` |
 | `CDAC_SMS_PASSWORD` | CDAC password; hashed (SHA-1) before transmission, never sent in plaintext | secret |

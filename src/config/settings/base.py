@@ -768,9 +768,9 @@ PDF_MAX_SIGN_INPUT_BYTES = env.int("PDF_MAX_SIGN_INPUT_BYTES", default=20971520)
 # ---------------------------------------------------------------------------
 # Scrutiny (apps.scrutiny, spec 0024)
 # ---------------------------------------------------------------------------
-# Stop-gap: the court establishment whose courtrooms the hearing groups act in
-# (spec 0023), and where a case is filed when its draft names no court (spec
-# 0021 §1). Scrutiny places a case by its court instead (spec 0029 #10.1).
+# The one court establishment this deployment scrutinises and registers for
+# (RLE-00): every case submitted for scrutiny goes there. Unset, every
+# submission is refused (E09019). Hearings also read it (spec 0023).
 SCRUTINY_ESTABLISHMENT_ID = env("SCRUTINY_ESTABLISHMENT_ID", default="")
 
 

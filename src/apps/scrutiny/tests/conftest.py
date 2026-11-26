@@ -40,10 +40,11 @@ def filer():
 
 
 @pytest.fixture
-def establishment():
-    """The court establishment the case is filed in, with one courtroom."""
+def establishment(settings):
+    """The establishment the deployment serves (``SCRUTINY_ESTABLISHMENT_ID``), with one courtroom."""
     court = make_establishment("EST", "Establishment")
     add_courtroom(court, "Main courtroom")
+    settings.SCRUTINY_ESTABLISHMENT_ID = str(court.pk)
     return court
 
 

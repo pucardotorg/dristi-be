@@ -1,6 +1,7 @@
 """Scrutiny on court roles (spec 0029 #10.1, #12 "Scrutiny").
 
-A case goes to the establishment of its ``court_id``. Each step is a court
+A case goes to the deployment's establishment (``SCRUTINY_ESTABLISHMENT_ID``,
+``RLE-00``), whatever court it names. Each step is a court
 action checked at the round's establishment, lists cover every establishment
 where the caller holds the stage's actions, and reading follows any scrutiny
 or registration action at the latest round's establishment.
@@ -8,6 +9,7 @@ or registration action at the latest round's establishment.
 
 import pytest
 from django.contrib.auth.models import Group
+from django.core.checks import run_checks
 from django.urls import reverse
 
 from apps.api.errors import BusinessError
@@ -19,11 +21,11 @@ from apps.scrutiny import permissions, selectors
 from apps.scrutiny.enums import RoundDecision, RoundStage
 from apps.scrutiny.models import ScrutinyRound
 from apps.scrutiny.services import rounds
+from apps.scrutiny.system_checks import check_establishment_exists, check_establishment_setting
 
 from .factories import (
     CASE_REGISTERER,
     SCRUTINY_OFFICER,
-    add_courtroom,
     code,
     draft_field,
     enter,
@@ -33,6 +35,7 @@ from .factories import (
     make_paid_case,
     make_user,
     open_round,
+    place_at,
 )
 from .test_api import client_for, error_codes, registration_url, url
 
@@ -51,16 +54,30 @@ def offered(case, user):
 
 
 @pytest.fixture
-def other_case(filer, other_establishment):
-    return make_case(filer, other_establishment, filing_number="F/OTH/2026/00001")
+def other_case(filer, establishment, other_establishment):
+    """A case whose round sits at a second establishment."""
+    case = make_case(filer, other_establishment, filing_number="F/OTH/2026/00001")
+    return place_at(case, other_establishment)
 
 
-# Routing: a case goes to the establishment of its court
+# Routing (#2.5): a paid case goes to the configured establishment, whatever court it names
 
 
-@pytest.mark.parametrize("filed_in", ["establishment", "courtroom"])
-def test_submission_routes_to_the_court_of_the_case(filer, officer, establishment, filed_in):
-    court = establishment if filed_in == "establishment" else establishment.children.get()
+@pytest.mark.parametrize(
+    "filed_in", ["none", "establishment", "courtroom", "other establishment", "not a court"]
+)
+def test_submission_routes_to_the_configured_establishment(
+    filer, officer, establishment, other_establishment, filed_in
+):
+    court = {
+        "none": None,
+        "establishment": establishment,
+        "courtroom": establishment.children.get(),
+        "other establishment": other_establishment,
+        "not a court": Organization.objects.create(
+            code="DC", name="District court", organization_type=OrganizationType.DISTRICT_COURT
+        ),
+    }[filed_in]
     case = make_paid_case(filer, court)
 
     response = submit(case, filer)
@@ -77,49 +94,54 @@ def test_submission_routes_to_the_court_of_the_case(filer, officer, establishmen
     assert [row["case_id"] for row in listed["results"]] == [str(case.pk)]
 
 
-@pytest.mark.parametrize(
-    "filed_in", ["none", "not a court", "inactive establishment", "courtroom of one"]
-)
-def test_submission_refused_without_a_court_establishment(filer, establishment, filed_in):
-    court = None
-    if filed_in == "not a court":
-        court = Organization.objects.create(
-            code="DC", name="District court", organization_type=OrganizationType.DISTRICT_COURT
-        )
-    elif filed_in in ("inactive establishment", "courtroom of one"):
-        # Nobody is allowed anything at an inactive court, so the case would never be seen.
-        closed = make_establishment("CLOSED", "Closed court")
-        room = add_courtroom(closed, "Closed courtroom")
-        Organization.objects.filter(pk=closed.pk).update(is_active=False)
-        court = closed if filed_in == "inactive establishment" else room
-    case = make_paid_case(filer, court)
+@pytest.mark.parametrize("filed_in", ["none", "other establishment"])
+def test_misfiled_case_is_forwarded_to_a_courtroom_here(
+    filer, officer, establishment, other_establishment, filed_in
+):
+    case = make_paid_case(filer, None if filed_in == "none" else other_establishment)
+    assert submit(case, filer).status_code == 200
+    courtroom = establishment.children.get()
+
+    rounds.forward(case.pk, officer, courtroom_id=courtroom.pk)
+
+    case.refresh_from_db()
+    assert (case.status, case.court_id) == (CaseStatus.PENDING_REGISTRATION, courtroom.pk)
+    assert open_round(case).establishment_id == establishment.pk
+
+
+@pytest.mark.parametrize("value", ["", "not-a-uuid"])
+def test_submission_refused_without_a_configured_establishment(
+    filer, establishment, settings, value
+):
+    case = make_paid_case(filer, establishment)
+    settings.SCRUTINY_ESTABLISHMENT_ID = value
 
     response = submit(case, filer)
 
-    assert (response.status_code, error_codes(response)) == (409, {None: ["E09021"]})
+    assert (response.status_code, error_codes(response)) == (503, {None: ["E09019"]})
     case.refresh_from_db()
     assert case.status == CaseStatus.PENDING_PAYMENT
     assert not ScrutinyRound.objects.filter(case=case).exists()
 
 
-def test_service_refuses_and_rolls_back_without_an_establishment(filer):
-    case = make_paid_case(filer, None)
+def test_service_refuses_and_rolls_back_without_an_establishment(filer, establishment, settings):
+    case = make_paid_case(filer, establishment)
+    settings.SCRUTINY_ESTABLISHMENT_ID = ""
 
     with pytest.raises(BusinessError) as excinfo:
         filing.submit_for_scrutiny(case.pk, filer)
 
-    assert code(excinfo) == "E09021"
+    assert code(excinfo) == "E09019"
     case.refresh_from_db()
     assert case.status == CaseStatus.PENDING_PAYMENT
 
 
 def test_a_case_back_in_scrutiny_keeps_its_establishment(
-    case, officer, establishment, other_establishment
+    case, officer, establishment, other_establishment, settings
 ):
     draft_field(case, officer, "CHQ-3[0]")
     rounds.send_back(case.pk, officer)
-    case.court = other_establishment
-    case.save()
+    settings.SCRUTINY_ESTABLISHMENT_ID = str(other_establishment.pk)
 
     enter(case, CaseStatus.UNDER_SCRUTINY)
 
@@ -136,7 +158,7 @@ def test_courtroom_is_chosen_among_the_establishments_own(case, officer, other_e
 def test_an_establishment_without_courtrooms_cannot_forward(filer, establishment):
     bare = make_establishment("BARE", "No courtrooms yet")
     officer = make_user(SCRUTINY_OFFICER, at=bare)
-    case = make_case(filer, bare)
+    case = place_at(make_case(filer, bare), bare)
     with pytest.raises(BusinessError) as excinfo:
         rounds.forward(case.pk, officer)
     assert code(excinfo) == "E09017"
@@ -343,3 +365,48 @@ def test_access_removed_mid_way_is_refused_at_once(case, officer, establishment)
     with pytest.raises(BusinessError) as excinfo:
         draft_field(case, officer, "CHQ-3[0]")
     assert code(excinfo) == "E09008"
+
+
+# System checks (#2.2): the configured establishment is checked at startup
+
+
+def test_check_warns_when_unset(settings):
+    settings.SCRUTINY_ESTABLISHMENT_ID = ""
+    assert [message.id for message in check_establishment_setting(None)] == ["scrutiny.W001"]
+
+
+def test_check_refuses_a_malformed_value(settings):
+    settings.SCRUTINY_ESTABLISHMENT_ID = "court-a"
+    assert [message.id for message in check_establishment_setting(None)] == ["scrutiny.E001"]
+
+
+def test_check_accepts_the_establishment(establishment):
+    assert check_establishment_setting(None) == []
+    assert check_establishment_exists(None, databases=["default"]) == []
+
+
+@pytest.mark.parametrize("configured", ["inactive", "unknown", "courtroom", "not a court"])
+def test_check_refuses_what_is_not_an_active_establishment(establishment, settings, configured):
+    if configured == "inactive":
+        Organization.objects.filter(pk=establishment.pk).update(is_active=False)
+    else:
+        settings.SCRUTINY_ESTABLISHMENT_ID = str(
+            {
+                "unknown": "00000000-0000-0000-0000-000000000000",
+                "courtroom": establishment.children.get().pk,
+                "not a court": Organization.objects.create(
+                    code="DC",
+                    name="District court",
+                    organization_type=OrganizationType.DISTRICT_COURT,
+                ).pk,
+            }[configured]
+        )
+    assert [m.id for m in check_establishment_exists(None, databases=["default"])] == [
+        "scrutiny.E002"
+    ]
+
+
+def test_database_check_runs_only_with_a_database(establishment):
+    Organization.objects.filter(pk=establishment.pk).update(is_active=False)
+    assert check_establishment_exists(None) == []
+    assert "scrutiny.E002" not in {message.id for message in run_checks()}

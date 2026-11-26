@@ -369,13 +369,13 @@ belongs to that establishment and has **no courtroom**. Its *Scrutinise case*
 task goes to the establishment's `SCRUTINY_OFFICER` holders, due `+0`,
 visible to Only Users (`SCR-09`).
 
-The establishment is the one of the `court_id` the filer gave the draft
-(spec 0029 #10.1): that court if it is an establishment, or a courtroom's
-establishment. A courtroom the filer named is not kept: the Scrutiny officer
-chooses it. Where the case names no court, or one that is neither, the
-submission is refused (`409 E09021`) and the case stays in `PENDING_PAYMENT`,
-rather than entering scrutiny with no round that anyone can see. A case
-returning to a stage keeps the establishment of its previous round.
+The establishment is the one `SCRUTINY_ESTABLISHMENT_ID` names, never the
+`court_id` the filer gave the draft: that may be missing, a courtroom or another
+court, and is ignored until the courtroom is chosen. Where no establishment is
+configured, the submission is refused (`503 E09019`) and the case stays in
+`PENDING_PAYMENT`, rather than entering scrutiny with no round that anyone can
+see. A case returning to a stage keeps the establishment of its previous round.
+Who may act there is decided by court roles (spec 0029 #10.1).
 
 The Scrutiny officer chooses the courtroom, from the establishment's
 courtrooms, as part of **Forward for registration** or **Register at Scrutiny**
@@ -993,9 +993,8 @@ Domain prefix `09` in `apps.api.errors.DOMAINS`, recorded in
 | `E09016` | `OATH_NOT_REQUIRED` | 400 | flagging an oath where the state requires none (`OTH-2`) |
 | `E09017` | `COURTROOM_REQUIRED` | 400 | Forward or Register without a courtroom, or with one not in the establishment (`SCR-16`); `field = courtroom_id` |
 | `E09018` | `REGISTRATION_TYPE_REQUIRED` | 400 | Forward or Register without a registration type where the state has several, or with an unknown one (`SCR-13`); `field = registration_type` |
-| `E09019` | `SCRUTINY_NOT_CONFIGURED` | 503 | no longer raised (spec 0029 #10.1); kept so the code is never reused |
+| `E09019` | `SCRUTINY_NOT_CONFIGURED` | 503 | a case enters scrutiny or registration with no establishment configured (#2.5); the submission is rolled back |
 | `E09020` | `CASE_NUMBER_TAKEN` | 409 | Register or Register at Scrutiny: the number the series gave was taken by a write outside numbering at the same moment; the decision is rolled back and can be retried |
-| `E09021` | `NO_ESTABLISHMENT` | 409 | a case enters scrutiny whose `court_id` is missing or is neither a court establishment nor one of its courtrooms (#2.5); the submission is rolled back |
 
 Workflow errors (`E08xxx`) from [`0011`](0011-case-workflows.md) pass through
 unchanged — a stale version is `412 E08005`.

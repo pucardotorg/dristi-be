@@ -89,7 +89,7 @@ establishment a filed case or a registration belongs to stays with product
 * Answer every access question through selectors — `can`, `actions_of`, `action_holders`, `establishments_of`, `courtrooms_of`, `staff_of_courtroom`, `courtrooms`, `establishment_of`, `is_court_reader`.
 * Manage roles and assignments in Django admin only (`REG-38`), and tell other modules when access changes.
 * Give the frontend the caller's courts and actions in one call, for the courtroom choice (`REG-36`) and for deciding first actions (`RLE-07`).
-* Move scrutiny and registration approval off Django groups, and remove the scrutiny stop-gap.
+* Move scrutiny and registration approval off Django groups. Scrutiny keeps routing every case to `SCRUTINY_ESTABLISHMENT_ID`, the deployment's one establishment (`RLE-00`).
 
 ## Non-goals
 
@@ -680,7 +680,7 @@ module, which owns the codes and channel settings; this module provides
 
 ### 10. Consumers and migration path
 
-#### 10.1 `apps.scrutiny` (replaces the stop-gap)
+#### 10.1 `apps.scrutiny` (court roles replace the groups)
 
 On `main` (PR #179), every role call goes through `apps/scrutiny/ports.py`
 and `permissions.py`, and the lists are scoped to one establishment through
@@ -693,12 +693,12 @@ and `permissions.py`, and the lists are scoped to one establishment through
 | `require_role(actor, round_, CourtRole.X)` in `services/rounds.py`, `services/flags.py`            | `access.require(actor, actions.<ACTION>, round_.establishment_id, error=errors.ROLE_REQUIRED)`, one action per check                |
 | `selectors.allowed_actions(round_, roles)` — stage × roles, with SCR-11 inline                       | stage × `actions_of`: each is offered when the caller is allowed it at the round's establishment; SCR-11 as in #7                  |
 | `ports.courtrooms(establishment_id)` — falls back to the establishment itself                         | `selectors.courtrooms(establishment_id)`; the fallback goes                                                                         |
-| `ports.configured_establishment()`                                                                     | removed, with `apps/scrutiny/system_checks.py` (`scrutiny.W001`, `E001`, `E002`); `E09019` (`SCRUTINY_NOT_CONFIGURED`) is no longer raised and stays defined, never reused. The setting and its env, CI and README entries stay until hearings stop reading it (`apps/hearings/ports.py`) |
-| `ports.establishment_id(case)` — the configured establishment                                         | the establishment of `case.court_id` (`selectors.active_establishment_of`); a case with none is refused `409 E09021` (`NO_ESTABLISHMENT`) and rolled back, as `E09019` was. Until P-2, a draft started without a court is filed at `SCRUTINY_ESTABLISHMENT_ID`, and filing refuses a court it cannot route by at draft start and in the completeness check (spec 0021 §1, §6.3), so the filer is not stopped after signing and paying |
+| `ports.configured_establishment()`                                                                     | kept, with `apps/scrutiny/system_checks.py` (`scrutiny.W001`, `E001`; `E002` now also refuses a value that is not an active court establishment, since its courtrooms come from #2). Every case still goes to the deployment's one establishment (`RLE-00`, 0024 §2.5); only who may act there changes |
+| `ports.establishment_id(case)` — the configured establishment                                         | unchanged; a case is refused `503 E09019` and rolled back when none is configured. The filer names no court (`efiling.md`; `scrutiny-registration.md` §4), so `case.court_id` cannot route; placing a case at one of several establishments is P-2 and #10.3 |
 | `ports.set_court(case, courtroom_id)`                                                                  | unchanged here; it changes with #10.3                                                                                                 |
 
 Until #10.3, a case's establishment for scrutiny is the round's
-`ScrutinyRound.establishment_id`, copied from `case.court_id` when the first
+`ScrutinyRound.establishment_id`, the configured establishment when the first
 round opens.
 
 **Steps that are not actions (#3.3)**
@@ -816,7 +816,7 @@ Product (from the court-roles issue):
 | #   | Question                                                                                                                                                                                                                             | Refs                     |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
 | P-1 | Environments host several establishments. Is that one state with several establishments, or several states? Per-state configuration (registration types, number series, `clerkApproval`, oath, the seeded roles) depends on it.    | `RLE-00`               |
-| P-2 | How is a filed case placed at an establishment: chosen by the filer, derived from jurisdiction, or routed by the court?                                                                                                              | `SCR-16`, `JUR-*`    |
+| P-2 | When a deployment has several establishments, how is a filed case placed at one: chosen by the filer, derived from jurisdiction, or routed by the court? In this version every case goes to the one establishment (`RLE-00`, scrutiny §4).                                                                                                              | `SCR-16`, `JUR-*`    |
 | P-3 | Which establishment approves an advocate's or clerk's registration, when the advocate practises at several?                                                                                                                          | `REG-23a`, `REG-23b` |
 | P-4 | Someone allowed actions at several establishments: do lists show all of them together, or one chosen establishment at a time?                                                                                                        | `RLE-02c`, `REG-36`  |
 | P-5 | After a case gets a courtroom, do those allowed the establishment's actions keep reading it, or only the courtroom's staff?                                                                                                          | `RLE-06`               |
@@ -847,10 +847,10 @@ This spec:
 - The 0025 seeder registry — an `organizations.CourtRole` seeder, once 0025 is built (until then, roles are entered in admin)
 - Scrutiny (#10.1):
   - `src/apps/scrutiny/court_actions.py` (new), `ports.py`, `enums.py`, `permissions.py`, `selectors.py`, `services/rounds.py`, `services/flags.py`, `views.py`
-  - `src/apps/scrutiny/system_checks.py` (removed) and `apps.py`
+  - `src/apps/scrutiny/system_checks.py` (`E002` checks for an active establishment)
   - `src/apps/scrutiny/tests/conftest.py`, `factories.py`, `test_establishment.py`, `test_selectors.py`
 - `src/apps/dristi_requests/court_actions.py` (new), `models.py`, `services.py`, and a data migration for the approval steps (#10.2, #11 step 5)
-- `src/config/settings/base.py`, `src/config/settings/test.py`, `.env.example`, `.env.prod.example`, `.env.ci`, `.github/workflows/ci.yml`, `README.md`, the comment in `src/apps/scrutiny/errors.py`, and `spec/0024-scrutiny.md` (removing `SCRUTINY_ESTABLISHMENT_ID`)
+- `src/config/settings/base.py`, `src/config/settings/test.py`, `.env.example`, `.env.prod.example`, `.env.ci`, `.github/workflows/ci.yml`, `README.md`, and `spec/0024-scrutiny.md` (`SCRUTINY_ESTABLISHMENT_ID` now only routes cases; court roles decide who acts)
 - `spec/0008-organization.md` (out-of-scope note points here)
 
 ## Related specs

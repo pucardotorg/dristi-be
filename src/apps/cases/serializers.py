@@ -11,7 +11,6 @@ from rest_framework.utils import html
 from apps.address.models import EMPTY_ADDRESS_MESSAGE, Address
 from apps.api import errors as api_errors
 from apps.files import documents
-from apps.organizations import selectors as court_selectors
 from apps.organizations.models import Organization
 from apps.parties.models import (
     MAX_AGE,
@@ -153,20 +152,9 @@ class DraftSessionSerializer(BlankAsNotGivenMixin, serializers.Serializer):
     created_at = serializers.DateTimeField(read_only=True)
 
     def validate_court_id(self, court_id):
-        """Accept only an active court establishment, or an active courtroom of one.
-
-        The court cannot be changed once the draft is started, and scrutiny
-        routes the case by it (spec 0029 #10.1), so a court the case could not
-        be filed in is refused here, where the filer can still choose another.
-        """
-        if court_id is None:
-            return court_id
-        if not Organization.objects.active().filter(pk=court_id).exists():
+        """Accept only an existing, active organization."""
+        if court_id is not None and not Organization.objects.active().filter(pk=court_id).exists():
             raise api_errors.DOES_NOT_EXIST.validation_error("No active court with this id.")
-        if court_selectors.active_establishment_of(court_id) is None:
-            raise api_errors.INVALID_CHOICE.validation_error(
-                "Choose a court establishment or one of its courtrooms."
-            )
         return court_id
 
 

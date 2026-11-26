@@ -15,7 +15,6 @@ import logging
 import uuid
 from contextlib import contextmanager
 
-from django.conf import settings
 from django.core.cache import cache, caches
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -32,7 +31,6 @@ from rest_framework.settings import api_settings
 from apps.api import errors as api_errors
 from apps.api.errors import BusinessError
 from apps.files import documents
-from apps.organizations import selectors as court_selectors
 
 from .. import errors
 from ..models import (
@@ -133,32 +131,11 @@ def unlink(rows, field, user):
 # Draft sessions and case resolution
 
 
-def default_court_id():
-    """Return the configured establishment's id if it is an active establishment, else None.
-
-    Temporary, until open question P-2 of spec 0029 decides how a case is
-    placed at an establishment: the filing UI does not choose a court, and
-    scrutiny routes a case by its court (spec 0029 #10.1), so a draft started
-    without one is filed at ``SCRUTINY_ESTABLISHMENT_ID``, where every case went
-    before.
-    """
-    try:
-        configured = uuid.UUID(str(settings.SCRUTINY_ESTABLISHMENT_ID))
-    except ValueError:
-        return None
-    establishment = court_selectors.active_establishment_of(configured)
-    if establishment is None or establishment.pk != configured:
-        return None
-    return configured
-
-
 def start_draft(user, case_type, court_id=None):
     """Cache a new draft session for ``user`` and return it. Nothing is written to the DB.
 
-    ``court_id`` is applied to the case when the first save creates it. Without
-    one, the configured establishment is used (``default_court_id``), if any.
+    ``court_id``, when given, is applied to the case when the first save creates it.
     """
-    court_id = court_id or default_court_id()
     draft = {
         "draft_session_id": str(uuid.uuid4()),
         "case_type": case_type,

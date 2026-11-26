@@ -22,7 +22,6 @@ from apps.cases.models import (
 from apps.cases.services import case_types
 from apps.cases.services.case_types import DocumentType
 from apps.files.models import File
-from apps.organizations.enums import CourtLevel
 from apps.organizations.models import OrganizationType
 from apps.organizations.tests.factories import make_organization
 from apps.parties.models import Person
@@ -138,7 +137,7 @@ class TestDraftsAndListing:
         assert error_codes(response) == {"case_type": ["E00005"]}
 
     def test_court_given_on_the_draft_is_set_on_the_case(self, client):
-        court = make_establishment()
+        court = make_organization(organization_type=OrganizationType.MAGISTRATE_COURT)
         response = client.post(
             reverse("case-list"),
             {"case_type": "CHEQUE_BOUNCE", "court_id": str(court.pk)},
@@ -174,115 +173,6 @@ class TestDraftsAndListing:
 
         assert response.status_code == 400
         assert error_codes(response) == {"court_id": [code]}
-
-    def test_draft_without_a_court_is_filed_at_the_configured_establishment(self, client, settings):
-        establishment = make_establishment()
-        settings.SCRUTINY_ESTABLISHMENT_ID = str(establishment.pk)
-
-        response = client.post(reverse("case-list"), {"case_type": "CHEQUE_BOUNCE"}, format="json")
-
-        assert response.status_code == 201
-        assert response.json()["court_id"] == str(establishment.pk)
-        draft = response.json()["draft_session_id"]
-        add_cheque(client, draft)
-        assert Case.objects.get(pk=draft).court == establishment
-
-    def test_a_court_given_wins_over_the_configured_establishment(self, client, settings):
-        settings.SCRUTINY_ESTABLISHMENT_ID = str(make_establishment().pk)
-        chosen = make_establishment(code="EST_2")
-
-        response = client.post(
-            reverse("case-list"),
-            {"case_type": "CHEQUE_BOUNCE", "court_id": str(chosen.pk)},
-            format="json",
-        )
-
-        assert response.json()["court_id"] == str(chosen.pk)
-
-    @pytest.mark.parametrize(
-        "configured",
-        [
-            lambda: "",
-            lambda: "not-a-uuid",
-            lambda: str(uuid.uuid4()),
-            # A courtroom is not an establishment, though it routes to one.
-            lambda: str(
-                make_organization(
-                    code="CR_1",
-                    organization_type=OrganizationType.MAGISTRATE_COURT,
-                    court_level=CourtLevel.COURTROOM,
-                    parent=make_establishment(),
-                ).pk
-            ),
-            lambda: str(
-                make_organization(
-                    code="EST_OFF",
-                    organization_type=OrganizationType.MAGISTRATE_COURT,
-                    court_level=CourtLevel.ESTABLISHMENT,
-                    is_active=False,
-                ).pk
-            ),
-        ],
-        ids=["unset", "malformed", "unknown", "courtroom", "inactive"],
-    )
-    def test_no_court_is_filled_in_when_the_setting_is_not_an_active_establishment(
-        self, client, settings, configured
-    ):
-        settings.SCRUTINY_ESTABLISHMENT_ID = configured()
-
-        response = client.post(reverse("case-list"), {"case_type": "CHEQUE_BOUNCE"}, format="json")
-
-        assert response.status_code == 201
-        assert response.json()["court_id"] is None
-
-    def test_courtroom_of_an_establishment_is_accepted(self, client):
-        courtroom = make_organization(
-            code="CR_1",
-            organization_type=OrganizationType.MAGISTRATE_COURT,
-            court_level=CourtLevel.COURTROOM,
-            parent=make_establishment(),
-        )
-
-        response = client.post(
-            reverse("case-list"),
-            {"case_type": "CHEQUE_BOUNCE", "court_id": str(courtroom.pk)},
-            format="json",
-        )
-
-        assert response.status_code == 201
-        assert response.json()["court_id"] == str(courtroom.pk)
-
-    @pytest.mark.parametrize(
-        "make_court",
-        [
-            # An organization that is not a court establishment or courtroom.
-            lambda: make_organization(
-                code="DIST_1", organization_type=OrganizationType.MAGISTRATE_COURT
-            ),
-            # A courtroom whose establishment is inactive: nobody could see the case.
-            lambda: make_organization(
-                code="CR_1",
-                organization_type=OrganizationType.MAGISTRATE_COURT,
-                court_level=CourtLevel.COURTROOM,
-                parent=make_organization(
-                    code="EST_1",
-                    organization_type=OrganizationType.MAGISTRATE_COURT,
-                    court_level=CourtLevel.ESTABLISHMENT,
-                    is_active=False,
-                ),
-            ),
-        ],
-        ids=["not-a-court-level", "inactive-establishment"],
-    )
-    def test_court_the_case_cannot_be_filed_in_is_400(self, client, make_court):
-        response = client.post(
-            reverse("case-list"),
-            {"case_type": "CHEQUE_BOUNCE", "court_id": str(make_court().pk)},
-            format="json",
-        )
-
-        assert response.status_code == 400
-        assert error_codes(response) == {"court_id": ["E00005"]}
 
     def test_list_shows_only_the_callers_cases(self, client, user, other_user, draft):
         add_cheque(client, draft)
@@ -396,15 +286,6 @@ class TestDraftsAndListing:
         assert APIClient().get(reverse("case-list")).status_code in (401, 403)
 
 
-def make_establishment(code="EST_1"):
-    """Return a court establishment, where a case entering scrutiny goes (spec 0029 #10.1)."""
-    return make_organization(
-        code=code,
-        organization_type=OrganizationType.MAGISTRATE_COURT,
-        court_level=CourtLevel.ESTABLISHMENT,
-    )
-
-
 class TestByNumber:
     def test_any_user_finds_a_registered_case(self, client_for, user, other_user):
         court = make_organization(organization_type=OrganizationType.MAGISTRATE_COURT)
@@ -428,7 +309,6 @@ class TestByNumber:
             created_by=user,
             case_number="CC/9/2024",
             status=CaseStatus.UNDER_SCRUTINY,
-            court=make_establishment(),
         )
 
         assert client.get(reverse("case-by-number", args=["CC/9/2024"])).status_code == 404
@@ -442,7 +322,6 @@ class TestByNumber:
             created_by=user,
             case_number="CC/10/2024",
             status=case_status,
-            court=make_establishment(),
         )
 
         assert client.get(reverse("case-by-number", args=["CC/10/2024"])).status_code == 404

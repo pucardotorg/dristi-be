@@ -10,9 +10,11 @@ when the real one lands:
   status (``receivers``), not on ``state_entered``.
 * Tasks — none yet: a case is on a list while its round is open, and *start*
   is the claim.
+* Establishment — every case goes to the deployment's one establishment,
+  ``SCRUTINY_ESTABLISHMENT_ID`` (``RLE-00``, #2.5), until ``apps.cases`` places
+  a case at one of several (spec 0029 #10.3).
 * Cases contract — the cheque-bounce field catalogue and date chain below,
-  the case's establishment read from its ``court_id`` until ``apps.cases``
-  places a case at one (spec 0029 #10.3), one registration type and no oath.
+  one registration type and no oath.
 
 Court access is not a stand-in: services check actions with
 ``apps.organizations.access`` (spec 0029 #10.1).
@@ -22,8 +24,10 @@ Court access is not a stand-in: services check actions with
 import calendar
 import datetime
 import re
+import uuid
 from dataclasses import dataclass
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -114,17 +118,22 @@ class RegistrationType:
 REGISTRATION_TYPES = (RegistrationType("CC", "Criminal complaint"),)
 
 
-def establishment_id(case):
-    """Return the id of the establishment a case entering scrutiny goes to, or None.
+def configured_establishment():
+    """Return the id of the establishment this deployment serves, or None if unset or malformed."""
+    try:
+        return uuid.UUID(str(settings.SCRUTINY_ESTABLISHMENT_ID))
+    except ValueError:
+        return None
 
-    The establishment of the case's ``court_id`` (spec 0029 #10.1): that court
-    if it is an establishment, or a courtroom's establishment. None when the
-    case names no court, one that is neither, or an inactive establishment:
-    nobody is allowed anything there, so the case could never be seen. The
-    courtroom is still the Scrutiny officer's choice (``SCR-16``).
+
+def establishment_id(case):
+    """Return the establishment a case entering scrutiny goes to, or None if unconfigured.
+
+    Always the deployment's one establishment (``RLE-00``, #2.5), never the
+    filer's ``court_id``: that may be missing, a courtroom or another court,
+    and the courtroom is the Scrutiny officer's choice (``SCR-16``).
     """
-    establishment = court.active_establishment_of(case.court_id)
-    return establishment.pk if establishment is not None else None
+    return configured_establishment()
 
 
 def courtrooms(establishment_id):

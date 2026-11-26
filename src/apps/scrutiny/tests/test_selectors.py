@@ -38,6 +38,7 @@ from .factories import (
     make_establishment,
     make_user,
     open_round,
+    place_at,
 )
 
 pytestmark = pytest.mark.django_db
@@ -367,7 +368,7 @@ def test_each_action_is_offered_on_its_own(case):
 
 def test_lists_filter_by_establishment(case, officer, registerer, filer, establishment):
     elsewhere = make_establishment("OTHER", "Other court")
-    other = make_case(filer, elsewhere, filing_number="F/OTH/2026/00001")
+    other = place_at(make_case(filer, elsewhere, filing_number="F/OTH/2026/00001"), elsewhere)
     assert open_round(other).establishment_id == elsewhere.pk
     _, rows = list_rows(officer, establishment_ids=[establishment.pk])
     assert [row["case_id"] for row in rows] == [case.pk]

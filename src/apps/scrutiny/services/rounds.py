@@ -43,11 +43,9 @@ def open_round(case, visit_id=None, routing_reason=""):
     a draft, and the correction scope is closed. Returns None when the case is
     in no stage.
 
-    The first round's establishment is the one of the case's court
-    (``ports.establishment_id``); later rounds keep it. Raises
-    ``NO_ESTABLISHMENT`` when the case names no court establishment, so the
-    transition that moved the case rolls back instead of leaving it in a stage
-    with no round, where nobody can see or act on it.
+    Raises ``SCRUTINY_NOT_CONFIGURED`` when the deployment names no
+    establishment, so the transition that moved the case rolls back instead of
+    leaving it in a stage with no round, where nobody can see or act on it.
     """
     stage = ports.STATUS_STAGE.get(case.status)
     if stage is None:
@@ -60,11 +58,10 @@ def open_round(case, visit_id=None, routing_reason=""):
         establishment_id = previous.establishment_id if previous else ports.establishment_id(case)
         if establishment_id is None:
             logger.error(
-                "event=SCRUTINY_ROUND_NOT_OPENED case=%s court=%s reason=no establishment",
+                "event=SCRUTINY_ROUND_NOT_OPENED case=%s reason=no establishment configured",
                 case.pk,
-                case.court_id,
             )
-            raise BusinessError(errors.NO_ESTABLISHMENT)
+            raise BusinessError(errors.SCRUTINY_NOT_CONFIGURED)
         fields = {}
         if stage == RoundStage.REGISTRATION and previous is not None:
             fields = {

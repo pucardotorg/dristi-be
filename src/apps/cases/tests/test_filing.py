@@ -29,9 +29,6 @@ from apps.cases.services.filing import return_to_signing
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 from apps.files.tests.factories import make_file
-from apps.organizations.enums import CourtLevel
-from apps.organizations.models import OrganizationType
-from apps.organizations.tests.factories import make_organization
 from apps.parties.models import Institution, Person
 from apps.parties.tests.factories import ADDRESS_DEFAULTS
 
@@ -1915,42 +1912,6 @@ class TestSubmitForSigning:
         assert response.status_code == 400
         assert error_codes(response)["participants.accused"] == ["E07005"]
         assert Case.objects.get(pk=draft).status == CaseStatus.DRAFT_IN_PROGRESS
-
-    def test_a_case_with_no_court_is_refused_before_signing(self, client, draft, pdf):
-        # A draft may start without a court (§1), and the filer cannot add one
-        # later, so the case is stopped here instead of at submit-for-scrutiny.
-        make_complete_case(client, draft, pdf)
-        Case.objects.filter(pk=draft).update(court=None)
-
-        response = submit(client, draft, "signing")
-
-        assert response.status_code == 400
-        assert error_codes(response) == {"court_id": ["E07005"]}
-        assert Case.objects.get(pk=draft).status == CaseStatus.DRAFT_IN_PROGRESS
-
-    def test_a_case_whose_establishment_was_deactivated_is_refused(
-        self, client, draft, pdf, establishment
-    ):
-        make_complete_case(client, draft, pdf)
-        establishment.is_active = False
-        establishment.save()
-
-        response = submit(client, draft, "signing")
-
-        assert response.status_code == 400
-        assert error_codes(response) == {"court_id": ["E07005"]}
-
-    def test_a_case_filed_in_a_courtroom_can_be_signed(self, client, draft, pdf, establishment):
-        courtroom = make_organization(
-            code="FILING_CR",
-            organization_type=OrganizationType.MAGISTRATE_COURT,
-            court_level=CourtLevel.COURTROOM,
-            parent=establishment,
-        )
-        make_complete_case(client, draft, pdf)
-        Case.objects.filter(pk=draft).update(court=courtroom)
-
-        assert submit(client, draft, "signing").status_code == 200
 
     def test_a_submitted_case_cannot_be_submitted_again(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)

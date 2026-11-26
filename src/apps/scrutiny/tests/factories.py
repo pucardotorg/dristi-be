@@ -283,6 +283,16 @@ def make_case(filer, establishment, filing_number=None, **cheque):
     return case
 
 
+def place_at(case, establishment):
+    """Move the case's open round to ``establishment``, as if another deployment served it.
+
+    Every case enters scrutiny at the configured establishment (#2.5), so a
+    case at a second establishment is placed there by hand.
+    """
+    ScrutinyRound.objects.filter(case=case, decision="").update(establishment_id=establishment.pk)
+    return case
+
+
 def open_round(case):
     return ScrutinyRound.objects.get(case=case, decision="")
 

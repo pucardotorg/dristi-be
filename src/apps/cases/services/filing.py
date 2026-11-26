@@ -28,7 +28,6 @@ from rest_framework.exceptions import NotFound
 from apps.api.errors import BusinessError
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
-from apps.organizations import selectors as court_selectors
 from apps.parties.models import PAN_CIN_REQUIRED_MESSAGE
 
 from .. import errors
@@ -308,16 +307,6 @@ def validation_errors(case):
 
     def error(field, message):
         problems.append(_error_item(field, message))
-
-    # Scrutiny routes the case by its court (spec 0029 #10.1), and the filer
-    # cannot change it after the draft starts. Refusing here stops the case
-    # before anyone signs or pays, instead of at submit-for-scrutiny (E09021).
-    if court_selectors.active_establishment_of(case.court_id) is None:
-        error(
-            "court_id",
-            "This case is not filed in a court establishment or one of its courtrooms, "
-            "so the court cannot receive it.",
-        )
 
     config = get_config(case.case_type)
     participants = CaseParticipant.objects.active().filter(case=case)
