@@ -1,0 +1,62 @@
+sequenceDiagram
+    autonumber
+    actor D as Order drafter / data filler
+    actor S as Order signer
+    participant FE as Frontend
+    participant OR as Backend (orders)
+    participant AP as Backend (applications)
+    participant ES as eSign (CDAC)
+
+    Note over D,ES: Screen: application pop-up, panel Onboard, Defer review, Dismiss (status PENDING_REVIEW)
+    D->>FE: Onboard, list for a date (pre-filled with suggested_date), respond Yes by the day before
+    FE->>OR: POST /orders/ {case_id, preset: {kind: APPLICATION, application_id}}
+    OR->>AP: handler.defaults(application)
+    AP-->>OR: Application Number, Application Type, onboard Yes, decides No, bring_back_on, respond Yes, respond_by
+    OR-->>FE: 201 order {id, status: DRAFT, items: [APPLICATION_ACTION {id, values}], text_version, data_version}
+    FE->>OR: PATCH /orders/{id}/items/{item_id}/ If-Match d-n<br/>{values: {onboard: true, decides: false, bring_back_on, respond: true, respond_by}}
+    OR->>AP: handler.validate(complete=false)
+    OR-->>FE: 200 item {problems: []}
+    FE->>OR: PATCH /orders/{id}/text/ If-Match t-n {text: the panel's standard words}
+    OR-->>FE: 200 {text_version}
+
+    alt Quick order pop-up: Sign order or Send for signing
+        FE->>OR: POST /orders/{id}/data/complete/
+        OR->>AP: handler.validate(complete=true)
+        OR-->>FE: 200 {data_complete: true}
+        Note right of FE: or 409 E11012 with item problems:<br/>DATE_IN_PAST, RESPOND_BY_INVALID, OUTCOME_NOT_ALLOWED, CIS_OUTCOME_INVALID
+        FE->>OR: POST /orders/{id}/send-for-signing/
+        OR-->>FE: 200 {status: SENT_FOR_SIGNING}
+        Note right of FE: or 409 E11006 when the next hearing is not settled:<br/>no listed hearing on the case means PUT /orders/{id}/next-hearing/ {state: NOT_LISTED_AGAIN} or a date first
+    else Open in order screen
+        FE-->>D: /employee/applications/{id}/order?order={order_id}, the order composer on the server draft
+    end
+    Note over FE,AP: Nothing about the application has changed. Row moves to band signing (pending_order).
+
+    S->>FE: Sign order (quick order, Pending orders or the order screen)
+    FE->>OR: POST /orders/{id}/sign/ {method: AADHAAR_ESIGN}
+    OR-->>FE: 200 {esign_url, form_fields, transaction_id}
+    FE->>ES: Browser form post to esign_url
+    ES-->>FE: Redirect back after Aadhaar OTP
+    FE->>OR: POST /orders/{id}/sign/confirm/ {transaction_id}
+    OR->>OR: Signed and data complete, so trigger (CMP-04), on commit enqueue run_order_workflows
+    OR-->>FE: 200 order {status: TRIGGERED}
+    Note over OR,AP: Dramatiq worker, a moment later
+    OR->>AP: handler.execute(APPLICATION_ACTION, values, run_id)
+
+    alt Onboard Yes, decides No: onboard on a date
+        AP->>AP: Lock, ONBOARD transition, number replaced where the state does it,<br/>PENDING_DECISION, decision_date, objections_invited, respond_by
+        AP->>AP: Complete review_application, open decide_application (due decision_date),<br/>open file_objection for the other side (due respond_by), notify the other side
+    else Onboard Yes, decides Yes: onboard and decide today
+        AP->>AP: ONBOARD then ACCEPT or REJECT, decision_date = order date, on_accept on acceptance
+    else Onboard No, decides No: defer review
+        AP->>AP: DEFER_REVIEW, review_due_date = bring_back_on, review_application re-dated
+    else Onboard No, decides Yes, outcome DISMISSED
+        AP->>AP: DISMISS, outcome DISMISSED, deciding_order_id, review_application completed
+    end
+    AP-->>OR: run DONE, summary e.g. Onboarded as CMP/2/2026, to be decided on 20 Nov, response by 19 Nov
+    loop Until pending_order is null (short backoff, a few tries)
+        FE->>AP: GET /applications/{id}/
+        AP-->>FE: 200 detail
+    end
+    FE->>AP: GET /applications/court-queue/counts/?court= and refetch the open view
+    AP-->>FE: Row now in decide or upcoming, or Closed. Detail orders[] has the new order and summary.

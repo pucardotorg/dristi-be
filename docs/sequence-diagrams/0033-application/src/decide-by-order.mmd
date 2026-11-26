@@ -1,0 +1,53 @@
+sequenceDiagram
+    autonumber
+    actor D as Order drafter / data filler
+    actor S as Order signer
+    participant FE as Frontend
+    participant OR as Backend (orders)
+    participant AP as Backend (applications)
+    participant HR as Backend (hearings)
+
+    Note over D,HR: Screen: application pop-up, panel Accept, Reject, Move date (PENDING_DECISION, task decide due today or earlier)
+    D->>FE: Pick Accept, Reject or Move date
+    FE->>OR: POST /orders/ {case_id, preset: {kind: APPLICATION, application_id}}
+    OR-->>FE: 201 order {id, items: [APPLICATION_ACTION, onboard fixed Yes]}
+
+    alt Accept or Reject
+        FE->>OR: PATCH /orders/{id}/items/{item_id}/<br/>{values: {decides: true, outcome: ACCEPTED or REJECTED, cis_outcome?}}
+        OR-->>FE: 200 item
+        Note right of FE: cis_outcome only where the state lists one (P&H). FE words Allowed, Partly allowed,<br/>Disallowed, Disallowed with cost become cis_outcome, never the status.
+        opt Advance or Postpone accepted: the order must move the hearing
+            FE->>OR: PUT /orders/{id}/next-hearing/ {state: LISTED, date, purpose}
+            OR->>HR: listing.hold(case, date, purpose, moves_hearing_id)
+            OR-->>FE: 200 + Rescheduling of hearing date item (SYSTEM), warnings
+        end
+    else Move date (List for a date when decided today)
+        FE->>OR: PATCH /orders/{id}/items/{item_id}/<br/>{values: {decides: false, bring_back_on, respond, respond_by}}
+        OR-->>FE: 200 item
+    end
+    FE->>OR: PATCH /orders/{id}/text/, POST /data/complete/, POST /send-for-signing/
+    OR-->>FE: 200, or 409 E11012 (HEARING_MOVE_REQUIRED, OUTCOME_NOT_ALLOWED, DATE_IN_PAST)
+
+    S->>FE: Sign order
+    FE->>OR: POST /orders/{id}/sign/ then eSign then POST /orders/{id}/sign/confirm/
+    OR->>OR: Trigger, on commit enqueue run_order_workflows
+    OR-->>FE: 200 order {status: TRIGGERED}
+    Note over OR,HR: Dramatiq worker: HEARING step first (listing.confirm with PARTY_APPLICATION<br/>and the applicant's side when it accepts an Advance or Postpone), then items
+    OR->>HR: listing.confirm(order)
+    OR->>AP: handler.execute(APPLICATION_ACTION, values, run_id)
+
+    alt ACCEPTED
+        AP->>AP: ACCEPT, outcome, deciding_order_id, close decide_application and any file_objection
+        AP->>AP: workflow_status PENDING, on_accept (type workflow: bail bond, litigant edit, witnesses, documents, DCA_DECIDED)
+        AP->>AP: DONE with WORKFLOW_DONE, or FAILED with WORKFLOW_FAILED and run_type_workflow retries
+    else REJECTED
+        AP->>AP: REJECT, on_reject only for Delay Condonation (DCA_DECIDED)
+    else MOVE_DECISION_DATE
+        AP->>AP: decision_date and respond_by moved, decide_application and file_objection re-dated<br/>or a new file_objection opened when the old one closed and respond is Yes
+    else Application already moved by another order, or expired
+        AP-->>OR: Run FAILED, APPLICATION_NOT_IN_STATUS. The order stands, the application is unchanged.
+    end
+    FE->>AP: Poll GET /applications/{id}/ until pending_order is null, then refetch counts and view
+    AP-->>FE: Row in Closed (outcome badge, deciding_order, workflow_summary) or back in upcoming
+
+    Note over D,HR: System, no screen: hearing_ended, hearing_rescheduled, hearing_cancelled or the 00:05 IST sweep<br/>expire a PENDING_REVIEW or PENDING_DECISION Advance or Postpone with no live order on it.<br/>Status EXPIRED, court tasks closed, row in Closed.

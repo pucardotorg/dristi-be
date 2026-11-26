@@ -1,0 +1,45 @@
+sequenceDiagram
+    autonumber
+    actor U as Court staff
+    participant FE as Frontend
+    participant AP as Backend (applications)
+    participant OR as Backend (orders)
+
+    Note over U,OR: Screen: application pop-up over the list (/employee/applications?view={view}&open={id})
+    U->>FE: Open a row (or /employee/applications/{id}, which redirects to ?open=)
+    FE->>AP: GET /applications/{id}/
+    AP-->>FE: 200 detail (same for every reader) + court view
+    Note right of FE: detail: type, status, side, application_number, earlier_application_number,<br/>raised_by, litigant, details, data, documents[], signed_file_id, submitted_at, onboarded_at,<br/>decision_date, objections_invited, respond_by, outcome, deciding_order, orders[], history,<br/>filed_on, previous_order, objection_status, workflow_summary, review_deferred<br/>court view: objection (submitted one, with details and documents), document (structured render),<br/>suggested_date, case {case_number, cause title, courtroom, next_hearing}, task {kind, due_date, overdue},<br/>order_actions, can_draft_order, pending_order, decision_hint
+    FE-->>U: Header (type, stage badge), facts well (Due, Objection, Next hearing, Application no., Filed by), paper, decision panel
+
+    alt Paper: Application
+        FE-->>U: ApplicationFacsimile from detail.document (court, case_number, matter, title, filed_for, parties, entries, details, signatory, dated)
+    else Paper: Objection
+        alt objection_status = FILED
+            FE-->>U: detail.objection rendered as paper (its details and documents)
+        else NOT_CALLED_FOR, DUE (by respond_by) or NONE_RECEIVED
+            FE-->>U: one line saying where it stands (shown once onboarded)
+        end
+    else Paper: Previous order or Order n
+        FE->>OR: GET /orders/{orders[n].id}/
+        OR-->>FE: 200 {number, order_date, rendered_html, signed_file_id}
+        FE-->>U: OrderPaper from rendered_html, summary under the switch
+        Note right of FE: GAP: orders[] carries id, number, title, signed_at, summary but no text
+    else Download signed application or a supporting document
+        U->>FE: Download
+        FE->>AP: GET /applications/{id}/documents/{doc_id}/ [PROPOSED]
+        AP-->>FE: 200 application/pdf
+        Note right of FE: GAP: spec 0033 has no download endpoint for submitted documents<br/>preview?format=pdf is drafting circle and pre-signature only
+    end
+
+    alt pending_order present (an Application action order is live)
+        FE-->>U: Panel: Order awaiting signature, Open order (no second order is started)
+    else status ACCEPTED, REJECTED, DISMISSED or EXPIRED
+        FE-->>U: ClosedRecord: outcome, deciding_order, workflow_summary
+    else PENDING_REVIEW or PENDING_DECISION and can_draft_order
+        FE-->>U: Panel options from order_actions (onboard, defer, dismiss or decide, move_date)
+    else can_draft_order = false
+        FE-->>U: Read only, no panel options
+    end
+
+    Note over U,OR: Other entry: court case view (/employee/cases/{case_id}), Applications tab<br/>GET /cases/{case_id}/applications/?type=&status=&search=&page= then the same GET /applications/{id}/
