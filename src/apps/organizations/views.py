@@ -4,16 +4,22 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.api import errors
 from apps.api.schema import error_responses
 from apps.api.viewsets import APIModelReadOnlyViewSet
 from apps.locations.serializers import LocationSerializer
 
+from . import selectors
 from .models import Organization
-from .serializers import OrganizationFilterSerializer, OrganizationSerializer
+from .serializers import (
+    MyCourtRolesSerializer,
+    OrganizationFilterSerializer,
+    OrganizationSerializer,
+)
 
 CODE_URL_PATH = r"code/(?P<code>[^/.]+)"
 
@@ -157,3 +163,19 @@ class OrganizationViewSet(APIModelReadOnlyViewSet):
     def jurisdictions_by_code(self, request, code=None, *args, **kwargs):
         """List the jurisdiction locations of an organization identified by code."""
         return self._jurisdictions_response(self._get_by_code(code))
+
+
+class MyCourtRolesView(APIView):
+    """GET /court-roles/me/: the caller's courts and what they may do there (spec 0029 #9.2).
+
+    For the courtroom choice after login (REG-36) and for deciding first
+    actions (RLE-07). It never replaces the server-side checks. Any signed-in
+    account may call it; one with no court access gets an empty list.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses=MyCourtRolesSerializer)
+    def get(self, request):
+        """Return the caller's establishments, courtrooms, roles and effective actions."""
+        return Response(selectors.court_access_summary(request.user))

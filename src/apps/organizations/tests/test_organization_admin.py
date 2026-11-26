@@ -70,10 +70,11 @@ class TestOrganizationAdminConfiguration:
             "name",
             "short_name",
             "organization_type",
+            "court_level",
             "parent",
             "is_active",
         )
-        assert admin_instance.list_filter == ("organization_type", "is_active")
+        assert admin_instance.list_filter == ("organization_type", "court_level", "is_active")
         assert admin_instance.search_fields == ("code", "name", "short_name")
         assert admin_instance.readonly_fields == ("id", "created_at", "updated_at")
         assert admin_instance.filter_horizontal == ("jurisdictions",)
