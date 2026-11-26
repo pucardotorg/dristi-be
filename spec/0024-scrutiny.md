@@ -375,6 +375,7 @@ court, and is ignored until the courtroom is chosen. Where no establishment is
 configured, the submission is refused (`503 E09019`) and the case stays in
 `PENDING_PAYMENT`, rather than entering scrutiny with no round that anyone can
 see. A case returning to a stage keeps the establishment of its previous round.
+Who may act there is decided by court roles (spec 0029 #10.1).
 
 The Scrutiny officer chooses the courtroom, from the establishment's
 courtrooms, as part of **Forward for registration** or **Register at Scrutiny**

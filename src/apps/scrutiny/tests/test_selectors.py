@@ -19,10 +19,10 @@ from apps.cases.models import (
     Representation,
 )
 from apps.cases.services.case_types import EvidenceType
-from apps.organizations.models import Organization, OrganizationType
 from apps.parties.models import Person
 from apps.scrutiny import case_selectors, permissions, ports, selectors
-from apps.scrutiny.enums import CourtRole, FlagStatus, FlagTarget, RoundStage, RoutingReason
+from apps.scrutiny import court_actions as actions
+from apps.scrutiny.enums import FlagStatus, FlagTarget, RoundStage, RoutingReason
 from apps.scrutiny.models import ScrutinyFlag, ScrutinyRound
 from apps.scrutiny.services import flags, responses, rounds
 from apps.users.models import AdvocateProfile, ApprovalStatus
@@ -35,15 +35,18 @@ from .factories import (
     draft_field,
     enter,
     make_case,
+    make_establishment,
     make_user,
     open_round,
+    place_at,
 )
 
 pytestmark = pytest.mark.django_db
 
 
 def list_rows(user, **kwargs):
-    kwargs.setdefault("establishment_id", ports.configured_establishment())
+    if "establishment_ids" not in kwargs:
+        kwargs["establishment_ids"] = permissions.require_court_reader(user, actions.SCRUTINY_STAGE)
     found = selectors.scrutiny_list(user, **kwargs)
     return found["counts"], selectors.scrutiny_rows(found["rounds"])
 
@@ -81,7 +84,7 @@ def test_court_reader_needs_a_court_role(case, officer, filer):
     with pytest.raises(NotFound):
         permissions.court_case(case.pk, filer)
     with pytest.raises(BusinessError) as excinfo:
-        permissions.require_court_reader(filer)
+        permissions.require_court_reader(filer, actions.SCRUTINY_STAGE)
     assert code(excinfo) == "E09008"
 
 
@@ -152,7 +155,7 @@ def test_rows_take_a_fixed_number_of_queries(officer, filer, establishment):
         for number in range(count):
             make_case(filer, establishment, filing_number=f"F/Q/{count}/{number}")
         found = selectors.scrutiny_list(
-            officer, establishment_id=establishment.pk, search=f"F/Q/{count}/"
+            officer, establishment_ids=[establishment.pk], search=f"F/Q/{count}/"
         )["rounds"]
         with CaptureQueriesContext(connection) as context:
             rows = selectors.scrutiny_rows(found)
@@ -180,7 +183,7 @@ def test_detail_marks_flagged_fields_and_actions(case, officer, officer_register
     assert [item["id"] for item in detail["flags"]["draft"]] == [flag.pk]
     assert isinstance(detail["alerts"], list)
     assert "oaths" not in detail
-    assert detail["allowed_actions"] == ["start", "flag", "send_back", "forward", "edit_title"]
+    assert detail["allowed_actions"] == ["start", "flag", "send_back", "forward"]
     as_both = selectors.scrutiny_detail(case, round_, officer_registerer)["allowed_actions"]
     assert "register" in as_both and "forward" not in as_both
 
@@ -203,9 +206,9 @@ def test_registration_list_and_detail(officer, registerer, filer, establishment)
     case = make_case(filer, establishment, cheque_date="2026-01-01", presented="2026-05-02")
     rounds.forward(case.pk, officer)
     rows = selectors.registration_rows(
-        selectors.registration_list(registerer, establishment_id=establishment.pk)
+        selectors.registration_list(registerer, establishment_ids=[establishment.pk])
     )
-    assert (rows[0]["case_id"], rows[0]["courtroom"]["name"]) == (case.pk, "Establishment")
+    assert (rows[0]["case_id"], rows[0]["courtroom"]["name"]) == (case.pk, "Main courtroom")
 
     round_ = open_round(case)
     detail = selectors.registration_detail(case, round_, registerer)
@@ -216,7 +219,7 @@ def test_registration_list_and_detail(officer, registerer, filer, establishment)
         "beyond 3 months of the cheque date",
         True,
     )
-    assert detail["allowed_actions"] == ["start", "register", "send_back", "edit_title"]
+    assert detail["allowed_actions"] == ["start", "register", "send_back"]
 
 
 def test_registration_detail_needs_a_forwarded_case(case, officer):
@@ -339,32 +342,45 @@ def test_rows_for_a_registration_send_back_and_a_registration(
 # Edges of the read models
 
 
-def test_actions_need_an_open_round_and_the_stage_role(case, officer, registerer):
+def test_actions_need_an_open_round_and_the_stage_actions(case, officer, registerer):
+    scrutiny = {action.code for action in actions.SCRUTINY_STAGE}
+    registration_codes = {action.code for action in actions.REGISTRATION_STAGE}
     round_ = open_round(case)
-    assert selectors.allowed_actions(round_, {CourtRole.CASE_REGISTERER}) == []
+    assert selectors.allowed_actions(round_, registration_codes) == []
     rounds.forward(case.pk, officer)
     round_.refresh_from_db()
-    assert selectors.allowed_actions(round_, {CourtRole.SCRUTINY_OFFICER}) == []
+    assert selectors.allowed_actions(round_, scrutiny) == []
     registration = open_round(case)
-    assert selectors.allowed_actions(registration, {CourtRole.SCRUTINY_OFFICER}) == []
+    assert selectors.allowed_actions(registration, scrutiny) == []
+
+
+def test_each_action_is_offered_on_its_own(case):
+    round_ = open_round(case)
+    assert selectors.allowed_actions(round_, {actions.SEND_BACK.code}) == ["start", "send_back"]
+    # Forward needs the courtroom choice that goes with it.
+    assert selectors.allowed_actions(round_, {actions.FORWARD.code}) == ["start"]
+    assert selectors.allowed_actions(
+        round_, {actions.FLAG.code, actions.FORWARD.code, actions.CHOOSE_COURTROOM.code}
+    ) == ["start", "flag", "forward"]
+    # Registering alone is not a scrutiny duty.
+    assert selectors.allowed_actions(round_, {actions.REGISTER.code}) == []
 
 
 def test_lists_filter_by_establishment(case, officer, registerer, filer, establishment):
-    elsewhere = Organization.objects.create(
-        code="OTHER", name="Other court", organization_type=OrganizationType.MAGISTRATE_COURT
-    )
-    other = make_case(filer, elsewhere, filing_number="F/OTH/2026/00001")
-    # Submission routes to the configured establishment; this round belongs to another court.
-    ScrutinyRound.objects.filter(case=other).update(establishment_id=elsewhere.pk)
-    _, rows = list_rows(officer, establishment_id=establishment.pk)
+    elsewhere = make_establishment("OTHER", "Other court")
+    other = place_at(make_case(filer, elsewhere, filing_number="F/OTH/2026/00001"), elsewhere)
+    assert open_round(other).establishment_id == elsewhere.pk
+    _, rows = list_rows(officer, establishment_ids=[establishment.pk])
     assert [row["case_id"] for row in rows] == [case.pk]
+    _, rows = list_rows(officer, establishment_ids=[establishment.pk, elsewhere.pk])
+    assert {row["case_id"] for row in rows} == {case.pk, other.pk}
 
     rounds.forward(case.pk, officer)
     found = selectors.registration_list(
-        registerer, establishment_id=establishment.pk, search="00001"
+        registerer, establishment_ids=[establishment.pk], search="00001"
     )
     assert [round_.case_id for round_ in found] == [case.pk]
-    assert not selectors.registration_list(registerer, establishment_id=elsewhere.pk)
+    assert not selectors.registration_list(registerer, establishment_ids=[elsewhere.pk])
 
 
 def test_rescrutiny_after_a_registration_send_back_has_no_reason(case, officer, registerer, filer):
@@ -384,7 +400,7 @@ def test_detail_lists_oaths_where_the_state_requires_them(case, officer, monkeyp
     assert selectors.scrutiny_detail(case, open_round(case), officer)["oaths"] == [oath]
 
 
-def test_list_names_parties_title_and_advocate(case, officer):
+def test_list_names_parties_and_advocate(case):
     CaseParticipant.objects.filter(case=case).delete()
     first = add_party(case, ParticipantRole.COMPLAINANT, "Prateek", 1)
     add_party(case, ParticipantRole.COMPLAINANT, "Asha", 2)
@@ -400,9 +416,6 @@ def test_list_names_parties_title_and_advocate(case, officer):
         "Prateek and others v. Deepak",
         "Adv. Meera Nair",
     )
-    rounds.set_title(case.pk, officer, complainant="Prateek Agrawal", accused="")
-    summary = case_selectors.get_case_summaries([case.pk])[case.pk]
-    assert summary["parties"] == "Prateek Agrawal v. Deepak"
 
 
 def test_history_names_the_routing_reason(case):
@@ -433,7 +446,7 @@ def test_history_through_registration(case, officer, registerer, filer, establis
     returned = next(e for e in entries if e["kind"] == "SENT_BACK_AT_REGISTRATION")
     assert returned["comment"] == "Re-check the affidavit."
     assert [e["text"] for e in entries if e["kind"] in ("FORWARDED", "REGISTERED")] == [
-        "Forwarded · Establishment",
+        "Forwarded · Main courtroom",
         "Forwarded · Courtroom 1",
         f"Registered · CC/1/{timezone.now().year}",
     ]
@@ -458,8 +471,10 @@ def test_corrections_show_only_items_sent_to_the_filer(case, officer):
     assert [item["target_ref"] for item in selectors.corrections(case)["flags"]] == ["JUR-10"]
 
 
-def test_anonymous_holds_no_court_role(case):
-    assert permissions.court_roles(AnonymousUser(), None) == frozenset()
+def test_anonymous_holds_no_court_action(case, establishment):
+    assert permissions.actions_held(AnonymousUser(), establishment.pk) == frozenset()
+    with pytest.raises(NotFound):
+        permissions.court_case(case.pk, AnonymousUser())
 
 
 def test_unknown_case_is_not_found_for_the_filing_side(filer):

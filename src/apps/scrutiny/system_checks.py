@@ -1,8 +1,8 @@
-"""Startup validation of ``SCRUTINY_ESTABLISHMENT_ID`` (spec 0024 #2.2).
+"""Startup validation of ``SCRUTINY_ESTABLISHMENT_ID`` (spec 0024 #2.2, #2.5).
 
-Court roles count only at that establishment (``ports.roles_held``), so a
-missing or wrong value closes scrutiny rather than opening it to every court.
-These checks say so at startup instead of leaving every court user with 404s.
+Every case entering scrutiny goes to that establishment (``ports.establishment_id``),
+so a missing or wrong value refuses every submission for scrutiny. These checks
+say so at startup instead of leaving filers to find out after paying.
 """
 
 import uuid
@@ -23,8 +23,8 @@ def check_establishment_setting(app_configs, **kwargs):
     if not value:
         return [
             Warning(
-                "SCRUTINY_ESTABLISHMENT_ID is not set: nobody holds a court role, so every "
-                "scrutiny and registration endpoint is closed.",
+                "SCRUTINY_ESTABLISHMENT_ID is not set: every case submitted for scrutiny is "
+                "refused (E09019).",
                 hint=HINT,
                 id="scrutiny.W001",
             )
@@ -44,10 +44,14 @@ def check_establishment_setting(app_configs, **kwargs):
 
 @register(Tags.database)
 def check_establishment_exists(app_configs, databases=None, **kwargs):
-    """Refuse an establishment that is not an active organization (run with ``check --database``)."""
+    """Refuse a value that is not an active court establishment (run with ``check --database``).
+
+    Its courtrooms are the ones the Scrutiny officer chooses from (``SCR-16``),
+    and its roles are the ones that act on the case (spec 0029 #10.1).
+    """
     if not databases or not settings.SCRUTINY_ESTABLISHMENT_ID:
         return []
-    from apps.organizations.models import Organization
+    from apps.organizations import selectors as court
 
     from .ports import configured_establishment
 
@@ -55,15 +59,15 @@ def check_establishment_exists(app_configs, databases=None, **kwargs):
     if establishment_id is None:
         return []
     try:
-        found = Organization.objects.active().filter(pk=establishment_id).exists()
+        establishment = court.active_establishment_of(establishment_id)
     except DatabaseError:
         # Not migrated yet: ``migrate`` runs database checks before it creates the tables.
         return []
-    if found:
+    if establishment is not None and establishment.pk == establishment_id:
         return []
     return [
         Error(
-            f"SCRUTINY_ESTABLISHMENT_ID {establishment_id} is not an active organization.",
+            f"SCRUTINY_ESTABLISHMENT_ID {establishment_id} is not an active court establishment.",
             hint=HINT,
             id="scrutiny.E002",
         )

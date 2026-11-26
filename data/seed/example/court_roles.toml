@@ -1,0 +1,17 @@
+# Example court roles for scrutiny and registration (spec 0029 #4, #10.1).
+#
+# Deployment-wide roles (no establishment); their actions are in
+# court_role_actions.toml. Give them to staff in admin (Organizations > Role
+# assignments) at an establishment such as ERN_NI_COURT, or at one of its
+# courtrooms. Seeding is insert-only: edit roles in admin afterwards.
+
+[seed]
+model = "organizations.CourtRole"
+
+[[rows]]
+code = "SCRUTINY_OFFICER"
+name = "Scrutiny officer"
+
+[[rows]]
+code = "CASE_REGISTERER"
+name = "Case registerer"

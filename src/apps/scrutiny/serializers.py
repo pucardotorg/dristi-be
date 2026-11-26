@@ -100,13 +100,6 @@ class RegistrationSendBackSerializer(serializers.Serializer):
         return attrs
 
 
-class TitleSerializer(serializers.Serializer):
-    """PATCH /scrutiny/{case_id}/title/: the parties' display names (#4.6)."""
-
-    complainant = serializers.CharField(max_length=256)
-    accused = serializers.CharField(max_length=256)
-
-
 class ExplainSerializer(serializers.Serializer):
     """POST /cases/{case_id}/corrections/{flag_id}/explain/ (#5.2)."""
 
@@ -465,7 +458,3 @@ class ResubmittedSerializer(serializers.Serializer):
 
     case_status = serializers.ChoiceField(choices=CaseStatus.choices)
     workflow_version = serializers.IntegerField()
-
-
-class TitleResultSerializer(TitleSerializer):
-    """The names now shown."""

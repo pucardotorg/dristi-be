@@ -80,8 +80,15 @@ def _courtrooms_with_bad_parent():
 
 
 def _invalid_assignments():
+    from django.db.models import Q
+
     from .enums import CourtLevel
-    from .models import CourtroomAssignment, RoleAssignment, assignment_problems
+    from .models import (
+        CourtroomAssignment,
+        RoleAssignment,
+        assignment_problems,
+        citizen_problem,
+    )
 
     warnings = []
     for assignment in (
@@ -89,7 +96,7 @@ def _invalid_assignments():
         .select_related("organization", "role", "user")
         .order_by("created_at")
     ):
-        problems = assignment_problems(assignment.user_id, assignment.organization, assignment.role)
+        problems = assignment_problems(assignment.user, assignment.organization, assignment.role)
         if problems:
             warnings.append(
                 Warning(
@@ -101,12 +108,16 @@ def _invalid_assignments():
             )
     for assignment in (
         CourtroomAssignment.objects.filter(is_active=True, user__is_active=True)
-        .exclude(courtroom__court_level=CourtLevel.COURTROOM)
+        .filter(~Q(courtroom__court_level=CourtLevel.COURTROOM) | Q(user__role__isnull=False))
         .select_related("courtroom", "user")
+        .order_by("created_at")
     ):
+        problem = citizen_problem(assignment.user).get("user") or (
+            f"{assignment.courtroom.code} is not a courtroom."
+        )
         warnings.append(
             Warning(
-                f"Courtroom assignment {assignment}: {assignment.courtroom.code} is not a courtroom.",
+                f"Courtroom assignment {assignment}: {problem}",
                 hint="Fix or deactivate it in admin.",
                 obj=assignment,
                 id="organizations.W002",

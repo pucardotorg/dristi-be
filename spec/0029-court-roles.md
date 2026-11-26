@@ -89,7 +89,7 @@ establishment a filed case or a registration belongs to stays with product
 * Answer every access question through selectors — `can`, `actions_of`, `action_holders`, `establishments_of`, `courtrooms_of`, `staff_of_courtroom`, `courtrooms`, `establishment_of`, `is_court_reader`.
 * Manage roles and assignments in Django admin only (`REG-38`), and tell other modules when access changes.
 * Give the frontend the caller's courts and actions in one call, for the courtroom choice (`REG-36`) and for deciding first actions (`RLE-07`).
-* Move scrutiny and registration approval off Django groups, and remove the scrutiny stop-gap.
+* Move scrutiny and registration approval off Django groups. Scrutiny keeps routing every case to `SCRUTINY_ESTABLISHMENT_ID`, the deployment's one establishment (`RLE-00`).
 
 ## Non-goals
 
@@ -154,6 +154,7 @@ Validation, in `Organization.clean()`:
 * A `COURTROOM` has a parent, and the parent is an `ESTABLISHMENT`.
 * An `ESTABLISHMENT` has no `ESTABLISHMENT` or `COURTROOM` above it.
 * `court_level` cannot change while the organization has active assignments.
+* An `ESTABLISHMENT`'s `court_level` cannot change while it has courtrooms, active or not: an inactive courtroom may still have staff, and would be left under a non-establishment. Move them or clear their level first.
 
 An establishment should have at least one active courtroom (`RLE-00`). This
 is a system check (#9.3), not a model constraint: an establishment is created
@@ -201,6 +202,7 @@ never by a string literal, so a typo fails at import.
 
 * No code checks a role, a role's code or a role's name (`RLE-08`). A static test enforces it (#12).
 * `User.role` stays the citizen user type (spec 0005).
+* A citizen account (`User.role` set: litigant, POA holder, advocate or clerk) holds no courtroom and no court role. `User.role` is the only marker: nothing marks an employee, and an account that has not finished registration has no role yet, so it is not caught. An account that registers as a citizen after being given court access is reported by `W002` (#9.3).
 * Django groups, `is_staff` and `is_superuser` allow no court action. `is_staff` keeps its Django meaning: admin access.
 * The database stores action codes as plain strings (no `choices`), validated against the registry, so adding an action needs no migration.
 
@@ -411,6 +413,7 @@ are deactivated, never deleted.
 | `courtroom` | `ForeignKey(Organization, PROTECT, related_name="staff_assignments")` | `court_level = COURTROOM` |
 
 * One active row per `(user, courtroom)`: `UniqueConstraint(fields=["user", "courtroom"], condition=Q(is_active=True))`.
+* An active row needs an active courtroom and a user that is not a citizen account (#3.2), in `clean()` and in `assign_courtroom`.
 * It makes the user staff of the courtroom: they read its cases (`RLE-06`) and may choose it after login (`REG-36`). It grants no action.
 
 It is its own model because the PRD separates the two: a person may be on a
@@ -429,6 +432,7 @@ courtroom's list with no action there, and reading follows the list.
 
 Validation, in `clean()` and in the services (#8):
 
+* The user is not a citizen account (#3.2).
 * The organization is active and has a `court_level`.
 * At a `COURTROOM`, the user has an active `CourtroomAssignment` there (`REG-35`: actions are carried per listed courtroom).
 * The role is active, and its `establishment` is null or is this organization's establishment.
@@ -656,7 +660,7 @@ courtroom choice after login (`REG-36`) and for deciding first actions
 | ---------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `organizations.W001` | Warning | an active establishment has no active courtroom (`RLE-00`)                                                                |
 | `organizations.E001` | Error   | an active courtroom's parent is not an active establishment                                                                 |
-| `organizations.W002` | Warning | an active assignment breaks #5.4 (data edited outside the services)                                                         |
+| `organizations.W002` | Warning | an active assignment breaks #5.3 or #5.4 (data edited outside the services, or a citizen account holding court access)      |
 | `organizations.W003` | Warning | an active role has no actions                                                                                               |
 | `organizations.W004` | Warning | a `CourtRoleAction` names a code no module declares (an action was removed without a data migration); selectors ignore it |
 | `organizations.E003` | Error   | two modules declare the same code, or a code is not `<app>.<action>` lowercase                                            |
@@ -676,7 +680,7 @@ module, which owns the codes and channel settings; this module provides
 
 ### 10. Consumers and migration path
 
-#### 10.1 `apps.scrutiny` (replaces the stop-gap)
+#### 10.1 `apps.scrutiny` (court roles replace the groups)
 
 On `main` (PR #179), every role call goes through `apps/scrutiny/ports.py`
 and `permissions.py`, and the lists are scoped to one establishment through
@@ -689,16 +693,18 @@ and `permissions.py`, and the lists are scoped to one establishment through
 | `require_role(actor, round_, CourtRole.X)` in `services/rounds.py`, `services/flags.py`            | `access.require(actor, actions.<ACTION>, round_.establishment_id, error=errors.ROLE_REQUIRED)`, one action per check                |
 | `selectors.allowed_actions(round_, roles)` — stage × roles, with SCR-11 inline                       | stage × `actions_of`: each is offered when the caller is allowed it at the round's establishment; SCR-11 as in #7                  |
 | `ports.courtrooms(establishment_id)` — falls back to the establishment itself                         | `selectors.courtrooms(establishment_id)`; the fallback goes                                                                         |
-| `ports.configured_establishment()`                                                                     | removed, with the setting, `apps/scrutiny/system_checks.py` (`scrutiny.W001`, `E001`, `E002`), and its env, CI and README entries; `E09019` (`SCRUTINY_NOT_CONFIGURED`) is no longer raised and stays defined, never reused |
-| `ports.establishment_id(case)`, `ports.set_court(case, courtroom_id)`                                | unchanged here; they change with #10.3                                                                                                |
+| `ports.configured_establishment()`                                                                     | kept, with `apps/scrutiny/system_checks.py` (`scrutiny.W001`, `E001`; `E002` now also refuses a value that is not an active court establishment, since its courtrooms come from #2). Every case still goes to the deployment's one establishment (`RLE-00`, 0024 §2.5); only who may act there changes |
+| `ports.establishment_id(case)` — the configured establishment                                         | unchanged; a case is refused `503 E09019` and rolled back when none is configured. The filer names no court (`efiling.md`; `scrutiny-registration.md` §4), so `case.court_id` cannot route; placing a case at one of several establishments is P-2 and #10.3 |
+| `ports.set_court(case, courtroom_id)`                                                                  | unchanged here; it changes with #10.3                                                                                                 |
 
 Until #10.3, a case's establishment for scrutiny is the round's
-`ScrutinyRound.establishment_id`, copied from `case.court_id` when the first
+`ScrutinyRound.establishment_id`, the configured establishment when the first
 round opens.
 
 **Steps that are not actions (#3.3)**
 
 * **Start** (0024 §4.2) uses `access.require_any` with the round's stage actions (`SCRUTINY_STAGE` / `REGISTRATION_STAGE` in `court_actions.py`).
+* **Forward** and **Register at Scrutiny** choose the courtroom (`SCR-16`), so each needs `scrutiny.choose_courtroom` as well as `scrutiny.forward`; Register at Scrutiny also needs `registration.register` at the same establishment (SCR-11).
 * ***Edit case title*** (0024 §4.6) is removed, with `edit_title` in `allowed_actions`: no PRD asks for it and the frontend does not call it.
 
 **Lists**
@@ -753,12 +759,13 @@ migration command.
 
 ### 12. Testing
 
-* **Levels:** a courtroom under a non-establishment is refused; an establishment under a courtroom is refused; changing the level of an organization with assignments is refused; system checks flag an establishment without courtrooms and a courtroom with a wrong parent.
+* **Levels:** a courtroom under a non-establishment is refused; an establishment under a courtroom is refused; changing the level of an organization with assignments is refused; changing an establishment's level while it has courtrooms is refused, including when the only one is inactive and still staffed; system checks flag an establishment without courtrooms and a courtroom with a wrong parent.
 * **Registry:** a duplicate code fails at startup; a badly formed code fails `E003`; an unregistered code in a role is refused by the services, flagged by `W004` and ignored by the selectors.
 * **Migration helpers (#3.4):** `add_action_to_roles_with` adds the code to every role holding `like`, active or not, with each row's scope, and nothing else; a second run adds nothing; history rows are written. `remove_action_from_roles` removes every row for the code and clears `W004`. `add_scope_code_with` adds the code only to scope lists on that axis that hold `like`, leaves rows with the axis missing unchanged, and adds nothing on a second run. Both run against historical models with the code no longer registered.
 * **Roles:** a scope on an unscoped action is refused, and so is an empty scope list; an unscoped action twice in one role is refused; a role scoped to establishment A cannot be assigned at B; adding a courtroom action to a role assigned at an establishment is refused; editing a role's actions changes every holder's access on the next call and is recorded in history.
 * **Assignments:**
   - A courtroom assignment without the courtroom on the list is refused.
+  - A citizen account (each `User.role`) is refused a courtroom and a role by the services, both models' `clean()`, admin and seeding; one that registers after being given access is reported by `W002`.
   - A role with courtroom actions assigned at an establishment is refused.
   - A second active `(user, organization, role)` is refused; a deactivated one assigned again is reactivated.
   - Removing a courtroom deactivates the role assignments there.
@@ -809,7 +816,7 @@ Product (from the court-roles issue):
 | #   | Question                                                                                                                                                                                                                             | Refs                     |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
 | P-1 | Environments host several establishments. Is that one state with several establishments, or several states? Per-state configuration (registration types, number series, `clerkApproval`, oath, the seeded roles) depends on it.    | `RLE-00`               |
-| P-2 | How is a filed case placed at an establishment: chosen by the filer, derived from jurisdiction, or routed by the court?                                                                                                              | `SCR-16`, `JUR-*`    |
+| P-2 | When a deployment has several establishments, how is a filed case placed at one: chosen by the filer, derived from jurisdiction, or routed by the court? In this version every case goes to the one establishment (`RLE-00`, scrutiny §4).                                                                                                              | `SCR-16`, `JUR-*`    |
 | P-3 | Which establishment approves an advocate's or clerk's registration, when the advocate practises at several?                                                                                                                          | `REG-23a`, `REG-23b` |
 | P-4 | Someone allowed actions at several establishments: do lists show all of them together, or one chosen establishment at a time?                                                                                                        | `RLE-02c`, `REG-36`  |
 | P-5 | After a case gets a courtroom, do those allowed the establishment's actions keep reading it, or only the courtroom's staff?                                                                                                          | `RLE-06`               |
@@ -818,7 +825,7 @@ This spec:
 
 | #   | Question                                                                                                                                                                                  |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| O-1 | Should an employee account be marked as such (a flag or user type) so citizens can never be assigned court roles? Today nothing marks an employee (0005 `is_staff` means admin access). |
+| O-1 | Should an employee account be marked as such (a flag or user type)? Citizens with `User.role` set are refused court access (#3.2), but an account that has not finished registration cannot be told apart from an employee (0005 `is_staff` means admin access). |
 | O-2 | Should Account approver actions be assignable at a level above the establishment (a state-wide approver), given P-3?                                                                      |
 | O-3 | Should a role edit that removes an action from many users at once need a second administrator's confirmation, or is history plus the admin warning (#9.1) enough?                         |
 | O-4 | Should `/court-roles/me/` drop `roles` entirely, so the frontend cannot branch on them, or keep them for display?                                                                     |
@@ -840,10 +847,10 @@ This spec:
 - The 0025 seeder registry — an `organizations.CourtRole` seeder, once 0025 is built (until then, roles are entered in admin)
 - Scrutiny (#10.1):
   - `src/apps/scrutiny/court_actions.py` (new), `ports.py`, `enums.py`, `permissions.py`, `selectors.py`, `services/rounds.py`, `services/flags.py`, `views.py`
-  - `src/apps/scrutiny/system_checks.py` (removed) and `apps.py`
+  - `src/apps/scrutiny/system_checks.py` (`E002` checks for an active establishment)
   - `src/apps/scrutiny/tests/conftest.py`, `factories.py`, `test_establishment.py`, `test_selectors.py`
 - `src/apps/dristi_requests/court_actions.py` (new), `models.py`, `services.py`, and a data migration for the approval steps (#10.2, #11 step 5)
-- `src/config/settings/base.py`, `src/config/settings/test.py`, `.env.example`, `.env.prod.example`, `.env.ci`, `.github/workflows/ci.yml`, `README.md`, the comment in `src/apps/scrutiny/errors.py`, and `spec/0024-scrutiny.md` (removing `SCRUTINY_ESTABLISHMENT_ID`)
+- `src/config/settings/base.py`, `src/config/settings/test.py`, `.env.example`, `.env.prod.example`, `.env.ci`, `.github/workflows/ci.yml`, `README.md`, and `spec/0024-scrutiny.md` (`SCRUTINY_ESTABLISHMENT_ID` now only routes cases; court roles decide who acts)
 - `spec/0008-organization.md` (out-of-scope note points here)
 
 ## Related specs

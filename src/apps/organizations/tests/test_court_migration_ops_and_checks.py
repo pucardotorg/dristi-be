@@ -9,7 +9,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase
 
 from apps.organizations import checks, migration_ops, services
-from apps.organizations.models import CourtRoleAction, RoleAssignment
+from apps.organizations.models import CourtRoleAction, CourtroomAssignment, RoleAssignment
 from apps.organizations.tests.court_factories import (
     TwoCourtsMixin,
     assign,
@@ -19,6 +19,7 @@ from apps.organizations.tests.court_factories import (
     make_user,
 )
 from apps.organizations.tests.factories import make_organization
+from apps.users.models import Role
 
 from . import court_actions as actions
 
@@ -175,6 +176,20 @@ class DatabaseCheckTests(TwoCourtsMixin, TestCase):
         self.assertEqual(self.ids(), ["organizations.W002"])
         RoleAssignment.objects.update(is_active=False)
         self.assertEqual(self.ids(), [])
+
+    def test_a_citizen_account_holding_court_access(self):
+        self.make_courts()
+        user = make_user()
+        assign(user, self.room_a1, make_role("TYPIST", [actions.EDIT]))
+        # Registered as a citizen after being given court access.
+        user.role = Role.LITIGANT
+        user.save()
+        messages = checks.check_court_data(None, databases=["default"])
+        self.assertEqual([message.id for message in messages], ["organizations.W002"] * 2)
+        self.assertEqual(
+            {type(message.obj) for message in messages}, {RoleAssignment, CourtroomAssignment}
+        )
+        self.assertTrue(all("citizen account" in message.msg for message in messages))
 
     def test_a_listed_courtroom_that_is_not_a_courtroom(self):
         self.make_courts()

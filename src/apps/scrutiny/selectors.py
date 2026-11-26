@@ -16,11 +16,13 @@ from rest_framework.exceptions import NotFound
 
 from apps.cases.models import CaseParticipant, CaseStatus
 from apps.core import services as configuration
+from apps.organizations import selectors as court
 from apps.organizations.models import Organization
 
 from . import case_selectors, ports
+from . import court_actions as actions
 from .checks.service import evaluate_checks
-from .enums import CourtRole, FlagStatus, FlagTarget, ResponseKind, RoundDecision, RoundStage
+from .enums import FlagStatus, FlagTarget, ResponseKind, RoundDecision, RoundStage
 from .models import ScrutinyFlag, ScrutinyRound
 
 TABS = ("registry", "advocate", "closed")
@@ -172,20 +174,40 @@ def _choices(round_):
     }
 
 
-def allowed_actions(round_, roles):
-    """Return what the caller may do: the round's stage combined with the roles they hold (#7.2)."""
+def allowed_actions(round_, held):
+    """Return what the caller may do: the round's stage combined with their actions there (#7.2).
+
+    ``held`` is the action codes the caller is allowed at the round's
+    establishment (``organizations.selectors.actions_of``). Each step is
+    offered when its service would allow it.
+    """
     if not round_.is_open:
         return []
-    started = [] if round_.started_by_id else ["start"]
+
+    def allowed(*needed):
+        return all(action.code in held for action in needed)
+
     if round_.stage == RoundStage.SCRUTINY:
-        if CourtRole.SCRUTINY_OFFICER not in roles:
-            return []
+        offered = []
+        if allowed(actions.FLAG):
+            offered.append("flag")
+        if allowed(actions.SEND_BACK):
+            offered.append("send_back")
         # Forward is never offered to someone who would forward to themselves (SCR-11).
-        decide = "register" if CourtRole.CASE_REGISTERER in roles else "forward"
-        return [*started, "flag", "send_back", decide, "edit_title"]
-    if CourtRole.CASE_REGISTERER not in roles:
-        return []
-    return [*started, "register", "send_back", "edit_title"]
+        if allowed(actions.FORWARD, actions.CHOOSE_COURTROOM):
+            offered.append("register" if allowed(actions.REGISTER) else "forward")
+        stage = actions.SCRUTINY_STAGE
+    else:
+        offered = []
+        if allowed(actions.REGISTER):
+            offered.append("register")
+        if allowed(actions.REGISTRATION_SEND_BACK):
+            offered.append("send_back")
+        stage = actions.REGISTRATION_STAGE
+    # Start is the duty's first step: any action of the stage allows it (spec 0029 #3.3).
+    if not round_.started_by_id and any(action.code in held for action in stage):
+        offered.insert(0, "start")
+    return offered
 
 
 # Lists (#7.1, #7.3)
@@ -222,8 +244,8 @@ def _tab_filter(tab, closed_since):
     return moved_on & Q(waiting_from__gte=closed_since)
 
 
-def scrutiny_list(user, *, establishment_id, tab="registry", claimed="anyone", search=""):
-    """Return ``{"counts", "rounds"}`` for the scrutiny officer's list (#7.1), of one establishment.
+def scrutiny_list(user, *, establishment_ids, tab="registry", claimed="anyone", search=""):
+    """Return ``{"counts", "rounds"}`` for the scrutiny officer's list (#7.1), of the establishments.
 
     One row per case, from its latest round: *with registry* while its
     scrutiny round is open, *with advocate* once sent back, *closed* once
@@ -243,7 +265,7 @@ def scrutiny_list(user, *, establishment_id, tab="registry", claimed="anyone", s
             output_field=DateTimeField(),
         )
     )
-    rounds = rounds.filter(establishment_id=establishment_id)
+    rounds = rounds.filter(establishment_id__in=establishment_ids)
     if claimed == "me":
         rounds = rounds.filter(started_by=user)
     elif claimed == "unassigned":
@@ -357,10 +379,10 @@ def scrutiny_rows(rounds, today=None):
     return rows
 
 
-def registration_list(user, *, establishment_id, search="", ordering="-waiting_days"):
-    """Return the open registration rounds of one establishment for the Case registerer (#7.3)."""
+def registration_list(user, *, establishment_ids, search="", ordering="-waiting_days"):
+    """Return the open registration rounds of the establishments for the Case registerer (#7.3)."""
     rounds = ScrutinyRound.objects.filter(
-        stage=RoundStage.REGISTRATION, decision="", establishment_id=establishment_id
+        stage=RoundStage.REGISTRATION, decision="", establishment_id__in=establishment_ids
     )
     if search and search.strip():
         rounds = _search(rounds, search.strip())
@@ -455,7 +477,7 @@ def scrutiny_detail(case, round_, user, today=None):
                 if flag.status in SENT
             ],
         },
-        "allowed_actions": allowed_actions(round_, ports.roles_held(user, round_.establishment_id)),
+        "allowed_actions": allowed_actions(round_, court.actions_of(user, round_.establishment_id)),
         "workflow_version": ports.workflow_version(case),
     }
     if ports.oath_required(case):
@@ -500,7 +522,7 @@ def registration_detail(case, round_, user, today=None):
         "registration_type": round_.registration_type,
         "registration_types": _choices(round_)["registration_types"],
         "open_items": [flag_view(flag) for flag in flags if _is_carried_open(flag)],
-        "allowed_actions": allowed_actions(round_, ports.roles_held(user, round_.establishment_id)),
+        "allowed_actions": allowed_actions(round_, court.actions_of(user, round_.establishment_id)),
         "workflow_version": ports.workflow_version(case),
     }
 

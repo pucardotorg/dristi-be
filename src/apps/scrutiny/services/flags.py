@@ -13,10 +13,11 @@ from rest_framework.exceptions import NotFound
 
 from apps.api.errors import BusinessError
 
+from .. import court_actions as actions
 from .. import errors, ports
-from ..enums import CourtRole, FlagStatus, FlagTarget, RoundStage
+from ..enums import FlagStatus, FlagTarget, RoundStage
 from ..models import ScrutinyFlag
-from .rounds import lock_open_round, require_role
+from .rounds import lock_open_round, require
 
 
 def auto_note(source):
@@ -33,7 +34,7 @@ def draft(case_id, actor, *, target_type, target_ref, note="", reason_code="", d
     """
     with transaction.atomic():
         round_ = lock_open_round(case_id, RoundStage.SCRUTINY)
-        require_role(actor, round_, CourtRole.SCRUTINY_OFFICER)
+        require(actor, round_, actions.FLAG)
         case = round_.case
         catalogue = ports.fields(case) if target_type == FlagTarget.FIELD else {}
         if document_issue and target_type != FlagTarget.FIELD:
@@ -186,7 +187,7 @@ def withdraw(case_id, flag_id, actor):
 
 def _draft_for_update(case_id, flag_id, actor):
     round_ = lock_open_round(case_id, RoundStage.SCRUTINY)
-    require_role(actor, round_, CourtRole.SCRUTINY_OFFICER)
+    require(actor, round_, actions.FLAG)
     flag = _flag_of_case(case_id, flag_id)
     if flag.round_id != round_.pk or flag.status != FlagStatus.DRAFT:
         raise BusinessError(errors.FLAG_NOT_DRAFT)
@@ -204,7 +205,7 @@ def resolve(case_id, flag_id, actor):
     """Resolve an item carried from an earlier round, with its whole ``carried_from`` chain (#4.5)."""
     with transaction.atomic():
         round_ = lock_open_round(case_id, RoundStage.SCRUTINY)
-        require_role(actor, round_, CourtRole.SCRUTINY_OFFICER)
+        require(actor, round_, actions.FLAG)
         flag = _flag_of_case(case_id, flag_id)
         carried_draft = (
             flag.round_id == round_.pk
