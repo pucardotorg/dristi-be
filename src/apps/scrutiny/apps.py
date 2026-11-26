@@ -11,5 +11,5 @@ class ScrutinyConfig(AppConfig):
     verbose_name = "Scrutiny"
 
     def ready(self):
-        """Connect the receivers and register the establishment setting's checks."""
-        from . import receivers, system_checks  # noqa: F401
+        """Connect the receivers."""
+        from . import receivers  # noqa: F401

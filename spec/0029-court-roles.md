@@ -693,8 +693,9 @@ and `permissions.py`, and the lists are scoped to one establishment through
 | `require_role(actor, round_, CourtRole.X)` in `services/rounds.py`, `services/flags.py`            | `access.require(actor, actions.<ACTION>, round_.establishment_id, error=errors.ROLE_REQUIRED)`, one action per check                |
 | `selectors.allowed_actions(round_, roles)` — stage × roles, with SCR-11 inline                       | stage × `actions_of`: each is offered when the caller is allowed it at the round's establishment; SCR-11 as in #7                  |
 | `ports.courtrooms(establishment_id)` — falls back to the establishment itself                         | `selectors.courtrooms(establishment_id)`; the fallback goes                                                                         |
-| `ports.configured_establishment()`                                                                     | removed, with the setting, `apps/scrutiny/system_checks.py` (`scrutiny.W001`, `E001`, `E002`), and its env, CI and README entries; `E09019` (`SCRUTINY_NOT_CONFIGURED`) is no longer raised and stays defined, never reused |
-| `ports.establishment_id(case)`, `ports.set_court(case, courtroom_id)`                                | unchanged here; they change with #10.3                                                                                                |
+| `ports.configured_establishment()`                                                                     | removed, with `apps/scrutiny/system_checks.py` (`scrutiny.W001`, `E001`, `E002`); `E09019` (`SCRUTINY_NOT_CONFIGURED`) is no longer raised and stays defined, never reused. The setting and its env, CI and README entries stay until hearings stop reading it (`apps/hearings/ports.py`) |
+| `ports.establishment_id(case)` — the configured establishment                                         | the establishment of `case.court_id` (`selectors.establishment_of`); a case with none is refused `409 E09021` (`NO_ESTABLISHMENT`) and rolled back, as `E09019` was |
+| `ports.set_court(case, courtroom_id)`                                                                  | unchanged here; it changes with #10.3                                                                                                 |
 
 Until #10.3, a case's establishment for scrutiny is the round's
 `ScrutinyRound.establishment_id`, copied from `case.court_id` when the first
@@ -703,6 +704,7 @@ round opens.
 **Steps that are not actions (#3.3)**
 
 * **Start** (0024 §4.2) uses `access.require_any` with the round's stage actions (`SCRUTINY_STAGE` / `REGISTRATION_STAGE` in `court_actions.py`).
+* **Forward** and **Register at Scrutiny** choose the courtroom (`SCR-16`), so each needs `scrutiny.choose_courtroom` as well as `scrutiny.forward`; Register at Scrutiny also needs `registration.register` at the same establishment (SCR-11).
 * ***Edit case title*** (0024 §4.6) is removed, with `edit_title` in `allowed_actions`: no PRD asks for it and the frontend does not call it.
 
 **Lists**

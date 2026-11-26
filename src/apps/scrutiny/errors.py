@@ -27,12 +27,13 @@ NOTHING_TO_SEND_BACK = define("E09005", "Flag at least one item before sending t
 OPEN_ITEMS_NOT_ACKNOWLEDGED = define(
     "E09006", "The case has open items; acknowledge them to continue.", status=409
 )
-# Forward by someone who also registers, or Register at Scrutiny by someone who
-# only scrutinises (SCR-11).
+# Forward by someone also allowed to register at the case's establishment, or
+# Register at Scrutiny by someone who is not (SCR-11).
 ACTION_NOT_FOR_ROLES = define(
     "E09007", "Your roles at this court call for the other action.", status=409
 )
-ROLE_REQUIRED = define("E09008", "You do not hold the court role this action needs.", status=403)
+# Not allowed the court action at the case's establishment (spec 0029 #10.1).
+ROLE_REQUIRED = define("E09008", "You are not allowed this action at this court.", status=403)
 # A registration send back is one overall comment and no flags (REF-02).
 SEND_BACK_COMMENT_REQUIRED = define(
     "E09010", "Give one overall comment; flags are not sent back from registration."
@@ -47,10 +48,18 @@ CASE_NUMBER_TAKEN = define(
     "E09020", "The case number was just taken. Try registering again.", status=409
 )
 
-# Routing (#2.5): SCRUTINY_ESTABLISHMENT_ID is unset or malformed, so a case
-# entering scrutiny or registration has nowhere to go; the move is refused.
+# No longer raised: scrutiny read SCRUTINY_ESTABLISHMENT_ID until it moved to
+# court roles (spec 0029 #10.1). Kept defined so the code is never reused.
 SCRUTINY_NOT_CONFIGURED = define(
     "E09019", "Scrutiny is not available: no court establishment is configured.", status=503
+)
+# Routing (#2.5): the case's court_id is missing, or is neither a court
+# establishment nor one of its courtrooms, so a case entering scrutiny has
+# nowhere to go; the move is refused and rolled back.
+NO_ESTABLISHMENT = define(
+    "E09021",
+    "Choose the court establishment this case is filed in before submitting it.",
+    status=409,
 )
 
 # Correction (#5)

@@ -1,8 +1,9 @@
 """Rounds and the decisions that close them (spec 0024 #4, #6).
 
-Each decision locks the open round, checks the actor's court role, then locks
-the case and moves it, in one transaction (#9.4). Roles are read when the
-action is taken, never snapshotted (#2.2).
+Each decision locks the open round, checks the actor's court action at the
+round's establishment (spec 0029 #10.1), then locks the case and moves it, in
+one transaction (#9.4). Access is read when the action is taken, never
+snapshotted (#2.2).
 """
 
 import logging
@@ -14,17 +15,20 @@ from django.utils import timezone
 
 from apps.api.errors import BusinessError
 from apps.cases.models import CaseStatus
+from apps.organizations import access
+from apps.organizations import selectors as court
 
+from .. import court_actions as actions
 from .. import errors, ports
-from ..enums import CourtRole, FlagStatus, FlagTarget, RoundDecision, RoundStage, RoutingReason
+from ..enums import FlagStatus, FlagTarget, RoundDecision, RoundStage, RoutingReason
 from ..models import ScrutinyFlag, ScrutinyRound
 
 logger = logging.getLogger(__name__)
 
-# The role a stage's actions need at the establishment (#2.2).
-STAGE_ROLE = {
-    RoundStage.SCRUTINY: CourtRole.SCRUTINY_OFFICER,
-    RoundStage.REGISTRATION: CourtRole.CASE_REGISTERER,
+# The duty each stage's Start belongs to: any one of its actions (spec 0029 #3.3).
+STAGE_ACTIONS = {
+    RoundStage.SCRUTINY: actions.SCRUTINY_STAGE,
+    RoundStage.REGISTRATION: actions.REGISTRATION_STAGE,
 }
 # Sent to the filer and not yet resolved; carried into the next round (#4.1).
 UNRESOLVED = (FlagStatus.RAISED, FlagStatus.RESPONDED)
@@ -39,9 +43,11 @@ def open_round(case, visit_id=None, routing_reason=""):
     a draft, and the correction scope is closed. Returns None when the case is
     in no stage.
 
-    Raises ``SCRUTINY_NOT_CONFIGURED`` when the deployment names no
-    establishment, so the transition that moved the case rolls back instead of
-    leaving it in a stage with no round, where nobody can see or act on it.
+    The first round's establishment is the one of the case's court
+    (``ports.establishment_id``); later rounds keep it. Raises
+    ``NO_ESTABLISHMENT`` when the case names no court establishment, so the
+    transition that moved the case rolls back instead of leaving it in a stage
+    with no round, where nobody can see or act on it.
     """
     stage = ports.STATUS_STAGE.get(case.status)
     if stage is None:
@@ -54,10 +60,11 @@ def open_round(case, visit_id=None, routing_reason=""):
         establishment_id = previous.establishment_id if previous else ports.establishment_id(case)
         if establishment_id is None:
             logger.error(
-                "event=SCRUTINY_ROUND_NOT_OPENED case=%s reason=no establishment configured",
+                "event=SCRUTINY_ROUND_NOT_OPENED case=%s court=%s reason=no establishment",
                 case.pk,
+                case.court_id,
             )
-            raise BusinessError(errors.SCRUTINY_NOT_CONFIGURED)
+            raise BusinessError(errors.NO_ESTABLISHMENT)
         fields = {}
         if stage == RoundStage.REGISTRATION and previous is not None:
             fields = {
@@ -129,10 +136,9 @@ def lock_open_round(case_id, stage):
     return round_
 
 
-def require_role(actor, round_, role):
-    """Refuse ``actor`` unless they hold ``role`` at the round's establishment (``E09008``)."""
-    if role not in ports.roles_held(actor, round_.establishment_id):
-        raise BusinessError(errors.ROLE_REQUIRED)
+def require(actor, round_, action):
+    """Refuse ``actor`` unless allowed ``action`` at the round's establishment (``E09008``)."""
+    access.require(actor, action, round_.establishment_id, error=errors.ROLE_REQUIRED)
 
 
 def lock_case(case_id, expected_version=None):
@@ -152,7 +158,9 @@ def start(case_id, actor, stage):
     """Record who first started the stage's open round (#4.2). Repeat calls change nothing."""
     with transaction.atomic():
         round_ = lock_open_round(case_id, stage)
-        require_role(actor, round_, STAGE_ROLE[stage])
+        access.require_any(
+            actor, STAGE_ACTIONS[stage], round_.establishment_id, error=errors.ROLE_REQUIRED
+        )
         if round_.started_by_id is None:
             round_.started_by, round_.started_at = actor, timezone.now()
             round_.save()
@@ -163,7 +171,7 @@ def send_back(case_id, actor, *, expected_version=None):
     """Raise every draft flag and send the case to the filer for correction (#4.3)."""
     with transaction.atomic():
         round_ = lock_open_round(case_id, RoundStage.SCRUTINY)
-        require_role(actor, round_, CourtRole.SCRUTINY_OFFICER)
+        require(actor, round_, actions.SEND_BACK)
         case = lock_case(case_id, expected_version)
         drafts = list(round_.flags.filter(status=FlagStatus.DRAFT))
         if not drafts:
@@ -207,7 +215,7 @@ def forward(
     acknowledge_open_items=False,
     expected_version=None,
 ):
-    """Forward the case to the Case registerer (#4.4); for a Scrutiny officer who does not register."""
+    """Forward the case to the Case registerer (#4.4); for someone not allowed to register here."""
     return _decide_at_scrutiny(
         case_id,
         actor,
@@ -228,7 +236,7 @@ def register_at_scrutiny(
     acknowledge_open_items=False,
     expected_version=None,
 ):
-    """Register the case at Scrutiny (#4.4); for a Scrutiny officer who is also a Case registerer."""
+    """Register the case at Scrutiny (#4.4); for someone allowed both to forward and to register."""
     return _decide_at_scrutiny(
         case_id,
         actor,
@@ -245,11 +253,10 @@ def _decide_at_scrutiny(
 ):
     with transaction.atomic():
         round_ = lock_open_round(case_id, RoundStage.SCRUTINY)
-        roles = ports.roles_held(actor, round_.establishment_id)
-        if CourtRole.SCRUTINY_OFFICER not in roles:
-            raise BusinessError(errors.ROLE_REQUIRED)
-        # Roles decide which of the two a person gets (SCR-11).
-        if register != (CourtRole.CASE_REGISTERER in roles):
+        require(actor, round_, actions.FORWARD)
+        require(actor, round_, actions.CHOOSE_COURTROOM)
+        # Whoever may also register at this establishment registers instead (SCR-11).
+        if register != court.can(actor, actions.REGISTER, round_.establishment_id):
             raise BusinessError(errors.ACTION_NOT_FOR_ROLES)
         case = lock_case(case_id, expected_version)
         courtroom = _choose_courtroom(round_.establishment_id, courtroom_id)
@@ -321,7 +328,7 @@ def register(
     """Register a forwarded case (#6.1): the type chosen at Forward may be changed, and is final."""
     with transaction.atomic():
         round_ = lock_open_round(case_id, RoundStage.REGISTRATION)
-        require_role(actor, round_, CourtRole.CASE_REGISTERER)
+        require(actor, round_, actions.REGISTER)
         case = lock_case(case_id, expected_version)
         type_code, stored_type = _choose_registration_type(
             round_.establishment_id, registration_type, preselected=round_.registration_type
@@ -343,7 +350,7 @@ def registration_send_back(case_id, actor, comment, *, expected_version=None):
     """Send a forwarded case to the filer with one comment, everything but the oath open (#6.2)."""
     with transaction.atomic():
         round_ = lock_open_round(case_id, RoundStage.REGISTRATION)
-        require_role(actor, round_, CourtRole.CASE_REGISTERER)
+        require(actor, round_, actions.REGISTRATION_SEND_BACK)
         case = lock_case(case_id, expected_version)
         comment = (comment or "").strip()
         if not comment:
@@ -352,19 +359,6 @@ def registration_send_back(case_id, actor, comment, *, expected_version=None):
         ports.open_for_correction(case, scope, round_.id)
         _decide(round_, actor, RoundDecision.SENT_BACK, comment=comment)
         ports.move_case(case, CaseStatus.PENDING_CORRECTION)
-    return round_
-
-
-def set_title(case_id, actor, *, complainant, accused):
-    """Change the parties' display names (*Edit case title*, #4.6) at either stage."""
-    with transaction.atomic():
-        round_ = (
-            ScrutinyRound.objects.select_for_update().filter(case_id=case_id, decision="").first()
-        )
-        if round_ is None:
-            raise BusinessError(errors.ROUND_NOT_OPEN)
-        require_role(actor, round_, STAGE_ROLE[round_.stage])
-        ports.set_case_title(ports.lock_case(case_id), complainant, accused, actor)
     return round_
 
 

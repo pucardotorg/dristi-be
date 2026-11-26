@@ -29,6 +29,9 @@ from apps.cases.services.filing import return_to_signing
 from apps.esign.constants import EntityType, ESignStatus
 from apps.esign.models import ESignTransaction
 from apps.files.tests.factories import make_file
+from apps.organizations.enums import CourtLevel
+from apps.organizations.models import OrganizationType
+from apps.organizations.tests.factories import make_organization
 from apps.parties.models import Institution, Person
 from apps.parties.tests.factories import ADDRESS_DEFAULTS
 
@@ -2108,6 +2111,17 @@ class TestSubmitForPaymentAndScrutiny:
         assert response.status_code == 400
         participant = f"participants.{complainant['case_participant_id']}"
         assert error_codes(response) == {participant: ["E07006"]}
+
+    @pytest.fixture
+    def draft(self, user):
+        """A draft filed in a court establishment, where scrutiny takes it (spec 0029 #10.1)."""
+        court = make_organization(
+            organization_type=OrganizationType.MAGISTRATE_COURT,
+            court_level=CourtLevel.ESTABLISHMENT,
+        )
+        return services.start_draft(user, CaseType.CHEQUE_BOUNCE, court_id=court.pk)[
+            "draft_session_id"
+        ]
 
     def test_the_full_lifecycle(self, client, user, draft, pdf):
         complainant = make_complete_case(client, draft, pdf)

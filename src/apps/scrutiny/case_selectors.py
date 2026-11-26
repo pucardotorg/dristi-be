@@ -22,7 +22,7 @@ from apps.cases.models import (
     ParticipantRole,
     Representation,
 )
-from apps.cases.services.case_types import DocumentType, EvidenceType, get_config
+from apps.cases.services.case_types import DocumentType, EvidenceType
 
 from . import ports
 
@@ -57,22 +57,19 @@ def _local_date(moment):
     return timezone.localdate(moment) if moment else None
 
 
-def _parties(participants, title=None):
-    """Return ``"A v. B"``: the court's title where it set one, else the first party of each side."""
-    title = title or {}
+def _parties(participants):
+    """Return ``"A v. B"``: the first party of each side, "and others" when there are more."""
     names = defaultdict(list)
     for participant in participants:
         names[participant.role].append(participant.name_at_filing)
 
-    def side(role, key):
+    def side(role):
         listed = names[role]
-        if title.get(key):
-            return title[key]
         if not listed:
             return ""
         return f"{listed[0]} and others" if len(listed) > 1 else listed[0]
 
-    return f"{side(ParticipantRole.COMPLAINANT, 'complainant')} v. {side(ParticipantRole.ACCUSED, 'accused')}"
+    return f"{side(ParticipantRole.COMPLAINANT)} v. {side(ParticipantRole.ACCUSED)}"
 
 
 def _advocate_name(representation):
@@ -99,7 +96,6 @@ def get_case_summaries(case_ids):
             to_attr="advocate_rows",
         ),
     )
-    titles = _case_titles(cases)
     summaries = {}
     for case in cases:
         advocates = list(dict.fromkeys(_advocate_name(row) for row in case.advocate_rows))
@@ -107,7 +103,7 @@ def get_case_summaries(case_ids):
             "id": case.pk,
             "filing_number": case.filing_number,
             "case_number": case.case_number,
-            "parties": _parties(case.party_rows, titles.get(case.pk)),
+            "parties": _parties(case.party_rows),
             "case_type": {"key": case.case_type, "label": case.get_case_type_display()},
             "advocates": advocates,
             "advocate": advocates[0] if advocates else None,
@@ -115,20 +111,6 @@ def get_case_summaries(case_ids):
             "status": case.status,
         }
     return summaries
-
-
-def _case_titles(cases):
-    """Return the court's *Edit case title* names, by case id, one query per case type."""
-    by_type = defaultdict(list)
-    for case in cases:
-        by_type[case.case_type].append(case.pk)
-    titles = {}
-    for case_type, ids in by_type.items():
-        model = get_config(case_type).get_detail_model()
-        for row in model.objects.filter(case_id__in=ids).only("case_id", "additional_details"):
-            if title := row.additional_details.get("case_title"):
-                titles[row.case_id] = title
-    return titles
 
 
 def get_case_summary(case):

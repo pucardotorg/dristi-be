@@ -191,6 +191,12 @@ mobile number, `courtroom` by code), then `organizations.RoleAssignment`
 the user's list first; the files load in that order. Seeding is insert-only:
 change roles and assignments in admin afterwards.
 
+`example/court_roles.toml` and `example/court_role_actions.toml` seed two
+deployment-wide roles, `SCRUTINY_OFFICER` and `CASE_REGISTERER`, holding the
+scrutiny and registration actions (`apps/scrutiny/court_actions.py`). Scrutiny
+places a case at the establishment of its `court_id`, so a case must name an
+establishment (or one of its courtrooms) to be submitted.
+
 ## Loading pincodes
 
 Pincodes (and the states and districts above them) are loaded from TOML like

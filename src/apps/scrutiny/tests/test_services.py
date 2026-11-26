@@ -21,7 +21,6 @@ from apps.cases.services import services as case_services
 from apps.cases.services.case_types import CaseType, EvidenceType, get_config
 from apps.scrutiny import ports
 from apps.scrutiny.enums import (
-    CourtRole,
     DocumentIssue,
     FlagStatus,
     FlagTarget,
@@ -34,6 +33,7 @@ from apps.scrutiny.models import ScrutinyFlagResponse, ScrutinyRound
 from apps.scrutiny.services import flags, responses, rounds
 
 from .factories import (
+    SCRUTINY_OFFICER,
     add_cheque,
     add_courtroom,
     code,
@@ -64,8 +64,8 @@ def test_entering_scrutiny_opens_round_one(case, establishment):
     assert ScrutinyRound.objects.filter(case=case).count() == 1
 
 
-def test_start_records_first_starter_only(case, officer):
-    other = make_user(CourtRole.SCRUTINY_OFFICER)
+def test_start_records_first_starter_only(case, officer, establishment):
+    other = make_user(SCRUTINY_OFFICER, at=establishment)
     rounds.start(case.pk, officer, RoundStage.SCRUTINY)
     rounds.start(case.pk, other, RoundStage.SCRUTINY)
     assert open_round(case).started_by == officer
@@ -467,11 +467,6 @@ def test_removing_the_only_complainant_is_not_resubmitted(case, officer, filer):
     assert excinfo.value.detail["participants.complainants"][0].code == "E07005"
 
 
-def test_set_title(case, officer):
-    rounds.set_title(case.pk, officer, complainant="Prateek Agrawal", accused="Deepak Choudhary")
-    assert ports.detail(case).additional_details["case_title"]["accused"] == "Deepak Choudhary"
-
-
 def test_delay_is_measured_against_today(case):
     set_cause_of_action(case, (timezone.localdate() - datetime.timedelta(days=40)).isoformat())
     assert ports.delay_alert(case)
@@ -601,14 +596,6 @@ def test_forward_needs_the_scrutiny_officer_role(case, registerer):
     with pytest.raises(BusinessError) as excinfo:
         rounds.forward(case.pk, registerer)
     assert code(excinfo) == "E09008"
-
-
-def test_title_needs_an_open_round(case, officer):
-    draft_field(case, officer, "CHQ-3[0]")
-    rounds.send_back(case.pk, officer)
-    with pytest.raises(BusinessError) as excinfo:
-        rounds.set_title(case.pk, officer, complainant="A", accused="B")
-    assert code(excinfo) == "E09001"
 
 
 def test_plugin_edges(case):

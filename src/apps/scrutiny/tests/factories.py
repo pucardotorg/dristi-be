@@ -4,7 +4,6 @@ import itertools
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 from django.utils import timezone
 
 from apps.cases.models import (
@@ -26,9 +25,12 @@ from apps.cases.services.case_types import (
     get_config,
 )
 from apps.files.tests.factories import make_file
-from apps.organizations.models import Organization, OrganizationType
+from apps.organizations import services as court_services
+from apps.organizations.enums import CourtLevel
+from apps.organizations.models import CourtRole, Organization, OrganizationType
 from apps.parties.models import Person
 from apps.parties.tests.factories import make_address
+from apps.scrutiny import court_actions as actions
 from apps.scrutiny import ports
 from apps.scrutiny.enums import FlagTarget
 from apps.scrutiny.models import ScrutinyRound
@@ -39,24 +41,63 @@ User = get_user_model()
 _numbers = itertools.count(1)
 
 
-def make_user(*roles, name="User"):
-    """Return a registered account holding ``roles``, past every API gate."""
+# The PRD roles' scrutiny duties, as the actions a role holds (spec 0029 #3.3).
+SCRUTINY_OFFICER = actions.SCRUTINY_STAGE
+CASE_REGISTERER = actions.REGISTRATION_STAGE
+
+
+def make_user(*duties, name="User", at=None):
+    """Return a registered account past every API gate, allowed ``duties`` at ``at``.
+
+    Each duty is a tuple of actions (``SCRUTINY_OFFICER``, ``CASE_REGISTERER``)
+    or one action; they are held through one role assigned at the organization
+    ``at`` (an establishment, or a courtroom of one).
+    """
     user = User.objects.create_user(
         mobile_number=f"+91910000{next(_numbers):04d}",
         name=name,
         registration_status=RegistrationStatus.COMPLETE,
         terms_version_accepted=settings.CURRENT_TERMS_VERSION,
     )
-    for role in roles:
-        user.groups.add(Group.objects.get_or_create(name=role)[0])
+    if duties:
+        grant(user, at, *duties)
     return user
+
+
+def grant(user, organization, *duties):
+    """Give ``user`` a role of its own holding ``duties`` at ``organization``."""
+    assert organization is not None, "Say where the actions are held (at=...)."
+    held = []
+    for duty in duties:
+        for action in duty if isinstance(duty, tuple) else (duty,):
+            if action not in held:
+                held.append(action)
+    role = court_services.save_role(
+        CourtRole(code=f"TEST_ROLE_{next(_numbers)}", name="Test role"), actor=None
+    )
+    court_services.set_role_actions(role, held, actor=None)
+    if organization.court_level == CourtLevel.COURTROOM:
+        court_services.assign_courtroom(user, organization, actor=None)
+    court_services.assign_role(user, organization, role, actor=None)
+    return role
+
+
+def make_establishment(code, name):
+    """Return a court establishment with no courtroom."""
+    return Organization.objects.create(
+        code=code,
+        name=name,
+        organization_type=OrganizationType.MAGISTRATE_COURT,
+        court_level=CourtLevel.ESTABLISHMENT,
+    )
 
 
 def add_courtroom(establishment, name):
     return Organization.objects.create(
-        code=name.upper().replace(" ", "_"),
+        code=f"{establishment.code}_{name.upper().replace(' ', '_')}",
         name=name,
         organization_type=OrganizationType.MAGISTRATE_COURT,
+        court_level=CourtLevel.COURTROOM,
         parent=establishment,
     )
 

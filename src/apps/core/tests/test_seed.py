@@ -24,7 +24,7 @@ from apps.dristi_requests.models import ApprovalStep, RequestType
 from apps.hearings.models import HearingPurpose
 from apps.locations.models import Location
 from apps.messaging.models import MessageTemplate
-from apps.organizations.models import Organization
+from apps.organizations.models import CourtRole, Organization
 from apps.scrutiny.models import ScrutinyRuleBinding
 
 EXAMPLE_DIR = settings.BASE_DIR.parent / "data" / "seed" / "example"
@@ -610,6 +610,14 @@ class TestDirectoryAndFlags:
         assert services.get_public_json("efiling_cheque_fraud", "identity_drop_down") == {
             "pan": "Pan Card",
             "epic_id": "Voter ID",
+        }
+        # The example scrutiny roles hold their PRD roles' actions (spec 0029 #10.1).
+        officer = CourtRole.objects.get(code="SCRUTINY_OFFICER", establishment__isnull=True)
+        assert set(officer.actions.values_list("action", flat=True)) == {
+            "scrutiny.flag",
+            "scrutiny.send_back",
+            "scrutiny.choose_courtroom",
+            "scrutiny.forward",
         }
         assert "skipped 0" in output
 

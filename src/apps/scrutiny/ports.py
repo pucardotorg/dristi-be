@@ -1,32 +1,29 @@
 """What scrutiny needs from modules that are not built yet (spec 0024 #1.1, #2.2, #2.3).
 
-Spec 0024 relies on the 0011 workflow engine and its tasks, on court roles
-(``court-roles.md``) and on a contract ``apps.cases`` does not expose yet. Every
-call scrutiny makes to them goes through this module, so each stand-in below
-is replaced here, and only here, when the real one lands:
+Spec 0024 relies on the 0011 workflow engine and its tasks and on a contract
+``apps.cases`` does not expose yet. Every call scrutiny makes to them goes
+through this module, so each stand-in below is replaced here, and only here,
+when the real one lands:
 
 * Workflow — ``Case.status`` is moved directly, as ``apps.cases.services.filing``
   does (spec 0021 §7, option a). A round opens when a case is saved in a stage
   status (``receivers``), not on ``state_entered``.
 * Tasks — none yet: a case is on a list while its round is open, and *start*
   is the claim.
-* Roles — Django groups named after the role. A group is held across the
-  deployment, so roles count only at the one establishment
-  ``SCRUTINY_ESTABLISHMENT_ID`` names (``RLE-00``) and nowhere else; unset,
-  nobody holds a court role.
-* Cases contract — the cheque-bounce field catalogue and date chain below, the
-  case title kept in the detail row's ``additional_details``, courtrooms as
-  the establishment's child organizations, one registration type and no oath.
+* Cases contract — the cheque-bounce field catalogue and date chain below,
+  the case's establishment read from its ``court_id`` until ``apps.cases``
+  places a case at one (spec 0029 #10.3), one registration type and no oath.
+
+Court access is not a stand-in: services check actions with
+``apps.organizations.access`` (spec 0029 #10.1).
   The correction scope is ``apps.cases.services.correction``'s.
 """
 
 import calendar
 import datetime
 import re
-import uuid
 from dataclasses import dataclass
 
-from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -40,30 +37,10 @@ from apps.cases.services.filing import (
     get_viewable_case,
     return_to_signing,
 )
-from apps.organizations.models import Organization
+from apps.organizations import selectors as court
 
 from . import errors as scrutiny_errors
-from .enums import CourtRole, RoundStage
-
-# Roles
-
-
-def configured_establishment():
-    """Return the id of the establishment this deployment serves, or None if unset or malformed."""
-    try:
-        return uuid.UUID(str(settings.SCRUTINY_ESTABLISHMENT_ID))
-    except ValueError:
-        return None
-
-
-def roles_held(user, establishment_id):
-    """Return the court roles ``user`` holds at the establishment; none at any other."""
-    configured = configured_establishment()
-    if configured is None or establishment_id is None or str(establishment_id) != str(configured):
-        return frozenset()
-    names = user.groups.filter(name__in=CourtRole.values).values_list("name", flat=True)
-    return frozenset(CourtRole(name) for name in names)
-
+from .enums import RoundStage
 
 # Workflow
 
@@ -138,19 +115,23 @@ REGISTRATION_TYPES = (RegistrationType("CC", "Criminal complaint"),)
 
 
 def establishment_id(case):
-    """Return the establishment a case entering scrutiny goes to, or None if unconfigured.
+    """Return the id of the establishment a case entering scrutiny goes to, or None.
 
-    Always the deployment's one establishment (``RLE-00``, #2.5), never the
-    filer's ``court_id``: that may be missing, a courtroom or another court,
-    and the courtroom is the Scrutiny officer's choice (``SCR-16``).
+    The establishment of the case's ``court_id`` (spec 0029 #10.1): that court
+    if it is an establishment, or a courtroom's establishment. None when the
+    case names no court, one that is neither, or an inactive establishment:
+    nobody is allowed anything there, so the case could never be seen. The
+    courtroom is still the Scrutiny officer's choice (``SCR-16``).
     """
-    return configured_establishment()
+    establishment = court.establishment_of(case.court_id)
+    if establishment is None or not establishment.is_active:
+        return None
+    return establishment.pk
 
 
 def courtrooms(establishment_id):
-    """Return the establishment's courtrooms; one with none of its own is its only courtroom."""
-    rooms = list(Organization.objects.active().filter(parent_id=establishment_id).order_by("name"))
-    return rooms or list(Organization.objects.filter(pk=establishment_id))
+    """Return the establishment's active courtrooms, by name (``SCR-16``)."""
+    return list(court.courtrooms(establishment_id))
 
 
 def registration_types(establishment_id):
@@ -379,13 +360,3 @@ def add_months(day, months):
 open_for_correction = correction.open_for_correction
 close_correction = correction.close_correction
 correction_scope = correction.get_scope
-
-
-# Case title (#4.6), kept on the detail row until apps.cases owns it
-
-
-def set_case_title(case, complainant, accused, actor):
-    """Store the display names the court gave the parties (*Edit case title*)."""
-    row = detail(case)
-    row.additional_details["case_title"] = {"complainant": complainant, "accused": accused}
-    row.save(update_fields=["additional_details", "updated_at"])

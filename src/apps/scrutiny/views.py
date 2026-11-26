@@ -2,7 +2,7 @@
 
 Views stay thin: each finds the case for the caller (``permissions``), hands
 the action to a service or the read to ``selectors``, and renders the result.
-Court actions check the caller's role in the service; decisions take
+Court actions are checked in the service (spec 0029 #7); decisions take
 ``If-Match: <workflow_version>`` and refuse a stale one with ``412 E08005``.
 """
 
@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 from apps.api.errors import BusinessError
 from apps.api.schema import error_responses
 
+from . import court_actions as actions
 from . import errors, permissions, ports, selectors
 from .enums import RoundStage
 from .serializers import (
@@ -39,8 +40,6 @@ from .serializers import (
     ScrutinyDetailSerializer,
     ScrutinyListQuerySerializer,
     ScrutinyRowSerializer,
-    TitleResultSerializer,
-    TitleSerializer,
 )
 from .services import flags, responses, rounds
 
@@ -143,15 +142,20 @@ class ScrutinyViewSet(viewsets.GenericViewSet):
         parameters=[ScrutinyListQuerySerializer], responses=error_responses(errors.ROLE_REQUIRED)
     )
     def list(self, request):
-        """Filings of the establishment, by tab: with registry, with advocate, closed."""
+        """Filings by tab (with registry, with advocate, closed), of every court the caller scrutinises.
+
+        ``establishment`` narrows the list to one of them.
+        """
         query = _valid(ScrutinyListQuerySerializer, request.query_params)
-        establishment_id = permissions.require_court_reader(request.user, query["establishment"])
+        establishment_ids = permissions.require_court_reader(
+            request.user, actions.SCRUTINY_STAGE, query["establishment"]
+        )
         found = selectors.scrutiny_list(
             request.user,
             tab=query["tab"],
             claimed=query["claimed"],
             search=query["search"],
-            establishment_id=establishment_id,
+            establishment_ids=establishment_ids,
         )
         page = self.paginate_queryset(found["rounds"])
         self.paginator.counts = found["counts"]
@@ -318,18 +322,6 @@ class ScrutinyViewSet(viewsets.GenericViewSet):
         )
         return _decided(round_)
 
-    @extend_schema(
-        request=TitleSerializer,
-        responses={200: TitleResultSerializer, **error_responses(*ROUND_ERRORS)},
-    )
-    @action(detail=True, methods=["patch"])
-    def title(self, request, case_id=None):
-        """Change the parties' names shown on the case (*Edit case title*, #4.6)."""
-        permissions.court_case(case_id, request.user)
-        data = _valid(TitleSerializer, request.data)
-        rounds.set_title(case_id, request.user, **data)
-        return Response(TitleResultSerializer(data).data)
-
 
 @extend_schema(tags=["registration"])
 class RegistrationViewSet(viewsets.GenericViewSet):
@@ -344,14 +336,19 @@ class RegistrationViewSet(viewsets.GenericViewSet):
         responses=error_responses(errors.ROLE_REQUIRED),
     )
     def list(self, request):
-        """Forwarded cases waiting to be registered, longest waiting first."""
+        """Forwarded cases waiting to be registered at the caller's courts, longest waiting first.
+
+        ``establishment`` narrows the list to one of them.
+        """
         query = _valid(RegistrationListQuerySerializer, request.query_params)
-        establishment_id = permissions.require_court_reader(request.user, query["establishment"])
+        establishment_ids = permissions.require_court_reader(
+            request.user, actions.REGISTRATION_STAGE, query["establishment"]
+        )
         found = selectors.registration_list(
             request.user,
             search=query["search"],
             ordering=query["ordering"],
-            establishment_id=establishment_id,
+            establishment_ids=establishment_ids,
         )
         page = self.paginate_queryset(found)
         rows = selectors.registration_rows(page)

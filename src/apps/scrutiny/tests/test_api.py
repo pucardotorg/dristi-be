@@ -171,7 +171,6 @@ def test_forward_follows_roles_and_courtrooms(case, officer, officer_registerer,
     assert (response.status_code, error_codes(response)) == (409, {None: ["E09007"]})
 
     room = add_courtroom(establishment, "Courtroom 1")
-    add_courtroom(establishment, "Courtroom 2")
     client = client_for(officer)
     response = client.post(url(case, "forward"), {}, format="json")
     assert error_codes(response) == {"courtroom_id": ["E09017"]}
@@ -199,14 +198,12 @@ def test_register_number_taken_at_the_same_moment_is_409(
     assert (response.status_code, error_codes(response)) == (409, {None: ["E09020"]})
 
 
-def test_edit_title(case, officer):
+def test_edit_title_is_gone(case, officer):
+    # No PRD asks for it (spec 0029 #3.3, #10.1).
     response = client_for(officer).patch(
         url(case, "title"), {"complainant": "Prateek", "accused": "Deepak"}, format="json"
     )
-    assert (response.status_code, response.json()) == (
-        200,
-        {"complainant": "Prateek", "accused": "Deepak", "meta": response.json()["meta"]},
-    )
+    assert response.status_code == 404
 
 
 def test_start_and_resolve(case, officer, filer):
@@ -235,7 +232,7 @@ def test_registration_list_detail_and_register(case, officer, registerer):
     assert [row["case_id"] for row in listed["results"]] == [str(case.pk)]
     detail = client.get(registration_url(case))
     assert detail.status_code == 200
-    assert detail.json()["allowed_actions"] == ["start", "register", "send_back", "edit_title"]
+    assert detail.json()["allowed_actions"] == ["start", "register", "send_back"]
     response = client.post(registration_url(case, "register"), {}, format="json")
     assert (response.status_code, response.json()["case_status"]) == (200, CaseStatus.REGISTERED)
 

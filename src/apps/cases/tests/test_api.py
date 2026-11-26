@@ -22,6 +22,7 @@ from apps.cases.models import (
 from apps.cases.services import case_types
 from apps.cases.services.case_types import DocumentType
 from apps.files.models import File
+from apps.organizations.enums import CourtLevel
 from apps.organizations.models import OrganizationType
 from apps.organizations.tests.factories import make_organization
 from apps.parties.models import Person
@@ -286,6 +287,14 @@ class TestDraftsAndListing:
         assert APIClient().get(reverse("case-list")).status_code in (401, 403)
 
 
+def make_establishment():
+    """Return a court establishment, where a case entering scrutiny goes (spec 0029 #10.1)."""
+    return make_organization(
+        organization_type=OrganizationType.MAGISTRATE_COURT,
+        court_level=CourtLevel.ESTABLISHMENT,
+    )
+
+
 class TestByNumber:
     def test_any_user_finds_a_registered_case(self, client_for, user, other_user):
         court = make_organization(organization_type=OrganizationType.MAGISTRATE_COURT)
@@ -309,6 +318,7 @@ class TestByNumber:
             created_by=user,
             case_number="CC/9/2024",
             status=CaseStatus.UNDER_SCRUTINY,
+            court=make_establishment(),
         )
 
         assert client.get(reverse("case-by-number", args=["CC/9/2024"])).status_code == 404
@@ -322,6 +332,7 @@ class TestByNumber:
             created_by=user,
             case_number="CC/10/2024",
             status=case_status,
+            court=make_establishment(),
         )
 
         assert client.get(reverse("case-by-number", args=["CC/10/2024"])).status_code == 404

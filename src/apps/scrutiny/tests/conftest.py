@@ -5,25 +5,33 @@ import pytest
 from apps.cases.models import CaseDocument
 from apps.cases.services.case_types import DocumentType
 from apps.files.tests.factories import make_file
-from apps.organizations.models import Organization, OrganizationType
-from apps.scrutiny.enums import CourtRole
 
-from .factories import make_case, make_user
-
-
-@pytest.fixture
-def officer():
-    return make_user(CourtRole.SCRUTINY_OFFICER, name="Biju B")
-
-
-@pytest.fixture
-def registerer():
-    return make_user(CourtRole.CASE_REGISTERER, name="Magistrate")
+from .factories import (
+    CASE_REGISTERER,
+    SCRUTINY_OFFICER,
+    add_courtroom,
+    make_case,
+    make_establishment,
+    make_user,
+)
 
 
 @pytest.fixture
-def officer_registerer():
-    return make_user(CourtRole.SCRUTINY_OFFICER, CourtRole.CASE_REGISTERER)
+def officer(establishment):
+    """A Scrutiny officer at the establishment."""
+    return make_user(SCRUTINY_OFFICER, name="Biju B", at=establishment)
+
+
+@pytest.fixture
+def registerer(establishment):
+    """A Case registerer at the establishment."""
+    return make_user(CASE_REGISTERER, name="Magistrate", at=establishment)
+
+
+@pytest.fixture
+def officer_registerer(establishment):
+    """Someone allowed both duties at the establishment (``SCR-11``)."""
+    return make_user(SCRUTINY_OFFICER, CASE_REGISTERER, at=establishment)
 
 
 @pytest.fixture
@@ -32,21 +40,19 @@ def filer():
 
 
 @pytest.fixture
-def establishment(settings):
-    """The establishment the deployment serves (``SCRUTINY_ESTABLISHMENT_ID``)."""
-    court = Organization.objects.create(
-        code="EST", name="Establishment", organization_type=OrganizationType.MAGISTRATE_COURT
-    )
-    settings.SCRUTINY_ESTABLISHMENT_ID = str(court.pk)
+def establishment():
+    """The court establishment the case is filed in, with one courtroom."""
+    court = make_establishment("EST", "Establishment")
+    add_courtroom(court, "Main courtroom")
     return court
 
 
 @pytest.fixture
 def other_establishment():
-    """A second court in the same deployment, which it does not serve."""
-    return Organization.objects.create(
-        code="OTHER", name="Other court", organization_type=OrganizationType.MAGISTRATE_COURT
-    )
+    """A second establishment, where the officers here hold nothing, with one courtroom."""
+    court = make_establishment("OTHER", "Other court")
+    add_courtroom(court, "Other courtroom")
+    return court
 
 
 @pytest.fixture

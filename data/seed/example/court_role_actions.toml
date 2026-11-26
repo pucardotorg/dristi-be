@@ -1,0 +1,29 @@
+# The actions of the example roles in court_roles.toml: each PRD role's
+# actions from apps/scrutiny/court_actions.py (spec 0029 #3.3).
+
+[seed]
+model = "organizations.CourtRoleAction"
+
+[[rows]]
+role = "SCRUTINY_OFFICER"
+action = "scrutiny.flag"
+
+[[rows]]
+role = "SCRUTINY_OFFICER"
+action = "scrutiny.send_back"
+
+[[rows]]
+role = "SCRUTINY_OFFICER"
+action = "scrutiny.choose_courtroom"
+
+[[rows]]
+role = "SCRUTINY_OFFICER"
+action = "scrutiny.forward"
+
+[[rows]]
+role = "CASE_REGISTERER"
+action = "registration.register"
+
+[[rows]]
+role = "CASE_REGISTERER"
+action = "registration.send_back"

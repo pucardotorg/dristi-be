@@ -25,6 +25,7 @@ from apps.cases.models import (
 from apps.cases.services.case_types import CaseType
 from apps.core.models import Configuration
 from apps.hearings.services import calendar, listing
+from apps.organizations.enums import CourtLevel
 from apps.organizations.models import Organization, OrganizationType
 from apps.parties.models import Person
 from apps.parties.tests.factories import make_address
@@ -56,11 +57,13 @@ def make_user(*roles, name="User"):
 
 
 def make_court(name, parent=None):
+    """Return a court establishment, or a courtroom of ``parent`` (spec 0029 #2)."""
     return Organization.objects.create(
         code=f"{name.upper().replace(' ', '_')}_{next(_numbers)}",
         name=name,
         organization_type=OrganizationType.MAGISTRATE_COURT,
         parent=parent,
+        court_level=CourtLevel.COURTROOM if parent else CourtLevel.ESTABLISHMENT,
     )
 
 
