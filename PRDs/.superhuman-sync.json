@@ -61,10 +61,61 @@
     "order-template-catalogue.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
       "title": "Order Item Catalogue",
-      "contentHash": "5c8a2f1c91b4",
-      "pageUpdatedAt": 1794300079.636,
-      "note": "Force-synced (cleared and rebuilt) 2026-11-10 for (22), Application action #27; the page had no comments. `sections` not recorded: the next sync must rebuild or patch by hand.",
-      "sections": [],
+      "contentHash": "c50b816b4e60",
+      "pageUpdatedAt": 1795693634.019,
+      "note": "Force-synced (cleared and rebuilt) 2026-11-26 for (23)-(24); the page's only comment (Garvita, warrant fields) was resolved first, on the owner's say-so. Sections are chunked at ## (Variables split at ### 25.); each records its first block.",
+      "sections": [
+        {
+          "key": "# Order item catalogue",
+          "elementId": "cl-Tmehw2XBUw",
+          "hash": "6aa49b540a87"
+        },
+        {
+          "key": "## Terminology",
+          "elementId": "cl-ZEeNET7NBo",
+          "hash": "adec3d3f3f05"
+        },
+        {
+          "key": "## Order items",
+          "elementId": "cl-VIbBRp5DrU",
+          "hash": "dffd800cb19f"
+        },
+        {
+          "key": "## Variables by order item",
+          "elementId": "cl-d4ckLF6DHW",
+          "hash": "5677616e9962"
+        },
+        {
+          "key": "### 25. Issue of miscellaneous process",
+          "elementId": "cl-7mjL6ZR9JK",
+          "hash": "556251afda7d"
+        },
+        {
+          "key": "## Combination restrictions",
+          "elementId": "cl-TwtIzECBvz",
+          "hash": "9c764e006290"
+        },
+        {
+          "key": "## Workflow trigger order",
+          "elementId": "cl-7Uz54aSeRq",
+          "hash": "4be69bda7aa2"
+        },
+        {
+          "key": "## Not in V1",
+          "elementId": "cl-XcIp9vEG_S",
+          "hash": "fc0ba27f1ad9"
+        },
+        {
+          "key": "## Application types",
+          "elementId": "cl-kH4OF_SbXY",
+          "hash": "ec0740754465"
+        },
+        {
+          "key": "## Hearing purposes",
+          "elementId": "cl-1vzCRkT_BP",
+          "hash": "52d018e574ef"
+        }
+      ],
       "calloutElementId": "cl--FeemPAxJA"
     },
     "join-a-case.md": {
@@ -271,10 +322,10 @@
     "process.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-7id_OHaaSJ",
       "title": "Process",
-      "contentHash": "93d12bff72fc",
-      "pageUpdatedAt": 1795665477.416,
+      "contentHash": "364da4375bee",
+      "pageUpdatedAt": 1795693364.278,
       "calloutElementId": "cl-XtYa7aTzg5",
-      "note": "Rebuilt 2026-11-03 for v14.3 (page had no comments). Markdown chunks split into many blocks on insert; sections record each chunk's first block. Views: Court Side table-uvv-IGiTDG, Citizen-Side table-QdkW0UnZCs, Notifications table-5v-9Iil4il, Events table-aUiExyPtHo. 2026-11-03: master-table PRDs tags renamed from '-handover' names to file stems (process, efiling, account-creation, join-a-case, scrutiny-registration); views on those five pages now filter on the new tags. 2026-11-26: v14.5–v14.10 patched in place (table cells via table_rows_manage, §13.2 and §15 bullet inserted); sections whose hash reads 'patched-2026-11-26' were edited and will be diffed against the page on the next sync.",
+      "note": "Rebuilt 2026-11-03 for v14.3 (page had no comments). Markdown chunks split into many blocks on insert; sections record each chunk's first block. Views: Court Side table-uvv-IGiTDG, Citizen-Side table-QdkW0UnZCs, Notifications table-5v-9Iil4il, Events table-aUiExyPtHo. 2026-11-03: master-table PRDs tags renamed from '-handover' names to file stems (process, efiling, account-creation, join-a-case, scrutiny-registration); views on those five pages now filter on the new tags. 2026-11-26: v14.5–v14.10 patched in place (table cells via table_rows_manage, §13.2 and §15 bullet inserted); sections whose hash reads 'patched-2026-11-26' were edited and will be diffed against the page on the next sync. 2026-11-26: v14.11 patched in place (§3.1 row, TPL-01-TPL-04 and Q-16 via table_rows_manage; A2, Status and callout by text replace).",
       "sections": [
         {
           "key": "# Process — Notice, Summons, Warrant, Proclamation, Attachment",
@@ -284,7 +335,7 @@
         {
           "key": "v12 — 2026-10-19; order items' variables are no longer locked or optional, and order items carry no template text (see [`dropped-ideas.md`](dropped-ideas.md)); links point at the e-filing handover, after the e-filing, scrutiny and registration handover was split in two. v11 — 2026-10-18; **court-side work is named by role** ([`court-roles.md`](court-roles.md)): a warrant is signed by a **Warrant signer**, every other process by a **Process signer** (`SGN-01`); marking sent, recording the outcome and recording a recall are done by a **Process dispatcher** (§6.2, `DSP-03`, `PIA-01`); the channels and police station are order data. The CMO and Magistrate no longer hold permissions here. v10 — 2026-09-30; 2026-10-15: **new By hand channel** (§6.2) — no envelope, no destination; the CMO marks it sent and records the outcome. Warrant may take it; **a proclamation takes By hand only**, and a screen may record it Sent and Executed once the signed copy is downloaded (`DSP-10`); `Q-2` resolved for affixation. **System send is still its own step** — whether a screen sends on signing is a UI choice (`DSP-02`). 2026-10-12: **recipient vs addressee clarified** (§2) — the recipient is the person the process names and never changes; a warrant, proclamation or attachment is *addressed* to the police; \"addressee\" no longer used for the person named (`SGN-01`, `DSP-04`, `PIA-01`, `Q-2`). **police is now a channel, not a flag.** The channels are",
           "elementId": "cl-VZ6ctc-pH1",
-          "hash": "4c6663e1361a"
+          "hash": "patched-2026-11-26"
         },
         {
           "key": "## A5. The channels, in plain terms",
