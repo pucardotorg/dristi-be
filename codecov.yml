@@ -1,0 +1,12 @@
+# Codecov status checks on pull requests (https://docs.codecov.com/docs/codecovyml-reference).
+coverage:
+  status:
+    # The lines a pull request adds or changes must be at least 90% covered.
+    patch:
+      default:
+        target: 90%
+    # The project's overall coverage may not drop by more than 1% from the base branch.
+    project:
+      default:
+        target: auto
+        threshold: 1%
