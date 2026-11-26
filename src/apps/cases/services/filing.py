@@ -316,7 +316,7 @@ def validation_errors(case):
         error(
             "court_id",
             "This case is not filed in a court establishment or one of its courtrooms, "
-            "so the court cannot receive it. Start a new filing and choose the court.",
+            "so the court cannot receive it.",
         )
 
     config = get_config(case.case_type)
