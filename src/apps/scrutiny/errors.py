@@ -55,10 +55,13 @@ SCRUTINY_NOT_CONFIGURED = define(
 )
 # Routing (#2.5): the case's court_id is missing, or is neither a court
 # establishment nor one of its courtrooms, so a case entering scrutiny has
-# nowhere to go; the move is refused and rolled back.
+# nowhere to go; the move is refused and rolled back. Filing refuses such a
+# court at draft start and before signing, so this is reached only when the
+# establishment stops being one, or is deactivated, after the case was signed.
 NO_ESTABLISHMENT = define(
     "E09021",
-    "Choose the court establishment this case is filed in before submitting it.",
+    "This case is not filed in an active court establishment or one of its courtrooms, "
+    "so the court cannot receive it.",
     status=409,
 )
 

@@ -138,7 +138,7 @@ class TestDraftsAndListing:
         assert error_codes(response) == {"case_type": ["E00005"]}
 
     def test_court_given_on_the_draft_is_set_on_the_case(self, client):
-        court = make_organization(organization_type=OrganizationType.MAGISTRATE_COURT)
+        court = make_establishment()
         response = client.post(
             reverse("case-list"),
             {"case_type": "CHEQUE_BOUNCE", "court_id": str(court.pk)},
@@ -174,6 +174,55 @@ class TestDraftsAndListing:
 
         assert response.status_code == 400
         assert error_codes(response) == {"court_id": [code]}
+
+    def test_courtroom_of_an_establishment_is_accepted(self, client):
+        courtroom = make_organization(
+            code="CR_1",
+            organization_type=OrganizationType.MAGISTRATE_COURT,
+            court_level=CourtLevel.COURTROOM,
+            parent=make_establishment(),
+        )
+
+        response = client.post(
+            reverse("case-list"),
+            {"case_type": "CHEQUE_BOUNCE", "court_id": str(courtroom.pk)},
+            format="json",
+        )
+
+        assert response.status_code == 201
+        assert response.json()["court_id"] == str(courtroom.pk)
+
+    @pytest.mark.parametrize(
+        "make_court",
+        [
+            # An organization that is not a court establishment or courtroom.
+            lambda: make_organization(
+                code="DIST_1", organization_type=OrganizationType.MAGISTRATE_COURT
+            ),
+            # A courtroom whose establishment is inactive: nobody could see the case.
+            lambda: make_organization(
+                code="CR_1",
+                organization_type=OrganizationType.MAGISTRATE_COURT,
+                court_level=CourtLevel.COURTROOM,
+                parent=make_organization(
+                    code="EST_1",
+                    organization_type=OrganizationType.MAGISTRATE_COURT,
+                    court_level=CourtLevel.ESTABLISHMENT,
+                    is_active=False,
+                ),
+            ),
+        ],
+        ids=["not-a-court-level", "inactive-establishment"],
+    )
+    def test_court_the_case_cannot_be_filed_in_is_400(self, client, make_court):
+        response = client.post(
+            reverse("case-list"),
+            {"case_type": "CHEQUE_BOUNCE", "court_id": str(make_court().pk)},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert error_codes(response) == {"court_id": ["E00005"]}
 
     def test_list_shows_only_the_callers_cases(self, client, user, other_user, draft):
         add_cheque(client, draft)
@@ -287,9 +336,10 @@ class TestDraftsAndListing:
         assert APIClient().get(reverse("case-list")).status_code in (401, 403)
 
 
-def make_establishment():
+def make_establishment(code="EST_1"):
     """Return a court establishment, where a case entering scrutiny goes (spec 0029 #10.1)."""
     return make_organization(
+        code=code,
         organization_type=OrganizationType.MAGISTRATE_COURT,
         court_level=CourtLevel.ESTABLISHMENT,
     )

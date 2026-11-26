@@ -123,10 +123,8 @@ def establishment_id(case):
     nobody is allowed anything there, so the case could never be seen. The
     courtroom is still the Scrutiny officer's choice (``SCR-16``).
     """
-    establishment = court.establishment_of(case.court_id)
-    if establishment is None or not establishment.is_active:
-        return None
-    return establishment.pk
+    establishment = court.active_establishment_of(case.court_id)
+    return establishment.pk if establishment is not None else None
 
 
 def courtrooms(establishment_id):

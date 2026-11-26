@@ -10,6 +10,9 @@ from rest_framework.test import APIClient
 
 from apps.cases.models import CaseType
 from apps.cases.services import services
+from apps.organizations.enums import CourtLevel
+from apps.organizations.models import OrganizationType
+from apps.organizations.tests.factories import make_organization
 from apps.users.models import RegistrationStatus, Role, User
 
 _numbers = itertools.count(1)
@@ -96,9 +99,21 @@ def client(client_for, user):
 
 
 @pytest.fixture
-def draft(user):
-    """A cheque bounce draft session for the filer; returns its id."""
-    return services.start_draft(user, CaseType.CHEQUE_BOUNCE)["draft_session_id"]
+def establishment():
+    """A court establishment a case can be filed in (spec 0029 #10.1)."""
+    return make_organization(
+        code="FILING_EST",
+        organization_type=OrganizationType.MAGISTRATE_COURT,
+        court_level=CourtLevel.ESTABLISHMENT,
+    )
+
+
+@pytest.fixture
+def draft(user, establishment):
+    """A cheque bounce draft session for the filer, filed in ``establishment``; returns its id."""
+    return services.start_draft(user, CaseType.CHEQUE_BOUNCE, court_id=establishment.pk)[
+        "draft_session_id"
+    ]
 
 
 @pytest.fixture

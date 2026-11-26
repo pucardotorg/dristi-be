@@ -177,6 +177,18 @@ def establishment_of(organization_id):
     return None
 
 
+def active_establishment_of(organization_id):
+    """Return the organization's establishment if it is active, else None.
+
+    Where a case filed at the organization goes: nobody is allowed anything at
+    an inactive establishment, so a case there could never be seen.
+    """
+    establishment = establishment_of(organization_id)
+    if establishment is None or not establishment.is_active:
+        return None
+    return establishment
+
+
 def action_holders(organization_id, action, *, process_type=None, channel=None):
     """Return the active users allowed ``action`` at the organization.
 

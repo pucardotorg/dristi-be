@@ -157,6 +157,19 @@ class CourtroomsSelectorTests(TestCase):
         self.assertIsNone(selectors.establishment_of(None))
         self.assertIsNone(selectors.establishment_of(uuid.uuid4()))
 
+    def test_active_establishment_of(self):
+        est = make_establishment("EST")
+        room = make_courtroom("EST_CR", est)
+        other = make_organization(code="OTHER")
+        self.assertEqual(selectors.active_establishment_of(est.pk), est)
+        self.assertEqual(selectors.active_establishment_of(room.pk), est)
+        self.assertIsNone(selectors.active_establishment_of(other.pk))
+        self.assertIsNone(selectors.active_establishment_of(None))
+        est.is_active = False
+        est.save()
+        self.assertIsNone(selectors.active_establishment_of(est.pk))
+        self.assertIsNone(selectors.active_establishment_of(room.pk))
+
     def test_establishment_id_of(self):
         est = make_establishment("EST")
         room = make_courtroom("EST_CR", est)

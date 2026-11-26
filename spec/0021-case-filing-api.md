@@ -141,7 +141,11 @@ Initializes a client-side draft session without creating database entries. Datab
 ```
 
 `court_id` is optional: the id of the court (an `Organization`) the case is to
-be filed in. An unknown or inactive id is a 400.
+be filed in. An unknown or inactive id is a 400 (`E00011`). It must be a court
+establishment or a courtroom of one, and that establishment must be active
+(spec 0029 #10.1); any other organization is a 400 (`E00005`). It cannot be
+changed later, and a case without one is refused by the completeness check
+(§6.3).
 
 **Response (201 Created):**
 ```json
@@ -1414,6 +1418,9 @@ POST /cases/{case_id}/validate
 ```
 
 **Validation Checks:**
+
+0. **Court:**
+   - The case's `court_id` is an active court establishment, or a courtroom of one ("This case is not filed in a court establishment or one of its courtrooms, so the court cannot receive it. Start a new filing and choose the court.", on `court_id`). Scrutiny routes the case by it (spec 0029 #10.1), and the filer cannot change it after the draft starts, so it is checked before anyone signs or pays rather than at submit-for-scrutiny (`E09021`). Temporary, until open question P-2 of spec 0029 decides how a case is placed at an establishment.
 
 1. **Participants:**
    - At least one active complainant (`role = 'COMPLAINANT'`, `is_active = true`)
