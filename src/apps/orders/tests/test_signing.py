@@ -400,7 +400,7 @@ def test_changing_the_type_after_signing_began_voids_that_signing(case, staff, s
     # Signing again prepares a new PDF and allots a number in the new type's series.
     signing.start_signing(order.pk, actor=signer)
     order = Order.objects.get(pk=order.pk)
-    assert order.number and order.signing_file_id == "file-2"
+    assert "/RZN/" in order.number and order.signing_file_id == "file-2"
     signing.record_signature(
         order.pk, success(order, signer, source="file-2", signed="signed-2").pk, actor=signer
     )
@@ -703,6 +703,24 @@ def test_a_triggered_order_whose_roznama_awaits_signature_may_still_sign_it(norm
     assert "sign_roznama" not in common.allowed_actions(normal_triggered)
     roznama.status = RoznamaStatus.SIGNED
     assert "sign_roznama" not in common.allowed_actions(normal_triggered, roznama)
+
+
+def test_a_refusal_on_a_triggered_order_lists_its_roznamas_actions(normal_triggered, staff):
+    from apps.orders.services import common
+
+    with pytest.raises(BusinessError) as excinfo:
+        drafting.edit_text(normal_triggered.pk, "<p>Changed.</p>", actor=staff)
+    assert code(excinfo) == "E14001"
+    assert excinfo.value.allowed_actions == ["edit_diary_entry", "sign_roznama"]
+    with pytest.raises(BusinessError) as excinfo:
+        common.require_data_editable(normal_triggered)
+    assert excinfo.value.allowed_actions == ["edit_diary_entry", "sign_roznama"]
+    OrderRoznama.objects.filter(order=normal_triggered).update(
+        status=RoznamaStatus.SIGNED, signed_file_id="roz-signed"
+    )
+    with pytest.raises(BusinessError) as excinfo:
+        drafting.edit_text(normal_triggered.pk, "<p>Changed.</p>", actor=staff)
+    assert excinfo.value.allowed_actions == []
 
 
 def test_a_counter_created_by_another_signing_in_the_same_moment_is_used(sent, monkeypatch):

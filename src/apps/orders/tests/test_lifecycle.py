@@ -177,8 +177,9 @@ def test_signing_an_order_with_complete_data_triggers_it(ready, staff, signer):
     assert order.status == OrderStatus.TRIGGERED
 
 
+@pytest.mark.parametrize("sign_first", [True, False])
 def test_sign_and_complete_in_either_order_trigger_exactly_once(
-    hearing, order, staff, signer, setter, django_capture_on_commit_callbacks
+    hearing, order, staff, signer, setter, django_capture_on_commit_callbacks, sign_first
 ):
     drafting.edit_text(order.pk, "<p>x</p>", actor=staff)
     next_hearing.set_next_hearing(
@@ -190,9 +191,14 @@ def test_sign_and_complete_in_either_order_trigger_exactly_once(
     signals.order_triggered.connect(receiver, weak=False)
     try:
         with django_capture_on_commit_callbacks(execute=False) as callbacks:
-            lifecycle.send_for_signing(order.pk, actor=staff)
-            sign(order, signer)
-            lifecycle.mark_complete(order.pk, actor=staff)
+            if sign_first:
+                lifecycle.send_for_signing(order.pk, actor=staff)
+                sign(order, signer)
+                lifecycle.mark_complete(order.pk, actor=staff)
+            else:
+                lifecycle.mark_complete(order.pk, actor=staff)
+                lifecycle.send_for_signing(order.pk, actor=staff)
+                sign(order, signer)
             # Marking complete again, or signing again, is refused: no second trigger.
             with pytest.raises(BusinessError) as again:
                 lifecycle.mark_complete(order.pk, actor=staff)

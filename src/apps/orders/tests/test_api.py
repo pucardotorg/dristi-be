@@ -725,6 +725,8 @@ def test_pending_orders_search_and_the_triggered_window(api, courtroom, ready, s
     query = {"court": str(courtroom.pk), "tab": "triggered"}
     assert len(api.get(url("order-pending"), query).json()["results"]) == 1
     assert api.get(url("order-pending"), {**query, "search": "zzzz"}).json()["results"] == []
+    by_case = api.get(url("order-pending"), {**query, "search": ready.case.case_number})
+    assert [row["id"] for row in by_case.json()["results"]] == [str(ready.pk)]
     Order.objects.filter(pk=ready.pk).update(
         triggered_at=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC)
     )

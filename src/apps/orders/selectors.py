@@ -107,7 +107,8 @@ def pending_queryset(court_id, tab, search=""):
     """The Pending orders tab's orders, newest first, optionally searched by case or title."""
     queryset = _in_tab(_base(court_id), tab).select_related("order_type", "roznama").distinct()
     if search:
-        case_ids = list(search_case_ids(search, court_id))
+        # A subquery: a broad search never loads the court's matching case ids into Python.
+        case_ids = search_case_ids(search, court_id)
         queryset = queryset.filter(Q(title__icontains=search) | Q(case_id__in=case_ids))
     return queryset.order_by("-updated_at")
 

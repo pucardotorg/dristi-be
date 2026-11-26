@@ -48,6 +48,9 @@ STRUCTURE_PARTS = {
     "tr": {"td", "th"},
 }
 INLINE_MARKUP = {"strong": "b", "b": "b", "em": "i", "i": "i", "u": "u"}
+# The cells the text's tables may hold in all, each row padded to its table's widest
+# (``_table_block``): one wide row would otherwise cost the PDF a cell per padded slot.
+MAX_TABLE_CELLS = 10_000
 
 # The signature box, in PDF points on the last page; the page's bottom margin leaves it clear.
 SIGN_PLACEHOLDER = {"page": -1, "x": 330, "y": 40, "width": 215, "height": 70}
@@ -96,8 +99,10 @@ def unsupported_structure(clean):
     The renderer draws only top-level lists and tables, takes a list's items and
     a table's cells as inline text (a paragraph inside one becomes a line of its
     own, see ``_inline``), and skips anything else inside them, so such text
-    would print differently from the page (or not at all). (Cell spans are
-    allowed: the PDF ignores them, a documented limitation.)
+    would print differently from the page (or not at all). A list item outside
+    a list would print as plain text run into its neighbours. (Cell spans are
+    allowed: the PDF ignores them, a documented limitation.) Tables are capped
+    at ``MAX_TABLE_CELLS`` as the PDF draws them, padded rows included.
     """
     if not clean or is_blank(clean):
         return ""
@@ -114,6 +119,18 @@ def unsupported_structure(clean):
             child.tag not in allowed or (child.tail or "").strip() for child in element
         ):
             return "A list can hold only list items, and a table only rows of cells."
+    for element in root.iter("li"):
+        if element.getparent().tag not in ("ol", "ul"):
+            return "A list item must be inside a numbered or bulleted list."
+    cells = 0
+    for table in root.iter("table"):
+        widths = [len(row) for row in table.iter("tr") if len(row)]
+        cells += max(widths, default=0) * len(widths)
+    if cells > MAX_TABLE_CELLS:
+        return (
+            f"Tables can hold at most {MAX_TABLE_CELLS:,} cells in all, "
+            "counting every row as wide as its table's widest row."
+        )
     return ""
 
 

@@ -30,6 +30,7 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A3, A4, A5, LEGAL, LETTER, landscape, portrait
 from reportlab.lib.styles import ParagraphStyle
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     Flowable,
@@ -43,7 +44,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-from reportlab.platypus.flowables import HRFlowable
+from reportlab.platypus.flowables import HRFlowable, _bulletFormat
 
 from ..exceptions import PDFRenderError
 from . import ImageData, PDFRenderer, fonts
@@ -75,6 +76,7 @@ BUILTIN_STYLES = {
 HEADER_FOOTER_GAP = 8
 PX_TO_PT = 0.75  # 96 dpi pixels to 72 dpi points
 ALPHA_WRAP = 26  # ReportLab's alphabetic list formatter restarts at "a" after "z"
+LIST_MARKER_GAP = 4  # points between the widest list marker and the item text
 
 
 def _alpha_label(number: int) -> str:
@@ -503,22 +505,41 @@ class PythonRenderer(PDFRenderer):
         # ReportLab's alphabetic formatter wraps after 26 (item 27 reads "a" again), so a
         # longer lettered list gets explicit "aa", "ab"... markers, as a browser prints them.
         lettered_long = list_type == "a" and len(texts) + start - 1 > ALPHA_WRAP
+        bullet_type = "bullet" if lettered_long else list_type
+        bullet_format = "%s." if ordered else None
+        indent = float(block.get("indent", 18))
+        if ordered and texts:
+            # ReportLab draws each marker from the list's left edge: widen the indent so
+            # the widest ("100.", "aaa.") ends before the item text instead of over it.
+            widest = max(
+                stringWidth(
+                    _bulletFormat(
+                        _alpha_label(start + index) if lettered_long else start + index,
+                        bullet_type,
+                        bullet_format,
+                    ),
+                    style.fontName,
+                    style.fontSize,
+                )
+                for index in range(len(texts))
+            )
+            indent = max(indent, widest + LIST_MARKER_GAP)
         items = [
             ListItem(
                 self._paragraph(text, style),
-                leftIndent=float(block.get("indent", 18)),
+                leftIndent=indent,
                 value=_alpha_label(start + index) if lettered_long else None,
             )
             for index, text in enumerate(texts)
         ]
         return ListFlowable(
             items,
-            bulletType="bullet" if lettered_long else list_type,
+            bulletType=bullet_type,
             start=None if lettered_long or not ordered else start,
-            bulletFormat="%s." if ordered else None,
+            bulletFormat=bullet_format,
             bulletFontName=style.fontName,
             bulletFontSize=style.fontSize,
-            leftIndent=float(block.get("indent", 18)),
+            leftIndent=indent,
         )
 
     def _image(self, block: dict):

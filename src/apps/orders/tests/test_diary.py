@@ -53,11 +53,7 @@ def test_a_separate_entry_is_kept_as_written_and_the_text_is_untouched(ready, st
 def test_a_separate_entry_cannot_be_blank(ready, staff):
     with pytest.raises(ValidationError) as excinfo:
         diary.set_entry(ready.pk, same_as_text=False, text="<p> </p>", actor=staff)
-    assert (
-        code(excinfo) == "E14011"
-        if hasattr(excinfo.value, "error")
-        else "text" in excinfo.value.detail
-    )
+    assert excinfo.value.detail["text"][0].code == "E14011"
 
 
 def test_the_entry_is_labelled_per_state(case, staff):

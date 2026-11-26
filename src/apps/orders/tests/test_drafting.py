@@ -9,6 +9,7 @@ from apps.api.errors import BusinessError
 from apps.core.models import Configuration
 from apps.hearings.enums import HearingStatus, ReleaseReason
 from apps.hearings.models import Hearing
+from apps.orders import errors
 from apps.orders.enums import ItemSource, OrderStatus
 from apps.orders.models import Order
 from apps.orders.services import bulk, drafting, items
@@ -147,6 +148,31 @@ def test_a_failing_preset_leaves_no_order_behind(case, drafter):
             case_id=case.pk, actor=drafter, preset={"kind": "APPLICATION", "action": "ACCEPT"}
         )
     assert Order.objects.count() == before
+
+
+def test_a_preset_failing_after_its_first_item_leaves_neither_order_nor_item(
+    case, drafter, monkeypatch
+):
+    from apps.orders.models import OrderItem
+
+    real = items.add_locked
+    saved = []
+
+    def second_fails(order, item_type, **kwargs):
+        if item_type.code == "ISSUE_OF_SUMMONS":
+            raise BusinessError(errors.ITEM_NOT_AVAILABLE)
+        saved.append(real(order, item_type, **kwargs).item_type.code)
+
+    monkeypatch.setattr(items, "add_locked", second_fails)
+    before = (Order.objects.count(), OrderItem.objects.count())
+    with pytest.raises(BusinessError):
+        drafting.create_outside_hearing(
+            case_id=case.pk,
+            actor=drafter,
+            preset={"kind": "COGNIZANCE", "action": "TAKE_COGNIZANCE"},
+        )
+    assert saved == ["COGNIZANCE"]  # the first item was written before the failure
+    assert (Order.objects.count(), OrderItem.objects.count()) == before
 
 
 # -- text --------------------------------------------------------------------------
@@ -355,6 +381,16 @@ def test_changing_the_type_clears_an_allotted_number(gujarat, case, drafter):
     drafting.change_type(order.pk, "ROZNAMA", actor=drafter)
     order.refresh_from_db()
     assert order.number == ""
+
+
+def test_changing_the_type_moves_the_text_version_only(gujarat, case, drafter):
+    # The heading changed: viewers' next /changes/ poll must not be a 304, and a
+    # filler's write against the current data_version must still go through.
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
+    drafting.change_type(order.pk, "ROZNAMA", actor=drafter)
+    changed = Order.objects.get(pk=order.pk)
+    assert changed.text_version == order.text_version + 1
+    assert changed.data_version == order.data_version
 
 
 # -- discard ----------------------------------------------------------------------

@@ -148,9 +148,19 @@ def allowed_actions(order, roznama=None):
     return actions
 
 
+def _allowed_for_error(order, roznama):
+    """``allowed_actions`` for an ``E14001``, reading the Roznama a triggered order may await.
+
+    Only a triggered order's actions depend on it, so no other refusal costs a query.
+    """
+    if roznama is None and order.status == OrderStatus.TRIGGERED:
+        roznama = roznama_of(order)
+    return allowed_actions(order, roznama)
+
+
 def require_action(order, action, roznama=None):
     """Raise ``E14001`` unless ``action`` is allowed from the order's status (#4)."""
-    allowed = allowed_actions(order, roznama)
+    allowed = _allowed_for_error(order, roznama)
     if action not in allowed:
         raise ActionError(order, action, allowed)
 
@@ -161,7 +171,7 @@ def require_data_editable(order):
     Raises ``E14001`` for a triggered or discarded order, ``E14013`` for complete data.
     """
     if order.status not in DATA_EDITABLE_STATUSES:
-        raise ActionError(order, "change order data", allowed_actions(order))
+        raise ActionError(order, "change order data", _allowed_for_error(order, None))
     if order.data_complete:
         raise BusinessError(errors.ORDER_DATA_COMPLETE)
 

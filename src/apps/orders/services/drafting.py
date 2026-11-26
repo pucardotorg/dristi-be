@@ -346,6 +346,9 @@ def change_type(order_id, type_code, *, actor, remove_linked_documents=False):
         # so a signature begun on it can never be recorded (as ``move_to_draft`` does).
         order.signing_file_id = ""
         items.recompute_title(order)
+        # The page's heading changed: viewers' next ``/changes/`` poll must see it (#5.4).
+        # The type is the drafter's, so the drafter's version moves, never the filler's.
+        order.text_version += 1
         common.save_order(order, actor, f"type changed to {order_type.code}")
         return order
 

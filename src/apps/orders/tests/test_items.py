@@ -92,9 +92,8 @@ def test_scheduling_is_not_offered_in_a_hearing_and_not_typed_outside_one(
 def test_rescheduling_needs_a_scheduled_hearing(case, drafter, filler):
     outside = drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
     reasons = {row["code"]: row for row in items.catalogue(outside)}
-    assert reasons["RESCHEDULING_OF_HEARING_DATE"]["unavailable_reason"]["code"] in (
-        "NO_HEARING_SCHEDULED",
-        "FOLLOWS_NEXT_HEARING",
+    assert reasons["RESCHEDULING_OF_HEARING_DATE"]["unavailable_reason"]["code"] == (
+        "NO_HEARING_SCHEDULED"
     )
 
 
@@ -195,16 +194,14 @@ def test_an_item_that_asks_for_nothing_is_added_with_empty_values(order, filler)
 def test_values_are_checked_for_shape_on_save_but_mandatory_fields_are_not(order, filler):
     item = add(order, "COST", filler, values={"amount": "12.50"})
     assert item.values == {"amount": "12.50"}
-    with pytest.raises(Exception) as excinfo:
-        add(order, "COST", filler, values={"amount": "-3"})
-    assert code(excinfo) == "E14011" if hasattr(excinfo.value, "error") else True
-    assert "values.amount" in str(excinfo.value.detail)
-    with pytest.raises(Exception) as excinfo:
-        add(order, "COST", filler, values={"paying_party": "NOBODY"})
-    assert "values.paying_party" in str(excinfo.value.detail)
-    with pytest.raises(Exception) as excinfo:
-        add(order, "COST", filler, values={"unknown": "x"})
-    assert "values.unknown" in str(excinfo.value.detail)
+    for values, key in (
+        ({"amount": "-3"}, "values.amount"),
+        ({"paying_party": "NOBODY"}, "values.paying_party"),
+        ({"unknown": "x"}, "values.unknown"),
+    ):
+        with pytest.raises(ValidationError) as excinfo:
+            add(order, "COST", filler, values=values)
+        assert excinfo.value.detail[key][0].code == "E14011", key
 
 
 def test_a_deadline_must_be_a_date(order, filler):

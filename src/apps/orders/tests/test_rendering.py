@@ -49,6 +49,10 @@ def test_sanitising_keeps_only_the_allow_list(dirty, clean):
         "<ol><p>para</p><li>a</li></ol>",
         "<table><caption>c</caption><tr><td>1</td></tr></table>",
         "<strong><ul><li>x</li></ul></strong>",
+        # An item outside a list would print as plain text run into its neighbours.
+        "<li>Pay 100</li><li>Pay 200</li>",
+        "<p>Pay:</p><li>100</li>",
+        "<table><tr><td><li>x</li></td></tr></table>",
     ],
 )
 def test_structure_the_pdf_cannot_draw_is_refused(body):
@@ -68,6 +72,31 @@ def test_structure_the_pdf_cannot_draw_is_refused(body):
 )
 def test_ordinary_lists_and_rectangular_tables_are_accepted(body):
     assert rendering.sanitize_html(body)
+
+
+def _table(widths):
+    return "<table>" + "".join("<tr>" + "<td>x</td>" * w + "</tr>" for w in widths) + "</table>"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # One wide row pads every other row to its width: 101 x 101 cells in the PDF.
+        _table([101] + [1] * 100),
+        # The cap counts every table in the text together.
+        _table([20] + [1] * 19) * 26,
+    ],
+)
+def test_tables_that_would_draw_too_many_cells_are_refused(body):
+    with pytest.raises(BusinessError) as excinfo:
+        rendering.sanitize_html(body)
+    assert excinfo.value.error.code == "E14027"
+    assert excinfo.value.detail["text"][0].code == "E14027"
+
+
+def test_a_table_of_as_many_cells_as_the_cap_is_accepted():
+    assert rendering.MAX_TABLE_CELLS == 100 * 100
+    assert rendering.sanitize_html(_table([100] * 100))
 
 
 def test_blank_html_says_nothing():

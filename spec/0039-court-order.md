@@ -831,6 +831,7 @@ a hearing the next hearing is set on the order and the item follows from it
 * `text` is HTML restricted to an allow-list: `p`, `br`, `strong`, `em`, `u`, `ol` (with `type="a"` for lettered), `ul`, `li`, `table`, `thead`, `tbody`, `tr`, `th`, `td` (`colspan`, `rowspan`). Everything else is stripped on save by a server-side sanitiser (`nh3`), never trusted from the client (`TXT-02`).
 * Paragraphs inside a list item or a table cell (`<li><p>…</p><p>…</p></li>`, as editors write them) are kept: each starts a new line of the item or cell in the PDF, so their words never run together (`ORD-13`).
 * At most config `orders.text_max_bytes` (`400 E14020`, `field = text`).
+* Tables hold at most 10,000 cells in all, each row counted as wide as its table's widest row, as the PDF draws it (`400 E14027`, `field = text`): a few bytes of ragged rows would otherwise cost the signing worker millions of PDF cells.
 * `rendering.render_page(order)` builds the page from the record — court heading, case header, attendance lines (from [`0023`](0023-hearings.md), people not required left out, empty lines left out, `ATT-03`), the text, the next hearing line, and the signature block — as HTML. The same HTML is the data of the `apps.pdf` template `court-order`. The detail endpoint returns it as `rendered_html`, so the page and the signed PDF never disagree (`ORD-13`). Heading and signature block are never typed.
 
 #### 5.4 Saving and concurrency
@@ -910,6 +911,7 @@ Normal, so no choice is shown there.
 * Changing to a type that does not allow links, on an order that has some, needs `remove_linked_documents = true`; without it, `409 E14025` with the documents that would be removed, so the screen can warn (`OTY-07`). With it, the links are removed in the same transaction.
 * Changing to a type without a separate diary entry makes the entry read as the order text but leaves `diary_same_as_text` and `diary_text` as chosen, so changing back restores the separate entry (`DEN-03`).
 * An un-overridden title follows the new type (#5.5). The number series is read at signing, so nothing else changes (`OTY-02`).
+* The heading on the page changes with the type, so the change bumps `text_version` (never `data_version`, so a filler's write is not refused): the next `/changes/` poll of everyone with the order open returns the new `rendered_html` (#5.4). The response carries the new version for the drafter's next text save.
 
 The type does not change items, workflows, tasks or the lifecycle (`OTY-02`).
 
@@ -1535,7 +1537,7 @@ before the first code is defined. (`11` is `apps.core`, spec 0030; `12` is
 | `E14024` | `ORDER_TYPE_NOT_OFFERED` | 400 | a type the case's state does not offer; `field = order_type` |
 | `E14025` | `LINKED_DOCUMENTS_WOULD_BE_REMOVED` | 409 | changing to a type without links, without `remove_linked_documents`; carries the documents (`OTY-07`) |
 | `E14026` | `DIARY_ENTRY_IS_ORDER_TEXT` | 409 | a separate diary entry on a type that has none (`DEN-03`) |
-| `E14027` | `ORDER_TEXT_STRUCTURE_UNSUPPORTED` | 400 | text (order text, diary entry, shortcut body) with a list or table that is not at the top level — inside a list item, a cell, another list or formatting — or with anything but items in a list or rows of cells in a table: the PDF draws only those, so the signed page would differ from the one the court saw (`ORD-13`); `field` is the text's |
+| `E14027` | `ORDER_TEXT_STRUCTURE_UNSUPPORTED` | 400 | text (order text, diary entry, shortcut body) with a list or table that is not at the top level — inside a list item, a cell, another list or formatting — with anything but items in a list or rows of cells in a table, with a list item outside a list, or with tables that would draw more than 10,000 cells in all (each row padded to its table's widest): the PDF draws only those, so the signed page would differ from the one the court saw (`ORD-13`); `field` is the text's |
 
 Rules:
 

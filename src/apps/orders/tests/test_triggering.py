@@ -392,6 +392,40 @@ def test_a_blocked_write_never_overwrites_a_live_claim_another_delivery_holds(
     assert OrderWorkflowRun.objects.get(pk=stage.pk).status == RunStatus.BLOCKED
 
 
+def test_a_stale_blocked_write_never_blocks_a_step_after_the_hearing_recovered(
+    ready, staff, signer, monkeypatch
+):
+    """Another delivery recovers the hearing and the COST step fails retryably: it stays FAILED."""
+    order = trigger(ready, staff, signer, ("COST", COST))
+    cost = OrderWorkflowRun.objects.get(order=order, order_item__item_type__code="COST")
+
+    def racing(order, scheduled):
+        # This delivery saw its hearing attempt fail; before it blocks the rest, another
+        # delivery retries the hearing to DONE and records COST's first failure.
+        OrderWorkflowRun.objects.filter(pk=scheduled.pk).update(status=RunStatus.DONE)
+        OrderWorkflowRun.objects.filter(pk=cost.pk).update(
+            status=RunStatus.FAILED, attempts=1, error_code="UNEXPECTED_ERROR"
+        )
+        return RunStatus.FAILED
+
+    monkeypatch.setattr(triggering, "_execute", racing)
+    assert triggering.run(order.pk) == 1  # COST is still retryable
+    cost.refresh_from_db()
+    assert (cost.status, cost.error_code) == (RunStatus.FAILED, "UNEXPECTED_ERROR")
+
+
+def test_a_step_whose_last_attempt_another_delivery_spent_is_not_claimed_again(
+    ready, staff, signer
+):
+    order = trigger(ready, staff, signer, ("ISSUE_OF_SUMMONS", summons(ready.case)))
+    scheduled = OrderWorkflowRun.objects.get(order_item__item_type__code="ISSUE_OF_SUMMONS")
+    OrderWorkflowRun.objects.filter(pk=scheduled.pk).update(status=RunStatus.FAILED, attempts=2)
+    scheduled.refresh_from_db()  # this delivery read attempt 2 of 3...
+    OrderWorkflowRun.objects.filter(pk=scheduled.pk).update(attempts=3)  # ...another spent 3
+    assert triggering._execute(order, scheduled) == RunStatus.FAILED
+    assert OrderWorkflowRun.objects.get(pk=scheduled.pk).attempts == 3
+
+
 def test_a_failed_enqueue_after_commit_neither_raises_nor_stops_later_callbacks(
     ready, staff, signer, monkeypatch, django_capture_on_commit_callbacks
 ):

@@ -125,32 +125,24 @@ def run(order_id):
     """
     order = Order.objects.select_related("order_type", "court").get(pk=order_id)
     runs = list(order.runs.select_related("order_item__item_type").order_by("sequence"))
-    blocked = False
+    blocker = None  # the failed HEARING step that blocks the steps after it
     busy = False
     for scheduled in runs:
         if scheduled.status == RunStatus.DONE:
             continue
-        if blocked:
-            # One conditional write: another delivery may have finished or claimed this step
-            # since the runs were read; its DONE, or its claim within the lease, must stand.
-            now = timezone.now()
-            OrderWorkflowRun.objects.filter(pk=scheduled.pk).exclude(status=RunStatus.DONE).exclude(
-                status=RunStatus.RUNNING, updated_at__gt=now - LEASE
-            ).update(
-                status=RunStatus.BLOCKED,
-                error_code="HEARING_STEP_FAILED",
-                updated_at=now,
-            )
+        if blocker is not None:
+            _block(blocker, scheduled)
             continue
         if scheduled.status == RunStatus.FAILED and scheduled.attempts >= conf.run_max_retries():
-            blocked = scheduled.step == RunStep.HEARING
+            if scheduled.step == RunStep.HEARING:
+                blocker = scheduled
             continue
         status = _execute(order, scheduled)
         if status == RunStatus.RUNNING:
             busy = True  # another delivery runs this step and carries on with the rest
             break
         if status == RunStatus.FAILED and scheduled.step == RunStep.HEARING:
-            blocked = True
+            blocker = scheduled
     retryable = sum(
         1
         for scheduled in order.runs.all()
@@ -158,6 +150,28 @@ def run(order_id):
     )
     # A claimed step whose worker died is taken over once its lease ends: look again then.
     return retryable + int(busy)
+
+
+def _block(hearing, scheduled):
+    """Mark ``scheduled`` blocked by the failed ``hearing`` step, if it still is.
+
+    Decided under the hearing step's row lock, which its recovery to ``DONE`` also
+    takes (``_execute``): once another delivery has recovered the hearing, its
+    dependent steps run normally, and a failure of theirs stays retryable. The
+    step's own ``DONE``, or a claim on it within the lease, also stands.
+    """
+    with transaction.atomic():
+        status = (
+            OrderWorkflowRun.objects.select_for_update()
+            .values_list("status", flat=True)
+            .get(pk=hearing.pk)
+        )
+        if status != RunStatus.FAILED:
+            return
+        now = timezone.now()
+        OrderWorkflowRun.objects.filter(pk=scheduled.pk).exclude(status=RunStatus.DONE).exclude(
+            status=RunStatus.RUNNING, updated_at__gt=now - LEASE
+        ).update(status=RunStatus.BLOCKED, error_code="HEARING_STEP_FAILED", updated_at=now)
 
 
 def _mark(run, status, *, result=None, error_code=""):
@@ -177,6 +191,9 @@ def _execute(order, scheduled):
         if locked.status == RunStatus.DONE:
             return locked.status
         if locked.status == RunStatus.RUNNING and timezone.now() - locked.updated_at < LEASE:
+            return locked.status
+        if locked.status == RunStatus.FAILED and locked.attempts >= conf.run_max_retries():
+            # Another delivery spent the last attempt since this one read the runs.
             return locked.status
         locked.attempts += 1
         locked.status = RunStatus.RUNNING
@@ -313,9 +330,12 @@ def _stage_step(order, scheduled):
 def retry_failed(order_id):
     """Admin: make every ``FAILED`` and ``BLOCKED`` step pending again and run them (#12.8)."""
     with transaction.atomic():
-        retried = OrderWorkflowRun.objects.filter(
+        stuck = OrderWorkflowRun.objects.filter(
             order_id=order_id, status__in=(RunStatus.FAILED, RunStatus.BLOCKED)
-        ).update(status=RunStatus.PENDING, attempts=0, error_code="")
+        )
+        # Lock in sequence order, the HEARING step first, as ``_block`` does: no deadlock.
+        list(stuck.select_for_update().order_by("sequence").values_list("pk", flat=True))
+        retried = stuck.update(status=RunStatus.PENDING, attempts=0, error_code="")
         if retried:
             enqueue_on_commit(order_id)
     return retried
