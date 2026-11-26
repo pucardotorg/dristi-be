@@ -20,6 +20,7 @@ class DSCESignConfig:
     require_registered_cert: bool = False
     identity_resolver: str = ""
     trust_roots: str = ""
+    allow_untrusted_cert: bool = False
     hash_algorithm: str = "SHA256"
 
 
@@ -31,6 +32,7 @@ def resolve_config() -> DSCESignConfig:
         require_registered_cert=bool(getattr(settings, "DSC_ESIGN_REQUIRE_REGISTERED_CERT", False)),
         identity_resolver=getattr(settings, "DSC_ESIGN_IDENTITY_RESOLVER", "") or "",
         trust_roots=getattr(settings, "DSC_ESIGN_TRUST_ROOTS", "") or "",
+        allow_untrusted_cert=bool(getattr(settings, "DSC_ESIGN_ALLOW_UNTRUSTED_CERT", False)),
         hash_algorithm=str(getattr(settings, "PDF_SIGNATURE_HASH_ALGORITHM", "SHA256")).upper(),
     )
 

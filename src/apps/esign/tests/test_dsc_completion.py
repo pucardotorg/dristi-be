@@ -1,6 +1,7 @@
 """DSC client-signature completion end-to-end and capability separation (spec 0038 #14)."""
 
 import base64
+from unittest.mock import patch
 
 from django.test import override_settings
 from django.urls import reverse
@@ -23,6 +24,7 @@ PROVIDERS = {
     ESIGN_PROVIDERS=PROVIDERS,
     ESIGN_DEFAULT_PROVIDER="mock",
     DSC_ESIGN_AGENT_URL="http://localhost:1620/sign",
+    DSC_ESIGN_ALLOW_UNTRUSTED_CERT=True,
     PDF_SIGNATURE_HASH_ALGORITHM="SHA256",
 )
 class DSCCompletionTests(ESignTestCase):
@@ -88,6 +90,31 @@ class DSCCompletionTests(ESignTestCase):
             reverse("esign-complete", args=[transaction.pk]), {"pkcs7": ""}, format="json"
         )
         self.assert_error(response, errors.CLIENT_SIGNATURE_MISSING)
+
+    def test_garbage_signature_returns_4xx_and_does_not_stick_in_signing(self):
+        """A malformed CMS is a client error; the row must never be left SIGNING."""
+        transaction = self.create_transaction(provider="dsc")
+        response = self.client.post(
+            reverse("esign-complete", args=[transaction.pk]),
+            {"pkcs7": base64.b64encode(b"not a CMS at all").decode()},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        transaction.refresh_from_db()
+        self.assertEqual(transaction.status, ESignStatus.FAILURE.value)
+
+    def test_provider_bug_marks_failure_not_stuck_in_signing(self):
+        """An unexpected provider exception fails the row rather than stranding it."""
+        transaction = self.create_transaction(provider="dsc")
+        pkcs7 = self._signed_pkcs7(transaction)
+        target = "addon.dsc_esign.provider.DSCESignProvider.verify_client_signature"
+        with patch(target, side_effect=RuntimeError("boom")):
+            response = self.client.post(
+                reverse("esign-complete", args=[transaction.pk]), {"pkcs7": pkcs7}, format="json"
+            )
+        self.assertEqual(response.status_code, 400)
+        transaction.refresh_from_db()
+        self.assertEqual(transaction.status, ESignStatus.FAILURE.value)
 
     def test_complete_refuses_a_callback_provider_transaction(self):
         transaction = self.create_transaction(provider="mock")

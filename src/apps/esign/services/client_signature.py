@@ -121,6 +121,16 @@ def _verify(transaction: ESignTransaction, provider, pkcs7: bytes) -> dict:
         log_event(EVENT_ESIGN_FAILED, transaction, failure_code=exc.code)
         exc.transaction = transaction
         raise
+    except Exception as exc:
+        # A provider bug must not leave the row stuck in SIGNING; record it as an
+        # invalid client signature and surface a 4xx, as the embed/store path does.
+        error = ESignClientSignatureInvalid()
+        transaction.mark_failed(error.code, error.message)
+        log_event(
+            EVENT_ESIGN_FAILED, transaction, failure_code=error.code, detail=type(exc).__name__
+        )
+        error.transaction = transaction
+        raise error from exc
 
     response_audit = safe_audit(dict(response.response_audit or {}))
     # ``response_audit`` already carries ``provider``; splat only the scalar

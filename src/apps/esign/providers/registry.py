@@ -13,6 +13,7 @@ is found): it uses ``get_callback_provider()``, the single registered CALLBACK
 provider.
 """
 
+import logging
 from functools import lru_cache
 
 from django.utils.module_loading import import_string
@@ -21,6 +22,8 @@ from .. import conf
 from ..exceptions import ESignProviderNotConfigured
 from .base import Completion, ESignProvider
 
+logger = logging.getLogger("apps.esign")
+
 # Sentinel key for a deprecated ESIGN_PROVIDER whose class could not be loaded or
 # declares no name; kept so get_default() surfaces the real import/validation
 # error instead of a bland "nothing registered".
@@ -28,8 +31,8 @@ _UNRESOLVED = ""
 
 
 @lru_cache(maxsize=8)
-def _load(name: str, path: str) -> ESignProvider:
-    """Import, validate and instantiate the provider registered as ``name``."""
+def _load_class(name: str, path: str) -> type[ESignProvider]:
+    """Import and validate the provider class registered as ``name``."""
 
     try:
         provider_class = import_string(path)
@@ -49,7 +52,14 @@ def _load(name: str, path: str) -> ESignProvider:
         raise ESignProviderNotConfigured(
             f"eSign provider {path!r} declares name {declared!r}, but is registered as {name!r}."
         )
-    return provider_class()
+    return provider_class
+
+
+@lru_cache(maxsize=8)
+def _load(name: str, path: str) -> ESignProvider:
+    """Import, validate and instantiate the provider registered as ``name``."""
+
+    return _load_class(name, path)()
 
 
 def _provider_paths() -> dict[str, str]:
@@ -107,17 +117,32 @@ def get_callback_provider() -> ESignProvider:
     found, so it cannot resolve the parser from ``transaction.provider``. There
     must be exactly one CALLBACK provider; a second callback ESP needs its own
     route (spec 0038 #4.5, #11.1).
+
+    ``completion`` is read from the provider *class* without instantiating it, and
+    an entry that cannot be resolved (bad import, removed addon) is logged and
+    skipped — a broken DSC registration must never stop the C-DAC callback from
+    finding its parser.
     """
 
-    matches = [p for p in (get(name) for name in names()) if Completion.CALLBACK in p.completion]
-    if not matches:
+    callback_names = []
+    for name in names():
+        path = _provider_paths().get(name or _UNRESOLVED)
+        try:
+            provider_class = _load_class(name or _UNRESOLVED, path)
+        except ESignProviderNotConfigured as exc:
+            logger.error("event='ESIGN_PROVIDER_UNRESOLVED' name=%r detail=%r", name, str(exc))
+            continue
+        if Completion.CALLBACK in provider_class.completion:
+            callback_names.append(name)
+
+    if not callback_names:
         raise ESignProviderNotConfigured("No callback-completed eSign provider is registered.")
-    if len(matches) > 1:
+    if len(callback_names) > 1:
         raise ESignProviderNotConfigured(
             "More than one CALLBACK eSign provider is registered; the anonymous callback "
             "cannot choose a parser. Give each callback provider its own route."
         )
-    return matches[0]
+    return get(callback_names[0])
 
 
 def get_provider() -> ESignProvider:
@@ -127,6 +152,7 @@ def get_provider() -> ESignProvider:
 
 
 def reset_provider_cache() -> None:
-    """Clear the resolved-provider cache (needed when overriding settings)."""
+    """Clear the resolved-provider caches (needed when overriding settings)."""
 
     _load.cache_clear()
+    _load_class.cache_clear()

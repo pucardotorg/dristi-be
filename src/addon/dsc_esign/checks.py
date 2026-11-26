@@ -42,4 +42,25 @@ def check_dsc_esign_configuration(app_configs, **kwargs):
             else Warning(message, id="dsc_esign.W001")
         )
 
+    # Without trust roots, an untrusted (self-signed) certificate is only accepted
+    # when DSC_ESIGN_ALLOW_UNTRUSTED_CERT is explicitly set — never in production.
+    if not config.trust_roots and not config.allow_untrusted_cert:
+        message = (
+            "DSC_ESIGN_TRUST_ROOTS is not set; DSC certificates cannot be verified against "
+            "the India CCA chain. Set it, or (non-production only) enable "
+            "DSC_ESIGN_ALLOW_UNTRUSTED_CERT to accept untrusted certificates."
+        )
+        messages.append(
+            Error(message, id="dsc_esign.E004")
+            if is_production_settings()
+            else Warning(message, id="dsc_esign.W002")
+        )
+    elif config.allow_untrusted_cert and is_production_settings():
+        messages.append(
+            Error(
+                "DSC_ESIGN_ALLOW_UNTRUSTED_CERT must not be enabled in production.",
+                id="dsc_esign.E005",
+            )
+        )
+
     return messages

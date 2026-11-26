@@ -6,6 +6,9 @@ from .base import *  # noqa: F401,F403
 from .base import (  # noqa: F401
     CDAC_SMS_USE_DEFAULT_NUMBER,
     CDAC_SMS_VERIFY_SSL,
+    ESIGN_DEFAULT_PROVIDER,
+    ESIGN_ENABLED_METHODS,
+    ESIGN_REGISTERED_PROVIDERS,
     PAYMENT_REGISTERED_PROVIDERS,
     PAYMENT_SELECTABLE_PROVIDERS,
     env,
@@ -80,3 +83,36 @@ PAYMENT_PROVIDERS = {
     or name in PAYMENT_REGISTERED_PROVIDERS
     or name in PAYMENT_SELECTABLE_PROVIDERS
 }
+
+
+# ---------------------------------------------------------------------------
+# eSign providers (spec 0038 #4, #11) — configured from the environment, like
+# payments. ESIGN_DEFAULT_PROVIDER=cdac keeps Aadhaar e-sign; add "dsc" to
+# ESIGN_REGISTERED_PROVIDERS (and ESIGN_ENABLED_METHODS) to offer DSC token
+# signing alongside it, with no code change. Leave all empty to fall back to the
+# deprecated single ESIGN_PROVIDER. The mock provider is never available here.
+# ---------------------------------------------------------------------------
+_AVAILABLE_ESIGN_PROVIDERS = {
+    "cdac": "addon.cdac_esign.provider.CDACESignProvider",
+    "dsc": "addon.dsc_esign.provider.DSCESignProvider",
+}
+_unknown_esign = {
+    name
+    for name in {ESIGN_DEFAULT_PROVIDER, *ESIGN_REGISTERED_PROVIDERS, *ESIGN_ENABLED_METHODS}
+    if name
+} - set(_AVAILABLE_ESIGN_PROVIDERS)
+if _unknown_esign:
+    raise ImproperlyConfigured(
+        "ESIGN_DEFAULT_PROVIDER / ESIGN_REGISTERED_PROVIDERS / ESIGN_ENABLED_METHODS name "
+        f"unknown eSign providers: {sorted(_unknown_esign)}."
+    )
+# Only build the registry when something is configured; otherwise leave it empty
+# so the deprecated ESIGN_PROVIDER alias still drives a single-provider install.
+if ESIGN_DEFAULT_PROVIDER or ESIGN_REGISTERED_PROVIDERS or ESIGN_ENABLED_METHODS:
+    ESIGN_PROVIDERS = {
+        name: path
+        for name, path in _AVAILABLE_ESIGN_PROVIDERS.items()
+        if name == ESIGN_DEFAULT_PROVIDER
+        or name in ESIGN_REGISTERED_PROVIDERS
+        or name in ESIGN_ENABLED_METHODS
+    }

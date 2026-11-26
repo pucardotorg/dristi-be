@@ -2,9 +2,13 @@
 
 import datetime
 import hashlib
+import os
+import random
+import tempfile
 import uuid
 from types import SimpleNamespace
 
+from asn1crypto import pem
 from django.test import SimpleTestCase
 
 from addon.dsc_esign.config import DSCESignConfig
@@ -13,6 +17,7 @@ from apps.esign.exceptions import (
     ESignCertificateNotPermitted,
     ESignClientSignatureInvalid,
     ESignClientSignatureMismatch,
+    ESignError,
 )
 
 from .factories import detached_cms, make_signer
@@ -25,7 +30,10 @@ def _txn(document_hash=None):
 
 
 def _config(**overrides):
-    base = {"hash_algorithm": "SHA256"}
+    # Default to allowing untrusted (self-signed) certs so these tests exercise
+    # the digest/signature/certificate-policy checks; trust-chain behaviour has
+    # its own dedicated tests below.
+    base = {"hash_algorithm": "SHA256", "allow_untrusted_cert": True}
     base.update(overrides)
     return DSCESignConfig(**base)
 
@@ -139,6 +147,63 @@ class RegisteredBindingTests(SimpleTestCase):
 def _fingerprint(content_info) -> str:
     cert = content_info["content"]["certificates"][0].chosen
     return hashlib.sha256(cert.dump()).hexdigest()
+
+
+class TrustChainTests(SimpleTestCase):
+    """The certificate must chain to a configured trust anchor (spec 0038 #8.1)."""
+
+    def test_untrusted_is_refused_by_default(self):
+        signer = make_signer()
+        pkcs7 = detached_cms(signer, DIGEST).dump()
+        config = DSCESignConfig(hash_algorithm="SHA256")  # no roots, not allowed
+        with self.assertRaises(ESignCertificateNotPermitted):
+            verify_client_signature(_txn(), pkcs7, config)
+
+    def test_certificate_chaining_to_a_configured_root_is_accepted(self):
+        signer = make_signer()
+        content_info = detached_cms(signer, DIGEST)
+        cert_der = signer.signing_cert.dump()
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = os.path.join(tmp, "roots.pem")
+            with open(bundle, "wb") as handle:
+                handle.write(pem.armor("CERTIFICATE", cert_der))
+            config = DSCESignConfig(hash_algorithm="SHA256", trust_roots=bundle)
+            response = verify_client_signature(_txn(), content_info.dump(), config)
+        self.assertTrue(response.success)
+
+    def test_backdated_signing_time_cannot_resurrect_an_expired_certificate(self):
+        """Validity is checked at server time, not the client's signingTime."""
+        past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=400)
+        signer = make_signer(
+            not_valid_before=past - datetime.timedelta(days=400),
+            not_valid_after=past,
+        )
+        pkcs7 = detached_cms(signer, DIGEST).dump()  # signingTime is ~now, cert expired
+        with self.assertRaises(ESignCertificateNotPermitted):
+            verify_client_signature(_txn(), pkcs7, _config())
+
+
+class FuzzTests(SimpleTestCase):
+    """A malformed CMS is always a 4xx client error, never a 500 (spec 0038 #14)."""
+
+    def test_mutated_blobs_always_raise_a_domain_error(self):
+        signer = make_signer()
+        valid = detached_cms(signer, DIGEST).dump()
+        rng = random.Random(1234)
+        for _ in range(400):
+            blob = bytearray(valid)
+            # Truncate and/or flip a handful of bytes.
+            if rng.random() < 0.5 and len(blob) > 10:
+                blob = blob[: rng.randint(1, len(blob) - 1)]
+            for _ in range(rng.randint(1, 6)):
+                if blob:
+                    blob[rng.randrange(len(blob))] = rng.randrange(256)
+            try:
+                verify_client_signature(_txn(), bytes(blob), _config())
+            except ESignError:
+                pass  # expected: always a mapped 4xx
+            except Exception as exc:  # noqa: BLE001 - the whole point of the test
+                self.fail(f"non-domain exception escaped verify: {type(exc).__name__}: {exc}")
 
 
 # Resolvers referenced by dotted path in the binding tests.

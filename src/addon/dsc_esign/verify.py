@@ -11,10 +11,12 @@ Failures map onto the domain's client-signature codes:
   * certificate policy / signer binding -> ESignCertificateNotPermitted
 """
 
+import asyncio
 import hashlib
 from datetime import UTC, datetime
 
 from asn1crypto import cms
+from asn1crypto import x509 as asn1_x509
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
@@ -25,6 +27,7 @@ from apps.esign.exceptions import (
     ESignCertificateNotPermitted,
     ESignClientSignatureInvalid,
     ESignClientSignatureMismatch,
+    ESignError,
 )
 from apps.esign.providers.base import ESignProviderResponse
 
@@ -34,20 +37,35 @@ _HASHES = {"sha256": hashes.SHA256, "sha384": hashes.SHA384, "sha512": hashes.SH
 
 
 def verify_client_signature(transaction, pkcs7: bytes, config) -> ESignProviderResponse:
-    """Verify ``pkcs7`` against ``transaction`` and return the response audit."""
+    """Verify ``pkcs7`` against ``transaction`` and return the response audit.
+
+    Every step after parsing runs under a catch-all so a malformed CMS always
+    surfaces as a 4xx client error (``ESignClientSignatureInvalid``) rather than
+    a 500 — otherwise the row is left stuck in ``SIGNING``. Domain errors
+    (mismatch, certificate policy) are re-raised unchanged.
+    """
 
     signed_data, signer_info = _parse(pkcs7)
-    digest_algorithm = _digest_algorithm(signer_info, config)
-    _check_message_digest(signer_info, transaction.document_hash)
+    try:
+        digest_algorithm = _digest_algorithm(signer_info, config)
+        _check_message_digest(signer_info, transaction.document_hash)
 
-    cert_der = _signer_certificate(signed_data, signer_info)
-    cert = _load_cert(cert_der)
-    _verify_signature(signer_info, cert, digest_algorithm)
+        cert_der = _signer_certificate(signed_data, signer_info)
+        cert = _load_cert(cert_der)
+        _verify_signature(signer_info, cert, digest_algorithm)
 
-    signing_time = _signing_time(signer_info)
-    _check_certificate(cert, signing_time)
+        # Validity is evaluated at the server's clock, never the client-chosen
+        # signingTime attribute (which is recorded only for audit).
+        _check_certificate(cert, datetime.now(UTC))
+        _check_trust_chain(cert_der, signed_data, config)
 
-    audit = _certificate_audit(cert_der, cert)
+        audit = _certificate_audit(cert_der, cert)
+        signing_time = _signing_time(signer_info)
+    except ESignError:
+        raise
+    except Exception as exc:
+        raise ESignClientSignatureInvalid() from exc
+
     _check_registered_binding(transaction, audit["certificate_fingerprint"], config)
 
     return ESignProviderResponse(
@@ -59,12 +77,18 @@ def verify_client_signature(transaction, pkcs7: bytes, config) -> ESignProviderR
 
 
 def _parse(pkcs7: bytes):
-    """Load the CMS SignedData and its single signer, or raise invalid."""
+    """Load the CMS SignedData and its single signer, or raise invalid.
+
+    ``dump(force=True)`` forces full structural parsing up front, so lazy
+    ``asn1crypto`` parse errors surface here as a client error rather than deeper
+    in verification where they would escape as a 500.
+    """
 
     try:
         content_info = cms.ContentInfo.load(pkcs7)
         if content_info["content_type"].native != "signed_data":
             raise ESignClientSignatureInvalid("The signature is not a CMS SignedData.")
+        content_info.dump(force=True)
         signed_data = content_info["content"]
         signer_infos = signed_data["signer_infos"]
     except ESignClientSignatureInvalid:
@@ -204,12 +228,15 @@ def _signing_time(signer_info) -> datetime:
     return datetime.now(UTC)
 
 
-def _check_certificate(cert, signing_time: datetime) -> None:
-    """Check validity period at signing time and that signing is permitted."""
+def _check_certificate(cert, moment: datetime) -> None:
+    """Check the validity period at ``moment`` and that signing is permitted.
 
-    moment = signing_time if signing_time.tzinfo else signing_time.replace(tzinfo=UTC)
+    ``moment`` is the server clock, not the client's signingTime attribute, so a
+    backdated signingTime cannot resurrect an expired certificate.
+    """
+
     if not (cert.not_valid_before_utc <= moment <= cert.not_valid_after_utc):
-        raise ESignCertificateNotPermitted("The certificate was not valid at signing time.")
+        raise ESignCertificateNotPermitted("The certificate is not currently valid.")
 
     try:
         key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage).value
@@ -217,6 +244,80 @@ def _check_certificate(cert, signing_time: datetime) -> None:
         return
     if not (key_usage.digital_signature or key_usage.content_commitment):
         raise ESignCertificateNotPermitted("The certificate may not be used for signing.")
+
+
+def _check_trust_chain(cert_der: bytes, signed_data, config) -> None:
+    """Require the signer certificate to chain to a configured trust anchor.
+
+    ``DSC_ESIGN_TRUST_ROOTS`` points at a PEM bundle (or directory) of the India
+    CCA roots/intermediates. When it is set, the signer certificate must build a
+    valid path to one of those anchors, using any intermediates carried in the
+    CMS; a self-signed or otherwise untrusted certificate is refused. When it is
+    not set, verification refuses untrusted certificates unless
+    ``DSC_ESIGN_ALLOW_UNTRUSTED_CERT`` is explicitly enabled (non-production
+    only), so the default never silently accepts an arbitrary self-signed cert.
+    """
+
+    roots = _load_trust_roots(config.trust_roots)
+    if not roots:
+        if config.allow_untrusted_cert:
+            return
+        raise ESignCertificateNotPermitted(
+            "DSC trust is not configured (set DSC_ESIGN_TRUST_ROOTS)."
+        )
+
+    from pyhanko_certvalidator import CertificateValidator, ValidationContext
+    from pyhanko_certvalidator.errors import PathError, ValidationError
+
+    intermediates = _cms_certificates(signed_data)
+    context = ValidationContext(trust_roots=roots, allow_fetching=False)
+    validator = CertificateValidator(
+        asn1_x509.Certificate.load(cert_der),
+        intermediate_certs=intermediates,
+        validation_context=context,
+    )
+    try:
+        asyncio.run(validator.async_validate_usage(key_usage=set()))
+    except (PathError, ValidationError) as exc:
+        raise ESignCertificateNotPermitted(
+            "The certificate does not chain to a trusted root."
+        ) from exc
+
+
+def _load_trust_roots(trust_roots: str) -> list:
+    """Load CCA trust anchors from a PEM bundle or directory; [] when unset."""
+
+    if not trust_roots:
+        return []
+    import os
+
+    from asn1crypto import pem
+
+    paths = []
+    if os.path.isdir(trust_roots):
+        paths = [os.path.join(trust_roots, name) for name in sorted(os.listdir(trust_roots))]
+    else:
+        paths = [trust_roots]
+
+    roots = []
+    for path in paths:
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read()
+        except OSError:
+            continue
+        for _, _, der in pem.unarmor(data, multiple=True):
+            roots.append(asn1_x509.Certificate.load(der))
+    return roots
+
+
+def _cms_certificates(signed_data) -> list:
+    """Every certificate carried in the CMS, as asn1crypto objects."""
+
+    certificates = signed_data["certificates"]
+    if certificates is None:
+        return []
+    return [choice.chosen for choice in certificates if choice.name == "certificate"]
 
 
 def _certificate_audit(cert_der: bytes, cert) -> dict:

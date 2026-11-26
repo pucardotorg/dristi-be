@@ -596,15 +596,24 @@ CDAC_SMS_DEFAULT_NUMBER = env("CDAC_SMS_DEFAULT_NUMBER", default="")
 # ---------------------------------------------------------------------------
 # Providers are a name -> dotted-path registry so several methods (C-DAC, DSC)
 # can run together (spec 0038 #4). ESIGN_DEFAULT_PROVIDER is used when a caller
-# does not name a signing_method. The deprecated single ESIGN_PROVIDER is read
-# into a one-entry registry when ESIGN_PROVIDERS is unset, so existing
-# deployments keep working unchanged.
+# does not name a signing_method. Like payments (spec 0017 #9.3), the registry is
+# built from the environment in config.settings.production against a map of
+# available providers; here ESIGN_PROVIDERS stays empty so the deprecated single
+# ESIGN_PROVIDER alias drives local/CI on the mock provider.
 ESIGN_PROVIDERS = {}
 ESIGN_DEFAULT_PROVIDER = env("ESIGN_DEFAULT_PROVIDER", default="")
+# Names registered besides the default, resolved by the environment modules
+# against _AVAILABLE_ESIGN_PROVIDERS (so a provider keeps resolving for in-flight
+# transactions after the default moves).
+ESIGN_REGISTERED_PROVIDERS = [
+    name.strip() for name in env.list("ESIGN_REGISTERED_PROVIDERS", default=[]) if name.strip()
+]
 ESIGN_PROVIDER = env("ESIGN_PROVIDER", default="apps.esign.providers.mock.MockESignProvider")
-# Optional allow-list of enabled signing methods; empty means every registered
-# provider (per-state signingMethods, SGM-05, narrows this).
-ESIGN_ENABLED_METHODS = []
+# Allow-list of signing methods offered to callers; empty means every registered
+# provider (per-state signingMethods, SGM-05, narrows this further).
+ESIGN_ENABLED_METHODS = [
+    name.strip() for name in env.list("ESIGN_ENABLED_METHODS", default=[]) if name.strip()
+]
 # Largest client-supplied PKCS#7 accepted at _complete (spec 0038 #6.3).
 ESIGN_MAX_CLIENT_SIGNATURE_BYTES = env.int("ESIGN_MAX_CLIENT_SIGNATURE_BYTES", default=262144)
 ESIGN_ENABLED = env.bool("ESIGN_ENABLED", default=True)
@@ -706,8 +715,12 @@ DSC_ESIGN_AGENT_URL = env("DSC_ESIGN_AGENT_URL", default="http://localhost:1620/
 # resolve the signer's acceptable certificate fingerprints.
 DSC_ESIGN_REQUIRE_REGISTERED_CERT = env.bool("DSC_ESIGN_REQUIRE_REGISTERED_CERT", default=False)
 DSC_ESIGN_IDENTITY_RESOLVER = env("DSC_ESIGN_IDENTITY_RESOLVER", default="")
-# India CCA trust roots for certificate-chain policy (spec 0038 #18.2).
+# India CCA trust roots (PEM bundle or directory) for certificate-chain policy
+# (spec 0038 #8.1, #18.2). Without it, an untrusted/self-signed certificate is
+# refused unless DSC_ESIGN_ALLOW_UNTRUSTED_CERT is explicitly set (never in
+# production — a system check enforces it).
 DSC_ESIGN_TRUST_ROOTS = env("DSC_ESIGN_TRUST_ROOTS", default="")
+DSC_ESIGN_ALLOW_UNTRUSTED_CERT = env.bool("DSC_ESIGN_ALLOW_UNTRUSTED_CERT", default=False)
 
 
 # ---------------------------------------------------------------------------
