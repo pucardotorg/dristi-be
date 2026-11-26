@@ -24,6 +24,7 @@ EXPECTED = {
     "heartbeat": "* * * * *",
     "expire_bulk_previews": "*/5 * * * *",
     "end_hearing_days": "30 18 * * *",
+    "poll_pending_payments": "* * * * *",
 }
 
 

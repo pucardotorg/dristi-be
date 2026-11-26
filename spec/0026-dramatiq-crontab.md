@@ -474,6 +474,7 @@ Remove the `scheduler` service and entrypoint case, `dramatiq_crontab` from
 | `apps.esign.tasks.reconcile_signing_transactions` | `*/5 * * * *` | `ESIGN_SIGNING_STUCK_TIMEOUT` is 300 s |
 | `apps.esign.tasks.cleanup_placeholders` | `30 20 * * *` (02:00 IST) | retention is in days, so run daily off-peak |
 | `apps.core.tasks.prune_task_history` | `0 21 * * *` (02:30 IST) | keeps `django_dramatiq_task` bounded |
+| `apps.payments.tasks.poll_pending_payments` | `* * * * *` | resolves pending payments whose callback never came (0017 #9.7); each payment keeps its own backoff (`PAYMENT_STATUS_POLL_INTERVAL_SECONDS` doubling to `PAYMENT_STATUS_POLL_MAX_INTERVAL_SECONDS`), so a minute tick only bounds the latency |
 
 `prune_task_history` is a new no-argument wrapper in `apps.core.tasks`. It calls
 `Task.tasks.delete_old_tasks(...)` with a 7-day age (a module constant). The
@@ -489,7 +490,6 @@ None of the eSign actors change apart from the added decorator.
 | --- | --- | --- |
 | `apps.pdf` | A job stays `QUEUED` if `actor.send` fails after commit. A job stays `PROCESSING` if its worker dies mid-render: the redelivered message carries the same `attempt` and `claim_job` drops it as a duplicate (0016 #10). Needs a stalled-job recovery actor. | amendment to 0016 |
 | `apps.messaging` | A `MessageLog` stays `PENDING` if `_publish` fails after commit. Log retention is also an open question (0009 Q1). | amendment to 0009 |
-| `apps.payments` | `poll_pending_payments` (0017 #9.7) is specified as periodic but not yet implemented. Schedule it every minute; it applies its own per-payment backoff. | 0017 |
 | `apps.users` | A verification request is not raised if `_publish_verification` fails after commit. Deleting abandoned `PENDING_PROFILE` accounts is 0005 #8 (non-priority). | 0005 |
 | `apps.files` | Reconciliation of orphaned storage objects (0014 Q8, out of scope there). | 0014 |
 

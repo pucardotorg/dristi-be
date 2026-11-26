@@ -1,8 +1,9 @@
 """Run one status-poll pass (spec 0017 #9.7).
 
-The project has no periodic scheduler yet, so the poller is driven from cron
-(or any scheduler) with this command; ``--enqueue`` hands the pass to a
-Dramatiq worker instead of running it inline.
+The ``scheduler`` service runs ``poll_pending_payments`` every minute (spec
+0026 #7.1). This command runs one pass on demand (e.g. while testing a
+provider); ``--enqueue`` hands the pass to a Dramatiq worker instead of
+running it inline.
 """
 
 from django.core.management.base import BaseCommand
