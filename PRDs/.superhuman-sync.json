@@ -61,9 +61,9 @@
     "order-template-catalogue.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
       "title": "Order Item Catalogue",
-      "contentHash": "855a69be7337",
-      "pageUpdatedAt": 1795755870.674,
-      "note": "Force-synced (cleared and rebuilt) 2026-11-26 for (23)-(24); the page's only comment (Garvita, warrant fields) was resolved first, on the owner's say-so. Sections are chunked at ## (Variables split at ### 25.); each records its first block. 2026-11-27: (25) patched in place; the order items table was replaced whole; sections marked patched-2026-11-27 will be diffed against the page on the next sync.",
+      "contentHash": "663a2e1e0cc7",
+      "pageUpdatedAt": 1795761102.125,
+      "note": "Force-synced (cleared and rebuilt) 2026-11-26 for (23)-(24); the page's only comment (Garvita, warrant fields) was resolved first, on the owner's say-so. Sections are chunked at ## (Variables split at ### 25.); each records its first block. 2026-11-27: (25) patched in place; the order items table was replaced whole; sections marked patched-2026-11-27 will be diffed against the page on the next sync. 2026-11-27: patched in place for the catalogue's (26)-(27) round (table cells via table_rows_manage, changed blocks replaced, Status and callout by text replace).",
       "sections": [
         {
           "key": "# Order item catalogue",
@@ -88,7 +88,7 @@
         {
           "key": "### 25. Issue of miscellaneous process",
           "elementId": "cl-7mjL6ZR9JK",
-          "hash": "556251afda7d"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "## Combination restrictions",
@@ -98,22 +98,22 @@
         {
           "key": "## Workflow trigger order",
           "elementId": "cl-7Uz54aSeRq",
-          "hash": "4be69bda7aa2"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "## Not in V1",
           "elementId": "cl-XcIp9vEG_S",
-          "hash": "fc0ba27f1ad9"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "## Application types",
           "elementId": "cl-kH4OF_SbXY",
-          "hash": "ec0740754465"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "## Hearing purposes",
           "elementId": "cl-1vzCRkT_BP",
-          "hash": "52d018e574ef"
+          "hash": "patched-2026-11-27"
         }
       ],
       "calloutElementId": "cl--FeemPAxJA"
@@ -129,8 +129,8 @@
     "case-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-oci-tqnIPh",
       "title": "Case Lifecycle",
-      "contentHash": "265a5f96fa25",
-      "pageUpdatedAt": 1793680999.155,
+      "contentHash": "2a80700624fa",
+      "pageUpdatedAt": 1795761196.962,
       "calloutElementId": "cl-IUH_IOrV8b",
       "sections": [
         {
@@ -179,7 +179,7 @@
           "hash": "4046b6a6d5d3"
         }
       ],
-      "note": "2026-10-30: rebuilt to v2, then reverted at the owner's request to the 2026-10-04 text and rebuilt again."
+      "note": "2026-10-30: rebuilt to v2, then reverted at the owner's request to the 2026-10-04 text and rebuilt again. 2026-11-27: patched in place for the catalogue's (26)-(27) round (table cells via table_rows_manage, changed blocks replaced, Status and callout by text replace)."
     },
     "pending-tasks.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-brLkhW_t8M",
@@ -413,8 +413,8 @@
     "order-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
       "title": "Order Generation",
-      "contentHash": "e67720f900e1",
-      "pageUpdatedAt": 1795755812.86,
+      "contentHash": "2f8f4b917991",
+      "pageUpdatedAt": 1795761188.229,
       "calloutElementId": "eca-DluhcPwJvd",
       "sections": [
         {
@@ -518,7 +518,7 @@
           "hash": "9e1da0487ee1"
         }
       ],
-      "note": "2026-11-03: patched in place to v8.6 (status, callout, §1/§6/§5.2 text; changed tables replaced whole — 1.1, out of scope, §3, §4, §5, 5.1, 5.2+5.3, 6.1, §7, §8, §9, 10.1, §11, §13, §14+14.1–14.3; §16 Enhancements and §17 Open questions added). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW, untouched. `sections` not refreshed. 2026-11-03 later: TXT-03 cell in grid-nro-qgW8LW and status patched. 2026-11-06: patched in place to v8.7 (status, callout, §10.1 intro; HRG-10 and CLS-06 cells updated; CLS-14 row added to grid-uCDhnjzU0v, its ID cell carries a trailing zero-width italic character so the ID stays monospace). `sections` still not refreshed. 2026-11-10: patched in place to v8.8 (Status line, callout, §1.1 Order items cell); comments kept. 2026-11-20: patched in place to v8.9 (Status line, callout; NXT table grid-QthE4Gb6jz: NXT-12 reworded, italic reason row and NXT-12a added, NXT-13–15 shifted down by rewriting rows). `sections` still not refreshed. 2026-11-27: v8.10 patched in place (ORD-09, ITM-04 cells; Status and callout by text replace)."
+      "note": "2026-11-03: patched in place to v8.6 (status, callout, §1/§6/§5.2 text; changed tables replaced whole — 1.1, out of scope, §3, §4, §5, 5.1, 5.2+5.3, 6.1, §7, §8, §9, 10.1, §11, §13, §14+14.1–14.3; §16 Enhancements and §17 Open questions added). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW, untouched. `sections` not refreshed. 2026-11-03 later: TXT-03 cell in grid-nro-qgW8LW and status patched. 2026-11-06: patched in place to v8.7 (status, callout, §10.1 intro; HRG-10 and CLS-06 cells updated; CLS-14 row added to grid-uCDhnjzU0v, its ID cell carries a trailing zero-width italic character so the ID stays monospace). `sections` still not refreshed. 2026-11-10: patched in place to v8.8 (Status line, callout, §1.1 Order items cell); comments kept. 2026-11-20: patched in place to v8.9 (Status line, callout; NXT table grid-QthE4Gb6jz: NXT-12 reworded, italic reason row and NXT-12a added, NXT-13–15 shifted down by rewriting rows). `sections` still not refreshed. 2026-11-27: v8.10 patched in place (ORD-09, ITM-04 cells; Status and callout by text replace). 2026-11-27: patched in place for the catalogue's (26)-(27) round (table cells via table_rows_manage, changed blocks replaced, Status and callout by text replace)."
     },
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
@@ -632,9 +632,9 @@
     "dropped-ideas.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-_zbeNwNLPs",
       "title": "Dropped Ideas",
-      "contentHash": "f80d1119c15c",
-      "pageUpdatedAt": 1795614832.232,
-      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated. 2026-11-20: Application onboarder role section appended; status and callout date updated. `sections` not recorded. 2026-11-23: PSS-03 section appended at the end; status and callout date updated. `sections` not recorded. 2026-11-25: Documents tab detail section (DSB-05, DSB-07–DSB-11, DSB-22, part of DSB-23) appended at the end; status and callout date updated. `sections` not recorded. 2026-11-25: the 'Now' line of the Documents tab section patched.",
+      "contentHash": "5d16894a96b0",
+      "pageUpdatedAt": 1795761222.277,
+      "note": "2026-11-03: 'Where the next hearing is entered' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-04: 'Cap on upfront channel-fee rounds (PMT-12)' section appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: four case-file sections (CFL-13; CFL-16–18; CFL-20; CFL-23/25) appended at the end; status and callout updated. `sections` not recorded. 2026-11-17: CFL-27–30 section appended; status updated. 2026-11-18: ACC-3 section appended; callout date updated. 2026-11-20: Application onboarder role section appended; status and callout date updated. `sections` not recorded. 2026-11-23: PSS-03 section appended at the end; status and callout date updated. `sections` not recorded. 2026-11-25: Documents tab detail section (DSB-05, DSB-07–DSB-11, DSB-22, part of DSB-23) appended at the end; status and callout date updated. `sections` not recorded. 2026-11-25: the 'Now' line of the Documents tab section patched. 2026-11-27: patched in place for the catalogue's (26)-(27) round (table cells via table_rows_manage, changed blocks replaced, Status and callout by text replace).",
       "calloutElementId": "cl-e-XQNr8pNU"
     },
     "office-management.md": {
@@ -885,8 +885,8 @@
     "cause-list-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-1hS7eP_meC",
       "title": "Cause List Generation",
-      "contentHash": "d66ead7dca10",
-      "pageUpdatedAt": 1795168800.531,
+      "contentHash": "e40d86677858",
+      "pageUpdatedAt": 1795761193.024,
       "calloutElementId": "cl-F3EnmA4_Ed",
       "sections": [
         {
@@ -969,7 +969,8 @@
           "elementId": "table-b6Raxj4S8o",
           "hash": "ce1681d713e9"
         }
-      ]
+      ],
+      "note": " 2026-11-27: patched in place for the catalogue's (26)-(27) round (table cells via table_rows_manage, changed blocks replaced, Status and callout by text replace)."
     },
     "landing-page.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-t8yAVm_QV-",
