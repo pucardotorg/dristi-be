@@ -39,7 +39,7 @@ def _advocates(case_id):
     """``{participant_id: [advocate name, ...]}`` of the case's active representations."""
     found = {}
     for rep in (
-        Representation.objects.filter(case_id=case_id, is_active=True, to_date__isnull=True)
+        Representation.objects.filter(ports.active_q("to_date"), case_id=case_id)
         .select_related("advocate__user")
         .order_by("from_date")
     ):

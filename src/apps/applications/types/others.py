@@ -278,7 +278,12 @@ class WarrantByHand(ApplicationTypeSpec):
     def render_entries(self, app):
         party = ports.participant(app.case_id, app.data.get("accused_participant_id"))
         return [
-            {"term": "Accused", "value": party.name_at_filing if party else ""},
+            {
+                "term": "Accused",
+                "value": (party.name_at_filing or party.entity_name_at_filing or "")
+                if party
+                else "",
+            },
             {"term": "Delivery address", "value": address_text(app.data.get("delivery_address"))},
         ]
 

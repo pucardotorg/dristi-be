@@ -167,10 +167,11 @@ class Application(BaseExtendableModel, BaseModel, BaseAuditableModel):
                 condition=Q(earlier_application_number__isnull=False),
                 name="applications_earlier_number_unique_per_case",
             ),
+            # #4.2 also asks for the number here; a state taking numbers from CIS (#7)
+            # submits before CIS returns one, so services.numbering enforces it instead.
             models.CheckConstraint(
-                condition=Q(status__in=FILER_STATUSES)
-                | Q(submitted_at__isnull=False, application_number__isnull=False),
-                name="applications_number_from_submission",
+                condition=Q(status__in=FILER_STATUSES) | Q(submitted_at__isnull=False),
+                name="applications_submitted_at_from_submission",
             ),
             models.CheckConstraint(
                 condition=Q(earlier_application_number__isnull=True)

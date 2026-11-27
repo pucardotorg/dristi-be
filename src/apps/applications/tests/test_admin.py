@@ -127,3 +127,31 @@ def test_type_code_is_read_only_once_created(admin_client):
     response = admin_client.get(reverse("admin:applications_applicationtype_change", args=[row.pk]))
     assert response.status_code == 200
     assert b'name="code"' not in response.content
+
+
+def test_view_only_user_cannot_retry_workflows(world):
+    from django.contrib.auth.models import Permission
+
+    staff = get_user_model().objects.create_user(
+        mobile_number="+919999900003", password="x", name="Viewer", is_staff=True
+    )
+    staff.user_permissions.add(Permission.objects.get(codename="view_application"))
+    client = Client()
+    client.force_login(staff)
+    application = submitted(world, "BAIL", side="ACCUSED", data={"bail_type": "CASH"})
+    pass_order(application, onboard=True, decides=True, outcome="ACCEPTED")
+    with mock.patch.object(run_type_workflow, "send") as send:
+        client.post(
+            reverse("admin:applications_application_changelist"),
+            {"action": "retry_type_workflow", "_selected_action": [str(application.pk)]},
+        )
+    send.assert_not_called()
+    staff.user_permissions.add(Permission.objects.get(codename="change_application"))
+    staff = get_user_model().objects.get(pk=staff.pk)
+    client.force_login(staff)
+    with mock.patch.object(run_type_workflow, "send") as send:
+        client.post(
+            reverse("admin:applications_application_changelist"),
+            {"action": "retry_type_workflow", "_selected_action": [str(application.pk)]},
+        )
+    send.assert_called_once_with(str(application.pk))

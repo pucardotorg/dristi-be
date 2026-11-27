@@ -63,6 +63,8 @@ def fee(state_code, type_code) -> Decimal:
     raw = _state_raw(state_code, f"fee.{type_code.lower()}")
     try:
         amount = Decimal(str(raw)) if raw not in (None, "") else Decimal("0")
+        if not amount.is_finite():
+            raise InvalidOperation
     except InvalidOperation:
         logger.error("event=APPLICATION_CONFIG_INVALID key=fee.%s", type_code.lower())
         return Decimal("0")

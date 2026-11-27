@@ -68,7 +68,8 @@ class PortNotAvailable(Exception):  # noqa: N818 - names the missing contract
     code = "CONTRACT_NOT_AVAILABLE"
 
 
-def _active_q(end_field):
+def active_q(end_field):
+    """Active now: not deactivated and not past its end date."""
     now = timezone.now()
     return Q(is_active=True) & (
         Q(**{f"{end_field}__isnull": True}) | Q(**{f"{end_field}__gt": now})
@@ -120,7 +121,7 @@ NO_ACCESS = CaseAccess()
 
 def _litigants(case_id):
     return CaseParticipant.objects.filter(
-        _active_q("end_date"), case_id=case_id, role__in=LITIGANT_ROLES
+        active_q("end_date"), case_id=case_id, role__in=LITIGANT_ROLES
     )
 
 
@@ -134,7 +135,7 @@ def advocate_options(case_id, side=None) -> list[AdvocateOption]:
     by_user: dict[uuid.UUID, dict] = {}
     representations = (
         Representation.objects.filter(
-            _active_q("to_date"), case_id=case_id, case_participant__role__in=roles
+            active_q("to_date"), case_id=case_id, case_participant__role__in=roles
         )
         .filter(case_participant__is_active=True)
         .select_related("advocate__user", "case_participant")
@@ -196,7 +197,7 @@ def case_access(case_id, user) -> CaseAccess:
     own_option = next((o for o in options if o.user_id == user.pk), None)
     own_parties = list(
         CaseParticipant.objects.filter(
-            _active_q("end_date"), case_id=case_id, person__user=user, role__in=list(ROLE_SIDE)
+            active_q("end_date"), case_id=case_id, person__user=user, role__in=list(ROLE_SIDE)
         ).values_list("pk", "role")
     )
     side = None
@@ -243,13 +244,16 @@ def side_user_ids(case_id, side) -> set[uuid.UUID]:
     roles = [role for role, s in ROLE_SIDE.items() if s == side]
     users = set(
         CaseParticipant.objects.filter(
-            _active_q("end_date"), case_id=case_id, role__in=roles, person__user__isnull=False
+            active_q("end_date"), case_id=case_id, role__in=roles, person__user__isnull=False
         ).values_list("person__user_id", flat=True)
     )
     lit_roles = [role for role, s in LITIGANT_SIDE.items() if s == side]
     advocates = set(
         Representation.objects.filter(
-            _active_q("to_date"), case_id=case_id, case_participant__role__in=lit_roles
+            active_q("to_date"),
+            case_id=case_id,
+            case_participant__role__in=lit_roles,
+            case_participant__is_active=True,
         ).values_list("advocate__user_id", flat=True)
     )
     users |= advocates

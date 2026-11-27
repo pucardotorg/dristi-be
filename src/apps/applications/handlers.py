@@ -61,7 +61,9 @@ class ApplicationActionHandler:
         application = self._application(ctx)
         if application is None:
             return self.validate_target(ctx)
-        return actions.validate(application, values, complete=complete)
+        return actions.validate(
+            application, values, complete=complete, moves_hearing=_moves_hearing(values)
+        )
 
     def summary(self, ctx, values):
         application = self._application(ctx)
@@ -73,8 +75,20 @@ class ApplicationActionHandler:
             ctx.target_id,
             values,
             order_id=ctx.order_id,
-            moves_hearing=bool(values.get("_moves_hearing")),
+            # 0025 #1.2's ItemContext carries no order date yet; use it once it does, so a
+            # late trigger judges dates on the order's day, not the run's.
+            order_date=getattr(ctx, "order_date", None),
+            moves_hearing=_moves_hearing(values),
         )
+
+
+def _moves_hearing(values):
+    """Whether the same order moves the application's hearing (#8.2 ``HEARING_MOVE_REQUIRED``).
+
+    The order module verifies the sibling *Rescheduling of hearing date* item and passes
+    the result in the values; validation and execution read the same answer.
+    """
+    return bool(values.get("_moves_hearing"))
 
 
 def register_with_orders():

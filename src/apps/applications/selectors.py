@@ -9,11 +9,12 @@ submitted application shows is the same for everyone who can see it
 import datetime
 from collections import Counter
 
-from django.db.models import Count, Exists, OuterRef, Prefetch, Q
-from django.utils import timezone
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q, Subquery
+from rest_framework.exceptions import NotFound
 
 from apps.cases.selectors import get_case_advocates, get_case_summaries
 from apps.hearings import selectors as hearings
+from apps.hearings.services.calendar import IST
 
 from . import access, conf, ports
 from .enums import (
@@ -43,7 +44,11 @@ CLOSING_ACTIONS = (Action.ACCEPT, Action.REJECT, Action.DISMISS, Action.EXPIRE)
 
 def base_queryset():
     return Application.objects.select_related(
-        "application_type", "case", "case__court", "raised_by", "created_by"
+        "application_type",
+        "case",
+        "case__court",
+        "raised_by__advocate_profile",
+        "created_by__advocate_profile",
     )
 
 
@@ -109,9 +114,9 @@ def _submitted_objection(application):
 def case_list(case_id, user, *, filters):
     """``GET /cases/{case_id}/applications/`` rows the caller may see (#14.1)."""
     queryset = access.visible_on_case(case_id, user, base_queryset()).annotate(
-        has_objection_flag=Exists(
-            Application.objects.filter(objection_to=OuterRef("pk"), status=S.SUBMITTED)
-        )
+        has_objection_flag=_submitted_objection_exists(),
+        # Any objection, a draft included: it bars a second one (ALC-24).
+        any_objection_flag=Exists(Application.objects.filter(objection_to=OuterRef("pk"))),
     )
     queryset = _filter(queryset, filters)
     if filters.get("pending"):
@@ -215,10 +220,18 @@ def caller_actions(app, user, case_access, *, in_circle=None):
         and not app.is_objection
         and case_access.is_drafter
         and case_access.side != app.side
-        and not Application.objects.filter(objection_to=app).exists()
+        and not _has_any_objection(app)
     ):
         found.append("file_objection")
     return found
+
+
+def _has_any_objection(app):
+    """The annotated flag when listed; one query on a single application."""
+    flag = getattr(app, "any_objection_flag", None)
+    if flag is not None:
+        return flag
+    return Application.objects.filter(objection_to=app).exists()
 
 
 def filers(case_id, user):
@@ -329,8 +342,10 @@ def _document_names(documents):
 
 def detail(app, user):
     """``GET /applications/{id}/`` for anyone who can see it (#14.3), plus the court view (#14.4)."""
-    app = with_transitions(base_queryset()).get(pk=app.pk)
-    case_access = ports.case_access(app.case_id, user)
+    app = with_transitions(base_queryset()).filter(pk=app.pk).first()
+    case_access = ports.case_access(app.case_id, user) if app is not None else None
+    if app is None or not access.can_see(app, user, case_access):
+        raise NotFound("Application not found.")
     transitions = list(app.transitions.all())
     in_circle = access.in_drafting_circle(app, user, case_access)
     objection = _submitted_objection(app)
@@ -338,18 +353,7 @@ def detail(app, user):
     litigant = ports.participant(app.case_id, app.raised_on_behalf_of)
     hearing = hearings.get_hearing(app.hearing_id) if app.hearing_id else None
     sign_row = next((t for t in reversed(transitions) if t.action == Action.SIGN), None)
-    orders = [
-        {
-            "id": t.order_id,
-            "number": None,
-            "title": Action(t.action).label,
-            "signed_at": t.created_at,
-            "summary": t.summary,
-            "deciding": t.order_id == app.deciding_order_id and t.action in DECIDING_ACTIONS,
-        }
-        for t in transitions
-        if t.order_id and t.action in ORDER_ACTIONS
-    ]
+    orders = _orders(app, transitions)
     workflow_row = next(
         (t for t in reversed(transitions) if t.action == Action.WORKFLOW_DONE), None
     )
@@ -449,7 +453,7 @@ def detail(app, user):
             app.is_objection
             and app.submitted_at
             and app.objection_to.respond_by
-            and app.submitted_at.date() > app.objection_to.respond_by
+            and app.submitted_at.astimezone(IST).date() > app.objection_to.respond_by
         ),
         "deciding_order": next(
             (
@@ -483,6 +487,34 @@ def detail(app, user):
 
 
 DECIDING_ACTIONS = (Action.ACCEPT, Action.REJECT, Action.DISMISS)
+
+
+def _orders(app, transitions):
+    """The *Orders* attribute (#14.3): each order once, oldest first.
+
+    An order that onboards and decides wrote two transitions (#8.3); it is one
+    order, titled by its last act (the decision) and summarised by both.
+    """
+    by_order = {}
+    for t in transitions:
+        if not t.order_id or t.action not in ORDER_ACTIONS:
+            continue
+        entry = by_order.setdefault(
+            t.order_id,
+            {"id": t.order_id, "number": None, "signed_at": t.created_at, "summaries": []},
+        )
+        entry["title"] = Action(t.action).label
+        entry["deciding"] = t.order_id == app.deciding_order_id and t.action in DECIDING_ACTIONS
+        if t.summary and t.summary not in entry["summaries"]:
+            entry["summaries"].append(t.summary)
+    orders = []
+    for entry in by_order.values():
+        summaries = entry.pop("summaries")
+        entry["summary"] = "; ".join(summaries)
+        orders.append(entry)
+    return orders
+
+
 # Filing steps are shown to the drafting circle only (#14.3 ``history``).
 FILING_ACTIONS = (Action.CREATE, Action.EDIT, Action.PROCEED_TO_SIGN, Action.BACK_TO_DRAFT)
 
@@ -589,14 +621,35 @@ def court_view(app, user, objection):
 
 
 def court_queryset(user, court_id):
-    """Submitted applications across a courtroom's cases, for its staff (#14.4)."""
+    """Submitted applications across a courtroom's cases, for its staff (#14.4).
+
+    Annotated with ``closed_at`` (the deciding order or the expiry), whether a
+    review was deferred and whether an objection was filed, so the queue needs
+    no query per row.
+    """
     if court_id is None or not ports.is_court_reader(user, court_id):
         return Application.objects.none()
+    closing = ApplicationTransition.objects.filter(
+        application_ref=OuterRef("pk"), action__in=CLOSING_ACTIONS
+    ).order_by("-created_at")
     return (
         base_queryset()
         .filter(case__court_id=court_id, status__in=SUBMITTED_STATUSES)
         .exclude(application_type__code="OBJECTION")
+        .annotate(
+            closed_at=Subquery(closing.values("created_at")[:1]),
+            review_deferred=Exists(
+                ApplicationTransition.objects.filter(
+                    application_ref=OuterRef("pk"), action=Action.DEFER_REVIEW
+                )
+            ),
+            has_objection_flag=_submitted_objection_exists(),
+        )
     )
+
+
+def _submitted_objection_exists():
+    return Exists(Application.objects.filter(objection_to=OuterRef("pk"), status=S.SUBMITTED))
 
 
 def _band(app, day, live):
@@ -620,7 +673,7 @@ def _due(app):
 def _closed_on(app):
     """The day the deciding order or the expiry took effect (#14.5 closed / archive)."""
     closed_at = getattr(app, "closed_at", None) or app.updated_at
-    return timezone.localdate(closed_at)
+    return closed_at.astimezone(IST).date()
 
 
 def court_queue(user, court_id, *, view=None, queue=None, filters=None):
@@ -675,10 +728,11 @@ def court_queue(user, court_id, *, view=None, queue=None, filters=None):
         rows.sort(key=_closed_on, reverse=True)
     elif ordering == "submitted_at":
         rows.sort(key=lambda a: a.submitted_at)
-    elif ordering == "-submitted_at" or (queue and not view):
+    elif ordering == "-submitted_at" or (queue and not view and not ordering):
         rows.sort(key=lambda a: a.submitted_at, reverse=True)
     elif ordering == "next_hearing":
-        rows.sort(key=lambda a: _next_hearing_date(a) or datetime.date.max)
+        next_dates = {case_id: _next_hearing_date(case_id) for case_id in {a.case_id for a in rows}}
+        rows.sort(key=lambda a: next_dates[a.case_id] or datetime.date.max)
     else:
         rows.sort(
             key=lambda a: (
@@ -690,8 +744,8 @@ def court_queue(user, court_id, *, view=None, queue=None, filters=None):
     return rows, facets, day, live
 
 
-def _next_hearing_date(app):
-    hearing = hearings.next_hearing(app.case_id)
+def _next_hearing_date(case_id):
+    hearing = hearings.next_hearing(case_id)
     return hearing.hearing_date if hearing else None
 
 
@@ -742,13 +796,15 @@ def queue_rows(applications, day, live, *, queue=None):
                 "overdue": due < day,
                 "due_today": due == day,
                 "deferred": app.status == S.PENDING_REVIEW
-                and getattr(app, "deferral_count", 0) > 0,
+                and getattr(app, "review_deferred", False),
             }
             if due
             else None,
             "status_line": {
                 "status": app.status,
-                "objection_status": objection_status(app, day=day),
+                "objection_status": ObjectionStatus.FILED
+                if getattr(app, "has_objection_flag", False)
+                else objection_status(app, day=day),
                 "review_due_date": app.review_due_date,
                 "decision_date": app.decision_date,
                 "respond_by": app.respond_by,
@@ -772,7 +828,11 @@ def queue_rows(applications, day, live, *, queue=None):
 
 
 def court_counts(user, court_id):
-    """Counts per view and per type-cut queue; only onboard and decide are badged (#14.5)."""
+    """Counts per view and per type-cut queue; only onboard and decide are badged (#14.5).
+
+    Queue counts are open work, as the task counts they stand in for (0011
+    ``/tasks/counts/``): a closed application is in its queue's list, not its count.
+    """
     day = today()
     applications = list(court_queryset(user, court_id))
     live = ports.live_items_targeting([a.pk for a in applications])

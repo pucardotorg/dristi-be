@@ -14,7 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -38,6 +38,7 @@ from .serializers import (
     CourtListQuerySerializer,
     CourtQuerySerializer,
     CourtQueueQuerySerializer,
+    CourtQueueRowSerializer,
     DocumentSerializer,
     DocumentUploadSerializer,
     ESignStartSerializer,
@@ -94,9 +95,10 @@ def expected_version(request):
 
 def _detail_response(application, user, *, code=status.HTTP_200_OK, extra=None):
     data = selectors.detail(application, user)
+    version = data["version"]
     if extra:
         data = {**extra, "application": data}
-    return Response(data, status=code, headers={"ETag": f'"{application.version}"'})
+    return Response(data, status=code, headers={"ETag": f'"{version}"'})
 
 
 def _stream(content, filename):
@@ -115,6 +117,30 @@ class PreviewFormatNegotiation(DefaultContentNegotiation):
 class ApplicationPagination(PageNumberPagination):
     page_size_query_param = "page_size"
     max_page_size = 100
+
+
+class CourtQueuePagination(ApplicationPagination):
+    """The court queue's page also carries the court's ``today`` and the filter facets (#14.5)."""
+
+    def get_paginated_response_schema(self, schema):
+        schema = super().get_paginated_response_schema(schema)
+        facet = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "string"},
+                    "label": {"type": "string"},
+                    "count": {"type": "integer"},
+                },
+            },
+        }
+        schema["properties"] = {
+            **schema["properties"],
+            "today": {"type": "string", "format": "date"},
+            "facets": {"type": "object", "properties": {"type": facet, "stage": facet}},
+        }
+        return schema
 
 
 class CaseApplicationsViewSet(viewsets.GenericViewSet):
@@ -230,11 +256,6 @@ class ApplicationViewSet(viewsets.GenericViewSet):
     pagination_class = ApplicationPagination
     list_actions = {"court_queue"}
 
-    def get_parsers(self):
-        if getattr(self, "action", None) in ("documents", "sign_upload"):
-            return [MultiPartParser(), FormParser()]
-        return [JSONParser(), MultiPartParser(), FormParser()]
-
     # Reads ------------------------------------------------------------------------
 
     @extend_schema(operation_id="applications_retrieve")
@@ -264,9 +285,14 @@ class ApplicationViewSet(viewsets.GenericViewSet):
     @extend_schema(
         operation_id="applications_court_queue",
         parameters=[CourtQueueQuerySerializer],
-        responses=QueueRowSerializer(many=True),
+        responses=CourtQueueRowSerializer(many=True),
     )
-    @action(detail=False, methods=["get"], url_path="court-queue")
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="court-queue",
+        pagination_class=CourtQueuePagination,
+    )
     def court_queue(self, request):
         """The court's Applications screen: views, type-cut queues, facets (#14.5)."""
         query = _valid(CourtQueueQuerySerializer, request.query_params)
@@ -342,7 +368,7 @@ class ApplicationViewSet(viewsets.GenericViewSet):
             ),
         },
     )
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post"], parser_classes=[MultiPartParser, FormParser])
     def documents(self, request, pk=None):
         """Attach a supporting document, or a file to a type field (#6.4)."""
         access.get_visible(pk, request.user)
@@ -409,7 +435,10 @@ class ApplicationViewSet(viewsets.GenericViewSet):
                 description="`pdf` returns the render as a PDF (the stored copy once pending signature).",
             )
         ],
-        responses={200: PreviewSerializer},
+        responses={
+            (200, "application/json"): PreviewSerializer,
+            (200, "application/pdf"): OpenApiResponse(OpenApiTypes.BINARY),
+        },
     )
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
@@ -463,7 +492,12 @@ class ApplicationViewSet(viewsets.GenericViewSet):
         request={"multipart/form-data": SignUploadSerializer},
         responses=error_responses(*SIGN_ERRORS, errors.DOCUMENT_NOT_ACCEPTED.example(field="file")),
     )
-    @action(detail=True, methods=["post"], url_path="sign/upload")
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="sign/upload",
+        parser_classes=[MultiPartParser, FormParser],
+    )
     def sign_upload(self, request, pk=None):
         """Upload a physically signed copy, where the state enables it (#6.7)."""
         access.get_visible(pk, request.user)

@@ -127,10 +127,11 @@ def test_t64_dismissal_cites_the_number_in_use(world):
     assert actions.defaults(application)["application_number"] == application.application_number
 
 
-def test_numbers_from_cis_shows_none(world):
+def test_numbers_from_cis_submits_without_a_number(world):
     set_config("applications", "numbers_from_cis", "true")
-    application = Application(case=world.case)
-    assert numbering.allot_submission_number(application) is None
+    application = submitted(world)
+    assert application.status == "PENDING_REVIEW"
+    assert application.application_number is None
 
 
 def test_number_taken_at_the_same_moment(world):

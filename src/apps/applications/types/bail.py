@@ -9,6 +9,7 @@ from .common import ADDRESS_SCHEMA, address_problems, address_text, format_rupee
 from .simple import side_only
 
 MAX_SURETIES = 10
+MAX_BAIL_AMOUNT = Decimal("1e12")
 BAIL_TYPES = {"CASH": "Cash", "SURETY": "Surety"}
 
 SURETY_SCHEMA = {
@@ -61,7 +62,9 @@ class Bail(ApplicationTypeSpec):
         amount = data.get("bail_amount")
         if amount not in (None, ""):
             try:
-                if Decimal(str(amount)) <= 0:
+                value = Decimal(str(amount))
+                # Finite and money-sized: an exponent like 1e999999999 must never reach rendering.
+                if not value.is_finite() or value <= 0 or value >= MAX_BAIL_AMOUNT:
                     raise InvalidOperation
             except InvalidOperation:
                 from apps.api import errors as api_errors

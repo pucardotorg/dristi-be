@@ -36,7 +36,9 @@ class HearingReschedule(ApplicationTypeSpec):
         return None
 
     def form_context(self, ctx):
-        hearing = hearings.next_hearing(ctx.case_id)
+        from ..services.drafting import scheduled_hearing
+
+        hearing = scheduled_hearing(ctx.case_id)
         return {
             "hearing": _hearing_dict(hearing),
             "reschedule_reasons": conf.reschedule_reasons(),

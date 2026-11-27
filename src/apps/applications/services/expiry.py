@@ -13,6 +13,7 @@ from django.db import transaction
 
 from apps.hearings import selectors as hearings
 from apps.hearings.enums import HearingStatus
+from apps.hearings.models import Hearing
 
 from .. import conf, ports
 from ..enums import OPEN_STATUSES, ApplicationStatus, ExpiryReason
@@ -61,7 +62,6 @@ def expire(application, reason, *, hearing_id=None):
     )
     for task in ("review_application", "decide_application"):
         ports.tasks.expire(task, application, reason="NO_LONGER_RELEVANT")
-    ports.tasks.expire("file_objection", application, reason="NO_LONGER_RELEVANT")
     from .objections import close_open_objection
 
     close_open_objection(application)
@@ -101,9 +101,18 @@ def _expire_each(application_ids, reason=None):
 
 def sweep():
     """The 00:05 IST sweep (#16.6): anything a missed signal left, in bounded batches."""
-    candidates = Application.objects.filter(
-        status__in=OPEN_STATUSES, application_type__code__in=expiring_type_codes()
-    ).order_by("submitted_at")
+    # Only rows whose hearing no longer stands, so a batch is never filled by applications
+    # with a future hearing and later ones are always reached (bounded, keyed by pk).
+    standing = Hearing.objects.filter(
+        status__in=LIVE_HEARING_STATUSES, hearing_date__gte=today()
+    ).values("pk")
+    candidates = (
+        Application.objects.filter(
+            status__in=OPEN_STATUSES, application_type__code__in=expiring_type_codes()
+        )
+        .exclude(hearing_id__in=standing)
+        .order_by("submitted_at", "pk")
+    )
     batch = list(candidates.values_list("pk", flat=True)[: conf.expiry_batch_size()])
     count = _expire_each(batch)
     if count:

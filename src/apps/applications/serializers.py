@@ -75,10 +75,10 @@ class CourtQueueQuerySerializer(CourtQuerySerializer):
     )
     type = serializers.CharField(required=False, max_length=32)
     side = serializers.ChoiceField(choices=Side.choices, required=False)
-    stage = serializers.CharField(required=False, max_length=64)
     search = serializers.CharField(required=False, max_length=100)
     ordering = serializers.ChoiceField(
-        choices=["due_date", "submitted_at", "-submitted_at", "next_hearing", "-delay_days"],
+        # ``stage`` and ``-delay_days`` (#14.5) wait on case stages and the delay data in apps.cases.
+        choices=["due_date", "submitted_at", "-submitted_at", "next_hearing"],
         required=False,
     )
 
@@ -324,6 +324,10 @@ class QueueRowSerializer(serializers.Serializer):
 
     def to_representation(self, instance):
         return instance
+
+
+class CourtQueueRowSerializer(QueueRowSerializer):
+    """A row of the court queue, whose page also carries ``today`` and ``facets``."""
 
 
 class QueueCountsSerializer(serializers.Serializer):

@@ -215,10 +215,26 @@ class TestEdit:
         assert response["ETag"] == '"1"'
 
     def test_t18_edit_in_pending_signature(self, world):
-        application = submitted(world)
-        response = patch(world.a1, application.pk, details="<p>x</p>")
+        body = {
+            "raised_by": str(world.a1.pk),
+            "litigant": str(world.complainant.pk),
+            "details": "<p>Original</p>",
+            "data": {"title": "T"},
+        }
+        app_id = create(world.a1, world.case, **body).json()["id"]
+        client_for(world.a1).post(f"/api/v1/applications/{app_id}/proceed-to-sign/")
+        application = Application.objects.get(pk=app_id)
+        assert application.status == "PENDING_SIGNATURE"
+        response = patch(world.a1, app_id, details="<p>changed</p>")
         assert response.status_code == 409
         assert codes_of(response) == ["E13001"]
+        after = Application.objects.get(pk=app_id)
+        assert after.details == "<p>Original</p>"
+        assert after.signing_file_id == application.signing_file_id
+
+    def test_edit_after_submission(self, world):
+        application = submitted(world)
+        assert codes_of(patch(world.a1, application.pk, details="<p>x</p>")) == ["E13001"]
 
     def test_t19_litigant_change_to_the_other_side(self, world, draft):
         response = patch(world.a1, draft["id"], litigant=str(world.accused.pk))

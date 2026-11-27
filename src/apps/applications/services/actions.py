@@ -165,7 +165,7 @@ def validate(application, values, *, complete, business_date=None, moves_hearing
             RESPOND_BY_INVALID,
             "The respond-by date must be today or later, and not after the date to bring it back.",
         )
-    if which["outcome"] and outcome:
+    if which["outcome"] and outcome not in (None, ""):
         allowed = (Outcome.ACCEPTED, Outcome.REJECTED) if onboard else (Outcome.DISMISSED,)
         if outcome not in allowed:
             problem(
@@ -223,7 +223,11 @@ def summary(application, values, *, number_replaced=None, business_date=None):
                 parts.append(f"Review deferred to {day:%d %b}")
             else:
                 parts.append(f"to be decided on {day:%d %b}")
-        if values.get("respond") and _date(values.get("respond_by")) and (onboard or onboarded):
+        if (
+            asked(application, values, business_date)["respond"]
+            and values.get("respond")
+            and _date(values.get("respond_by"))
+        ):
             parts.append(f"response by {_date(values['respond_by']):%d %b}")
     text = "; ".join(parts)
     return text[:1].upper() + text[1:]

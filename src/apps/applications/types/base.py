@@ -167,7 +167,7 @@ def _collect(value, parts, prefix):
     """Walk ``value`` along ``parts`` (``a[]``, ``b``) and return ``(path, id)`` pairs."""
     if not parts:
         if isinstance(value, list):
-            return [(_path(prefix), str(item)) for item in value if item]
+            return [(_path(prefix), str(item)) for item in value if item is not None]
         return [(_path(prefix), str(value))] if value else []
     head, rest = parts[0], parts[1:]
     is_list = head.endswith("[]")

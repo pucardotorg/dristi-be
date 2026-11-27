@@ -23,7 +23,7 @@ ADDRESSES_SCHEMA = {"type": "array", "maxItems": 10, "items": ADDRESS_SCHEMA}
 
 def address_problems(address, path):
     """An address with nothing in it, or a malformed pincode (domain 05 rules, 0020 §7)."""
-    if not address:
+    if address is None:
         return []
     problems = []
     if not any((address.get(name) or "").strip() for name in CONTENT_FIELDS):

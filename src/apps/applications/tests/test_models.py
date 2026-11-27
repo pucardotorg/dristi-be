@@ -45,7 +45,7 @@ class TestConstraints:
         with pytest.raises(IntegrityError), transaction.atomic():
             Application.objects.bulk_create([application])
 
-    def test_number_from_submission(self, world):
+    def test_submitted_at_from_submission(self, world):
         self.save_raw(self.base(world, status="PENDING_REVIEW", signed_file_id="f"))
 
     def test_replaced_only_when_onboarded(self, world):

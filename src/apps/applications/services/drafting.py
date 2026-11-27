@@ -15,6 +15,8 @@ from rest_framework.exceptions import ErrorDetail, NotFound, ValidationError
 from apps.api import errors as api_errors
 from apps.api.errors import BusinessError
 from apps.cases.models import Case
+from apps.esign.constants import ACTIVE_STATUSES
+from apps.esign.models import ESignTransaction
 from apps.files.documents import (
     ACCEPTED_FORMATS,
     discard_documents,
@@ -22,6 +24,7 @@ from apps.files.documents import (
     store_documents,
 )
 from apps.hearings import selectors as hearings
+from apps.hearings.enums import HearingStatus
 from apps.payments.enums import OPEN_PAYMENT_STATUSES
 from apps.payments.models import Demand, PaymentDemandItem
 from apps.payments.services.demands import DemandService
@@ -67,6 +70,14 @@ def _case(case_id):
 
 def filer_context(case_id, user):
     return FilerContext(case_id=case_id, user=user, access=ports.case_access(case_id, user))
+
+
+def _reader_context(case_id, user):
+    """The caller's context, or ``404`` for someone with no relationship to the case."""
+    ctx = filer_context(case_id, user)
+    if not ctx.access.is_case_reader:
+        raise NotFound("Case not found.")
+    return ctx
 
 
 def _require_on_file(case):
@@ -119,8 +130,8 @@ def _available_type(ctx, code):
 def form_context(case_id, code, user):
     """Everything the form needs that the filer does not type (#6.2)."""
     case = _case(case_id)
+    ctx = _reader_context(case_id, user)
     _require_on_file(case)
-    ctx = filer_context(case_id, user)
     _require_drafter(ctx)
     row = _available_type(ctx, code)
     options = ports.advocate_options(case_id, ctx.side)
@@ -250,7 +261,7 @@ def apply_initial_fields(application, ctx, data):
         application, ctx, raised_by_given="raised_by" in data, litigant_given="litigant" in data
     )
     if application.spec.needs_hearing:
-        hearing = hearings.next_hearing(application.case_id)
+        hearing = scheduled_hearing(application.case_id)
         application.hearing_id = hearing.id if hearing else None
     _validate_draft(application)
 
@@ -258,8 +269,8 @@ def apply_initial_fields(application, ctx, data):
 def create(case_id, user, data):
     """``POST /cases/{case_id}/applications/`` (#6.3). Returns ``(application, created)``."""
     case = _case(case_id)
+    ctx = _reader_context(case_id, user)
     _require_on_file(case)
-    ctx = filer_context(case_id, user)
     _require_drafter(ctx)
     code = data["application_type"]
     if code == "OBJECTION" or data.get("objection_to"):
@@ -286,7 +297,11 @@ def create(case_id, user, data):
 
 
 def _filer_locked(application_id, user, action, version):
-    application = common.lock(application_id)
+    try:
+        application = common.lock(application_id)
+    except Application.DoesNotExist as exc:
+        # Deleted between the view's visibility check and this lock.
+        raise NotFound("Application not found.") from exc
     if not access.can_see(application, user):
         raise NotFound("Application not found.")
     common.require(application, action)
@@ -410,11 +425,17 @@ def completeness_problems(application):
     return problems
 
 
+def scheduled_hearing(case_id):
+    """The case's ``SCHEDULED`` hearing (#3.4); one already started does not count."""
+    upcoming = hearings.next_hearing(case_id)
+    return upcoming if upcoming is not None and upcoming.status == HearingStatus.SCHEDULED else None
+
+
 def require_hearing_upcoming(application):
     """Advance / Postpone: still the case's next scheduled hearing, not past (``E13016``)."""
     if not application.spec.needs_hearing:
         return
-    upcoming = hearings.next_hearing(application.case_id)
+    upcoming = scheduled_hearing(application.case_id)
     if upcoming is None or upcoming.id != application.hearing_id or upcoming.hearing_date < today():
         raise BusinessError(errors.HEARING_NOT_UPCOMING)
 
@@ -433,6 +454,9 @@ def proceed_to_sign(application_id, user, *, version=None):
     with transaction.atomic():
         application = _filer_locked(application_id, user, Action.PROCEED_TO_SIGN, version)
         raise_problems(completeness_problems(application))
+        # Representation may have changed since the draft was edited: the stored pair must
+        # still hold, or the copy to sign would name a signer who can no longer sign.
+        _check_parties(application, None, raised_by_given=False, litigant_given=True)
         require_hearing_upcoming(application)
         require_target_pending(application)
         application.spec.prepare(application)
@@ -453,9 +477,19 @@ def back_to_draft(application_id, user, *, version=None):
     """``POST /applications/{id}/back-to-draft/`` (#6.6, ``ALC-31``)."""
     with transaction.atomic():
         application = _filer_locked(application_id, user, Action.BACK_TO_DRAFT, version)
+        superseded = application.signing_file_id
         application.signing_file_id = ""
         common.transition(application, Action.BACK_TO_DRAFT, user, to_status=S.DRAFT)
         ports.tasks.expire("sign_application", application, reason="BACK_TO_DRAFT")
+        # The superseded copy to sign is released unless an e-sign still works on it;
+        # such a file is left for the e-sign cleanup to retire with its transaction.
+        if (
+            superseded
+            and not ESignTransaction.objects.filter(
+                source_file_id=superseded, status__in=ACTIVE_STATUSES
+            ).exists()
+        ):
+            transaction.on_commit(lambda: discard_documents([superseded]))
     return application
 
 

@@ -56,7 +56,10 @@ def can_sign_application(*, user, entity_type, entity_id, organization_id=None, 
 
 
 def _signer_locked(application_id, user):
-    application = common.lock(application_id)
+    try:
+        application = common.lock(application_id)
+    except Application.DoesNotExist as exc:
+        raise NotFound("Application not found.") from exc
     if not access.can_see(application, user):
         raise NotFound("Application not found.")
     common.require(application, Action.SIGN)
@@ -98,7 +101,10 @@ def initiate(application_id, user, *, method, sign_placeholder=None):
 def confirm(application_id, user, *, transaction_id):
     """``POST /applications/{id}/sign/confirm/`` (#6.7): record a successful e-sign, idempotently."""
     with transaction.atomic():
-        application = common.lock(application_id)
+        try:
+            application = common.lock(application_id)
+        except Application.DoesNotExist as exc:
+            raise NotFound("Application not found.") from exc
         if not access.can_see(application, user):
             raise NotFound("Application not found.")
         esign = ESignTransaction.objects.filter(

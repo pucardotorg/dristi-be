@@ -134,8 +134,8 @@ class TestCaseList:
             submitted(world)
         with CaptureQueriesContext(connection) as large:
             case_list(world.staff, world.case)
-        # Per-row checks are bounded by the access stand-ins; the growth must stay linear and small.
-        assert len(large.captured_queries) <= len(small.captured_queries) + 12 * 2
+        # A page of 15 costs what a page of 3 does: no query per row.
+        assert len(large.captured_queries) == len(small.captured_queries)
 
 
 class TestNeedsAttention:

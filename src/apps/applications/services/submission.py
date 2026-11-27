@@ -104,8 +104,13 @@ def submit(application, actor):
     """Submit the locked application (#6.9)."""
     from .expiry import hearing_gone
 
-    if application.is_objection and application.objection_to.status not in OPEN_TARGET:
-        raise BusinessError(errors.TARGET_NOT_PENDING)
+    if application.is_objection:
+        # Hold the target's lock through the SUBMITTED transition, so a decision on it
+        # cannot commit between this check and the write. Decisions lock only the target,
+        # so the order (objection, then target) cannot deadlock with them.
+        application.objection_to = common.lock(application.objection_to_id)
+        if application.objection_to.status not in OPEN_TARGET:
+            raise BusinessError(errors.TARGET_NOT_PENDING)
     application.submitted_at = common.now()
     numbering.allot_submission_number(application)
     if application.is_objection:

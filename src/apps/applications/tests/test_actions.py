@@ -377,3 +377,29 @@ class TestHandler:
         with mock.patch("apps.applications.handlers.import_module", return_value=registry):
             assert register_with_orders() is True
         registry.register.assert_called_once()
+
+
+def test_one_order_that_onboards_and_decides_is_listed_once(world):
+    from .factories import client_for
+
+    application = submitted(world)
+    order_id = uuid.uuid4()
+    pass_order(application, order_id=order_id, onboard=True, decides=True, outcome="REJECTED")
+    orders = client_for(world.b1).get(f"/api/v1/applications/{application.pk}/").json()["orders"]
+    assert len(orders) == 1
+    assert orders[0]["id"] == str(order_id)
+    assert orders[0]["title"] == "Rejected"
+    assert orders[0]["deciding"] is True
+
+
+def test_false_outcome_is_refused_not_a_crash(world):
+    application = submitted(world)
+    result = pass_order(application, onboard=True, decides=True, outcome=False)
+    assert (result.status, result.error_code) == ("FAILED", "OUTCOME_NOT_ALLOWED")
+
+
+def test_same_day_onboarding_summary_names_no_response(world):
+    application = submitted(world)
+    pass_order(application, onboard=True, bring_back_on=TODAY, respond=True, respond_by=TODAY)
+    summary = Application.objects.get(pk=application.pk).transitions.get(action="ONBOARD").summary
+    assert "response by" not in summary

@@ -110,6 +110,13 @@ class ApplicationAdmin(ReadOnlyAdminMixin, AuditUserAdminMixin, SimpleHistoryAdm
 
     @admin.action(description="Retry type workflow")
     def retry_type_workflow(self, request, queryset):
+        # The admin is read-only (has_change_permission is False for everyone), so the
+        # model permission is checked directly, as the record-order view does.
+        if not request.user.has_perm("applications.change_application"):
+            self.message_user(
+                request, "You do not have permission to retry workflows.", messages.ERROR
+            )
+            return
         count = 0
         for application in queryset.filter(
             workflow_status__in=(WorkflowStatus.FAILED, WorkflowStatus.PENDING)

@@ -152,6 +152,16 @@ class EditLitigantDetails(ApplicationTypeSpec):
                 problems.items.append(problem)
         for index, address in enumerate(details.get("addresses") or []):
             problems.items.extend(address_problems(address, f"data.details.addresses[{index}]"))
+        representative = details.get("representative") or {}
+        problem = phone_problem(
+            representative.get("phone_number"), "data.details.representative.phone_number"
+        )
+        if problem:
+            problems.items.append(problem)
+        for index, address in enumerate(representative.get("addresses") or []):
+            problems.items.extend(
+                address_problems(address, f"data.details.representative.addresses[{index}]")
+            )
         if (
             participant is not None
             and participant.role == ParticipantRole.COMPLAINANT
@@ -229,23 +239,26 @@ def _show(value):
 def current_details(participant) -> dict:
     """The participant's current values under the ``details`` keys (#3.4 prefill)."""
     data = CaseParticipantSerializer(participant).data
+    institution = data.get("institution")
+    # An institution with no person acting for it keeps its contacts on the institution.
+    contacts = institution if institution and not participant.person_id else data
     addresses = [
         {
             key: address.get(key) or ""
             for key in ("line1", "city", "district", "state", "pincode", "police_station")
         }
-        for address in data.get("addresses") or []
+        for address in contacts.get("addresses") or []
     ]
     details = {
         "name": participant.name_at_filing,
         "age": participant.age_at_filing,
         "gender": participant.gender_at_filing,
+        "disability_status": data.get("disability_status"),
         "designation": participant.designation_at_filing,
-        "phone_number": (data.get("mobile_numbers") or [None])[0],
-        "email": (data.get("email_addresses") or [None])[0],
+        "phone_number": (contacts.get("mobile_numbers") or [None])[0],
+        "email": (contacts.get("email_addresses") or [None])[0],
         "addresses": addresses,
     }
-    institution = data.get("institution")
     if institution:
         details.update(
             entity_type=institution.get("entity_type"),

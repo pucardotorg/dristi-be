@@ -203,6 +203,7 @@ class TestSignature:
             )
         assert response.status_code == 201, response.json()
         kwargs = started.call_args.kwargs
+        assert kwargs["user"] == world.a1
         assert kwargs["file_id"] == application.signing_file_id
         assert kwargs["entity_type"] == "APPLICATION"
         assert kwargs["entity_id"] == str(application.pk)
@@ -438,3 +439,26 @@ class TestSubmission:
         application = ready_to_sign(world)
         response = client_for(other_clerk).get(f"/api/v1/applications/{application.pk}/")
         assert response.status_code == 404
+
+
+def test_back_to_draft_releases_the_superseded_copy(world, django_capture_on_commit_callbacks):
+    from apps.files.models import File
+
+    application = ready_to_sign(world)
+    old_file = application.signing_file_id
+    with django_capture_on_commit_callbacks(execute=True):
+        client_for(world.a1).post(f"/api/v1/applications/{application.pk}/back-to-draft/")
+    assert not File.objects.filter(pk=old_file).exists()
+
+
+def test_back_to_draft_keeps_a_copy_an_esign_is_working_on(
+    world, django_capture_on_commit_callbacks
+):
+    from apps.files.models import File
+
+    application = ready_to_sign(world)
+    esign = success_esign(application, world.a1)
+    ESignTransaction.objects.filter(pk=esign.pk).update(status="PENDING")
+    with django_capture_on_commit_callbacks(execute=True):
+        client_for(world.a1).post(f"/api/v1/applications/{application.pk}/back-to-draft/")
+    assert File.objects.filter(pk=application.signing_file_id).exists()

@@ -303,3 +303,34 @@ class TestExpiry:
 
     def test_close_objection_windows_actor(self, world):
         assert close_objection_windows.fn() == 0
+
+
+def test_sweep_is_not_stalled_by_applications_with_future_hearings(world):
+    from apps.cases.models import ParticipantRole
+
+    from .factories import add_party, make_case, represent
+
+    future = schedule_hearing(world.case, TODAY + datetime.timedelta(days=20))
+    for _ in range(2):
+        submitted(
+            world,
+            "POSTPONE_HEARING",
+            data={"reason_code": "ILLNESS", "proposed_date": "2026-12-20"},
+            hearing_id=future.pk,
+        )
+    other = make_case(world.court)
+    party = add_party(other, ParticipantRole.COMPLAINANT, "Other")
+    add_party(other, ParticipantRole.ACCUSED, "Other accused")
+    represent(other, world.a1, party)
+    soon = schedule_hearing(other, TODAY + datetime.timedelta(days=2))
+    world.case, world.complainant = other, party
+    late = submitted(
+        world,
+        "POSTPONE_HEARING",
+        data={"reason_code": "ILLNESS", "proposed_date": "2026-11-20"},
+        hearing_id=soon.pk,
+    )
+    set_config("applications", "expiry_batch_size", "2")
+    set_config("hearings", "business_date_override", "2026-11-16")
+    assert expiry.sweep() == 1
+    assert reload(late).status == "EXPIRED"
