@@ -53,7 +53,6 @@ action stays in the PRD that owns it, linked from the table.
 | **Process signer** | Sign process, within the process types and channels held (`RLE-09`). | [`process.md`](process.md) `SGN-01` |
 | **Process dispatcher** | Send process — mark it sent, or click Send where the system sends it — and recall a process, sent or not, within the process types and channels held (`RLE-09`). | [`process.md`](process.md) `DSP-03`, `PIA-01` |
 | **Process reporter** | Record the outcome of process — served or executed, or not — within the process types and channels held (`RLE-09`). | [`process.md`](process.md) `DSP-03`, `DSP-08`, `DSP-09` |
-| **Evidence marker** | Mark a document in the case file as evidence, where its category allows it ([`case-file.md`](case-file.md) §1.2), as prosecution (P) or defence (D), which allots its exhibit number. | [`evidence-marking.md`](evidence-marking.md) `DSB-12`–`DSB-14` |
 | **A-Diary editor** | Kerala only. Change an A-Diary entry's text — which also changes the A-Diary text of the order it came from — until that day's A-Diary is signed. | [`a-diary.md`](a-diary.md) `ADY-07`, `ADY-09` |
 | **A-Diary signer** | Kerala only. Sign the A-Diary. | [`a-diary.md`](a-diary.md) `ADY-12` |
 | **Document submitter** | Submit documents on a case, and sign their own submission. | [`document-submission.md`](document-submission.md) `DSB-04`, `DSB-18` |
@@ -71,29 +70,29 @@ means the title exists there but its roles have not been confirmed. Scrutiny off
 
 | Staff title | Roles |
 |---|---|
-| **Magistrate** | Case registerer, Order drafter, Next hearing setter, Order signer, Hearing controller, Process signer for warrants, proclamation and attachment, Evidence marker, Document submitter, A-Diary editor, A-Diary signer |
+| **Magistrate** | Case registerer, Order drafter, Next hearing setter, Order signer, Hearing controller, Process signer for warrants, proclamation and attachment, Document submitter, A-Diary editor, A-Diary signer |
 | **Scrutiny officer** | Scrutiny officer, Account approver |
-| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Envelope receiver, Process signer except for warrants, proclamation and attachment, Process dispatcher and Process reporter except for e-Post, Evidence marker, Document submitter |
-| **Typist** | Order drafter, Order data filler, Next hearing setter, Evidence marker |
+| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Envelope receiver, Process signer except for warrants, proclamation and attachment, Process dispatcher and Process reporter except for e-Post, Document submitter |
+| **Typist** | Order drafter, Order data filler, Next hearing setter |
 | **Post officer** | Process dispatcher and Process reporter for e-Post |
 
 ### 3.2 Gujarat
 
 | Staff title | Roles |
 |---|---|
-| **Magistrate** | Order drafter, Next hearing setter, Order signer, Hearing controller, Process signer for warrants, proclamation and attachment, Evidence marker, Document submitter |
+| **Magistrate** | Order drafter, Next hearing setter, Order signer, Hearing controller, Process signer for warrants, proclamation and attachment, Document submitter |
 | **Scrutiny officer** | Scrutiny officer, Case registerer, Account approver — one person across five courtrooms today |
-| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Envelope receiver, Process signer except for warrants, proclamation and attachment, Process dispatcher and Process reporter except for e-Post, Evidence marker, Document submitter |
-| **Typist** | Order drafter, Order data filler, Evidence marker |
+| **Bench clerk / Reader** | Order drafter, Order data filler, Next hearing setter, Hearing controller, Envelope receiver, Process signer except for warrants, proclamation and attachment, Process dispatcher and Process reporter except for e-Post, Document submitter |
+| **Typist** | Order drafter, Order data filler |
 | **Post officer** | Process dispatcher and Process reporter for e-Post |
 
 ### 3.3 Punjab & Haryana
 
 | Staff title | Roles |
 |---|---|
-| **Magistrate** | Order drafter, Next hearing setter, Order signer, Hearing controller, Process signer for warrants, proclamation and attachment, Evidence marker, Document submitter |
-| **Bench clerk / Reader** | Order drafter, Next hearing setter, Hearing controller, Envelope receiver, Process signer except for warrants, proclamation and attachment, Process dispatcher and Process reporter except for e-Post, Evidence marker, Document submitter |
-| **Typist / Steno** | Order drafter, Evidence marker |
+| **Magistrate** | Order drafter, Next hearing setter, Order signer, Hearing controller, Process signer for warrants, proclamation and attachment, Document submitter |
+| **Bench clerk / Reader** | Order drafter, Next hearing setter, Hearing controller, Envelope receiver, Process signer except for warrants, proclamation and attachment, Process dispatcher and Process reporter except for e-Post, Document submitter |
+| **Typist / Steno** | Order drafter |
 | **Ahlmad** | Scrutiny officer, Case registerer, Order data filler, Account approver |
 | **Post officer** | Process dispatcher and Process reporter for e-Post |
 

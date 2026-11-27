@@ -1,6 +1,6 @@
 # Dropped ideas
 
-**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`); the four application order items (#5, #6, #13, #26) of the order item catalogue. 2026-11-11 — the next hearing's status and View All Hearings on the case overview (`OVW-02`, `OVW-05`); one line of text per case update on the overview (`OVW-06`); the hearings list and hearing detail on the case (`HRG-01`–`HRG-12`); hiding Notice/Process Status when no process has issued (`SVC-16`); the Applications filters and search, and the Needs attention grouping, bulk signing and bulk payment (`APP-01`–`APP-04`, `APP-09`–`APP-11`); the application statuses and record restated in view-case (`APP-12`–`APP-20`); the Documents section's separate bail-bond list and its filters and search (`DOC-01`–`DOC-04`); a witness's linked party and added by, and how its number is composed (`PTY-13`–`PTY-16`); legal teams all authored or none (`PTY-21`); counts per group in Parties (`PTY-22`); the rest of the Parties section's structure — list and selection, per-population rules and fields (`PTY-01`–`PTY-14`, `PTY-17`–`PTY-20`, `PTY-23`, `PTY-27`, `PTY-29`, `PTY-31`, `PTY-32`); Case History's date range and the Bail lifecycle section of view-case (`TME-02`, `TME-03`, §13); view-case's Not yet covered section; the last order highlighted in Case History (`TME-06`). 2026-11-13 — the case reference of bulk filing (`BLK-07`). 2026-11-16 — an exhibit number never changing (case-file `CFL-13`, `Q-7`). 2026-11-17 — the case file index as headings two levels deep (case-file `CFL-16`, `CFL-17`, `Q-8`), and the case file opening on its first document (`CFL-18`); a document's number as its exhibit number or a system identifier (case-file `CFL-20`); no other action offered in the case file (case-file `CFL-25`); actions on documents only, not on sections (case-file `CFL-23`). Later the same day — the naming rules for vakalatnamas, orders, documents attached and payment receipts (case-file `CFL-27`–`CFL-30`), folded into the §3.1 names table. 2026-11-20 — the Application onboarder role, from court-roles and application lifecycle. 2026-11-23 — the PSS Act wording swap (`PSS-03`), from the PSS Act document. 2026-11-25 — the Documents tab's columns, sources, titles and filter, from document submission (`DSB-05`, `DSB-07`–`DSB-11`, `DSB-22`, part of `DSB-23`). 2026-11-27 — blanks in an order-text template, from order generation (`SHC-03`). 2026-11-27 — the In this version rows of templates (`TMP-08a`, `TMP-16`) and the screens list in `TMP-14`, folded into the §1.1 table. 2026-11-27 — variables in all-case-types templates from the sections common to every case type (templates `TMP-11`). 2026-11-27 — a template's case type, owner and screens as separate attributes, merged into Scope (templates `TMP-04`, `TMP-05`). 2026-11-27 — shortcut owner, sharing, screen scope and variables, from order generation (`SHC-06`–`SHC-08`); Additional details template variables, format and ownership, from bulk filing (`BLK-10c`, `BLK-10i`, `BLK-10d`); both now in templates.md. 2026-11-27 — the catalogue's *Not in V1* table of order items with their variables and workflows; the section workflows under its hearing purposes.
+**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`); the four application order items (#5, #6, #13, #26) of the order item catalogue. 2026-11-11 — the next hearing's status and View All Hearings on the case overview (`OVW-02`, `OVW-05`); one line of text per case update on the overview (`OVW-06`); the hearings list and hearing detail on the case (`HRG-01`–`HRG-12`); hiding Notice/Process Status when no process has issued (`SVC-16`); the Applications filters and search, and the Needs attention grouping, bulk signing and bulk payment (`APP-01`–`APP-04`, `APP-09`–`APP-11`); the application statuses and record restated in view-case (`APP-12`–`APP-20`); the Documents section's separate bail-bond list and its filters and search (`DOC-01`–`DOC-04`); a witness's linked party and added by, and how its number is composed (`PTY-13`–`PTY-16`); legal teams all authored or none (`PTY-21`); counts per group in Parties (`PTY-22`); the rest of the Parties section's structure — list and selection, per-population rules and fields (`PTY-01`–`PTY-14`, `PTY-17`–`PTY-20`, `PTY-23`, `PTY-27`, `PTY-29`, `PTY-31`, `PTY-32`); Case History's date range and the Bail lifecycle section of view-case (`TME-02`, `TME-03`, §13); view-case's Not yet covered section; the last order highlighted in Case History (`TME-06`). 2026-11-13 — the case reference of bulk filing (`BLK-07`). 2026-11-16 — an exhibit number never changing (case-file `CFL-13`, `Q-7`). 2026-11-17 — the case file index as headings two levels deep (case-file `CFL-16`, `CFL-17`, `Q-8`), and the case file opening on its first document (`CFL-18`); a document's number as its exhibit number or a system identifier (case-file `CFL-20`); no other action offered in the case file (case-file `CFL-25`); actions on documents only, not on sections (case-file `CFL-23`). Later the same day — the naming rules for vakalatnamas, orders, documents attached and payment receipts (case-file `CFL-27`–`CFL-30`), folded into the §3.1 names table. 2026-11-20 — the Application onboarder role, from court-roles and application lifecycle. 2026-11-23 — the PSS Act wording swap (`PSS-03`), from the PSS Act document. 2026-11-25 — the Documents tab's columns, sources, titles and filter, from document submission (`DSB-05`, `DSB-07`–`DSB-11`, `DSB-22`, part of `DSB-23`). 2026-11-27 — blanks in an order-text template, from order generation (`SHC-03`). 2026-11-27 — the In this version rows of templates (`TMP-08a`, `TMP-16`) and the screens list in `TMP-14`, folded into the §1.1 table. 2026-11-27 — variables in all-case-types templates from the sections common to every case type (templates `TMP-11`). 2026-11-27 — a template's case type, owner and screens as separate attributes, merged into Scope (templates `TMP-04`, `TMP-05`). 2026-11-27 — shortcut owner, sharing, screen scope and variables, from order generation (`SHC-06`–`SHC-08`); Additional details template variables, format and ownership, from bulk filing (`BLK-10c`, `BLK-10i`, `BLK-10d`); both now in templates.md. 2026-11-27 — the catalogue's *Not in V1* table of order items with their variables and workflows; the section workflows under its hearing purposes. 2026-11-27 — choosing P or D at marking, and P1, D1 numbering per side, from evidence marking (`DSB-13`, `DSB-14`). 2026-11-27 — the provisional ID, DOC-1, DOC-2 …, from evidence marking (`DSB-15`). 2026-11-27 — linking a witness-number order to the party, from evidence marking (`EVM-25`). 2026-11-27 — the Evidence marker role, from court roles. 2026-11-27 — Exhibits split by party, from the case file (`CFL-07`).
 
 Ideas taken out of the PRDs, kept here with their last wording so they can be restored. Each entry says where it came from and what replaced it. The full earlier documents are also in git history: commit `cb97c67` holds both files as they were before.
 
@@ -1147,3 +1147,70 @@ steps in a hearing, offered alongside the order items — are not being built.
 ### From order-generation.md §5.1
 
 > | `SHC-03` | A template's text can contain blanks. Once it is inserted, the drafter can fill the first blank straight away, without searching for it. |
+
+---
+
+## P or D at marking, and numbering per side (evidence-marking.md `DSB-13`, `DSB-14`)
+
+**Dropped 2026-11-27.** The exhibit number now comes from a numbering sequence chosen at marking. A sequence has no meaning of its own; each state configures its sequences, and each numbered witness on the case gives one too.
+
+**Now:** `EVM-03` and `EVM-08`–`EVM-10` of [`evidence-marking.md`](evidence-marking.md).
+
+### From evidence-marking.md §1 and §2
+
+> | `DSB-13` | When marking, they choose **P** (prosecution) or **D** (defence). The court has no evidence series of its own: documents the court produces are marked P or D too. |
+> | `DSB-14` | The exhibit number is allotted at marking, in sequence per side within the case: P1, P2 … and D1, D2 …. |
+
+---
+
+## Provisional ID for every document (evidence-marking.md `DSB-15`)
+
+**Dropped 2026-11-27.** Every document already has a unique identifier from the system; no separate numbering is created.
+
+**Now:** `DOC-15` of [`view-case.md`](view-case.md).
+
+### From evidence-marking.md §3
+
+> | `DSB-15` | Every document on the case record is allotted a **provisional ID** when it enters the record: `DOC-` and a number in sequence within the case — DOC-1, DOC-2 …. It stays on the document after it is marked, and the exhibit number is shown beside it. |
+
+---
+
+## Witness-number order linked to the party (evidence-marking.md `EVM-25`)
+
+**Dropped 2026-11-27.** Linking is between documents; a party is not a document, so an order cannot be linked to it.
+
+**Now:** nothing.
+
+### From evidence-marking.md §5
+
+> | `EVM-25` | An order that gives, removes or changes a witness number is linked to that party automatically. |
+
+---
+
+## Evidence marker role (court-roles.md §2)
+
+**Dropped 2026-11-27.** Marking a document as evidence, and giving a witness number, are orders. They are started by an Order drafter or Order signer, the order items are filled by an Order data filler, and the order is signed by an Order signer.
+
+**Now:** `EVM-26` of [`evidence-marking.md`](evidence-marking.md); `CFL-22` of [`case-file.md`](case-file.md).
+
+### From court-roles.md §2
+
+> | **Evidence marker** | Mark a document in the case file as evidence, where its category allows it ([`case-file.md`](case-file.md) §1.2), as prosecution (P) or defence (D), which allots its exhibit number. | [`evidence-marking.md`](evidence-marking.md) `DSB-12`–`DSB-14` |
+
+It was held by the Magistrate, Bench clerk / Reader and Typist in Kerala and Gujarat, and by the Magistrate, Bench clerk / Reader and Typist / Steno in Punjab & Haryana.
+
+---
+
+## Exhibits split by party (case-file.md `CFL-07`, §6.1)
+
+**Dropped 2026-11-27.** Exhibits is now split by exhibit sequence, in every state; a sequence carries no side.
+
+**Now:** `CFL-07` of [`case-file.md`](case-file.md).
+
+### From case-file.md §2 and §6
+
+> | `CFL-07` | Where the state marks evidence separately by party (§6.1), **Exhibits** is split into three sub-sections: **Evidence of the complainant**, **Evidence of the accused** and **Other evidence**. Otherwise it is one section. |
+
+> | Evidence is marked separately by party | Exhibits is split into three sub-sections only where this is Yes (`CFL-07`) | No | No | Yes |
+
+> | Exhibits | 13 | 12 | In Kerala only: Evidence of the complainant; Evidence of the accused; Other evidence | Orders linked to it |
