@@ -1,0 +1,33 @@
+sequenceDiagram
+    autonumber
+    actor T as Order drafter / data filler (in a hearing)
+    participant FE as Frontend
+    participant OR as Backend (orders)
+    participant AP as Backend (applications)
+
+    Note over T,AP: Screen: hearing order (order-door-screen), Applications section under the items (APL-01)
+    T->>FE: Open the hearing's order
+    FE->>OR: POST /orders/ {hearing_id} (returns the live order if one exists) or GET /orders/{id}/
+    OR-->>FE: 200 order {id, case, hearing, items, data_version}
+    FE->>AP: GET /cases/{case_id}/applications/?pending=true
+    AP-->>FE: 200 [PENDING_REVIEW or PENDING_DECISION rows with onboarded, decision_date, objections_invited]
+    FE-->>T: Applications pending on the matter, each with its type, number and where it stands
+
+    opt Read one before deciding
+        T->>FE: Open application
+        FE->>AP: GET /applications/{id}/
+        AP-->>FE: 200 detail with document
+    end
+
+    T->>FE: Answer the application in this order (onboard, defer, dismiss, decide or move date)
+    FE->>OR: POST /orders/{id}/items/ If-Match d-n<br/>{item_type: APPLICATION_ACTION, target_id: application_id, values}
+    alt Added
+        OR-->>FE: 201 item {problems}
+    else The application already has an item on this order
+        OR-->>FE: 409 E11009 (combination rule 4: one per application per order)
+    else Not open (draft, decided, expired)
+        OR-->>FE: 409 E11008 APPLICATION_NOT_OPEN
+    end
+
+    Note over T,AP: The hearing order is signed and completed like any order. On trigger,<br/>handler.execute runs once per APPLICATION_ACTION item, as in the review and decide diagrams.<br/>The review or decide task closes only if this order acts on the application (ALC-18, ALC-32).
+    Note over FE,AP: GAP: listing-applications.ts is demo data and Allowed or Dismissed only writes a sentence into the order.<br/>Replace it with the pending list above and the APPLICATION_ACTION item.

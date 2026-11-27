@@ -1,0 +1,42 @@
+sequenceDiagram
+    autonumber
+    actor U as Court staff (any reader of the courtroom)
+    participant FE as Frontend
+    participant RO as Backend (court-roles, hearings)
+    participant AP as Backend (applications)
+
+    Note over U,AP: Screen: Review Applications (/employee/applications?view=all), page load
+    U->>FE: Open Review Applications (rail, or old /onboard-applications, /decide-applications links)
+    FE->>RO: GET /court-roles/me/
+    RO-->>FE: 200 {establishments: [{courtrooms: [{id, name, actions}]}]}
+    Note right of FE: court_id = the courtroom chosen after login (0029 REG-36)<br/>GAP: FE session is a demo store, no courtroom id yet
+
+    par Rail badge and pills
+        FE->>AP: GET /applications/court-queue/counts/?court={court_id}
+        AP-->>FE: 200 {today, views: {onboard, decide, signing, upcoming, closed, archive},<br/>queues: {rescheduling, delay_condonation, other}}
+    and List
+        FE->>AP: GET /applications/court-queue/?court={court_id}&view=all&page=1
+        AP-->>FE: 200 {data: [row], meta: {count}, today, facets: {type, stage}}
+    end
+    Note right of FE: row: application_id, type, application_number, earlier_application_number,<br/>case {id, case_number, cause title, stage, advocates}, side, filed_by, submitted_at,<br/>band, task {kind, due_date, overdue, due_today, deferred},<br/>status_line {objection_status, review_due_date or decision_date, respond_by}, pending_order
+    FE-->>U: Title with today (response today, not the browser clock), pills To onboard n and To decide n, rows soonest due first
+
+    alt Pill changed: All open, To onboard, To decide, Closed
+        U->>FE: Pick a pill
+        FE->>AP: GET /applications/court-queue/?court=&view={all | onboard | decide | closed}
+        AP-->>FE: 200 rows
+    else View archive
+        U->>FE: View archive
+        FE->>AP: GET /applications/court-queue/?court=&view=archive
+        AP-->>FE: 200 rows with outcome, deciding_order {id, number, signed_at}
+    else Search: case, party, type, either number
+        U->>FE: Type in search (debounced)
+        FE->>AP: GET /applications/court-queue/?court=&view={view}&search={q}
+        AP-->>FE: 200 rows (matches the number in use and the earlier one)
+    else Next page
+        U->>FE: Page 2
+        FE->>AP: GET /applications/court-queue/?court=&view={view}&page=2
+        AP-->>FE: 200 rows
+    end
+
+    Note over FE,AP: FE view later = BE view upcoming. FE hides the Upcoming pill, its rows stay under All open with band upcoming.<br/>A row with pending_order sits in band signing only, shown as Order awaiting signature, signed in Sign orders.<br/>Closed and archive include EXPIRED (FE queueOf ignores expired today).
