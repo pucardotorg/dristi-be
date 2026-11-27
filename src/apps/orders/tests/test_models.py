@@ -184,7 +184,6 @@ def test_the_seeded_rules_name_their_items():
         "SCHEDULING_OF_HEARING_DATE",
         "RESCHEDULING_OF_HEARING_DATE",
     }
-    assert uuid and OrderType
 
 
 @pytest.mark.parametrize("options", [7, "COURT", [], [1, 2], None, [""], ["A", ""]])
@@ -339,6 +338,53 @@ def test_turning_off_the_separate_entry_of_an_a_diary_type_is_refused(state_code
     with pytest.raises(ValidationError) as excinfo:
         order_type.full_clean()
     assert set(excinfo.value.message_dict) == {"diary_entry_in_a_diary"}
+
+
+@pytest.mark.parametrize(
+    "field, value", [("is_active", False), ("code", "NORMAL_OLD"), ("state_code", "XX")]
+)
+def test_a_state_keeps_its_normal_order_type(field, value):
+    # Every order whose type is not chosen falls back to it.
+    order_type = OrderType.objects.get(state_code="KL", code="NORMAL")
+    setattr(order_type, field, value)
+    with pytest.raises(ValidationError) as excinfo:
+        order_type.full_clean()
+    assert set(excinfo.value.message_dict) == {field}
+
+
+def test_a_retired_normal_order_type_may_be_brought_back_and_other_types_retired():
+    normal = OrderType.objects.get(state_code="KL", code="NORMAL")
+    normal.label = "Order"
+    normal.full_clean()
+    other = OrderType.objects.exclude(code="NORMAL").first()
+    other.is_active = False
+    other.full_clean()
+    OrderType.objects.filter(pk=normal.pk).update(is_active=False)
+    normal.refresh_from_db()
+    normal.is_active = True
+    normal.full_clean()
+
+
+def test_an_item_type_closes_a_case_only_for_a_reason_the_hearings_know():
+    item = OrderItemType.objects.get(code="COST")
+    item.closes_case = "CASE_DISPOSED"
+    item.full_clean()
+    item.closes_case = "CASE_DISPOSD"
+    with pytest.raises(ValidationError) as excinfo:
+        item.full_clean()
+    assert set(excinfo.value.message_dict) == {"closes_case"}
+
+
+def test_a_change_to_an_item_types_suggested_purposes_is_in_its_history():
+    from apps.hearings.models import HearingPurpose
+
+    item = OrderItemType.objects.get(code="COST")
+    purpose = HearingPurpose.objects.exclude(suggested_order_items=item).first()
+    before = item.history.count()
+    item.suggested_for_purposes.add(purpose)
+    assert item.history.count() == before + 1
+    recorded = item.history.first().suggested_for_purposes.values_list("hearingpurpose", flat=True)
+    assert purpose.pk in recorded
 
 
 def test_every_seeded_order_type_is_valid():

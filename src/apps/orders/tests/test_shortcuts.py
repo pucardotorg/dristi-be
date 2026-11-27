@@ -3,11 +3,11 @@
 import pytest
 
 from apps.api.errors import BusinessError
-from apps.orders import rendering
+from apps.orders import conf, rendering
 from apps.orders.models import OrderShortcut
 from apps.orders.services import shortcuts
 
-from .factories import code
+from .factories import code, field
 
 pytestmark = pytest.mark.django_db
 
@@ -60,3 +60,15 @@ def test_an_edit_of_the_scope_moves_the_shortcut_between_screens(drafter, shortc
     assert (row.name, row.body, row.scope) == ("called", "<p>Called.</p>", ["DIARY_ENTRY"])
     assert [s.pk for s in shortcuts.list_for(drafter, scope="DIARY_ENTRY")] == [shortcut.pk]
     assert shortcuts.list_for(drafter, scope="ORDER_TEXT") == []
+
+
+def test_a_body_larger_than_the_order_text_may_be_is_refused(drafter, shortcut):
+    # Short paragraphs: printable, so only the size refuses it.
+    too_large = "<p>x</p>" * (conf.text_max_bytes() // len("<p>x</p>") + 1)
+    with pytest.raises(BusinessError) as excinfo:
+        shortcuts.create(drafter, name="long", body=too_large, scope=None)
+    assert (code(excinfo), field(excinfo)) == ("E14020", "body")
+    with pytest.raises(BusinessError) as excinfo:
+        shortcuts.update(drafter, shortcut.pk, body=too_large)
+    assert (code(excinfo), field(excinfo)) == ("E14020", "body")
+    assert OrderShortcut.objects.get(pk=shortcut.pk).body == "<p>Called.</p>"

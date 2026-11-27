@@ -5,9 +5,10 @@ from rest_framework.exceptions import NotFound
 
 from apps.api.errors import BusinessError
 
-from .. import errors, rendering
+from .. import errors
 from ..enums import SHORTCUT_SCOPE_ORDER_TEXT
 from ..models import OrderShortcut
+from . import common
 
 
 def list_for(owner, *, scope="", search=""):
@@ -27,7 +28,7 @@ def create(owner, *, name, body, scope):
             return OrderShortcut.objects.create(
                 owner=owner,
                 name=name,
-                body=rendering.sanitize_html(body, field="body"),
+                body=common.clean_text(body, field="body"),
                 scope=list(scope),
                 created_by=owner,
                 updated_by=owner,
@@ -56,7 +57,7 @@ def update(owner, shortcut_id, **changes):
                 row.name = changes["name"]
                 fields.append("name")
             if "body" in changes:
-                row.body = rendering.sanitize_html(changes["body"], field="body")
+                row.body = common.clean_text(changes["body"], field="body")
                 fields.append("body")
             if "scope" in changes:
                 row.scope = list(changes["scope"])

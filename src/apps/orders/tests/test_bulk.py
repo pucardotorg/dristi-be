@@ -3,13 +3,13 @@
 import uuid
 
 import pytest
-from rest_framework.exceptions import ValidationError
 
+from apps.api.errors import BusinessError
 from apps.orders.enums import OrderStatus
 from apps.orders.models import Order
 from apps.orders.services import bulk, drafting, lifecycle
 
-from .factories import TODAY, make_case, started_hearing
+from .factories import TODAY, code, field, make_case, started_hearing
 
 pytestmark = pytest.mark.django_db
 
@@ -25,12 +25,28 @@ def test_bulk_items_refuse_orders_of_more_than_one_courtroom(
 ):
     other_hearing = started_hearing(make_case(sibling_courtroom), staff)
     other = drafting.create_in_hearing(hearing_id=other_hearing.pk, actor=drafter)[0]
-    with pytest.raises(ValidationError) as excinfo:
+    with pytest.raises(BusinessError) as excinfo:
         bulk.bulk_items(
             actor=staff, order_ids=[order.pk, other.pk], item_specs=[{"item_type": "COST"}]
         )
-    assert excinfo.value.detail["order_ids"][0].code == "E14011"
+    assert (code(excinfo), field(excinfo)) == ("E14029", "order_ids")
     assert not order.items.exists() and not other.items.exists()
+
+
+def test_bulk_items_treat_an_order_the_caller_may_not_see_as_not_found(order, stranger):
+    # Neither its existence nor its courtroom shows: the answer is the one a random id gets.
+    missing = uuid.uuid4()
+    result = bulk.bulk_items(
+        actor=stranger, order_ids=[order.pk, missing], item_specs=[{"item_type": "COST"}]
+    )
+    assert result == {
+        "done": [],
+        "skipped": [
+            {"order_id": order.pk, "code": "E00105", "message": "Order not found."},
+            {"order_id": missing, "code": "E00105", "message": "Order not found."},
+        ],
+    }
+    assert not order.items.exists()
 
 
 def test_bulk_items_name_an_order_not_found_and_carry_on(order, staff):

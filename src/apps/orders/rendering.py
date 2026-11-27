@@ -51,6 +51,18 @@ INLINE_MARKUP = {"strong": "b", "b": "b", "em": "i", "i": "i", "u": "u"}
 # The cells the text's tables may hold in all, each row padded to its table's widest
 # (``_table_block``): one wide row would otherwise cost the PDF a cell per padded slot.
 MAX_TABLE_CELLS = 10_000
+# The PDF gives a table's columns equal shares of the page: past this, a column is
+# too narrow to hold a letter.
+MAX_TABLE_COLUMNS = 20
+# The lines one paragraph, list item or table row (its cells together) may print
+# as. The PDF lays out each one whole, in time that grows with the square of its
+# lines: past this, one block could hold signing up for minutes.
+MAX_BLOCK_LINES = 500
+# About as many characters as fit on a full-width line of the PDF's body text.
+LINE_CHARS = 90
+# How deep elements may nest. The HTML parser silently drops whatever lies past
+# its own limit, and the PDF would then lose text the page shows.
+MAX_DEPTH = 20
 
 # The signature box, in PDF points on the last page; the page's bottom margin leaves it clear.
 SIGN_PLACEHOLDER = {"page": -1, "x": 330, "y": 40, "width": 215, "height": 70}
@@ -93,6 +105,57 @@ def sanitize_html(text, *, field="text"):
     return clean
 
 
+def _parse(clean):
+    """Parse sanitised HTML under a ``div``, keeping text however deeply it nests."""
+    parser = lxml_html.HTMLParser(huge_tree=True)
+    return lxml_html.fragment_fromstring(clean, create_parent="div", parser=parser)
+
+
+def _depth(root):
+    deepest, stack = 0, [(root, 0)]
+    while stack:
+        element, depth = stack.pop()
+        deepest = max(deepest, depth)
+        stack.extend((child, depth + 1) for child in element)
+    return deepest
+
+
+def _lines(chars, breaks, columns=1):
+    """Estimate the lines a block prints as: its breaks, and its text wrapped to its width."""
+    return breaks + 1 + chars // max(2, LINE_CHARS // columns - 1)
+
+
+def _breaks(element):
+    """The line breaks inside ``element``: each ``<br>``, and each paragraph (see ``_inline``)."""
+    return sum(1 for _ in element.iter("br", "p")) - (element.tag in ("br", "p"))
+
+
+def _block_lines(root):
+    """Yield the estimated lines of each block the PDF lays out whole (see ``html_to_blocks``)."""
+    chars = len(root.text or "")
+    breaks = 0
+    for child in root:
+        if child.tag in ("ol", "ul", "table", "p"):
+            yield _lines(chars, breaks)
+            if child.tag == "p":
+                yield _lines(len(child.text_content()), _breaks(child))
+            elif child.tag == "table":
+                columns = max((len(row) for row in child.iter("tr")), default=1)
+                for row in child.iter("tr"):
+                    yield sum(
+                        _lines(len(cell.text_content()), _breaks(cell), columns) for cell in row
+                    )
+            else:
+                for item in child.iterchildren("li"):
+                    yield _lines(len(item.text_content()), _breaks(item))
+            chars, breaks = 0, 0
+        else:
+            chars += len(child.text_content())
+            breaks += 1 if child.tag == "br" else _breaks(child)
+        chars += len(child.tail or "")
+    yield _lines(chars, breaks)
+
+
 def unsupported_structure(clean):
     """Return what in sanitised ``clean`` the PDF renderer cannot represent; ``""`` when nothing.
 
@@ -102,11 +165,18 @@ def unsupported_structure(clean):
     would print differently from the page (or not at all). A list item outside
     a list would print as plain text run into its neighbours. (Cell spans are
     allowed: the PDF ignores them, a documented limitation.) Tables are capped
-    at ``MAX_TABLE_CELLS`` as the PDF draws them, padded rows included.
+    at ``MAX_TABLE_CELLS`` as the PDF draws them, padded rows included, and at
+    ``MAX_TABLE_COLUMNS``; each block (a table row's cells together) at
+    ``MAX_BLOCK_LINES``, and nesting at ``MAX_DEPTH``, so whatever is accepted
+    can be signed.
     """
     if not clean or is_blank(clean):
         return ""
-    root = lxml_html.fragment_fromstring(clean, create_parent="div")
+    root = _parse(clean)
+    if _depth(root) > MAX_DEPTH:
+        return "Formatting is nested too deeply to print. Remove some of the nested formatting."
+    if _whitespace.sub(" ", root.text_content()).strip() != plain_text(clean):
+        return "Part of this text could not be read for printing. Simplify its formatting."
     for element in root.iter("ol", "ul", "table"):
         if element.getparent() is not root:
             return (
@@ -125,19 +195,29 @@ def unsupported_structure(clean):
     cells = 0
     for table in root.iter("table"):
         widths = [len(row) for row in table.iter("tr") if len(row)]
+        if max(widths, default=0) > MAX_TABLE_COLUMNS:
+            return f"A table can have at most {MAX_TABLE_COLUMNS} columns."
         cells += max(widths, default=0) * len(widths)
     if cells > MAX_TABLE_CELLS:
         return (
             f"Tables can hold at most {MAX_TABLE_CELLS:,} cells in all, "
             "counting every row as wide as its table's widest row."
         )
+    if any(lines > MAX_BLOCK_LINES for lines in _block_lines(root)):
+        return (
+            "A paragraph, list item or table row is too long to print. "
+            f"Split it into shorter ones of at most about {MAX_BLOCK_LINES} lines."
+        )
     return ""
+
+
+_whitespace = re.compile(r"[\s ]+")
 
 
 def plain_text(text):
     """Return the visible text of ``text`` (HTML), whitespace and non-breaking spaces collapsed."""
     bare = nh3.clean(text or "", tags=set())
-    return re.sub(r"[\s ]+", " ", html_lib.unescape(bare)).strip()
+    return _whitespace.sub(" ", html_lib.unescape(bare)).strip()
 
 
 def is_blank(text):
@@ -157,25 +237,35 @@ def _inline(element):
     """
     out = []
     after_paragraph = False
+    # Whether ``out`` has content and its last content ends in a break, kept as it
+    # grows: re-joining it at every paragraph would make many paragraphs quadratic.
+    has_content = ends_in_break = False
+
+    def push(markup):
+        nonlocal has_content, ends_in_break
+        out.append(markup)
+        if content := markup.rstrip():
+            has_content = True
+            ends_in_break = content.endswith("<br/>")
 
     def add(markup):
         nonlocal after_paragraph
         if after_paragraph and markup.strip():
-            out.append("<br/>")
+            push("<br/>")
             after_paragraph = False
-        out.append(markup)
+        push(markup)
 
     add(html_lib.escape(element.text or "", quote=False))
     for child in element:
         if child.tag == "br":
-            out.append("<br/><br/>" if after_paragraph else "<br/>")
+            push("<br/><br/>" if after_paragraph else "<br/>")
             after_paragraph = False
         elif child.tag == "p":
             inner = _trim_breaks(_inline(child))
             if inner:
-                if "".join(out).strip() and not "".join(out).rstrip().endswith("<br/>"):
-                    out.append("<br/>")
-                out.append(inner)
+                if has_content and not ends_in_break:
+                    push("<br/>")
+                push(inner)
                 after_paragraph = True
         else:
             inner = _inline(child)
@@ -193,17 +283,28 @@ def _list_block(element):
     return block
 
 
+def _cell(cell):
+    """A cell's markup; a header cell is bold, as the page shows it."""
+    markup = _inline(cell).strip()
+    return f"<b>{markup}</b>" if cell.tag == "th" and markup else markup
+
+
 def _table_block(element):
-    rows = [
-        [_inline(cell).strip() for cell in row if cell.tag in ("td", "th")]
-        for row in element.iter("tr")
-    ]
+    rows = [[_cell(cell) for cell in row if cell.tag in ("td", "th")] for row in element.iter("tr")]
     rows = [row for row in rows if row]
     if not rows:
         return None
     width = max(len(row) for row in rows)
     rows = [row + [""] * (width - len(row)) for row in rows]
-    return {"type": "table", "columns": [{"header": ""} for _ in range(width)], "rows": rows}
+    # Equal columns: sized from their content, wide columns could overrun the page.
+    # A cell is one paragraph however many lines it holds: its row must be free to
+    # break across pages, or a row taller than a page could not be placed.
+    return {
+        "type": "table",
+        "columns": [{"header": "", "width": f"{100 / width}%"} for _ in range(width)],
+        "rows": rows,
+        "split_rows": True,
+    }
 
 
 def _trim_breaks(markup):
@@ -226,7 +327,7 @@ def html_to_blocks(text):
     """Turn sanitised order text into renderer blocks, in order."""
     if is_blank(text):
         return []
-    root = lxml_html.fragment_fromstring(text, create_parent="div")
+    root = _parse(text)
     blocks = []
     run = [html_lib.escape(root.text or "", quote=False)]
 
@@ -280,6 +381,11 @@ def attendance_sentences(hearing_id):
     return lines
 
 
+def order_attendance(order):
+    """The attendance lines the order prints: a signed order's are those it was signed with."""
+    return order.signing_attendance if order.is_signed else attendance_sentences(order.hearing_id)
+
+
 def next_hearing_line(order, purpose_label=""):
     """The order's closing line about the next hearing."""
     if order.next_hearing_state == NextHearingState.LISTED and order.next_hearing_date:
@@ -322,9 +428,7 @@ def page_facts(
         signer = order.signed_by.name or ""
     if attendance is None:
         # A signed order keeps the roll its signing file was prepared with.
-        attendance = (
-            order.signing_attendance if order.is_signed else attendance_sentences(order.hearing_id)
-        )
+        attendance = order_attendance(order)
     return {
         # A signed order keeps the heading its signing file was prepared with.
         "heading": (order.is_signed and order.signing_heading) or order.order_type.pdf_heading,

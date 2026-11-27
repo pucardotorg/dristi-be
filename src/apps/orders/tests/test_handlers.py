@@ -5,16 +5,16 @@ import uuid
 
 import pytest
 from django.core.checks import Error, Warning  # noqa: A004
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 
 from apps.api.errors import BusinessError
 from apps.orders import handlers
 from apps.orders.handlers import base, checks
 from apps.orders.handlers.base import ItemContext, OrderItemHandler, RunResult
 from apps.orders.models import OrderItem, OrderItemType, OrderWorkflowRun
-from apps.orders.services import items, lifecycle, signing, triggering
+from apps.orders.services import items, lifecycle, triggering
+from apps.orders.services.common import ProblemsError
 
-from .factories import code
 from .test_triggering import COST, trigger
 
 pytestmark = pytest.mark.django_db
@@ -102,17 +102,18 @@ def test_mandatory_submission_opens_a_task_for_the_directed_side(
 
 def test_mandatory_submission_needs_all_its_fields_to_complete(ready, staff):
     items.add(ready.pk, "MANDATORY_SUBMISSIONS", actor=staff, values={"party_type": "ACCUSED"})
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ProblemsError) as excinfo:
         lifecycle.mark_complete(ready.pk, actor=staff)
+    assert excinfo.value.error.code == "E14012"
     keys = dict(excinfo.value.problems)
     assert {"items[1].values.document_type", "items[1].values.deadline"} <= set(keys)
 
 
 def test_cost_paying_and_receiving_party_must_differ(ready, staff):
     bad = {**COST, "receiving_party": "ACCUSED"}
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         items.add(ready.pk, "COST", actor=staff, values=bad)
-    assert "values.receiving_party" in excinfo.value.detail
+    assert excinfo.value.detail["values.receiving_party"][0].code == "E14011"
 
 
 def test_a_cost_demand_is_raised_for_the_paying_sides_user(ready, staff, signer, case):
@@ -177,7 +178,6 @@ def test_placeholder_defaults_name_every_accused(ready):
     handler = handlers.get("ISSUE_OF_SUMMONS")
     ctx = ItemContext(case_id=ready.case_id, order_id=ready.pk)
     assert len(handler.defaults(ctx)["party_names"]) == 1
-    assert signing and code
 
 
 def test_the_mandatory_submission_deadline_uses_the_court_date(monkeypatch):
@@ -259,8 +259,9 @@ def test_a_batta_cannot_be_confirmed_before_its_workflow_step_is_done(
     order = trigger(ready, staff, signer, ("WITNESS_BATTA", values))
     item = order.items.get()
     OrderWorkflowRun.objects.filter(order_item=item).update(status=RunStatus.PENDING)
-    with pytest.raises(BusinessError):
+    with pytest.raises(BusinessError) as excinfo:
         items.confirm_paid(order.pk, item.pk, user=complainant_user)
+    assert excinfo.value.error.code == "E14001"
     assert "paid_confirmed_by" not in order.runs.get(order_item=item).result
 
 

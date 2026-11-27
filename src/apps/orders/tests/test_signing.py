@@ -1,6 +1,7 @@
 """Signing (spec 0039 #8): e-sign start and confirm, numbers, dates, the Roznama."""
 
 import datetime
+import io
 import uuid
 
 import pytest
@@ -9,14 +10,27 @@ from django.utils import timezone
 from apps.api.errors import BusinessError
 from apps.core.models import Configuration
 from apps.esign.models import ESignTransaction
+from apps.hearings.enums import CancellationReason
+from apps.hearings.models import Hearing
 from apps.hearings.services import courtroom as hearing_courtroom
-from apps.orders import ports, rendering
+from apps.hearings.services import listing
+from apps.orders import rendering
 from apps.orders.enums import NumberSeries, OrderStatus, RoznamaStatus
 from apps.orders.models import Order, OrderNumberCounter, OrderRoznama, OrderType
 from apps.orders.permissions import can_sign_via_esign
 from apps.orders.services import diary, drafting, lifecycle, signing
 
-from .factories import TODAY, code
+from .factories import TODAY, code, field, schedule
+
+NEXT = TODAY.replace(day=19)
+LATER = TODAY.replace(day=26)
+
+
+def pdf_text(content):
+    from pypdf import PdfReader
+
+    return "\n".join(page.extract_text() for page in PdfReader(io.BytesIO(content)).pages)
+
 
 pytestmark = pytest.mark.django_db
 
@@ -120,6 +134,77 @@ def test_only_an_order_sent_for_signing_can_be_started(ready, signer, started):
     with pytest.raises(BusinessError) as excinfo:
         signing.start_signing(ready.pk, actor=signer)
     assert code(excinfo) == "E14001"
+
+
+def test_text_that_cannot_be_printed_is_refused_with_e14028_and_the_number_is_kept(
+    sent, signer, started
+):
+    # Saved before the column cap: too wide for the page, it cannot be rendered.
+    wide = "<table><tr>" + "<td>x</td>" * 80 + "</tr></table>"
+    Order.objects.filter(pk=sent.pk).update(text=wide)
+    with pytest.raises(BusinessError) as excinfo:
+        signing.start_signing(sent.pk, actor=signer)
+    assert code(excinfo) == "E14028"
+    assert field(excinfo) == "text"
+    order = Order.objects.get(pk=sent.pk)
+    assert order.signing_file_id == "" and started["stored"] == []
+    # The number is allotted in its own transaction, before rendering, and kept for the retry.
+    assert order.number.endswith("/ORD/1/2026")
+    Order.objects.filter(pk=sent.pk).update(text="<p>Heard.</p>")
+    signing.start_signing(sent.pk, actor=signer)
+    assert Order.objects.get(pk=sent.pk).number == order.number
+    assert OrderNumberCounter.objects.get(court=sent.court, series="ORDER").last_value == 1
+
+
+@pytest.fixture
+def listed_sent(case, drafter, staff):
+    """An order outside a hearing, sent for signing, showing the case's listed hearing."""
+    listed = schedule(case, NEXT, "EVIDENCE_OF_COMPLAINANT")
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
+    drafting.edit_text(order.pk, "<p>Adjourned.</p>", actor=staff)
+    lifecycle.send_for_signing(order.pk, actor=staff)
+    return Order.objects.get(pk=order.pk), listed
+
+
+def test_signing_prints_the_listed_hearing_as_it_stands_now(listed_sent, signer, monkeypatch):
+    order, listed = listed_sent
+    Hearing.objects.filter(pk=listed.pk).update(hearing_date=LATER)
+    printed = []
+
+    def store(order, content, name, actor):
+        printed.append(pdf_text(content))
+        return "file-1"
+
+    monkeypatch.setattr(signing, "_store", store)
+    monkeypatch.setattr(signing, "_initiate", lambda order, actor, file_id: "initiation")
+    signing.start_signing(order.pk, actor=signer)
+    assert Order.objects.get(pk=order.pk).next_hearing_date == LATER
+    assert "Next hearing: 26 November 2026" in printed[0]
+
+
+def test_signing_is_refused_once_the_listed_hearing_is_cancelled(listed_sent, signer, started):
+    order, listed = listed_sent
+    listing.cancel_open_hearings(case_id=order.case_id, reason=CancellationReason.CASE_TRANSFERRED)
+    with pytest.raises(BusinessError) as excinfo:
+        signing.start_signing(order.pk, actor=signer)
+    assert code(excinfo) == "E14006"
+    assert started["stored"] == []
+
+
+def test_a_signature_begun_before_the_listed_hearing_moved_cannot_be_recorded(
+    listed_sent, signer, started
+):
+    order, listed = listed_sent
+    signing.start_signing(order.pk, actor=signer)
+    txn = success(order, signer)
+    Hearing.objects.filter(pk=listed.pk).update(hearing_date=LATER)
+    with pytest.raises(BusinessError) as excinfo:
+        signing.record_signature(order.pk, txn.pk, actor=signer)
+    assert code(excinfo) == "E14015"
+    order = Order.objects.get(pk=order.pk)
+    assert order.status == OrderStatus.SENT_FOR_SIGNING
+    assert order.signing_file_id == ""
+    assert order.next_hearing_date == LATER
 
 
 # -- confirming ------------------------------------------------------------------------
@@ -371,7 +456,6 @@ def test_the_roznama_text_is_editable_until_signed_and_an_edit_clears_a_signing_
     with pytest.raises(BusinessError) as excinfo:
         diary.set_entry(normal_triggered.pk, same_as_text=True, actor=filler)
     assert code(excinfo) == "E14014"
-    assert ports and OrderRoznama
 
 
 def test_changing_the_type_after_signing_began_voids_that_signing(case, staff, signer, started):
@@ -649,6 +733,108 @@ def test_an_esign_start_failure_is_its_own_api_error_and_the_prepared_file_stays
     # The order was saved before e-sign began: a retry reuses its number.
     order = Order.objects.get(pk=sent.pk)
     assert order.signing_file_id == "file-1" and order.number
+
+
+# -- confirming: what is sent on commit -------------------------------------------------
+
+
+@pytest.fixture
+def received(monkeypatch):
+    """Record the ``order_signed`` / ``roznama_signed`` signals and the parties' SMS."""
+    from apps.orders import signals
+    from apps.orders.services import notifications
+
+    calls = []
+    monkeypatch.setattr(
+        notifications,
+        "enqueue_sms",
+        lambda key, to, ctx, correlation_id="": calls.append(("sms", key)),
+    )
+    monkeypatch.setattr(notifications, "enqueue_email", lambda *a, **k: None)
+
+    def receiver(signal, order_id, **kwargs):
+        calls.append((signal, order_id))
+
+    for name in ("order_signed", "roznama_signed"):
+        getattr(signals, name).connect(receiver, weak=False, dispatch_uid=f"test-{name}")
+    yield calls
+    for name in ("order_signed", "roznama_signed"):
+        getattr(signals, name).disconnect(dispatch_uid=f"test-{name}")
+
+
+def test_a_signature_sends_order_signed_and_notifies_the_parties_once_committed(
+    sent, signer, started, received, django_capture_on_commit_callbacks, complainant_user
+):
+    from apps.orders import signals
+
+    signing.start_signing(sent.pk, actor=signer)
+    with django_capture_on_commit_callbacks(execute=False) as callbacks:
+        signing.record_signature(sent.pk, success(sent, signer).pk, actor=signer)
+    assert received == []
+    for callback in callbacks:
+        callback()
+    assert (signals.order_signed, sent.pk) in received
+    assert ("sms", "ORDER_SIGNED") in received
+
+
+def test_a_signature_rolled_back_sends_and_notifies_nothing(
+    sent, signer, started, received, django_capture_on_commit_callbacks, complainant_user
+):
+    from django.db import transaction
+
+    signing.start_signing(sent.pk, actor=signer)
+    txn = success(sent, signer)
+    with django_capture_on_commit_callbacks(execute=True) as callbacks:
+        with pytest.raises(RuntimeError), transaction.atomic():
+            signing.record_signature(sent.pk, txn.pk, actor=signer)
+            raise RuntimeError("the caller's transaction fails after the signature")
+    assert (callbacks, received) == ([], [])
+    assert Order.objects.get(pk=sent.pk).status == OrderStatus.SENT_FOR_SIGNING
+
+
+def test_signing_a_roznama_sends_roznama_signed_once_committed(
+    normal_triggered, signer, started, received, django_capture_on_commit_callbacks
+):
+    from apps.orders import signals
+
+    signing.start_roznama_signing(normal_triggered.pk, actor=signer)
+    roznama = OrderRoznama.objects.get(order=normal_triggered)
+    txn = success(normal_triggered, signer, source=roznama.signing_file_id, signed="roz-signed")
+    with django_capture_on_commit_callbacks(execute=False) as callbacks:
+        signing.record_roznama_signature(normal_triggered.pk, txn.pk, actor=signer)
+    assert received == []
+    for callback in callbacks:
+        callback()
+    assert received == [(signals.roznama_signed, normal_triggered.pk)]
+
+
+def test_a_roll_that_cannot_be_locked_undoes_the_signature_that_would_trigger(
+    ready, staff, signer, started, monkeypatch
+):
+    from apps.hearings import errors as hearing_errors
+    from apps.hearings.exceptions import HearingError
+    from apps.orders.models import OrderWorkflowRun
+
+    def refuse(hearing_id, actor):
+        raise HearingError(error=hearing_errors.INVALID_TRANSITION)
+
+    # Data complete first: the signature triggers, and the trigger locks the roll.
+    lifecycle.mark_complete(ready.pk, actor=staff)
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.start_signing(ready.pk, actor=signer)
+    txn = success(ready, signer)
+    with monkeypatch.context() as patched:
+        patched.setattr(lifecycle.courtroom, "lock_attendance", refuse)
+        with pytest.raises(BusinessError) as excinfo:
+            signing.record_signature(ready.pk, txn.pk, actor=signer)
+    assert code(excinfo) == "E10001"
+    order = Order.objects.get(pk=ready.pk)
+    assert (order.status, order.signed_file_id) == (OrderStatus.SENT_FOR_SIGNING, "")
+    assert not OrderWorkflowRun.objects.filter(order=order).exists()
+    # Nothing was lost: the same signature is recorded once the roll can be locked.
+    assert signing.record_signature(ready.pk, txn.pk, actor=signer).status == (
+        OrderStatus.TRIGGERED
+    )
 
 
 # -- confirming: what is refused -------------------------------------------------------

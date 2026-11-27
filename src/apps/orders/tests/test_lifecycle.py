@@ -203,8 +203,9 @@ def test_sign_and_complete_in_either_order_trigger_exactly_once(
             with pytest.raises(BusinessError) as again:
                 lifecycle.mark_complete(order.pk, actor=staff)
             assert code(again) == "E14001"
-            with pytest.raises(BusinessError):
+            with pytest.raises(BusinessError) as twice:
                 sign(order, signer)
+            assert code(twice) == "E14001"
         assert received == []  # nothing is sent before the commit
         for callback in callbacks:
             callback()
@@ -279,7 +280,6 @@ def test_pending_stages_are_read_from_the_facts(ready, staff, signer):
     lifecycle.mark_complete(ready.pk, actor=staff)
     ready.refresh_from_db()
     assert common.stages(ready) == ["TRIGGERED"]
-    assert TODAY
 
 
 def test_marking_a_discarded_order_complete_is_refused(order, staff):

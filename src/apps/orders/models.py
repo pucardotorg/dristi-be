@@ -15,6 +15,7 @@ from apps.core.models import (
     BaseAuditableModel,
     BaseModel,
 )
+from apps.hearings.enums import CancellationReason
 
 from . import field_schema
 from .enums import (
@@ -92,8 +93,9 @@ class OrderType(BaseModel, BaseActivatableModel, BaseAuditableModel):
         return f"{self.state_code} {self.label}"
 
     def clean(self):
-        """Check that ``preselect_from`` is a list of known screens."""
+        """Check ``preselect_from``, the diary flags, and that a state keeps its ``NORMAL``."""
         super().clean()
+        self._keep_normal()
         known = {"HEARING", "APPLICATION_ONBOARDING"}
         if not isinstance(self.preselect_from, list) or any(
             not isinstance(screen, str) or screen not in known for screen in self.preselect_from
@@ -111,8 +113,29 @@ class OrderType(BaseModel, BaseActivatableModel, BaseAuditableModel):
                 }
             )
 
+    def _keep_normal(self):
+        """Refuse to retire, re-code or move a state's ``NORMAL`` (one per state, by the constraint).
 
-class OrderItemType(BaseModel, BaseActivatableModel, BaseAuditableModel):
+        An order whose type is not chosen falls back to it (``drafting.resolve_type``):
+        without it, no order could be drafted in the state (``E14024``).
+        """
+        if not self.pk:
+            return
+        stored = OrderType.objects.filter(pk=self.pk, code="NORMAL", is_active=True).first()
+        if stored is None:
+            return
+        changed = {
+            "is_active": not self.is_active,
+            "code": self.code != stored.code,
+            "state_code": self.state_code != stored.state_code,
+        }
+        if field := next((name for name, change in changed.items() if change), None):
+            raise ValidationError(
+                {field: f"{stored.state_code} must keep an active NORMAL order type."}
+            )
+
+
+class OrderItemType(BaseModel, BaseActivatableModel):
     """One order item of the catalogue (spec 0039 #3.3).
 
     Seeded from ``order-template-catalogue.md`` by
@@ -137,6 +160,9 @@ class OrderItemType(BaseModel, BaseActivatableModel, BaseAuditableModel):
         "hearings.HearingPurpose", blank=True, related_name="suggested_order_items"
     )
     sequence = models.PositiveSmallIntegerField(default=0)
+    # Declared here instead of inherited from ``BaseAuditableModel``, which cannot track a
+    # many-to-many: the suggested purposes are an admin edit and their changes are kept (#3.11).
+    history = HistoricalRecords(m2m_fields=[suggested_for_purposes])
 
     class Meta(BaseModel.Meta):
         """Meta options."""
@@ -147,7 +173,7 @@ class OrderItemType(BaseModel, BaseActivatableModel, BaseAuditableModel):
         return self.code
 
     def clean(self):
-        """Check the code, the field schema and the contextual target."""
+        """Check the code, the field schema, the contextual target and the reason a case closes."""
         super().clean()
         errors = {}
         if not CODE_RE.fullmatch(self.code or ""):
@@ -158,6 +184,12 @@ class OrderItemType(BaseModel, BaseActivatableModel, BaseAuditableModel):
             errors["target_type"] = "A contextual item applies to an APPLICATION."
         if self.availability == Availability.CONTEXTUAL and self.category:
             errors["category"] = "A contextual item has no category."
+        if self.closes_case:
+            # Passed to the hearings at trigger: a typo would fail only there, as a failed run.
+            if self.closes_case not in CancellationReason.values:
+                errors["closes_case"] = (
+                    f"Use one of {', '.join(CancellationReason.values)}, or leave it blank."
+                )
         if errors:
             raise ValidationError(errors)
 

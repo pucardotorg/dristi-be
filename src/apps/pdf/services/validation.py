@@ -122,6 +122,7 @@ _BLOCKS = [
             "header_style": {"type": "string"},
             "show_header": {"type": "boolean"},
             "repeat_header": {"type": "boolean"},
+            "split_rows": {"type": "boolean"},
             "border": {"type": "boolean"},
             "padding": _NUMBER,
             "header_background": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},

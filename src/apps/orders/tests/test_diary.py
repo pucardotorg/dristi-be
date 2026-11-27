@@ -9,7 +9,7 @@ from apps.orders import selectors
 from apps.orders.models import Order
 from apps.orders.services import diary, drafting, lifecycle, next_hearing, signing
 
-from .factories import TODAY, code
+from .factories import code
 
 pytestmark = pytest.mark.django_db
 
@@ -133,7 +133,6 @@ def test_diary_entries_list_every_type_together(case, staff, signer, courtroom):
     assert by_order[roznama_type.pk]["type"]["code"] == "ROZNAMA"
     only = selectors.diary_entries(courtroom.pk, order_type="ROZNAMA")
     assert [row["order_id"] for row in only] == [roznama_type.pk]
-    assert TODAY
 
 
 def test_the_case_history_shows_every_orders_entry_as_business_of_the_day(case, staff, signer):

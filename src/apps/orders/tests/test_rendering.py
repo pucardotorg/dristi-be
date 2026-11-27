@@ -1,6 +1,7 @@
 """The page and the PDF come from one renderer (spec 0039 #5.3); plus selectors and mail."""
 
 import datetime
+from collections import Counter
 
 import pytest
 
@@ -81,8 +82,8 @@ def _table(widths):
 @pytest.mark.parametrize(
     "body",
     [
-        # One wide row pads every other row to its width: 101 x 101 cells in the PDF.
-        _table([101] + [1] * 100),
+        # One wide row pads every other row to its width: 20 x 501 cells in the PDF.
+        _table([20] + [1] * 500),
         # The cap counts every table in the text together.
         _table([20] + [1] * 19) * 26,
     ],
@@ -94,9 +95,79 @@ def test_tables_that_would_draw_too_many_cells_are_refused(body):
     assert excinfo.value.detail["text"][0].code == "E14027"
 
 
-def test_a_table_of_as_many_cells_as_the_cap_is_accepted():
-    assert rendering.MAX_TABLE_CELLS == 100 * 100
-    assert rendering.sanitize_html(_table([100] * 100))
+def test_a_table_of_as_many_cells_as_the_cap_is_accepted_and_prints():
+    assert rendering.MAX_TABLE_CELLS == rendering.MAX_TABLE_COLUMNS * 500
+    clean = rendering.sanitize_html(_table([rendering.MAX_TABLE_COLUMNS] * 500))
+    # Words, not lines: pypdf 7 extracts a row's cells on one line, earlier ones apart.
+    printed = [word for line in _pdf_lines(clean) for word in line.split()]
+    assert printed.count("x") == rendering.MAX_TABLE_CELLS
+
+
+def _pdf_lines(clean):
+    """Render sanitised text as the signed PDF draws it; return its text, line by line."""
+    pypdf = pytest.importorskip("pypdf")
+    import io
+
+    from apps.pdf.renderer import get_renderer
+
+    document = {
+        "page": {"size": "A4", "margins": {"bottom": rendering.BOTTOM_MARGIN}},
+        "sections": [rendering.html_to_blocks(clean)],
+    }
+    pdf = get_renderer().render(document, {})
+    pages = pypdf.PdfReader(io.BytesIO(pdf)).pages
+    return [line.strip() for page in pages for line in page.extract_text().splitlines()]
+
+
+def _lines(count, per_line="w"):
+    return "<br>".join([per_line] * count)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # Wider than the page can split into columns that hold a letter.
+        "<table><tr>" + "<td>x</td>" * (rendering.MAX_TABLE_COLUMNS + 1) + "</tr></table>",
+        # Laid out whole by the PDF, in time that grows with the square of their lines.
+        f"<p>{_lines(rendering.MAX_BLOCK_LINES + 1)}</p>",
+        _lines(rendering.MAX_BLOCK_LINES + 1),
+        f"<ol><li>{_lines(rendering.MAX_BLOCK_LINES + 1)}</li></ol>",
+        f"<ul><li>{'<p>w</p>' * (rendering.MAX_BLOCK_LINES + 1)}</li></ul>",
+        f"<p>{'word ' * (rendering.LINE_CHARS * rendering.MAX_BLOCK_LINES // 4)}</p>",
+        # A row's cells are laid out together: their lines count together.
+        "<table><tr>" + f"<td>{_lines(rendering.MAX_BLOCK_LINES // 2)}</td>" * 3 + "</tr></table>",
+        # The HTML parser drops what lies past its depth limit: the PDF would lose "after".
+        "<p>before</p>" + "<em>" * 300 + "deep" + "</em>" * 300 + "<p>after</p>",
+        "<p>" + "<strong><em>" * 11 + "x" + "</em></strong>" * 11 + "</p>",
+    ],
+)
+def test_text_the_pdf_cannot_print_whole_is_refused(body):
+    with pytest.raises(BusinessError) as excinfo:
+        rendering.sanitize_html(body)
+    assert excinfo.value.error.code == "E14027"
+    assert excinfo.value.detail["text"][0].code == "E14027"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<table><tr>"
+        + f"<td>{'a' * 60}</td>" * rendering.MAX_TABLE_COLUMNS
+        + "</tr><tr>"
+        + f"<td>{'b' * 300}</td><td>{'c' * 300}</td>"
+        + "</tr></table>",
+        f"<p>{_lines(rendering.MAX_BLOCK_LINES - 5)}</p>",
+        f"<ol><li>{_lines(rendering.MAX_BLOCK_LINES - 5)}</li></ol>",
+        "<table><tr>" + f"<td>{_lines(rendering.MAX_BLOCK_LINES // 3)}</td>" * 2 + "</tr></table>",
+        "<p>" + "<strong><em>" * 9 + "deep" + "</em></strong>" * 9 + "</p><p>after</p>",
+    ],
+)
+def test_text_at_the_limits_is_accepted_and_prints_every_character(body):
+    clean = rendering.sanitize_html(body)
+    # Counted, not compared in order: the PDF's text reads a row's cells line by line,
+    # and adds list markers. Nothing of the text may be missing.
+    printed = Counter("".join(_pdf_lines(clean)).replace(" ", ""))
+    assert Counter(rendering.plain_text(clean).replace(" ", "")) - printed == Counter()
 
 
 def test_blank_html_says_nothing():
@@ -114,7 +185,7 @@ def test_html_becomes_renderer_blocks():
     assert blocks[0] == {"type": "paragraph", "text": "Para <b>bold</b> <i>it</i><br/>next"}
     assert blocks[1] == {"type": "list", "items": ["one", "two"], "ordered": True}
     assert blocks[2]["ordered"] is False
-    assert blocks[3]["rows"] == [["A", "B"], ["C", ""]]
+    assert blocks[3]["rows"] == [["<b>A</b>", "B"], ["C", ""]]
     assert rendering.html_to_blocks("") == []
 
 
@@ -239,7 +310,6 @@ def test_the_order_signed_template_is_seeded_and_renders():
 
     template = MessageTemplate.objects.get(message_key="ORDER_SIGNED", message_type="sms")
     assert "{{order_title}}" in template.content
-    assert datetime and Order
 
 
 def test_lettered_lists_keep_their_style_in_the_pdf_blocks():
@@ -281,8 +351,9 @@ def test_a_long_lettered_list_gives_every_item_its_own_letters_in_the_pdf():
     }
     pdf = get_renderer().render({"page": {"size": "A4"}, "sections": [[block]]}, {})
     text = "\n".join(page.extract_text() for page in pypdf.PdfReader(io.BytesIO(pdf)).pages)
-    lines = text.splitlines()
-    labels = [lines[i - 1] for i, line in enumerate(lines) if line.startswith("item")]
+    # Words, not lines: pypdf 7 extracts a marker and its item on one line, earlier ones apart.
+    words = text.split()
+    labels = [words[i - 1] for i, word in enumerate(words) if word.startswith("item")]
     assert labels[:3] == ["a.", "b.", "c."]
     assert labels[25:] == ["z.", "aa.", "ab."]
     assert len(set(labels)) == 28
@@ -336,11 +407,38 @@ def test_paragraphs_in_a_list_item_keep_their_own_lines_in_the_pdf():
 
 def test_paragraphs_in_a_table_cell_keep_their_own_lines_in_the_pdf():
     clean = rendering.sanitize_html(
-        "<table><tr><td><p>100</p><p>200</p></td><th><strong><p>a</p><p>b</p></strong></th>"
+        "<table><tr><td><p>100</p><p>200</p></td><td><strong><p>a</p><p>b</p></strong></td>"
         "<td>c</td></tr></table>"
     )
     [block] = rendering.html_to_blocks(clean)
     assert block["rows"] == [["100<br/>200", "<b>a<br/>b</b>", "c"]]
+
+
+def test_a_header_cell_is_bold_in_the_pdf_as_on_the_page():
+    clean = rendering.sanitize_html(
+        "<table><tr><th>Exhibit</th><th></th></tr><tr><td>P1</td><td>x</td></tr></table>"
+    )
+    [block] = rendering.html_to_blocks(clean)
+    assert block["rows"] == [["<b>Exhibit</b>", ""], ["P1", "x"]]
+    assert "Exhibit" in _pdf_lines(clean)[0]
+
+
+def test_a_table_cell_taller_than_a_page_prints_every_line_in_the_pdf(ready, signer):
+    pypdf = pytest.importorskip("pypdf")
+    import io
+
+    lines = [f"line {n:03d}" for n in range(120)]
+    ready.text = rendering.sanitize_html(f"<table><tr><td>{'<br>'.join(lines)}</td></tr></table>")
+    pdf = rendering.render_pdf(ready, signing_user=signer)
+    reader = pypdf.PdfReader(io.BytesIO(pdf))
+    text = "\n".join(page.extract_text() for page in reader.pages).splitlines()
+    assert len(reader.pages) > 1
+    assert [line.strip() for line in text if line.strip().startswith("line ")] == lines
+
+
+def test_many_paragraphs_in_one_list_item_each_keep_their_own_line():
+    [block] = rendering.html_to_blocks("<ul><li>" + "<p>x</p>" * 25_000 + "</li></ul>")
+    assert block["items"] == ["<br/>".join(["x"] * 25_000)]
 
 
 def test_text_around_a_paragraph_in_an_item_starts_a_new_line():

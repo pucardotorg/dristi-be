@@ -11,7 +11,7 @@ from apps.hearings import selectors as hearing_selectors
 from apps.hearings.exceptions import HearingError
 from apps.hearings.services import listing
 
-from .. import conf, errors, ports, rendering
+from .. import errors, ports, rendering
 from ..enums import (
     SHORTCUT_SCOPE_ORDER_TEXT,
     EnteredFrom,
@@ -207,14 +207,15 @@ def edit_text(order_id, text, *, actor, text_version=None):
     """Save the order text, sanitised, as it is typed (#5.3, #5.4).
 
     Idempotent: the same text is a no-op that does not bump the version
-    (``ORD-20``). A change to an order whose data is marked complete reopens it
-    (``SND-06``).
+    (``ORD-20``), whatever version it was sent against, so a retried save whose
+    response was lost succeeds. A change to an order whose data is marked
+    complete reopens it (``SND-06``).
     """
     with transaction.atomic():
         order = common.lock_order(order_id)
-        common.require_action(order, "edit_text")
-        common.check_version(order, "text", text_version)
-        return edit_text_locked(order, text, actor, reason="text saved", autosave=True)
+        return edit_text_locked(
+            order, text, actor, reason="text saved", autosave=True, text_version=text_version
+        )
 
 
 def append_text(order_id, text, *, actor):
@@ -224,20 +225,21 @@ def append_text(order_id, text, *, actor):
         return edit_text_locked(order, f"{order.text}{rendering.sanitize_html(text)}", actor)
 
 
-def edit_text_locked(order, text, actor, *, reason="text appended", autosave=False):
+def edit_text_locked(
+    order, text, actor, *, reason="text appended", autosave=False, text_version=None
+):
     """``edit_text`` for a caller that already holds the order's lock.
 
-    An ``autosave`` (the client saves every few seconds, ``ORD-20``) writes no
+    ``text_version`` is checked only when the text changes (``E14002``). An ``autosave`` (the client saves every few seconds, ``ORD-20``) writes no
     history row unless it reopens the order data: the row of the next send,
     move back, sign, trigger or discard holds the text then (#12.3). The latest
     save's author and time stay on the order (``text_saved_by``, ``text_saved_at``).
     """
     common.require_action(order, "edit_text")
-    clean = rendering.sanitize_html(text)
-    if len(clean.encode()) > conf.text_max_bytes():
-        raise BusinessError(errors.ORDER_TEXT_TOO_LARGE, field="text")
+    clean = common.clean_text(text)
     if clean == order.text:
         return order
+    common.check_version(order, "text", text_version)
     order.text = clean
     order.text_version += 1
     order.text_saved_by = actor

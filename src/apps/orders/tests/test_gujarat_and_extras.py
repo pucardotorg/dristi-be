@@ -2,15 +2,15 @@
 
 import pytest
 from django.test import override_settings
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
 from apps.api.errors import BusinessError
 from apps.core.models import Configuration
-from apps.orders.enums import OrderRole
 from apps.orders.models import Order
 from apps.orders.services import drafting, items, lifecycle, next_hearing, numbering, signing
 
-from .factories import code, make_user
+from .factories import code
 
 pytestmark = pytest.mark.django_db
 
@@ -62,7 +62,7 @@ def test_a_state_with_one_type_shows_no_type_on_its_rows(case, courtroom, drafte
 
 
 def test_a_person_cannot_type_into_a_read_only_field(order, filler):
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         items.add(
             order.pk,
             "ACCEPT_APPLICATION",
@@ -70,12 +70,11 @@ def test_a_person_cannot_type_into_a_read_only_field(order, filler):
             target_id=order.pk,
             values={"application_number": "A/1"},
         )
-    assert "values.application_number" in excinfo.value.detail
+    assert excinfo.value.detail["values.application_number"][0].code == "E14011"
     item = items.add(order.pk, "REJECT_APPLICATION", actor=filler, target_id=order.pk)
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         items.update(order.pk, item.pk, {"application_number": "A/2"}, actor=filler)
-    assert "values.application_number" in excinfo.value.detail
-    assert BusinessError and code
+    assert excinfo.value.detail["values.application_number"][0].code == "E14011"
 
 
 def test_a_read_only_value_the_system_filled_survives_an_edit(case, drafter, setter, filler):
@@ -90,8 +89,9 @@ def test_a_read_only_value_the_system_filled_survives_an_edit(case, drafter, set
     )
     item = order.items.get()
     assert item.values["original_hearing_date"] == TODAY.replace(day=19).isoformat()
-    with pytest.raises(BusinessError):  # a system item follows the next hearing
+    with pytest.raises(BusinessError) as excinfo:  # a system item follows the next hearing
         items.update(order.pk, item.pk, {**item.values, "hearing_purpose": "ADR"}, actor=filler)
+    assert code(excinfo) == "E14001"
     item.refresh_from_db()
     assert item.values["original_hearing_date"] == TODAY.replace(day=19).isoformat()
     assert item.values["hearing_purpose"] == "ARGUMENTS"
@@ -112,4 +112,3 @@ def test_the_number_format_is_pluggable(order):
 
 def test_the_default_format_names_the_courtroom_series_number_and_year(order):
     assert numbering.allot(order, "ROZNAMA") == f"{order.court.code}/RZN/1/2026"
-    assert OrderRole and make_user

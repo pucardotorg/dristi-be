@@ -21,12 +21,20 @@ from apps.esign.exceptions import ESignError
 from apps.esign.models import ESignTransaction
 from apps.esign.services import initiate_esign
 from apps.hearings.services import calendar
+from apps.pdf.exceptions import PDFRenderError
 from apps.pdf.services import documents as pdf_documents
 
 from .. import conf, errors, ports, rendering, signals
-from ..enums import NumberSeries, OrderStatus, RoznamaStatus, SigningMethod, TaskKey
+from ..enums import (
+    NextHearingState,
+    NumberSeries,
+    OrderStatus,
+    RoznamaStatus,
+    SigningMethod,
+    TaskKey,
+)
 from ..models import OrderRoznama
-from . import common, diary, lifecycle, notifications, numbering
+from . import common, diary, lifecycle, next_hearing, notifications, numbering
 
 logger = logging.getLogger(__name__)
 ENTITY_TYPE = "ORDER"
@@ -72,6 +80,31 @@ def _store(order, content, name, actor):
     )
 
 
+def _render(order, **kwargs):
+    """Render the PDF to sign. Text saved before a limit it breaks may not print (``E14028``)."""
+    try:
+        return rendering.render_pdf(order, **kwargs)
+    except PDFRenderError as exc:
+        logger.warning("Order %s could not be rendered for signing: %s", order.pk, exc)
+        raise BusinessError(errors.ORDER_NOT_PRINTABLE, field="text") from exc
+
+
+def _allot_number(order_id, actor):
+    """Allot the order's number on its first signing attempt, in a transaction of its own (#8.3).
+
+    Every first attempt in the courtroom's series waits on the counter's row lock,
+    so it is released before the PDF is rendered. The number is kept whatever
+    happens to the attempt, as a retry would keep it.
+    """
+    with transaction.atomic():
+        order = common.lock_order(order_id)
+        common.require_action(order, "sign")
+        lifecycle._validate_held_date(order)
+        if not order.number:
+            order.number = numbering.allot(order, order.order_type.number_series)
+            common.save_order(order, actor, "number allotted")
+
+
 def _initiate(order, actor, file_id):
     try:
         return initiate_esign(
@@ -96,14 +129,20 @@ def start_signing(order_id, *, actor, method=SigningMethod.AADHAAR_ESIGN):
 
     Allots the number on the first attempt and sets the order date to the
     business date. The method must be enabled (``E14017``), and a held date must
-    still be confirmable.
+    still be confirmable. A next hearing that is the case's listed hearing is
+    read again, and must still exist (``E14006``).
     """
     _require_method(method)
+    _allot_number(order_id, actor)
     with transaction.atomic():
         order = common.lock_order(order_id)
         common.require_action(order, "sign")
         lifecycle._validate_held_date(order)
+        next_hearing.follow_listed(order)
+        if order.next_hearing_state == NextHearingState.UNSET:
+            raise BusinessError(errors.NEXT_HEARING_NOT_SETTLED)
         if not order.number:
+            # A type change since the number was allotted cleared it.
             series = order.order_type.number_series
             order.number = numbering.allot(order, series)
         order.order_date = calendar.business_date()
@@ -112,7 +151,7 @@ def start_signing(order_id, *, actor, method=SigningMethod.AADHAAR_ESIGN):
         order.signing_attendance = rendering.attendance_sentences(order.hearing_id)
         # The PDF prints the snapshot, not a second read: a roll edit committed between
         # two reads and reverted before confirmation would pass the check below.
-        content = rendering.render_pdf(
+        content = _render(
             order,
             signing_user=actor,
             attendance=order.signing_attendance,
@@ -142,8 +181,8 @@ def record_signature(order_id, transaction_id, *, actor):
 
     Raises ``E14015`` for a transaction that is pending, another order's,
     another user's or from before a move back; and for one begun on an earlier
-    business date, which is signed again so the date on the page is the day it
-    was signed.
+    business date, on other attendance or on a listed hearing since moved, which
+    is signed again so the page signed is the order as it stands.
     """
     txn = ESignTransaction.objects.filter(pk=transaction_id).first()
     stale = None
@@ -172,6 +211,10 @@ def record_signature(order_id, transaction_id, *, actor):
             order.signing_file_id = ""
             common.save_order(order, actor, "signing expired: attendance changed")
             stale = "The attendance changed after signing began. Sign the order again."
+        elif next_hearing.follow_listed(order):
+            order.signing_file_id = ""
+            common.save_order(order, actor, "signing expired: listed hearing changed")
+            stale = "The case's listed hearing changed after signing began. Sign the order again."
         else:
             _finalise(order, txn.signed_file_id, SigningMethod.AADHAAR_ESIGN, actor)
     if stale:
@@ -180,12 +223,20 @@ def record_signature(order_id, transaction_id, *, actor):
 
 
 def record_signed_file(order_id, signed_file_id, method, *, actor):
-    """Record a signature made outside ``apps.esign`` (a DSC module, per order or Roznama)."""
+    """Record a signature made outside ``apps.esign``, on an order sent for signing.
+
+    The entry point for a DSC module, which does not exist yet (#8.2, question 2).
+    It signs the order only, not a Gujarat Roznama, and does not yet allot the
+    number or set the order date (#8.3): the DSC module must add a step that
+    prepares the file to sign, as ``start_signing`` does, before it can be used.
+    """
     if not signed_file_id:
         raise BusinessError(errors.SIGNATURE_NOT_VALID_FOR_ORDER, "The signed file is missing.")
     with transaction.atomic():
         order = common.lock_order(order_id)
         common.require_action(order, "sign")
+        # The roll a signed order prints and composes its diary entry from (``order_attendance``).
+        order.signing_attendance = rendering.attendance_sentences(order.hearing_id)
         _finalise(order, signed_file_id, method, actor)
         return order
 
@@ -224,7 +275,7 @@ def start_roznama_signing(order_id, *, actor, method=SigningMethod.AADHAAR_ESIGN
             raise BusinessError(errors.DIARY_ENTRY_LOCKED, "This Roznama is already signed.")
         if not roznama.number:
             roznama.number = numbering.allot(order, NumberSeries.ROZNAMA)
-        content = rendering.render_pdf(
+        content = _render(
             order,
             signing_user=actor,
             entry_text=diary.composed_entry(order),

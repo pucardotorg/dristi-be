@@ -31,19 +31,20 @@ def same_as_text(order):
     return order.diary_same_as_text or not order.order_type.separate_diary_entry
 
 
-def composed_entry(order):
+def composed_entry(order, purpose_label=None):
     """Return the diary entry as HTML: the order text with attendance and next hearing lines.
 
     A separate entry is returned as written. Otherwise the entry is composed on
-    read, in full (``PUB-04``, ``ADY-04``).
+    read, in full (``PUB-04``, ``ADY-04``), with the attendance the order prints.
+    ``purpose_label`` is the next hearing's, when the caller has read it already.
     """
     if not same_as_text(order):
         return order.diary_text
-    parts = [
-        f"<p>{html.escape(line)}</p>" for line in rendering.attendance_sentences(order.hearing_id)
-    ]
+    parts = [f"<p>{html.escape(line)}</p>" for line in rendering.order_attendance(order)]
     parts.append(order.text)
-    if closing := rendering.next_hearing_line(order, next_purpose_label(order)):
+    if purpose_label is None:
+        purpose_label = next_purpose_label(order)
+    if closing := rendering.next_hearing_line(order, purpose_label):
         parts.append(f"<p>{html.escape(closing)}</p>")
     return "".join(parts)
 
@@ -59,14 +60,15 @@ def _can_edit_after_triggering(order, roznama):
     )
 
 
-def set_entry(order_id, *, same_as_text, text="", actor):
+def set_entry(order_id, *, same_as_text, text="", actor, data_version=None):
     """Set the diary entry (#6.6); an order data filler until triggered.
 
     A type with no separate entry refuses ``same_as_text = false``
     (``E14026``). After triggering, only a Gujarat Roznama awaiting its signature
     may be edited (by a filler or a signer); an edit clears a signing begun on the
     old text. In Kerala the A-Diary edits (``set_entry_text``); in Punjab & Haryana
-    the Summary is fixed (``E14014``).
+    the Summary is fixed (``E14014``). The entry is order data: ``data_version``
+    is checked (``E14002``) and bumped.
     """
     with transaction.atomic():
         order = common.lock_order(order_id)
@@ -82,7 +84,8 @@ def set_entry(order_id, *, same_as_text, text="", actor):
             common.require_action(order, "edit_diary_entry")
         if not same_as_text and not order.order_type.separate_diary_entry:
             raise BusinessError(errors.DIARY_ENTRY_IS_ORDER_TEXT)
-        clean = rendering.sanitize_html(text)
+        common.check_version(order, "data", data_version)
+        clean = common.clean_text(text)
         if not same_as_text and rendering.is_blank(clean):
             raise errors.ITEM_VALUES_INVALID.validation_error(
                 {"text": ["Write the diary entry, or use the order text."]}
@@ -111,7 +114,7 @@ def set_entry_text(order_id, text, actor):
         order = common.lock_order(order_id)
         if order.status != OrderStatus.TRIGGERED or not order.order_type.diary_entry_in_a_diary:
             raise BusinessError(errors.DIARY_ENTRY_LOCKED)
-        clean = rendering.sanitize_html(text)
+        clean = common.clean_text(text)
         if clean == composed_entry(order):
             return order
         order.diary_same_as_text = False

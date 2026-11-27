@@ -51,12 +51,18 @@ def bulk_items(*, actor, order_ids, item_specs):
     """
     order_ids = list(dict.fromkeys(order_ids))
     _too_large(len(order_ids))
-    orders = {o.pk: o for o in Order.objects.filter(pk__in=order_ids)}
+    found = Order.objects.filter(pk__in=order_ids)
+    # An order in a courtroom the caller is not staff of is not found, as on every
+    # other endpoint: its court is never checked, so nothing reveals that it exists (#11.4).
+    staff_of = {
+        court_id
+        for court_id in {o.court_id for o in found}
+        if permissions.is_staff(actor, court_id)
+    }
+    orders = {o.pk: o for o in found if o.court_id in staff_of}
     courts = {o.court_id for o in orders.values()}
     if len(courts) > 1:
-        raise errors.ITEM_VALUES_INVALID.validation_error(
-            {"order_ids": ["Bulk order items apply to the orders of one courtroom."]}
-        )
+        raise BusinessError(errors.BULK_ACROSS_COURTROOMS, field="order_ids")
     if courts:
         permissions.require_role(actor, next(iter(courts)), "bulk_items")
     done, skipped = [], []

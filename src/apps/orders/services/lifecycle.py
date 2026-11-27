@@ -15,7 +15,7 @@ from apps.hearings.services import courtroom, listing
 from .. import errors, ports, rendering, signals
 from ..enums import NextHearingState, OrderStatus, TaskKey
 from ..models import OrderRoznama
-from . import common, items, triggering
+from . import common, items, next_hearing, triggering
 
 
 def _validate_held_date(order):
@@ -39,6 +39,7 @@ def send_for_signing(order_id, *, actor):
         common.require_action(order, "send_for_signing")
         if rendering.is_blank(order.text):
             raise BusinessError(errors.ORDER_TEXT_EMPTY, field="text")
+        next_hearing.follow_listed(order)
         if order.next_hearing_state == NextHearingState.UNSET:
             raise BusinessError(errors.NEXT_HEARING_NOT_SETTLED)
         _validate_held_date(order)

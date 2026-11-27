@@ -563,7 +563,7 @@ edited in admin; retired with `is_active = False`, never deleted.
 | `has_workflow` | `BooleanField` | needs a handler (#1.2) |
 | `trigger_phase` | `CharField(8, choices=TriggerPhase)` | `FIRST`, `NORMAL`, `LAST` — the catalogue's *Workflow trigger order* |
 | `stage_event` | `CharField(64, blank=True)` | the [`0011`](0011-case-workflows.md) event dispatched when triggered (#9.4) |
-| `closes_case` | `CharField(32, blank=True)` | the [`0023`](0023-hearings.md) `CancellationReason` passed to `cancel_open_hearings`, empty if the item does not take the case off the list |
+| `closes_case` | `CharField(32, blank=True)` | the [`0023`](0023-hearings.md) `CancellationReason` passed to `cancel_open_hearings`, empty if the item does not take the case off the list; any other value is refused in admin (`clean`) |
 | `outcome` | `CharField(16, blank=True)` | the case outcome it records, e.g. `DISMISSED` |
 | `suggested_for_purposes` | `ManyToManyField("hearings.HearingPurpose", blank=True)` | *Suggested* (`ITM-02`) |
 | `sequence` | `PositiveSmallIntegerField` | display order within its category |
@@ -625,7 +625,7 @@ order whose type allows links (`OTY-06`).
 | --- | --- | --- |
 | `owner` | `FK(User, on_delete=CASCADE, related_name="shortcuts")` | the person who created it; only they see and maintain it (`SHC-06`) |
 | `name` | `CharField(64)` | `^[a-z0-9][a-z0-9-]*$`; what the shortcut is called up by |
-| `body` | `TextField` | sanitised HTML, same allow-list as order text; may contain blanks (`SHC-03`) |
+| `body` | `TextField` | sanitised HTML, same allow-list and size limit as order text (`400 E14027`, `400 E14020`, `field = body`); may contain blanks (`SHC-03`) |
 | `scope` | `ArrayField(CharField(32))` | the screens it is offered on, e.g. `ORDER_TEXT`; a new shortcut's scope is the screen it was created on (`SHC-07`) |
 
 `UniqueConstraint(owner, Lower("name"))`. Shortcuts have no workflow and no
@@ -676,7 +676,7 @@ retired with `is_active = False`.
 | `default_title` | `CharField(64)` | *Order*, *Roznama*, *Zimni* — the title with no items (`TIT-07`) |
 | `preselect_from` | `ArrayField(CharField(16))` | where the order is preselected to this type: `HEARING`, `APPLICATION_ONBOARDING` (`OTY-03`) |
 
-`UniqueConstraint(state_code, code)`. Each state has exactly one `NORMAL`.
+`UniqueConstraint(state_code, code)`. Each state has exactly one `NORMAL`; every order whose type is not chosen falls back to it, so admin refuses to retire it, change its `code` or move it to another state (`OrderType.clean`).
 
 #### 3.10 `OrderRoznama`
 
@@ -830,8 +830,10 @@ a hearing the next hearing is set on the order and the item follows from it
 
 * `text` is HTML restricted to an allow-list: `p`, `br`, `strong`, `em`, `u`, `ol` (with `type="a"` for lettered), `ul`, `li`, `table`, `thead`, `tbody`, `tr`, `th`, `td` (`colspan`, `rowspan`). Everything else is stripped on save by a server-side sanitiser (`nh3`), never trusted from the client (`TXT-02`).
 * Paragraphs inside a list item or a table cell (`<li><p>…</p><p>…</p></li>`, as editors write them) are kept: each starts a new line of the item or cell in the PDF, so their words never run together (`ORD-13`).
+* A header cell (`th`) prints bold in the PDF, as the page shows it (`ORD-13`).
 * At most config `orders.text_max_bytes` (`400 E14020`, `field = text`).
 * Tables hold at most 10,000 cells in all, each row counted as wide as its table's widest row, as the PDF draws it (`400 E14027`, `field = text`): a few bytes of ragged rows would otherwise cost the signing worker millions of PDF cells.
+* What is accepted can be signed (`400 E14027`, `field = text`): a table has at most 20 columns, which the PDF gives equal shares of the page; a paragraph, a list item or a table row (its cells together) prints as at most about 500 lines, its breaks and its text wrapped to its width, as the PDF lays each out whole in time that grows with the square of its lines; and elements nest at most 20 deep, past which the HTML parser would silently drop text the page shows. A table row taller than a page breaks across pages.
 * `rendering.render_page(order)` builds the page from the record — court heading, case header, attendance lines (from [`0023`](0023-hearings.md), people not required left out, empty lines left out, `ATT-03`), the text, the next hearing line, and the signature block — as HTML. The same HTML is the data of the `apps.pdf` template `court-order`. The detail endpoint returns it as `rendered_html`, so the page and the signed PDF never disagree (`ORD-13`). Heading and signature block are never typed.
 
 #### 5.4 Saving and concurrency
@@ -845,7 +847,7 @@ If-Match: "t-14"
 * Order drafter; `status = DRAFT`.
 * `If-Match` carries `text_version`; a mismatch is `412 E14002` and the client reloads (`DFT-02`). Order data writes use `data_version` the same way, so the drafter and the filler working the same draft never block each other.
 * A text change on an order whose `data_complete` is true sets it false (`SND-06`).
-* Saves are idempotent: the same text is a no-op that does not bump the version (`ORD-20`).
+* Saves are idempotent: the same text is a no-op that does not bump the version, whatever `If-Match` it carries, so a save retried after its response was lost succeeds (`ORD-20`).
 
 Concurrent editing of the same part is refused rather than merged; this is the
 least effort that handles it (`DFT-02`). How two people editing at the same
@@ -1034,7 +1036,7 @@ order: this endpoint and the cause list (#10.5) both call
 `CAUSE_LIST`), shown on the order, and is checked against `data_version`:
 
 * **In a hearing** — `LISTED` calls `listing.hold(case, date, purpose, order, previous_hearing_id = order.hearing)`; a hold already on the order is changed in place ([`0023`](0023-hearings.md) #7.1, #7.2). Scheduling and Rescheduling items are not offered (`NXT-03`).
-* **Outside a hearing** — the next hearing starts as the case's listed hearing (`selectors.next_hearing(case)`), read only (`ORD-08`). Setting a different date or purpose holds it with `moves_hearing_id` set and adds a *Rescheduling of hearing date* item, `SYSTEM`, its original and new dates filled from the change. Where the case has no listed hearing, setting a date holds a new one and adds *Scheduling of hearing date*. Returning to the listed hearing releases the hold and removes the item.
+* **Outside a hearing** — the next hearing starts as the case's listed hearing (`selectors.next_hearing(case)`), read only (`ORD-08`). Until the order holds a date of its own, it follows that hearing: sending for signing, starting a signing and confirming one read it again, so another order having moved it is printed as moved, and its cancellation leaves the next hearing unsettled (`409 E14006`). Setting a different date or purpose holds it with `moves_hearing_id` set and adds a *Rescheduling of hearing date* item, `SYSTEM`, its original and new dates filled from the change. Where the case has no listed hearing, setting a date holds a new one and adds *Scheduling of hearing date*. Returning to the listed hearing releases the hold and removes the item.
 * `NOT_LISTED_AGAIN` releases any hold (`DATE_REMOVED`) and records the decision (`NXT-01`).
 * A date without a purpose, or a purpose without a date, is refused (`400 E14011`, `NXT-02`).
 * [`0023`](0023-hearings.md) errors (`E10003`–`E10009`, `E10014`) pass through unchanged; its `warnings` (full day, adjournment limit) are returned in the response.
@@ -1059,6 +1061,7 @@ on read by `selectors.diary_entry(order_id)`; it is never shortened (`PUB-04`,
 
 * On a type without a separate entry (Roznama), `same_as_text = false` is refused (`409 E14026`): the entry is always the order text (`DEN-03`, `RZT-02`).
 * A diary entry is text only. It carries no order data and triggers nothing (`DEN-04`).
+* The entry is checked and saved as the order text is (#5.3): its structure (`400 E14027`) and size (`400 E14020`), `field = text`. Its write is checked against `data_version` (`If-Match: "d-N"`, `412 E14002`) and bumps it, as every order-data write (#12.5).
 
 After triggering, the entry changes only in two ways:
 
@@ -1068,8 +1071,8 @@ After triggering, the entry changes only in two ways:
 In Punjab & Haryana the Summary is fixed once the order is triggered
 (`409 E14014`).
 
-`GET /api/v1/diary-entries/?court=&date=&state_type=` lists diary entries of
-triggered orders together, whatever the order's type (`DEN-05`): case, hearing
+`GET /api/v1/diary-entries/?court=&date=&state_type=&page=&page_size=` lists diary entries of
+triggered orders together, newest first and a page at a time, whatever the order's type (`DEN-05`): case, hearing
 date and purpose, entry text, next hearing, the order, its type, and, in
 Gujarat, the Roznama's status and number. In Gujarat a list of Roznamas
 therefore includes both Roznama-type orders and the Roznamas of normal orders.
@@ -1124,8 +1127,8 @@ Order signer, `SENT_FOR_SIGNING`:
 
 1. `method` is enabled for the state (config `signing.methods`, `signing-methods.md` `SGM-05`); else `400 E14017`.
 2. Where the order holds a date, `listing.validate(order)` passes.
-3. Allot the number if none (#8.3); set the order date to the business date.
-4. Render the page with number, date, the type's `pdf_heading` (*Order* or *Roznama*, `RZT-05`) and the signer's name and designation; store it with `apps.files`; set `signing_file_id`.
+3. Allot the number if none (#8.3), in a transaction of its own, so the counter's row lock is not held while the PDF renders; set the order date to the business date. A next hearing that is the case's listed hearing is read again (#6.4); with no listed hearing left, `409 E14006`.
+4. Render the page with number, date, the type's `pdf_heading` (*Order* or *Roznama*, `RZT-05`) and the signer's name and designation; store it with `apps.files`; set `signing_file_id`. Text saved before a limit of #5.3 that it breaks may not render: `400 E14028`, `field = text`, and the number is kept.
 5. Call the `apps.esign` initiation service in-process with `entity_type = ORDER`, `entity_id = order.id`, `file_id = signing_file_id` and the signature-block placement. Return its `esign_url`, `form_fields` and `transaction_id` unchanged ([`0015`](0015-cdac-esign.md) #6.1).
 
 The order registers an `ORDER` authorizer with `apps.esign`
@@ -1152,16 +1155,19 @@ POST /api/v1/orders/{id}/sign/confirm/
 * `data_complete` → trigger (#9) in the same transaction.
 
 A signing begun on one business date and confirmed on the next is refused and
-signed again, so the order date on the page is the day it was signed.
+signed again, so the order date on the page is the day it was signed. So is one
+whose attendance, or whose listed hearing (#6.4), has changed since it began.
 
 #### 8.2 Several orders at once
 
 Bulk signing needs a DSC (`SGN-03`, `SGN-06`); batch e-sign does not apply to
 orders. No spec yet provides DSC signing ([`0015`](0015-cdac-esign.md)
-Non-goals). `record_signature` takes the signed file and the method and nothing
-specific to e-sign, so a DSC module can call it per order or per Roznama — in
-Gujarat they are signed in bulk together (`RZN-02`). The bulk endpoint is
-deferred until then (question 2).
+Non-goals). `record_signed_file` takes the signed file and the method and
+nothing specific to e-sign, so a DSC module can call it per order. It does not
+yet sign a Roznama — in Gujarat order and Roznama are signed in bulk together
+(`RZN-02`) — nor allot the number and set the order date (#8.3): the DSC module
+adds a step that prepares the file to sign, as `start_signing` does, and a
+Roznama variant. The bulk endpoint is deferred until then (question 2).
 
 #### 8.3 Number and date
 
@@ -1364,8 +1370,10 @@ POST /api/v1/orders/bulk/items/
 { "order_ids": ["…", "…"], "items": [ { "item_type": "ISSUE_OF_SUMMONS" } ] }
 ```
 
-Order data filler; hearing orders of one courtroom only (`ITM-10`, `PND-07`).
-Each item is added to each order through `services.items.add` with `BULK`, its
+Order data filler; hearing orders of one courtroom only (`ITM-10`, `PND-07`;
+orders of more than one, `400 E14029`, `field = order_ids`). An order in a
+courtroom the caller is not staff of is skipped as `E00105`, like an id that does
+not exist, before the courtroom and role are checked (#11.4). Each item is added to each order through `services.items.add` with `BULK`, its
 defaults worked out against that order's case. Each order is its own
 transaction. The response lists `done` and `skipped` per order, with the reason
 (`E14001`, `E14008`, `E14009`, `E14013`). Fields that need input are left for
@@ -1466,7 +1474,7 @@ with the `orders` tag, the `meta` envelope and the standard error shape.
 | POST | `/orders/bulk/text/` | #10.4 | order drafter |
 | POST | `/orders/bulk/next-hearing/` | #10.5 | next hearing setter |
 | PUT | `/hearings/{hearing_id}/next-hearing/` | the cause list's column (#10.5) | next hearing setter |
-| GET | `/diary-entries/` | #6.6 (`DEN-05`) | court staff |
+| GET | `/diary-entries/` | #6.6 (`DEN-05`), paginated | court staff |
 | GET | `/order-items/` | the catalogue; with `?order=`, availability (#6.1); `?search=`, `?category=` | court staff |
 | GET / POST | `/shortcuts/?scope=ORDER_TEXT` | the caller's own shortcuts: list and search; add (`SHC-05`, `SHC-06`) | order drafter |
 | PATCH / DELETE | `/shortcuts/{id}/` | change, remove; owner only (`SHC-06`) | order drafter |
@@ -1530,14 +1538,16 @@ before the first code is defined. (`11` is `apps.core`, spec 0030; `12` is
 | `E14017` | `SIGNING_METHOD_NOT_ENABLED` | 400 | the method is not enabled for the state (`SGM-05`); `field = method` |
 | `E14018` | `SHORTCUT_NAME_TAKEN` | 409 | the caller already has a shortcut with that name; `field = name` |
 | `E14019` | `ROLE_REQUIRED` | 403 | the caller lacks the role the action needs in the courtroom |
-| `E14020` | `ORDER_TEXT_TOO_LARGE` | 400 | text over `text_max_bytes`; `field = text` |
+| `E14020` | `ORDER_TEXT_TOO_LARGE` | 400 | text (order text, diary entry, shortcut body) over `text_max_bytes`; `field` is the text's |
 | `E14021` | `DOCUMENT_NOT_ON_CASE` | 400 | linking a document that is not in the case file; `field = document_id` |
 | `E14022` | `BULK_TOO_LARGE` | 400 | more orders or listings than `bulk_max_orders` |
 | `E14023` | `LINKS_NOT_ALLOWED_FOR_TYPE` | 409 | linking a document to an order whose type allows none (`OTY-06`) |
 | `E14024` | `ORDER_TYPE_NOT_OFFERED` | 400 | a type the case's state does not offer; `field = order_type` |
 | `E14025` | `LINKED_DOCUMENTS_WOULD_BE_REMOVED` | 409 | changing to a type without links, without `remove_linked_documents`; carries the documents (`OTY-07`) |
 | `E14026` | `DIARY_ENTRY_IS_ORDER_TEXT` | 409 | a separate diary entry on a type that has none (`DEN-03`) |
-| `E14027` | `ORDER_TEXT_STRUCTURE_UNSUPPORTED` | 400 | text (order text, diary entry, shortcut body) with a list or table that is not at the top level — inside a list item, a cell, another list or formatting — with anything but items in a list or rows of cells in a table, with a list item outside a list, or with tables that would draw more than 10,000 cells in all (each row padded to its table's widest): the PDF draws only those, so the signed page would differ from the one the court saw (`ORD-13`); `field` is the text's |
+| `E14027` | `ORDER_TEXT_STRUCTURE_UNSUPPORTED` | 400 | text (order text, diary entry, shortcut body) with a list or table that is not at the top level — inside a list item, a cell, another list or formatting — with anything but items in a list or rows of cells in a table, with a list item outside a list, or with tables that would draw more than 10,000 cells in all (each row padded to its table's widest): the PDF draws only those, so the signed page would differ from the one the court saw (`ORD-13`); also a table of more than 20 columns, a block over about 500 lines, or nesting over 20 deep (#5.3); `field` is the text's |
+| `E14028` | `ORDER_NOT_PRINTABLE` | 400 | the PDF to sign cannot be rendered: text saved before a limit of #5.3 that it breaks; `field = text` |
+| `E14029` | `BULK_ACROSS_COURTROOMS` | 400 | bulk order items on orders of more than one courtroom (#10.3); `field = order_ids` |
 
 Rules:
 
@@ -1753,7 +1763,7 @@ above is unchanged where the build follows it.
 
 ### Built as specified
 
-Every model, the lifecycle table, drafting with presets, text sanitising (`nh3`) and the single renderer for page and PDF, the catalogue with availability and combination rules, order data with defaults and completion checks, the next hearing held through `apps.hearings`, send / move back / sign (Aadhaar e-sign, idempotent confirm checked against the current signing file) / mark complete / trigger exactly once under the order lock, numbering, the Gujarat Roznama, runs written in the trigger transaction and executed by an idempotent actor with blocking and retry, Pending orders and counts, the case's orders, diary entries, bulk items / text / next hearing, shortcuts, the live-view poll, the `ORDER` e-sign authorizer, admin, `E14001`-`E14027`, and `order_status_for_hearings`. The row-lock guarantees (#12.5) are tested on PostgreSQL only.
+Every model, the lifecycle table, drafting with presets, text sanitising (`nh3`) and the single renderer for page and PDF, the catalogue with availability and combination rules, order data with defaults and completion checks, the next hearing held through `apps.hearings`, send / move back / sign (Aadhaar e-sign, idempotent confirm checked against the current signing file) / mark complete / trigger exactly once under the order lock, numbering, the Gujarat Roznama, runs written in the trigger transaction and executed by an idempotent actor with blocking and retry, Pending orders and counts, the case's orders, diary entries, bulk items / text / next hearing, shortcuts, the live-view poll, the `ORDER` e-sign authorizer, admin, `E14001`-`E14029`, and `order_status_for_hearings`. The row-lock guarantees (#12.5) are tested on PostgreSQL only.
 
 ### Divergences
 

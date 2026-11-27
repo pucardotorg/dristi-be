@@ -184,6 +184,15 @@ def test_invalid_documents_raise_render_error(document):
         render(document)
 
 
+def test_a_table_row_taller_than_a_page_splits_only_when_asked():
+    lines = [f"line {n:03d}" for n in range(120)]
+    table = {"type": "table", "columns": [{"header": ""}], "rows": [["<br/>".join(lines)]]}
+    with pytest.raises(PDFRenderError):
+        render(doc(table))
+    text = text_of(render(doc({**table, "split_rows": True})))
+    assert [line.strip() for line in text.splitlines() if line.strip().startswith("line ")] == lines
+
+
 def test_composer_escapes_request_data_but_keeps_template_markup():
     format_config = {"body": [{"type": "paragraph", "text": "<b>{{ data.name }}</b>"}]}
     document = compose(format_config, {"data": {"name": "<i>x</i> & y"}, "meta": {}})

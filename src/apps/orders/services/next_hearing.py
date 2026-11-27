@@ -86,6 +86,36 @@ def default_from_listed(order, actor=None):
     order.next_hearing_entered_at = None
 
 
+def follow_listed(order):
+    """Bring an order that shows the case's listed hearing up to date; return whether it changed.
+
+    Outside a hearing, a next hearing the order does not hold is the listed hearing
+    itself (``ORD-08``), which another order may since have moved or cancelled. It
+    follows that hearing, and is unsettled once the case has none (``SND-03``).
+    Bumps ``data_version`` on a change; the caller saves the order.
+    """
+    if (
+        order.hearing_id
+        or order.next_hearing_held
+        or order.next_hearing_state != NextHearingState.LISTED
+    ):
+        return False
+    listed = hearing_selectors.scheduled_hearing(order.case_id)
+    if listed is None:
+        _clear(order)
+        order.next_hearing_state = NextHearingState.UNSET
+    elif (listed.hearing_date, listed.purpose_code) != (
+        order.next_hearing_date,
+        order.next_hearing_purpose,
+    ):
+        order.next_hearing_date = listed.hearing_date
+        order.next_hearing_purpose = listed.purpose_code
+    else:
+        return False
+    order.data_version += 1
+    return True
+
+
 def _clear(order):
     order.next_hearing_date = None
     order.next_hearing_purpose = ""
@@ -225,17 +255,19 @@ def release_on_discard(order, actor=None):
     order.next_hearing_held = False
 
 
-def view(order):
-    """The next hearing as the order screen shows it, with the purpose's label."""
+def view(order, purpose_label=None):
+    """The next hearing as the order screen shows it, with the purpose's label.
+
+    ``purpose_label`` is the label when the caller has read it already.
+    """
     purpose = None
     if order.next_hearing_purpose:
-        from apps.hearings.models import HearingPurpose
+        if purpose_label is None:
+            from apps.hearings.models import HearingPurpose
 
-        row = HearingPurpose.objects.filter(code=order.next_hearing_purpose).first()
-        purpose = {
-            "code": order.next_hearing_purpose,
-            "label": row.label if row else order.next_hearing_purpose,
-        }
+            row = HearingPurpose.objects.filter(code=order.next_hearing_purpose).first()
+            purpose_label = row.label if row else order.next_hearing_purpose
+        purpose = {"code": order.next_hearing_purpose, "label": purpose_label}
     return {
         "state": order.next_hearing_state,
         "date": order.next_hearing_date,
@@ -244,4 +276,11 @@ def view(order):
     }
 
 
-__all__ = ["BusinessError", "default_from_listed", "release_on_discard", "set_next_hearing", "view"]
+__all__ = [
+    "BusinessError",
+    "default_from_listed",
+    "follow_listed",
+    "release_on_discard",
+    "set_next_hearing",
+    "view",
+]

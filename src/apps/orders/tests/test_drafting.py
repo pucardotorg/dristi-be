@@ -143,10 +143,11 @@ def test_an_application_preset_adds_the_matching_item_with_its_target(case, draf
 
 def test_a_failing_preset_leaves_no_order_behind(case, drafter):
     before = Order.objects.count()
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as excinfo:
         drafting.create_outside_hearing(
             case_id=case.pk, actor=drafter, preset={"kind": "APPLICATION", "action": "ACCEPT"}
         )
+    assert excinfo.value.detail["preset"][0].code == "E14011"
     assert Order.objects.count() == before
 
 
@@ -165,12 +166,13 @@ def test_a_preset_failing_after_its_first_item_leaves_neither_order_nor_item(
 
     monkeypatch.setattr(items, "add_locked", second_fails)
     before = (Order.objects.count(), OrderItem.objects.count())
-    with pytest.raises(BusinessError):
+    with pytest.raises(BusinessError) as excinfo:
         drafting.create_outside_hearing(
             case_id=case.pk,
             actor=drafter,
             preset={"kind": "COGNIZANCE", "action": "TAKE_COGNIZANCE"},
         )
+    assert code(excinfo) == "E14008"
     assert saved == ["COGNIZANCE"]  # the first item was written before the failure
     assert (Order.objects.count(), OrderItem.objects.count()) == before
 

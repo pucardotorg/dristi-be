@@ -6,9 +6,9 @@ import pytest
 from rest_framework.exceptions import ValidationError
 
 from apps.api.errors import BusinessError
-from apps.hearings.enums import HearingStatus, ReleaseReason
-from apps.hearings.exceptions import HearingError
+from apps.hearings.enums import CancellationReason, HearingStatus, ReleaseReason
 from apps.hearings.models import Hearing
+from apps.hearings.services import listing
 from apps.orders import conf, errors
 from apps.orders.enums import EnteredFrom, ItemSource, NextHearingState
 from apps.orders.models import Order
@@ -65,17 +65,21 @@ def test_not_listed_again_releases_the_hold(order, setter):
     assert updated.next_hearing_held is False
 
 
-@pytest.mark.parametrize("kwargs", [{"date": NEXT}, {"purpose": "APPEARANCE"}])
-def test_half_a_next_hearing_is_refused(order, setter, kwargs):
-    with pytest.raises(Exception) as excinfo:
+@pytest.mark.parametrize(
+    ("kwargs", "missing"), [({"date": NEXT}, "purpose"), ({"purpose": "APPEARANCE"}, "date")]
+)
+def test_half_a_next_hearing_is_refused(order, setter, kwargs, missing):
+    with pytest.raises(ValidationError) as excinfo:
         set_(order, setter, **kwargs)
-    assert excinfo.value.detail.keys() & {"date", "purpose"}
+    assert set(excinfo.value.detail) == {missing}
+    assert excinfo.value.detail[missing][0].code == "E14011"
     assert hold_of(order) is None
 
 
 def test_not_listed_again_takes_no_date(order, setter):
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as excinfo:
         set_(order, setter, state="NOT_LISTED_AGAIN", date=NEXT)
+    assert excinfo.value.detail["date"][0].code == "E14011"
 
 
 def test_hearings_errors_pass_through_unchanged(order, setter):
@@ -191,6 +195,50 @@ def test_a_date_change_reopens_complete_order_data(case, drafter, setter, filler
     assert Order.objects.get(pk=order.pk).data_complete is False
 
 
+def outside_draft(case, drafter, staff):
+    """A draft outside a hearing, its text written, showing the case's listed hearing."""
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
+    drafting.edit_text(order.pk, "<p>Adjourned.</p>", actor=staff)
+    return Order.objects.get(pk=order.pk)
+
+
+def test_sending_for_signing_follows_a_listed_hearing_moved_since_the_draft(case, drafter, staff):
+    from apps.orders.services import lifecycle
+
+    listed = schedule(case, NEXT, "EVIDENCE_OF_COMPLAINANT")
+    order = outside_draft(case, drafter, staff)
+    assert order.next_hearing_date == NEXT
+    Hearing.objects.filter(pk=listed.pk).update(hearing_date=LATER)
+    lifecycle.send_for_signing(order.pk, actor=staff)
+    sent = Order.objects.get(pk=order.pk)
+    assert sent.next_hearing_date == LATER
+    assert sent.next_hearing_purpose == "EVIDENCE_OF_COMPLAINANT"
+    assert sent.next_hearing_held is False
+    assert sent.data_version == order.data_version + 1
+
+
+def test_sending_for_signing_is_refused_once_the_listed_hearing_is_cancelled(case, drafter, staff):
+    from apps.orders.services import lifecycle
+
+    listed = schedule(case, NEXT, "EVIDENCE_OF_COMPLAINANT")
+    order = outside_draft(case, drafter, staff)
+    listing.cancel_open_hearings(case_id=case.pk, reason=CancellationReason.CASE_TRANSFERRED)
+    assert Hearing.objects.get(pk=listed.pk).status == HearingStatus.CANCELLED
+    with pytest.raises(BusinessError) as excinfo:
+        lifecycle.send_for_signing(order.pk, actor=staff)
+    assert code(excinfo) == "E14006"
+    assert Order.objects.get(pk=order.pk).status == "DRAFT"
+
+
+def test_a_date_the_order_holds_does_not_follow_the_listed_hearing(case, drafter, setter):
+    listed = schedule(case, NEXT, "EVIDENCE_OF_COMPLAINANT")
+    order = drafting.create_outside_hearing(case_id=case.pk, actor=drafter)
+    updated, _ = set_(order, setter, date=LATER, purpose="ARGUMENTS")
+    Hearing.objects.filter(pk=listed.pk).update(hearing_date=TODAY.replace(day=24))
+    assert next_hearing.follow_listed(updated) is False
+    assert updated.next_hearing_date == LATER
+
+
 # -- the cause list ------------------------------------------------------------------------
 
 
@@ -244,7 +292,6 @@ def test_started_hearings_keep_a_purpose_the_order_already_has(hearing, order, s
     )
     order.refresh_from_db()
     assert (order.next_hearing_date, order.next_hearing_purpose) == (LATER, "ARGUMENTS")
-    assert HearingError and started_hearing
 
 
 def test_bulk_items_roll_back_an_orders_earlier_items_when_a_later_one_fails(
@@ -338,7 +385,6 @@ def test_bulk_next_hearing_with_an_explicit_purpose_keeps_last_write_wins(
         purpose="EVIDENCE_OF_COMPLAINANT",
     )
     assert seen["data_version"] is None and result["done"] == [hearing.pk]
-    assert started_hearing and drafting
 
 
 def test_a_hold_is_replaced_when_the_hearing_it_moves_changes(case, drafter, setter):
@@ -394,7 +440,8 @@ def test_the_listed_hearing_is_read_after_the_court_lock(case, drafter, setter, 
 
 
 def test_bulk_text_leaves_no_draft_when_the_append_fails(started, case, staff):
-    too_long = f"<p>{'x' * (conf.text_max_bytes() + 1)}</p>"
+    # Short paragraphs: printable, so the append itself is what fails, on the size.
+    too_long = "<p>x</p>" * (conf.text_max_bytes() // len("<p>x</p>") + 1)
     result = bulk.bulk_text(
         actor=staff, court_id=case.court_id, hearing_ids=[started.pk], text=too_long
     )

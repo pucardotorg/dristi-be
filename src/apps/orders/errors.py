@@ -77,3 +77,8 @@ ORDER_TEXT_STRUCTURE_UNSUPPORTED = define(
     "The signed PDF cannot show nested lists, lists and tables inside list items or table "
     "cells, or text inside a list or table outside its items and cells.",
 )
+ORDER_NOT_PRINTABLE = define(
+    "E14028",
+    "The order cannot be printed for signing. Shorten or simplify its text, then sign again.",
+)
+BULK_ACROSS_COURTROOMS = define("E14029", "Bulk order items apply to the orders of one courtroom.")

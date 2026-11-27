@@ -320,8 +320,10 @@ def case_orders(case_id, *, staff):
         if staff
         else queryset.filter(status__in=(OrderStatus.SIGNED, OrderStatus.TRIGGERED))
     )
+    orders = list(queryset.order_by("-created_at"))
+    labels = _purpose_labels(orders)
     rows = []
-    for order in queryset.order_by("-created_at"):
+    for order in orders:
         roznama = getattr(order, "roznama", None)
         rows.append(
             {
@@ -331,7 +333,9 @@ def case_orders(case_id, *, staff):
                 "number": order.number,
                 "order_date": order.order_date,
                 "status": PARTY_STATUS_LABELS[order.status],
-                "business_of_the_day": diary.composed_entry(order)
+                "business_of_the_day": diary.composed_entry(
+                    order, labels.get(order.next_hearing_purpose, "")
+                )
                 if order.status == OrderStatus.TRIGGERED
                 else "",
                 "signed_file_id": order.signed_file_id,
@@ -343,29 +347,46 @@ def case_orders(case_id, *, staff):
     return rows
 
 
-def diary_entries(court_id, *, date=None, order_type=""):
-    """Every triggered order's diary entry together, whatever its type (#6.6, ``DEN-05``).
+def _purpose_labels(orders):
+    """``{code: label}`` for the orders' next-hearing purposes, in one query."""
+    from apps.hearings.models import HearingPurpose
 
-    Both Roznama-type orders and the Roznamas of normal orders appear, with the
-    Roznama's status and number.
-    """
+    codes = {order.next_hearing_purpose for order in orders if order.next_hearing_purpose}
+    labels = dict(HearingPurpose.objects.filter(code__in=codes).values_list("code", "label"))
+    return {code: labels.get(code, code) for code in codes}
+
+
+def diary_entry_orders(court_id, *, date=None, order_type=""):
+    """The triggered orders whose diary entries ``diary_entry_rows`` lists, newest first."""
     queryset = (
         Order.objects.filter(court_id=court_id, status=OrderStatus.TRIGGERED)
         .select_related("order_type", "roznama")
-        .order_by("-triggered_at")
+        .order_by("-triggered_at", "-pk")
     )
     if date:
         queryset = queryset.filter(Q(hearing__hearing_date=date) | Q(order_date=date))
     if order_type:
         queryset = queryset.filter(order_type__code=order_type)
-    orders = list(queryset)
+    return queryset
+
+
+def diary_entry_rows(orders):
+    """Every given triggered order's diary entry, whatever its type (#6.6, ``DEN-05``).
+
+    Both Roznama-type orders and the Roznamas of normal orders appear, with the
+    Roznama's status and number. A page reads its cases, hearings and purposes
+    once; each entry prints the attendance its order was signed with.
+    """
+    orders = list(orders)
     summaries = get_case_summaries({order.case_id for order in orders})
     hearings = hearing_selectors.get_hearings({o.hearing_id for o in orders if o.hearing_id})
+    labels = _purpose_labels(orders)
     rows = []
     for order in orders:
         roznama = getattr(order, "roznama", None)
         summary = summaries.get(order.case_id)
         hearing = hearings.get(order.hearing_id)
+        label = labels.get(order.next_hearing_purpose, "")
         rows.append(
             {
                 "order_id": order.pk,
@@ -376,8 +397,8 @@ def diary_entries(court_id, *, date=None, order_type=""):
                 },
                 "hearing_date": hearing.hearing_date if hearing else None,
                 "hearing_purpose": hearing.purpose_label if hearing else "",
-                "entry": diary.composed_entry(order),
-                "next_hearing": next_hearing.view(order),
+                "entry": diary.composed_entry(order, label),
+                "next_hearing": next_hearing.view(order, label),
                 "type": {"code": order.order_type.code, "label": order.order_type.label},
                 "entry_label": order.order_type.diary_entry_label,
                 "roznama": {"status": roznama.status, "number": roznama.number}
@@ -386,6 +407,11 @@ def diary_entries(court_id, *, date=None, order_type=""):
             }
         )
     return rows
+
+
+def diary_entries(court_id, *, date=None, order_type=""):
+    """Every triggered order's diary entry together, unpaginated (see ``diary_entry_rows``)."""
+    return diary_entry_rows(diary_entry_orders(court_id, date=date, order_type=order_type))
 
 
 def order_status_for_hearings(hearing_ids):

@@ -97,6 +97,63 @@ def test_two_signatures_at_once_record_one(ready, staff, signer):
     assert Order.objects.get(pk=ready.pk).signed_file_id in ("signed-a", "signed-b")
 
 
+@pytest.fixture
+def esign_started(ready, staff, signer, monkeypatch):
+    """``ready`` sent for signing and started on Aadhaar e-sign; returns a success maker."""
+    import datetime
+    import uuid
+
+    from django.utils import timezone
+
+    from apps.esign.models import ESignTransaction
+
+    monkeypatch.setattr(signing, "_store", lambda order, content, name, actor: "file-1")
+    monkeypatch.setattr(signing, "_initiate", lambda order, actor, file_id: "initiation")
+    lifecycle.send_for_signing(ready.pk, actor=staff)
+    signing.start_signing(ready.pk, actor=signer)
+
+    def success(signed):
+        return ESignTransaction.objects.create(
+            module="orders",
+            entity_type="ORDER",
+            entity_id=str(ready.pk),
+            signer=signer,
+            provider="mock",
+            provider_transaction_id=f"p-{uuid.uuid4()}",
+            source_file_id="file-1",
+            signed_file_id=signed,
+            status="SUCCESS",
+            expires_at=timezone.now() + datetime.timedelta(hours=1),
+        )
+
+    return success
+
+
+def test_one_e_sign_confirmation_arriving_twice_records_it_once(ready, signer, esign_started):
+    txn = esign_started("signed-a")
+    results = race(
+        lambda: signing.record_signature(ready.pk, txn.pk, actor=signer),
+        lambda: signing.record_signature(ready.pk, txn.pk, actor=signer),
+    )
+    # Idempotent: the second sees the first's signature and returns the order.
+    assert not [r for r in results if isinstance(r, BaseException)], results
+    order = Order.objects.get(pk=ready.pk)
+    assert (order.status, order.signed_file_id) == (OrderStatus.SIGNED, "signed-a")
+    assert order.history.filter(history_change_reason="signed").count() == 1
+
+
+def test_two_e_signatures_at_once_record_one(ready, signer, esign_started):
+    first, second = esign_started("signed-a"), esign_started("signed-b")
+    results = race(
+        lambda: signing.record_signature(ready.pk, first.pk, actor=signer),
+        lambda: signing.record_signature(ready.pk, second.pk, actor=signer),
+    )
+    failures = [r for r in results if isinstance(r, BaseException)]
+    assert len(failures) == 1 and isinstance(failures[0], BusinessError), results
+    assert failures[0].error.code == "E14016"
+    assert Order.objects.get(pk=ready.pk).signed_file_id in ("signed-a", "signed-b")
+
+
 def test_two_drafts_for_one_hearing_at_once_are_one_order(hearing, drafter, staff):
     results = race(
         lambda: drafting.create_in_hearing(hearing_id=hearing.pk, actor=drafter),

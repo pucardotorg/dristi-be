@@ -13,10 +13,10 @@ from rest_framework.test import APIClient
 
 from apps.core.models import Configuration
 from apps.orders.enums import ItemSource, OrderRole
-from apps.orders.models import Order, OrderShortcut
+from apps.orders.models import Order, OrderShortcut, OrderType
 from apps.orders.services import drafting, items, lifecycle, signing
 
-from .factories import TODAY, make_case, make_court, make_user, mark_roll, schedule, started_hearing
+from .factories import TODAY, make_case, make_user, mark_roll, schedule, started_hearing
 
 pytestmark = pytest.mark.django_db
 
@@ -203,13 +203,17 @@ def test_an_action_without_the_role_is_403_e14019(order, drafter, filler):
         assert (response.status_code, errors_of(response)) == (403, [("E14019", None)]), target
 
 
-def test_a_role_held_in_another_courtroom_grants_nothing_here(order, hearing, sibling_courtroom):
+def test_a_user_with_no_role_sees_no_order_in_any_courtroom(order, hearing, sibling_courtroom):
+    """Someone with no court role sees no order, in this courtroom or a sibling one.
+
+    A role held only in a sibling courtroom is not tested here: roles are still groups
+    held across the establishment's courtrooms (``ports.court_roles``, a Divergence),
+    so it would grant access until per-courtroom roles exist (spec 0029).
+    """
     other = make_case(sibling_courtroom)
     from apps.orders.services import drafting as d
 
     foreign = d.create_outside_hearing(case_id=other.pk, actor=make_user(OrderRole.ORDER_DRAFTER))
-    # Roles are groups held across the deployment's courtrooms; the courtroom of the order
-    # decides, and someone with no role anywhere is a stranger.
     stranger = make_user(name="Nobody")
     for target in (order, foreign):
         assert client_for(stranger).get(url("order-detail", target.pk)).status_code == 404
@@ -218,11 +222,19 @@ def test_a_role_held_in_another_courtroom_grants_nothing_here(order, hearing, si
 def test_staff_of_another_court_and_outsiders_get_404_not_403(
     order, foreign_court, stranger, staff
 ):
-    foreigner = make_user(*OrderRole.values, name="Kollam")
-    with mock.patch("apps.orders.ports.court_roles", side_effect=lambda user, court: frozenset()):
-        with mock.patch("apps.orders.ports.is_court_staff", return_value=False):
-            response = client_for(foreigner).get(url("order-detail", order.pk))
-    assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
+    # An order of a court outside the establishment: staff here hold no role there.
+    elsewhere = Order.objects.create(
+        case=make_case(foreign_court),
+        court=foreign_court,
+        order_type=OrderType.objects.get(state_code="KL", code="NORMAL"),
+        title="Order",
+    )
+    for method, target, body in (
+        ("get", url("order-detail", elsewhere.pk), None),
+        ("patch", url("order-text", elsewhere.pk), {"text": "x"}),
+    ):
+        response = getattr(client_for(staff), method)(target, body, format="json")
+        assert (response.status_code, errors_of(response)) == (404, [("E00105", None)]), method
     response = client_for(stranger).patch(url("order-text", order.pk), {"text": "x"}, format="json")
     assert (response.status_code, errors_of(response)) == (404, [("E00105", None)])
     assert client_for().get(url("order-detail", order.pk)).status_code in (401, 403)
@@ -249,6 +261,11 @@ def test_text_saves_with_if_match_and_a_stale_version_is_412_e14002(api, order):
         url("order-text", order.pk), {"text": "<p>Hello</p>"}, format="json", HTTP_IF_MATCH='"t-0"'
     )
     assert ok.status_code == 200 and ok.json()["text_version"] == 1
+    # A retried save whose response was lost: the same text, sent against the old version.
+    retried = api.patch(
+        url("order-text", order.pk), {"text": "<p>Hello</p>"}, format="json", HTTP_IF_MATCH='"t-0"'
+    )
+    assert retried.status_code == 200 and retried.json()["text_version"] == 1
     stale = api.patch(
         url("order-text", order.pk), {"text": "<p>Other</p>"}, format="json", HTTP_IF_MATCH='"t-0"'
     )
@@ -388,6 +405,25 @@ def test_the_diary_entry_endpoint_sets_a_text_of_its_own(api, order):
         format="json",
     )
     assert errors_of(nested) == [("E14027", "text")]
+
+
+def test_the_diary_entry_is_order_data_checked_against_its_version(api, order):
+    from apps.orders import conf
+
+    target = f"/api/v1/orders/{order.pk}/diary-entry/"
+    version = Order.objects.get(pk=order.pk).data_version
+    body = {"same_as_text": False, "text": "<p>Mine.</p>"}
+    ok = api.put(target, body, format="json", HTTP_IF_MATCH=f'"d-{version}"')
+    assert ok.status_code == 200
+    stale = api.put(
+        target, {**body, "text": "<p>Theirs.</p>"}, format="json", HTTP_IF_MATCH=f'"d-{version}"'
+    )
+    assert (stale.status_code, errors_of(stale)) == (412, [("E14002", None)])
+    assert Order.objects.get(pk=order.pk).diary_text == "<p>Mine.</p>"
+    # Short paragraphs: printable, so only the size refuses it.
+    too_large = "<p>x</p>" * (conf.text_max_bytes() // len("<p>x</p>") + 1)
+    refused = api.put(target, {**body, "text": too_large}, format="json")
+    assert errors_of(refused) == [("E14020", "text")]
 
 
 def test_the_paying_party_confirms_a_witness_batta_through_the_api(
@@ -733,14 +769,48 @@ def test_pending_orders_search_and_the_triggered_window(api, courtroom, ready, s
     assert api.get(url("order-pending"), query).json()["results"] == []
 
 
-def test_pending_orders_batch_their_case_reads(api, courtroom, django_assert_max_num_queries):
-    for _ in range(12):
-        drafting.create_outside_hearing(
-            case_id=make_case(courtroom).pk, actor=make_user(OrderRole.ORDER_DRAFTER)
-        )
+def _queries_for(api, target, query, rows):
+    """The queries one GET of ``target`` makes; it must list ``rows`` rows."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connection) as captured:
+        body = api.get(target, query).json()
+    assert len(body.get("results", body.get("data"))) == rows
+    return len(captured)
+
+
+def test_pending_orders_take_the_same_queries_for_2_rows_as_for_12(api, courtroom):
+    def drafts(count):
+        for _ in range(count):
+            drafting.create_outside_hearing(
+                case_id=make_case(courtroom).pk, actor=make_user(OrderRole.ORDER_DRAFTER)
+            )
+
     query = {"court": str(courtroom.pk), "tab": "drafting", "page_size": 50}
-    with django_assert_max_num_queries(30):
-        assert len(api.get(url("order-pending"), query).json()["results"]) == 12
+    drafts(2)
+    two = _queries_for(api, url("order-pending"), query, 2)
+    drafts(10)
+    assert _queries_for(api, url("order-pending"), query, 12) == two
+
+
+def test_the_cases_orders_take_the_same_queries_however_many_there_are(api, case, staff, signer):
+    from apps.orders.services import next_hearing
+
+    def triggered():
+        order = drafting.create_outside_hearing(case_id=case.pk, actor=staff)
+        drafting.edit_text(order.pk, "<p>Disposed of.</p>", actor=staff)
+        next_hearing.set_next_hearing(order.pk, state="NOT_LISTED_AGAIN", actor=staff)
+        lifecycle.mark_complete(order.pk, actor=staff)
+        lifecycle.send_for_signing(order.pk, actor=staff)
+        signing.record_signed_file(order.pk, "signed", "DSC", actor=signer)
+
+    triggered()
+    drafting.create_outside_hearing(case_id=case.pk, actor=staff)
+    two = _queries_for(api, url("case-orders", case.pk), {}, 2)
+    for _ in range(3):
+        triggered()
+    assert _queries_for(api, url("case-orders", case.pk), {}, 5) == two
 
 
 def test_the_cases_orders_for_staff_and_parties(api, ready, staff, signer, case, complainant_user):
@@ -773,7 +843,9 @@ def test_diary_entries_endpoint(api, courtroom, ready, staff, signer):
     lifecycle.mark_complete(ready.pk, actor=staff)
     lifecycle.send_for_signing(ready.pk, actor=staff)
     signing.record_signed_file(ready.pk, "signed", "DSC", actor=signer)
-    rows = api.get(url("diary-entries"), {"court": str(courtroom.pk)}).json()["data"]
+    body = api.get(url("diary-entries"), {"court": str(courtroom.pk)}).json()
+    assert body["count"] == 1
+    rows = body["results"]
     assert [row["order_id"] for row in rows] == [str(ready.pk)]
     assert rows[0]["entry_label"] == "A-Diary text"
     assert (
@@ -782,6 +854,51 @@ def test_diary_entries_endpoint(api, courtroom, ready, staff, signer):
         .status_code
         == 403
     )
+
+
+def triggered_in_hearing(courtroom, staff, signer):
+    """A triggered order of a hearing of a new case: attendance marked, next hearing set."""
+    from apps.orders.services import next_hearing
+
+    hearing = started_hearing(make_case(courtroom), staff)
+    order = drafting.create_in_hearing(hearing_id=hearing.pk, actor=staff)[0]
+    drafting.edit_text(order.pk, "<p>Heard.</p>", actor=staff)
+    next_hearing.set_next_hearing(
+        order.pk,
+        state="LISTED",
+        date=TODAY.replace(day=19),
+        purpose="EVIDENCE_OF_COMPLAINANT",
+        actor=staff,
+    )
+    mark_roll(hearing, staff)
+    lifecycle.mark_complete(order.pk, actor=staff)
+    lifecycle.send_for_signing(order.pk, actor=staff)
+    signing.record_signed_file(order.pk, "signed", "DSC", actor=signer)
+    return order
+
+
+def test_diary_entries_come_a_page_at_a_time_in_a_fixed_number_of_queries(
+    api, courtroom, staff, signer
+):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    query = {"court": str(courtroom.pk), "page_size": 50}
+    triggered_in_hearing(courtroom, staff, signer)
+    with CaptureQueriesContext(connection) as one:
+        assert len(api.get(url("diary-entries"), query).json()["results"]) == 1
+    for _ in range(3):
+        triggered_in_hearing(courtroom, staff, signer)
+    with CaptureQueriesContext(connection) as four:
+        rows = api.get(url("diary-entries"), query).json()["results"]
+    assert len(rows) == 4
+    assert len(four) == len(one)
+    for row in rows:
+        assert "was present" in row["entry"]
+        assert "for Evidence of the complainant." in row["entry"]
+        assert row["next_hearing"]["purpose"]["label"] == "Evidence of the complainant"
+    page = api.get(url("diary-entries"), {**query, "page_size": 3}).json()
+    assert page["count"] == 4 and len(page["results"]) == 3 and page["next"]
 
 
 # -- bulk -----------------------------------------------------------------------------------------------
@@ -963,8 +1080,13 @@ def test_bulk_size_is_limited_e14022(api, courtroom):
     assert errors_of(response) == [("E14022", None)]
 
 
-def test_bulk_actions_need_their_roles(courtroom, hearing, drafter, filler, setter):
+def test_bulk_actions_need_their_roles(courtroom, hearing, order, drafter, filler, setter):
     payloads = (
+        (
+            drafter,
+            "order-bulk-items",
+            {"order_ids": [str(order.pk)], "items": [{"item_type": "COST"}]},
+        ),
         (
             filler,
             "order-bulk-text",
@@ -983,6 +1105,21 @@ def test_bulk_actions_need_their_roles(courtroom, hearing, drafter, filler, sett
     for user, name, body in payloads:
         response = client_for(user).post(url(name), body, format="json")
         assert errors_of(response) == [("E14019", None)], name
+
+
+def test_bulk_actions_in_a_courtroom_where_the_caller_holds_no_role_are_refused(
+    courtroom, foreign_court, hearing, staff, stranger
+):
+    """An endpoint that names the courtroom has no hidden order to protect: ``403``."""
+    for user, court in ((staff, foreign_court), (stranger, courtroom)):
+        for name, body in (
+            ("order-bulk-text", {"text": "x"}),
+            ("order-bulk-next-hearing", {"state": "NOT_LISTED_AGAIN"}),
+        ):
+            body = {**body, "court": str(court.pk), "hearing_ids": [str(hearing.pk)]}
+            response = client_for(user).post(url(name), body, format="json")
+            assert (response.status_code, errors_of(response)) == (403, [("E14019", None)]), name
+    assert not Order.objects.filter(hearing_id=hearing.pk).exists()
 
 
 # -- shortcuts -------------------------------------------------------------------------------------------
@@ -1037,4 +1174,3 @@ def test_a_shortcut_body_is_sanitised_like_order_text(drafter):
         url("shortcut-list"), {"name": "x", "body": "<script>1</script><p>ok</p>"}, format="json"
     )
     assert response.json()["body"] == "<p>ok</p>"
-    assert make_court and started_hearing

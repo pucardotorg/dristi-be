@@ -8,8 +8,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import RequestFactory
 
-from apps.orders import handlers
-from apps.orders.admin import OrderAdmin, OrderItemTypeAdmin, OrderItemTypeForm
+from apps.orders.admin import OrderAdmin, OrderItemTypeForm
 from apps.orders.models import Order, OrderItemType, OrderRoznama, OrderType, OrderWorkflowRun
 
 from .factories import make_user
@@ -69,7 +68,8 @@ def test_saving_a_workflow_item_without_a_handler_is_refused():
     assert _form(item).is_valid()
     refused = _form(item, has_workflow="on")
     assert not refused.is_valid()
-    assert "handler" in str(refused.errors)
+    # Reported on the form as a whole: it is the code and the flag together that clash.
+    assert set(refused.errors) == {"__all__"}
 
 
 def test_saving_an_invalid_field_schema_is_refused():
@@ -80,7 +80,7 @@ def test_saving_an_invalid_field_schema_is_refused():
         has_workflow="on",
     )
     assert not form.is_valid()
-    assert "field_schema" in form.errors or "field_schema" in str(form.errors)
+    assert set(form.errors) == {"field_schema"}
 
 
 def test_retry_failed_steps_calls_the_service(admin_user_, ready):
@@ -91,7 +91,6 @@ def test_retry_failed_steps_calls_the_service(admin_user_, ready):
             model_admin.retry_failed_steps(request, Order.objects.filter(pk=ready.pk))
     retry.assert_called_once_with(ready.pk)
     assert "2 step" in message.call_args.args[1]
-    assert handlers and OrderItemTypeAdmin
 
 
 def test_the_order_pages_items_and_runs_cannot_be_added_to(admin_user_, ready):

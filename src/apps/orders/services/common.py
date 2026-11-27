@@ -6,7 +6,7 @@ from rest_framework.exceptions import APIException, ErrorDetail
 from apps.api.errors import BusinessError
 from apps.hearings.exceptions import HearingError
 
-from .. import errors
+from .. import conf, errors, rendering
 from ..enums import DATA_EDITABLE_STATUSES, OrderStatus, RoznamaStatus, Stage
 from ..models import Order
 
@@ -174,6 +174,18 @@ def require_data_editable(order):
         raise ActionError(order, "change order data", _allowed_for_error(order, None))
     if order.data_complete:
         raise BusinessError(errors.ORDER_DATA_COMPLETE)
+
+
+def clean_text(text, *, field="text"):
+    """Sanitise ``text`` as the order text is: its structure (``E14027``) and size (``E14020``).
+
+    For every text that can reach a signed page or the order text: the order text,
+    the diary entry and a shortcut's body (#3.1, #5.3).
+    """
+    clean = rendering.sanitize_html(text, field=field)
+    if len(clean.encode()) > conf.text_max_bytes():
+        raise BusinessError(errors.ORDER_TEXT_TOO_LARGE, field=field)
+    return clean
 
 
 def check_version(order, kind, expected):

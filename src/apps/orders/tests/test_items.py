@@ -9,10 +9,11 @@ from rest_framework.exceptions import ValidationError
 from apps.api.errors import BusinessError
 from apps.orders import field_schema
 from apps.orders.enums import ItemSource, OrderStatus
-from apps.orders.models import Order, OrderItem, OrderItemType
+from apps.orders.models import Order, OrderItem, OrderItemCombinationRule, OrderItemType
 from apps.orders.services import drafting, items, lifecycle
+from apps.orders.services.common import ProblemsError
 
-from .factories import TODAY, code, field, make_case
+from .factories import code, field, make_case
 
 pytestmark = pytest.mark.django_db
 
@@ -112,8 +113,9 @@ def test_moving_out_of_the_register_only_for_a_case_in_it(order, case, filler):
     triggered_with(case, "MOVE_OUT_OF_LONG_PENDING_REGISTER", at=timezone.now())
     Order.objects.filter(pk=order.pk).update(data_version=0)
     other = drafting.create_outside_hearing(case_id=case.pk, actor=filler)
-    with pytest.raises(BusinessError):
+    with pytest.raises(BusinessError) as excinfo:
         add(other, "MOVE_OUT_OF_LONG_PENDING_REGISTER", filler)
+    assert (code(excinfo), field(excinfo)) == ("E14008", "item_type")
 
 
 def test_a_retired_item_cannot_be_added(order, filler):
@@ -127,23 +129,28 @@ def test_a_retired_item_cannot_be_added(order, filler):
 
 
 @pytest.mark.parametrize(
-    ("first", "second", "message"),
+    ("first", "second"),
     [
-        ("JUDGEMENT", "DISMISS_CASE", "You cannot add both Dismiss case and Judgement."),
-        ("CASE_SETTLEMENT", "ABATE_CASE", "You cannot add both Abate case and Case settlement."),
-        ("COGNIZANCE", "DISMISS_CASE", "You cannot add both Dismiss case and Cognizance."),
-        ("COGNIZANCE", "COGNIZANCE", "You cannot add Cognizance twice."),
-        ("DISMISS_CASE", "DISMISS_CASE", "You cannot add Dismiss case twice."),
+        ("JUDGEMENT", "DISMISS_CASE"),
+        ("CASE_SETTLEMENT", "ABATE_CASE"),
+        ("COGNIZANCE", "DISMISS_CASE"),
+        ("COGNIZANCE", "COGNIZANCE"),
+        ("DISMISS_CASE", "DISMISS_CASE"),
     ],
 )
 def test_the_catalogue_combination_rules_are_refused_with_their_message(
-    order, filler, first, second, message
+    order, filler, first, second
 ):
     add(order, first, filler)
     with pytest.raises(BusinessError) as excinfo:
         add(order, second, filler)
     assert code(excinfo) == "E14009"
-    assert message in str(excinfo.value.detail)
+    # The message is the configured rule's, with the two items' labels (ITM-07, #11.6).
+    existing, adding = (OrderItemType.objects.get(code=c) for c in (first, second))
+    rules = OrderItemCombinationRule.objects.filter(item_types=existing).filter(item_types=adding)
+    configured = {r.message.format(adding=adding.label, existing=existing.label) for r in rules}
+    assert field(excinfo) == "item_type"
+    assert str(excinfo.value.detail["item_type"][0]) in configured
 
 
 def test_unrestricted_items_may_repeat_and_combine(order, filler):
@@ -205,9 +212,9 @@ def test_values_are_checked_for_shape_on_save_but_mandatory_fields_are_not(order
 
 
 def test_a_deadline_must_be_a_date(order, filler):
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         add(order, "MANDATORY_SUBMISSIONS", filler, values={"deadline": "not-a-date"})
-    assert "values.deadline" in str(excinfo.value.detail)
+    assert excinfo.value.detail["values.deadline"][0].code == "E14011"
 
 
 def test_a_hearing_purpose_must_be_an_active_one(order):
@@ -228,9 +235,9 @@ def test_a_hearing_purpose_must_be_an_active_one(order):
 
 
 def test_a_person_chosen_must_be_in_the_case(order, filler):
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         add(order, "ISSUE_OF_SUMMONS", filler, values={"party_names": [str(uuid.uuid4())]})
-    assert "values.party_names" in str(excinfo.value.detail)
+    assert excinfo.value.detail["values.party_names"][0].code == "E14011"
 
 
 def test_summons_default_to_every_accused_without_guessing_the_rest(order, filler, case):
@@ -313,7 +320,7 @@ def test_order_data_is_stale_against_an_old_version(order, filler):
 
 def test_mandatory_fields_are_checked_only_when_marked_complete(order, filler):
     add(order, "COST", filler)
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ProblemsError) as excinfo:
         lifecycle.mark_complete(order.pk, actor=filler)
     assert excinfo.value.error.code == "E14012"
     problems = dict(excinfo.value.problems)
@@ -339,7 +346,7 @@ def test_complete_order_data_cannot_be_changed_until_reopened(order, filler):
 def test_an_unconfirmed_reader_item_blocks_completion_until_confirmed(order, filler):
     item = add(order, "JUDGEMENT", filler, source=ItemSource.READER)
     assert item.confirmed is False
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ProblemsError) as excinfo:
         lifecycle.mark_complete(order.pk, actor=filler)
     assert excinfo.value.error.code == "E14012"
     items.confirm(order.pk, item.pk, actor=filler)
@@ -381,11 +388,9 @@ def test_items_of_another_case_have_their_own_defaults(order, filler, courtroom)
     mine = add(order, "ISSUE_OF_SUMMONS", filler)
     theirs = add(outside, "ISSUE_OF_SUMMONS", filler)
     assert mine.values["party_names"] != theirs.values["party_names"]
-    assert TODAY
 
 
 def test_participant_ids_compare_as_uuids(order):
-    item_type = OrderItemType.objects.get(code="ISSUE_OF_SUMMONS")
     from apps.orders.services.items import _party_ids
 
     ids = _party_ids(order, ("ACCUSED",))
@@ -393,7 +398,6 @@ def test_participant_ids_compare_as_uuids(order):
     assert field_schema.canonical_id(chosen.upper()) in ids
     field = {"key": "k", "label": "L", "input": "PARTIES"}
     assert field_schema.value_problem(field, [chosen, chosen.upper()])
-    assert item_type
 
 
 def test_a_participant_id_in_capitals_is_one_of_the_case(order, filler):
@@ -426,7 +430,7 @@ def _read_only_error(excinfo, key):
 def test_a_null_for_a_record_key_the_item_lacks_is_refused(order, filler):
     item = _withdrawal(order, filler)
     before = Order.objects.get(pk=order.pk).data_version
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         items.update(order.pk, item.pk, {"application_number": None}, actor=filler)
     _read_only_error(excinfo, "application_number")
     item.refresh_from_db()
@@ -436,7 +440,7 @@ def test_a_null_for_a_record_key_the_item_lacks_is_refused(order, filler):
 
 def test_a_value_for_a_record_key_the_item_lacks_is_refused(order, filler):
     item = _withdrawal(order, filler)
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         items.update(order.pk, item.pk, {"application_number": "A/9/2026"}, actor=filler)
     _read_only_error(excinfo, "application_number")
 
@@ -444,7 +448,7 @@ def test_a_value_for_a_record_key_the_item_lacks_is_refused(order, filler):
 def test_changing_a_stored_record_value_is_refused(order, filler):
     item = _withdrawal(order, filler, application_number="A/1/2026")
     for typed in ("A/2/2026", None):
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(ValidationError) as excinfo:
             items.update(order.pk, item.pk, {"application_number": typed}, actor=filler)
         _read_only_error(excinfo, "application_number")
     item.refresh_from_db()
@@ -541,6 +545,9 @@ def test_a_shared_party_lookup_still_refuses_a_person_outside_the_roles(order):
 # -- refusals and the reading layer on update -----------------------------------------
 
 
+NOT_ON_CASE = "The application is not on this case."
+
+
 class _RefusingTarget:
     """A handler that refuses the application an item names (as ``apps.applications`` will)."""
 
@@ -553,7 +560,7 @@ class _RefusingTarget:
     def validate_target(self, ctx):
         from apps.orders.handlers.base import Problem
 
-        return [Problem("target_id", "NOT_ON_CASE", "The application is not on this case.")]
+        return [Problem("target_id", "NOT_ON_CASE", NOT_ON_CASE)]
 
 
 def test_an_unknown_item_code_is_not_available(order, filler):
@@ -571,7 +578,8 @@ def test_a_handler_refusing_the_application_refuses_the_item_on_its_target(
     with pytest.raises(BusinessError) as excinfo:
         add(order, "ACCEPT_APPLICATION", filler, target_id=uuid.uuid4())
     assert code(excinfo) == "E14010" and field(excinfo) == "target_id"
-    assert str(excinfo.value.detail["target_id"][0]) == "The application is not on this case."
+    # The handler's own reason reaches the caller, not a generic message.
+    assert str(excinfo.value.detail["target_id"][0]) == NOT_ON_CASE
     assert not order.items.exists()
 
 

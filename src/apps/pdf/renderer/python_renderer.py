@@ -44,6 +44,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from reportlab.platypus.doctemplate import LayoutError
 from reportlab.platypus.flowables import HRFlowable, _bulletFormat
 
 from ..exceptions import PDFRenderError
@@ -217,7 +218,7 @@ class PythonRenderer(PDFRenderer):
             return self._render(document), self.anchors
         except PDFRenderError:
             raise
-        except (KeyError, ValueError, TypeError, AttributeError, OSError) as exc:
+        except (KeyError, ValueError, TypeError, AttributeError, OSError, LayoutError) as exc:
             raise PDFRenderError(f"Rendering failed: {type(exc).__name__}.") from exc
 
     # -- document ----------------------------------------------------------
@@ -424,6 +425,8 @@ class PythonRenderer(PDFRenderer):
             rows,
             colWidths=self._widths(columns) if columns else None,
             repeatRows=header_rows if block.get("repeat_header", True) else 0,
+            # A row may break across pages, so one taller than a page still prints whole.
+            splitInRow=1 if block.get("split_rows") else 0,
             hAlign="LEFT",
         )
         padding = float(block.get("padding", 4))

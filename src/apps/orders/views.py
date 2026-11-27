@@ -14,6 +14,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
+from rest_framework.generics import GenericAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -23,6 +24,7 @@ from apps.api.errors import BusinessError
 from apps.api.schema import error_responses
 from apps.cases.models import Case
 from apps.esign.views import FORM_METHOD
+from apps.hearings import errors as hearing_errors
 from apps.hearings import selectors as hearing_selectors
 
 from . import errors, permissions, ports, selectors
@@ -87,6 +89,19 @@ IF_MATCH = OpenApiParameter(
 # Errors every action on one order can give.
 ACTION_ERRORS = (errors.ROLE_REQUIRED, errors.INVALID_ORDER_ACTION)
 STALE_ERRORS = (*ACTION_ERRORS, errors.ORDER_STALE)
+# Setting the next hearing: half a value, and the ``apps.hearings`` codes ``listing``
+# raises, passed through unchanged (#6.4, #11.6).
+NEXT_HEARING_ERRORS = (
+    errors.ITEM_VALUES_INVALID.example(field="purpose"),
+    hearing_errors.CASE_NOT_LISTABLE,
+    hearing_errors.CASE_ALREADY_SCHEDULED,
+    hearing_errors.DATE_IN_PAST,
+    hearing_errors.DATE_NOT_SITTING,
+    hearing_errors.DATE_BEYOND_HORIZON,
+    hearing_errors.DATE_NOT_AFTER_PREVIOUS,
+    hearing_errors.COURT_DAY_FULL,
+    hearing_errors.PURPOSE_INACTIVE,
+)
 
 
 def _valid(serializer_class, data, **kwargs):
@@ -124,6 +139,21 @@ class OrdersPagination(PageNumberPagination):
     max_page_size = 100
 
 
+class PendingPagination(OrdersPagination):
+    """Documents what ``pending`` adds to a page: the four tabs' ``counts`` and the ``tab`` shown."""
+
+    def get_paginated_response_schema(self, schema):
+        paginated = super().get_paginated_response_schema(schema)
+        tabs = list(selectors.TABS)
+        paginated["properties"]["counts"] = {
+            "type": "object",
+            "properties": {tab: {"type": "integer"} for tab in tabs},
+        }
+        paginated["properties"]["tab"] = {"type": "string", "enum": tabs}
+        paginated["required"] = [*paginated["required"], "counts", "tab"]
+        return paginated
+
+
 class OrdersViewMixin:
     """Reports a service's missing row as ``404``, not a server error."""
 
@@ -140,7 +170,11 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
     pagination_class = OrdersPagination
     serializer_class = OrderDetailSerializer
     list_actions = {"pending"}
-    unpaginated_actions = {"pending_counts"}
+
+    def get_serializer_class(self):
+        if self.action == "pending":
+            return PendingRowSerializer
+        return super().get_serializer_class()
 
     # -- create and read -----------------------------------------------------
 
@@ -427,10 +461,7 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
         parameters=[IF_MATCH],
         responses={
             200: NextHearingResultSerializer,
-            **error_responses(
-                *STALE_ERRORS,
-                errors.ITEM_VALUES_INVALID.example(field="purpose"),
-            ),
+            **error_responses(*STALE_ERRORS, *NEXT_HEARING_ERRORS),
         },
     )
     @action(detail=True, methods=["put"], url_path="next-hearing")
@@ -459,13 +490,15 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
 
     @extend_schema(
         request=DiaryEntrySerializer,
+        parameters=[IF_MATCH],
         responses={
             200: OrderDetailSerializer,
             **error_responses(
-                *ACTION_ERRORS,
+                *STALE_ERRORS,
                 errors.DIARY_ENTRY_LOCKED,
                 errors.DIARY_ENTRY_IS_ORDER_TEXT,
                 errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED.example(field="text"),
+                errors.ORDER_TEXT_TOO_LARGE.example(field="text"),
             ),
         },
     )
@@ -475,7 +508,11 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
         order, _ = permissions.actionable_order(request.user, pk, "edit_diary_entry")
         data = _valid(DiaryEntrySerializer, request.data)
         diary.set_entry(
-            order.pk, same_as_text=data["same_as_text"], text=data["text"], actor=request.user
+            order.pk,
+            same_as_text=data["same_as_text"],
+            text=data["text"],
+            actor=request.user,
+            data_version=if_match(request, "d"),
         )
         return _detail(order.pk, request.user)
 
@@ -547,7 +584,10 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
         responses={
             200: SignInitiationSerializer,
             **error_responses(
-                *ACTION_ERRORS, errors.SIGNING_METHOD_NOT_ENABLED.example(field="method")
+                *ACTION_ERRORS,
+                errors.SIGNING_METHOD_NOT_ENABLED.example(field="method"),
+                errors.NEXT_HEARING_NOT_SETTLED,
+                errors.ORDER_NOT_PRINTABLE.example(field="text"),
             ),
         },
     )
@@ -583,7 +623,11 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
         request=SignSerializer,
         responses={
             200: SignInitiationSerializer,
-            **error_responses(*ACTION_ERRORS, errors.DIARY_ENTRY_LOCKED),
+            **error_responses(
+                *ACTION_ERRORS,
+                errors.DIARY_ENTRY_LOCKED,
+                errors.ORDER_NOT_PRINTABLE.example(field="text"),
+            ),
         },
     )
     @action(detail=True, methods=["post"], url_path="roznama/sign")
@@ -638,10 +682,9 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
     # -- lists and bulk ---------------------------------------------------------
 
     @extend_schema(
-        parameters=[PendingQuerySerializer],
-        responses={200: PendingRowSerializer(many=True), **error_responses(errors.ROLE_REQUIRED)},
+        parameters=[PendingQuerySerializer], responses=error_responses(errors.ROLE_REQUIRED)
     )
-    @action(detail=False, methods=["get"], url_path="pending")
+    @action(detail=False, methods=["get"], url_path="pending", pagination_class=PendingPagination)
     def pending(self, request):
         """Pending orders: every order not yet triggered, in four tabs (#10.1).
 
@@ -654,7 +697,7 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
         page = self.paginate_queryset(
             selectors.pending_queryset(query["court"], tab, query.get("search", ""))
         )
-        rows = PendingRowSerializer(selectors.pending_rows(page, roles, tab), many=True).data
+        rows = self.get_serializer(selectors.pending_rows(page, roles, tab), many=True).data
         response = self.get_paginated_response(rows)
         response.data["counts"] = selectors.pending_counts(query["court"])
         response.data["tab"] = tab
@@ -686,7 +729,11 @@ class OrderViewSet(OrdersViewMixin, viewsets.GenericViewSet):
         request=BulkItemsSerializer,
         responses={
             200: BulkResultSerializer,
-            **error_responses(errors.ROLE_REQUIRED, errors.BULK_TOO_LARGE),
+            **error_responses(
+                errors.ROLE_REQUIRED,
+                errors.BULK_TOO_LARGE,
+                errors.BULK_ACROSS_COURTROOMS.example(field="order_ids"),
+            ),
         },
     )
     @action(detail=False, methods=["post"], url_path="bulk/items")
@@ -763,7 +810,7 @@ class HearingNextHearingView(OrdersViewMixin, APIView):
         parameters=[IF_MATCH],
         responses={
             200: NextHearingResultSerializer,
-            **error_responses(errors.ROLE_REQUIRED, errors.HEARING_NOT_STARTED, errors.ORDER_STALE),
+            **error_responses(*STALE_ERRORS, errors.HEARING_NOT_STARTED, *NEXT_HEARING_ERRORS),
         },
     )
     def put(self, request, hearing_id):
@@ -811,8 +858,12 @@ class OrderItemCatalogueView(OrdersViewMixin, APIView):
         return Response(CatalogueItemSerializer(rows, many=True).data)
 
 
-class DiaryEntriesView(OrdersViewMixin, APIView):
-    """``GET /diary-entries/``: every triggered order's diary entry together (#6.6, ``DEN-05``)."""
+class DiaryEntriesView(OrdersViewMixin, GenericAPIView):
+    """``GET /diary-entries/``: every triggered order's diary entry together, a page at a time
+    (#6.6, ``DEN-05``)."""
+
+    serializer_class = DiaryEntryRowSerializer
+    pagination_class = OrdersPagination
 
     @extend_schema(
         parameters=[DiaryEntriesQuerySerializer],
@@ -825,10 +876,13 @@ class DiaryEntriesView(OrdersViewMixin, APIView):
         query = _valid(DiaryEntriesQuerySerializer, request.query_params)
         if not permissions.is_staff(request.user, query["court"]):
             raise permissions.role_error("create")
-        rows = selectors.diary_entries(
-            query["court"], date=query.get("date"), order_type=query.get("state_type", "")
+        page = self.paginate_queryset(
+            selectors.diary_entry_orders(
+                query["court"], date=query.get("date"), order_type=query.get("state_type", "")
+            )
         )
-        return Response(DiaryEntryRowSerializer(rows, many=True).data)
+        rows = selectors.diary_entry_rows(page)
+        return self.get_paginated_response(DiaryEntryRowSerializer(rows, many=True).data)
 
 
 class CaseOrdersView(OrdersViewMixin, APIView):
@@ -861,7 +915,7 @@ class ShortcutViewSet(OrdersViewMixin, viewsets.GenericViewSet):
 
     @extend_schema(
         parameters=[ShortcutQuerySerializer],
-        responses={200: ShortcutSerializer(many=True), **error_responses(errors.ROLE_REQUIRED)},
+        responses=error_responses(errors.ROLE_REQUIRED),
     )
     def list(self, request):
         """The caller's shortcuts, optionally on one screen and by name."""
@@ -880,6 +934,7 @@ class ShortcutViewSet(OrdersViewMixin, viewsets.GenericViewSet):
                 errors.ROLE_REQUIRED,
                 errors.SHORTCUT_NAME_TAKEN.example(field="name"),
                 errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED.example(field="body"),
+                errors.ORDER_TEXT_TOO_LARGE.example(field="body"),
             ),
         },
     )
@@ -902,6 +957,7 @@ class ShortcutViewSet(OrdersViewMixin, viewsets.GenericViewSet):
             **error_responses(
                 errors.SHORTCUT_NAME_TAKEN.example(field="name"),
                 errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED.example(field="body"),
+                errors.ORDER_TEXT_TOO_LARGE.example(field="body"),
             ),
         },
     )
