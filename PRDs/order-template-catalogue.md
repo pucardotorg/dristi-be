@@ -67,29 +67,29 @@ How an order is drafted from this configuration is owned by
 
 | # | Order item | Category | Workflow | Logic | States |
 |---|---|---|---|---|---|
-| 1 | Mandatory submissions and responses | Filings | Creates submission task | || Kerala, Gujarat, Punjab & Haryana |
-| 2 | Referral of case to ADR | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
-| 3 | Scheduling of hearing date | Case management | Schedules next hearing | Offered only when the case has no hearing scheduled, and not in a hearing's own order, where the next date is set under Next hearing. || Kerala, Gujarat, Punjab & Haryana |
-| 4 | Rescheduling of hearing date | Case management | Reschedules hearing | Offered only when the case has a hearing scheduled, and not in a hearing's own order. || Kerala, Gujarat, Punjab & Haryana |
-| 7 | Case transfer | Case management | | || Kerala, Gujarat, Punjab & Haryana |
-| 8 | Case settlement | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
-| 9 | Issue of summons | Process | Triggers the summons workflow | || Kerala, Gujarat, Punjab & Haryana |
-| 10 | Issue of warrants | Process | Triggers the warrant workflow | || Kerala, Gujarat, Punjab & Haryana |
-| 11 | Withdrawal of case | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
-| 12 | Issue of notice | Process | Triggers the notice workflow | || Kerala, Gujarat, Punjab & Haryana |
-| 14 | Cognizance | Case management | | Offered only until cognizance is taken or the case is dismissed. Once either is ordered, neither can be ordered again. || Kerala, Gujarat, Punjab & Haryana |
-| 15 | Judgement | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
-| 16 | Dismiss case | Case management | | Offered only until cognizance is taken or the case is dismissed. Once either is ordered, neither can be ordered again. || Kerala, Gujarat, Punjab & Haryana |
-| 17 | Bail | Filings | Triggers the bail workflow | || Kerala, Gujarat, Punjab & Haryana |
-| 18 | Cost | Miscellaneous | Creates payment task | || Kerala, Gujarat, Punjab & Haryana |
-| 19 | Witness batta | Miscellaneous | Creates a task for the paying party, closed by confirming they have paid — the payment is not made through the system | || Kerala, Gujarat, Punjab & Haryana |
-| 20 | Issue of proclamation | Process | Triggers the proclamation workflow | || Kerala, Gujarat, Punjab & Haryana |
-| 21 | Issue of attachment | Process | Triggers the attachment workflow | || Kerala, Gujarat, Punjab & Haryana |
+| 1 | Mandatory submissions and responses | Filings | Creates submission task | | Kerala, Gujarat, Punjab & Haryana |
+| 2 | Referral of case to ADR | Disposal | | | Kerala, Gujarat, Punjab & Haryana |
+| 3 | Scheduling of hearing date | Case management | Schedules next hearing | Offered only when the case has no hearing scheduled, and not in a hearing's own order, where the next date is set under Next hearing. | Kerala, Gujarat, Punjab & Haryana |
+| 4 | Rescheduling of hearing date | Case management | Reschedules hearing | Offered only when the case has a hearing scheduled, and not in a hearing's own order. | Kerala, Gujarat, Punjab & Haryana |
+| 7 | Case transfer | Case management | | | Kerala, Gujarat, Punjab & Haryana |
+| 8 | Case settlement | Disposal | | | Kerala, Gujarat, Punjab & Haryana |
+| 9 | Issue of summons | Process | Triggers the summons workflow | | Kerala, Gujarat, Punjab & Haryana |
+| 10 | Issue of warrants | Process | Triggers the warrant workflow | | Kerala, Gujarat, Punjab & Haryana |
+| 11 | Withdrawal of case | Disposal | | | Kerala, Gujarat, Punjab & Haryana |
+| 12 | Issue of notice | Process | Triggers the notice workflow | | Kerala, Gujarat, Punjab & Haryana |
+| 14 | Cognizance | Case management | | Offered only until cognizance is taken or the case is dismissed. Once either is ordered, neither can be ordered again. | Kerala, Gujarat, Punjab & Haryana |
+| 15 | Judgement | Disposal | | | Kerala, Gujarat, Punjab & Haryana |
+| 16 | Dismiss case | Case management | | Offered only until cognizance is taken or the case is dismissed. Once either is ordered, neither can be ordered again. | Kerala, Gujarat, Punjab & Haryana |
+| 17 | Bail | Filings | Triggers the bail workflow | | Kerala, Gujarat, Punjab & Haryana |
+| 18 | Cost | Miscellaneous | Creates payment task | | Kerala, Gujarat, Punjab & Haryana |
+| 19 | Witness batta | Miscellaneous | Creates a task for the paying party, closed by confirming they have paid — the payment is not made through the system | | Kerala, Gujarat, Punjab & Haryana |
+| 20 | Issue of proclamation | Process | Triggers the proclamation workflow | | Kerala, Gujarat, Punjab & Haryana |
+| 21 | Issue of attachment | Process | Triggers the attachment workflow | | Kerala, Gujarat, Punjab & Haryana |
 | 22 | Moving case to long pending register | Case management | | Offered only when the case is not in the long pending register. | Kerala |
 | 23 | Moving case out of long pending register | Case management | | Offered only when the case is in the long pending register. | Kerala |
-| 24 | Abate case | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
-| 25 | Issue of miscellaneous process | Process | Triggers the miscellaneous process workflow | || Kerala, Gujarat, Punjab & Haryana |
-| 27 | Application action | Filings | *(see note below)* | Offered only when the case has an application still pending ([`order-generation.md`](order-generation.md) `APL-01`). || Kerala, Gujarat, Punjab & Haryana |
+| 24 | Abate case | Disposal | | | Kerala, Gujarat, Punjab & Haryana |
+| 25 | Issue of miscellaneous process | Process | Triggers the miscellaneous process workflow | | Kerala, Gujarat, Punjab & Haryana |
+| 27 | Application action | Filings | *(see note below)* | Offered only when the case has an application still pending ([`order-generation.md`](order-generation.md) `APL-01`). | Kerala, Gujarat, Punjab & Haryana |
 
 **Application action (#27).** The order item through which an order acts on an application ([`application-lifecycle.md`](application-lifecycle.md) `ALC-32`), at most one per application in an order. When chosen, it asks which application it applies to. It is also added in advance when the order is opened from the application's task, and can be removed (`ALC-32`; [`order-generation.md`](order-generation.md) `ITM-04`). Its questions — whether to onboard the application, whether the order decides it, the outcome (Accepted or Rejected once onboarded; Dismissed before), the CIS outcome, a date, and whether the other party must respond — are owned by `ALC-38`. It covers every application type; the types, and the workflow each triggers on acceptance, are in "Application types" of [`application-lifecycle.md`](application-lifecycle.md). Numbers 5, 6, 13 and 26 are withdrawn and not reused.
 
