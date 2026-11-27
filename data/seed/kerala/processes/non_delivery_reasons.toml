@@ -1,6 +1,11 @@
 # Reasons for a negative outcome (spec 0028 #3.1, DSP-09): a state-configurable
 # list. Kerala's starts from the e-filing list for a returned demand notice
 # (bulk-draft-creation-skill.md); a state edits it in admin.
+#
+# A row may name the process types it is for, by code, e.g.
+#   process_types = ["WARRANT"]
+# A row naming none is for every type, as these are until Kerala's warrant
+# list and other-types list (process.md §13.2, newer than our copy) arrive.
 
 [seed]
 model = "processes.NonDeliveryReason"

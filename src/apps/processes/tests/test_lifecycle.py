@@ -192,3 +192,5 @@ class TestExpiry:
         signed.refresh_from_db()
         assert unsigned.expires_at == conf.start_of(new_day)
         assert signed.expires_at == conf.start_of(HEARING_DAY)  # fixed on signing (EXP-01a)
+        # Both keep the hearing's current date, which the lists sort on.
+        assert unsigned.hearing_date == signed.hearing_date == new_day

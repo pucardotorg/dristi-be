@@ -300,6 +300,8 @@ register(
         model_label="processes.NonDeliveryReason",
         key=("state_code", "code"),
         fields=("state_code", "code", "label", "sequence", "is_active"),
-        order=30,
+        # The process types a reason is for, by code; none for every type.
+        m2m_by_code={"process_types": FkRef("processes.ProcessType", "code")},
+        order=40,
     )
 )

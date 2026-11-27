@@ -14,6 +14,7 @@ drawn from the pool, with a demand for the balance (#6).
 """
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -29,7 +30,7 @@ from apps.hearings.selectors import get_hearing, next_hearing
 from apps.locations.models import Location
 
 from .. import errors
-from ..enums import DestinationKind, Side
+from ..enums import DestinationKind, Side, WarrantType
 from ..models import (
     DESTINATION_FIELDS,
     Process,
@@ -48,6 +49,8 @@ ADDED_CONTACT_TYPES = {
     DestinationKind.EMAIL: ContactType.EMAIL,
     DestinationKind.POSTAL: ContactType.ADDRESS,
 }
+# The process type whose item fields decide its template (catalogue #10).
+WARRANT = "WARRANT"
 
 
 class NewDestinationSerializer(serializers.Serializer):
@@ -74,11 +77,13 @@ class RecipientValuesSerializer(serializers.Serializer):
 
 
 class ItemValuesSerializer(serializers.Serializer):
-    """The shape of a Process-category item's values (#5.1)."""
+    """The shape of a Process-category item's recipients (#5.1).
+
+    Its other fields are carried onto each process as given (``item_fields``);
+    those a rule depends on are checked by ``_item_fields``.
+    """
 
     recipients = RecipientValuesSerializer(many=True, allow_empty=False)
-    notice_type = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    process_type_detail = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 
 @dataclass
@@ -94,12 +99,66 @@ class Planned:
     party_taking_steps: str
     channel: object
     destination: dict
+    item_fields: dict
     added: object = None
     added_path: str = ""
 
 
 def _refuse(error, field, message=None):
     raise BusinessError(error, message, field=f"values.{field}")
+
+
+def _bond_amount(value):
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        amount = None
+    if amount is None or not amount.is_finite() or amount <= 0:
+        _refuse(errors.ITEM_FIELD_INVALID, "bond_amount", "Enter a bond amount above zero.")
+    return str(amount.quantize(Decimal("0.01")))
+
+
+def _sureties(value):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        _refuse(errors.ITEM_FIELD_INVALID, "sureties", "Enter a number of sureties of one or more.")
+    return value
+
+
+def _warrant_fields(fields):
+    """A warrant's type, and for a bailable one its bond amount and sureties (catalogue #10)."""
+    if fields.get("warrant_type") not in WarrantType.values:
+        _refuse(
+            errors.ITEM_FIELD_INVALID,
+            "warrant_type",
+            "Choose whether the warrant is bailable or non-bailable.",
+        )
+    bailable = fields["warrant_type"] == WarrantType.BAILABLE
+    for name, check in (("bond_amount", _bond_amount), ("sureties", _sureties)):
+        if name in fields and not bailable:
+            _refuse(
+                errors.ITEM_FIELD_INVALID,
+                name,
+                "A non-bailable warrant takes no bond amount or sureties.",
+            )
+        if bailable:
+            fields[name] = check(fields.get(name))
+    return fields
+
+
+def _item_fields(process_type, values):
+    """The item's fields other than its recipients, checked where a rule needs them.
+
+    Copied onto every process the item starts (``TPL-03``, ``TPL-04``). An
+    empty field is left out.
+    """
+    fields = {
+        key: value
+        for key, value in values.items()
+        if key != "recipients" and value is not None and value != ""
+    }
+    if process_type.code == WARRANT:
+        fields = _warrant_fields(fields)
+    return fields
 
 
 def _party_taking_steps(recipient, given, path):
@@ -173,6 +232,7 @@ def plan(case_id, process_type, values):
     """
     shape = ItemValuesSerializer(data=values)
     shape.is_valid(raise_exception=True)
+    item_fields = _item_fields(process_type, values)
     recipients = process_recipients(case_id)
     planned = []
     for index, item in enumerate(shape.validated_data["recipients"]):
@@ -195,6 +255,7 @@ def plan(case_id, process_type, values):
                 "recipient_type": kind,
                 "party_taking_steps": side,
                 "channel": channel,
+                "item_fields": item_fields,
             }
             planned += [Planned(**common, destination=fields) for fields in on_record]
             planned += [
@@ -280,7 +341,9 @@ def _build(planned, round_, order_item_id, process_type):
             destination_kind=each.channel.destination_kind,
             destination_added=each.added is not None,
             party_taking_steps=each.party_taking_steps,
+            item_fields=each.item_fields,
             hearing_id=round_.hearing_id,
+            hearing_date=round_.hearing_date,
             expires_at=expires_at(round_.hearing_date),
             status_at=now,
             **each.destination,

@@ -24,22 +24,18 @@ from apps.processes.enums import ProcessStatus
 from apps.processes.models import Process
 from apps.processes.services import issue
 
-SEED = Path(__file__).resolve().parents[4] / "data" / "seed" / "core" / "processes"
+SEED = Path(__file__).resolve().parents[4] / "data" / "seed"
 MOBILE = "+919812345678"
 
 
 def seed_masters():
-    """Load the process masters and Kerala's court fees, as a deployment does."""
-    call_command("seed", str(SEED), verbosity=0)
+    """Load the process masters, then Kerala's, as a Kerala deployment does."""
+    call_command(
+        "seed", str(SEED / "core" / "processes"), str(SEED / "kerala" / "processes"), verbosity=0
+    )
     Configuration.objects.update_or_create(
         config_set="tenant", config_key="state_code", defaults={"config_value": "KL"}
     )
-    for code in ("notice", "summons", "warrant"):
-        Configuration.objects.update_or_create(
-            config_set="processes.kl",
-            config_key=f"court_fee.{code}",
-            defaults={"config_value": "2.00"},
-        )
 
 
 def make_staff(*actions, name="Staff"):
@@ -83,14 +79,27 @@ def recipient(participant, *channels, **values):
     }
 
 
-def start(case, *recipients, item_code="ISSUE_OF_SUMMONS", order_id=None, order_item_id=None, **kw):
-    """Trigger a Process-category order item; return its processes in creation order."""
+def start(
+    case,
+    *recipients,
+    item_code="ISSUE_OF_SUMMONS",
+    order_id=None,
+    order_item_id=None,
+    fields=None,
+    **kw,
+):
+    """Trigger a Process-category order item; return its processes in creation order.
+
+    ``fields`` are the item's other fields; a warrant is non-bailable unless given.
+    """
+    if fields is None and item_code == "ISSUE_OF_WARRANTS":
+        fields = {"warrant_type": "NON_BAILABLE"}
     ids = issue.start_from_order_item(
         case_id=case.pk,
         order_id=order_id or uuid.uuid4(),
         order_item_id=order_item_id or uuid.uuid4(),
         item_code=item_code,
-        values={"recipients": list(recipients)},
+        values={"recipients": list(recipients), **(fields or {})},
         **kw,
     )
     return list(Process.objects.filter(pk__in=ids).order_by("created_at"))

@@ -28,6 +28,9 @@ PARTY_TAKING_STEPS_REQUIRED = define(
 DESTINATION_INVALID = define(
     "E12017", "This is not a valid mobile number, email address or postal address."
 )
+ITEM_FIELD_INVALID = define(
+    "E12020", "This field of the order item is missing or not valid for the process type."
+)
 
 # Steps (#7.1, #8)
 NO_ENVELOPE_FOR_CHANNEL = define("E12009", "This process's channel takes no envelope.", status=409)

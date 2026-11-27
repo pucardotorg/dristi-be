@@ -1,6 +1,7 @@
 # Channels (spec 0028 #3.1, process-handover.md §6.2). `is_available` is
 # Kerala's at launch (§13.1): Email and e-Post come post-launch, Police (NSTEP)
-# never; another state's deployment edits it in admin.
+# never. Each state folder has its own copy with its own availability: seeding
+# only inserts, so availability cannot be layered over a shared copy.
 
 [seed]
 model = "processes.Channel"

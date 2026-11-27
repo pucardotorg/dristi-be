@@ -8,13 +8,14 @@ from django.db.models import Count, Q
 
 from apps.cases.selectors import search_case_ids
 
-from . import steps
+from . import conf, steps
 from .enums import ProcessStatus, Step
-from .models import Process
+from .models import NonDeliveryReason, Process
 
 ORDERINGS = {
     "status_at": "status_at",
-    "hearing_date": "round__hearing_date",
+    # The hearing's current date, not the date at issue (#11.2).
+    "hearing_date": "hearing_date",
     "expires_at": "expires_at",
     "created_at": "created_at",
 }
@@ -64,23 +65,49 @@ def court_processes(user, query):
 def counts(user, court_id):
     """Counts for a screen's tabs and pills, and of the caller's moves.
 
-    ``by_status_channel`` is ``{status: {channel: n}}``, so a screen can count
-    a pill that is one status on some channels, e.g. *To post* is ``SIGNED`` on
-    RPAD and Police (RPAD). ``by_status`` and ``by_channel`` are its totals.
+    ``breakdown`` counts each status, channel and process type together, so a
+    screen can count any pill: *To publish* is ``SIGNED`` proclamations by
+    hand, *To hand over* the other ``SIGNED`` processes by hand.
+    ``by_status_channel`` is ``{status: {channel: n}}``, e.g. *To post* is
+    ``SIGNED`` on RPAD and Police (RPAD); ``by_status`` and ``by_channel`` are
+    its totals.
     """
     rows = Process.objects.filter(round__court_id=court_id)
-    pairs = rows.values_list("status", "channel__code").annotate(n=Count("pk")).order_by()
-    by_status_channel, by_status, by_channel = {}, Counter(), Counter()
-    for status, channel, n in pairs:
-        by_status_channel.setdefault(status, {})[channel] = n
+    cells = (
+        rows.values_list("status", "channel__code", "process_type__code")
+        .annotate(n=Count("pk"))
+        .order_by("status", "channel__code", "process_type__code")
+    )
+    breakdown, by_status_channel = [], {}
+    by_status, by_channel = Counter(), Counter()
+    for status, channel, process_type, n in cells:
+        breakdown.append(
+            {"status": status, "channel": channel, "process_type": process_type, "count": n}
+        )
+        of_status = by_status_channel.setdefault(status, {})
+        of_status[channel] = of_status.get(channel, 0) + n
         by_status[status] += n
         by_channel[channel] += n
     return {
         "by_status": dict(by_status),
         "by_channel": dict(by_channel),
         "by_status_channel": by_status_channel,
+        "breakdown": breakdown,
         "my_moves": rows.filter(steps.my_move_filter(user, court_id)).count(),
     }
+
+
+def non_delivery_reasons(process_type=None):
+    """The state's active reasons; with ``process_type`` (a code), only those for it (``DSP-09``).
+
+    A reason that names no process type is for every type.
+    """
+    rows = NonDeliveryReason.objects.active().filter(state_code=conf.state_code())
+    if process_type:
+        rows = rows.filter(
+            Q(process_types__isnull=True) | Q(process_types__code=process_type)
+        ).distinct()
+    return rows.prefetch_related("process_types")
 
 
 def _runs(rows, *fields):

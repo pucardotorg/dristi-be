@@ -3,17 +3,32 @@
 Errors are asserted by ``code`` and ``field``, never by message (spec 0000 #13).
 """
 
+import datetime
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
 from apps.core.models import Configuration
+from apps.hearings.tests.factories import make_case, make_user, schedule
+from apps.locations.models import Location
+from apps.locations.tests.factories import make_location, make_police_station
 from apps.processes import conf
 from apps.processes import court_actions as actions
 from apps.processes.enums import ProcessStatus
-from apps.processes.models import Process
+from apps.processes.models import NonDeliveryReason, Process, ProcessType
+from apps.processes.services import dispatch, expiry
 
-from .factories import accused, address_ids, make_staff, mark_signed, recipient, start
+from .conftest import HEARING_DAY
+from .factories import (
+    accused,
+    add_mobile,
+    address_ids,
+    make_staff,
+    mark_signed,
+    recipient,
+    start,
+)
 
 BASE = "/api/v1"
 
@@ -46,6 +61,23 @@ class TestList:
         assert rpad["hearing"]["date_at_issue"] == rpad["hearing"]["current_date"] == "2026-11-20"
         assert rpad["case"]["display_number"].startswith("CC/")
         assert rpad["fee"] == {"court_fee": "2.00", "paid": False, "paid_at": None}
+        assert rpad["item_fields"] == {}
+
+    def test_rows_show_the_order_item_s_fields(self, staff, courtroom, case):
+        fields = {"warrant_type": "BAILABLE", "bond_amount": "5000", "sureties": 1}
+        start(
+            case, recipient(accused(case), "BY_HAND"), item_code="ISSUE_OF_WARRANTS", fields=fields
+        )
+
+        (row,) = (
+            client_for(staff).get(f"{BASE}/processes/", {"court": courtroom.pk}).json()["results"]
+        )
+
+        assert row["item_fields"] == {
+            "warrant_type": "BAILABLE",
+            "bond_amount": "5000.00",
+            "sureties": 1,
+        }
 
     def test_my_move_keeps_what_the_caller_can_do_next(self, courtroom, processes):
         receiver = make_staff(actions.RECEIVE_ENVELOPE)
@@ -83,6 +115,53 @@ class TestList:
         body = client_for(staff).get(f"{BASE}/processes/counts/", {"court": courtroom.pk}).json()
 
         assert body["by_status_channel"] == {ProcessStatus.SIGNED: {"SMS": 1, "RPAD": 1}}
+
+    def test_counts_split_by_hand_by_type(self, staff, courtroom, case):
+        """*To publish* and *To hand over* are both SIGNED by hand; the type tells them apart."""
+        for item_code in ("ISSUE_OF_PROCLAMATION", "ISSUE_OF_WARRANTS"):
+            for process in start(case, recipient(accused(case), "BY_HAND"), item_code=item_code):
+                mark_signed(process)
+
+        body = client_for(staff).get(f"{BASE}/processes/counts/", {"court": courtroom.pk}).json()
+
+        signed = ProcessStatus.SIGNED
+        assert body["breakdown"] == [
+            {"status": signed, "channel": "BY_HAND", "process_type": code, "count": 1}
+            for code in ("PROCLAMATION", "WARRANT")
+        ]
+        assert body["by_status_channel"] == {signed: {"BY_HAND": 2}}
+
+    def test_send_act_names_the_screen_s_button(self, staff, courtroom, case):
+        start(case, recipient(accused(case), "SMS", "RPAD"))
+        for item_code in ("ISSUE_OF_PROCLAMATION", "ISSUE_OF_WARRANTS"):
+            start(case, recipient(accused(case), "BY_HAND"), item_code=item_code)
+
+        rows = client_for(staff).get(f"{BASE}/processes/", {"court": courtroom.pk}).json()
+
+        assert {
+            (row["process_type"]["code"], row["channel"]["code"]): row["send_act"]
+            for row in rows["results"]
+        } == {
+            ("SUMMONS", "SMS"): "send",
+            ("SUMMONS", "RPAD"): "mark_posted",
+            ("PROCLAMATION", "BY_HAND"): "mark_published",
+            ("WARRANT", "BY_HAND"): "mark_handed_over",
+        }
+
+    def test_sorted_by_the_hearing_s_current_date(self, staff, courtroom, case, processes):
+        later = make_case(courtroom, complainant_user=make_user(name="Another complainant"))
+        add_mobile(accused(later))
+        schedule(later, HEARING_DAY + datetime.timedelta(days=7))
+        (other,) = start(later, recipient(accused(later), "SMS"))
+        # The first case's hearing moves past the other's.
+        moved_to = HEARING_DAY + datetime.timedelta(days=14)
+        expiry.follow_hearing(hearing_id=processes[0].hearing_id, hearing_date=moved_to)
+        query = {"court": courtroom.pk, "ordering": "hearing_date"}
+
+        rows = client_for(staff).get(f"{BASE}/processes/", query).json()["results"]
+
+        assert [row["id"] for row in rows][0] == str(other.pk)
+        assert rows[-1]["hearing"]["date_at_issue"] == HEARING_DAY.isoformat()
 
     @pytest.mark.parametrize(
         ("flag", "value", "channels"),
@@ -377,6 +456,22 @@ class TestOrderRecipients:
 
         assert not any(row["preselected"] for row in rows)
 
+    def test_the_police_station_of_an_earlier_round_is_prefilled(self, staff, case):
+        kerala = make_location(
+            code="IN_KERALA", name="Kerala", location_type=Location.LocationType.STATE
+        )
+        station = make_police_station(kerala)
+        start(
+            case,
+            recipient(accused(case), "POLICE_RPAD", police_station=station.code),
+            item_code="ISSUE_OF_WARRANTS",
+        )
+
+        rows = {row["type"]: row for row in client_for(staff).get(self.url(case)).json()["data"]}
+
+        assert rows["ACCUSED"]["police_station"] == {"code": station.code, "name": station.name}
+        assert rows["COMPLAINANT"]["police_station"] is None
+
     def test_a_party_cannot_read_the_contacts(self, complainant_user, case):
         response = client_for(complainant_user).get(self.url(case))
 
@@ -415,4 +510,37 @@ class TestMasters:
     def test_non_delivery_reasons_of_the_state(self, stranger):
         reasons = client_for(stranger).get(f"{BASE}/non-delivery-reasons/").json()["data"]
 
-        assert reasons[0] == {"code": "ADDRESSEE_NOT_AVAILABLE", "label": "Addressee not available"}
+        assert reasons[0] == {
+            "code": "ADDRESSEE_NOT_AVAILABLE",
+            "label": "Addressee not available",
+            "process_types": [],
+        }
+
+
+class TestReasonsPerType:
+    @pytest.fixture
+    def absconding(self):
+        reason = NonDeliveryReason.objects.create(
+            state_code="KL", code="ABSCONDING", label="Absconding", sequence=10
+        )
+        reason.process_types.set([ProcessType.objects.get(code="WARRANT")])
+        return reason
+
+    @pytest.mark.parametrize(("process_type", "listed"), [("WARRANT", True), ("SUMMONS", False)])
+    def test_the_list_for_a_type(self, stranger, absconding, process_type, listed):
+        response = client_for(stranger).get(
+            f"{BASE}/non-delivery-reasons/", {"process_type": process_type}
+        )
+
+        codes = [reason["code"] for reason in response.json()["data"]]
+        assert ("ABSCONDING" in codes) is listed
+        assert "REFUSED" in codes  # names no type, so is for every type
+
+    def test_an_outcome_takes_only_a_reason_for_its_type(self, staff, processes, absconding):
+        rpad = mark_signed(processes[1])
+        dispatch.send(process_id=rpad.pk, actor=staff)
+        body = {"status": ProcessStatus.NOT_DELIVERED, "reason": "ABSCONDING"}
+
+        response = client_for(staff).post(f"{BASE}/processes/{rpad.pk}/outcome/", body)
+
+        assert (response.status_code, error(response)) == (400, ("E12014", "reason"))

@@ -186,6 +186,62 @@ class TestValidation:
         assert not ProcessRound.objects.exists()
 
 
+class TestItemFields:
+    """The item's other fields ride on every process it starts (``TPL-03``, ``TPL-04``)."""
+
+    def test_every_process_of_the_item_carries_them(self, case):
+        fields = {"notice_type": "DELAY_CONDONATION", "process_type_detail": ""}
+
+        processes = start(
+            case,
+            recipient(accused(case), "SMS", "RPAD"),
+            item_code="ISSUE_OF_NOTICE",
+            fields=fields,
+        )
+
+        assert len(processes) == 2
+        assert all(p.item_fields == {"notice_type": "DELAY_CONDONATION"} for p in processes)
+
+    def test_a_bailable_warrant_keeps_its_bond_and_sureties(self, case):
+        fields = {"warrant_type": "BAILABLE", "bond_amount": 10000, "sureties": 2}
+
+        (process,) = start(
+            case, recipient(accused(case), "BY_HAND"), item_code="ISSUE_OF_WARRANTS", fields=fields
+        )
+
+        assert process.item_fields == {
+            "warrant_type": "BAILABLE",
+            "bond_amount": "10000.00",
+            "sureties": 2,
+        }
+
+    @pytest.mark.parametrize(
+        ("fields", "field"),
+        [
+            ({}, "warrant_type"),
+            ({"warrant_type": "MAYBE"}, "warrant_type"),
+            ({"warrant_type": "BAILABLE", "sureties": 2}, "bond_amount"),
+            ({"warrant_type": "BAILABLE", "bond_amount": "0", "sureties": 2}, "bond_amount"),
+            ({"warrant_type": "BAILABLE", "bond_amount": "lots", "sureties": 2}, "bond_amount"),
+            ({"warrant_type": "BAILABLE", "bond_amount": "500"}, "sureties"),
+            ({"warrant_type": "BAILABLE", "bond_amount": "500", "sureties": 0}, "sureties"),
+            ({"warrant_type": "BAILABLE", "bond_amount": "500", "sureties": "2"}, "sureties"),
+            ({"warrant_type": "NON_BAILABLE", "bond_amount": "500"}, "bond_amount"),
+            ({"warrant_type": "NON_BAILABLE", "sureties": 1}, "sureties"),
+        ],
+    )
+    def test_a_warrant_s_fields_are_checked(self, case, fields, field):
+        code, path = refusal(
+            case,
+            recipient(accused(case), "BY_HAND"),
+            item_code="ISSUE_OF_WARRANTS",
+            fields=fields,
+        )
+
+        assert (code, path) == ("E12020", f"values.{field}")
+        assert not Process.objects.exists()
+
+
 class TestFees:
     def test_without_a_pool_each_process_gets_a_demand_item(self, case):
         processes = start(case, recipient(accused(case), "SMS", "RPAD"))

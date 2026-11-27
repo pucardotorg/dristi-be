@@ -6,7 +6,7 @@ Proposed
 
 ## References
 
-- PRDs: `process.md` v14.4 (§3.1, §3.2, `PRC-`, `AUT-`, `TPL-01`, `TPL-02`, §6.2, §6.3, `FEE-`, `STP-`, `SGN-`, `DSP-`, §10.1, `EXP-`, `PIA-01`, §13, §15, `Q-15`, `Q-16`), `court-roles.md` (`RLE-02a`, `RLE-04`, `RLE-06`, `RLE-07`, `RLE-08`, `RLE-09`, §2), `order-template-catalogue.md` (#9, #10, #12, #20, #21, #25), `pending-task-drafts.md` (§4–§8), `pending-tasks.md`, `case-lifecycle.md` (§4), `efiling.md` (§19.2), `view-case.md` v1.76 (§7, `SVC-`), `signing-methods.md` (`SGM-`), `payment-logic.md` v2.7 (`PMT-04`, §4)
+- PRDs: `process.md` v14.4 (§3.1, §3.2, `PRC-`, `AUT-`, `TPL-01`–`TPL-04`, §6.2, §6.3, `FEE-`, `STP-`, `SGN-`, `DSP-`, §10.1, `EXP-`, `PIA-01`, §13, §15, `Q-15`, `Q-16`), `court-roles.md` (`RLE-02a`, `RLE-04`, `RLE-06`, `RLE-07`, `RLE-08`, `RLE-09`, §2), `order-template-catalogue.md` (#9, #10 with warrant type, bond amount and sureties, #12 with notice type, #20, #21, #25), `pending-task-drafts.md` (§4–§8), `pending-tasks.md`, `case-lifecycle.md` (§4), `efiling.md` (§19.2), `view-case.md` v1.76 (§7, `SVC-`), `signing-methods.md` (`SGM-`), `payment-logic.md` v2.7 (`PMT-04`, §4)
 - Specs: [`0029`](0029-court-roles.md) — court actions, roles and scope; every access check here goes through it (#2)
 
 > **Scope note.** A summons and a warrant are two **process types** of one
@@ -104,7 +104,7 @@ The PRD fixes the rules:
 * One process per recipient, per channel, per address. A company and each person in charge are separate recipients (`PRC-02`).
 * The destination comes from the recipient's own record, or on a police channel from the entered police station. An Order data filler may add a new destination on the order screen; it is saved to the recipient's record for later rounds. A channel is blocked only where the recipient has no destination of its kind and none is added (`PRC-05`).
 * The process's hearing is the one set in the same order, or else the case's existing next hearing. A change to the hearing's date changes nothing on the process except an unsigned process's expiry; screens look up the latest date from the case (`PRC-06`).
-* The document's template is set by process type, recipient and channel; one template serves every channel unless a channel has its own (`TPL-01`, `TPL-02`).
+* The document's template is set by process type, recipient and channel and, where configured, an order item field's value, e.g. a bailable and a non-bailable warrant; one template serves every channel unless a channel has its own (`TPL-01`, `TPL-02`). A template may use any process attribute, including the order item's fields, which are also shown wherever processes are listed (`TPL-03`, `TPL-04`).
 * The system fills in and preselects whatever it can and never guesses (`AUT-01`–`AUT-09`).
 * The court fee is flat per process type, drawn from one pool per case; only the balance is collected, from the party directed to take steps, and nothing is refunded (`FEE-01`, `FEE-04`–`FEE-08`).
 * An RPAD or Police (RPAD) process needs its own envelope, received by an Envelope receiver, before it can be signed (`STP-01`–`STP-03`).
@@ -466,6 +466,13 @@ All seeded by the `seed` command ([`0025`](0025-data-seeding-command.md)) from
 the deployment's data files, registered as `SeedSpec`s, and edited in admin.
 Retired with `is_active = False`, never deleted.
 
+Process types are the same in every state and are seeded from
+`data/seed/core/processes/`. What a state decides is seeded from its own
+folder after `core/`, e.g. `data/seed/kerala/processes/`: the channels with
+their availability, the type × channel matrix (which names them), the
+non-delivery reasons and the court fees. Seeding only inserts, so a state's
+channel availability cannot be layered over a shared copy.
+
 **`ProcessType`** — `process.md` §2.
 
 | Field | Type | Notes |
@@ -485,12 +492,17 @@ process (`TPL-01`, `TPL-02`).
 | `process_type` | `FK(ProcessType, on_delete=PROTECT)` | |
 | `recipient_type` | `CharField(32, choices=RecipientType)` | |
 | `channel` | `FK(Channel, null=True, on_delete=PROTECT)` | `NULL` is the template for every channel |
+| `item_field` | `CharField(64, blank=True)` | an order item field the template depends on, e.g. `warrant_type`; empty for any |
+| `item_value` | `CharField(64, blank=True)` | the value it applies to, e.g. `BAILABLE` |
 | `pdf_template_key` | `CharField(100)` | a `PDFTemplate` key, e.g. `process-summons-accused` |
 
-`UniqueConstraint(process_type, recipient_type, channel)`, `nulls_distinct=False`.
-One row with `channel = NULL` is created per type and recipient; a row for a
-channel is added only where that channel has its own (`TPL-02`). Their content
-is `Q-16`.
+`UniqueConstraint(process_type, recipient_type, channel, item_field, item_value)`,
+`nulls_distinct=False`. One row with `channel = NULL` is created per type and
+recipient; a row for a channel is added only where that channel has its own
+(`TPL-02`). A row with an item field applies only where the process's
+`item_fields` hold that value (`TPL-01`): the warrant has one for
+`warrant_type = BAILABLE`, which prints the bond amount and sureties, and one
+for `NON_BAILABLE`. Their content is `Q-16`. Built with signing.
 
 **`Channel`** — `process.md` §6.2, §13.1.
 
@@ -523,7 +535,10 @@ anywhere (`PRC-08`). At launch it does not work out a station from an address
 §15). The data is yet to be received (`Q-15`).
 
 **`NonDeliveryReason`** — the state-configurable reason list for a negative
-outcome (`DSP-09`): `state_code`, `code`, `label`, `sequence`.
+outcome (`DSP-09`): `state_code`, `code`, `label`, `sequence`, and
+`process_types` (`M2M(ProcessType, blank=True)`): the types it is for, e.g. a
+warrant's list and the other types' list; a reason naming none is for every
+type. An outcome's reason must be one for the process's type (`400 E12014`).
 `UniqueConstraint(state_code, code)`.
 
 #### 3.2 `ProcessRound`
@@ -556,8 +571,10 @@ All the processes one order triggers (`process.md` §3, `SVC-04`).
 | `destination_added` | `BooleanField(default=False)` | the destination was added on the order screen rather than taken from the record (`PRC-05`) |
 | `police_station` | `FK(PoliceStation, null=True, on_delete=PROTECT)` | police channels (`PRC-03`) |
 | `party_taking_steps` | `CharField(16, choices=Side)` | `COMPLAINANT`, `ACCUSED` (`PRC-07`) |
+| `item_fields` | `JSONField(default=dict)` | every other field of the triggering order item, e.g. a warrant's `warrant_type`, `bond_amount` and `sureties`, or a notice's `notice_type`; empty ones left out; set at start, never changed (§3.1, `TPL-03`, `TPL-04`) |
 | `hearing_id` | `UUIDField(null=True)` | the round's hearing, kept on the row for expiry; never changed after start (`process.md` §3.1) |
-| `template` | `FK(ProcessTemplate, on_delete=PROTECT)` | resolved at creation (`TPL-01`, `TPL-02`) |
+| `hearing_date` | `DateField(null=True)` | that hearing's current date: the round's at start, then moved by `hearing_rescheduled` for every process of the hearing, signed or not; the lists sort on it (#11.2) |
+| `template` | `FK(ProcessTemplate, null=True, on_delete=PROTECT)` | the template the document was rendered with, set at render (`TPL-01`, `TPL-02`); added with signing |
 | `status` | `CharField(24, choices=ProcessStatus)` | #4 |
 | `status_at` | `DateTimeField` | `DSP-04` |
 | `remark` | `TextField(blank=True)` | the outcome comment, or the last error (`DSP-04`, `DSP-08`) |
@@ -713,16 +730,23 @@ The item's values, per recipient (`order-template-catalogue.md` #9, #10, #12,
       "police_station": null
     }
   ],
-  "notice_type": null,
-  "process_type_detail": null
+  "warrant_type": "BAILABLE",
+  "bond_amount": "10000.00",
+  "sureties": 2
 }
 ```
 
 `new_destinations` are destinations an Order data filler added on the order
 screen — a mobile number, an email address or a postal address (`PRC-05`).
 
-`notice_type` belongs to *Issue of notice*, `process_type_detail` to *Issue of
-miscellaneous process*; both are printed on the document.
+Every key but `recipients` is one of the item's other fields, copied as given
+onto each process it starts (`Process.item_fields`). *Issue of warrants* (#10)
+has `warrant_type` (`BAILABLE`, `NON_BAILABLE`) and, for a bailable warrant
+only, `bond_amount` (above zero, kept to two decimals) and `sureties` (a
+whole number, one or more). *Issue of notice* (#12) has `notice_type`, e.g.
+*Delay condonation notice*; *Issue of miscellaneous process* has
+`process_type_detail`. All are printed on the document where its template
+uses them (`TPL-03`).
 
 #### 5.2 Validation
 
@@ -732,6 +756,7 @@ miscellaneous process*; both are printed on the document.
 * no channel, or a channel not available in the deployment or not allowed for the type (`PRC-03`, `PRC-04`, §6.3) — `E12003`;
 * a channel for which the recipient has no destination of its kind on the record and none is added (`PRC-05`) — `E12004`;
 * an added destination of the wrong shape — an invalid mobile number, email or address — `E12017`;
+* a warrant with no `warrant_type` or an unknown one; a bailable warrant without a valid `bond_amount` or `sureties`; a non-bailable warrant with either — `E12020`, `field = values.<field>`;
 * a police channel without a police station, or with one not in the master (`PRC-03`, `PRC-08`) — `E12005`;
 * no party directed to take steps where the system cannot work it out (`AUT-03`) — `E12006`.
 
@@ -743,7 +768,7 @@ idempotent on `run_id` and on `processes_one_per_destination`:
 1. Lock the case's round row: get or create the `ProcessRound` for `order_id`. Its hearing is `hearing_id` when the order sets a new hearing date, else `next_hearing(case)` at that moment (`PRC-06`).
 2. Save each of `new_destinations` to the recipient's record through `apps.cases.services.add_recipient_destination`, so later rounds offer it (`PRC-05`).
 3. For each recipient, each channel, and each destination of that channel's kind the order chose or added — each address for `POSTAL`, the mobile or email for `MOBILE` / `EMAIL`, the one police station for `POLICE_STATION` — create a process (`PRC-02`, `PRC-05`). Postal channels take one process per address; a recipient with no destination of a channel's kind gets none on it.
-4. Resolve the template: the row for the type, recipient type and channel, else the type and recipient type's all-channel row (`TPL-02`). Set `expires_at` (#8.6) and the court fee (#6.2).
+4. Copy the item's other fields onto each process (`item_fields`). Set `expires_at` (#8.6) and the court fee (#6.2). The template is resolved at render (#7.2).
 5. Draw the round's fee from the pool and raise a demand for the balance (#6).
 6. Open each process's tasks (#10.1); set `PENDING_STEPS` or `PENDING_SIGNATURE`.
 7. Dispatch `<TYPE>_TRIGGERED` for the type's secondary stage (#10.3).
@@ -842,7 +867,7 @@ POST /api/v1/processes/{id}/sign/
 `process.sign` for the type and channel, `PENDING_SIGNATURE`:
 
 1. `method` is enabled for the state (`signing-methods.md` `SGM-05`; `400 E12010`).
-2. Render the document with the process's `template` — set by process type, recipient and channel, falling back to the type and recipient's all-channel template (`TPL-01`, `TPL-02`) — with the case, the recipient, the destination, and the hearing's date and purpose as they stand at render. Store it with `apps.files`; set `signing_file_id`.
+2. Render the document with the process's template — the most specific row for its type and recipient type: channel and item field matched, then channel, then item field, then the all-channel row (`TPL-01`, `TPL-02`) — with the case, the recipient, the destination, `item_fields`, and the hearing's date and purpose as they stand at render (`TPL-03`). Store it with `apps.files`; set `signing_file_id`.
 3. Start e-sign through the `apps.esign` initiation service with `entity_type` the process type (`SUMMONS`, `WARRANT`, `NOTICE`, or `OTHER` for the rest until 0015's enum gains them), `entity_id = process.id`. Return the form fields unchanged ([`0015`](0015-cdac-esign.md) #6.1).
 
 `POST /processes/{id}/sign/confirm/ {"transaction_id"}` records the signature,
@@ -1169,10 +1194,13 @@ published; that is one process at a time.
 returns each complainant, accused and witness with `type`, `name`,
 `party_taking_steps` (null where it must be chosen, `AUT-03`), `preselected`
 (`AUT-05`: the accused where there is exactly one and no accused has joined —
-claimed their record), `mobiles`, `emails` and `addresses`. `AUT-06` (the
-unexamined witness) waits for examination to be recorded; `AUT-04` (police
-station) waits on question 2. Court staff only: the contacts are not a
-party's to read.
+claimed their record), `mobiles`, `emails`, `addresses` and
+`police_station`. `police_station` (`AUT-04`) is the station of the
+recipient's latest process on a police channel on the case, else null: a
+police process names a station, not an address, so it is held per recipient,
+not per address; one typed at e-filing waits on question 2. `AUT-06` (the
+unexamined witness) waits for examination to be recorded. Court staff only:
+the contacts are not a party's to read.
 
 #### 11.2 `GET /api/v1/processes/`
 
@@ -1188,7 +1216,7 @@ party's to read.
 | `fee_paid` | `true` / `false` |
 | `case`, `round`, `hearing` | UUIDs |
 | `search` | case number, title or recipient name |
-| `ordering` | default `status_at`; also `hearing_date` (the date at issue, #3.2), `expires_at`, `created_at`, each with `-` for descending |
+| `ordering` | default `status_at`; also `hearing_date` (the hearing's current date, `Process.hearing_date`), `expires_at`, `created_at`, each with `-` for descending |
 | `page`, `page_size` | project pagination, max 100 |
 
 ```json
@@ -1201,6 +1229,7 @@ party's to read.
       "round": { "id": "…", "order_id": "…" },
       "hearing": { "id": "…", "date_at_issue": "2026-11-20", "current_date": "2026-11-27" },
       "process_type": { "code": "WARRANT", "label": "Warrant" },
+      "item_fields": { "warrant_type": "BAILABLE", "bond_amount": "10000.00", "sureties": 2 },
       "recipient": { "type": "ACCUSED", "id": "…", "name": "Anand Kumar", "role_label": "Accused 1" },
       "channel": { "code": "POLICE_NSTEP", "label": "Police (NSTEP)", "send_mode": "SYSTEM", "status_mode": "SYSTEM" },
       "destination": { "kind": "POLICE_STATION", "police_station": { "code": "KL_ERN_CENTRAL", "name": "Ernakulam Central" } },
@@ -1209,12 +1238,29 @@ party's to read.
       "status_at": "2026-11-04T11:02:00+05:30",
       "expires_at": "2026-11-20T00:00:00+05:30",
       "fee": { "court_fee": "2.00", "paid": true },
-      "allowed_actions": ["send", "recall"]
+      "allowed_actions": ["send", "recall"],
+      "send_act": "send"
     }
   ],
   "meta": { "...": "standard envelope" }
 }
 ```
+
+`item_fields` are the triggering order item's other fields, e.g. a warrant's
+type, bond amount and sureties, on every process row: the lists, the detail,
+the case register and the bulk results (`TPL-04`).
+
+`send_act` names what `send` is on the screen, by channel and type:
+`mark_posted` (RPAD, e-Post, Police (RPAD)), `mark_handed_over` (by hand),
+`mark_published` (a proclamation by hand; send `{"published": true}`) or
+`send` (a system channel). Each is `POST /processes/{id}/send/`;
+`allowed_actions` stays one entry per endpoint.
+
+`GET /processes/counts/` returns `by_status`, `by_channel`,
+`by_status_channel` (`{status: {channel: n}}`), `my_moves`, and `breakdown`:
+`[{status, channel, process_type, count}]`, for a pill that also splits by
+type, e.g. *To publish* (`SIGNED`, `BY_HAND`, `PROCLAMATION`) against *To hand
+over* (`SIGNED`, `BY_HAND`, any other type).
 
 `allowed_actions` combines the status, the channel's modes and the caller's
 scoped actions, so the screen offers only what the caller may do (`RLE-07`).
@@ -1250,7 +1296,7 @@ demand; the envelope task to the process.
 | --- | --- | --- | --- |
 | GET | `/process-types/` | active types with their channels for this deployment | any registered user |
 | GET | `/police-stations/?state=&search=` | the master (`PRC-08`) | any registered user |
-| GET | `/non-delivery-reasons/?state=` | the reason list (`DSP-09`) | court staff |
+| GET | `/non-delivery-reasons/?process_type=` | the deployment's reason list, each with its `process_types`; with `process_type`, only the reasons for it (`DSP-09`) | court staff |
 | POST | `/processes/channels/{channel}/_callback` | system status reports (#9.3) | public; trust from the backend |
 
 #### 11.5 Permissions
@@ -1300,11 +1346,12 @@ and `11` are taken by the hearings and court orders specs.
 | `E12017` | `DESTINATION_INVALID` | 400 | a destination added on the order screen is not a valid mobile number, email or postal address (`PRC-05`); `field = values.recipients[i].new_destinations[j]` |
 | `E12018` | `OUTCOME_DATE_INVALID` | 400 | `outcome_date` in the future or before the process was sent; `field = outcome_date` |
 | `E12019` | `OUTCOME_FILE_INVALID` | 400 | `file_id` is not a file uploaded for this process through `outcome-file`; `field = file_id` |
+| `E12020` | `ITEM_FIELD_INVALID` | 400 | an order item field a rule depends on is missing or invalid, e.g. a warrant's type, or a bailable warrant's bond amount or sureties (#5.2); `field = values.<field>` |
 
 Rules:
 
 * Released codes never change meaning and are never reused.
-* `E12002`–`E12006` and `E12017` are raised in-process to the orders module, which surfaces them on its own endpoints with `field` under the item's `values`.
+* `E12002`–`E12006`, `E12017` and `E12020` are raised in-process to the orders module, which surfaces them on its own endpoints with `field` under the item's `values`.
 * Every endpoint declares its codes with `error_responses(...)` ([`0000`](0000-api-coding-spec.md) #10.1).
 * A process the caller may not see is `404 E00105`, never a processes code.
 
@@ -1396,16 +1443,17 @@ The six master tables are added to `CACHALOT_ONLY_CACHABLE_TABLES`
 ### 13. Testing
 
 * **Fan-out:** one process per recipient, channel and address; a company and its persons in charge as separate recipients; several addresses on RPAD give several processes; a recipient with no mobile gets no SMS process; a redelivered trigger creates nothing; one round per order.
-* **Validation:** each of `E12002`–`E12006`, including a proclamation to a witness and a notice on a police channel.
+* **Validation:** each of `E12002`–`E12006`, including a proclamation to a witness and a notice on a police channel; `E12020` for a warrant with no or an unknown `warrant_type`, a bailable warrant without a bond amount above zero or sureties of one or more, and a non-bailable warrant with either; nothing is created.
+* **Item fields:** the item's other fields are copied onto every process it starts, empty ones left out, and never change; a bailable warrant keeps its bond amount (two decimals) and sureties; `item_fields` is on every process row.
 * **Destinations:** an added mobile, email or address creates its process and is saved to the recipient's record, offered in the next round; a channel with no destination on the record is accepted when one is added and refused otherwise; an invalid added destination refused (`E12017`).
-* **Templates:** a channel's own template is used where one exists, else the type and recipient's all-channel template.
+* **Templates:** a channel's own template is used where one exists, else the type and recipient's all-channel template; a row with an item field applies only where the process's `item_fields` hold that value, and wins over one without (a bailable and a non-bailable warrant each get their own; the bailable one prints the bond amount and sureties).
 * **Defaults:** each `AUT-` rule — one accused preselected, several none; after joining, the one unexamined witness; every address; the channels marked Default per type, with only the police channel the deployment runs; party taking steps per recipient; a police station from an earlier round, from e-filing by exact name, otherwise blank.
 * **Fees:** prepaid filing fees cover a round with no task; a partial pool covers processes in creation order; the balance becomes one item per process; a zero fee needs no payment; the remainder stays in the pool; payment moves only the paid processes; `PENDING` never counts.
 * **Steps:** RPAD waits for its own envelope and fee in either order; SMS in the same round does not wait; only a holder of `process.receive_envelope` for the type and channel records receipt.
 * **Signing:** refused before fee and envelope; only a holder of `process.sign` for that type and channel signs — one scoped to summons cannot sign a warrant; the e-sign authorizer refuses the same; each process gets its own signature and event; sign-and-send only with both `process.sign` and `process.send` on a System send channel, recording `SIGNED` and `SENT` at the same time.
 * **Send and status:** manual send by a holder of `process.send`; system send through a stub backend, a failed send to `ERRORED`, transient retried; a Manual send channel never reaches `ERRORED`; outcome by a holder of `process.record_outcome` only on Manual status channels; system status updates and expiry need no user and record no actor; negative outcome needs a reason; callback trusted only through the backend; poll applies reports; a report on a terminal process ignored; labels *Executed* / *Not executed* for warrants.
 * **Proclamation:** By hand only; *Mark as published* with `process.send` alone records `SENT` and *Executed* together, with no `process.record_outcome` check and no outcome task.
-* **Lists and outcome date:** filter by reason; sort by hearing date at issue; `outcome_date` stored apart from `status_at`, refused in the future or before sending (`E12018`); fee paid date per process.
+* **Lists and outcome date:** filter by reason; sort by the hearing's current date, which follows a reschedule; `outcome_date` stored apart from `status_at`, refused in the future or before sending (`E12018`); fee paid date per process.
 * **Resend and recall:** only `ERRORED` resends, as the same process, with `process.send`; recall needs `process.recall`, and `process.send` alone does not recall; a bulk recall with one process outside the caller's scope recalls nothing; recall before send never dispatches and cancels an unpaid item; recall after a system send calls the backend; outcomes refuse recall; tasks expire.
 * **Expiry:** 00:00 IST on the hearing date; moves with the hearing before signing, fixed after; the sweep expires `PENDING_STEPS`, `PENDING_SIGNATURE`, `SIGNED` and `ERRORED` processes and closes their tasks; a `SENT` process past its date is left alone; never dispatched after expiry.
 * **Hearing:** the order's new hearing, else the case's next hearing at trigger; a later move changes nothing on the process but an unsigned expiry; lists return the date at issue and the current date.
@@ -1461,7 +1509,7 @@ cd src && python manage.py check
 9. When will the police-station master data be received (`Q-15`)?
 10. What is the PDF template for each process type (`Q-16`)?
 11. A sent process never expires (`EXP-02`). Should a sent process with no outcome long after its hearing be shown to the court, so it is not forgotten?
-12. Lists show and sort by the hearing's date at issue (`ProcessRound.hearing_date`). Should they use the hearing's current date instead (`PRC-06` allows either)? Sorting by it needs a batched hearing-date read from `apps.hearings`.
+12. ~~Sort by the date at issue or the current date?~~ Resolved: the lists sort by the hearing's current date, kept on the process (`Process.hearing_date`); rows show both.
 13. The register's *Status date* (`SVC-13`) for an outcome: the day it was recorded (`status_at`) or the day it happened (`outcome_date`)?
 
 ---

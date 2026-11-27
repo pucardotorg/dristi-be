@@ -8,7 +8,7 @@ is no create: processes come from orders (``services.issue``).
 import uuid
 
 from django.core.exceptions import ObjectDoesNotExist
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -20,8 +20,8 @@ from apps.api.schema import error_responses
 from apps.cases.selectors import get_case_summaries
 from apps.hearings.selectors import hearing_dates
 
-from . import conf, errors, permissions, recipients, selectors
-from .models import NonDeliveryReason, ProcessType
+from . import errors, permissions, recipients, selectors
+from .models import ProcessType
 from .serializers import (
     BulkResultSerializer,
     CourtQuerySerializer,
@@ -38,6 +38,7 @@ from .serializers import (
     ProcessRegisterEntrySerializer,
     ProcessSerializer,
     ProcessTypeSerializer,
+    ReasonQuerySerializer,
     RecallSerializer,
     SendSerializer,
 )
@@ -314,11 +315,13 @@ class ProcessTypeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     queryset = ProcessType.objects.active().prefetch_related("type_channels__channel")
 
 
+@extend_schema_view(list=extend_schema(parameters=[ReasonQuerySerializer]))
 class NonDeliveryReasonViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
-    """The state's reasons for a negative outcome (``DSP-09``)."""
+    """The state's reasons for a negative outcome; with ``process_type``, those for it (``DSP-09``)."""
 
     serializer_class = NonDeliveryReasonSerializer
     pagination_class = None
 
     def get_queryset(self):
-        return NonDeliveryReason.objects.active().filter(state_code=conf.state_code())
+        query = _valid(ReasonQuerySerializer, self.request.query_params)
+        return selectors.non_delivery_reasons(query.get("process_type"))

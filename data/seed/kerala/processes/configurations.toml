@@ -1,0 +1,24 @@
+# Kerala's court fee per process type (spec 0028 #12.3, payment-logic.md §4,
+# process-handover.md §13.2): ₹2 for notice, summons and warrant; a type with
+# no entry costs nothing. Read as processes.<state_code>.court_fee.<type>.
+
+[seed]
+model = "core.Configuration"
+
+[[rows]]
+config_set = "processes.kl"
+config_key = "court_fee.notice"
+config_value = "2.00"
+description = "Court fee for one notice in Kerala (FEE-01)."
+
+[[rows]]
+config_set = "processes.kl"
+config_key = "court_fee.summons"
+config_value = "2.00"
+description = "Court fee for one summons in Kerala (FEE-01)."
+
+[[rows]]
+config_set = "processes.kl"
+config_key = "court_fee.warrant"
+config_value = "2.00"
+description = "Court fee for one warrant in Kerala (FEE-01)."

@@ -17,7 +17,7 @@ from apps.cases.serializers import AddressSerializer, CodeLabelSerializer
 from apps.files.documents import document_error
 
 from . import steps
-from .enums import OUTCOME_STATUS_CHOICES, ProcessStatus, RecipientType, Side
+from .enums import OUTCOME_STATUS_CHOICES, ProcessStatus, RecipientType, SendAct, Side
 from .models import Channel, NonDeliveryReason, ProcessEvent, ProcessType
 
 # Input
@@ -57,6 +57,11 @@ class ListQuerySerializer(serializers.Serializer):
 
 class CourtQuerySerializer(serializers.Serializer):
     court = serializers.UUIDField()
+
+
+class ReasonQuerySerializer(serializers.Serializer):
+    # Only the reasons for this process type, e.g. ``WARRANT``.
+    process_type = serializers.CharField(required=False)
 
 
 class SendSerializer(serializers.Serializer):
@@ -212,6 +217,8 @@ class ProcessSerializer(serializers.Serializer):
     channel = ChannelSerializer()
     destination = ProcessDestinationSerializer(source="*")
     party_taking_steps = serializers.CharField()
+    # The order item's other fields, e.g. ``warrant_type``, ``bond_amount``, ``sureties`` (``TPL-04``).
+    item_fields = serializers.DictField(read_only=True)
     status = serializers.CharField()
     status_label = serializers.CharField()
     status_at = serializers.DateTimeField()
@@ -227,6 +234,8 @@ class ProcessSerializer(serializers.Serializer):
     outcome_file_id = serializers.CharField()
     signed_file_id = serializers.CharField()
     allowed_actions = serializers.SerializerMethodField()
+    # What ``send`` in ``allowed_actions`` is on the screen: posted, handed over, published.
+    send_act = serializers.ChoiceField(choices=SendAct.choices, read_only=True)
 
     @extend_schema_field(ProcessCaseSerializer)
     def get_case(self, process):
@@ -270,6 +279,13 @@ class ProcessRegisterEntrySerializer(serializers.Serializer):
     groups = ProcessRegisterGroupSerializer(many=True)
 
 
+class ProcessCountCellSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    channel = serializers.CharField()
+    process_type = serializers.CharField()
+    count = serializers.IntegerField()
+
+
 class ProcessCountsSerializer(serializers.Serializer):
     by_status = serializers.DictField(child=serializers.IntegerField())
     by_channel = serializers.DictField(child=serializers.IntegerField())
@@ -277,6 +293,8 @@ class ProcessCountsSerializer(serializers.Serializer):
     by_status_channel = serializers.DictField(
         child=serializers.DictField(child=serializers.IntegerField())
     )
+    # Every status, channel and type counted together: a pill that also splits by type.
+    breakdown = ProcessCountCellSerializer(many=True)
     my_moves = serializers.IntegerField()
 
 
@@ -299,6 +317,8 @@ class OrderRecipientSerializer(serializers.Serializer):
     mobiles = serializers.ListField(child=serializers.CharField())
     emails = serializers.ListField(child=serializers.CharField())
     addresses = AddressSerializer(many=True)
+    # The station used for them in an earlier round, to pre-fill (``AUT-04``).
+    police_station = PoliceStationSerializer(allow_null=True)
 
 
 class OfferedChannelSerializer(ChannelSerializer):
@@ -336,6 +356,9 @@ class ProcessTypeSerializer(serializers.ModelSerializer):
 
 
 class NonDeliveryReasonSerializer(serializers.ModelSerializer):
+    # The process types it is for; empty for every type.
+    process_types = serializers.SlugRelatedField(slug_field="code", many=True, read_only=True)
+
     class Meta:
         model = NonDeliveryReason
-        fields = ("code", "label")
+        fields = ("code", "label", "process_types")

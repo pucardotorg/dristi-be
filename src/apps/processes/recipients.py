@@ -12,6 +12,7 @@ from apps.cases.models import ParticipantRole
 from apps.cases.selectors import ProcessRecipient, process_recipients
 
 from .enums import RecipientType, Side
+from .models import Process
 
 # Who is directed to take steps when the order does not say (``AUT-02``).
 OPPOSITE_SIDE = {
@@ -60,6 +61,25 @@ class OrderRecipient:
     mobiles: tuple
     emails: tuple
     addresses: list
+    police_station: object = None
+
+
+def last_police_stations(case_id) -> dict:
+    """Each recipient's police station in their latest process on a police channel (``AUT-04``).
+
+    A police process names a station, not an address, so the station is
+    held per recipient. One from e-filing is free text, not yet matched to
+    the master (spec 0028 open question 2), so it is not offered.
+    """
+    held = {}
+    rows = (
+        Process.objects.filter(case_id=case_id, police_station__isnull=False)
+        .select_related("police_station")
+        .order_by("recipient_id", "-created_at")
+    )
+    for process in rows:
+        held.setdefault(process.recipient_id, process.police_station)
+    return held
 
 
 def for_order_screen(case_id) -> list[OrderRecipient]:
@@ -67,10 +87,12 @@ def for_order_screen(case_id) -> list[OrderRecipient]:
 
     Every address on the record is offered, and pre-selected by the screen
     (``AUT-07``); the channels pre-selected per type come from the process
-    types (``AUT-08``).
+    types (``AUT-08``); the police station is the one used in an earlier
+    round, if any (``AUT-04``).
     """
     recipients = list(process_recipients(case_id).values())
     preselected = preselected_ids(recipients)
+    stations = last_police_stations(case_id)
     addresses = Address.objects.in_bulk(
         [address_id for each in recipients for address_id in each.address_ids]
     )
@@ -84,6 +106,7 @@ def for_order_screen(case_id) -> list[OrderRecipient]:
             mobiles=each.mobiles,
             emails=each.emails,
             addresses=[addresses[address_id] for address_id in each.address_ids],
+            police_station=stations.get(each.id),
         )
         for each in recipients
     ]

@@ -91,3 +91,23 @@ class Step(models.TextChoices):
     SEND = "send", "Mark as sent"
     RECORD_OUTCOME = "record_outcome", "Record outcome"
     RECALL = "recall", "Recall"
+
+
+class WarrantType(models.TextChoices):
+    """A warrant's type, from *Issue of warrants*; it picks the warrant's template."""
+
+    BAILABLE = "BAILABLE", "Bailable"
+    NON_BAILABLE = "NON_BAILABLE", "Non-bailable"
+
+
+class SendAct(models.TextChoices):
+    """What the send step is on a process's screen; every one is ``POST /send/`` (#8.1).
+
+    ``mark_published`` sends ``{"published": true}``; ``send`` is a system
+    channel's, which comes with the channel backends.
+    """
+
+    MARK_POSTED = "mark_posted", "Mark as posted"
+    MARK_HANDED_OVER = "mark_handed_over", "Mark as handed over"
+    MARK_PUBLISHED = "mark_published", "Mark as published"
+    SEND = "send", "Send"

@@ -1,6 +1,8 @@
 # The process type x channel matrix (spec 0028 #3.1, process-handover.md §6.3).
 # `preselected` marks the cells marked Default (AUT-08). A deployment runs Police
 # (NSTEP) or Police (iCOPS), not both; the one it does not run is unavailable.
+# It lives with the state's channels.toml, which it names: core/ is seeded
+# first, so a matrix there would find no channels and be skipped.
 
 [seed]
 model = "processes.ProcessTypeChannel"

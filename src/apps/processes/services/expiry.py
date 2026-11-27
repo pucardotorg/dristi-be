@@ -24,15 +24,24 @@ def expires_at(hearing_date):
 
 
 def follow_hearing(*, hearing_id, hearing_date):
-    """Move the expiry of the hearing's unsigned, unsent processes to its new date."""
-    moving = Process.objects.filter(
-        hearing_id=hearing_id, expiry_fixed=False, status__in=EXPIRABLE_STATUSES
-    )
+    """The hearing's processes take its new date; an unsigned, unsent one's expiry moves too.
+
+    Every process keeps the date, which the lists sort on (#11.2); only the
+    expiry stops following it at signing (``EXP-01a``).
+    """
     new = expires_at(hearing_date)
     # One save each, so every change is kept in history.
-    for process in moving.exclude(expires_at=new):
-        process.expires_at = new
-        process.save(update_fields=["expires_at", "updated_at"])
+    for process in Process.objects.filter(hearing_id=hearing_id):
+        fields = []
+        if process.hearing_date != hearing_date:
+            process.hearing_date = hearing_date
+            fields.append("hearing_date")
+        moves_expiry = not process.expiry_fixed and process.status in EXPIRABLE_STATUSES
+        if moves_expiry and process.expires_at != new:
+            process.expires_at = new
+            fields.append("expires_at")
+        if fields:
+            process.save(update_fields=[*fields, "updated_at"])
 
 
 def expire_due():

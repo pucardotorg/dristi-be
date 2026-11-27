@@ -19,23 +19,17 @@ from apps.payments.services import DemandService
 
 from .. import conf, errors
 from ..enums import EventSource, ProcessStatus, Step
-from ..models import NonDeliveryReason
+from ..selectors import non_delivery_reasons
 from . import bulk, transitions
 
 logger = logging.getLogger(__name__)
 
-PROCLAMATION = "PROCLAMATION"
-BY_HAND = "BY_HAND"
 # Every outcome's supporting file carries this tag and its process's id.
 OUTCOME_FILE_TAG = "process-outcome"
 
 
-def _is_publication(process):
-    return process.process_type.code == PROCLAMATION and process.channel.code == BY_HAND
-
-
 def _send(process, actor, published=False):
-    if published and not _is_publication(process):
+    if published and not process.is_publication:
         raise BusinessError(
             errors.INVALID_PROCESS_ACTION,
             "Only a proclamation by hand is marked as published.",
@@ -79,10 +73,9 @@ def send_many(*, process_ids, actor):
     return bulk.each(process_ids, actor, Step.SEND, lambda p: _send(p, actor))
 
 
-def _reason(code):
-    reason = (
-        NonDeliveryReason.objects.active().filter(state_code=conf.state_code(), code=code).first()
-    )
+def _reason(process, code):
+    """The state's reason ``code``, where it is one for the process's type (``DSP-09``)."""
+    reason = non_delivery_reasons(process.process_type.code).filter(code=code).first()
     if reason is None:
         raise BusinessError(errors.REASON_REQUIRED, field="reason")
     return reason
@@ -122,7 +115,7 @@ def _record(process, actor, *, status, reason="", outcome_date=None, comment="",
         raise BusinessError(errors.OUTCOME_DATE_INVALID, field="outcome_date")
     if file_id:
         _check_file(process, file_id)
-    process.reason = _reason(reason) if status == ProcessStatus.NOT_DELIVERED else None
+    process.reason = _reason(process, reason) if status == ProcessStatus.NOT_DELIVERED else None
     process.outcome_date, process.remark, process.outcome_file_id = outcome_date, comment, file_id
     return transitions.move(
         process,

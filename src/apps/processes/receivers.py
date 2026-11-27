@@ -23,5 +23,5 @@ def on_payment_completed(*, items, **kwargs):
 
 @receiver(hearing_rescheduled, dispatch_uid="processes.follow_hearing")
 def on_hearing_rescheduled(*, hearing_id, to_date, **kwargs):
-    """An unsigned process's expiry follows its hearing (``EXP-01a``)."""
+    """A process keeps its hearing's date; an unsigned one's expiry follows it (``EXP-01a``)."""
     expiry.follow_hearing(hearing_id=hearing_id, hearing_date=to_date)

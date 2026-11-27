@@ -20,11 +20,16 @@ from .enums import (
     EventSource,
     ProcessStatus,
     RecipientType,
+    SendAct,
     Side,
     StepMode,
 )
 
 EVENT_IMMUTABLE_MESSAGE = "A process event is never changed once recorded."
+
+# Seeded codes some rules name: a proclamation by hand is published (``DSP-10``).
+PROCLAMATION = "PROCLAMATION"
+BY_HAND = "BY_HAND"
 
 # Where each destination kind keeps its value; a police station has none here.
 DESTINATION_FIELDS = {
@@ -129,12 +134,19 @@ class ProcessTypeChannel(Master):
 
 
 class NonDeliveryReason(Master):
-    """The state's reasons for a negative outcome (``DSP-09``)."""
+    """The state's reasons for a negative outcome (``DSP-09``).
+
+    A reason is for the process types it names, e.g. a warrant's list and
+    the other types' list; one naming none is for every type.
+    """
 
     state_code = models.CharField(max_length=3)
     code = models.CharField(max_length=32)
     label = models.CharField(max_length=128)
     sequence = models.PositiveSmallIntegerField(default=0)
+    process_types = models.ManyToManyField(
+        ProcessType, blank=True, related_name="non_delivery_reasons"
+    )
 
     class Meta(Master.Meta):
         """Meta options."""
@@ -192,7 +204,12 @@ class Process(BaseModel, BaseAuditableModel):
     # Added on the order screen rather than taken from the record (``PRC-05``).
     destination_added = models.BooleanField(default=False)
     party_taking_steps = models.CharField(max_length=16, choices=Side.choices)
+    # Every other field of the order item, e.g. a warrant's type, bond amount and
+    # sureties, or a notice's type; set at start, never changed (``TPL-03``, ``TPL-04``).
+    item_fields = models.JSONField(default=dict, blank=True)
     hearing_id = models.UUIDField(null=True, blank=True)
+    # The hearing's current date, kept as it moves, so the lists sort on it (#11.2).
+    hearing_date = models.DateField(null=True, blank=True)
 
     status = models.CharField(max_length=24, choices=ProcessStatus.choices)
     status_at = models.DateTimeField()
@@ -293,6 +310,22 @@ class Process(BaseModel, BaseAuditableModel):
         if self.status == ProcessStatus.NOT_DELIVERED:
             return self.process_type.negative_label
         return self.get_status_display()
+
+    @property
+    def is_publication(self):
+        """A proclamation by hand: sent and executed at once (``DSP-10``)."""
+        return self.process_type.code == PROCLAMATION and self.channel.code == BY_HAND
+
+    @property
+    def send_act(self):
+        """What the send step is called for this process's channel and type (#8.1)."""
+        if self.channel.send_mode == StepMode.SYSTEM:
+            return SendAct.SEND
+        if self.is_publication:
+            return SendAct.MARK_PUBLISHED
+        if self.channel.code == BY_HAND:
+            return SendAct.MARK_HANDED_OVER
+        return SendAct.MARK_POSTED
 
     @property
     def steps_done(self):
