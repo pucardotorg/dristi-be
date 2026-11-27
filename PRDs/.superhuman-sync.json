@@ -532,8 +532,8 @@
     "court-roles.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-QZMTyidPZD",
       "title": "Court Roles",
-      "contentHash": "0e4ea7150485",
-      "pageUpdatedAt": 1795792366.16,
+      "contentHash": "920127aacfd5",
+      "pageUpdatedAt": 1795792881.711,
       "calloutElementId": "cl-F9ItCYdmYV",
       "sections": [
         {
@@ -557,7 +557,7 @@
           "hash": "41f457719d9b"
         }
       ],
-      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed. Patched 2026-11-20 at v10.9: Status and callout; §2 Application onboarder row deleted; §3 cells (role removed; Kerala Scrutiny officer + Account approver; P&H Typist / Steno + Evidence marker). sections hashes not recomputed. Patched 2026-11-20 at v10.10: Status and callout; §4 Q-1 table replaced by \"None open.\" (cl-zUWIng0NPs). Patched 2026-11-20 at v10.11: Status and callout; six §3 cells (Magistrate signs warrants, proclamation and attachment; Bench clerk / Reader the rest). Patched 2026-11-25 at v10.13: Status and callout; §2 Evidence marker cell; Document submitter row added at the end of the §2 table (local file moved to match); six §3 cells (Magistrate and Bench clerk / Reader gain Document submitter). sections hashes not recomputed. Patched 2026-11-25 at v10.14: Status and callout; Evidence marker cell (exhibit number). 2026-11-27: patched in place to v10.15 (Status line, callout, Order drafter cell in grid-H_HKcFYmuM). 2026-11-27: Evidence marker row deleted from grid-H_HKcFYmuM; nine staff cells in grid-LXD0xBSTUi, grid-IiJtAib9HK, grid-RwZY5pCb3G. Status line unchanged (local file has no v10.16 entry for this). sections hashes not recomputed."
+      "note": "2026-11-08: '-handover' file names replaced in place on the page (text and table cells), no rebuild. Links on pages with comments (account-creation, efiling, join-a-case, cognizance-cheat-sheet, scrutiny-registration, some status lines) show the new name but still point at the old -handover.md target. sections hashes not recomputed. Patched 2026-11-20 at v10.9: Status and callout; §2 Application onboarder row deleted; §3 cells (role removed; Kerala Scrutiny officer + Account approver; P&H Typist / Steno + Evidence marker). sections hashes not recomputed. Patched 2026-11-20 at v10.10: Status and callout; §4 Q-1 table replaced by \"None open.\" (cl-zUWIng0NPs). Patched 2026-11-20 at v10.11: Status and callout; six §3 cells (Magistrate signs warrants, proclamation and attachment; Bench clerk / Reader the rest). Patched 2026-11-25 at v10.13: Status and callout; §2 Evidence marker cell; Document submitter row added at the end of the §2 table (local file moved to match); six §3 cells (Magistrate and Bench clerk / Reader gain Document submitter). sections hashes not recomputed. Patched 2026-11-25 at v10.14: Status and callout; Evidence marker cell (exhibit number). 2026-11-27: patched in place to v10.15 (Status line, callout, Order drafter cell in grid-H_HKcFYmuM). 2026-11-27: Evidence marker row deleted from grid-H_HKcFYmuM; nine staff cells in grid-LXD0xBSTUi, grid-IiJtAib9HK, grid-RwZY5pCb3G. sections hashes not recomputed. 2026-11-27: Status and callout patched to v10.16."
     },
     "scrutiny-registration.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-h9S6cM70_A",
