@@ -30,6 +30,7 @@ from apps.files.services import FileNotFound, get_file, get_file_content
 from apps.parties.models import EntityType, Gender
 from apps.pdf import errors as pdf_errors
 from apps.pdf.exceptions import PDFError, PDFRenderError
+from apps.pdf.renderer import fonts
 from apps.pdf.renderer.merge import merge, page_count
 from apps.pdf.services import jobs as pdf_jobs
 from apps.pdf.services.config_loader import PDFConfigLoader
@@ -41,6 +42,7 @@ from .. import errors
 from ..models import (
     SIGNING_ROLES,
     Case,
+    CaseParticipant,
     CaseStatus,
     ComplaintSigningPackage,
     ParticipantRole,
@@ -64,9 +66,13 @@ from .filing import (
     validation_errors,
 )
 from .services import lock_case
+from .signing import signer_q
 
 TEMPLATE_KEY = "case-complaint"
 APPENDIX_HEADING = "Documents uploaded by the Complainant."
+# Where the sample places it: the complaint's left margin, near the top.
+APPENDIX_MARGIN = 57
+APPENDIX_TOP = 72
 
 # The cover's "Complaint under ..." line prints the case type's long title (DOC-03).
 LONG_TITLES = {
@@ -261,8 +267,20 @@ def _require_complete(case):
 
 
 def render_preview(case_id, user):
-    """Return the complaint PDF for ``user``'s view of the case; nothing is stored."""
+    """Return the complaint PDF for ``user``'s view of the case.
+
+    A draft is rendered from the case on every call and nothing is stored
+    ("always current", §16). Once the case has moved to signing, the PDF is
+    the one being signed: the latest signing package's current file -- the
+    complaint with its documents and every signature recorded so far -- so
+    what is shown is exactly what was, or is being, signed. A case pending
+    signature whose package is not prepared yet is still rendered.
+    """
     case = get_viewable_case(case_id, user)
+    if case.status != CaseStatus.DRAFT_IN_PROGRESS:
+        signed = current_signing_file(case)
+        if signed is not None:
+            return signed
     _require_complete(case)
     payload = build_payload(case)
     try:
@@ -271,12 +289,45 @@ def render_preview(case_id, user):
         raise pdf_errors.api_error(exc) from exc
 
 
+def current_signing_file(case):
+    """Return the bytes of ``case``'s latest signing package's current file, or ``None``.
+
+    The latest package that is not superseded: open while it is being signed,
+    complete once everyone has signed. Its current file carries every
+    signature recorded on it.
+    """
+    package = (
+        ComplaintSigningPackage.objects.filter(case=case)
+        .exclude(status=SigningPackageStatus.SUPERSEDED)
+        .order_by("-signing_round")
+        .first()
+    )
+    if package is None or package.current_file_id is None:
+        return None
+    try:
+        with get_file_content(str(package.current_file_id)) as handle:
+            return handle.read()
+    except FileNotFound as exc:
+        raise BusinessError(
+            pdf_errors.NO_DOCUMENT, "The signed complaint PDF no longer exists."
+        ) from exc
+
+
 # The copy to sign
 
 
 def get_signing_package(case_id, user):
-    """Return the case's open signing package, or ``None``."""
-    case = get_filing_side_case(case_id, user)
+    """Return the case's open signing package, or ``None``.
+
+    Readable by the filing side and by anyone who signs as one of the case's
+    signatories (``signing.signer_q``): a complainant with no account yet signs
+    from their own device by the number entered for them (efiling §18), and
+    needs the package -- its file and their placeholder -- to start the e-sign.
+    """
+    signs_here = Case.objects.filter(
+        pk__in=CaseParticipant.objects.active().filter(signer_q(user)).values("case_id")
+    )
+    case = signs_here.filter(pk=case_id).first() or get_filing_side_case(case_id, user)
     return case, open_package(case)
 
 
@@ -387,11 +438,16 @@ def _max_signing_bytes():
 
 
 def _appendix_page():
-    """The page that opens the appended documents (DOC-07)."""
+    """The page that opens the appended documents (DOC-07).
+
+    As in the efiling §16.9 sample: the heading in the complaint's own bold
+    face, at the top left of the page.
+    """
+    fonts.register_family(fonts.DEFAULT_FONT)
     out = io.BytesIO()
     canvas = Canvas(out, pagesize=A4, invariant=1)
-    canvas.setFont("Helvetica-Bold", 14)
-    canvas.drawCentredString(A4[0] / 2, A4[1] / 2, APPENDIX_HEADING)
+    canvas.setFont(fonts.face_name(fonts.DEFAULT_FONT, "bold"), 10.5)
+    canvas.drawString(APPENDIX_MARGIN, A4[1] - APPENDIX_TOP, APPENDIX_HEADING)
     canvas.showPage()
     canvas.save()
     return out.getvalue()

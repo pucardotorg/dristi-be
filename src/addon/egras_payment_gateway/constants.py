@@ -38,6 +38,11 @@ FIELD_REMARKS = "Remarks"
 FIELD_TOTAL_AMOUNT = "TotalAmount"
 FIELD_SCHEME_COUNT = "SCHEMECOUNT"
 FIELD_UURL = "UURL"
+# The NIC field list marks VALID_UPTO "manual payment only", but e-GRAS staging
+# rejects a net-banking (ptype=N) request without it ("missing valid_upto date")
+# and bounces the browser straight back to UURL. Sent as dd/mm/yyyy.
+FIELD_VALID_UPTO = "VALID_UPTO"
+VALID_UPTO_FORMAT = "%d/%m/%Y"
 
 # Only net banking / UPI is in scope (spec 0022 #4.1); manual challans (``M``)
 # are out of scope.

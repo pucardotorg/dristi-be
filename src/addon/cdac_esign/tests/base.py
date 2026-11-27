@@ -22,7 +22,7 @@ class CDACSettingsMixin:
             "ESIGN_PROVIDER": constants.PROVIDER_PATH,
             "CDAC_ESIGN_URL": "https://esign.cdac.invalid/esign",
             "CDAC_ESIGN_ASP_ID": "ASP-TEST",
-            "CDAC_ESIGN_RESPONSE_URL": "https://dristi.invalid/api/v1/esign/_signed",
+            "CDAC_ESIGN_RESPONSE_URL": "https://dristi.invalid/api/v1/esign/_signed/",
             "CDAC_ESIGN_KEYSTORE_PATH": write_keystore(directory),
             "CDAC_ESIGN_KEYSTORE_PASSWORD": KEYSTORE_PASSWORD,
             "CDAC_ESIGN_RESPONSE_CERT": esp_key_pair().certificate_pem,

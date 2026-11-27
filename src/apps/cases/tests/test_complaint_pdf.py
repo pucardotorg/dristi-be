@@ -130,7 +130,7 @@ class TestPreview:
         assert response["Content-Disposition"].startswith("inline;")
         text = text_of(response.content)
         assert "Rajesh Kumar v/s Suresh Patel" in text
-        assert "Complaint under Section 138 of the Negotiable Instruments Act, 1881" in text
+        assert "COMPLAINT UNDER SECTION 138 OF THE NEGOTIABLE INSTRUMENTS ACT, 1881" in text
         assert "₹50,000" in text
         assert "15 January 2024" in text
         assert "Funds insufficient" in text
@@ -138,6 +138,19 @@ class TestPreview:
         # Rich text prints as text, never as the editor's markup.
         assert "facts above are true" in text
         assert "<p>" not in text
+
+    def test_laid_out_as_the_prd_sample(self, client, draft, pdf):
+        """efiling §16.9 sample: the complaint starts on page 1, no running header or footer."""
+        make_complete_case(client, draft, pdf)
+
+        pages = PdfReader(io.BytesIO(preview(client, draft).content)).pages
+        first = pages[0].extract_text()
+
+        # The cover heads page 1 and the party details follow on the same page.
+        assert "COMPLAINT UNDER SECTION 138" in first and "1. Party details" in first
+        assert first.index("COMPLAINT UNDER") < first.index("1. Party details")
+        # No "Page x of y" footer and no case reference repeated as a header.
+        assert not any("Page 1 of" in page.extract_text() for page in pages)
 
     def test_stores_nothing(self, client, draft, pdf):
         make_complete_case(client, draft, pdf)
@@ -202,6 +215,24 @@ class TestSigningPackage:
 
         assert response.status_code == 409
         assert error_codes(response) == {None: ["E07004"]}
+
+    def test_the_documents_heading_sits_at_the_top_left_in_the_complaint_font(
+        self, client, draft, pending
+    ):
+        body = prepare(client, draft).json()
+        complaint_pages = len(PdfReader(io.BytesIO(read(body["complaint_file_id"]))).pages)
+        page = PdfReader(io.BytesIO(read(body["signing_file_id"]))).pages[complaint_pages]
+        found = []
+
+        def visit(text, cm, tm, font, size):
+            if text.strip():
+                found.append((cm[4] + tm[4], cm[5] + tm[5], font["/BaseFont"]))
+
+        page.extract_text(visitor_text=visit)
+
+        x, y, font = found[0]
+        assert x < 100 and y > 700  # top left, as in the sample
+        assert "NotoSans-Bold" in font
 
     def test_appends_every_uploaded_document_after_the_complaint(self, client, draft, pending):
         response = prepare(client, draft)
@@ -422,6 +453,74 @@ class TestCaseTitle:
         assert complaint_pdf._side_title(parties) == "Nair Traders +2 others"
 
 
+class TestCurrentFile:
+    """GET complaint-pdf in each stage of signing."""
+
+    def test_pending_signature_before_the_copy_is_prepared_is_rendered(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        submit(client, draft, "signing")
+
+        response = preview(client, draft)
+
+        assert response.status_code == 200
+        assert "PREVIEW" not in text_of(response.content)
+        assert not ComplaintSigningPackage.objects.exists()
+
+    def test_a_superseded_copy_is_not_shown(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        submit(client, draft, "signing")
+        prepare(client, draft)
+        client.post(reverse("case-return-to-draft", args=[draft]), {"reason": "Fix"}, format="json")
+
+        response = preview(client, draft)
+
+        # Back in draft: rendered afresh, as a preview.
+        assert response.status_code == 200
+        assert "PREVIEW - NOT FOR FILING" in text_of(response.content)
+
+    def test_a_current_file_gone_from_storage_is_reported(self, client, draft, pdf):
+        make_complete_case(client, draft, pdf)
+        submit(client, draft, "signing")
+        body = prepare(client, draft).json()
+        File.objects.filter(pk=body["current_file_id"]).update(is_active=False)
+
+        response = preview(client, draft)
+
+        assert response.status_code == 404
+        assert error_codes(response) == {None: ["E04007"]}
+
+    def test_the_current_file_needs_no_complete_filing(self, client, draft, pdf):
+        """What was signed is shown even if a rule added later would call it incomplete."""
+        make_complete_case(client, draft, pdf)
+        submit(client, draft, "signing")
+        body = prepare(client, draft).json()
+        Case.objects.filter(pk=draft).update(affidavit="")
+
+        response = preview(client, draft)
+
+        assert response.status_code == 200
+        assert response.content == read(body["current_file_id"])
+
+    def test_only_the_filing_side_sees_the_signed_file(
+        self, client, client_for, other_user, draft, pdf
+    ):
+        make_complete_case(client, draft, pdf)
+        submit(client, draft, "signing")
+        prepare(client, draft)
+
+        assert preview(client_for(other_user), draft).status_code == 404
+
+
+class TestSignerIds:
+    def test_an_anonymous_user_signs_as_no_one(self, draft):
+        from django.contrib.auth.models import AnonymousUser
+
+        from apps.cases.services.signing import signer_ids
+
+        assert signer_ids(draft, AnonymousUser()) == set()
+        assert signer_ids(draft, None) == set()
+
+
 class TestSigningPackageModel:
     def test_names_its_round_and_status(self, user, draft):
         case = Case.objects.create(id=draft, case_type="CHEQUE_BOUNCE", created_by=user)
@@ -590,6 +689,39 @@ class TestSigning:
             status = validate_pdf_signature(signature, ValidationContext(trust_roots=[esp[1]]))
             assert status.intact and status.valid
         assert submit(client_for(signers[0][0]), draft, "payment").status_code == 200
+
+    def test_the_complaint_pdf_is_always_the_current_signed_file(
+        self, client_for, signing_esp, draft, signers
+    ):
+        """After signing starts, GET complaint-pdf returns the file being signed, signatures in."""
+        filer = client_for(signers[0][0])
+        package = ComplaintSigningPackage.objects.get(case_id=draft)
+
+        # Prepared, nobody signed yet: the copy to sign, complaint and documents.
+        shown = filer.get(reverse("case-complaint-pdf", args=[draft]))
+        assert shown.status_code == 200
+        assert shown.content == read(package.signing_file_id)
+
+        for count, (signer_user, participant, box) in enumerate(signers, start=1):
+            client = client_for(signer_user)
+            started = self.initiate(client, draft, self.current_file(client, draft), box)
+            transaction = self.complete(client, signing_esp, started.json()["transaction_id"])
+            client.post(
+                reverse("case-participant-sign", args=[draft, participant["case_participant_id"]]),
+                {"signature_document_id": transaction.signed_file_id},
+                format="json",
+            )
+
+            shown = filer.get(reverse("case-complaint-pdf", args=[draft])).content
+            package.refresh_from_db()
+            assert str(package.current_file_id) == transaction.signed_file_id
+            assert shown == read(package.current_file_id)
+            assert len(PdfFileReader(io.BytesIO(shown)).embedded_signatures) == count
+
+        # Still the signed file once the case has moved on to payment.
+        assert submit(filer, draft, "payment").status_code == 200
+        later = filer.get(reverse("case-complaint-pdf", args=[draft])).content
+        assert len(PdfFileReader(io.BytesIO(later)).embedded_signatures) == len(signers)
 
     def test_only_the_awaited_file_and_signer_may_start(
         self, client_for, make_user, draft, signers
@@ -780,3 +912,121 @@ class TestRichText:
 
     def test_self_closing_line_breaks_are_kept(self):
         assert to_paragraphs("<p>first<br/>second</p>") == ["first<br/>second"]
+
+
+class TestIsMe:
+    """``is_me`` marks the signatories the caller signs as, by the rule e-sign enforces."""
+
+    @pytest.fixture
+    def case(self, client, user, make_user, draft, pdf, settings):
+        """Two complainants: the filer, and one with no account whose number is on the case."""
+        settings.ESIGN_PROVIDER = "apps.esign.providers.mock.MockESignProvider"
+        reset_provider_cache()
+        first = make_complete_case(client, draft, pdf)
+        second = add_second_complainant(client, draft, pdf)
+        Person.objects.filter(pk=first["person_id"]).update(user=user)
+        assert submit(client, draft, "signing").status_code == 200
+        prepare(client, draft)
+        party = make_user()
+        party.mobile_number = SECOND_MOBILE
+        party.save(update_fields=["mobile_number"])
+        return {"first": first, "second": second, "party": party}
+
+    @staticmethod
+    def mine(client, case_id):
+        body = client.get(reverse("case-complaint-signing", args=[case_id])).json()
+        return {row["case_participant_id"]: row["is_me"] for row in body["signatories"]}
+
+    def test_each_user_sees_only_the_rows_they_sign_as(
+        self, client, client_for, other_user, draft, case
+    ):
+        first, second = case["first"]["case_participant_id"], case["second"]["case_participant_id"]
+
+        # The filer, by their linked account; the second party, by the number entered for them.
+        assert self.mine(client, draft) == {first: True, second: False}
+        assert self.mine(client_for(case["party"]), draft) == {first: False, second: True}
+
+    def test_the_prepare_response_carries_it_too(self, client, draft, case):
+        body = prepare(client, draft).json()
+
+        assert [row["is_me"] for row in body["signatories"]] == [True, False]
+
+    def test_it_matches_whether_e_sign_lets_the_user_start(self, client_for, user, draft, case):
+        """For each signer, true exactly on the rows the e-sign authorizer lets them start."""
+        current = ComplaintSigningPackage.objects.get(case_id=draft).current_file_id
+        for account in (user, case["party"]):
+            rows = self.mine(client_for(account), draft)
+            allowed = can_sign_case_filing(
+                user=account, entity_type="CASE_FILING", entity_id=draft, file_id=current
+            )
+            assert any(rows.values()) is allowed is True
+            assert list(rows.values()).count(True) == 1
+
+    def test_someone_who_signs_as_no_one_cannot_read_it_or_start(
+        self, client_for, make_user, draft, case
+    ):
+        stranger = make_user()
+        package = ComplaintSigningPackage.objects.get(case_id=draft)
+        box = next(iter(package.placeholders.values()))
+
+        read = client_for(stranger).get(reverse("case-complaint-signing", args=[draft]))
+        started = TestSigning.initiate(
+            client_for(stranger),
+            draft,
+            package.current_file_id,
+            {**box, "signer_name": "x", "reason": "y"},
+        )
+
+        assert (read.status_code, started.status_code) == (404, 403)
+
+    def test_a_party_without_an_account_can_read_it_from_their_own_device(
+        self, client_for, draft, case
+    ):
+        body = client_for(case["party"]).get(reverse("case-complaint-signing", args=[draft])).json()
+
+        mine = [row for row in body["signatories"] if row["is_me"]]
+        assert [row["case_participant_id"] for row in mine] == [
+            case["second"]["case_participant_id"]
+        ]
+        box = next(
+            p
+            for p in body["signature_placeholders"]
+            if p["case_participant_id"] == mine[0]["case_participant_id"]
+        )
+        started = TestSigning.initiate(
+            client_for(case["party"]), draft, body["current_file_id"], box
+        )
+        assert started.status_code == 201, started.json()
+
+    def test_it_stays_true_after_signing(self, client, user, draft, case):
+        first = case["first"]["case_participant_id"]
+        CaseParticipant.objects.filter(pk=first).update(has_signed=True)
+
+        body = client.get(reverse("case-complaint-signing", args=[draft])).json()
+        row = next(r for r in body["signatories"] if r["case_participant_id"] == first)
+
+        assert (row["has_signed"], row["is_me"]) == (True, True)
+
+    def test_one_person_in_two_roles_is_marked_twice(self, client, user, draft, pdf):
+        complainant = make_complete_case(client, draft, pdf)
+        Person.objects.filter(pk=complainant["person_id"]).update(user=user)
+        # The holder has no account and their number on the case is the
+        # filer's login, so the filer signs as both rows.
+        holder = add_poa_holder(
+            client, draft, [complainant["case_participant_id"]], mobile_numbers=[POA_MOBILE]
+        ).json()
+        upload(
+            client,
+            draft,
+            pdf,
+            "POA_DOCUMENT",
+            case_participant_id=complainant["case_participant_id"],
+        )
+        Person.objects.filter(pk=holder["person_id"]).update(user=None)
+        user.mobile_number = POA_MOBILE
+        user.save(update_fields=["mobile_number"])
+        submit(client, draft, "signing")
+
+        body = prepare(client, draft).json()
+
+        assert [row["is_me"] for row in body["signatories"]] == [True, True]

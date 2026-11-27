@@ -43,6 +43,16 @@ def financial_year(initiated_at) -> str:
     return f"{start % 100:02d}{(start + 1) % 100:02d}"
 
 
+def valid_upto(initiated_at, horizon) -> str:
+    """Challan validity date: ``initiated_at`` (IST) plus the pending horizon.
+
+    Derived from the request, not from "now", so a replay rebuilds the same form.
+    The horizon is when Dristi stops waiting for the payment anyway (#6.4).
+    """
+
+    return (initiated_at.astimezone(constants.IST) + horizon).strftime(constants.VALID_UPTO_FORMAT)
+
+
 def application_number(reference: UUID, prefix: str) -> str:
     """Deterministic ``Applicationnumber`` from the payment/batch reference (#4.4)."""
 
@@ -145,6 +155,7 @@ def build_request(request: InitiationRequest, config) -> EGRASRequest:
         constants.FIELD_SECURITY_PHONE: payer.phone,
         constants.FIELD_BANK: bank,
         constants.FIELD_PTYPE: constants.PTYPE_NET_BANKING,
+        constants.FIELD_VALID_UPTO: valid_upto(request.initiated_at, config.pending_horizon),
         constants.FIELD_REMARKS: build_remarks(request.demand_numbers, config.remarks_template),
         constants.FIELD_TOTAL_AMOUNT: str(total),
         constants.FIELD_SCHEME_COUNT: str(len(schemes)),

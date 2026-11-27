@@ -142,7 +142,7 @@ src/addon/cdac_esign/
 
 ```text
 Dristi UI
-   |  POST /api/v1/esign/_esign  {entity, file_id, sign_placeholder}
+   |  POST /api/v1/esign/_esign/  {entity, file_id, sign_placeholder}
    v
 apps.esign initiation service
    |
@@ -160,7 +160,7 @@ response: {esign_url, form_fields, transaction_id, cdac_transaction_id}
 browser auto-submits form ---> C-DAC ESP ---> Aadhaar eKYC + OTP + consent
                                                    |
                                                    v
-                        POST /api/v1/esign/_signed  (form-urlencoded, no session)
+                        POST /api/v1/esign/_signed/  (form-urlencoded, no session)
                                                    |
 apps.esign callback service                        v
    +-- provider.parse_response(payload) -> ESignProviderResponse
@@ -402,7 +402,7 @@ All routes live in `apps/esign/urls.py`, are included under `/api/v1/`, are
 tagged `esign` in Swagger, and carry the standard `meta` envelope — except the
 callback, which is not a JSON API (#6.3).
 
-### 6.1 `POST /api/v1/esign/_esign` — initiate
+### 6.1 `POST /api/v1/esign/_esign/` — initiate
 
 Authenticated (`IsAuthenticatedAndRegistered`). Request:
 
@@ -450,7 +450,7 @@ Response `201`:
 The UI treats `form_fields` as opaque and posts them verbatim to `esign_url`.
 No provider-specific knowledge in the client.
 
-### 6.2 `GET /api/v1/esign/transactions/{id}` — status
+### 6.2 `GET /api/v1/esign/transactions/{id}/` — status
 
 Authenticated (`IsAuthenticatedAndRegistered`); scoped to the initiating user and
 organization. Returns status,
@@ -460,7 +460,7 @@ is the only supported way for a client to learn the outcome. Excluded from
 caching (per [`0012`](0012-redis-caching.md)) because it is read-after-write on a
 volatile row.
 
-### 6.3 `POST /api/v1/esign/_signed` — ESP callback
+### 6.3 `POST /api/v1/esign/_signed/` — ESP callback
 
 - `AllowAny`, `@csrf_exempt`, authentication classes emptied. Trust comes from
   the response signature, not from the caller.
@@ -476,7 +476,7 @@ volatile row.
   here; this is documented in the Swagger annotation.
 - Throttled per IP, and payload size limited, since the endpoint is public.
 
-### 6.4 `POST /api/v1/esign/transactions/{id}/_retry` — retry
+### 6.4 `POST /api/v1/esign/transactions/{id}/_retry/` — retry
 
 Authenticated (`IsAuthenticatedAndRegistered`). Creates a new transaction from a `FAILURE`/`EXPIRED` one, reusing
 the existing placeholder PDF, and returns the same body as #6.1. Rejects retry
@@ -491,7 +491,7 @@ of `PENDING`/`SIGNING`/`SUCCESS` rows and enforces `ESIGN_MAX_ATTEMPTS`.
 ```xml
 <Esign ver="2.1" sc="Y" ts="2026-09-22T17:40:03" txn="orders-0f9d..."
        ekycId="" ekycIdType="A" aspId="ASP-ID" AuthMode="1"
-       responseSigType="pkcs7" responseUrl="https://.../api/v1/esign/_signed">
+       responseSigType="pkcs7" responseUrl="https://.../api/v1/esign/_signed/">
   <Docs>
     <InputHash id="1" hashAlgorithm="SHA256"
                docInfo="Order 9f2c...">HEX_HASH</InputHash>
@@ -608,7 +608,7 @@ file per transaction.
 
 If the deployment terminates C-DAC traffic at a separate interceptor, the
 interceptor may only do transport/auth/allow-listing and must forward the
-unmodified payload to `/api/v1/esign/_signed`. The business logic is identical
+unmodified payload to `/api/v1/esign/_signed/`. The business logic is identical
 in both models; nothing in `apps.esign` branches on it.
 
 ---

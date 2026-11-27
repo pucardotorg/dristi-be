@@ -20,7 +20,7 @@ from .base import PKCS7_BASE64, ESignTestCase, registered_user
 
 
 class InitiateEndpointTests(ESignTestCase):
-    """``POST /api/v1/esign/_esign``."""
+    """``POST /api/v1/esign/_esign/``."""
 
     def test_returns_the_esp_form_and_the_meta_envelope(self):
         """The UI gets an opaque form plus the standard envelope."""
@@ -126,7 +126,7 @@ class InitiateEndpointTests(ESignTestCase):
 
 
 class StatusEndpointTests(ESignTestCase):
-    """``GET /api/v1/esign/transactions/{id}``."""
+    """``GET /api/v1/esign/transactions/{id}/``."""
 
     def setUp(self):
         """Create a transaction owned by the signed-in user."""
@@ -174,7 +174,7 @@ class StatusEndpointTests(ESignTestCase):
 
 
 class RetryEndpointTests(ESignTestCase):
-    """``POST /api/v1/esign/transactions/{id}/_retry``."""
+    """``POST /api/v1/esign/transactions/{id}/_retry/``."""
 
     def setUp(self):
         """Create a failed transaction to retry."""
@@ -238,7 +238,7 @@ class RetryEndpointTests(ESignTestCase):
 
 
 class CallbackEndpointTests(ESignTestCase):
-    """``POST /api/v1/esign/_signed``."""
+    """``POST /api/v1/esign/_signed/``."""
 
     def setUp(self):
         """Create a PENDING transaction and drop the session."""
@@ -352,15 +352,15 @@ class SchemaTests(ESignTestCase):
         schema = response.json()
 
         for path, method in (
-            ("/api/v1/esign/_esign", "post"),
-            ("/api/v1/esign/_signed", "post"),
-            ("/api/v1/esign/transactions/{transaction_id}", "get"),
-            ("/api/v1/esign/transactions/{transaction_id}/_retry", "post"),
+            ("/api/v1/esign/_esign/", "post"),
+            ("/api/v1/esign/_signed/", "post"),
+            ("/api/v1/esign/transactions/{transaction_id}/", "get"),
+            ("/api/v1/esign/transactions/{transaction_id}/_retry/", "post"),
         ):
             self.assertIn(path, schema["paths"], path)
             self.assertEqual(schema["paths"][path][method]["tags"], ["esign"])
 
-        callback = schema["paths"]["/api/v1/esign/_signed"]["post"]
+        callback = schema["paths"]["/api/v1/esign/_signed/"]["post"]
         self.assertIn("302", callback["responses"])
 
 

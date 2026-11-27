@@ -282,9 +282,13 @@ are out of scope (#14).
 | `SCHEMECOUNT` | number of schemes | 1 … `EGRAS_MAX_SCHEMES` |
 | `SCHEMENAME`, `SCHEMENAME2`… / `FEEAMOUNT1`, `FEEAMOUNT2`… | #4.3 | 17-char scheme code / integer |
 | `UURL` | `EGRAS_RETURN_URL` | absolute `https://` URL of the callback endpoint (0017 #9.6) |
+| `VALID_UPTO` | `initiated_at` (IST) + `EGRAS_PENDING_HORIZON` | `dd/mm/yyyy` |
 
-`VALID_UPTO`, `CSC_ID` and `CSC_Amount` are not sent: they belong to manual and
-CSC modes, which are out of scope. The first scheme posts as `SCHEMENAME` (no
+`VALID_UPTO` is sent although NIC's field list marks it "manual payment only":
+e-GRAS staging rejects a `ptype = N` request without it (`missing valid_upto
+date`) and returns the browser straight to `UURL`. It is derived from the
+request, so a replay rebuilds the same form. `CSC_ID` and `CSC_Amount` are not
+sent: they belong to CSC mode, which is out of scope. The first scheme posts as `SCHEMENAME` (no
 suffix) with `FEEAMOUNT1`, following the NIC v3.6 sample request. The names of
 the second and later schemes have no NIC sample and are assumed to be
 `SCHEMENAME2`/`FEEAMOUNT2`…; until NIC confirms them (#16, Q-3)

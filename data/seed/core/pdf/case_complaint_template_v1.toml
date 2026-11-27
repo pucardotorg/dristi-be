@@ -6,8 +6,16 @@
 # case preview payload and from `extras` the service adds (display labels,
 # court name, case title and number, rich text as safe paragraphs).
 #
-# The `signatures` block draws one slot per signatory, two to a row (DOC-02),
-# and reports where each box lands so the signature is placed on it.
+# Laid out as the efiling §16.9 filled sample
+# (PRDs/efiling-reference/complaint-pdf-worked-example.pdf): court, case title,
+# number and proceeding title head page 1 and the complaint follows on the same
+# page; 57pt side margins, 11pt cover lines, 13pt section headings, 7.5pt grey
+# labels over 9.5pt values in thirds; no running header or page-number footer.
+# A draft prints PREVIEW - NOT FOR FILING at the top.
+#
+# The `signatures` block draws one slot per signatory, two to a row (DOC-02):
+# a rule, the name in bold, the role in grey, and reports where each box lands
+# so the signature is placed on it.
 #
 # A version a job has used is immutable and seeding is insert-only: change
 # the template by adding a version 2 row with is_active = true.
@@ -25,10 +33,10 @@ is_active = true
 "size" = "A4"
 
 [rows.format_config."page"."margins"]
-"top" = 48
-"right" = 42
-"bottom" = 48
-"left" = 42
+"top" = 72
+"right" = 51
+"bottom" = 60
+"left" = 51
 
 [rows.format_config."metadata"]
 "title" = "Complaint {{ case_ref }}"
@@ -39,52 +47,57 @@ is_active = true
 
 [rows.format_config."styles"."default"]
 "font" = "noto-sans"
-"size" = 10
+"size" = 9.5
+"leading" = 12.5
 
 [rows.format_config."styles"."label"]
-"size" = 8
+"size" = 7.5
 "color" = "#555555"
 "space_after" = 0
 
+[rows.format_config."styles"."court"]
+"size" = 11
+"align" = "center"
+"space_after" = 3
+
 [rows.format_config."styles"."cover"]
-"size" = 13
+"size" = 11
 "bold" = true
 "align" = "center"
-"space_after" = 6
+"space_after" = 3
 
 [rows.format_config."styles"."h1"]
 "size" = 13
 "bold" = true
-"space_before" = 10
+"space_before" = 14
 "space_after" = 6
 
 [rows.format_config."styles"."h2"]
 "size" = 11
 "bold" = true
-"space_before" = 8
+"space_before" = 10
 "space_after" = 4
 
 [rows.format_config."styles"."block"]
-"size" = 10
+"size" = 9.5
 "bold" = true
-"space_before" = 6
+"space_before" = 8
 "space_after" = 2
 
-[rows.format_config."header"]
-"right" = "{{ case_ref }}"
-"center" = "{{ 'PREVIEW - NOT FOR FILING' if data.status == 'DRAFT_IN_PROGRESS' else '' }}"
-
-[rows.format_config."footer"]
-"center" = "Page {page} of {pages}"
-"line" = true
-
-[[rows.format_config."body"]]
-"type" = "spacer"
-"height" = 90
+[rows.format_config."styles"."watermark"]
+"size" = 8
+"color" = "#B00020"
+"align" = "center"
 
 [[rows.format_config."body"]]
 "type" = "paragraph"
-"style" = "cover"
+"style" = "watermark"
+"text" = "PREVIEW - NOT FOR FILING"
+"when" = "data.status == 'DRAFT_IN_PROGRESS'"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "court"
 "text" = "{{ court_name }}"
 
 [[rows.format_config."body"]]
@@ -100,10 +113,11 @@ is_active = true
 [[rows.format_config."body"]]
 "type" = "paragraph"
 "style" = "cover"
-"text" = "Complaint under {{ case_type_long_title }}"
+"text" = "{{ ('Complaint under ' ~ case_type_long_title) | upper }}"
 
 [[rows.format_config."body"]]
-"type" = "page_break"
+"type" = "spacer"
+"height" = 18
 
 [[rows.format_config."body"]]
 "type" = "heading"
@@ -129,8 +143,8 @@ is_active = true
 [[rows.format_config."body"."blocks"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Type</font><br/>{{ 'Institution' if p.institution else 'Individual' }}", "<font size=8 color='#555555'>Full Name</font><br/>{{ p.name_at_filing | default('-', true) }}", "<font size=8 color='#555555'>Age</font><br/>{{ p.age_at_filing | default('-', true) }}"], ["<font size=8 color='#555555'>Mobile Number</font><br/>{{ p.mobile_numbers | join('<br/>') or '-' }}", "<font size=8 color='#555555'>Email Address</font><br/>{{ p.email_addresses | join('<br/>') or '-' }}", "<font size=8 color='#555555'>Address</font><br/>{% for a in p.addresses %}{{ a.line1 }}, {{ a.city }}, {{ a.district }}, {{ a.state }} {{ a.pincode }}{% if p.role == 'ACCUSED' %}<br/><font size=8 color='#555555'>Police Station</font><br/>{{ a.police_station | default('-', true) }}{% endif %}<br/>{% else %}-{% endfor %}"], ["<font size=8 color='#555555'>Party in person</font><br/>{{ {True: 'Yes', False: 'No'}.get(p.is_party_in_person, '-') }}", "<font size=8 color='#555555'>Power of Attorney given</font><br/>{{ {True: 'Yes', False: 'No'}.get(p.poa_given, '-') }}", "<font size=8 color='#555555'>Gender</font><br/>{{ labels.gender.get(p.gender_at_filing, '-') }}"]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Type</font><br/>{{ 'Institution' if p.institution else 'Individual' }}<br/>", "<font size=7.5 color='#555555'>Full Name</font><br/>{{ p.name_at_filing | default('-', true) }}<br/>", "<font size=7.5 color='#555555'>Age</font><br/>{{ p.age_at_filing | default('-', true) }}<br/>"], ["<font size=7.5 color='#555555'>Mobile Number</font><br/>{{ p.mobile_numbers | join('<br/>') or '-' }}<br/>", "<font size=7.5 color='#555555'>Email Address</font><br/>{{ p.email_addresses | join('<br/>') or '-' }}<br/>", "<font size=7.5 color='#555555'>Address</font><br/>{% for a in p.addresses %}{{ a.line1 }}, {{ a.city }}, {{ a.district }}, {{ a.state }} {{ a.pincode }}{% if p.role == 'ACCUSED' %}<br/><font size=7.5 color='#555555'>Police Station</font><br/>{{ a.police_station | default('-', true) }}{% endif %}<br/>{% else %}-{% endfor %}<br/>"], ["<font size=7.5 color='#555555'>Party in person</font><br/>{{ {True: 'Yes', False: 'No'}.get(p.is_party_in_person, '-') }}<br/>", "<font size=7.5 color='#555555'>Power of Attorney given</font><br/>{{ {True: 'Yes', False: 'No'}.get(p.poa_given, '-') }}<br/>", "<font size=7.5 color='#555555'>Gender</font><br/>{{ labels.gender.get(p.gender_at_filing, '-') }}<br/>"]]
 
 [[rows.format_config."body"."blocks"."columns"]]
 "width" = "33%"
@@ -144,8 +158,8 @@ is_active = true
 [[rows.format_config."body"."blocks"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Institution</font><br/>{{ p.entity_name_at_filing | default('-', true) }}", "<font size=8 color='#555555'>Type of Institution</font><br/>{{ labels.entity_type.get(p.institution.entity_type, '-') }}", "<font size=8 color='#555555'>Designation</font><br/>{{ p.designation_at_filing | default('-', true) }}"]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Institution</font><br/>{{ p.entity_name_at_filing | default('-', true) }}<br/>", "<font size=7.5 color='#555555'>Type of Institution</font><br/>{{ labels.entity_type.get(p.institution.entity_type, '-') }}<br/>", "<font size=7.5 color='#555555'>Designation</font><br/>{{ p.designation_at_filing | default('-', true) }}<br/>"]]
 "when" = "p.institution"
 
 [[rows.format_config."body"."blocks"."columns"]]
@@ -222,8 +236,8 @@ is_active = true
 [[rows.format_config."body"."blocks"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Type</font><br/>{{ 'Institution' if p.institution else 'Individual' }}", "<font size=8 color='#555555'>Full Name</font><br/>{{ p.name_at_filing or p.entity_name_at_filing or '-' }}", "<font size=8 color='#555555'>Designation</font><br/>{{ p.designation_at_filing | default('-', true) }}"], ["<font size=8 color='#555555'>Mobile Number</font><br/>{{ p.mobile_numbers | join('<br/>') or '-' }}", "<font size=8 color='#555555'>Email Address</font><br/>{{ p.email_addresses | join('<br/>') or '-' }}", "<font size=8 color='#555555'>Address</font><br/>{% for a in p.addresses %}{{ a.line1 }}, {{ a.city }}, {{ a.district }}, {{ a.state }} {{ a.pincode }}{% if p.role == 'ACCUSED' %}<br/><font size=8 color='#555555'>Police Station</font><br/>{{ a.police_station | default('-', true) }}{% endif %}<br/>{% else %}-{% endfor %}"]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Type</font><br/>{{ 'Institution' if p.institution else 'Individual' }}<br/>", "<font size=7.5 color='#555555'>Full Name</font><br/>{{ p.name_at_filing or p.entity_name_at_filing or '-' }}<br/>", "<font size=7.5 color='#555555'>Designation</font><br/>{{ p.designation_at_filing | default('-', true) }}<br/>"], ["<font size=7.5 color='#555555'>Mobile Number</font><br/>{{ p.mobile_numbers | join('<br/>') or '-' }}<br/>", "<font size=7.5 color='#555555'>Email Address</font><br/>{{ p.email_addresses | join('<br/>') or '-' }}<br/>", "<font size=7.5 color='#555555'>Address</font><br/>{% for a in p.addresses %}{{ a.line1 }}, {{ a.city }}, {{ a.district }}, {{ a.state }} {{ a.pincode }}{% if p.role == 'ACCUSED' %}<br/><font size=7.5 color='#555555'>Police Station</font><br/>{{ a.police_station | default('-', true) }}{% endif %}<br/>{% else %}-{% endfor %}<br/>"]]
 
 [[rows.format_config."body"."blocks"."columns"]]
 "width" = "33%"
@@ -258,8 +272,8 @@ is_active = true
 [[rows.format_config."body"."blocks"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Date on cheque</font><br/>{{ (c.evidence_info.cheque_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Amount</font><br/>{% if c.evidence_info.amount is defined %}&#8377;{{ c.evidence_info.amount | format_number(0, 'indian') }}{% else %}-{% endif %}", "<font size=8 color='#555555'>Cheque number</font><br/>{{ c.evidence_info.cheque_number | default('-', true) }}"], ["<font size=8 color='#555555'>Bank Name</font><br/>{{ c.evidence_info.bank_name | default('-', true) }}", "<font size=8 color='#555555'>Bank Branch</font><br/>{{ c.evidence_info.bank_branch | default('-', true) }}", "<font size=8 color='#555555'>IFSC</font><br/>{{ c.evidence_info.ifsc_code | default('-', true) }}"], ["<font size=8 color='#555555'>Bank Account Number</font><br/>{{ c.evidence_info.bank_account_number | default('-', true) }}", "", ""]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Date on cheque</font><br/>{{ (c.evidence_info.cheque_date | default('')) | format_date('%d %B %Y') or '-' }}<br/>", "<font size=7.5 color='#555555'>Amount</font><br/>{% if c.evidence_info.amount is defined %}&#8377;{{ c.evidence_info.amount | format_number(0, 'indian') }}{% else %}-{% endif %}<br/>", "<font size=7.5 color='#555555'>Cheque number</font><br/>{{ c.evidence_info.cheque_number | default('-', true) }}<br/>"], ["<font size=7.5 color='#555555'>Bank Name</font><br/>{{ c.evidence_info.bank_name | default('-', true) }}<br/>", "<font size=7.5 color='#555555'>Bank Branch</font><br/>{{ c.evidence_info.bank_branch | default('-', true) }}<br/>", "<font size=7.5 color='#555555'>IFSC</font><br/>{{ c.evidence_info.ifsc_code | default('-', true) }}<br/>"], ["<font size=7.5 color='#555555'>Bank Account Number</font><br/>{{ c.evidence_info.bank_account_number | default('-', true) }}<br/>", "", ""]]
 
 [[rows.format_config."body"."blocks"."columns"]]
 "width" = "33%"
@@ -278,8 +292,8 @@ is_active = true
 [[rows.format_config."body"."blocks"."blocks"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Date of presentation</font><br/>{{ (m.evidence_info.presentation_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Date on return memo</font><br/>{{ (m.evidence_info.return_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Return reason</font><br/>{{ labels.return_reason.get(m.evidence_info.get('return_reason'), '-') }}"]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Date of presentation</font><br/>{{ (m.evidence_info.presentation_date | default('')) | format_date('%d %B %Y') or '-' }}<br/>", "<font size=7.5 color='#555555'>Date on return memo</font><br/>{{ (m.evidence_info.return_date | default('')) | format_date('%d %B %Y') or '-' }}<br/>", "<font size=7.5 color='#555555'>Return reason</font><br/>{{ labels.return_reason.get(m.evidence_info.get('return_reason'), '-') }}<br/>"]]
 
 [[rows.format_config."body"."blocks"."blocks"."columns"]]
 "width" = "33%"
@@ -309,8 +323,8 @@ is_active = true
 [[rows.format_config."body"."blocks"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Nature of debt/liability</font><br/>{{ labels.nature_of_debt.get(n.evidence_info.get('nature_of_debt'), '-') }}", "<font size=8 color='#555555'>Dispatch date</font><br/>{{ (n.evidence_info.dispatch_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Mode of service</font><br/>{{ labels.mode_of_service.get(n.evidence_info.get('mode_of_service'), '-') }}"], ["<font size=8 color='#555555'>Tracking number</font><br/>{{ n.evidence_info.tracking_number | default('-', true) }}", "<font size=8 color='#555555'>Delivered?</font><br/>{{ {True: 'Yes', False: 'No'}.get(n.evidence_info.get('is_delivered'), '-') }}", "<font size=8 color='#555555'>Payment status</font><br/>{{ labels.payment_status.get(n.evidence_info.get('payment_status'), '-') }}"]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Nature of debt/liability</font><br/>{{ labels.nature_of_debt.get(n.evidence_info.get('nature_of_debt'), '-') }}<br/>", "<font size=7.5 color='#555555'>Dispatch date</font><br/>{{ (n.evidence_info.dispatch_date | default('')) | format_date('%d %B %Y') or '-' }}<br/>", "<font size=7.5 color='#555555'>Mode of service</font><br/>{{ labels.mode_of_service.get(n.evidence_info.get('mode_of_service'), '-') }}<br/>"], ["<font size=7.5 color='#555555'>Tracking number</font><br/>{{ n.evidence_info.tracking_number | default('-', true) }}<br/>", "<font size=7.5 color='#555555'>Delivered?</font><br/>{{ {True: 'Yes', False: 'No'}.get(n.evidence_info.get('is_delivered'), '-') }}<br/>", "<font size=7.5 color='#555555'>Payment status</font><br/>{{ labels.payment_status.get(n.evidence_info.get('payment_status'), '-') }}<br/>"]]
 
 [[rows.format_config."body"."blocks"."columns"]]
 "width" = "33%"
@@ -324,8 +338,8 @@ is_active = true
 [[rows.format_config."body"."blocks"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Date of delivery</font><br/>{{ (n.evidence_info.delivery_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Accused replied?</font><br/>{{ {True: 'Yes', False: 'No'}.get(n.evidence_info.get('accused_replied'), '-') }}", ""]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Date of delivery</font><br/>{{ (n.evidence_info.delivery_date | default('')) | format_date('%d %B %Y') or '-' }}<br/>", "<font size=7.5 color='#555555'>Accused replied?</font><br/>{{ {True: 'Yes', False: 'No'}.get(n.evidence_info.get('accused_replied'), '-') }}<br/>", ""]]
 "when" = "n.evidence_info.get('is_delivered') is sameas true"
 
 [[rows.format_config."body"."blocks"."columns"]]
@@ -340,8 +354,8 @@ is_active = true
 [[rows.format_config."body"."blocks"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Return date</font><br/>{{ (n.evidence_info.return_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Reason for non-delivery</font><br/>{{ labels.non_delivery_reason.get(n.evidence_info.get('non_delivery_reason'), '-') }}", ""]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Return date</font><br/>{{ (n.evidence_info.return_date | default('')) | format_date('%d %B %Y') or '-' }}<br/>", "<font size=7.5 color='#555555'>Reason for non-delivery</font><br/>{{ labels.non_delivery_reason.get(n.evidence_info.get('non_delivery_reason'), '-') }}<br/>", ""]]
 "when" = "n.evidence_info.get('is_delivered') is sameas false"
 
 [[rows.format_config."body"."blocks"."columns"]]
@@ -361,8 +375,8 @@ is_active = true
 [[rows.format_config."body"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Was the cheque deposited by the payee?</font><br/>{{ {True: 'Yes', False: 'No'}.get(jur.get('cheque_deposited_by_payee'), '-') }}", "<font size=8 color='#555555'>Cause of action date</font><br/>{{ (jur.cause_of_action_date | default('')) | format_date('%d %B %Y') or '-' }}", "<font size=8 color='#555555'>Complaint filing date</font><br/>{{ (jur.complaint_filing_date | default('')) | format_date('%d %B %Y') or '-' }}"], ["<font size=8 color='#555555'>Other complaints pending between the parties?</font><br/>{{ {True: 'Yes', False: 'No'}.get(jur.get('other_complaints_pending'), '-') }}", "", ""]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Was the cheque deposited by the payee?</font><br/>{{ {True: 'Yes', False: 'No'}.get(jur.get('cheque_deposited_by_payee'), '-') }}<br/>", "<font size=7.5 color='#555555'>Cause of action date</font><br/>{{ (jur.cause_of_action_date | default('')) | format_date('%d %B %Y') or '-' }}<br/>", "<font size=7.5 color='#555555'>Complaint filing date</font><br/>{{ (jur.complaint_filing_date | default('')) | format_date('%d %B %Y') or '-' }}<br/>"], ["<font size=7.5 color='#555555'>Other complaints pending between the parties?</font><br/>{{ {True: 'Yes', False: 'No'}.get(jur.get('other_complaints_pending'), '-') }}<br/>", "", ""]]
 
 [[rows.format_config."body"."columns"]]
 "width" = "33%"
@@ -381,8 +395,8 @@ is_active = true
 [[rows.format_config."body"]]
 "type" = "table"
 "border" = false
-"padding" = 3
-"rows" = [["<font size=8 color='#555555'>Would you like to settle the case outside the court?</font><br/>{{ labels.adr.get(prayer.get('adr_preference'), '-') }}", "", ""]]
+"padding" = 0
+"rows" = [["<font size=7.5 color='#555555'>Would you like to settle the case outside the court?</font><br/>{{ labels.adr.get(prayer.get('adr_preference'), '-') }}<br/>", "", ""]]
 
 [[rows.format_config."body"."columns"]]
 "width" = "33%"
@@ -484,6 +498,7 @@ is_active = true
 "type" = "signatures"
 "source" = "data.signatories"
 "box_height" = 64
+"label_style" = "label"
 
 [rows.data_config]
 "sync_render" = true

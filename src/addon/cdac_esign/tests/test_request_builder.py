@@ -18,7 +18,7 @@ from addon.cdac_esign.request_builder import (
 CONFIG = CDACESignConfig(
     url="https://esign.cdac.invalid/esign",
     asp_id="ASP-TEST",
-    response_url="https://dristi.invalid/api/v1/esign/_signed",
+    response_url="https://dristi.invalid/api/v1/esign/_signed/",
     keystore_path="/dev/null",
     keystore_password="secret",
 )
@@ -93,7 +93,7 @@ class RequestXMLTests(SimpleTestCase):
         self.assertEqual(root.get("aspId"), "ASP-TEST")
         self.assertEqual(root.get("AuthMode"), "1")
         self.assertEqual(root.get("responseSigType"), "pkcs7")
-        self.assertEqual(root.get("responseUrl"), "https://dristi.invalid/api/v1/esign/_signed")
+        self.assertEqual(root.get("responseUrl"), "https://dristi.invalid/api/v1/esign/_signed/")
 
     def test_exactly_one_input_hash_is_emitted(self):
         """This iteration signs one document per transaction."""
