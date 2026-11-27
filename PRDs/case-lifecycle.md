@@ -1,6 +1,6 @@
 # Case Lifecycle
 
-Status: Converted from PUCAR functional spec (PDF, undated). V1-specific event names removed; end triggers removed from primary stages; Post-Judgement, Post-Disposal, and Long Pending Register made sticky.
+Status: 2026-11-27 — stage 16, Long Pending Register, is Kerala only. Converted from PUCAR functional spec (PDF, undated). V1-specific event names removed; end triggers removed from primary stages; Post-Judgement, Post-Disposal, and Long Pending Register made sticky.
 
 Source: `Case Lifeycle.pdf`
 
@@ -45,7 +45,7 @@ Whenever the start trigger tagged to a primary stage occurs, that stage becomes 
 | 13 | Judgement | Hearing is scheduled with purpose = Judgement AND the case is not in Post-Judgement, Post-Disposal, or Long Pending Register | |
 | 14 | Post-Judgement | Judgement order is passed | |
 | 15 | Post-Disposal | Order for dismissal is passed, OR case is withdrawn, OR case is settled, OR case is transferred | |
-| 16 | Long Pending Register | Workflow for moving case to long pending register is triggered | The case leaves LPR when the exit workflow is triggered. What the primary stage should be on exit is open — see OQ-1. |
+| 16 | Long Pending Register | Workflow for moving case to long pending register is triggered | Kerala only: the order items that move a case into and out of the long pending register are offered in Kerala only ([`order-template-catalogue.md`](order-template-catalogue.md) #22, #23). The case leaves LPR when the exit workflow is triggered. What the primary stage should be on exit is open — see OQ-1. |
 
 ---
 

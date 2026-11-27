@@ -1,6 +1,6 @@
 # Dropped ideas
 
-**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`); the four application order items (#5, #6, #13, #26) of the order item catalogue. 2026-11-11 — the next hearing's status and View All Hearings on the case overview (`OVW-02`, `OVW-05`); one line of text per case update on the overview (`OVW-06`); the hearings list and hearing detail on the case (`HRG-01`–`HRG-12`); hiding Notice/Process Status when no process has issued (`SVC-16`); the Applications filters and search, and the Needs attention grouping, bulk signing and bulk payment (`APP-01`–`APP-04`, `APP-09`–`APP-11`); the application statuses and record restated in view-case (`APP-12`–`APP-20`); the Documents section's separate bail-bond list and its filters and search (`DOC-01`–`DOC-04`); a witness's linked party and added by, and how its number is composed (`PTY-13`–`PTY-16`); legal teams all authored or none (`PTY-21`); counts per group in Parties (`PTY-22`); the rest of the Parties section's structure — list and selection, per-population rules and fields (`PTY-01`–`PTY-14`, `PTY-17`–`PTY-20`, `PTY-23`, `PTY-27`, `PTY-29`, `PTY-31`, `PTY-32`); Case History's date range and the Bail lifecycle section of view-case (`TME-02`, `TME-03`, §13); view-case's Not yet covered section; the last order highlighted in Case History (`TME-06`). 2026-11-13 — the case reference of bulk filing (`BLK-07`). 2026-11-16 — an exhibit number never changing (case-file `CFL-13`, `Q-7`). 2026-11-17 — the case file index as headings two levels deep (case-file `CFL-16`, `CFL-17`, `Q-8`), and the case file opening on its first document (`CFL-18`); a document's number as its exhibit number or a system identifier (case-file `CFL-20`); no other action offered in the case file (case-file `CFL-25`); actions on documents only, not on sections (case-file `CFL-23`). Later the same day — the naming rules for vakalatnamas, orders, documents attached and payment receipts (case-file `CFL-27`–`CFL-30`), folded into the §3.1 names table. 2026-11-20 — the Application onboarder role, from court-roles and application lifecycle. 2026-11-23 — the PSS Act wording swap (`PSS-03`), from the PSS Act document. 2026-11-25 — the Documents tab's columns, sources, titles and filter, from document submission (`DSB-05`, `DSB-07`–`DSB-11`, `DSB-22`, part of `DSB-23`).
+**Status:** 2026-10-19 — created; locked and optional variables, dropped from the order template catalogue and the order generation PRD. Then order item templates and the template system, dropped from the catalogue. 2026-10-20 — application detail cut from the order generation PRD; the per-court setting for where attendance and the next hearing are entered; the one-press hearing control; the trigger summary before marking order data complete; personal shortcuts seeded from the catalogue. 2026-10-29 — shortcuts saved per courtroom. 2026-11-03 — the per-court setting for where the next hearing is entered (`nextHearingEntry`). 2026-11-04 — the cap on upfront channel-fee rounds (`PMT-12`). 2026-11-10 — no bulk acts on applications (`ALC-35`); the four application order items (#5, #6, #13, #26) of the order item catalogue. 2026-11-11 — the next hearing's status and View All Hearings on the case overview (`OVW-02`, `OVW-05`); one line of text per case update on the overview (`OVW-06`); the hearings list and hearing detail on the case (`HRG-01`–`HRG-12`); hiding Notice/Process Status when no process has issued (`SVC-16`); the Applications filters and search, and the Needs attention grouping, bulk signing and bulk payment (`APP-01`–`APP-04`, `APP-09`–`APP-11`); the application statuses and record restated in view-case (`APP-12`–`APP-20`); the Documents section's separate bail-bond list and its filters and search (`DOC-01`–`DOC-04`); a witness's linked party and added by, and how its number is composed (`PTY-13`–`PTY-16`); legal teams all authored or none (`PTY-21`); counts per group in Parties (`PTY-22`); the rest of the Parties section's structure — list and selection, per-population rules and fields (`PTY-01`–`PTY-14`, `PTY-17`–`PTY-20`, `PTY-23`, `PTY-27`, `PTY-29`, `PTY-31`, `PTY-32`); Case History's date range and the Bail lifecycle section of view-case (`TME-02`, `TME-03`, §13); view-case's Not yet covered section; the last order highlighted in Case History (`TME-06`). 2026-11-13 — the case reference of bulk filing (`BLK-07`). 2026-11-16 — an exhibit number never changing (case-file `CFL-13`, `Q-7`). 2026-11-17 — the case file index as headings two levels deep (case-file `CFL-16`, `CFL-17`, `Q-8`), and the case file opening on its first document (`CFL-18`); a document's number as its exhibit number or a system identifier (case-file `CFL-20`); no other action offered in the case file (case-file `CFL-25`); actions on documents only, not on sections (case-file `CFL-23`). Later the same day — the naming rules for vakalatnamas, orders, documents attached and payment receipts (case-file `CFL-27`–`CFL-30`), folded into the §3.1 names table. 2026-11-20 — the Application onboarder role, from court-roles and application lifecycle. 2026-11-23 — the PSS Act wording swap (`PSS-03`), from the PSS Act document. 2026-11-25 — the Documents tab's columns, sources, titles and filter, from document submission (`DSB-05`, `DSB-07`–`DSB-11`, `DSB-22`, part of `DSB-23`). 2026-11-27 — the catalogue's *Not in V1* table of order items with their variables and workflows; the section workflows under its hearing purposes.
 
 Ideas taken out of the PRDs, kept here with their last wording so they can be restored. Each entry says where it came from and what replaced it. The full earlier documents are also in git history: commit `cb97c67` holds both files as they were before.
 
@@ -1011,3 +1011,56 @@ As it stood in §2 of [`court-roles.md`](court-roles.md), held by the Magistrate
 > | `DSB-09` | Documents in Draft or Pending signature appear only under **Needs attention**. |
 > | `DSB-10` | **Evidence number** shows the provisional ID until the document is marked, then its evidence number (P1, D1 …). |
 > | `DSB-11` | The **Document type** filter offers the document types in MDMS (§5), and also **Deposition**, **Filing** and **Application**. Filing covers documents that came in with the complaint; Application covers documents submitted with an application. |
+
+---
+
+## Order items not in V1, listed with their variables
+
+**Dropped 2026-11-27.** The catalogue no longer keeps a table of order items outside V1
+with their variables and workflows.
+
+**Now:** *Future enhancements* in [`order-template-catalogue.md`](order-template-catalogue.md)
+names the three order items, to be brought in if the need for them arises.
+
+### From order-template-catalogue.md, *Not in V1*
+
+> Order types outside V1 scope. Kept here for future reference; they are not offered in V1.
+>
+> | Order type | Was | Variables | Workflow |
+> |---|---|---|---|
+> | Order under section 202 CrPC | Yes (Cognizance) | *(none)* | *(none)* |
+> | Accept extension for submission deadline | No (application) | `[Application Number]` · `[Document Type]` · `[Document Name]` · `[Party Type]` · `[New Submission Date]` | Updates submission deadline |
+> | Reject extension for submission deadline | No (application) | `[Application Number]` · `[Document Type]` · `[Document Name]` | |
+
+---
+
+## Section workflows under hearing purposes
+
+**Dropped 2026-11-27.** Section workflows — dedicated screens for recording procedural
+steps in a hearing, offered alongside the order items — are not being built.
+
+**Now:** the catalogue's *Hearing purposes* lists order items only.
+
+### From order-template-catalogue.md, *Hearing purposes*
+
+> The table below has two kinds of actions: **order types** (from the order type catalogue above) and **section workflows** (marked with ⚙). Section workflows are not order types — they are dedicated screens for recording specific procedural steps during a hearing. Each opens its own form for the magistrate to enter structured details. They produce a record that becomes part of the case file.
+>
+> ### Section workflows
+>
+> | ID | Section workflow | Description |
+> |---|---|---|
+> | ⚙ Recording of plea | Plea under S. 274 of the Sanhita | Records the accused's plea (guilty / not guilty) and the particulars of the offence as read and explained |
+> | ⚙ Examination of the accused | Examination under S. 351 BNSS | Records the statement of the accused when examined by the court |
+> | ⚙ Evidence of the complainant | Complainant evidence | Records the complainant's evidence — documents, testimony, affidavit evidence |
+> | ⚙ Examination of the witness | Witness examination | Records witness testimony — examination-in-chief, cross-examination, re-examination |
+>
+> The section workflows in the *Hearing purpose → actions* rows that had them:
+>
+> | # | Hearing purpose | People required | Likely order types and section workflows |
+> |---|---|---|---|
+> | 7 | Plea | Accused, Accused Advocate | Bail, Referral to ADR, Issue of notice · ⚙ Recording of plea |
+> | 8 | Evidence of the complainant | Complainant, Complainant Advocate, Accused Advocate | Witness batta, Issue of summons (for witnesses) · ⚙ Evidence of the complainant, ⚙ Examination of the witness |
+> | 9 | Examination of the accused under S. 351 BNSS | Accused, Accused Advocate | Issue of warrants · ⚙ Examination of the accused |
+> | 10 | Evidence of the accused | Complainant Advocate, Accused, Accused Advocate | Witness batta, Issue of summons (for witnesses) · ⚙ Examination of the witness |
+>
+> - Section workflows (⚙) are surfaced as buttons alongside the order type dropdown. They open dedicated screens.

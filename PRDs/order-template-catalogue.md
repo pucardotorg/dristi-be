@@ -1,6 +1,6 @@
 # Order item catalogue
 
-**Status:** 2026-11-27 (25) — **no more Dropdown and Contextual**: the Availability column and its note are removed; every order item is chosen the same way, and Application action (#27) asks which application it applies to when chosen, and is added in advance when the order is opened from the application's task. Rescheduling's condition is in its own note, as before. **#3 Scheduling of hearing date** is offered only when the case has no hearing scheduled, and not in a hearing's own order. The order items table gains a **States** column: Moving case to and out of the long pending register (#22, #23) are offered in Kerala only; the rest are not yet decided. The mapping notes under the combination restrictions are removed. 2026-11-26 (24) — **#12 Issue of notice**: the notice type is chosen from one value, *Delay condonation notice*, which is also the default; more notice types may be added later. The note on the missing police station is removed. **#11 Withdrawal of case** is not linked to an application: it is chosen from the dropdown only, and has no variables. **Every variables table has a new shape**: *Mandatory to enter*, *Default value* and *Validation* (empty in every row) are merged into one **Logic** column, which says when a variable is shown, whether it is mandatory and its default; variables the system fills in say where from and that they cannot be edited. The note that bond amount and number of sureties are asked only for a bailable warrant is now in their rows. The explanation above the tables is aligned. 2026-11-25 (23) — **#10 Issue of warrants has its own variables table**, no longer shared with summons, proclamation and attachment. It gains **Warrant type** (Bailable or Non-bailable, mandatory) and, for a bailable warrant only, **Bond amount** and **Number of sureties**, both mandatory. 2026-11-10 (22) — **one order item per application**: Accept application (#5), Reject application (#6), Acceptance of bail (#13) and Dismiss application (#26) are withdrawn and replaced by **#27 Application action**, the order item through which an order acts on an application, whose questions are owned by [`application-lifecycle.md`](application-lifecycle.md) `ALC-38`. Accepting a Bail application triggers the Bail type's workflow (`ALC-16`); there is no separate bail acceptance item. Combination rule 4 is now one Application action per application per order. "Application types covered by generic accept/reject" is replaced by a pointer to application-lifecycle.md. The withdrawn items are in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-22 (21) — rescheduling of hearing date (#4) is now a dropdown order item under Case management, offered only when the case already has a hearing scheduled and the order is not a hearing's own; it asks only the new hearing date and the purpose, the purpose defaulting to the one the hearing already has. 2026-10-20 (20) — dismissal no longer points at `APL-04`–`APL-06` of order-generation.md. 2026-10-19 (19) — templates dropped: retitled *Order item catalogue*; the Template column, the template notes and *How the template system works* moved to [`dropped-ideas.md`](dropped-ideas.md). The catalogue now holds the order items, their variables, workflows, availability, combination restrictions and hearing purposes. 2026-10-19 (18) — contextual order items can now be chosen on the order screen, and ask what they apply to (`ITM-04`). Channels, addresses and police station are fields of the order item like any other (`ITM-11` of order-generation.md removed). Locked / Optional column and the *Locked vs optional variables* section removed: a variable is mandatory to enter or not; the old text is in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
+**Status:** 2026-11-27 (26) — the order items table gains a **Logic** column, saying when each order item is offered: Scheduling (#3) only when no hearing is scheduled and Rescheduling (#4) only when one is, neither in a hearing's own order; Cognizance (#14) and Dismiss case (#16) only until one of them is ordered; Moving case to the long pending register (#22) only when the case is not in it, and out of it (#23) only when it is; Application action (#27) only when the case has an application still pending. The conditions under #3 and #4 in *Variables by order item* move into the column. Application action (#27) is in the **Filings** category. **States** filled for every order item: Kerala, Gujarat and Punjab & Haryana, except #22 and #23, Kerala only. *Not in V1* is replaced by **Future enhancements**, which names its three order items as ones that can be brought in if the need arises. **Section workflows** (the ⚙ entries under Hearing purposes) are removed, to [`dropped-ideas.md`](dropped-ideas.md). *Hearing purposes* becomes the first table of a new **Master data** section, held here until it has a document of its own, and moves above the V1 stop-reading marker, which is then removed. In *Hearing purposes*: the line on where the list came from, the line on order types available at any hearing, and the notes on blank people and generic order types are removed; *People required* is kept for review and not built in V1; *Likely order items* (was *Likely order types*) is built in V1 and may be used to suggest order items. The two *Review application* rows (#18, #20) are merged into #18, and the notes under the table are removed. A **States** column is added, not yet filled. The *Application types* section is folded into the Application action (#27) note. *Condonation of delay* (#1) lists Application action, Dismiss case, Cognizance and Issue of summons as likely order items, and *Delay condonation and admission* (#3) lists the same, covering both #1 and #2. **#17 Bail** gains `[Party Name]`, the party the bail is for, chosen from any party in the case, defaulting to the accused where the case has exactly one. In *Hearing purposes*, *Referral to ADR* is corrected to the order item's name, *Referral of case to ADR*. *Issue of summons* no longer carries "(for witnesses)", and *To issue order* (#19) has no likely order items. 2026-11-27 (25) — **no more Dropdown and Contextual**: the Availability column and its note are removed; every order item is chosen the same way, and Application action (#27) asks which application it applies to when chosen, and is added in advance when the order is opened from the application's task. Rescheduling's condition is in its own note, as before. **#3 Scheduling of hearing date** is offered only when the case has no hearing scheduled, and not in a hearing's own order. The order items table gains a **States** column: Moving case to and out of the long pending register (#22, #23) are offered in Kerala only; the rest are not yet decided. The mapping notes under the combination restrictions are removed. 2026-11-26 (24) — **#12 Issue of notice**: the notice type is chosen from one value, *Delay condonation notice*, which is also the default; more notice types may be added later. The note on the missing police station is removed. **#11 Withdrawal of case** is not linked to an application: it is chosen from the dropdown only, and has no variables. **Every variables table has a new shape**: *Mandatory to enter*, *Default value* and *Validation* (empty in every row) are merged into one **Logic** column, which says when a variable is shown, whether it is mandatory and its default; variables the system fills in say where from and that they cannot be edited. The note that bond amount and number of sureties are asked only for a bailable warrant is now in their rows. The explanation above the tables is aligned. 2026-11-25 (23) — **#10 Issue of warrants has its own variables table**, no longer shared with summons, proclamation and attachment. It gains **Warrant type** (Bailable or Non-bailable, mandatory) and, for a bailable warrant only, **Bond amount** and **Number of sureties**, both mandatory. 2026-11-10 (22) — **one order item per application**: Accept application (#5), Reject application (#6), Acceptance of bail (#13) and Dismiss application (#26) are withdrawn and replaced by **#27 Application action**, the order item through which an order acts on an application, whose questions are owned by [`application-lifecycle.md`](application-lifecycle.md) `ALC-38`. Accepting a Bail application triggers the Bail type's workflow (`ALC-16`); there is no separate bail acceptance item. Combination rule 4 is now one Application action per application per order. "Application types covered by generic accept/reject" is replaced by a pointer to application-lifecycle.md. The withdrawn items are in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-22 (21) — rescheduling of hearing date (#4) is now a dropdown order item under Case management, offered only when the case already has a hearing scheduled and the order is not a hearing's own; it asks only the new hearing date and the purpose, the purpose defaulting to the one the hearing already has. 2026-10-20 (20) — dismissal no longer points at `APL-04`–`APL-06` of order-generation.md. 2026-10-19 (19) — templates dropped: retitled *Order item catalogue*; the Template column, the template notes and *How the template system works* moved to [`dropped-ideas.md`](dropped-ideas.md). The catalogue now holds the order items, their variables, workflows, availability, combination restrictions and hearing purposes. 2026-10-19 (18) — contextual order items can now be chosen on the order screen, and ask what they apply to (`ITM-04`). Channels, addresses and police station are fields of the order item like any other (`ITM-11` of order-generation.md removed). Locked / Optional column and the *Locked vs optional variables* section removed: a variable is mandatory to enter or not; the old text is in [`dropped-ideas.md`](dropped-ideas.md). 2026-10-06 (17) — accept, reject and acceptance of bail apply only once the
 application is onboarded; before that it can only be dismissed. New contextual order item
 **26. Dismiss application**, which cites no application number and names the application
 by its type, the party that filed it and its filing date. 2026-10-06 (16) — added a stop-reading marker before "Not in V1":
@@ -65,39 +65,39 @@ How an order is drafted from this configuration is owned by
 
 ## Order items
 
-| # | Order item | Category | Workflow | States |
-|---|---|---|---|---|
-| 1 | Mandatory submissions and responses | Filings | Creates submission task | |
-| 2 | Referral of case to ADR | Disposal | | |
-| 3 | Scheduling of hearing date | Case management | Schedules next hearing | |
-| 4 | Rescheduling of hearing date | Case management | Reschedules hearing | |
-| 7 | Case transfer | Case management | | |
-| 8 | Case settlement | Disposal | | |
-| 9 | Issue of summons | Process | Triggers the summons workflow | |
-| 10 | Issue of warrants | Process | Triggers the warrant workflow | |
-| 11 | Withdrawal of case | Disposal | | |
-| 12 | Issue of notice | Process | Triggers the notice workflow | |
-| 14 | Cognizance | Case management | | |
-| 15 | Judgement | Disposal | | |
-| 16 | Dismiss case | Case management | | |
-| 17 | Bail | Filings | Triggers the bail workflow | |
-| 18 | Cost | Miscellaneous | Creates payment task | |
-| 19 | Witness batta | Miscellaneous | Creates a task for the paying party, closed by confirming they have paid — the payment is not made through the system | |
-| 20 | Issue of proclamation | Process | Triggers the proclamation workflow | |
-| 21 | Issue of attachment | Process | Triggers the attachment workflow | |
-| 22 | Moving case to long pending register | Case management | | Kerala |
-| 23 | Moving case out of long pending register | Case management | | Kerala |
-| 24 | Abate case | Disposal | | |
-| 25 | Issue of miscellaneous process | Process | Triggers the miscellaneous process workflow | |
-| 27 | Application action | | *(see note below)* | |
+| # | Order item | Category | Workflow | Logic | States |
+|---|---|---|---|---|---|
+| 1 | Mandatory submissions and responses | Filings | Creates submission task | || Kerala, Gujarat, Punjab & Haryana |
+| 2 | Referral of case to ADR | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
+| 3 | Scheduling of hearing date | Case management | Schedules next hearing | Offered only when the case has no hearing scheduled, and not in a hearing's own order, where the next date is set under Next hearing. || Kerala, Gujarat, Punjab & Haryana |
+| 4 | Rescheduling of hearing date | Case management | Reschedules hearing | Offered only when the case has a hearing scheduled, and not in a hearing's own order. || Kerala, Gujarat, Punjab & Haryana |
+| 7 | Case transfer | Case management | | || Kerala, Gujarat, Punjab & Haryana |
+| 8 | Case settlement | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
+| 9 | Issue of summons | Process | Triggers the summons workflow | || Kerala, Gujarat, Punjab & Haryana |
+| 10 | Issue of warrants | Process | Triggers the warrant workflow | || Kerala, Gujarat, Punjab & Haryana |
+| 11 | Withdrawal of case | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
+| 12 | Issue of notice | Process | Triggers the notice workflow | || Kerala, Gujarat, Punjab & Haryana |
+| 14 | Cognizance | Case management | | Offered only until cognizance is taken or the case is dismissed. Once either is ordered, neither can be ordered again. || Kerala, Gujarat, Punjab & Haryana |
+| 15 | Judgement | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
+| 16 | Dismiss case | Case management | | Offered only until cognizance is taken or the case is dismissed. Once either is ordered, neither can be ordered again. || Kerala, Gujarat, Punjab & Haryana |
+| 17 | Bail | Filings | Triggers the bail workflow | || Kerala, Gujarat, Punjab & Haryana |
+| 18 | Cost | Miscellaneous | Creates payment task | || Kerala, Gujarat, Punjab & Haryana |
+| 19 | Witness batta | Miscellaneous | Creates a task for the paying party, closed by confirming they have paid — the payment is not made through the system | || Kerala, Gujarat, Punjab & Haryana |
+| 20 | Issue of proclamation | Process | Triggers the proclamation workflow | || Kerala, Gujarat, Punjab & Haryana |
+| 21 | Issue of attachment | Process | Triggers the attachment workflow | || Kerala, Gujarat, Punjab & Haryana |
+| 22 | Moving case to long pending register | Case management | | Offered only when the case is not in the long pending register. | Kerala |
+| 23 | Moving case out of long pending register | Case management | | Offered only when the case is in the long pending register. | Kerala |
+| 24 | Abate case | Disposal | | || Kerala, Gujarat, Punjab & Haryana |
+| 25 | Issue of miscellaneous process | Process | Triggers the miscellaneous process workflow | || Kerala, Gujarat, Punjab & Haryana |
+| 27 | Application action | Filings | *(see note below)* | Offered only when the case has an application still pending ([`order-generation.md`](order-generation.md) `APL-01`). || Kerala, Gujarat, Punjab & Haryana |
 
-**Application action (#27).** The order item through which an order acts on an application ([`application-lifecycle.md`](application-lifecycle.md) `ALC-32`), at most one per application in an order. When chosen, it asks which application it applies to. It is also added in advance when the order is opened from the application's task, and can be removed (`ALC-32`; [`order-generation.md`](order-generation.md) `ITM-04`). Its questions — whether to onboard the application, whether the order decides it, the outcome (Accepted or Rejected once onboarded; Dismissed before), the CIS outcome, a date, and whether the other party must respond — are owned by `ALC-38`. Numbers 5, 6, 13 and 26 are withdrawn and not reused.
+**Application action (#27).** The order item through which an order acts on an application ([`application-lifecycle.md`](application-lifecycle.md) `ALC-32`), at most one per application in an order. When chosen, it asks which application it applies to. It is also added in advance when the order is opened from the application's task, and can be removed (`ALC-32`; [`order-generation.md`](order-generation.md) `ITM-04`). Its questions — whether to onboard the application, whether the order decides it, the outcome (Accepted or Rejected once onboarded; Dismissed before), the CIS outcome, a date, and whether the other party must respond — are owned by `ALC-38`. It covers every application type; the types, and the workflow each triggers on acceptance, are in "Application types" of [`application-lifecycle.md`](application-lifecycle.md). Numbers 5, 6, 13 and 26 are withdrawn and not reused.
 
-**States.** The states whose deployment offers the order item. A blank cell is not yet
-decided.
+**States.** The states whose deployment offers the order item.
 
-**Category.** Groups order items on the order-issuance screen. Application action (#27)
-has none.
+**Logic.** When the order item is offered. A blank cell has no condition recorded.
+
+**Category.** Groups order items on the order-issuance screen.
 
 **Application workflows belong to the application, not the order item.** When an
 application is accepted, any workflow associated with that application type is triggered.
@@ -151,10 +151,6 @@ give for each variable.
 | `[Hearing Date]` | Date of the next hearing | Date picker *(proposed)* | Mandatory. |
 | `[Hearing Purpose]` | Purpose of the next hearing | Dropdown — MDMS hearing purposes | Mandatory. |
 
-Offered only when the case has no hearing scheduled; otherwise the date is moved with
-*Rescheduling of hearing date* (#4). Not offered in a hearing's own order, where the next
-date is set under Next hearing ([`order-generation.md`](order-generation.md) `ORD-09`).
-
 ### 4. Rescheduling of hearing date
 
 | Variable | Meaning | Input type | Logic |
@@ -163,9 +159,7 @@ date is set under Next hearing ([`order-generation.md`](order-generation.md) `OR
 | `[Hearing Purpose]` | Purpose of the rescheduled hearing | Dropdown — MDMS hearing purposes | Mandatory. Defaults to the purpose the hearing already has. |
 | `[Original Hearing Date]` | Date of the hearing being moved | None — from the hearing being moved | System-filled with the date the case's hearing is currently scheduled for; not editable. |
 
-Offered only when the case already has a hearing scheduled. Not offered in a hearing's own
-order, where the next date is set under Next hearing. Only the new hearing date and the
-purpose are asked.
+Only the new hearing date and the purpose are asked.
 
 ### 7. Case transfer · 8. Case settlement · 11. Withdrawal of case · 14. Cognizance · 15. Judgement · 16. Dismiss case · 22–23. Moving case to / out of long pending register · 24. Abate case
 
@@ -220,6 +214,7 @@ with its own template where needed ([`process.md`](process.md) `TPL-01`).
 
 | Variable | Meaning | Input type | Logic |
 |---|---|---|---|
+| `[Party Name]` | The party the bail is for | Dropdown — parties in the case | Mandatory. Defaults to the accused, where the case has exactly one. |
 | `[Plea]` | Guilty / not guilty | Dropdown — Guilty, Not guilty *(proposed)* | |
 
 ### 18. Cost
@@ -302,73 +297,47 @@ others.
 
 ---
 
-> **V1 readers can stop here.** Nothing from this point on is required for V1 — it is kept
-> for reference and future work.
+## Master data
 
-## Not in V1
+Master data the order items use, held here until it has a document of its own.
 
-Order types outside V1 scope. Kept here for future reference; they are not offered in V1.
+### Hearing purposes
 
-| Order type | Was | Variables | Workflow |
-|---|---|---|---|
-| Order under section 202 CrPC | Yes (Cognizance) | *(none)* | *(none)* |
-| Accept extension for submission deadline | No (application) | `[Application Number]` · `[Document Type]` · `[Document Name]` · `[Party Type]` · `[New Submission Date]` | Updates submission deadline |
-| Reject extension for submission deadline | No (application) | `[Application Number]` · `[Document Type]` · `[Document Name]` | |
+The master list of hearing purposes, with the people required at each and the order items
+likely at each.
+
+*People required* is kept here for review and is not built in V1
+([`order-generation.md`](order-generation.md) `ATT-02a`). *Likely order items* is built in
+V1; the order screen may use it to suggest order items for the hearing (`ITM-01`).
+*States* is not yet filled: which hearing purposes each state uses is open
+([`cause-list-generation.md`](cause-list-generation.md) `Q-1`).
+
+| # | Hearing purpose | People required | Likely order items | States |
+|---|---|---|---|---|
+| 1 | Condonation of delay | Complainant Advocate, Accused Advocate | Application action, Dismiss case, Cognizance, Issue of summons | |
+| 2 | Admission | Complainant Advocate, Accused Advocate | Cognizance, Dismiss case, Issue of summons | |
+| 3 | Delay condonation and admission | Complainant Advocate, Accused Advocate | Application action, Dismiss case, Cognizance, Issue of summons | |
+| 4 | Cognizance | Complainant Advocate, Accused Advocate | Cognizance, Dismiss case, Issue of summons | |
+| 5 | Appearance | Accused, Accused Advocate | Issue of summons, Issue of warrants, Bail, Issue of notice | |
+| 6 | Bail | Accused, Accused Advocate | Bail, Application action, Issue of warrants | |
+| 7 | Plea | Accused, Accused Advocate | Bail, Referral of case to ADR, Issue of notice | |
+| 8 | Evidence of the complainant | Complainant, Complainant Advocate, Accused Advocate | Witness batta, Issue of summons | |
+| 9 | Examination of the accused under S. 351 BNSS | Accused, Accused Advocate | Issue of warrants | |
+| 10 | Evidence of the accused | Complainant Advocate, Accused, Accused Advocate | Witness batta, Issue of summons | |
+| 11 | Arguments | Complainant Advocate, Accused Advocate | Referral of case to ADR, Case settlement | |
+| 12 | Judgement | Accused Advocate | Judgement | |
+| 13 | For reports (forensics, ADR, etc.) | | Referral of case to ADR | |
+| 14 | ADR | | Referral of case to ADR, Case settlement | |
+| 15 | Mediation | | Referral of case to ADR, Case settlement | |
+| 16 | Warrant | | Issue of warrants, Issue of proclamation, Issue of attachment, Bail | |
+| 17 | Execution | | Issue of attachment, Issue of warrants | |
+| 18 | Review application | | | |
+| 19 | To issue order | | | |
 
 ---
 
-## Application types
+## Future enhancements
 
-Application action (#27) covers every application type. The types, and the workflow each triggers on acceptance, are in "Application types" of [`application-lifecycle.md`](application-lifecycle.md).
-
----
-
-## Hearing purposes
-
-Merged from both codebases and the attendance requirements table.
-
-**Order types available at any hearing:** Scheduling of hearing date, Cost, Mandatory submissions, Withdrawal of case, Case transfer, Moving to/from LP register, Abate case. These are generic — they are always available and not repeated in every row below.
-
-The table below has two kinds of actions: **order types** (from the order type catalogue above) and **section workflows** (marked with ⚙). Section workflows are not order types — they are dedicated screens for recording specific procedural steps during a hearing. Each opens its own form for the magistrate to enter structured details. They produce a record that becomes part of the case file.
-
-### Section workflows
-
-| ID | Section workflow | Description |
-|---|---|---|
-| ⚙ Recording of plea | Plea under S. 274 of the Sanhita | Records the accused's plea (guilty / not guilty) and the particulars of the offence as read and explained |
-| ⚙ Examination of the accused | Examination under S. 351 BNSS | Records the statement of the accused when examined by the court |
-| ⚙ Evidence of the complainant | Complainant evidence | Records the complainant's evidence — documents, testimony, affidavit evidence |
-| ⚙ Examination of the witness | Witness examination | Records witness testimony — examination-in-chief, cross-examination, re-examination |
-
-### Hearing purpose → actions
-
-| # | Hearing purpose | People required | Likely order types and section workflows |
-|---|---|---|---|
-| 1 | Condonation of delay | Complainant Advocate, Accused Advocate | Dismiss case |
-| 2 | Admission | Complainant Advocate, Accused Advocate | Cognizance, Dismiss case, Issue of summons |
-| 3 | Delay condonation and admission | Complainant Advocate, Accused Advocate | Cognizance, Dismiss case, Issue of summons |
-| 4 | Cognizance | Complainant Advocate, Accused Advocate | Cognizance, Dismiss case, Issue of summons |
-| 5 | Appearance | Accused, Accused Advocate | Issue of summons, Issue of warrants, Bail, Issue of notice |
-| 6 | Bail | Accused, Accused Advocate | Bail, Application action, Issue of warrants |
-| 7 | Plea | Accused, Accused Advocate | Bail, Referral to ADR, Issue of notice · ⚙ Recording of plea |
-| 8 | Evidence of the complainant | Complainant, Complainant Advocate, Accused Advocate | Witness batta, Issue of summons (for witnesses) · ⚙ Evidence of the complainant, ⚙ Examination of the witness |
-| 9 | Examination of the accused under S. 351 BNSS | Accused, Accused Advocate | Issue of warrants · ⚙ Examination of the accused |
-| 10 | Evidence of the accused | Complainant Advocate, Accused, Accused Advocate | Witness batta, Issue of summons (for witnesses) · ⚙ Examination of the witness |
-| 11 | Arguments | Complainant Advocate, Accused Advocate | Referral to ADR, Case settlement |
-| 12 | Judgement | Accused Advocate | Judgement |
-| 13 | For reports (forensics, ADR, etc.) | | Referral to ADR |
-| 14 | ADR | | Referral to ADR, Case settlement |
-| 15 | Mediation | | Referral to ADR, Case settlement |
-| 16 | Warrant | | Issue of warrants, Issue of proclamation, Issue of attachment, Bail |
-| 17 | Execution | | Issue of attachment, Issue of warrants |
-| 18 | Review application | | |
-| 19 | To issue order | | *(any order — generic hearing for issuing pending orders)* |
-| 20 | Review application | | |
-
-**Notes:**
-- "Delay condonation and admission" (#3) is a combined hearing that covers two purposes in one sitting.
-- "People required" is blank where attendance rules are not yet defined.
-- The "Likely order types" column lists order types *specific* to this hearing — the generic types listed above (scheduling, cost, submissions, etc.) are always available and not repeated.
-- Section workflows (⚙) are surfaced as buttons alongside the order type dropdown. They open dedicated screens.
-- #18 and #20 both cover application review — they exist as separate entries in the two codebases but are the same hearing purpose.
-
+In a later version, these order items can be brought in if the need for them arises: Order
+under section 202 CrPC, Accept extension for submission deadline, and Reject extension for
+submission deadline.
