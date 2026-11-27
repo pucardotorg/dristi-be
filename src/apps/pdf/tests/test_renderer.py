@@ -74,6 +74,31 @@ def test_lists():
     assert "1." in text and "First" in text and "Second" in text
 
 
+@pytest.mark.parametrize(
+    ("list_type", "count", "marker"), [("1", 100, "100."), ("a", 621, "ww."), ("a", 703, "aaa.")]
+)
+def test_a_wide_list_marker_ends_before_its_item_text(list_type, count, marker):
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    block = {
+        "type": "list",
+        "items": [f"item{n}" for n in range(1, count + 1)],
+        "ordered": True,
+        "list_type": list_type,
+        "style": "body",
+    }
+    renderer = PythonRenderer()
+    pdf = renderer.render(doc(block, styles={"body": {"size": 12}}), {})
+    found = {}
+    for page in PdfReader(io.BytesIO(pdf)).pages:
+        page.extract_text(
+            visitor_text=lambda text, cm, tm, *_: found.setdefault(text.strip(), cm[4] + tm[4])
+        )
+    style = renderer._style("body")
+    marker_end = found[marker] + stringWidth(marker, style.fontName, style.fontSize)
+    assert marker_end < found[f"item{count}"]
+
+
 def test_images_qr_and_placeholders():
     image = ImageData(content=png_bytes(40, 20), width=40, height=20)
     pdf = render(
@@ -157,6 +182,15 @@ def test_custom_styles_and_fonts():
 def test_invalid_documents_raise_render_error(document):
     with pytest.raises(PDFRenderError):
         render(document)
+
+
+def test_a_table_row_taller_than_a_page_splits_only_when_asked():
+    lines = [f"line {n:03d}" for n in range(120)]
+    table = {"type": "table", "columns": [{"header": ""}], "rows": [["<br/>".join(lines)]]}
+    with pytest.raises(PDFRenderError):
+        render(doc(table))
+    text = text_of(render(doc({**table, "split_rows": True})))
+    assert [line.strip() for line in text.splitlines() if line.strip().startswith("line ")] == lines
 
 
 def test_composer_escapes_request_data_but_keeps_template_markup():

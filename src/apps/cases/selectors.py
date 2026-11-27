@@ -400,3 +400,127 @@ def case_ids_filed_before(moment):
     A lazy ``QuerySet`` of ids; a case not yet filed is not in it.
     """
     return Case.objects.filter(filed_at__lt=moment).values_list("pk", flat=True)
+
+
+# Orders (spec 0039 #1.1)
+
+
+@dataclass(frozen=True)
+class PartyRef:
+    """A person on a case an order item may name."""
+
+    id: UUID
+    name: str
+    role: str
+
+
+@dataclass(frozen=True)
+class OrderContext:
+    """The case facts an order item's defaults and availability read (``VAR-01``-``VAR-03``).
+
+    ``parties`` maps each participant role to its active participants, in
+    ordinal order. ``witnesses`` are the witnesses with the side that calls
+    them. Whether an accused has joined the case, and whether a witness has
+    been examined, are not modelled yet, so neither is offered here.
+    """
+
+    case_id: UUID
+    registered: bool
+    court_id: UUID | None
+    parties: dict[str, list[PartyRef]]
+    witnesses: list[PartyRef]
+    witness_sides: dict[UUID, str]
+
+    def of_role(self, role):
+        """Return the active participants holding ``role``."""
+        return self.parties.get(str(role), [])
+
+
+def order_context(case_id) -> OrderContext:
+    """Return the facts about the case an order reads. Three queries."""
+    case = Case.objects.filter(pk=case_id).values("status", "court_id").first()
+    parties = defaultdict(list)
+    sides = {}
+    rows = (
+        CaseParticipant.objects.active()
+        .filter(case_id=case_id)
+        .select_related("witness")
+        .order_by("role", "ordinal")
+    )
+    for participant in rows:
+        parties[participant.role].append(
+            PartyRef(
+                id=participant.pk, name=participant.name_at_filing or "", role=participant.role
+            )
+        )
+        witness = getattr(participant, "witness", None)
+        if witness is not None:
+            sides[participant.pk] = witness.side
+    return OrderContext(
+        case_id=case_id,
+        registered=bool(case) and case["status"] == CaseStatus.REGISTERED,
+        court_id=case["court_id"] if case else None,
+        parties=dict(parties),
+        witnesses=list(parties.get(ParticipantRole.WITNESS, [])),
+        witness_sides=sides,
+    )
+
+
+@dataclass(frozen=True)
+class CaseDocumentRef:
+    """A document in the case file an order can link (``ORD-17``)."""
+
+    id: UUID
+    document_type: str
+    name: str
+
+
+def case_documents(case_id) -> list[CaseDocumentRef]:
+    """Return the active documents of the case file, newest first."""
+    from .models import CaseDocument
+
+    return [
+        CaseDocumentRef(
+            id=row.pk,
+            document_type=row.document_type,
+            name=row.get_document_type_display(),
+        )
+        for row in CaseDocument.objects.active().filter(case_id=case_id).order_by("-created_at")
+    ]
+
+
+def state_code(case_id) -> str:
+    """Return the state code of the case's establishment, e.g. ``KL`` (spec 0039 #2.2).
+
+    The deployment serves one state (``tenant.state_code``), so every case has it.
+    """
+    from apps.core import services as config
+
+    return config.get("tenant", "state_code", "KL").strip().upper()
+
+
+def delay_applicable(case_id) -> bool:
+    """Whether the complaint was filed late and so carries a delay condonation reason.
+
+    The cognizance preset adds *Accept application* on the delay condonation
+    application only when this is true (spec 0039 #5.2).
+    """
+    from datetime import date
+
+    from .models import ChequeBounceCase
+    from .services.case_types import limitation_deadline
+
+    detail = (
+        ChequeBounceCase.objects.filter(case_id=case_id)
+        .values_list("jurisdiction_limitation", flat=True)
+        .first()
+    )
+    if not detail or not detail.get("condonation_reason"):
+        return False
+    try:
+        arose = date.fromisoformat(detail["cause_of_action_date"])
+        filed = date.fromisoformat(detail["complaint_filing_date"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    # Filing on the deadline is on time.
+    return filed > limitation_deadline(arose)

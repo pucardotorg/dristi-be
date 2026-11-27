@@ -1,0 +1,560 @@
+"""One renderer for the order page and the signed PDF (spec 0039 #5.3, ``ORD-13``).
+
+``render_page`` builds the page from the record as HTML. ``pdf_document`` builds
+the same page as the block list ``apps.pdf``'s renderer draws, so the page the
+court sees and the PDF that is signed are two views of one record. The heading,
+the attendance lines, the next hearing line and the signature block are never
+typed (``TXT-05``): only the body between them is the drafter's.
+"""
+
+import html as html_lib
+import re
+
+import nh3
+from lxml import html as lxml_html
+
+from apps.api.errors import BusinessError
+from apps.hearings import selectors as hearing_selectors
+from apps.hearings.enums import AttendanceMark, AttendeeType
+
+from . import errors
+from .enums import NextHearingState
+
+ALLOWED_TAGS = {
+    "p",
+    "br",
+    "strong",
+    "em",
+    "u",
+    "ol",
+    "ul",
+    "li",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+}
+ALLOWED_ATTRIBUTES = {"ol": {"type"}, "td": {"colspan", "rowspan"}, "th": {"colspan", "rowspan"}}
+SPAN_RE = re.compile(r"[1-9][0-9]?")
+# What each list or table element may hold for the PDF to draw it as the page shows it.
+STRUCTURE_PARTS = {
+    "ol": {"li"},
+    "ul": {"li"},
+    "table": {"thead", "tbody", "tr"},
+    "thead": {"tr"},
+    "tbody": {"tr"},
+    "tr": {"td", "th"},
+}
+INLINE_MARKUP = {"strong": "b", "b": "b", "em": "i", "i": "i", "u": "u"}
+# The cells the text's tables may hold in all, each row padded to its table's widest
+# (``_table_block``): one wide row would otherwise cost the PDF a cell per padded slot.
+MAX_TABLE_CELLS = 10_000
+# The PDF gives a table's columns equal shares of the page: past this, a column is
+# too narrow to hold a letter.
+MAX_TABLE_COLUMNS = 20
+# The lines one paragraph, list item or table row (its cells together) may print
+# as. The PDF lays out each one whole, in time that grows with the square of its
+# lines: past this, one block could hold signing up for minutes.
+MAX_BLOCK_LINES = 500
+# About as many characters as fit on a full-width line of the PDF's body text.
+LINE_CHARS = 90
+# How deep elements may nest. The HTML parser silently drops whatever lies past
+# its own limit, and the PDF would then lose text the page shows.
+MAX_DEPTH = 20
+
+# The signature box, in PDF points on the last page; the page's bottom margin leaves it clear.
+SIGN_PLACEHOLDER = {"page": -1, "x": 330, "y": 40, "width": 215, "height": 70}
+BOTTOM_MARGIN = 150
+
+ATTENDEE_LABELS = {
+    AttendeeType.COMPLAINANT: "Complainant",
+    AttendeeType.ACCUSED: "Accused",
+    AttendeeType.POA_HOLDER: "PoA holder",
+    AttendeeType.COMPLAINANT_ADVOCATE: "Advocate for the complainant",
+    AttendeeType.ACCUSED_ADVOCATE: "Advocate for the accused",
+}
+
+
+def _attribute_filter(tag, attribute, value):
+    if tag == "ol" and attribute == "type":
+        return value if value in ("a", "1") else None
+    if attribute in ("colspan", "rowspan"):
+        return value if SPAN_RE.fullmatch(value) else None
+    return value
+
+
+def sanitize_html(text, *, field="text"):
+    """Return ``text`` reduced to the allow-list, never trusting the client (``TXT-02``).
+
+    Refused with ``E14027`` on ``field`` when it uses structure the PDF cannot draw
+    (see ``unsupported_structure``): the page and the signed document must not differ.
+    """
+    clean = nh3.clean(
+        text or "",
+        tags=ALLOWED_TAGS,
+        attributes=ALLOWED_ATTRIBUTES,
+        attribute_filter=_attribute_filter,
+        url_schemes=set(),
+        link_rel=None,
+        strip_comments=True,
+    ).strip()
+    if problem := unsupported_structure(clean):
+        raise BusinessError(errors.ORDER_TEXT_STRUCTURE_UNSUPPORTED, problem, field=field)
+    return clean
+
+
+def _parse(clean):
+    """Parse sanitised HTML under a ``div``, keeping text however deeply it nests."""
+    parser = lxml_html.HTMLParser(huge_tree=True)
+    return lxml_html.fragment_fromstring(clean, create_parent="div", parser=parser)
+
+
+def _depth(root):
+    deepest, stack = 0, [(root, 0)]
+    while stack:
+        element, depth = stack.pop()
+        deepest = max(deepest, depth)
+        stack.extend((child, depth + 1) for child in element)
+    return deepest
+
+
+def _lines(chars, breaks, columns=1):
+    """Estimate the lines a block prints as: its breaks, and its text wrapped to its width."""
+    return breaks + 1 + chars // max(2, LINE_CHARS // columns - 1)
+
+
+def _breaks(element):
+    """The line breaks inside ``element``: each ``<br>``, and each paragraph (see ``_inline``)."""
+    return sum(1 for _ in element.iter("br", "p")) - (element.tag in ("br", "p"))
+
+
+def _block_lines(root):
+    """Yield the estimated lines of each block the PDF lays out whole (see ``html_to_blocks``)."""
+    chars = len(root.text or "")
+    breaks = 0
+    for child in root:
+        if child.tag in ("ol", "ul", "table", "p"):
+            yield _lines(chars, breaks)
+            if child.tag == "p":
+                yield _lines(len(child.text_content()), _breaks(child))
+            elif child.tag == "table":
+                columns = max((len(row) for row in child.iter("tr")), default=1)
+                for row in child.iter("tr"):
+                    yield sum(
+                        _lines(len(cell.text_content()), _breaks(cell), columns) for cell in row
+                    )
+            else:
+                for item in child.iterchildren("li"):
+                    yield _lines(len(item.text_content()), _breaks(item))
+            chars, breaks = 0, 0
+        else:
+            chars += len(child.text_content())
+            breaks += 1 if child.tag == "br" else _breaks(child)
+        chars += len(child.tail or "")
+    yield _lines(chars, breaks)
+
+
+def unsupported_structure(clean):
+    """Return what in sanitised ``clean`` the PDF renderer cannot represent; ``""`` when nothing.
+
+    The renderer draws only top-level lists and tables, takes a list's items and
+    a table's cells as inline text (a paragraph inside one becomes a line of its
+    own, see ``_inline``), and skips anything else inside them, so such text
+    would print differently from the page (or not at all). A list item outside
+    a list would print as plain text run into its neighbours. (Cell spans are
+    allowed: the PDF ignores them, a documented limitation.) Tables are capped
+    at ``MAX_TABLE_CELLS`` as the PDF draws them, padded rows included, and at
+    ``MAX_TABLE_COLUMNS``; each block (a table row's cells together) at
+    ``MAX_BLOCK_LINES``, and nesting at ``MAX_DEPTH``, so whatever is accepted
+    can be signed.
+    """
+    if not clean or is_blank(clean):
+        return ""
+    root = _parse(clean)
+    if _depth(root) > MAX_DEPTH:
+        return "Formatting is nested too deeply to print. Remove some of the nested formatting."
+    if _whitespace.sub(" ", root.text_content()).strip() != plain_text(clean):
+        return "Part of this text could not be read for printing. Simplify its formatting."
+    for element in root.iter("ol", "ul", "table"):
+        if element.getparent() is not root:
+            return (
+                "Lists and tables cannot be placed inside a list item, a table cell, "
+                "another list or formatted text."
+            )
+    for element in root.iter(*STRUCTURE_PARTS):
+        allowed = STRUCTURE_PARTS[element.tag]
+        if (element.text or "").strip() or any(
+            child.tag not in allowed or (child.tail or "").strip() for child in element
+        ):
+            return "A list can hold only list items, and a table only rows of cells."
+    for element in root.iter("li"):
+        if element.getparent().tag not in ("ol", "ul"):
+            return "A list item must be inside a numbered or bulleted list."
+    cells = 0
+    for table in root.iter("table"):
+        widths = [len(row) for row in table.iter("tr") if len(row)]
+        if max(widths, default=0) > MAX_TABLE_COLUMNS:
+            return f"A table can have at most {MAX_TABLE_COLUMNS} columns."
+        cells += max(widths, default=0) * len(widths)
+    if cells > MAX_TABLE_CELLS:
+        return (
+            f"Tables can hold at most {MAX_TABLE_CELLS:,} cells in all, "
+            "counting every row as wide as its table's widest row."
+        )
+    if any(lines > MAX_BLOCK_LINES for lines in _block_lines(root)):
+        return (
+            "A paragraph, list item or table row is too long to print. "
+            f"Split it into shorter ones of at most about {MAX_BLOCK_LINES} lines."
+        )
+    return ""
+
+
+_whitespace = re.compile(r"[\s ]+")
+
+
+def plain_text(text):
+    """Return the visible text of ``text`` (HTML), whitespace and non-breaking spaces collapsed."""
+    bare = nh3.clean(text or "", tags=set())
+    return _whitespace.sub(" ", html_lib.unescape(bare)).strip()
+
+
+def is_blank(text):
+    """Whether sanitised ``text`` says nothing (``SND-02``)."""
+    return not plain_text(text)
+
+
+# -- HTML to renderer blocks ------------------------------------------------
+
+
+def _inline(element):
+    """Return the element's content as renderer markup: bold, italic, underline, breaks.
+
+    A paragraph inside it (``<li><p>…</p><p>…</p></li>``, as editors write list
+    items and cells) starts on its own line, so its words never run into the
+    text around it (``ORD-13``).
+    """
+    out = []
+    after_paragraph = False
+    # Whether ``out`` has content and its last content ends in a break, kept as it
+    # grows: re-joining it at every paragraph would make many paragraphs quadratic.
+    has_content = ends_in_break = False
+
+    def push(markup):
+        nonlocal has_content, ends_in_break
+        out.append(markup)
+        if content := markup.rstrip():
+            has_content = True
+            ends_in_break = content.endswith("<br/>")
+
+    def add(markup):
+        nonlocal after_paragraph
+        if after_paragraph and markup.strip():
+            push("<br/>")
+            after_paragraph = False
+        push(markup)
+
+    add(html_lib.escape(element.text or "", quote=False))
+    for child in element:
+        if child.tag == "br":
+            push("<br/><br/>" if after_paragraph else "<br/>")
+            after_paragraph = False
+        elif child.tag == "p":
+            inner = _trim_breaks(_inline(child))
+            if inner:
+                if has_content and not ends_in_break:
+                    push("<br/>")
+                push(inner)
+                after_paragraph = True
+        else:
+            inner = _inline(child)
+            tag = INLINE_MARKUP.get(child.tag)
+            add(f"<{tag}>{inner}</{tag}>" if tag else inner)
+        add(html_lib.escape(child.tail or "", quote=False))
+    return "".join(out)
+
+
+def _list_block(element):
+    items = [_inline(item).strip() for item in element.iterchildren("li")]
+    block = {"type": "list", "items": items, "ordered": element.tag == "ol"}
+    if element.tag == "ol" and element.get("type") == "a":
+        block["list_type"] = "a"
+    return block
+
+
+def _cell(cell):
+    """A cell's markup; a header cell is bold, as the page shows it."""
+    markup = _inline(cell).strip()
+    return f"<b>{markup}</b>" if cell.tag == "th" and markup else markup
+
+
+def _table_block(element):
+    rows = [[_cell(cell) for cell in row if cell.tag in ("td", "th")] for row in element.iter("tr")]
+    rows = [row for row in rows if row]
+    if not rows:
+        return None
+    width = max(len(row) for row in rows)
+    rows = [row + [""] * (width - len(row)) for row in rows]
+    # Equal columns: sized from their content, wide columns could overrun the page.
+    # A cell is one paragraph however many lines it holds: its row must be free to
+    # break across pages, or a row taller than a page could not be placed.
+    return {
+        "type": "table",
+        "columns": [{"header": "", "width": f"{100 / width}%"} for _ in range(width)],
+        "rows": rows,
+        "split_rows": True,
+    }
+
+
+def _trim_breaks(markup):
+    """Strip whitespace and leading/trailing ``<br/>`` by index, slicing once."""
+    start, end = 0, len(markup)
+    while True:
+        while start < end and markup[start].isspace():
+            start += 1
+        while end > start and markup[end - 1].isspace():
+            end -= 1
+        if markup.startswith("<br/>", start, end):
+            start += len("<br/>")
+        elif end - start >= len("<br/>") and markup.endswith("<br/>", start, end):
+            end -= len("<br/>")
+        else:
+            return markup[start:end]
+
+
+def html_to_blocks(text):
+    """Turn sanitised order text into renderer blocks, in order."""
+    if is_blank(text):
+        return []
+    root = _parse(text)
+    blocks = []
+    run = [html_lib.escape(root.text or "", quote=False)]
+
+    def flush():
+        # Consecutive top-level inline nodes and their tails are one paragraph.
+        markup = _trim_breaks("".join(run))
+        run.clear()
+        if markup:
+            blocks.append({"type": "paragraph", "text": markup})
+
+    for child in root:
+        if child.tag in ("ol", "ul", "table", "p"):
+            flush()
+            if child.tag in ("ol", "ul"):
+                blocks.append(_list_block(child))
+            elif child.tag == "table":
+                if block := _table_block(child):
+                    blocks.append(block)
+            else:
+                markup = _inline(child).strip()
+                if markup:
+                    blocks.append({"type": "paragraph", "text": markup})
+        elif child.tag == "br":
+            run.append("<br/>")
+        else:
+            inner = _inline(child)
+            tag = INLINE_MARKUP.get(child.tag)
+            run.append(f"<{tag}>{inner}</{tag}>" if tag else inner)
+        run.append(html_lib.escape(child.tail or "", quote=False))
+    flush()
+    return blocks
+
+
+# -- The record the page is built from ---------------------------------------
+
+
+def attendance_sentences(hearing_id):
+    """One line per marked person: people not required and empty lines are left out (``ATT-03``)."""
+    if not hearing_id:
+        return []
+    lines = []
+    for line in hearing_selectors.attendance_lines(hearing_id):
+        if line.mark == AttendanceMark.NOT_REQUIRED:
+            continue
+        label = ATTENDEE_LABELS.get(line.attendee_type, line.attendee_type)
+        if line.mark == AttendanceMark.PRESENT:
+            how = " (by video)" if line.appearance_mode == "VIDEO" else ""
+            lines.append(f"{label} {line.name} was present{how}.")
+        else:
+            lines.append(f"{label} {line.name} was absent.")
+    return lines
+
+
+def order_attendance(order):
+    """The attendance lines the order prints: a signed order's are those it was signed with."""
+    return order.signing_attendance if order.is_signed else attendance_sentences(order.hearing_id)
+
+
+def next_hearing_line(order, purpose_label=""):
+    """The order's closing line about the next hearing."""
+    if order.next_hearing_state == NextHearingState.LISTED and order.next_hearing_date:
+        date = order.next_hearing_date.strftime("%d %B %Y").lstrip("0")
+        purpose = f" for {purpose_label}" if purpose_label else ""
+        return f"Next hearing: {date}{purpose}."
+    if order.next_hearing_state == NextHearingState.NOT_LISTED_AGAIN:
+        return "The case is not listed again."
+    return ""
+
+
+def signature_lines(order, *, signer_name="", signed=False):
+    """The signature block: who signs and when, or that it is not signed yet.
+
+    ``signer_name`` with ``signed`` false is the PDF being signed: the name and
+    designation are printed under the empty signature box.
+    """
+    designation = order.signer_designation or "Magistrate"
+    when = order.order_date.strftime("%d %B %Y").lstrip("0") if order.order_date else ""
+    if signer_name and signed:
+        return [signer_name, designation, f"Signed on {when}" if when else "Signed"]
+    if signer_name:
+        return [signer_name, designation, f"Date: {when}" if when else ""]
+    return [designation, "Not signed"]
+
+
+def page_facts(
+    order, *, case_summary=None, purpose_label="", signing_user=None, number=None, attendance=None
+):
+    """Gather everything the page shows, once, so HTML and PDF cannot differ.
+
+    ``signing_user`` is the person about to sign: their name goes on the document
+    being signed. ``number`` replaces the order's own (a Roznama's internal number).
+    ``attendance`` replaces the roll read now: the snapshot a signing file is prepared with.
+    """
+    signer = ""
+    if signing_user is not None:
+        signer = signing_user.name or ""
+    elif order.signed_by_id:
+        signer = order.signed_by.name or ""
+    if attendance is None:
+        # A signed order keeps the roll its signing file was prepared with.
+        attendance = order_attendance(order)
+    return {
+        # A signed order keeps the heading its signing file was prepared with.
+        "heading": (order.is_signed and order.signing_heading) or order.order_type.pdf_heading,
+        "court": order.court.name,
+        "number": order.number if number is None else number,
+        "date": order.order_date.strftime("%d %B %Y").lstrip("0") if order.order_date else "",
+        "case_number": case_summary.display_number if case_summary else "",
+        "case_title": case_summary.title if case_summary else "",
+        "title": order.title,
+        "attendance": attendance,
+        "body": order.text,
+        "next_hearing": next_hearing_line(order, purpose_label),
+        "signature": signature_lines(
+            order, signer_name=signer, signed=order.is_signed and signing_user is None
+        ),
+    }
+
+
+def _e(value):
+    return html_lib.escape(str(value or ""), quote=True)
+
+
+def render_page(order, *, case_summary=None, purpose_label=""):
+    """Return the page as HTML: the one thing the screen and the PDF both show (``ORD-13``)."""
+    facts = page_facts(order, case_summary=case_summary, purpose_label=purpose_label)
+    parts = ['<section class="order-page">', f'<header><p class="court">{_e(facts["court"])}</p>']
+    if facts["case_number"] or facts["case_title"]:
+        parts.append(f'<p class="case">{_e(facts["case_number"])} · {_e(facts["case_title"])}</p>')
+    parts.append(f"<h1>{_e(facts['heading'])}</h1>")
+    if facts["number"]:
+        parts.append(f'<p class="number">{_e(facts["number"])} · {_e(facts["date"])}</p>')
+    parts.append("</header>")
+    if facts["attendance"]:
+        parts.append(
+            '<div class="attendance">'
+            + "".join(f"<p>{_e(line)}</p>" for line in facts["attendance"])
+            + "</div>"
+        )
+    parts.append(f'<div class="body">{facts["body"]}</div>')
+    if facts["next_hearing"]:
+        parts.append(f'<p class="next-hearing">{_e(facts["next_hearing"])}</p>')
+    parts.append(
+        '<footer class="signature">'
+        + "".join(f"<p>{_e(line)}</p>" for line in facts["signature"])
+        + "</footer></section>"
+    )
+    return "".join(parts)
+
+
+def pdf_document(
+    order,
+    *,
+    case_summary=None,
+    purpose_label="",
+    entry_text=None,
+    heading=None,
+    signing_user=None,
+    number=None,
+    attendance=None,
+):
+    """Return the order as a renderer document: the same facts as ``render_page``.
+
+    ``entry_text`` (sanitised HTML) replaces the body, and ``heading`` the
+    heading, for a Gujarat Roznama (#8.4), which prints the diary entry. The
+    entry is complete as composed, so the attendance and next hearing lines are
+    not added around it.
+    """
+    facts = page_facts(
+        order,
+        case_summary=case_summary,
+        purpose_label=purpose_label,
+        signing_user=signing_user,
+        number=number,
+        attendance=attendance,
+    )
+    body = facts["body"] if entry_text is None else entry_text
+    blocks = [
+        {
+            "type": "paragraph",
+            "text": html_lib.escape(facts["court"]),
+            "align": "center",
+            "style": "heading3",
+        },
+        {
+            "type": "heading",
+            "text": html_lib.escape(heading or facts["heading"]),
+            "level": 1,
+            "align": "center",
+        },
+    ]
+    if facts["number"]:
+        blocks.append(
+            {
+                "type": "paragraph",
+                "text": html_lib.escape(f"{facts['number']} · {facts['date']}"),
+                "align": "center",
+            }
+        )
+    if facts["case_number"] or facts["case_title"]:
+        blocks.append(
+            {
+                "type": "paragraph",
+                "text": html_lib.escape(f"{facts['case_number']} · {facts['case_title']}"),
+                "align": "center",
+            }
+        )
+    blocks.append({"type": "line"})
+    if entry_text is None:
+        blocks += [
+            {"type": "paragraph", "text": html_lib.escape(line)} for line in facts["attendance"]
+        ]
+    blocks += html_to_blocks(body)
+    if entry_text is None and facts["next_hearing"]:
+        blocks.append({"type": "paragraph", "text": html_lib.escape(facts["next_hearing"])})
+    blocks.append({"type": "spacer", "height": 18})
+    for line in facts["signature"]:
+        blocks.append({"type": "paragraph", "text": html_lib.escape(line), "align": "right"})
+    return {
+        "page": {"size": "A4", "margins": {"bottom": BOTTOM_MARGIN}},
+        "metadata": {"title": facts["title"] or facts["heading"]},
+        "sections": [blocks],
+    }
+
+
+def render_pdf(order, **kwargs):
+    """Render the order's PDF in-process (spec 0016 renderer, no HTTP)."""
+    from apps.pdf.renderer import get_renderer
+
+    return get_renderer().render(pdf_document(order, **kwargs), {})

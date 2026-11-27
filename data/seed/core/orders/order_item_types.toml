@@ -1,0 +1,621 @@
+# The order item catalogue (spec 0039 #3.3), from PRDs/order-template-catalogue.md.
+#
+# Insert-only: a deployment edits an item, its fields or its suggested purposes in
+# admin; re-seeding never overwrites them. An item with `has_workflow` needs a
+# handler (`apps/orders/handlers`); a test checks every one has one.
+# `stage_event` is dispatched, and `closes_case` cancels the case's open hearings,
+# by the last step of the order's triggering (spec 0039 #9.4).
+
+[seed]
+model = "orders.OrderItemType"
+
+[[rows]]
+code = "MANDATORY_SUBMISSIONS"
+label = "Mandatory submissions and responses"
+category = "FILINGS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 1
+
+[[rows.field_schema.fields]]
+key = "party_type"
+label = "Party directed to file"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "document_type"
+label = "Type of document to be filed"
+input = "MASTER"
+mandatory = true
+master = "document_types"
+
+[[rows.field_schema.fields]]
+key = "document_details"
+label = "Details of the document to be filed"
+input = "TEXT"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "deadline"
+label = "Deadline for submission"
+input = "DATE"
+mandatory = true
+
+[[rows]]
+code = "BAIL"
+label = "Bail"
+category = "FILINGS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 2
+suggested_for_purposes = ["APPEARANCE", "BAIL", "PLEA", "WARRANT"]
+
+[[rows.field_schema.fields]]
+key = "plea"
+label = "Plea"
+input = "ENUM"
+mandatory = false
+options = ["GUILTY", "NOT_GUILTY"]
+
+[[rows]]
+code = "REFERRAL_TO_ADR"
+label = "Referral of case to ADR"
+category = "DISPOSAL"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "LAST"
+stage_event = "MEDIATION_ORDERED"
+sequence = 1
+suggested_for_purposes = ["PLEA", "ARGUMENTS", "FOR_REPORTS", "ADR", "MEDIATION"]
+
+[[rows.field_schema.fields]]
+key = "adr_mode"
+label = "Mode of ADR"
+input = "MASTER"
+mandatory = true
+master = "adr_modes"
+
+[[rows.field_schema.fields]]
+key = "adr_end_date"
+label = "Date of end of ADR"
+input = "DATE"
+mandatory = true
+
+[[rows]]
+code = "CASE_SETTLEMENT"
+label = "Case settlement"
+category = "DISPOSAL"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "LAST"
+stage_event = "CASE_DISPOSED"
+closes_case = "CASE_DISPOSED"
+sequence = 2
+suggested_for_purposes = ["ARGUMENTS", "ADR", "MEDIATION"]
+
+[rows.field_schema]
+fields = []
+
+[[rows]]
+code = "WITHDRAWAL_OF_CASE"
+label = "Withdrawal of case"
+category = "DISPOSAL"
+availability = "BOTH"
+target_type = "APPLICATION"
+has_workflow = true
+trigger_phase = "LAST"
+stage_event = "CASE_DISPOSED"
+closes_case = "CASE_DISPOSED"
+sequence = 3
+
+[[rows.field_schema.fields]]
+key = "application_number"
+label = "The withdrawal application, where there is one"
+input = "RECORD"
+mandatory = false
+
+[[rows]]
+code = "JUDGEMENT"
+label = "Judgement"
+category = "DISPOSAL"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "LAST"
+stage_event = "JUDGEMENT_PASSED"
+closes_case = "CASE_DISPOSED"
+sequence = 4
+suggested_for_purposes = ["JUDGEMENT"]
+
+[rows.field_schema]
+fields = []
+
+[[rows]]
+code = "ABATE_CASE"
+label = "Abate case"
+category = "DISPOSAL"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "LAST"
+stage_event = "CASE_DISPOSED"
+closes_case = "CASE_DISPOSED"
+sequence = 5
+
+[rows.field_schema]
+fields = []
+
+[[rows]]
+code = "SCHEDULING_OF_HEARING_DATE"
+label = "Scheduling of hearing date"
+category = "CASE_MANAGEMENT"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "FIRST"
+sequence = 1
+
+[[rows.field_schema.fields]]
+key = "hearing_date"
+label = "Hearing date"
+input = "DATE"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "hearing_purpose"
+label = "Hearing purpose"
+input = "HEARING_PURPOSE"
+mandatory = true
+
+[[rows]]
+code = "RESCHEDULING_OF_HEARING_DATE"
+label = "Rescheduling of hearing date"
+category = "CASE_MANAGEMENT"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "FIRST"
+sequence = 2
+
+[[rows.field_schema.fields]]
+key = "new_hearing_date"
+label = "New hearing date"
+input = "DATE"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "hearing_purpose"
+label = "Hearing purpose"
+input = "HEARING_PURPOSE"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "original_hearing_date"
+label = "Original hearing date"
+input = "RECORD"
+mandatory = false
+
+[[rows]]
+code = "CASE_TRANSFER"
+label = "Case transfer"
+category = "CASE_MANAGEMENT"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "LAST"
+stage_event = "CASE_DISPOSED"
+closes_case = "CASE_TRANSFERRED"
+sequence = 3
+
+[rows.field_schema]
+fields = []
+
+[[rows]]
+code = "COGNIZANCE"
+label = "Cognizance"
+category = "CASE_MANAGEMENT"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "NORMAL"
+stage_event = "COGNIZANCE_TAKEN"
+sequence = 4
+suggested_for_purposes = ["ADMISSION", "DELAY_CONDONATION_AND_ADMISSION", "COGNIZANCE"]
+
+[rows.field_schema]
+fields = []
+
+[[rows]]
+code = "DISMISS_CASE"
+label = "Dismiss case"
+category = "CASE_MANAGEMENT"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "LAST"
+stage_event = "CASE_DISPOSED"
+closes_case = "CASE_DISPOSED"
+sequence = 5
+suggested_for_purposes = ["CONDONATION_OF_DELAY", "ADMISSION", "DELAY_CONDONATION_AND_ADMISSION", "COGNIZANCE"]
+
+[rows.field_schema]
+fields = []
+
+[[rows]]
+code = "MOVE_TO_LONG_PENDING_REGISTER"
+label = "Moving case to long pending register"
+category = "CASE_MANAGEMENT"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "LAST"
+stage_event = "MOVED_TO_LPR"
+closes_case = "LONG_PENDING_REGISTER"
+sequence = 6
+
+[rows.field_schema]
+fields = []
+
+[[rows]]
+code = "MOVE_OUT_OF_LONG_PENDING_REGISTER"
+label = "Moving case out of long pending register"
+category = "CASE_MANAGEMENT"
+availability = "DROPDOWN"
+has_workflow = false
+trigger_phase = "NORMAL"
+stage_event = "MOVED_OUT_OF_LPR"
+sequence = 7
+
+[rows.field_schema]
+fields = []
+
+[[rows]]
+code = "ISSUE_OF_SUMMONS"
+label = "Issue of summons"
+category = "PROCESS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 1
+suggested_for_purposes = ["ADMISSION", "DELAY_CONDONATION_AND_ADMISSION", "COGNIZANCE", "APPEARANCE", "EVIDENCE_OF_COMPLAINANT", "EVIDENCE_OF_ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "party_names"
+label = "Person the process is addressed to"
+input = "PARTIES"
+mandatory = true
+party_types = ["ACCUSED", "COMPLAINANT", "WITNESS"]
+
+[[rows.field_schema.fields]]
+key = "party_taking_steps"
+label = "Party directed to take steps"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "recipients"
+label = "Channels and addresses, per person"
+input = "PROCESS_RECIPIENTS"
+mandatory = true
+
+[[rows]]
+code = "ISSUE_OF_WARRANTS"
+label = "Issue of warrants"
+category = "PROCESS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 2
+suggested_for_purposes = ["APPEARANCE", "BAIL", "EXAMINATION_OF_ACCUSED", "WARRANT", "EXECUTION"]
+
+[[rows.field_schema.fields]]
+key = "party_names"
+label = "Person the process is addressed to"
+input = "PARTIES"
+mandatory = true
+party_types = ["ACCUSED", "COMPLAINANT", "WITNESS"]
+
+[[rows.field_schema.fields]]
+key = "party_taking_steps"
+label = "Party directed to take steps"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "recipients"
+label = "Channels and addresses, per person"
+input = "PROCESS_RECIPIENTS"
+mandatory = true
+
+[[rows]]
+code = "ISSUE_OF_NOTICE"
+label = "Issue of notice"
+category = "PROCESS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 3
+suggested_for_purposes = ["APPEARANCE", "PLEA"]
+
+[[rows.field_schema.fields]]
+key = "notice_type"
+label = "Type of notice"
+input = "MASTER"
+mandatory = true
+master = "notice_types"
+
+[[rows.field_schema.fields]]
+key = "party_names"
+label = "Person the process is addressed to"
+input = "PARTIES"
+mandatory = true
+party_types = ["ACCUSED", "COMPLAINANT", "WITNESS"]
+
+[[rows.field_schema.fields]]
+key = "party_taking_steps"
+label = "Party directed to take steps"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "recipients"
+label = "Channels and addresses, per person"
+input = "PROCESS_RECIPIENTS"
+mandatory = true
+
+[[rows]]
+code = "ISSUE_OF_PROCLAMATION"
+label = "Issue of proclamation"
+category = "PROCESS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 4
+suggested_for_purposes = ["WARRANT"]
+
+[[rows.field_schema.fields]]
+key = "party_names"
+label = "Person the process is addressed to"
+input = "PARTIES"
+mandatory = true
+party_types = ["ACCUSED", "COMPLAINANT", "WITNESS"]
+
+[[rows.field_schema.fields]]
+key = "party_taking_steps"
+label = "Party directed to take steps"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "recipients"
+label = "Channels and addresses, per person"
+input = "PROCESS_RECIPIENTS"
+mandatory = true
+
+[[rows]]
+code = "ISSUE_OF_ATTACHMENT"
+label = "Issue of attachment"
+category = "PROCESS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 5
+suggested_for_purposes = ["WARRANT", "EXECUTION"]
+
+[[rows.field_schema.fields]]
+key = "party_names"
+label = "Person the process is addressed to"
+input = "PARTIES"
+mandatory = true
+party_types = ["ACCUSED", "COMPLAINANT", "WITNESS"]
+
+[[rows.field_schema.fields]]
+key = "party_taking_steps"
+label = "Party directed to take steps"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "recipients"
+label = "Channels and addresses, per person"
+input = "PROCESS_RECIPIENTS"
+mandatory = true
+
+[[rows]]
+code = "ISSUE_OF_MISCELLANEOUS_PROCESS"
+label = "Issue of miscellaneous process"
+category = "PROCESS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 6
+
+[[rows.field_schema.fields]]
+key = "process_type"
+label = "Type of process"
+input = "MASTER"
+mandatory = true
+master = "process_types"
+
+[[rows.field_schema.fields]]
+key = "party_names"
+label = "Person the process is addressed to"
+input = "PARTIES"
+mandatory = true
+party_types = ["ACCUSED", "COMPLAINANT", "WITNESS"]
+
+[[rows.field_schema.fields]]
+key = "party_taking_steps"
+label = "Party directed to take steps"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "recipients"
+label = "Channels and addresses, per person"
+input = "PROCESS_RECIPIENTS"
+mandatory = true
+
+[[rows]]
+code = "COST"
+label = "Cost"
+category = "MISCELLANEOUS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 1
+
+[[rows.field_schema.fields]]
+key = "paying_party"
+label = "Paying party"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "amount"
+label = "Amount, in ₹"
+input = "AMOUNT"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "receiving_party"
+label = "Receiving party"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED", "COURT"]
+
+[[rows.field_schema.fields]]
+key = "pay_by"
+label = "Date by which it must be paid"
+input = "DATE"
+mandatory = true
+
+[[rows]]
+code = "WITNESS_BATTA"
+label = "Witness batta"
+category = "MISCELLANEOUS"
+availability = "DROPDOWN"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 2
+suggested_for_purposes = ["EVIDENCE_OF_COMPLAINANT", "EVIDENCE_OF_ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "paying_party"
+label = "Paying party"
+input = "ENUM"
+mandatory = true
+options = ["COMPLAINANT", "ACCUSED"]
+
+[[rows.field_schema.fields]]
+key = "amount"
+label = "Amount, in ₹"
+input = "AMOUNT"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "witness"
+label = "The witness receiving it"
+input = "PARTY"
+mandatory = true
+party_types = ["WITNESS"]
+
+[[rows.field_schema.fields]]
+key = "pay_by"
+label = "Date by which it must be paid"
+input = "DATE"
+mandatory = true
+
+[[rows]]
+code = "ACCEPT_APPLICATION"
+label = "Accept application"
+availability = "CONTEXTUAL"
+target_type = "APPLICATION"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 0
+
+[[rows.field_schema.fields]]
+key = "application_number"
+label = "Application number"
+input = "RECORD"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "application_type"
+label = "Application type"
+input = "RECORD"
+mandatory = true
+
+[[rows]]
+code = "REJECT_APPLICATION"
+label = "Reject application"
+availability = "CONTEXTUAL"
+target_type = "APPLICATION"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 0
+
+[[rows.field_schema.fields]]
+key = "application_number"
+label = "Application number"
+input = "RECORD"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "application_type"
+label = "Application type"
+input = "RECORD"
+mandatory = true
+
+[[rows]]
+code = "ACCEPTANCE_OF_BAIL"
+label = "Acceptance of bail"
+availability = "CONTEXTUAL"
+target_type = "APPLICATION"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 0
+suggested_for_purposes = ["BAIL"]
+
+[[rows.field_schema.fields]]
+key = "application_number"
+label = "Application number"
+input = "RECORD"
+mandatory = true
+
+[[rows]]
+code = "DISMISS_APPLICATION"
+label = "Dismiss application"
+availability = "CONTEXTUAL"
+target_type = "APPLICATION"
+has_workflow = true
+trigger_phase = "NORMAL"
+sequence = 0
+
+[[rows.field_schema.fields]]
+key = "application_type"
+label = "Application type"
+input = "RECORD"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "party_type"
+label = "Party type of the person who filed it"
+input = "RECORD"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "party_name"
+label = "Person who filed it"
+input = "RECORD"
+mandatory = true
+
+[[rows.field_schema.fields]]
+key = "filing_date"
+label = "Date the application was filed"
+input = "RECORD"
+mandatory = true

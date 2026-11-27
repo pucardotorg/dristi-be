@@ -146,6 +146,13 @@ class ErrorItemsTests(SimpleTestCase):
             [("profile.bar_number", "bad"), ("items[1].qty", "too small"), (None, "whole object")],
         )
 
+    def test_error_data_survives_an_empty_detail(self):
+        exc = exceptions.ValidationError({})
+        exc.error_data = {"allowed_actions": ["sign"]}
+        items = error_items(exc)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["data"], {"allowed_actions": ["sign"]})
+
     def test_unknown_code_falls_back_by_status(self):
         class Teapot(exceptions.APIException):
             status_code = 403

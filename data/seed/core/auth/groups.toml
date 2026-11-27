@@ -4,8 +4,9 @@
 # (dristi_requests/request_types.toml).
 #
 # HEARING_CONTROLLER, NEXT_HEARING_SETTER and ORDER_DATA_FILLER are the
-# placeholder court roles (spec 0023 #1.2, apps/hearings/ports.py). Remove
-# them with ports.py once court roles are held per courtroom (spec 0026).
+# placeholder court roles (spec 0023 #1.2, apps/hearings/ports.py); ORDER_DRAFTER and
+# ORDER_SIGNER join them for orders (spec 0039 #2.1, apps/orders/ports.py). Remove
+# them with the ports once court roles are held per courtroom (spec 0029).
 
 [seed]
 model = "auth.Group"
@@ -21,3 +22,9 @@ name = "NEXT_HEARING_SETTER"
 
 [[rows]]
 name = "ORDER_DATA_FILLER"
+
+[[rows]]
+name = "ORDER_DRAFTER"
+
+[[rows]]
+name = "ORDER_SIGNER"

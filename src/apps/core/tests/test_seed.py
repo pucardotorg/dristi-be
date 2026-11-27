@@ -24,6 +24,7 @@ from apps.dristi_requests.models import ApprovalStep, RequestType
 from apps.hearings.models import HearingPurpose
 from apps.locations.models import Location
 from apps.messaging.models import MessageTemplate
+from apps.orders.models import OrderItemCombinationRule, OrderItemType, OrderType
 from apps.organizations.models import Organization
 from apps.pdf.models import PDFTemplate, PDFTemplateVersion
 from apps.scrutiny.models import ScrutinyRuleBinding
@@ -547,8 +548,11 @@ class TestCoreSeed:
     # Rows per model that the session seed (src/conftest.py) loads: the data
     # the old data migrations inserted.
     SESSION = {
-        Group: 4,
-        MessageTemplate: 12,
+        Group: 6,
+        MessageTemplate: 13,
+        OrderType: 5,
+        OrderItemType: 26,
+        OrderItemCombinationRule: 5,
         HearingPurpose: 19,
         RequestType: 3,
         ApprovalStep: 3,
@@ -582,11 +586,11 @@ class TestCoreSeed:
         assert not any(model.objects.exists() for model in self.REST)
 
         output = run(str(CORE_DIR), "--strict")
-        assert "created 15, unchanged 49, skipped 0" in output
+        assert "created 15, unchanged 88, skipped 0" in output
         expected = {**self.SESSION, **self.REST}
         assert {m: m.objects.count() for m in expected} == expected
 
-        assert "created 0, unchanged 64, skipped 0" in run(str(CORE_DIR), "--strict")
+        assert "created 0, unchanged 103, skipped 0" in run(str(CORE_DIR), "--strict")
 
 
 def test_migrations_carry_no_data():

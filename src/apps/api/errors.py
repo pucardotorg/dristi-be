@@ -48,6 +48,7 @@ DOMAINS = {
     "09": "scrutiny",
     "10": "hearings",
     "11": "core",
+    "14": "orders",
 }
 
 
@@ -268,6 +269,8 @@ def error_items(exc: exceptions.APIException, *, field: str | None = None) -> li
         items = [
             {"code": error.code, "message": error.message, **({"field": field} if field else {})}
         ]
+    if data := getattr(exc, "error_data", None):
+        items[0]["data"] = data
     return items
 
 

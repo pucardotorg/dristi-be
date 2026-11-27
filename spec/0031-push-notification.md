@@ -788,9 +788,10 @@ error domain and ships no `errors.py`.
 
 A domain prefix for `apps.notifications` will be allocated in
 `apps.api.errors.DOMAINS` and spec 0000 §9.2 when a first domain-specific code
-is actually needed. Note for that allocation: `10` is reserved for `core`
-(spec 0030) and `11` is claimed for `apps.orders` by the in-flight court-order
-spec (0025), so notifications must take the next free prefix at that time.
+is actually needed. Note for that allocation: `10` is
+`apps.hearings`, `11` is `apps.core` (spec 0030), `12` and `13` are claimed by
+processes (0028) and applications (0033) and `14` by `apps.orders` (court-order
+spec 0039), so notifications must take the next free prefix at that time.
 
 ## 9. Settings and environment
 

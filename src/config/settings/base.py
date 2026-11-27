@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "apps.scrutiny",
     "apps.payments",
     "apps.hearings",
+    "apps.orders",
     "apps.notifications",
     # Addons
     "addon.cdac_sms_gateway",
@@ -425,6 +426,12 @@ CACHALOT_ONLY_CACHABLE_TABLES = (
     # Reference table edited in admin (spec 0023 #11.8).
     "hearings_hearingpurpose",
     "core_language",
+    # Reference tables edited in admin (spec 0039 #12.6).
+    "orders_ordertype",
+    "orders_orderitemtype",
+    "orders_orderitemtype_suggested_for_purposes",
+    "orders_orderitemcombinationrule",
+    "orders_orderitemcombinationrule_item_types",
 )
 CACHALOT_UNCACHABLE_TABLES = (
     "users_user",
@@ -854,3 +861,11 @@ LOGGING = {
         },
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Orders (spec 0039)
+# ---------------------------------------------------------------------------
+# Formats an order or Roznama number: a dotted path to a callable taking
+# ``court_code``, ``series``, ``seq``, ``year`` and ``state`` (spec 0039 #8.3).
+ORDERS_NUMBER_FORMATTER = "apps.orders.services.numbering.default_formatter"

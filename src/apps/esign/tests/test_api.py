@@ -107,8 +107,8 @@ class InitiateEndpointTests(ESignTestCase):
 
     def test_permission_denial_returns_forbidden(self):
         """An owning module's refusal is a 403 with the domain code."""
-        permissions.register_entity_authorizer("ORDER", lambda **kwargs: False)
-        self.addCleanup(permissions.unregister_entity_authorizer, "ORDER")
+        permissions.register_entity_authorizer("OTHER", lambda **kwargs: False)
+        self.addCleanup(permissions.unregister_entity_authorizer, "OTHER")
 
         response = self.initiate()
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -224,8 +224,8 @@ class RetryEndpointTests(ESignTestCase):
 
     def test_permission_is_checked_again_on_retry(self):
         """Losing the right to sign since the first attempt refuses the retry."""
-        permissions.register_entity_authorizer("ORDER", lambda **kwargs: False)
-        self.addCleanup(permissions.unregister_entity_authorizer, "ORDER")
+        permissions.register_entity_authorizer("OTHER", lambda **kwargs: False)
+        self.addCleanup(permissions.unregister_entity_authorizer, "OTHER")
 
         response = self.client.post(self.url)
         self.assert_error(response, errors.NOT_PERMITTED)

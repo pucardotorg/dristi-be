@@ -30,6 +30,7 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A3, A4, A5, LEGAL, LETTER, landscape, portrait
 from reportlab.lib.styles import ParagraphStyle
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     Flowable,
@@ -43,7 +44,8 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-from reportlab.platypus.flowables import HRFlowable
+from reportlab.platypus.doctemplate import LayoutError
+from reportlab.platypus.flowables import HRFlowable, _bulletFormat
 
 from ..exceptions import PDFRenderError
 from . import ImageData, PDFRenderer, fonts
@@ -74,6 +76,18 @@ BUILTIN_STYLES = {
 }
 HEADER_FOOTER_GAP = 8
 PX_TO_PT = 0.75  # 96 dpi pixels to 72 dpi points
+ALPHA_WRAP = 26  # ReportLab's alphabetic list formatter restarts at "a" after "z"
+LIST_MARKER_GAP = 4  # points between the widest list marker and the item text
+
+
+def _alpha_label(number: int) -> str:
+    """1 -> "a", 26 -> "z", 27 -> "aa": the numbering a browser gives ``<ol type="a">``."""
+    label = ""
+    while number > 0:
+        number, remainder = divmod(number - 1, 26)
+        label = chr(ord("a") + remainder) + label
+    return label
+
 
 _TAG_SPLIT = re.compile(r"(<[^>]*>|&[#a-zA-Z0-9]+;)")
 
@@ -204,7 +218,7 @@ class PythonRenderer(PDFRenderer):
             return self._render(document), self.anchors
         except PDFRenderError:
             raise
-        except (KeyError, ValueError, TypeError, AttributeError, OSError) as exc:
+        except (KeyError, ValueError, TypeError, AttributeError, OSError, LayoutError) as exc:
             raise PDFRenderError(f"Rendering failed: {type(exc).__name__}.") from exc
 
     # -- document ----------------------------------------------------------
@@ -411,6 +425,8 @@ class PythonRenderer(PDFRenderer):
             rows,
             colWidths=self._widths(columns) if columns else None,
             repeatRows=header_rows if block.get("repeat_header", True) else 0,
+            # A row may break across pages, so one taller than a page still prints whole.
+            splitInRow=1 if block.get("split_rows") else 0,
             hAlign="LEFT",
         )
         padding = float(block.get("padding", 4))
@@ -485,19 +501,48 @@ class PythonRenderer(PDFRenderer):
 
     def _list(self, block: dict):
         style = self._style(block.get("style"))
-        items = [
-            ListItem(self._paragraph(text, style), leftIndent=float(block.get("indent", 18)))
-            for text in block.get("items") or []
-        ]
         ordered = block.get("ordered", False)
+        list_type = block.get("list_type", "1") if ordered else "bullet"
+        start = int(block.get("start", 1)) if ordered else None
+        texts = block.get("items") or []
+        # ReportLab's alphabetic formatter wraps after 26 (item 27 reads "a" again), so a
+        # longer lettered list gets explicit "aa", "ab"... markers, as a browser prints them.
+        lettered_long = list_type == "a" and len(texts) + start - 1 > ALPHA_WRAP
+        bullet_type = "bullet" if lettered_long else list_type
+        bullet_format = "%s." if ordered else None
+        indent = float(block.get("indent", 18))
+        if ordered and texts:
+            # ReportLab draws each marker from the list's left edge: widen the indent so
+            # the widest ("100.", "aaa.") ends before the item text instead of over it.
+            widest = max(
+                stringWidth(
+                    _bulletFormat(
+                        _alpha_label(start + index) if lettered_long else start + index,
+                        bullet_type,
+                        bullet_format,
+                    ),
+                    style.fontName,
+                    style.fontSize,
+                )
+                for index in range(len(texts))
+            )
+            indent = max(indent, widest + LIST_MARKER_GAP)
+        items = [
+            ListItem(
+                self._paragraph(text, style),
+                leftIndent=indent,
+                value=_alpha_label(start + index) if lettered_long else None,
+            )
+            for index, text in enumerate(texts)
+        ]
         return ListFlowable(
             items,
-            bulletType="1" if ordered else "bullet",
-            start=block.get("start", 1) if ordered else None,
-            bulletFormat="%s." if ordered else None,
+            bulletType=bullet_type,
+            start=None if lettered_long or not ordered else start,
+            bulletFormat=bullet_format,
             bulletFontName=style.fontName,
             bulletFontSize=style.fontSize,
-            leftIndent=float(block.get("indent", 18)),
+            leftIndent=indent,
         )
 
     def _image(self, block: dict):
