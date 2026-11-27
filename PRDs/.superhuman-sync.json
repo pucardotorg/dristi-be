@@ -61,14 +61,14 @@
     "order-template-catalogue.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-kK7FwGLrKj",
       "title": "Order Item Catalogue",
-      "contentHash": "c50b816b4e60",
-      "pageUpdatedAt": 1795693634.019,
-      "note": "Force-synced (cleared and rebuilt) 2026-11-26 for (23)-(24); the page's only comment (Garvita, warrant fields) was resolved first, on the owner's say-so. Sections are chunked at ## (Variables split at ### 25.); each records its first block.",
+      "contentHash": "855a69be7337",
+      "pageUpdatedAt": 1795755870.674,
+      "note": "Force-synced (cleared and rebuilt) 2026-11-26 for (23)-(24); the page's only comment (Garvita, warrant fields) was resolved first, on the owner's say-so. Sections are chunked at ## (Variables split at ### 25.); each records its first block. 2026-11-27: (25) patched in place; the order items table was replaced whole; sections marked patched-2026-11-27 will be diffed against the page on the next sync.",
       "sections": [
         {
           "key": "# Order item catalogue",
           "elementId": "cl-Tmehw2XBUw",
-          "hash": "6aa49b540a87"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "## Terminology",
@@ -78,12 +78,12 @@
         {
           "key": "## Order items",
           "elementId": "cl-VIbBRp5DrU",
-          "hash": "dffd800cb19f"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "## Variables by order item",
           "elementId": "cl-d4ckLF6DHW",
-          "hash": "5677616e9962"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "### 25. Issue of miscellaneous process",
@@ -93,7 +93,7 @@
         {
           "key": "## Combination restrictions",
           "elementId": "cl-TwtIzECBvz",
-          "hash": "9c764e006290"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "## Workflow trigger order",
@@ -413,14 +413,14 @@
     "order-generation.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-TBFFzPbig0",
       "title": "Order Generation",
-      "contentHash": "418ddb897a34",
-      "pageUpdatedAt": 1795169419.011,
+      "contentHash": "e67720f900e1",
+      "pageUpdatedAt": 1795755812.86,
       "calloutElementId": "eca-DluhcPwJvd",
       "sections": [
         {
           "key": "# Order generation",
           "elementId": "cl-KrRUqMchAG",
-          "hash": "461405cf65c7"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "#1",
@@ -435,7 +435,7 @@
         {
           "key": "## 2. Where the screen is used",
           "elementId": "cl-gRXPfwdrGj",
-          "hash": "69d1f1450fdd"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "## 3. Roles",
@@ -455,7 +455,7 @@
         {
           "key": "## 6. The order data",
           "elementId": "cl-VQCzs2WhAI",
-          "hash": "f4b77afb6f95"
+          "hash": "patched-2026-11-27"
         },
         {
           "key": "## 7. The draft",
@@ -518,7 +518,7 @@
           "hash": "9e1da0487ee1"
         }
       ],
-      "note": "2026-11-03: patched in place to v8.6 (status, callout, §1/§6/§5.2 text; changed tables replaced whole — 1.1, out of scope, §3, §4, §5, 5.1, 5.2+5.3, 6.1, §7, §8, §9, 10.1, §11, §13, §14+14.1–14.3; §16 Enhancements and §17 Open questions added). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW, untouched. `sections` not refreshed. 2026-11-03 later: TXT-03 cell in grid-nro-qgW8LW and status patched. 2026-11-06: patched in place to v8.7 (status, callout, §10.1 intro; HRG-10 and CLS-06 cells updated; CLS-14 row added to grid-uCDhnjzU0v, its ID cell carries a trailing zero-width italic character so the ID stays monospace). `sections` still not refreshed. 2026-11-10: patched in place to v8.8 (Status line, callout, §1.1 Order items cell); comments kept. 2026-11-20: patched in place to v8.9 (Status line, callout; NXT table grid-QthE4Gb6jz: NXT-12 reworded, italic reason row and NXT-12a added, NXT-13–15 shifted down by rewriting rows). `sections` still not refreshed."
+      "note": "2026-11-03: patched in place to v8.6 (status, callout, §1/§6/§5.2 text; changed tables replaced whole — 1.1, out of scope, §3, §4, §5, 5.1, 5.2+5.3, 6.1, §7, §8, §9, 10.1, §11, §13, §14+14.1–14.3; §16 Enhancements and §17 Open questions added). Live view: Pending tasks (Court Side) — Order generation, table-PXd-K2TdnW, untouched. `sections` not refreshed. 2026-11-03 later: TXT-03 cell in grid-nro-qgW8LW and status patched. 2026-11-06: patched in place to v8.7 (status, callout, §10.1 intro; HRG-10 and CLS-06 cells updated; CLS-14 row added to grid-uCDhnjzU0v, its ID cell carries a trailing zero-width italic character so the ID stays monospace). `sections` still not refreshed. 2026-11-10: patched in place to v8.8 (Status line, callout, §1.1 Order items cell); comments kept. 2026-11-20: patched in place to v8.9 (Status line, callout; NXT table grid-QthE4Gb6jz: NXT-12 reworded, italic reason row and NXT-12a added, NXT-13–15 shifted down by rewriting rows). `sections` still not refreshed. 2026-11-27: v8.10 patched in place (ORD-09, ITM-04 cells; Status and callout by text replace)."
     },
     "application-lifecycle.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-yA8zFlV5mk",
