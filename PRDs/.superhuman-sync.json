@@ -1038,57 +1038,52 @@
     "case-file.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-WBYZ9C_w-f",
       "title": "Case File",
-      "contentHash": "f8434237ea0e",
-      "pageUpdatedAt": 1795614805.407,
+      "contentHash": "3d07d8b95c79",
+      "pageUpdatedAt": 1795763327.82,
       "calloutElementId": "cl-GBIPaWffYt",
       "sections": [
         {
           "key": "# Case File",
           "elementId": "cl-BmcOXCAhTU",
-          "hash": "2b0097cd505f"
+          "hash": "841d2993b714"
         },
         {
           "key": "# 1. Categories",
           "elementId": "cl-44omDt8lrJ",
-          "hash": "94239d465436"
+          "hash": "2d205729287c"
         },
         {
           "key": "# 2. How the case file is ordered",
           "elementId": "cl-2tnyyODqED",
-          "hash": "f7bf9c53f20c"
+          "hash": "9ad5b107c635"
         },
         {
           "key": "# 3. Viewing the case file",
           "elementId": "cl-PrkEvbhhIu",
-          "hash": "72f3eda5d7bd"
+          "hash": "022ee847300a"
         },
         {
           "key": "# 4. Marking as evidence",
           "elementId": "cl-qqtDx0H6Ej",
-          "hash": "5eb39d523bdb"
+          "hash": "a24003df7590"
         },
         {
           "key": "# 5. Downloading",
           "elementId": "cl-3pd14T5U7U",
-          "hash": "639fbd0838bd"
+          "hash": "c34ac111d45d"
         },
         {
           "key": "# 6. Configuration by state",
           "elementId": "cl-AyA3l929HR",
-          "hash": "974b0529afb6"
+          "hash": "8605dde96fd8"
         },
         {
-          "key": "# 7. Future enhancements",
-          "elementId": "cl-lhl9jhqpoO",
-          "hash": "708a7386de39"
-        },
-        {
-          "key": "# 8. Open questions",
+          "key": "# 7. Open questions",
           "elementId": "cl-GjEnJmGKJW",
-          "hash": "3be537157129"
+          "hash": "e25f1bfcb36e"
         }
       ],
-      "note": "Rebuilt 2026-11-25 at v32 (no comments on the page), overwriting an unidentified page edit by Sathyajith MS on 2026-11-23, on the owner's instruction. The Status line is split across two blocks (v32–v16 in the heading chunk's second block, v15 on in cl-S0Uf_LzTqU). Section elementIds are each chunk's first block. Patched 2026-11-25 at v33: Status and callout; §1 and §3.1 row 10 cells. sections hashes not recomputed."
+      "note": "Rebuilt 2026-11-25 at v32 (no comments on the page), overwriting an unidentified page edit by Sathyajith MS on 2026-11-23, on the owner's instruction. The Status line is split across two blocks (v34–v16 in the heading chunk's second block, v15 on in cl-S0Uf_LzTqU). Section elementIds are each chunk's first block. Patched 2026-11-27 at v34: Status and callout; §1 table row 16 added; one sentence each in §1.1 and §1.2; §6.2 requirements table (CFL-32–CFL-34) and its reason; §7 Future enhancements deleted; Open questions renumbered §7. Section hashes recomputed from the local file at v34."
     },
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
