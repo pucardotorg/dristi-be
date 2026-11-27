@@ -45,7 +45,7 @@ from ..exceptions import (
 )
 from ..log import log_event
 from ..models import ESignTransaction
-from ..providers import ESignProviderResponse, get_provider
+from ..providers import ESignProviderResponse, get_callback_provider
 from .initiation import actor_id, artefact_tags, safe_audit
 
 # Failure codes a provider is allowed to report directly; anything else it
@@ -75,7 +75,12 @@ def process_callback(payload: Mapping[str, str]) -> CallbackOutcome:
     nothing may be recorded for a caller we do not trust.
     """
 
-    provider = get_provider()
+    # The anonymous callback must parse before a transaction is found, so it
+    # cannot resolve the provider from the row; it uses the single registered
+    # CALLBACK provider (spec 0038 #4.5). The gate then filters on this
+    # provider's name, so a CLIENT_SIGNATURE transaction can never be completed
+    # here.
+    provider = get_callback_provider()
     log_event(EVENT_CALLBACK_RECEIVED, None, provider=provider.name)
 
     parsed = provider.parse_response(payload)
@@ -155,7 +160,24 @@ def _expire(transaction: ESignTransaction) -> None:
 def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> CallbackOutcome:
     """Embed the signature, store the signed PDF and mark the row ``SUCCESS``."""
 
-    pkcs7 = _decode_signature(transaction, parsed)
+    response_audit = _response_audit(parsed)
+    pkcs7 = _decode_signature(transaction, parsed, response_audit)
+    locked = finalize_signature(transaction, pkcs7, response_audit)
+    return CallbackOutcome(transaction=locked, status=locked.status)
+
+
+def finalize_signature(
+    transaction: ESignTransaction, pkcs7: bytes, response_audit: dict
+) -> ESignTransaction:
+    """Embed ``pkcs7`` into the placeholder, store the signed PDF, mark ``SUCCESS``.
+
+    Shared by the anonymous ESP callback and the authenticated client-signature
+    completion (spec 0038 #8). The transaction must already be locked into
+    ``SIGNING`` by the caller's gate; the embed/upload run outside the lock and a
+    compare-and-set guards the final transition. Returns the final row (which may
+    have been moved on by the reconciler); raises a recorded :class:`ESignError`
+    on embed/storage failure.
+    """
 
     files = get_file_client()
     try:
@@ -163,16 +185,18 @@ def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> C
             transaction.placeholder_file_id, max_bytes=prepared_document_max_bytes()
         )
     except ESignError as exc:
-        raise _fail(transaction, exc, parsed) from exc
+        raise _fail(transaction, exc, response_audit) from exc
     except Exception as exc:
-        raise _fail(transaction, ESignFileStorageError(), parsed) from exc
+        raise _fail(transaction, ESignFileStorageError(), response_audit) from exc
 
     try:
         signed = get_pdf_client().embed_signature(prepared, pkcs7, transaction.signature_field_name)
     except ESignError as exc:
-        raise _fail(transaction, exc, parsed, signature_bytes=len(pkcs7)) from exc
+        raise _fail(transaction, exc, response_audit, signature_bytes=len(pkcs7)) from exc
     except Exception as exc:
-        raise _fail(transaction, ESignPDFEmbedError(), parsed, signature_bytes=len(pkcs7)) from exc
+        raise _fail(
+            transaction, ESignPDFEmbedError(), response_audit, signature_bytes=len(pkcs7)
+        ) from exc
     log_event(
         EVENT_SIGNATURE_EMBEDDED, transaction, signed_size=len(signed), signature_bytes=len(pkcs7)
     )
@@ -190,11 +214,11 @@ def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> C
         # Keep the storage module's reason for support (it names the wrong
         # field) in the audit and log, not in the user-facing message.
         error = ESignSignedUploadError(audit={"storage_error": exc.message[:200]})
-        raise _fail(transaction, error, parsed) from exc
+        raise _fail(transaction, error, response_audit) from exc
     except ESignError as exc:
-        raise _fail(transaction, ESignSignedUploadError(), parsed) from exc
+        raise _fail(transaction, ESignSignedUploadError(), response_audit) from exc
     except Exception as exc:
-        raise _fail(transaction, ESignSignedUploadError(), parsed) from exc
+        raise _fail(transaction, ESignSignedUploadError(), response_audit) from exc
     log_event(EVENT_SIGNED_STORED, transaction, signed_file_id=signed_file_id)
 
     # Compare-and-set on SIGNING: the embed and upload ran outside any lock, so
@@ -211,27 +235,26 @@ def _complete(transaction: ESignTransaction, parsed: ESignProviderResponse) -> C
                 detail="completion refused; row left SIGNING before the signed PDF was stored",
                 orphaned_signed_file_id=signed_file_id,
             )
-            return CallbackOutcome(transaction=locked, status=locked.status)
-        locked.mark_success(
-            signed_file_id=signed_file_id,
-            response_audit=_response_audit(parsed),
-        )
+            return locked
+        locked.mark_success(signed_file_id=signed_file_id, response_audit=response_audit)
     log_event(EVENT_ESIGN_SUCCEEDED, locked, signed_file_id=signed_file_id)
-    return CallbackOutcome(transaction=locked, status=locked.status)
+    return locked
 
 
-def _decode_signature(transaction: ESignTransaction, parsed: ESignProviderResponse) -> bytes:
+def _decode_signature(
+    transaction: ESignTransaction, parsed: ESignProviderResponse, response_audit: dict
+) -> bytes:
     """Return the PKCS#7 bytes, failing the transaction when unusable."""
 
     if not parsed.signature:
-        raise _fail(transaction, ESignSignatureMissing(), parsed)
+        raise _fail(transaction, ESignSignatureMissing(), response_audit)
     try:
         # Providers may hand over line-wrapped base64; whitespace is never data.
         pkcs7 = base64.b64decode("".join(parsed.signature.split()), validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise _fail(transaction, ESignSignatureInvalid(), parsed) from exc
+        raise _fail(transaction, ESignSignatureInvalid(), response_audit) from exc
     if not pkcs7:
-        raise _fail(transaction, ESignSignatureInvalid(), parsed)
+        raise _fail(transaction, ESignSignatureInvalid(), response_audit)
     return pkcs7
 
 
@@ -256,7 +279,7 @@ def _record_provider_failure(transaction: ESignTransaction, parsed: ESignProvide
 def _fail(
     transaction: ESignTransaction,
     error: ESignError,
-    parsed: ESignProviderResponse,
+    response_audit: dict,
     **diagnostics,
 ) -> ESignError:
     """Record ``error`` on ``transaction`` and return it for raising.
@@ -267,9 +290,9 @@ def _fail(
     """
 
     details = {**error.audit, **diagnostics}
-    response_audit = _response_audit(parsed)
-    response_audit.update(safe_audit(details))
-    transaction.mark_failed(error.code, error.message, response_audit=response_audit)
+    audit = dict(response_audit)
+    audit.update(safe_audit(details))
+    transaction.mark_failed(error.code, error.message, response_audit=audit)
     log_event(EVENT_ESIGN_FAILED, transaction, failure_code=error.code, **details)
     error.transaction = transaction
     return error

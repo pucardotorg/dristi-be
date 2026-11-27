@@ -12,6 +12,7 @@ from . import views
 urlpatterns = [
     path("esign/_esign/", views.ESignInitiateView.as_view(), name="esign-initiate"),
     path("esign/_signed/", views.ESignCallbackView.as_view(), name="esign-callback"),
+    path("esign/methods/", views.ESignMethodsView.as_view(), name="esign-methods"),
     path(
         "esign/transactions/<uuid:transaction_id>/",
         views.ESignTransactionStatusView.as_view(),
@@ -21,5 +22,10 @@ urlpatterns = [
         "esign/transactions/<uuid:transaction_id>/_retry/",
         views.ESignRetryView.as_view(),
         name="esign-retry",
+    ),
+    path(
+        "esign/transactions/<uuid:transaction_id>/_complete/",
+        views.ClientSignatureCompleteView.as_view(),
+        name="esign-complete",
     ),
 ]

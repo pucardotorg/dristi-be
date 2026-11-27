@@ -66,6 +66,17 @@ DISABLED = define("E03026", "Electronic signing is temporarily unavailable.", st
 # Storage (added after the initial release; never renumber the codes above)
 FILE_STORAGE_REJECTED = define("E03027", "Document storage rejected the request.", status=500)
 
+# Multi-provider / client-signature completion (spec 0038 #10)
+METHOD_NOT_ENABLED = define("E03028", "This signing method is not enabled.", status=400)
+CLIENT_SIGNATURE_MISSING = define("E03029", "No signature was provided.", status=400)
+CLIENT_SIGNATURE_INVALID = define("E03030", "The signature is not valid.", status=400)
+CLIENT_SIGNATURE_MISMATCH = define(
+    "E03031", "The signature does not match the document.", status=400
+)
+CERTIFICATE_NOT_PERMITTED = define(
+    "E03032", "The signing certificate is not permitted.", status=403
+)
+
 BY_FAILURE_CODE = {
     constants.ESIGN_INVALID_REQUEST: INVALID_REQUEST,
     constants.ESIGN_SOURCE_NOT_FOUND: SOURCE_NOT_FOUND,
@@ -93,6 +104,11 @@ BY_FAILURE_CODE = {
     constants.ESIGN_NOT_RETRYABLE: NOT_RETRYABLE,
     constants.ESIGN_MAX_ATTEMPTS_EXCEEDED: MAX_ATTEMPTS_EXCEEDED,
     constants.ESIGN_PLACEHOLDER_MISSING: PLACEHOLDER_MISSING,
+    constants.ESIGN_METHOD_NOT_ENABLED: METHOD_NOT_ENABLED,
+    constants.ESIGN_CLIENT_SIGNATURE_MISSING: CLIENT_SIGNATURE_MISSING,
+    constants.ESIGN_CLIENT_SIGNATURE_INVALID: CLIENT_SIGNATURE_INVALID,
+    constants.ESIGN_CLIENT_SIGNATURE_MISMATCH: CLIENT_SIGNATURE_MISMATCH,
+    constants.ESIGN_CERTIFICATE_NOT_PERMITTED: CERTIFICATE_NOT_PERMITTED,
     constants.ESIGN_DISABLED: DISABLED,
 }
 

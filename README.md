@@ -327,7 +327,11 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `PDF_SIGNATURE_HASH_ALGORITHM` | ByteRange digest algorithm (`SHA256`, `SHA384`, `SHA512`); must match the ESP request | `SHA256` |
 | `PDF_MAX_SIGN_INPUT_BYTES` | Largest PDF accepted by the signing primitives; keep it at or above `FILE_MAX_SIZE_BYTES`, or an accepted upload cannot be signed | `20971520` |
 | `CASE_PDF_TENANT_ID` | Tenant (state code) the e-filing complaint PDF is rendered for; the complaint template is seeded from `data/seed/core/pdf` | `kl` |
-| `ESIGN_PROVIDER` | Dotted path of the active eSign provider. The mock provider needs no C-DAC credentials and is the local/CI default. | `addon.cdac_esign.provider.CDACESignProvider` |
+| `ESIGN_DEFAULT_PROVIDER` | Name of the provider used when a caller does not pass `signing_method` (spec 0038). Resolved in production against the available map (`cdac`, `dsc`). | `cdac` |
+| `ESIGN_REGISTERED_PROVIDERS` | Comma-separated provider names registered besides the default, so in-flight transactions keep resolving after the default moves | `cdac,dsc` |
+| `ESIGN_ENABLED_METHODS` | Comma-separated signing methods offered to callers; empty means every registered provider | `cdac,dsc` |
+| `ESIGN_PROVIDER` | **Deprecated** single-provider alias, used only when the three keys above are empty (local/CI default is the mock provider) | `addon.cdac_esign.provider.CDACESignProvider` |
+| `ESIGN_MAX_CLIENT_SIGNATURE_BYTES` | Largest client-supplied PKCS#7 accepted at `_complete` (DSC) | `262144` |
 | `ESIGN_ENABLED` | Kill switch; initiation returns 503 when disabled | `True` |
 | `ESIGN_TRANSACTION_TTL` | Seconds a transaction waits for the ESP callback | `900` |
 | `ESIGN_CALLBACK_GRACE_PERIOD` | Seconds a late callback is still accepted | `300` |
@@ -354,6 +358,11 @@ Copy `.env.example` to `.env` for local development. See `.env.prod.example` for
 | `CDAC_ESIGN_VERIFY_RESPONSE_SIGNATURE` | Verify the response XMLDSig; rejected as `False` in production | `True` |
 | `CDAC_ESIGN_ALLOW_SHA1_RESPONSE` | Also accept RSA-SHA1 / SHA-1 response signatures. C-DAC signs eSign 2.1 responses with SHA-1, so it must be `True` for them to verify | `False` |
 | `CDAC_ESIGN_RESPONSE_FIELD` | Form field the ESP delivers the response document under, when it is not one of the known names | `msg` |
+| `DSC_ESIGN_AGENT_URL` | Local pyHanko signing-agent URL returned to the browser as `action_url` when signing with a DSC token (spec 0038) | `http://localhost:1620/sign` |
+| `DSC_ESIGN_TRUST_ROOTS` | India CCA trust anchors (PEM bundle or directory) the DSC certificate must chain to. Required in production; without it, untrusted certs are refused unless `DSC_ESIGN_ALLOW_UNTRUSTED_CERT` is set | `/run/secrets/cca-trust-roots.pem` |
+| `DSC_ESIGN_ALLOW_UNTRUSTED_CERT` | Accept a certificate that does not chain to a trust root (self-signed). Non-production only; a system check forbids it in production | `False` |
+| `DSC_ESIGN_REQUIRE_REGISTERED_CERT` | Require the signing certificate to match the signer's registered DSC via `DSC_ESIGN_IDENTITY_RESOLVER` (spec 0038 #8.1.4) | `False` |
+| `DSC_ESIGN_IDENTITY_RESOLVER` | Dotted path of a callable returning the acceptable certificate fingerprints for a transaction's signer; required when the binding above is on | *(empty)* |
 | `PAYMENT_DEFAULT_PROVIDER` | Name (a key of the `PAYMENT_PROVIDERS` setting) of the provider new payments are started with; empty leaves payments `INITIATED` for an operator. Payments in flight keep their own provider. | `mock` locally, empty in production until a gateway addon ships |
 | `PAYMENT_REGISTERED_PROVIDERS` | Comma-separated provider names kept registered besides the default, so payments still pending at a provider that is no longer the default keep resolving through its callback and poller | empty; `egras` while switching away from e-GRAS |
 | `PAYMENT_SELECTABLE_PROVIDERS` | Comma-separated, ordered provider names a payer may choose per payment (`provider` on create); empty means the default only. Must include `PAYMENT_DEFAULT_PROVIDER`; every name is registered (spec 0032 #4.2) | `egras,offline` |

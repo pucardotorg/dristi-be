@@ -74,6 +74,40 @@ class RegistryTests(SimpleTestCase):
             get_provider()
 
 
+class CallbackProviderResolutionTests(SimpleTestCase):
+    """A broken registration must not break the anonymous callback (spec 0038 #4.5)."""
+
+    def setUp(self):
+        reset_provider_cache()
+        self.addCleanup(reset_provider_cache)
+
+    @override_settings(
+        ESIGN_PROVIDERS={
+            "mock": "apps.esign.providers.mock.MockESignProvider",
+            "dsc": "addon.dsc_esign.provider.Missing",  # broken on purpose
+        },
+        ESIGN_DEFAULT_PROVIDER="mock",
+    )
+    def test_broken_entry_is_skipped_not_fatal(self):
+        """The single healthy CALLBACK provider is returned; the bad one is skipped."""
+        from apps.esign.providers import get_callback_provider
+
+        self.assertIsInstance(get_callback_provider(), MockESignProvider)
+
+    @override_settings(
+        ESIGN_PROVIDERS={
+            "mock": "apps.esign.providers.mock.MockESignProvider",
+            "dsc": "addon.dsc_esign.provider.DSCESignProvider",
+        },
+        ESIGN_DEFAULT_PROVIDER="mock",
+    )
+    def test_dsc_is_not_a_callback_provider(self):
+        """Only the CALLBACK provider is eligible; DSC is CLIENT_SIGNATURE."""
+        from apps.esign.providers import get_callback_provider
+
+        self.assertIsInstance(get_callback_provider(), MockESignProvider)
+
+
 class MockProviderTests(SimpleTestCase):
     """The provider used locally and in CI."""
 

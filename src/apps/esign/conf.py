@@ -17,12 +17,52 @@ DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_PLACEHOLDER_RETENTION_DAYS = 7
 DEFAULT_CALLBACK_THROTTLE_RATE = "60/min"
 DEFAULT_CALLBACK_MAX_BODY_BYTES = 262144
+DEFAULT_MAX_CLIENT_SIGNATURE_BYTES = 262144
 
 
 def provider_path() -> str:
-    """Dotted path of the active provider class."""
+    """Dotted path of the active provider class (deprecated single-provider alias)."""
 
     return getattr(settings, "ESIGN_PROVIDER", DEFAULT_PROVIDER) or ""
+
+
+def providers_setting() -> dict:
+    """The ``ESIGN_PROVIDERS`` registry (name -> dotted path), possibly empty.
+
+    When unset, the registry falls back to the deprecated single ``ESIGN_PROVIDER``
+    (spec 0038 #4), so existing deployments keep working unchanged.
+    """
+
+    return dict(getattr(settings, "ESIGN_PROVIDERS", {}) or {})
+
+
+def default_provider_name() -> str:
+    """Name used for initiations that do not name a ``signing_method``."""
+
+    return getattr(settings, "ESIGN_DEFAULT_PROVIDER", "") or ""
+
+
+def enabled_methods() -> list[str] | None:
+    """Signing methods offered to callers, or ``None`` to allow every registered one.
+
+    Per-state ``signingMethods`` (SGM-05) narrow this; absent that, a deployment
+    may still pin the list with ``ESIGN_ENABLED_METHODS``.
+    """
+
+    value = getattr(settings, "ESIGN_ENABLED_METHODS", None)
+    return list(value) if value else None
+
+
+def max_client_signature_bytes() -> int:
+    """Largest client-supplied PKCS#7 accepted at ``_complete``; ``0`` disables the limit."""
+
+    return int(
+        getattr(
+            settings,
+            "ESIGN_MAX_CLIENT_SIGNATURE_BYTES",
+            DEFAULT_MAX_CLIENT_SIGNATURE_BYTES,
+        )
+    )
 
 
 def is_enabled() -> bool:
