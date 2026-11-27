@@ -161,6 +161,15 @@ register(
 
 register(
     SeedSpec(
+        model_label="applications.ApplicationType",
+        key=("code",),
+        fields=("code", "label", "description", "template_code", "sequence", "is_active"),
+        order=30,
+    )
+)
+
+register(
+    SeedSpec(
         model_label="dristi_requests.RequestType",
         key=("code",),
         fields=("code", "name", "description", "schema", "min_documents", "is_active"),

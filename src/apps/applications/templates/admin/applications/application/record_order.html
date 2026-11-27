@@ -1,0 +1,36 @@
+{% extends "admin/base_site.html" %}
+{% comment %}Record an order's Application action answers (spec 0033 #1.2, #8.2).{% endcomment %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:applications_application_changelist' %}">Applications</a>
+  &rsaquo; <a href="{% url 'admin:applications_application_change' application.pk %}">{{ application }}</a>
+  &rsaquo; {{ title }}
+</div>
+{% endblock %}
+{% block content %}
+<div id="content-main">
+  {% if not open %}
+    <p class="errornote">This application is {{ application.get_status_display|lower }}: an order can no
+      longer act on it. Recording will be refused.</p>
+  {% endif %}
+  <p>Use this only for an order signed outside the system, until the orders module records it.
+    The order acts on the application exactly as the order item would.</p>
+  <form method="post">{% csrf_token %}
+    {{ form.non_field_errors }}
+    <fieldset class="module aligned">
+      {% for field in form %}
+        <div class="form-row">
+          {{ field.errors }}
+          {{ field.label_tag }} {{ field }}
+          {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </fieldset>
+    <div class="submit-row">
+      <input type="submit" class="default" value="Record order">
+      <a href="{% url 'admin:applications_application_change' application.pk %}" class="closelink">Back</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

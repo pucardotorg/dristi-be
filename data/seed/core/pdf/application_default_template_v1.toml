@@ -1,0 +1,188 @@
+# The default application template, version 1 (spec 0033 #6.5, #6.5a).
+# See application_default_template.toml for what it prints and where from.
+
+[seed]
+model = "pdf.PDFTemplateVersion"
+
+[[rows]]
+template = "application-default"
+version = 1
+is_active = true
+
+[rows.format_config]
+
+[rows.format_config."page"]
+"size" = "A4"
+
+[rows.format_config."page"."margins"]
+"top" = 64
+"right" = 57
+"bottom" = 60
+"left" = 57
+
+[rows.format_config."metadata"]
+"title" = "{{ data.title }} {{ data.case_number }}"
+"author" = "Dristi"
+"subject" = "{{ data.matter }}"
+
+[rows.format_config."styles"]
+
+[rows.format_config."styles"."default"]
+"font" = "noto-sans"
+"size" = 10
+"leading" = 14
+
+[rows.format_config."styles"."court"]
+"size" = 11
+"bold" = true
+"align" = "center"
+"space_after" = 3
+
+[rows.format_config."styles"."cover"]
+"size" = 10.5
+"bold" = true
+"align" = "center"
+"space_after" = 3
+
+[rows.format_config."styles"."title"]
+"size" = 12
+"bold" = true
+"align" = "center"
+"space_before" = 12
+"space_after" = 8
+
+[rows.format_config."styles"."label"]
+"size" = 8
+"color" = "#555555"
+"space_after" = 0
+
+[rows.format_config."styles"."watermark"]
+"size" = 8
+"color" = "#B00020"
+"align" = "center"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "watermark"
+"text" = "PREVIEW - NOT FOR FILING"
+"when" = "data.draft"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "court"
+"text" = "{{ data.court }}"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "cover"
+"text" = "{{ data.case_number }}"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "cover"
+"text" = "{{ data.matter }}"
+
+[[rows.format_config."body"]]
+"type" = "spacer"
+"height" = 10
+
+[[rows.format_config."body"]]
+"type" = "group"
+"source" = "data.parties"
+"as" = "group"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "table"
+"border" = false
+"padding" = 2
+"source" = "group"
+"as" = "row"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"value" = "<font size=8 color='#555555'>{{ row.term }}</font>"
+"width" = "30%"
+
+[[rows.format_config."body"."blocks"."columns"]]
+"value" = "{{ row.value }}"
+"width" = "70%"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "title"
+"text" = "{{ data.title }}"
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"style" = "label"
+"text" = "Filed for {{ data.filed_for }}"
+"when" = "data.filed_for"
+
+[[rows.format_config."body"]]
+"type" = "table"
+"when" = "data.entries"
+"border" = false
+"padding" = 2
+"source" = "data.entries"
+"as" = "e"
+
+[[rows.format_config."body"."columns"]]
+"value" = "<font size=8 color='#555555'>{{ e.term }}</font>"
+"width" = "30%"
+
+[[rows.format_config."body"."columns"]]
+"value" = "{{ e.value }}"
+"width" = "70%"
+
+[[rows.format_config."body"]]
+"type" = "spacer"
+"height" = 8
+
+[[rows.format_config."body"]]
+"type" = "group"
+"source" = "data.paragraphs"
+"as" = "para"
+
+[[rows.format_config."body"."blocks"]]
+"type" = "paragraph"
+"text" = "{{ para }}"
+
+[[rows.format_config."body"]]
+"type" = "spacer"
+"height" = 12
+
+[[rows.format_config."body"]]
+"type" = "paragraph"
+"text" = "Dated this {{ data.dated }}."
+
+[[rows.format_config."body"]]
+"type" = "spacer"
+"height" = 8
+
+[[rows.format_config."body"]]
+"type" = "signatures"
+"source" = "data.signatories"
+"box_height" = 56
+"label_style" = "label"
+
+[rows.data_config]
+"sync_render" = true
+"filename" = "application-{{ data.application_id }}"
+
+[rows.data_config."request_schema"]
+"type" = "object"
+"required" = ["application_id", "court", "case_number", "matter", "title", "parties", "entries", "paragraphs", "dated", "signatories"]
+
+[rows.data_config."request_schema"."properties"."application_id"]
+"type" = "string"
+
+[rows.data_config."request_schema"."properties"."parties"]
+"type" = "array"
+
+[rows.data_config."request_schema"."properties"."entries"]
+"type" = "array"
+
+[rows.data_config."request_schema"."properties"."paragraphs"]
+"type" = "array"
+
+[rows.data_config."request_schema"."properties"."signatories"]
+"type" = "array"

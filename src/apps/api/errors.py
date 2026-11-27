@@ -48,6 +48,7 @@ DOMAINS = {
     "09": "scrutiny",
     "10": "hearings",
     "11": "core",
+    "13": "applications",
 }
 
 

@@ -1,0 +1,108 @@
+# Application types (spec 0033 #3.1, #4.1), in the type picker's order.
+#
+# A type's behaviour is its code spec (apps.applications.types); this row only
+# labels, orders and switches it on. A blank template_code renders the
+# application with the application-default template (#6.5); a type gets its
+# own template by seeding one and setting the key here in admin.
+#
+# PoA Change stays inactive until Q-16 decides who raises and signs it (#6.1).
+
+[seed]
+model = "applications.ApplicationType"
+
+[[rows]]
+code = "BAIL"
+label = "Bail"
+description = "Ask for the accused to be released on bail."
+sequence = 1
+
+[[rows]]
+code = "POSTPONE_HEARING"
+label = "Postpone"
+description = "Ask for the next hearing to be moved to a later date."
+sequence = 2
+
+[[rows]]
+code = "ADVANCE_HEARING"
+label = "Advance / Prepone"
+description = "Ask for the next hearing to be moved to an earlier date."
+sequence = 3
+
+[[rows]]
+code = "EDIT_LITIGANT_DETAILS"
+label = "Edit Litigant Details"
+description = "Correct or update a litigant's details on the case."
+sequence = 4
+
+[[rows]]
+code = "ADDITION_OF_WITNESS"
+label = "Addition of Witness"
+description = "Add witnesses to the case."
+sequence = 5
+
+[[rows]]
+code = "PRODUCTION_OF_DOCUMENTS"
+label = "Production of Documents"
+description = "Put documents before the court to add to the case file."
+sequence = 6
+
+[[rows]]
+code = "DELAY_CONDONATION"
+label = "Delay Condonation"
+description = "Ask the court to condone a delay in filing."
+sequence = 7
+
+[[rows]]
+code = "CASE_SETTLEMENT"
+label = "Case Settlement"
+description = "Tell the court the parties have settled."
+sequence = 8
+
+[[rows]]
+code = "CASE_WITHDRAWAL"
+label = "Case Withdrawal"
+description = "Ask to withdraw the case."
+sequence = 9
+
+[[rows]]
+code = "CASE_TRANSFER"
+label = "Case Transfer"
+description = "Ask for the case to be transferred to another court."
+sequence = 10
+
+[[rows]]
+code = "WARRANT_BY_HAND"
+label = "Warrant by Hand"
+description = "Ask for a warrant to be delivered by hand."
+sequence = 11
+
+[[rows]]
+code = "ABSENT_APPLICATION"
+label = "Absent Application"
+description = "Explain a party's absence."
+sequence = 12
+
+[[rows]]
+code = "REOPEN_EVIDENCE"
+label = "Reopen Evidence"
+description = "Ask to reopen the evidence."
+sequence = 13
+
+[[rows]]
+code = "OBJECTION"
+label = "Objection"
+description = "Object to an application of the other side."
+sequence = 14
+
+[[rows]]
+code = "GENERIC"
+label = "Generic"
+description = "Any other request to the court, with a title of your own."
+sequence = 15
+
+[[rows]]
+code = "POA_CHANGE"
+label = "PoA Change"
+description = "Change who holds the power of attorney for litigants."
+sequence = 16
+is_active = false
