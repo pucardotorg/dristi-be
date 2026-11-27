@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "apps.scrutiny",
     "apps.payments",
     "apps.hearings",
+    "apps.processes",
     "apps.notifications",
     # Addons
     "addon.cdac_sms_gateway",
@@ -312,6 +313,9 @@ SPECTACULAR_SETTINGS = {
     # name each enum explicitly so drf-spectacular does not fall back to
     # hash-suffixed names (drf_spectacular.W001).
     "ENUM_NAME_OVERRIDES": {
+        # A channel's send and status update share one set of modes.
+        "ProcessStepModeEnum": "apps.processes.enums.StepMode",
+        "ProcessOutcomeStatusEnum": "apps.processes.enums.OUTCOME_STATUS_CHOICES",
         "RequestStatusEnum": "apps.dristi_requests.models.Request.Status",
         "RequestApprovalStatusEnum": "apps.dristi_requests.models.RequestApproval.Status",
         # drf-spectacular names an enum after its field. Scrutiny's round also has a

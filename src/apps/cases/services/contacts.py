@@ -143,6 +143,44 @@ def replace_contacts(case, user, lists, *, participant=None, institution=None, p
             validated_save(row)
 
 
+def add_contact(participant, contact_type, value, user):
+    """Add one mobile number, email or address to a participant's record on its case.
+
+    ``value`` is the number or email, or for ``ADDRESS`` the address's fields.
+    It goes on the participant's own contacts, or for an institution with no
+    person acting for it on the institution's (spec 0020 §4.6), after those
+    already there; an equal active contact is reused. Returns the stored
+    value, or the address's id. A malformed value raises Django's
+    ``ValidationError``.
+    """
+    owner = (
+        {"participant": participant}
+        if participant.person_id or not participant.institution_id
+        else {"institution": participant.institution}
+    )
+    rows = owner_rows(participant.case, **owner).filter(contact_type=contact_type)
+    if contact_type == ContactType.ADDRESS:
+        address, _ = Address.objects.get_or_create_address(created_by=user, **value)
+        stored, match = address.pk, {"address": address}
+    else:
+        stored, match = value, {"value": value}
+    if not rows.filter(**match).exists():
+        last = rows.order_by("-ordinal").values_list("ordinal", flat=True).first() or 0
+        row = CaseContact(
+            case=participant.case,
+            case_participant=owner.get("participant"),
+            institution=participant.institution if participant.institution_id else None,
+            contact_type=contact_type,
+            ordinal=last + 1,
+            created_by=user,
+            updated_by=user,
+            **match,
+        )
+        row.full_clean()
+        row.save()
+    return stored
+
+
 # Pass to ``set_permanent_address`` to keep the stored one, unless it is now the first address.
 KEEP_PERMANENT_ADDRESS = object()
 

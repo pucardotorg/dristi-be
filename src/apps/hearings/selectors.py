@@ -65,6 +65,11 @@ def next_hearing(case_id) -> HearingRef | None:
     return None
 
 
+def hearing_dates(hearing_ids) -> dict[UUID, datetime.date]:
+    """Return each hearing's current date by id, in one query; unknown ids are left out."""
+    return dict(Hearing.objects.filter(pk__in=set(hearing_ids)).values_list("pk", "hearing_date"))
+
+
 def has_scheduled_hearing(case_id) -> bool:
     """Whether the case has a scheduled hearing (Advance / Postpone "Available when")."""
     return Hearing.objects.filter(case_id=case_id, status=HearingStatus.SCHEDULED).exists()

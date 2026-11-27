@@ -6,3 +6,6 @@ config_set = "tenant"
 config_key = "state_code"
 config_value = "KL"
 description = "Two- or three-letter state code that prefixes human-readable numbers, e.g. KL-REQ-00001. Changing it starts a new number series; existing numbers keep the old code."
+
+# A state's process court fees are in its own folder, e.g.
+# kerala/processes/configurations.toml (spec 0028 #12.3).

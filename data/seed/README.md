@@ -118,6 +118,7 @@ seeded instead of shipped as data migrations:
 - `core/messaging/` — the SMS templates (account, case filing, hearings).
 - `core/scrutiny/` — the national `SCRUTINY_CHECKS_DEFAULT` rule and its
   binding.
+- `core/processes/process_types.toml` — the six process types (spec 0028).
 
 This data used to be inserted by data migrations (spec 0036). Add new
 reference data here, not in a migration.
@@ -125,6 +126,28 @@ reference data here, not in a migration.
 ```sh
 python manage.py seed data/seed/core/
 ```
+
+## A state's own data
+
+What differs between states lives in the state's folder, seeded after
+`core/`. For processes (spec 0028), `kerala/processes/` holds:
+
+- `channels.toml` — the channels, with which this state offers
+  (`is_available`: Police (iCOPS) in Kerala, Police (NSTEP) in Gujarat and
+  Punjab & Haryana).
+- `process_type_channels.toml` — which channel each type may use, and which
+  are preselected. It names the state's channels, so it lives beside them.
+- `non_delivery_reasons.toml` — the state's reasons for a negative outcome.
+- `configurations.toml` — the state's court fee per process type
+  (`processes.kl.court_fee.*`).
+
+```sh
+python manage.py seed data/seed/core/
+python manage.py seed data/seed/kerala/processes/
+```
+
+Another state copies the folder and sets its own values; seeding only
+inserts, so availability cannot be layered over a shared copy.
 
 ## Bar-ID approvers (local / test)
 

@@ -1,0 +1,127 @@
+# The process type x channel matrix (spec 0028 #3.1, process-handover.md §6.3).
+# `preselected` marks the cells marked Default (AUT-08). A deployment runs Police
+# (NSTEP) or Police (iCOPS), not both; the one it does not run is unavailable.
+# It lives with the state's channels.toml, which it names: core/ is seeded
+# first, so a matrix there would find no channels and be skipped.
+
+[seed]
+model = "processes.ProcessTypeChannel"
+
+[[rows]]
+process_type = "NOTICE"
+channel = "SMS"
+preselected = true
+
+[[rows]]
+process_type = "NOTICE"
+channel = "EMAIL"
+preselected = true
+
+[[rows]]
+process_type = "NOTICE"
+channel = "RPAD"
+preselected = true
+
+[[rows]]
+process_type = "NOTICE"
+channel = "EPOST"
+
+[[rows]]
+process_type = "SUMMONS"
+channel = "SMS"
+preselected = true
+
+[[rows]]
+process_type = "SUMMONS"
+channel = "EMAIL"
+preselected = true
+
+[[rows]]
+process_type = "SUMMONS"
+channel = "RPAD"
+preselected = true
+
+[[rows]]
+process_type = "SUMMONS"
+channel = "EPOST"
+
+[[rows]]
+process_type = "SUMMONS"
+channel = "POLICE_RPAD"
+
+[[rows]]
+process_type = "SUMMONS"
+channel = "POLICE_NSTEP"
+
+[[rows]]
+process_type = "SUMMONS"
+channel = "POLICE_ICOPS"
+
+[[rows]]
+process_type = "WARRANT"
+channel = "POLICE_RPAD"
+
+[[rows]]
+process_type = "WARRANT"
+channel = "POLICE_NSTEP"
+preselected = true
+
+[[rows]]
+process_type = "WARRANT"
+channel = "POLICE_ICOPS"
+preselected = true
+
+[[rows]]
+process_type = "WARRANT"
+channel = "BY_HAND"
+
+[[rows]]
+process_type = "PROCLAMATION"
+channel = "BY_HAND"
+preselected = true
+
+[[rows]]
+process_type = "ATTACHMENT"
+channel = "POLICE_RPAD"
+
+[[rows]]
+process_type = "ATTACHMENT"
+channel = "POLICE_NSTEP"
+preselected = true
+
+[[rows]]
+process_type = "ATTACHMENT"
+channel = "POLICE_ICOPS"
+preselected = true
+
+[[rows]]
+process_type = "CUSTOM"
+channel = "SMS"
+
+[[rows]]
+process_type = "CUSTOM"
+channel = "EMAIL"
+
+[[rows]]
+process_type = "CUSTOM"
+channel = "RPAD"
+
+[[rows]]
+process_type = "CUSTOM"
+channel = "EPOST"
+
+[[rows]]
+process_type = "CUSTOM"
+channel = "POLICE_RPAD"
+
+[[rows]]
+process_type = "CUSTOM"
+channel = "POLICE_NSTEP"
+
+[[rows]]
+process_type = "CUSTOM"
+channel = "POLICE_ICOPS"
+
+[[rows]]
+process_type = "CUSTOM"
+channel = "BY_HAND"

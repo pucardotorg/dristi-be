@@ -210,6 +210,73 @@ def get_case_contacts(case_id) -> list[Contact]:
     return contacts
 
 
+# Process recipients (spec 0028 #1.1)
+
+PROCESS_RECIPIENT_ROLES = (
+    ParticipantRole.COMPLAINANT,
+    ParticipantRole.ACCUSED,
+    ParticipantRole.WITNESS,
+)
+
+
+@dataclass(frozen=True)
+class ProcessRecipient:
+    """A participant a process may be addressed to, with where it can reach them.
+
+    ``is_person_in_charge`` marks the person acting for an accused
+    institution, a recipient of their own (``PRC-02``). ``witness_side`` is
+    the side calling a witness, else None. ``has_joined`` is true once the
+    participant's person has an account, i.e. has claimed their record and
+    joined the case. The destinations are the participant's active contacts on
+    the case, primary first; an institution with no person acting for it is
+    reached at the institution's own.
+    """
+
+    id: UUID
+    role: str
+    name: str
+    is_person_in_charge: bool
+    has_joined: bool
+    witness_side: str | None
+    mobiles: tuple[str, ...]
+    emails: tuple[str, ...]
+    address_ids: tuple[UUID, ...]
+
+
+def _values(contacts, contact_type, attribute):
+    return tuple(getattr(row, attribute) for row in contacts if row.contact_type == contact_type)
+
+
+def process_recipients(case_id) -> dict[UUID, ProcessRecipient]:
+    """Return the case's active complainants, accused and witnesses by id. Three queries."""
+    participants = load_contacts(
+        CaseParticipant.objects.active()
+        .filter(case_id=case_id, role__in=PROCESS_RECIPIENT_ROLES)
+        .select_related("witness", "person")
+        .order_by("role", "ordinal")
+    )
+    recipients = {}
+    for participant in participants:
+        own, of_institution = contacts_of(participant)
+        contacts = own if participant.person_id else of_institution
+        witness = getattr(participant, "witness", None)
+        recipients[participant.pk] = ProcessRecipient(
+            id=participant.pk,
+            role=participant.role,
+            name=participant.name_at_filing
+            or participant.entity_name_at_filing
+            or participant.designation_at_filing
+            or "",
+            is_person_in_charge=bool(participant.institution_id and participant.person_id),
+            has_joined=bool(participant.person_id and participant.person.user_id),
+            witness_side=witness.side if witness else None,
+            mobiles=_values(contacts, ContactType.MOBILE_NUMBER, "value"),
+            emails=_values(contacts, ContactType.EMAIL, "value"),
+            address_ids=_values(contacts, ContactType.ADDRESS, "address_id"),
+        )
+    return recipients
+
+
 # Summaries (spec 0023 #1.1)
 
 

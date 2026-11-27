@@ -85,6 +85,25 @@ def paid_total(*, case, charge_types) -> Decimal:
     return total or ZERO
 
 
+def paid_on_items(item_ids) -> Decimal:
+    """Sum of ``paid_amount`` of the PAID items among ``item_ids``.
+
+    In-process only: lets a raising module tell money it already spent on its
+    own items from the rest of ``paid_total``.
+    """
+
+    total = DemandItem.objects.filter(
+        pk__in=list(item_ids), status=DemandItemStatus.PAID
+    ).aggregate(total=Sum("paid_amount"))["total"]
+    return total or ZERO
+
+
+def unpaid_item(item_id) -> DemandItem | None:
+    """The demand item if it is still ``UNPAID``, for its raising module to cancel; else None."""
+
+    return DemandItem.objects.filter(pk=item_id, status=DemandItemStatus.UNPAID).first()
+
+
 def attestations_for(payments) -> dict[tuple[str, str], PaymentAttestation]:
     """The recorded collections of ``payments``, keyed by provider transaction."""
 
