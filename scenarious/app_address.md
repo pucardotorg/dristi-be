@@ -90,20 +90,21 @@ Endpoints: `/admin/address/address/` (spec 0020 §7.3; spec 0037 §5)
 
 Tests: `apps/address/tests/integration/test_admin_flow.py`.
 
-## Consumers — how parties use addresses
+## Consumers — how party writes use addresses
 
 ID: ADDR-CONSUMERS
-Endpoints: party writes in `apps.parties` that carry addresses (spec 0020 §4.6, §7)
+Endpoints: party writes in `apps.cases` that carry addresses (`POST /cases/{case_id}/complainants/` etc.; spec 0020 §4.6, §7)
 
 | # | Given | When | Then |
 |---|-------|------|------|
 | 1 | two unrelated party writes (different cases) naming the identical address | both writes complete | both cases' `ADDRESS` contacts point at **one** shared address row — a complainant and an accused at the same place share it, and neither sees who recorded it first |
-| 2 | a case whose `ADDRESS` contact references an address | anything attempts to delete the address | the address survives: `Address.delete()` always raises, and the contact's FK is `PROTECT` besides |
+| 2 | a case whose `ADDRESS` contact references an address | anything attempts to delete the address | the address survives: `Address.delete()` always raises, and a queryset delete (which bypasses the instance guard) is caught by the contact's `PROTECT` foreign key |
 
 Notes:
 
-- The flow tests for these rows live in `apps.parties` — that app owns the
+- The flow tests for these rows live in `apps.cases` — that app owns the
   party-write behavior (spec 0037 §2 rule 1); they are listed here because
   they pin the address module's consumer contract. Row IDs are tagged in the
-  parties suite.
-- Tests: `apps/parties/tests/integration/` (tagged `ADDR-CONSUMERS-*`).
+  cases suite.
+- Tests: `apps/cases/tests/integration/test_address_consumers.py` (tagged
+  `ADDR-CONSUMERS-*`).

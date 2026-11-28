@@ -82,7 +82,7 @@ Endpoints: `GET /api/v1/dristi-requests/approvals/` · `GET /api/v1/dristi-reque
 | 3 | a two-step type whose step 1 has `condition = {"field": "data.amount", "op": "gt", "value": 1000}`, and a request with `amount` = 500 | approver 1 approves step 0 | step 1 is recorded `skipped` ("Step condition not met.") and the request is `approved` — conditions are evaluated lazily against the request's own data (spec 0010 §3) |
 | 4 | the submitted two-step request | approver 2 POSTs decide on the step-0 approval | 404 — the approvals queue is scoped to the assignee, so another user's approval is simply not there; `E02004` remains the service-layer backstop in `services.decide` |
 | 5 | the submitted two-step request | the requester (not in any approver group) POSTs decide | 404 — the requester is never eligible to approve their own request |
-| 6 | the submitted two-step request | approver 2 POSTs decide on their **own** step-1 approval while step 0 is still pending | 400 with code `E02002` — only the current approval step can be acted upon |
+| 6 | the submitted two-step request | approver 1 approves step 0, then re-lists their queue with and without `?status=approved` | the default (pending) queue is empty, and the decided approval shows in the history filter with its comments and `decided_at` — step 1's approval only exists once step 0 is decided (lazy routing) |
 | 7 | the submitted two-step request | approver 1 decides `rejected` with no `comments` | 400 with code `E00002` on `comments` — a reason is required to reject |
 | 8 | the step-0 approval already decided | the same approver POSTs decide again | 400 with code `E02002` — a decided approval cannot be decided again |
 | 9 | a submitted request whose type has a test-registered approval hook | the final step is approved | the hook runs inside the deciding transaction; when the hook raises, the whole decision rolls back — the approval stays `pending` and the request is not `approved` |
@@ -110,6 +110,12 @@ Endpoints: `POST /api/v1/dristi-requests/{request_id}/resubmit/` · `POST /api/v
 | 5 | an approved request | the requester POSTs cancel | 400 with code `E02001` |
 | 6 | a cancelled request | the former approver POSTs decide on its skipped approval | 400 with code `E02002` — the skipped approval is not pending and cannot be decided |
 | 7 | another user's request | the outsider POSTs resubmit or cancel | 404 — the action routes are restricted to the requester (staff excepted) |
+
+Notes:
+
+- Row 2 drives `services.resubmit` directly: the API's resubmit action takes
+  no body, so the corrected-data / replacement-documents path is only
+  reachable at the service layer (spec 0037 §1 shape 2).
 
 Tests: `apps/dristi_requests/tests/integration/test_lifecycle.py`.
 

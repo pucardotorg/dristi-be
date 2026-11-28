@@ -1,0 +1,34 @@
+# The location chain the pincode pre-fill flows seed: a country, a state, a
+# district and one pincode under it (spec 0007 §7). Loaded once per module by
+# the ``seeded_locations`` fixture, through the product's own ``seed`` command.
+# Codes mirror what scenarious/app_locations.md plans for the locations suite,
+# with the same values, so an overlapping seed in one session stays harmless
+# (seeding is insert-only).
+
+[seed]
+model = "locations.Location"
+
+[[rows]]
+code = "IN"
+name = "India"
+short_name = "IN"
+location_type = "country"
+
+[[rows]]
+code = "IN_KL"
+name = "Kerala"
+short_name = "KL"
+location_type = "state"
+parent = "IN"
+
+[[rows]]
+code = "IN_KL_ERN"
+name = "Ernakulam"
+location_type = "district"
+parent = "IN_KL"
+
+[[rows]]
+code = "PIN_682001"
+name = "682001"
+location_type = "pincode"
+parent = "IN_KL_ERN"
