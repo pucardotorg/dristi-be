@@ -14,10 +14,10 @@
     "efiling.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-O7TYrxMn-4",
       "title": "E-Filing",
-      "contentHash": "893e5ed793da",
-      "pageUpdatedAt": 1795776457.086,
+      "contentHash": "c607a15a63cd",
+      "pageUpdatedAt": 1795857925.728,
       "calloutElementId": "cl-sUwstgBvn-",
-      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed. 2026-11-17 v50.16: Status line, callout and DCM-12 cells (grid-TpBE7PtM6j) patched in place. 2026-11-18 v50.17: Status line, callout, §5 police-station sentence, §8 persons-responsible line (new block), §20.2 batch 21 patched; ACC-3 row deleted and ACC-14 cell updated (grid-FAAg6kHyer); WIT-8 row added (grid-s22EreNnJR). 2026-11-19: patched in place to v50.19 (ACC-6/7, ACC-16/17, JUR-7/8, missing contacts, batch 22). Hash is of the committed file; the working copy also holds uncommitted PSS Act edits (v50.18) from another session, not synced. 2026-11-23: NOT synced. The page was edited on 2026-11-19 20:36 IST by Ashish Yadav (ashish.y@beehyv.com), after the last recorded sync; local is at v50.33 (PSS Act scope, LIT-2/LIT-17, date and IFSC validations, Visible-when wording, tooltips, JUR-9/11, synopsis field IDs). Resolve with the owner before overwriting. 2026-11-23 (later): owner approved overwriting Ashish Yadav's 2026-11-19 page edit. Patched in place to v50.33: status line and callout (v50.18 entry added too), §1 scope, CHQ-11, §11 delay paragraph, §14 natively-digital paragraph, §16.1 printed labels rebuilt as new blocks; cells changed in the LIT, ADV, ACC, CHQ, LDN, JUR, DCM-5 and SYN grids (single-code cells written as plain text, since one code mark is stored literally). `sections` not recorded. 2026-11-27: patched in place to v50.34 (Status line, callout, PRY-1 Type cell in grid-UGBc7eKxqI)."
+      "note": "2026-11-10: patched in place (table cells and text blocks), no rebuild; sections hashes not recomputed. 2026-11-17 v50.16: Status line, callout and DCM-12 cells (grid-TpBE7PtM6j) patched in place. 2026-11-18 v50.17: Status line, callout, §5 police-station sentence, §8 persons-responsible line (new block), §20.2 batch 21 patched; ACC-3 row deleted and ACC-14 cell updated (grid-FAAg6kHyer); WIT-8 row added (grid-s22EreNnJR). 2026-11-19: patched in place to v50.19 (ACC-6/7, ACC-16/17, JUR-7/8, missing contacts, batch 22). Hash is of the committed file; the working copy also holds uncommitted PSS Act edits (v50.18) from another session, not synced. 2026-11-23: NOT synced. The page was edited on 2026-11-19 20:36 IST by Ashish Yadav (ashish.y@beehyv.com), after the last recorded sync; local is at v50.33 (PSS Act scope, LIT-2/LIT-17, date and IFSC validations, Visible-when wording, tooltips, JUR-9/11, synopsis field IDs). Resolve with the owner before overwriting. 2026-11-23 (later): owner approved overwriting Ashish Yadav's 2026-11-19 page edit. Patched in place to v50.33: status line and callout (v50.18 entry added too), §1 scope, CHQ-11, §11 delay paragraph, §14 natively-digital paragraph, §16.1 printed labels rebuilt as new blocks; cells changed in the LIT, ADV, ACC, CHQ, LDN, JUR, DCM-5 and SYN grids (single-code cells written as plain text, since one code mark is stored literally). `sections` not recorded. 2026-11-27: patched in place to v50.34 (Status line, callout, PRY-1 Type cell in grid-UGBc7eKxqI). 2026-11-28: patched in place to v50.36 (status, callout, §16.4 rows 1.2/1.3/2.1–2.4/3.2, §16.8 ACC-14…23 row, §16.9 link/case table/what-to-look-at, §20.2 batch 23)."
     },
     "case-numbers.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-w5J9rG6X75",
@@ -1128,24 +1128,24 @@
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
       "title": "Payment and Settlement Systems Act Cases",
-      "contentHash": "9df479d9b81f",
-      "pageUpdatedAt": 1795452839.633,
+      "contentHash": "2c5bc483b428",
+      "pageUpdatedAt": 1795857790.371,
       "calloutElementId": "cl-8kTOmx76kL",
       "sections": [
         {
           "key": "# Payment and Settlement Systems Act Cases",
           "elementId": "cl-p3YNtnak9u",
-          "hash": "d4b10e55819b"
+          "hash": "f332bac20895"
         },
         {
           "key": "# 1. Section map",
           "elementId": "cl-atW4I_xyVA",
-          "hash": "19ce8bb69a63"
+          "hash": "eea1b0b31c82"
         },
         {
           "key": "# 2. Entry context",
           "elementId": "cl-46oDXyLm5Y",
-          "hash": "9d033e5d8234"
+          "hash": "dc40ce04c88c"
         },
         {
           "key": "# 3. Form structure",
@@ -1179,8 +1179,8 @@
         },
         {
           "key": "# 9. Generated complaint PDF — `DOC`",
-          "elementId": "cl-XcB5Uc9SA3",
-          "hash": "a253cc5a8669"
+          "elementId": "cl-vH7kBhLfVR",
+          "hash": "513f9e8b9672"
         },
         {
           "key": "# 10. Prefilled text templates",
@@ -1190,7 +1190,7 @@
         {
           "key": "# 11. Open questions — `Q`",
           "elementId": "cl-GVQTFTaf4x",
-          "hash": "b8d246438272"
+          "hash": "ac8dc39f8c90"
         },
         {
           "key": "view: Pending tasks (Court Side) — Payment and Settlement Systems Act Cases",
