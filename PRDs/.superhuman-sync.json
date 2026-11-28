@@ -1128,14 +1128,14 @@
     "payment-settlement-systems-act.md": {
       "pageUri": "superhuman://docs/KtL_rwN6Qw/pages/section-hEU_AKNZ_Z",
       "title": "Payment and Settlement Systems Act Cases",
-      "contentHash": "2c5bc483b428",
-      "pageUpdatedAt": 1795857790.371,
+      "contentHash": "9907a3a92765",
+      "pageUpdatedAt": 1795858267.438,
       "calloutElementId": "cl-8kTOmx76kL",
       "sections": [
         {
           "key": "# Payment and Settlement Systems Act Cases",
           "elementId": "cl-p3YNtnak9u",
-          "hash": "f332bac20895"
+          "hash": "b86b36224442"
         },
         {
           "key": "# 1. Section map",
@@ -1190,7 +1190,7 @@
         {
           "key": "# 11. Open questions — `Q`",
           "elementId": "cl-GVQTFTaf4x",
-          "hash": "ac8dc39f8c90"
+          "hash": "ce9e667356ee"
         },
         {
           "key": "view: Pending tasks (Court Side) — Payment and Settlement Systems Act Cases",
