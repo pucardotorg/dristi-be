@@ -29,6 +29,9 @@ Endpoints: `POST /auth/otp/request/`
 | 5 | a number with no account | POST a `password_reset` code request | the same 202 body as for a known number — the endpoint reveals nothing about which numbers hold accounts (a code is still "sent") |
 | 6 | a malformed mobile number (`9876543210`, `+14155552671`) | POST | 400 with `E00001` on `mobile_number` — the implementation accepts only the Indian `+91[6-9]xxxxxxxxx` form, narrower than spec 0005 §5.2's generic E.164 (current behavior, pinned) |
 | 7 | an unknown purpose (`"verify_email"`) | POST | 400 with `E00001` on `purpose` |
+| 8 | a code was just sent to a number | five more requests arrive back-to-back (an impatient user hammering "resend") | the first was the only SMS; every repeat is 429 `E01005` with `Retry-After` never below 1 — one write wins the key, the rest are refused (`cache.add()` is the whole mechanism) |
+| 9 | no cooldown active | the SMS hand-off to messaging raises mid-request | the request fails, and the number is **not** left cooldown-locked: the cooldown key is removed with the failure, so an immediate retry is 202 — a failed send must not look like a sent one |
+| 10 | no accounts at all | requests for three **different** numbers in quick succession | all three are 202 — the cooldown is per number, and there is no per-caller ceiling (current behavior, pinned so introducing one fails a test) |
 
 Notes:
 
@@ -38,6 +41,9 @@ Notes:
   real `enqueue_sms` for MessageLog assertions where the table asks for them.
 - "Cooldown expired" (row 4) is simulated at the cache boundary — the expiry
   *is* the key's absence (spec 0005 §4.1.3) — not by sleeping.
+- Row 9 injects the failure at the messaging boundary (`_send_sms` raising),
+  the seam spec 0037 §6 prefers; the assertion is on the cooldown key being
+  cleaned up, which is what lets the retry through.
 - Known consequence pinned, spec 0005 §4.1.3.1: the code reaches the
   `MessageLog` (`context` and rendered content) in plaintext. A test asserts
   this current behavior so its removal fails a test.
@@ -57,6 +63,10 @@ Endpoints: `POST /users/`
 | 5 | a valid outstanding code | POST with a wrong code five times (`OTP_MAX_ATTEMPTS`), then with the right one | each wrong guess is 401 `E01001`; the fifth destroys the code, so the right one is refused too |
 | 6 | a code that was just used successfully | POST the same code again | 401 `E01001` — verification consumes, so replay fails |
 | 7 | a non-canonical number (bare 10 digits, `+91` with a leading 0) | POST with any OTP | 400 with `E00001` on `mobile_number` — the number is validated before the code is ever looked at; no account created |
+| 8 | user1 holds a `register` code for their number; user2 holds one for theirs | user2 POSTs user1's code with **user2's** number, then user2's code with **user1's** number | both are 401 `E01001` — a code is bound to the number it was issued for, and no account is created for either |
+| 9 | user1 requested a `register` code, and user2 has seen it | user2 races: POSTs the code with user1's number first; user1 then POSTs the same code | user2 gets 201 and the account; user1's own attempt is 401 `E01001` — the code is consumed by whoever presents it first, which is exactly why the code must stay secret |
+| 10 | a valid outstanding code | POST a wrong code four times (below `OTP_MAX_ATTEMPTS`), then the right one | the wrong guesses are 401 `E01001`, but the code survives them: the right one is 201 |
+| 11 | four wrong guesses are already counted against the outstanding code | the cooldown passes, a **fresh** code is issued, then four more wrong guesses and the right one | the right code is 201 — issuing a code resets the attempt counter (spec 0005 §5.1), so a re-send is a fresh start, not a step closer to lockout |
 
 Notes:
 
@@ -81,6 +91,8 @@ Endpoints: `POST /sessions/` · `DELETE /sessions/`
 | 7 | a complete account | POST with both `otp` and `password`, then with neither | both 400 with `E01008` — exactly one credential |
 | 8 | accounts and non-accounts | POST a wrong password, an unknown number, and a wrong OTP | all three are the identical 401 with `E01003` |
 | 9 | a logged-in client | DELETE `/sessions/`, then call a gated endpoint | 204; the follow-up is unauthenticated (403 `E00102`) |
+| 10 | a valid outstanding `login` code | POST a wrong OTP five times, then the right one | the wrong guesses are 401 `E01003`; the fifth destroys the code, so the right one is 401 `E01003` too — the attempts machinery is shared by every verification endpoint |
+| 11 | user1 holds a `login` code for their number | user2 POSTs user1's code with **user2's** number | 401 `E01003` — codes are bound to the number they were issued for, at login as at registration |
 
 Notes:
 
@@ -169,6 +181,7 @@ Endpoints: `POST /auth/password-reset/verify/` · `POST /auth/password-reset/`
 | 6 | a verified session | POST a weak password, then a strong one | 400 with `E01011` on `new_password`, and the permission is **not** spent: the strong retry is 204 |
 | 7 | a second client logged into the same account | the first client resets the password | the second client's next call is 403 `E00102` — the new hash invalidates every existing session |
 | 8 | a session verified more than `PASSWORD_RESET_WINDOW_SECONDS` ago | POST `{new_password}` | 401 `E01014` |
+| 9 | a valid outstanding `password_reset` code | verify with a wrong code five times, then with the right one | the wrong guesses are 401 `E01001`; the fifth destroys the code, so the right one is refused too and the session is never marked — the attempts machinery is shared by every verification endpoint |
 
 Notes:
 
