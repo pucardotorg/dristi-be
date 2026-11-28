@@ -87,6 +87,11 @@ make format      # Format code with ruff
 
 Run `make help` to see all available commands.
 
+The Makefile uses podman when it is installed and falls back to docker; force
+one with `make up CONTAINER_ENGINE=docker`. On podman, `make up` also prepares
+the rustfs data directories and works around a podman-compose bug that leaves
+containers stuck in `Created` (see the comments in the Makefile).
+
 Pincode pre-fill needs location data, which the repository does not ship. The
 states, districts and pincodes are seeded from TOML with the `seed` command
 (`python manage.py seed states.toml districts.toml pincodes.toml`); the data and
